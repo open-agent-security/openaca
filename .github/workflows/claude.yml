@@ -1,0 +1,121 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  # 'assigned' is intentionally NOT included: the assigned event fires under
+  # the assigner's identity but `github.event.issue.author_association` stays
+  # the OPENER, so we can't reliably gate it. The practical 'invoke @claude
+  # on an existing issue' path is to comment '@claude ...' on the issue —
+  # that goes through issue_comment, where comment.author_association is the
+  # commenter and the gate works correctly.
+  issues:
+    types: [opened]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    # Only TRUSTED actors (repo OWNER/MEMBER/COLLABORATOR) can invoke @claude.
+    # The job has write perms on contents/pull-requests/issues, so any
+    # non-collaborator who could comment '@claude do X' on an issue/PR would
+    # otherwise be able to trigger arbitrary commits/comments under our token.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && (github.event.review.author_association == 'OWNER' || github.event.review.author_association == 'MEMBER' || github.event.review.author_association == 'COLLABORATOR')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && (github.event.issue.author_association == 'OWNER' || github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    permissions:
+      # Write across contents/pull-requests/issues so @claude can do the work
+      # people @-mention it for: post comments, create branches, push commits.
+      # The default read-only token would silently 403 on any of those API
+      # calls, breaking the entire mention-driven flow.
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      # Refuse to operate on fork PRs. The if: gate above only checks the
+      # COMMENTER's association — but the next step checks out the PR head
+      # and the action then runs with write tokens. Fork PR + write secrets
+      # against untrusted code is a write-token-exposure risk. Native
+      # filtering in `if:` only works for pull_request_review* events (the
+      # payload has head.repo); for issue_comment events the PR head repo
+      # isn't in the payload, so we resolve it at runtime via the API.
+      - name: Refuse fork PRs (write-token exposure)
+        if: github.event.issue.pull_request != null || github.event.pull_request != null
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          HEAD_REPO=$(gh pr view "$PR_NUM" -R "$REPO" --json headRepository --jq '.headRepository.nameWithOwner')
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::Refusing to run @claude on PR from fork ($HEAD_REPO) — workflow grants write tokens and would expose secrets to untrusted code."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          # For `issue_comment` on a PR, GitHub sets `github.sha` to the
+          # default branch's HEAD — NOT the PR head. Checking out that SHA
+          # means PR-only files don't exist on disk and the action crashes
+          # on `git hash-object`. Resolve to the PR head explicitly:
+          #   - pull_request_review / _review_comment expose pull_request.head.sha
+          #   - issue_comment on a PR has issue.pull_request set; build the
+          #     head ref from the PR number
+          #   - issues:opened (not on a PR) -> fall through to github.ref
+          # The fork-refusal step above guarantees same-repo head when we reach this.
+          ref: ${{ github.event.pull_request.head.sha || (github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number)) || github.ref }}
+
+      # Install uv + sync deps so @claude can run the same lint/test gates
+      # the pre-push hook + ci.yml run, before pushing commits to a PR.
+      # Without this, @claude's pushes skip the gate entirely and PR-breaking
+      # lint/format/type/test errors land on the PR before anyone notices.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          # Match pyproject.toml `requires-python` and ci.yml. `python-version`
+          # here installs that interpreter AND sets UV_PYTHON, so every
+          # `uv sync`/`uv run` in this job uses it.
+          python-version: "3.10"
+
+      - name: Sync deps
+        # `--frozen` forbids re-resolution: install exactly what's in the
+        # committed uv.lock. Same behavior as ci.yml so claude bot's pushes
+        # hit the same dep set the rest of CI uses.
+        run: uv sync --frozen
+
+      - name: Install pre-push hook
+        run: bash scripts/install-hooks.sh
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Lets Claude read CI results on PRs.
+          additional_permissions: |
+            actions: read
+
+          # Surface Claude's full SDK conversation in the workflow log.
+          # Default is `false` (per claude-code-action upstream) which hides
+          # everything as "Running Claude Code via SDK (full output hidden
+          # for security)..." and makes silent stalls impossible to diagnose
+          # — runs reporting "success" while making zero commits, with no
+          # way to tell if Claude hit a token cap, got stuck on a tool call,
+          # or decided to bail mid-task.
+          #
+          # Privacy / security tradeoff: workflow logs are visible to anyone
+          # with read access to Actions on this repo. The action's default
+          # prompt construction includes PR title, body, comments, and
+          # review threads — all of which are already public on the PR. We
+          # don't pass secrets through the prompt. Acceptable.
+          show_full_output: true

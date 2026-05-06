@@ -1,0 +1,1 @@
+Scan the recent conversation for decisions where (a) the rejected alternative is plausible and likely to be re-suggested, and (b) the reason is not obvious from the code alone. If any qualify, write a new ADR in docs/adrs/ using TEMPLATE.md and add an entry to INDEX.md. See CLAUDE.md > Architecture Decision Records for the bar and supersession discipline.

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Pre-push hook for asve. Installed by scripts/install-hooks.sh
+# which sets `core.hooksPath = scripts/git-hooks`.
+#
+# CI-parity: runs the same lint / type / test commands as CI before any push,
+# so local pushes fail on the same checks CI would reject. Iteration loop
+# quality — bots and humans fix lint/type/test failures BEFORE pushing rather
+# than declaring "done" and leaving a red PR for the next person to notice.
+#
+# Bypass: git push --no-verify (use sparingly — typically when test
+# infrastructure is broken locally and you're pushing the fix).
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+fail() {
+  echo ""
+  echo "  ❌ $1"
+  echo ""
+  echo "  To bypass (not recommended): git push --no-verify"
+  echo ""
+  exit 1
+}
+
+# Read pushed refs from stdin once. Pure deletions (local_sha is zero-SHA)
+# skip the check — there's no code to validate.
+pushed_any=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "$ZERO_SHA" ]; then
+    continue
+  fi
+  pushed_any=1
+done
+
+if [ "$pushed_any" = "0" ]; then
+  exit 0
+fi
+
+cd "$REPO_ROOT"
+
+# `git push` exports GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE / etc. into the
+# hook's environment. Those leak into every grandchild process — pytest, then
+# any test fixture that does `subprocess.check_call(["git", "-C", tmp_path,
+# ...])`. The grandchild git inherits the parent repo's GIT_DIR and ignores
+# `-C tmp_path`. Tests that pass when run directly silently fail when run
+# from the hook. Unset the leakers before gates run.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_INTERNAL_GETTEXT_SH_SCHEME
+
+# Refuse on dirty worktree. The hook reads files from disk; uncommitted edits
+# or relevant untracked files would let the gate validate code that isn't in
+# the pushed commit (false-positive pass).
+if ! git diff --quiet HEAD; then
+  fail "working tree has uncommitted changes — pre-push would
+    validate uncommitted code, not the commit being pushed.
+    To fix: git commit (or git stash) before pushing."
+fi
+untracked="$(git ls-files --others --exclude-standard)"
+if [ -n "$untracked" ]; then
+  fail "untracked, gitignore-eligible files present — pre-push
+    would validate them locally but they won't be in the pushed
+    commit, so a passing run would be a false positive.
+    Files:
+$(echo "$untracked" | sed 's/^/      /')
+    To fix: git add+commit, remove the files, or add them to .gitignore."
+fi
+
+# ---------- CI-parity local gates ----------
+
+echo "  → ruff check"
+if ! uv run ruff check . > /tmp/asve-pre-push-ruff-check.log 2>&1; then
+  tail -40 /tmp/asve-pre-push-ruff-check.log
+  fail "ruff check failed.
+    To fix: uv run ruff check --fix . (then re-stage and re-push)"
+fi
+
+echo "  → ruff format --check"
+if ! uv run ruff format --check . > /tmp/asve-pre-push-ruff-format.log 2>&1; then
+  tail -40 /tmp/asve-pre-push-ruff-format.log
+  fail "ruff format --check failed.
+    To fix: uv run ruff format . (then re-stage and re-push)"
+fi
+
+echo "  → pyright"
+if ! uv run pyright > /tmp/asve-pre-push-pyright.log 2>&1; then
+  tail -40 /tmp/asve-pre-push-pyright.log
+  fail "pyright failed.
+    To fix: uv run pyright (address each error)"
+fi
+
+echo "  → pytest"
+if ! uv run pytest -q > /tmp/asve-pre-push-pytest.log 2>&1; then
+  tail -40 /tmp/asve-pre-push-pytest.log
+  fail "pytest failed.
+    To fix: uv run pytest -v (debug failures, then re-stage and re-push)"
+fi
+
+
+echo "  ✓ pre-push checks ok"
+exit 0

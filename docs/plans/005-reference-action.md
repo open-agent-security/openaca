@@ -1,12 +1,12 @@
-# 005 — Reference GitHub Action
+# 005 — Reference Scanner (CLI + Action)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A thin, local-first GitHub Action that consumers invoke via `open-agent-security/asve@v1`. The Action parses agent-installation manifests in the consumer's repo (using the parsers from Plan 003), looks up matching advisories from the ASVE static export, and reports findings as both SARIF and GitHub annotations.
+**Goal:** A reference scanner exposed two ways from a single Python entrypoint (`tools/scan.py`): (a) the `asve-scan` CLI for local developer use, with human-readable terminal output and smart defaults so `asve-scan .` "just works"; (b) a thin composite GitHub Action at the repo root (`action.yml`, invoked as `open-agent-security/asve@v1`) that wraps the same CLI for CI use. CLI is a first-class V0 deliverable; PyPI publishing is a deliberate follow-up.
 
-**Architecture:** A single Python entrypoint (`tools/scan.py`) wraps three steps: (1) parse the target repo using `tools.parsers.parse_repo`, (2) match the resulting `ComponentRef` stream against the loaded advisory corpus using a small ranges/identity matcher, (3) emit SARIF (for code-scanning UIs) and GitHub annotations (for inline PR review). The `action.yml` at the repo root invokes the same script.
+**Architecture:** `tools/scan.py` wraps three steps: (1) parse the target repo using `tools.parsers.parse_repo` (Plan 003), (2) match the resulting `ComponentRef` stream against the loaded advisory corpus using a small ranges/identity matcher, (3) emit findings via three sinks selected at runtime — a human-readable terminal table (default for local), GitHub workflow annotations (only when `GITHUB_ACTIONS=true`), and SARIF (when `--sarif` is given). Smart defaults: `--target` defaults to the current directory; `--advisories` resolves explicit-flag → `./advisories` if present → `~/.cache/asve/all.zip` (auto-fetched from `https://asve.dev/all.zip` and cached, with `--no-fetch` opt-out). The `action.yml` invokes the same CLI with explicit args.
 
-**Tech Stack:** Python 3.11+, `packaging` (npm/PyPI version comparison), stdlib `json` for SARIF emission. No JavaScript Action wrapper — pure composite-Python action.
+**Tech Stack:** Python 3.11+, `packaging` (npm/PyPI version comparison), stdlib `json` for SARIF emission, stdlib `urllib.request` for advisory auto-fetch (no new runtime deps). No JavaScript Action wrapper — pure composite-Python action.
 
 **Depends on:** 001 (project setup), 002 (advisory corpus), 003 (parsers), 004 (static export).
 
@@ -19,9 +19,13 @@
 | `action.yml` | Composite GitHub Action manifest at repo root |
 | `tools/matcher.py` | Match a `ComponentRef` against a set of advisories |
 | `tools/sarif.py` | Render findings as SARIF v2.1.0 |
+| `tools/report.py` | Human-readable terminal report (table) + GitHub annotations (gated on `GITHUB_ACTIONS`) |
+| `tools/advisory_source.py` | Resolve `--advisories`: explicit flag → `./advisories` → `~/.cache/asve/all.zip` (auto-fetch + cache) |
 | `tools/scan.py` | End-to-end CLI: parse → match → report |
 | `tests/test_matcher.py` | Range and identity matching tests |
 | `tests/test_sarif.py` | SARIF schema-shape tests |
+| `tests/test_report.py` | Terminal report + GitHub-annotation gating tests |
+| `tests/test_advisory_source.py` | Source resolution + cache-vs-fetch tests |
 | `tests/test_scan.py` | End-to-end scan against fixture repos |
 | `tests/fixtures/repos/exposed-mcp/...` | Fixture repo that should match ASVE-2026-0001 |
 
@@ -520,6 +524,466 @@ Expected: both pass.
 ```bash
 git add tools/scan.py tests/test_scan.py tests/fixtures/repos/exposed-mcp/ pyproject.toml
 git commit -m "feat: end-to-end asve-scan CLI"
+```
+
+---
+
+## Task 4b: Human-readable terminal report; gate GitHub annotations
+
+The CLI is a first-class V0 deliverable, so the terminal experience matters. Refactor the existing GitHub-annotation emission into a `tools/report.py` module, add a human-readable findings table, and only emit GitHub annotations when running inside Actions (`GITHUB_ACTIONS=true`).
+
+**Files:**
+- Create: `tools/report.py`
+- Create: `tests/test_report.py`
+- Modify: `tools/scan.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/test_report.py
+import os
+
+import pytest
+from click.testing import CliRunner
+
+from tools.component_ref import ComponentRef
+from tools.matcher import Finding
+from tools.report import emit_github_annotations, emit_terminal_report
+
+ADVISORY_INDEX = {
+    "ASVE-2026-0001": {
+        "summary": "Command injection in @cyanheads/git-mcp-server",
+        "severity": [{"type": "CVSS_V4", "score": "CVSS:4.0/AV:N/.../SA:N"}],
+    }
+}
+
+
+def make_finding(advisory_id="ASVE-2026-0001", confidence="high") -> Finding:
+    ref = ComponentRef(ecosystem="npm", name="@cyanheads/git-mcp-server", version="1.1.0",
+                       source_manifest="package.json", source_locator="dependencies")
+    return Finding(advisory_id=advisory_id, component=ref, confidence=confidence,
+                   reason=f"{ref.name}@{ref.version} matches {advisory_id}")
+
+
+def test_terminal_report_renders_table(capsys):
+    emit_terminal_report([make_finding()], ADVISORY_INDEX)
+    out = capsys.readouterr().out
+    assert "ASVE-2026-0001" in out
+    assert "@cyanheads/git-mcp-server" in out
+    assert "1.1.0" in out
+    assert "package.json" in out
+
+
+def test_terminal_report_no_findings(capsys):
+    emit_terminal_report([], ADVISORY_INDEX)
+    out = capsys.readouterr().out
+    assert "no findings" in out.lower()
+
+
+def test_github_annotations_emit_when_in_actions(capsys, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    emit_github_annotations([make_finding()])
+    out = capsys.readouterr().out
+    assert "::error" in out
+    assert "ASVE-2026-0001" in out
+
+
+def test_github_annotations_silent_when_not_in_actions(capsys, monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    emit_github_annotations([make_finding()])
+    out = capsys.readouterr().out
+    assert out == ""
+```
+
+- [ ] **Step 2: Run to confirm failure**
+
+Run: `uv run pytest tests/test_report.py -v`
+Expected: fails — `tools.report` does not exist.
+
+- [ ] **Step 3: Implement `tools/report.py`**
+
+```python
+"""Output sinks for asve-scan findings."""
+from __future__ import annotations
+
+import os
+
+import click
+
+from tools.matcher import Finding
+
+
+def _severity_style(confidence: str) -> str:
+    if confidence == "high":
+        return click.style("high", fg="red", bold=True)
+    if confidence == "low":
+        return click.style("low", fg="yellow")
+    return click.style(confidence, fg="cyan")
+
+
+def emit_terminal_report(findings: list[Finding], advisory_index: dict[str, dict]) -> None:
+    """Human-readable findings table for a developer terminal."""
+    if not findings:
+        click.echo(click.style("no findings", fg="green"))
+        return
+
+    headers = ("ADVISORY", "SEVERITY", "COMPONENT", "VERSION", "LOCATION")
+    rows = []
+    for f in findings:
+        component = f.component.name or f.component.component_identity or "-"
+        version = f.component.version or "-"
+        location = f"{f.component.source_manifest}::{f.component.source_locator}"
+        rows.append((f.advisory_id, _severity_style(f.confidence), component, version, location))
+
+    widths = [
+        max(len(headers[i]), max(len(_strip_ansi(r[i])) for r in rows))
+        for i in range(len(headers))
+    ]
+
+    def fmt(values, color: bool = False) -> str:
+        return "  ".join(
+            v.ljust(widths[i] + (len(v) - len(_strip_ansi(v)) if color else 0))
+            for i, v in enumerate(values)
+        )
+
+    click.echo(click.style(fmt(headers), bold=True))
+    click.echo("-" * sum(widths) + "-" * 8)
+    for row in rows:
+        click.echo(fmt(row, color=True))
+
+    high_count = sum(1 for f in findings if f.confidence == "high")
+    summary = f"\n{len(findings)} finding(s); {high_count} high-confidence"
+    click.echo(click.style(summary, bold=True))
+
+
+def emit_github_annotations(findings: list[Finding]) -> None:
+    """GitHub workflow annotation lines, only when running inside Actions."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    for f in findings:
+        kind = "error" if f.confidence == "high" else "warning"
+        click.echo(
+            f"::{kind} file={f.component.source_manifest},title={f.advisory_id}::"
+            f"{f.reason}"
+        )
+
+
+def _strip_ansi(s: str) -> str:
+    """Remove ANSI color escape sequences for width calculation."""
+    import re
+    return re.sub(r"\x1b\[[0-9;]*m", "", s)
+```
+
+- [ ] **Step 4: Refactor `tools/scan.py` to use `report.py`**
+
+Remove the local `emit_github_annotations` function from `tools/scan.py` (it lives in `tools/report.py` now). At the top of `tools/scan.py`:
+
+```python
+from tools.report import emit_github_annotations, emit_terminal_report
+```
+
+Replace the bottom of `main` (the section that handled output and exit codes) with:
+
+```python
+    advisory_index = {a["id"]: a for a in corpus}
+
+    if sarif:
+        sarif_doc = to_sarif(findings, advisory_index)
+        sarif.write_text(json.dumps(sarif_doc, indent=2))
+        click.echo(f"sarif: wrote {sarif}", err=True)
+
+    emit_terminal_report(findings, advisory_index)
+    emit_github_annotations(findings)
+
+    if not findings:
+        sys.exit(0)
+
+    high_count = sum(1 for f in findings if f.confidence == "high")
+    if fail_on == "none":
+        sys.exit(0)
+    if fail_on == "high" and high_count == 0:
+        sys.exit(0)
+    sys.exit(1)
+```
+
+- [ ] **Step 5: Run all tests**
+
+Run: `uv run pytest tests/test_report.py tests/test_scan.py -v`
+Expected: all pass. (The `test_scan.py` tests still pass because `emit_terminal_report` is additive and `emit_github_annotations` no-ops outside `GITHUB_ACTIONS=true`.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tools/report.py tools/scan.py tests/test_report.py
+git commit -m "feat: human-readable terminal report; gate GitHub annotations on GITHUB_ACTIONS"
+```
+
+---
+
+## Task 4c: Smart defaults for `--target` and `--advisories` (auto-fetch + cache)
+
+For the CLI to "just work" locally, `asve-scan .` should run without spelling out `--target` or `--advisories`. Resolve `--advisories` in this order: explicit flag → `./advisories` if present → `~/.cache/asve/all.zip` (auto-fetched from `https://asve.dev/all.zip` and cached). Provide `--no-fetch` to opt out of the network step.
+
+**Files:**
+- Create: `tools/advisory_source.py`
+- Create: `tests/test_advisory_source.py`
+- Modify: `tools/scan.py`
+- Modify: `tests/test_scan.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/test_advisory_source.py
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from tools.advisory_source import (
+    DEFAULT_REMOTE_URL,
+    AdvisorySourceError,
+    resolve_advisories,
+)
+
+
+def test_explicit_path_wins(tmp_path):
+    explicit = tmp_path / "advisories"
+    explicit.mkdir()
+    (explicit / "ASVE-2026-0001.yaml").write_text("id: ASVE-2026-0001\n")
+    resolved = resolve_advisories(explicit, no_fetch=False, cache_dir=tmp_path / "cache")
+    assert resolved == explicit
+
+
+def test_local_advisories_dir_used_when_no_flag(tmp_path, monkeypatch):
+    cwd = tmp_path / "project"
+    (cwd / "advisories").mkdir(parents=True)
+    (cwd / "advisories" / "ASVE-2026-0001.yaml").write_text("id: ASVE-2026-0001\n")
+    monkeypatch.chdir(cwd)
+    resolved = resolve_advisories(None, no_fetch=False, cache_dir=tmp_path / "cache")
+    assert resolved.resolve() == (cwd / "advisories").resolve()
+
+
+def test_no_fetch_with_no_local_raises(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(AdvisorySourceError):
+        resolve_advisories(None, no_fetch=True, cache_dir=tmp_path / "cache")
+
+
+def test_fetches_and_caches_when_no_local(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cache_dir = tmp_path / "cache"
+
+    def fake_download(url: str, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(target, "w") as zf:
+            zf.writestr("advisories/2026/ASVE-2026-0001.yaml",
+                        "id: ASVE-2026-0001\n")
+
+    with patch("tools.advisory_source._download", side_effect=fake_download):
+        resolved = resolve_advisories(None, no_fetch=False, cache_dir=cache_dir)
+
+    assert (resolved / "2026" / "ASVE-2026-0001.yaml").is_file()
+
+
+def test_cached_zip_reused_on_second_call(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cache_dir = tmp_path / "cache"
+
+    def fake_download(url: str, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(target, "w") as zf:
+            zf.writestr("advisories/2026/ASVE-2026-0001.yaml",
+                        "id: ASVE-2026-0001\n")
+
+    with patch("tools.advisory_source._download", side_effect=fake_download) as dl:
+        resolve_advisories(None, no_fetch=False, cache_dir=cache_dir)
+        resolve_advisories(None, no_fetch=False, cache_dir=cache_dir)
+
+    assert dl.call_count == 1   # second call hits cache
+```
+
+- [ ] **Step 2: Run to confirm failure**
+
+Run: `uv run pytest tests/test_advisory_source.py -v`
+Expected: fails — `tools.advisory_source` does not exist.
+
+- [ ] **Step 3: Implement `tools/advisory_source.py`**
+
+```python
+"""Resolve --advisories: explicit flag → ./advisories → cached static export."""
+from __future__ import annotations
+
+import urllib.request
+import zipfile
+from pathlib import Path
+from typing import Optional
+
+DEFAULT_REMOTE_URL = "https://asve.dev/all.zip"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "asve"
+
+
+class AdvisorySourceError(RuntimeError):
+    pass
+
+
+def _download(url: str, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url, timeout=30) as response, target.open("wb") as out:
+        out.write(response.read())
+
+
+def _extract(zip_path: Path, dest: Path) -> Path:
+    """Extract zip and return the path to the contained advisories directory."""
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(dest)
+    advisories = dest / "advisories"
+    if not advisories.is_dir():
+        raise AdvisorySourceError(
+            f"expected 'advisories/' inside {zip_path}; got {sorted(p.name for p in dest.iterdir())}"
+        )
+    return advisories
+
+
+def resolve_advisories(
+    explicit: Optional[Path],
+    *,
+    no_fetch: bool,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    remote_url: str = DEFAULT_REMOTE_URL,
+) -> Path:
+    """Return a path containing advisory YAMLs.
+
+    Resolution order:
+        1. explicit (when given) — must exist.
+        2. ./advisories — if present in the current working directory.
+        3. cached extract of remote_url under cache_dir (only when no_fetch is False).
+    """
+    if explicit is not None:
+        if not explicit.exists():
+            raise AdvisorySourceError(f"--advisories path does not exist: {explicit}")
+        return explicit
+
+    local = Path("advisories")
+    if local.is_dir():
+        return local
+
+    if no_fetch:
+        raise AdvisorySourceError(
+            "no --advisories given, no ./advisories directory, and --no-fetch was set"
+        )
+
+    zip_path = cache_dir / "all.zip"
+    extracted = cache_dir / "extracted"
+    if not zip_path.is_file():
+        _download(remote_url, zip_path)
+    if not (extracted / "advisories").is_dir():
+        _extract(zip_path, extracted)
+    return extracted / "advisories"
+```
+
+- [ ] **Step 4: Wire into `tools/scan.py`**
+
+In `tools/scan.py`, replace the `--target` and `--advisories` decorators with:
+
+```python
+@click.command()
+@click.argument("target", type=click.Path(exists=True, file_okay=False, path_type=Path),
+                default=".")
+@click.option("--advisories", type=click.Path(path_type=Path), default=None,
+              help="ASVE advisories directory. Defaults to ./advisories or the cached static export.")
+@click.option("--no-fetch", is_flag=True, default=False,
+              help="Do not fetch the remote static export when no local advisories are found.")
+@click.option("--sarif", type=click.Path(dir_okay=False, path_type=Path), default=None,
+              help="Write SARIF v2.1.0 to this path.")
+@click.option("--fail-on", type=click.Choice(["high", "any", "none"]), default="any",
+              show_default=True, help="Exit non-zero when findings of this severity are present.")
+def main(target: Path, advisories: Path | None, no_fetch: bool,
+         sarif: Path | None, fail_on: str) -> None:
+    """Scan TARGET for components matching ASVE advisories."""
+    from tools.advisory_source import resolve_advisories
+    advisories_path = resolve_advisories(advisories, no_fetch=no_fetch)
+
+    refs = parse_repo(target)
+    corpus = load_corpus(advisories_path)
+    findings = match(refs, corpus)
+
+    # ... rest of main unchanged from Task 4b ...
+```
+
+`target` is now a positional argument with a default of `.` so `asve-scan` (no args) means `asve-scan .`.
+
+- [ ] **Step 5: Update existing scan tests for the new positional argument**
+
+In `tests/test_scan.py`, the existing tests pass `--target` explicitly; both styles still work because `--target` is no longer a flag. Update the tests to use the positional form:
+
+```python
+def test_scan_finds_exposed_mcp(tmp_path):
+    sarif_out = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        str(FIXTURES / "repos" / "exposed-mcp"),
+        "--advisories", str(REPO_ROOT / "advisories"),
+        "--sarif", str(sarif_out),
+    ])
+    assert result.exit_code == 1, result.output
+    sarif = json.loads(sarif_out.read_text())
+    rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
+    assert "ASVE-2026-0001" in rule_ids
+
+
+def test_scan_clean_repo_exits_zero(tmp_path):
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "package.json").write_text('{"name":"clean","version":"0","dependencies":{}}')
+    sarif_out = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        str(clean),
+        "--advisories", str(REPO_ROOT / "advisories"),
+        "--sarif", str(sarif_out),
+    ])
+    assert result.exit_code == 0, result.output
+```
+
+Add one more test exercising the bare-defaults form:
+
+```python
+def test_scan_defaults_to_cwd_with_local_advisories(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / "advisories" / "2026").mkdir(parents=True)
+    (project / "advisories" / "2026" / "ASVE-2026-0001.yaml").write_text(
+        (REPO_ROOT / "advisories" / "2026" / "ASVE-2026-0001.yaml").read_text()
+    )
+    (project / "package.json").write_text(
+        '{"name":"clean","version":"0","dependencies":{}}'
+    )
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    result = runner.invoke(main, [])
+    assert result.exit_code == 0, result.output
+```
+
+- [ ] **Step 6: Run all scan + advisory-source tests**
+
+Run: `uv run pytest tests/test_scan.py tests/test_advisory_source.py -v`
+Expected: all pass.
+
+- [ ] **Step 7: Manual smoke check**
+
+```bash
+cd /path/to/some/repo/with/mcp.json
+uv run asve-scan         # uses cwd, fetches advisories on first run, caches them
+```
+
+Expected: terminal table of findings (or "no findings" in green); cache populated under `~/.cache/asve/`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add tools/advisory_source.py tools/scan.py tests/test_advisory_source.py tests/test_scan.py
+git commit -m "feat: smart defaults for asve-scan (cwd + auto-fetch advisories)"
 ```
 
 ---

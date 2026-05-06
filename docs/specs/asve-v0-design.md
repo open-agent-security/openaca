@@ -166,7 +166,7 @@ Seven items. Anything else waits.
 | 3 | **3-5 hand-curated advisories** | Mostly aliases of existing CVE/GHSA agent-component vulns, plus ≥1 enriched record demonstrating manifest detection beyond lockfile parsing. All `type: vulnerability` in V0. |
 | 4 | **Linter + CI** | Hard-fail and warning discipline per §7. |
 | 5 | **Static export pipeline** | `advisories/*.yaml → JSON → all.zip → modified_id.csv → GitHub Pages docs site`. No HTTP API. |
-| 6 | **Reference Action** | Lives at the repo root: `action.yml`. Invocation: `open-agent-security/asve@v1`. Thin, local-first; consumes the static export and runs manifest parsers. |
+| 6 | **Reference scanner (CLI + Action)** | One Python entrypoint (`tools/scan.py`) exposed two ways: (a) `asve-scan` console script for local use (`uv run asve-scan .`) with human-readable terminal output and smart defaults for `--target` / `--advisories`; (b) a thin composite GitHub Action at the repo root (`action.yml`, invoked as `open-agent-security/asve@v1`) that wraps the same CLI for CI. PyPI distribution is a follow-up; V0 ships the CLI as a console script in the repo. |
 | 7 | **Disclosure policy doc** | `docs/disclosure-policy.md`. OpenSSF baseline + ASVE-specific defaults. **Documented in V0; not operated as an active program.** See §10. |
 
 ### Out of V0
@@ -174,7 +174,8 @@ Seven items. Anything else waits.
 - HTTP API (`/v1/query`, etc.).
 - Benchmark harness or scanner leaderboard.
 - Public detection-rule format (Sigma-equivalent).
-- Multi-platform CLI binary (the Action is enough).
+- PyPI publishing of the CLI (`asve-tools`). V0 ships the console script in-repo; users install via `uv sync` from a clone. PyPI distribution is a follow-up.
+- Multi-platform standalone binary (single executable, no Python required).
 - Active disclosure pipeline at scale.
 - `type: exposure` and `type: config` records.
 - T3 (hash-based) advisories.
@@ -244,7 +245,7 @@ ASVE record:
 
 - Adds ASVE component identity (plugin/package/source/commit).
 - Adds agent metadata (`component_type`, `surfaces`, OWASP ASI).
-- The reference Action detects it from `mcp.json` /
+- The reference scanner (CLI + Action) detects it from `mcp.json` /
   `.claude-plugin/plugin.json` / `.claude/settings.json`, not from
   `package.json`.
 
@@ -280,7 +281,7 @@ ALL of:
 1. **Lookup layer proof**:
    - 25+ published advisories.
    - At least 3 component types represented.
-   - Static export and reference Action working from a clean install.
+   - Static export and reference scanner (CLI + Action) working from a clean install.
 
 2. **Disclosure framework documented**:
    - OpenSSF baseline + ASVE-specific defaults captured in
@@ -338,7 +339,7 @@ Gates, not weeks. Ship when each gate passes.
 | 1 | Schema validates 5 hand-written advisories | `schema/asve.schema.json` + `tools/lint.py`; 3-5 `type: vulnerability` advisories (mostly aliases, ≥1 enriched manifest-detection record) |
 | 2 | First batch of advisories merged | Aggregator script `tools/import-from-osv.py` for the alias workflow; advisories alias real CVEs; ≥1 record demonstrates `mcp.json` / `.claude-plugin/plugin.json` detection beyond lockfile |
 | 3 | Static export builds and round-trips | `uv run asve-export` produces `all.zip`, `modified_id.csv`, advisory pages on GitHub Pages |
-| 4 | Reference Action detects ≥3 patterns end-to-end | `action.yml` at repo root consumes `all.zip`; manifest parsers cover `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json` (Cursor + Windsurf in V1); SARIF output; GitHub annotations |
+| 4 | Reference scanner (CLI + Action) detects ≥3 patterns end-to-end | `asve-scan` CLI runs locally with human-readable output; `action.yml` at repo root wraps the same CLI for CI; manifest parsers cover `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json` (Cursor + Windsurf in V1); SARIF output; GitHub annotations only when `GITHUB_ACTIONS=true` |
 | 5 | Disclosure policy doc published | `docs/disclosure-policy.md` complete; OpenSSF baseline + ASVE defaults |
 | 6 | Contributor guide, public launch | `README.md`, `CONTRIBUTING.md`, schema docs, "how to file an advisory" with worked examples; launch post |
 

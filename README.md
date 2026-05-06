@@ -17,9 +17,10 @@ traditional SCA tools don't yet parse:
 - **Agent-context metadata** layered on existing CVE/GHSA records:
   `component_type`, `surfaces`, `agent_impact`, OWASP Agentic Top 10 (ASI)
   category mapping.
-- **A reference scanner** (a thin GitHub Action) that consumes the static
-  advisory export and reports findings against a repository's installed
-  agent-stack components.
+- **A reference scanner** — one Python entrypoint exposed as both a CLI
+  (`asve-scan`) for local use and a thin GitHub Action for CI. Both consume
+  the static advisory export and report findings against a repository's
+  installed agent-stack components.
 
 ## Status
 
@@ -40,15 +41,31 @@ plans.
 
 ## Reference scanner
 
-Use the GitHub Action in your workflow:
+### CLI (local)
+
+Run the scanner against a checkout:
+
+```bash
+uv run asve-scan .
+```
+
+By default `asve-scan` fetches the latest published advisory bundle (cached
+under `~/.cache/asve`) and prints a human-readable report. Pass
+`--advisories <dir-or-zip>` to use a local set, or `--no-fetch` to fail
+fast when no local advisories are available.
+
+PyPI distribution is a follow-up; for V0 the CLI ships as a console script
+in this repo.
+
+### GitHub Action (CI)
 
 ```yaml
 - uses: open-agent-security/asve@v1
 ```
 
-The Action consumes the latest static export, parses your repository's
-agent-installation manifests, and reports advisories against installed
-components.
+The Action wraps the same CLI, consumes the latest static export, parses
+your repository's agent-installation manifests, and reports advisories
+against installed components (with SARIF output for code scanning).
 
 ## License
 

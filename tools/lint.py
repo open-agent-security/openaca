@@ -19,15 +19,17 @@ _FORMAT_CHECKER = FormatChecker()
 
 
 @_FORMAT_CHECKER.checks("date-time", raises=ValueError)
-def _check_date_time(value: object) -> None:
+def _check_date_time(value: object) -> bool:
     if isinstance(value, str):
         datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return True
 
 
 @_FORMAT_CHECKER.checks("uri", raises=ValueError)
-def _check_uri(value: object) -> None:
+def _check_uri(value: object) -> bool:
     if isinstance(value, str) and not urllib.parse.urlparse(value).scheme:
         raise ValueError(f"not a valid URI: {value!r}")
+    return True
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

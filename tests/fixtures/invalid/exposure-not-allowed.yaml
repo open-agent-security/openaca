@@ -1,0 +1,10 @@
+schema_version: "1.7.5"
+id: ASVE-2026-9001
+type: exposure
+summary: "fuzzy middle category"
+details: "should be rejected in V0"
+published: "2026-05-06T00:00:00Z"
+modified: "2026-05-06T00:00:00Z"
+references:
+  - type: WEB
+    url: "https://example.com"

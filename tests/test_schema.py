@@ -2,7 +2,7 @@ import json
 
 import pytest
 import yaml
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 
 
 @pytest.fixture
@@ -21,3 +21,10 @@ def test_schema_is_valid_jsonschema(schema):
 
 def test_sample_advisory_passes_schema(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
+
+
+@pytest.mark.parametrize("name", ["exposure-not-allowed", "config-not-allowed"])
+def test_v0_rejects_non_vulnerability_types(schema, fixtures_dir, name):
+    advisory = yaml.safe_load((fixtures_dir / "invalid" / f"{name}.yaml").read_text())
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)

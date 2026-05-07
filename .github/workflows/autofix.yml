@@ -49,6 +49,11 @@ on:
     # whether the action posts fresh or updates in place. The body
     # marker check in the `if:` gate keeps non-claude edits out.
     types: [created, edited]
+  push:
+    # Bounce 0: main moved -> rebase open PRs that are now stale. Catches
+    # both PR merges AND direct pushes to main (manual hotfixes, manual
+    # main pushes). pull_request:closed+merged would miss the latter.
+    branches: [main]
 
 jobs:
   trigger-claude-via-comment:
@@ -147,3 +152,121 @@ jobs:
           fi
           gh pr comment "$PR_NUM" -R "$REPO" --body "$MARKER
           @codex review the latest commits — claude bot just pushed fixes that haven't been reviewed yet."
+
+  rebase-stale-prs:
+    # Bounce 0: main moved -> for each open PR (same-repo only, fork PRs
+    # excluded), check mergeStateStatus and either rebase cleanly or ask
+    # @claude to resolve conflicts. Catches both PR-merge pushes and
+    # direct pushes to main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      # Coalesce: if main moves twice while we're still working on the
+      # first push, cancel and re-run with the latest SHA. Avoids racing
+      # two rebase runs against the same PR.
+      group: rebase-stale-prs
+      cancel-in-progress: true
+    env:
+      # Use the PAT for both gh API calls AND the git push. Pushing to a
+      # PR branch under GITHUB_TOKEN works but invalidates downstream
+      # workflow triggers (recursion guard) — the PAT keeps the @claude
+      # comment path working if this rebase later races with a Codex
+      # review on the same PR.
+      GH_TOKEN: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
+      REPO: ${{ github.repository }}
+      MAIN_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout (full history for rebase)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
+
+      - name: Configure git author
+        run: |
+          git config user.email "actions@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Rebase BEHIND PRs / flag DIRTY ones
+        run: |
+          set -euo pipefail
+
+          # mergeStateStatus values that matter:
+          #   CLEAN     - up to date with main (or ahead). skip.
+          #   BEHIND    - mergeable, base moved. clean rebase needed.
+          #   DIRTY     - conflicts. ask @claude.
+          #   BLOCKED   - branch protection or required checks failing. skip.
+          #   UNSTABLE  - mergeable but failing checks. skip — pre-existing.
+          #   UNKNOWN   - GitHub still computing. skip; next push retries.
+          #
+          # We exclude fork PRs: pushing to a fork branch from this workflow
+          # 403s, and posting @claude on a fork is blocked downstream by
+          # claude.yml's fork-refusal step anyway.
+          PRS_JSON=$(gh pr list --state open -R "$REPO" \
+            --json number,headRefName,mergeStateStatus,baseRefName,headRepository \
+            --jq "[.[] | select(.baseRefName == \"main\") | select(.headRepository.nameWithOwner == \"$REPO\")]")
+
+          echo "Open same-repo PRs targeting main:"
+          echo "$PRS_JSON" | jq -r '.[] | "  #\(.number) [\(.mergeStateStatus)] \(.headRefName)"'
+
+          # Process each PR. Loop over JSON array via index so we can read
+          # only env-style fields and never interpolate untrusted data.
+          COUNT=$(echo "$PRS_JSON" | jq 'length')
+          for i in $(seq 0 $((COUNT - 1))); do
+            PR_NUM=$(echo "$PRS_JSON" | jq -r ".[$i].number")
+            BRANCH=$(echo "$PRS_JSON" | jq -r ".[$i].headRefName")
+            STATUS=$(echo "$PRS_JSON" | jq -r ".[$i].mergeStateStatus")
+
+            # Defensive: branch names are user-controlled. Refuse anything
+            # that isn't a sane ref. (`refs/heads/<name>` syntax: letters,
+            # digits, slashes, dashes, underscores, dots.)
+            if ! printf '%s' "$BRANCH" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+              echo "::warning::PR #$PR_NUM has unsafe branch name; skipping"
+              continue
+            fi
+
+            case "$STATUS" in
+              BEHIND)
+                echo "PR #$PR_NUM ($BRANCH): clean rebase needed"
+                git fetch origin "$BRANCH":"refs/remotes/origin/$BRANCH" --force
+                git checkout -B "$BRANCH" "origin/$BRANCH"
+                if git rebase origin/main; then
+                  if git push --force-with-lease origin "$BRANCH"; then
+                    gh pr comment "$PR_NUM" -R "$REPO" \
+                      --body "🔁 Auto-rebased on \`main\` (no conflicts) after $MAIN_SHA."
+                  else
+                    echo "::warning::Force-push of #$PR_NUM failed (lease lost?). Will retry on next push."
+                  fi
+                else
+                  # Race: GitHub said BEHIND but the rebase produced
+                  # conflicts. The next push will see DIRTY and route to
+                  # the @claude path.
+                  git rebase --abort
+                  echo "::warning::Rebase of #$PR_NUM failed despite BEHIND status (likely race with another push)"
+                fi
+                git checkout main
+                ;;
+              DIRTY)
+                echo "PR #$PR_NUM ($BRANCH): conflicts — asking @claude to rebase"
+                # Idempotency: don't re-ask claude for the same main SHA.
+                MARKER="<!-- autofix-rebase-claude:$MAIN_SHA -->"
+                ALREADY=$(gh pr view "$PR_NUM" -R "$REPO" --json comments \
+                  --jq "[.comments[] | select(.body | contains(\"$MARKER\"))] | length")
+                if [ "$ALREADY" -gt 0 ]; then
+                  echo "  already asked @claude for $MAIN_SHA — skipping"
+                  continue
+                fi
+                gh pr comment "$PR_NUM" -R "$REPO" --body "$MARKER
+                @claude main has moved and this PR has merge conflicts. Please rebase \`$BRANCH\` on \`origin/main\` and resolve any conflicts. Run the local pre-push gate before force-pushing. If the conflicts indicate the underlying approach is invalidated by the new main, push back via a comment instead of force-fitting a resolution."
+                ;;
+              CLEAN)
+                echo "PR #$PR_NUM ($BRANCH): already current — skipping"
+                ;;
+              *)
+                echo "PR #$PR_NUM ($BRANCH): status $STATUS — leaving alone"
+                ;;
+            esac
+          done

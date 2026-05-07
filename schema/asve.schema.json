@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asve.dev/schema/asve.schema.json",
+  "title": "ASVE Advisory",
+  "type": "object",
+  "required": ["schema_version", "id", "type", "summary", "details", "published", "modified", "references"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "id": {"type": "string", "pattern": "^ASVE-[0-9]{4}-[0-9]{4}$"},
+    "type": {"type": "string", "enum": ["vulnerability", "exposure", "config"]},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 200},
+    "details": {"type": "string", "minLength": 1},
+    "published": {"type": "string", "format": "date-time"},
+    "modified": {"type": "string", "format": "date-time"},
+    "withdrawn": {"type": "string", "format": "date-time"},
+    "severity": {"type": "array", "items": {"$ref": "#/$defs/severity"}},
+    "references": {"type": "array", "items": {"$ref": "#/$defs/reference"}, "minItems": 1},
+    "affected": {"type": "array", "items": {"$ref": "#/$defs/affected"}},
+    "database_specific": {"$ref": "#/$defs/database_specific"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"const": "vulnerability"}}},
+      "then": {"required": ["affected"]}
+    },
+    {
+      "if": {"properties": {"type": {"const": "exposure"}}},
+      "then": {"not": {"description": "exposure records are reserved; rejected in V0"}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "config"}}},
+      "then": {"not": {"description": "config records are reserved; rejected in V0"}}
+    }
+  ],
+  "$defs": {
+    "severity": {
+      "type": "object",
+      "required": ["type", "score"],
+      "properties": {
+        "type": {"type": "string", "enum": ["CVSS_V4"]},
+        "score": {"type": "string", "pattern": "^CVSS:4\\.0/"}
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["type", "url"],
+      "properties": {
+        "type": {"type": "string", "enum": ["ADVISORY", "ARTICLE", "FIX", "PACKAGE", "REPORT", "WEB"]},
+        "url": {"type": "string", "format": "uri"}
+      }
+    },
+    "affected": {
+      "type": "object",
+      "required": ["package"],
+      "properties": {
+        "package": {
+          "type": "object",
+          "required": ["ecosystem", "name"],
+          "properties": {
+            "ecosystem": {"type": "string"},
+            "name": {"type": "string"},
+            "purl": {"type": "string"}
+          }
+        },
+        "ranges": {"type": "array"},
+        "versions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "database_specific": {
+      "type": "object",
+      "properties": {
+        "asve": {"$ref": "#/$defs/asve_extension"}
+      }
+    },
+    "asve_extension": {
+      "type": "object",
+      "required": ["component_type"],
+      "properties": {
+        "component_type": {"type": "string"},
+        "component_identity": {"type": "string"},
+        "surfaces": {"type": "array", "items": {"type": "string"}},
+        "agent_impact": {
+          "type": "object",
+          "additionalProperties": {"type": "boolean"}
+        },
+        "owasp_agentic_top10": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^asi(0[1-9]|10)$"}
+        },
+        "owasp_agentic_skills_top10": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "evidence_level": {
+          "type": "string",
+          "enum": ["confirmed", "likely", "research", "disputed", "withdrawn"]
+        }
+      }
+    }
+  }
+}

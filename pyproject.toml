@@ -1,0 +1,20 @@
+[project]
+name = "asve"
+version = "0.0.0"
+description = "Open advisories for agent stack security."
+requires-python = ">=3.10"
+license = "Apache-2.0"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.4",
+    "pyright>=1.1",
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

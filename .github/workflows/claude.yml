@@ -84,7 +84,7 @@ jobs:
           # Match pyproject.toml `requires-python` and ci.yml. `python-version`
           # here installs that interpreter AND sets UV_PYTHON, so every
           # `uv sync`/`uv run` in this job uses it.
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Sync deps
         # `--frozen` forbids re-resolution: install exactly what's in the

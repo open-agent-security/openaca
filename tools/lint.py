@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from tools.cvss import is_valid_cvss_v4
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+ID_RE = re.compile(r"^ASVE-(\d{4})-\d{4}$")
 
 
 def load_schema() -> dict:
@@ -23,6 +25,30 @@ def find_advisories(target: Path) -> list[Path]:
     if target.is_file():
         return [target] if target.suffix in {".yaml", ".yml"} else []
     return sorted(p for p in target.rglob("*.yaml"))
+
+
+YEAR_DIR_RE = re.compile(r"^\d{4}$")
+
+
+def check_path_consistency(advisory: dict, path: Path) -> list[str]:
+    # Only apply to files that look like real advisories (parent is a 4-digit
+    # year directory). Fixtures and other YAML files outside the advisories
+    # tree are exempt — they intentionally don't conform to the layout.
+    if not YEAR_DIR_RE.match(path.parent.name):
+        return []
+    advisory_id = advisory.get("id", "")
+    m = ID_RE.match(advisory_id)
+    if not m:
+        return []  # schema check covers this
+    year = m.group(1)
+    expected_filename = f"{advisory_id}.yaml"
+    parent_year = path.parent.name
+    errors: list[str] = []
+    if path.name != expected_filename:
+        errors.append(f"path: filename {path.name!r} should be {expected_filename!r}")
+    if parent_year != year:
+        errors.append(f"path: parent dir {parent_year!r} should be {year!r}")
+    return errors
 
 
 def check_cvss(advisory: dict) -> list[str]:
@@ -68,7 +94,11 @@ def main(target: Path) -> None:
             failed += 1
             continue
 
-        errors = check_schema(advisory, validator) + check_cvss(advisory)
+        errors = (
+            check_schema(advisory, validator)
+            + check_cvss(advisory)
+            + check_path_consistency(advisory, path)
+        )
         if errors:
             failed += 1
             for err in errors:

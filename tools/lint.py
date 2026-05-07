@@ -1,4 +1,5 @@
 """ASVE advisory linter."""
+
 from __future__ import annotations
 
 import json
@@ -110,8 +111,8 @@ def main(target: Path) -> None:
     # Pass 2: per-advisory checks.
     failed = 0
     for path, advisory, parse_error in loaded:
-        if parse_error:
-            click.echo(f"{path}: {parse_error}", err=True)
+        if parse_error is not None or advisory is None:
+            click.echo(f"{path}: {parse_error or 'failed to load'}", err=True)
             failed += 1
             continue
         errors = (

@@ -3,6 +3,7 @@
 Verifies the vector matches the v4 grammar for required base metrics.
 Does not compute scores; that's a future concern.
 """
+
 from __future__ import annotations
 
 REQUIRED_BASE_METRICS = {
@@ -23,7 +24,7 @@ REQUIRED_BASE_METRICS = {
 def is_valid_cvss_v4(vector: str) -> bool:
     if not vector.startswith("CVSS:4.0/"):
         return False
-    parts = vector[len("CVSS:4.0/"):].split("/")
+    parts = vector[len("CVSS:4.0/") :].split("/")
     metrics: dict[str, str] = {}
     for part in parts:
         if ":" not in part:

@@ -34,7 +34,7 @@ jobs:
           # any newer-syntax regressions that would break the lower bound.
           # `python-version` here both installs that interpreter AND sets
           # UV_PYTHON so every subsequent `uv sync`/`uv run` uses it.
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Sync deps
         if: steps.project_check.outputs.have_project == 'true'
@@ -58,4 +58,13 @@ jobs:
 
       - name: Pytest
         if: steps.project_check.outputs.have_project == 'true'
-        run: uv run pytest -v
+        run: uv run pytest --cov=tools --cov-report=term-missing
+
+      - name: Asve-lint advisory corpus
+        if: steps.project_check.outputs.have_project == 'true'
+        run: |
+          if [ -d advisories ] && [ "$(find advisories -name '*.yaml' -print -quit)" ]; then
+            uv run asve-lint advisories/
+          else
+            echo "::notice::no advisories present yet; skipping asve-lint"
+          fi

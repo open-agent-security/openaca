@@ -1,4 +1,5 @@
 """Reserve the next free ASVE-YYYY-NNNN identifier."""
+
 from __future__ import annotations
 
 import re

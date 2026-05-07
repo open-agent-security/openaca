@@ -9,6 +9,8 @@ import click
 import yaml
 from jsonschema import Draft202012Validator
 
+from tools.cvss import is_valid_cvss_v4
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 
@@ -21,6 +23,16 @@ def find_advisories(target: Path) -> list[Path]:
     if target.is_file():
         return [target] if target.suffix in {".yaml", ".yml"} else []
     return sorted(p for p in target.rglob("*.yaml"))
+
+
+def check_cvss(advisory: dict) -> list[str]:
+    errors: list[str] = []
+    for i, sev in enumerate(advisory.get("severity") or []):
+        if sev.get("type") == "CVSS_V4":
+            score = sev.get("score", "")
+            if not is_valid_cvss_v4(score):
+                errors.append(f"cvss: severity[{i}].score is not a valid CVSS v4 vector: {score!r}")
+    return errors
 
 
 def check_schema(advisory: dict, validator: Draft202012Validator) -> list[str]:
@@ -56,7 +68,7 @@ def main(target: Path) -> None:
             failed += 1
             continue
 
-        errors = check_schema(advisory, validator)
+        errors = check_schema(advisory, validator) + check_cvss(advisory)
         if errors:
             failed += 1
             for err in errors:

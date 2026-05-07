@@ -179,18 +179,37 @@ jobs:
       REPO: ${{ github.repository }}
       MAIN_SHA: ${{ github.sha }}
     steps:
+      # Graceful skip when the PAT secret isn't configured yet (initial
+      # repo setup). Without this guard, actions/checkout fails with
+      # "Input required and not supplied: token" on every push to main,
+      # turning every merge into a red workflow run.
+      - id: have_pat
+        name: Check AUTOFIX_TRIGGER_PAT presence
+        env:
+          PAT: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::warning::AUTOFIX_TRIGGER_PAT not set; skipping rebase. Add the secret per setup-autofix instructions to enable."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout (full history for rebase)
+        if: steps.have_pat.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
 
       - name: Configure git author
+        if: steps.have_pat.outputs.skip != 'true'
         run: |
           git config user.email "actions@users.noreply.github.com"
           git config user.name "github-actions[bot]"
 
       - name: Rebase BEHIND PRs / flag DIRTY ones
+        if: steps.have_pat.outputs.skip != 'true'
         run: |
           set -euo pipefail
 

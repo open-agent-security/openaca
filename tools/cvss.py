@@ -30,6 +30,8 @@ def is_valid_cvss_v4(vector: str) -> bool:
         if ":" not in part:
             return False
         key, value = part.split(":", 1)
+        if key in metrics:
+            return False  # duplicate metric
         metrics[key] = value
     for key, allowed in REQUIRED_BASE_METRICS.items():
         if key not in metrics or metrics[key] not in allowed:

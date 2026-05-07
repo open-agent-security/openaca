@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 import click
 import yaml
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 
 from tools.cvss import is_valid_cvss_v4
+
+_FORMAT_CHECKER = FormatChecker()
+
+
+@_FORMAT_CHECKER.checks("date-time", raises=ValueError)
+def _check_date_time(value: object) -> None:
+    if isinstance(value, str):
+        datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+@_FORMAT_CHECKER.checks("uri", raises=ValueError)
+def _check_uri(value: object) -> None:
+    if isinstance(value, str) and not urllib.parse.urlparse(value).scheme:
+        raise ValueError(f"not a valid URI: {value!r}")
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
@@ -28,14 +45,11 @@ def find_advisories(target: Path) -> list[Path]:
     return sorted(p for p in target.rglob("*.yaml"))
 
 
-YEAR_DIR_RE = re.compile(r"^\d{4}$")
-
-
 def check_path_consistency(advisory: dict, path: Path) -> list[str]:
-    # Only apply to files that look like real advisories (parent is a 4-digit
-    # year directory). Fixtures and other YAML files outside the advisories
-    # tree are exempt — they intentionally don't conform to the layout.
-    if not YEAR_DIR_RE.match(path.parent.name):
+    # Exempt files outside the advisories corpus tree (e.g., test fixtures).
+    # Real advisories must live at advisories/YYYY/ASVE-YYYY-NNNN.yaml; files
+    # elsewhere (tests/fixtures/, scripts, etc.) are intentionally exempt.
+    if "advisories" not in path.parts:
         return []
     advisory_id = advisory.get("id", "")
     m = ID_RE.match(advisory_id)
@@ -43,12 +57,11 @@ def check_path_consistency(advisory: dict, path: Path) -> list[str]:
         return []  # schema check covers this
     year = m.group(1)
     expected_filename = f"{advisory_id}.yaml"
-    parent_year = path.parent.name
     errors: list[str] = []
     if path.name != expected_filename:
         errors.append(f"path: filename {path.name!r} should be {expected_filename!r}")
-    if parent_year != year:
-        errors.append(f"path: parent dir {parent_year!r} should be {year!r}")
+    if path.parent.name != year:
+        errors.append(f"path: parent dir {path.parent.name!r} should be {year!r}")
     return errors
 
 
@@ -88,7 +101,7 @@ def check_schema(advisory: dict, validator: Draft202012Validator) -> list[str]:
 def main(target: Path) -> None:
     """Lint ASVE advisories under TARGET (file or directory)."""
     schema = load_schema()
-    validator = Draft202012Validator(schema)
+    validator = Draft202012Validator(schema, format_checker=_FORMAT_CHECKER)
     advisories = find_advisories(target)
 
     if not advisories:

@@ -61,6 +61,15 @@ def check_cvss(advisory: dict) -> list[str]:
     return errors
 
 
+def check_internal_aliases(advisory: dict, known_ids: set[str]) -> list[str]:
+    errors: list[str] = []
+    for alias in advisory.get("aliases") or []:
+        if isinstance(alias, str) and ID_RE.match(alias):
+            if alias != advisory.get("id") and alias not in known_ids:
+                errors.append(f"alias: ASVE alias {alias!r} not found in corpus")
+    return errors
+
+
 def check_schema(advisory: dict, validator: Draft202012Validator) -> list[str]:
     errors = []
     for e in validator.iter_errors(advisory):
@@ -85,19 +94,31 @@ def main(target: Path) -> None:
         click.echo(f"no advisory YAML files found under {target}", err=True)
         sys.exit(0)
 
-    failed = 0
+    # Pass 1: load all advisories; collect known IDs.
+    loaded: list[tuple[Path, dict | None, str | None]] = []
+    known_ids: set[str] = set()
     for path in advisories:
         try:
             advisory = yaml.safe_load(path.read_text())
         except yaml.YAMLError as e:
-            click.echo(f"{path}: yaml: {e}", err=True)
+            loaded.append((path, None, f"yaml: {e}"))
+            continue
+        loaded.append((path, advisory, None))
+        if isinstance(advisory, dict) and isinstance(advisory.get("id"), str):
+            known_ids.add(advisory["id"])
+
+    # Pass 2: per-advisory checks.
+    failed = 0
+    for path, advisory, parse_error in loaded:
+        if parse_error:
+            click.echo(f"{path}: {parse_error}", err=True)
             failed += 1
             continue
-
         errors = (
             check_schema(advisory, validator)
             + check_cvss(advisory)
             + check_path_consistency(advisory, path)
+            + check_internal_aliases(advisory, known_ids)
         )
         if errors:
             failed += 1

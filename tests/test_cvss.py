@@ -22,6 +22,8 @@ def test_valid_vectors(vector):
         "CVSS:4.0/AV:Z/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
         "AV:N/AC:L",
         "CVSS:4.0",
+        # duplicate base metric
+        "CVSS:4.0/AV:N/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
     ],
 )
 def test_invalid_vectors(vector):

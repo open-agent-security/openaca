@@ -1,0 +1,21 @@
+schema_version: "1.7.5"
+id: ASVE-2026-9004
+type: vulnerability
+aliases: []
+summary: "test datetime rejection"
+details: "not a valid datetime"
+published: "not-a-datetime"
+modified: "2026-05-06T00:00:00Z"
+affected:
+  - package:
+      ecosystem: npm
+      name: "x"
+severity:
+  - type: CVSS_V4
+    score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+references:
+  - type: WEB
+    url: "https://example.com"
+database_specific:
+  asve:
+    component_type: mcp_server

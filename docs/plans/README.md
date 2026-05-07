@@ -6,8 +6,8 @@ unless noted.
 
 | # | Plan | Status | Depends on |
 |---|---|---|---|
-| 001 | [Schema + advisory-authoring tooling](001-schema-and-tooling.md) | 🟡 Active | — |
-| 002 | [First V0 advisories + OSV importer](002-first-advisories.md) | ⏸ Pending | 001 |
+| 001 | [Schema + advisory-authoring tooling](001-schema-and-tooling.md) | ✅ Done | — |
+| 002 | [First V0 advisories + OSV importer](002-first-advisories.md) | 🟡 Active | 001 |
 | 003 | [Manifest parsers](003-manifest-parsers.md) | ⏸ Pending | 001 (project setup) |
 | 004 | [Static export pipeline](004-static-export.md) | ⏸ Pending | 001, 002 |
 | 005 | [Reference GitHub Action](005-reference-action.md) | ⏸ Pending | 003, 004 |

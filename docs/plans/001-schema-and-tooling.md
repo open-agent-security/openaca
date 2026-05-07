@@ -48,7 +48,7 @@
 
 **Prerequisite:** `uv` installed. Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` if needed; on macOS `brew install uv` also works.
 
-- [ ] **Step 1: Write `pyproject.toml` (hatchling backend, PEP 621)**
+- [x] **Step 1: Write `pyproject.toml` (hatchling backend, PEP 621)**
 
 ```toml
 [project]
@@ -92,13 +92,13 @@ target-version = "py311"
 
 > Notes: dev tooling lives in `[dependency-groups]` (PEP 735) which `uv sync` installs by default. `[project.optional-dependencies]` would also work but `dependency-groups` is the uv-native choice and excludes dev tools from published wheels.
 
-- [ ] **Step 2: Write `.python-version`**
+- [x] **Step 2: Write `.python-version`**
 
 ```text
 3.11
 ```
 
-- [ ] **Step 3: Verify `.gitignore` covers Python and ensure `uv.lock` is NOT ignored**
+- [x] **Step 3: Verify `.gitignore` covers Python and ensure `uv.lock` is NOT ignored**
 
 Run: `grep -E '__pycache__|egg-info|pytest_cache' .gitignore`
 Expected: matches present (existing GitHub Python template covers these).
@@ -106,12 +106,12 @@ Expected: matches present (existing GitHub Python template covers these).
 Run: `grep -E '^uv\.lock' .gitignore`
 Expected: no match. If present, remove that line — `uv.lock` should be committed.
 
-- [ ] **Step 4: Sync the project (creates `.venv` and `uv.lock`)**
+- [x] **Step 4: Sync the project (creates `.venv` and `uv.lock`)**
 
 Run: `uv sync`
 Expected: uv resolves the dependency graph, creates `.venv/`, writes `uv.lock`. (Importing `tools` is verified after Task 2 creates the package marker.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pyproject.toml .python-version uv.lock
@@ -127,17 +127,17 @@ git commit -m "chore: bootstrap Python tooling project with uv"
 - Create: `tests/__init__.py`
 - Create: `tests/conftest.py`
 
-- [ ] **Step 1: Create `tools/__init__.py`**
+- [x] **Step 1: Create `tools/__init__.py`**
 
 ```python
 """ASVE advisory database tooling."""
 ```
 
-- [ ] **Step 2: Create empty `tests/__init__.py`**
+- [x] **Step 2: Create empty `tests/__init__.py`**
 
 (empty file)
 
-- [ ] **Step 3: Write `tests/conftest.py` with shared paths**
+- [x] **Step 3: Write `tests/conftest.py` with shared paths**
 
 ```python
 from pathlib import Path
@@ -164,12 +164,12 @@ def fixtures_dir() -> Path:
     return FIXTURES
 ```
 
-- [ ] **Step 4: Run pytest to confirm collection works**
+- [x] **Step 4: Run pytest to confirm collection works**
 
 Run: `uv run pytest --collect-only`
 Expected: pytest reports 0 tests collected (no test files yet) and exits 0 or 5.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/__init__.py tests/__init__.py tests/conftest.py
@@ -183,7 +183,7 @@ git commit -m "chore: package skeletons for tools and tests"
 **Files:**
 - Create: `tests/fixtures/valid/asve-2026-0001.yaml`
 
-- [ ] **Step 1: Write a complete valid advisory fixture**
+- [x] **Step 1: Write a complete valid advisory fixture**
 
 ```yaml
 # tests/fixtures/valid/asve-2026-0001.yaml
@@ -236,12 +236,12 @@ database_specific:
     evidence_level: confirmed
 ```
 
-- [ ] **Step 2: Sanity-check YAML parses**
+- [x] **Step 2: Sanity-check YAML parses**
 
 Run: `uv run python -c "import yaml; yaml.safe_load(open('tests/fixtures/valid/asve-2026-0001.yaml'))"`
 Expected: exits 0, no output.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/fixtures/valid/asve-2026-0001.yaml
@@ -256,7 +256,7 @@ git commit -m "test: reference valid advisory fixture"
 - Create: `schema/asve.schema.json`
 - Create: `tests/test_schema.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_schema.py
@@ -285,12 +285,12 @@ def test_sample_advisory_passes_schema(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_schema.py -v`
 Expected: both tests fail (schema file does not exist).
 
-- [ ] **Step 3: Write the JSON Schema**
+- [x] **Step 3: Write the JSON Schema**
 
 ```json
 {
@@ -397,12 +397,12 @@ Expected: both tests fail (schema file does not exist).
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_schema.py -v`
 Expected: both tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add schema/asve.schema.json tests/test_schema.py
@@ -418,7 +418,7 @@ git commit -m "feat: add ASVE JSON Schema with type-branching"
 - Create: `tests/fixtures/invalid/config-not-allowed.yaml`
 - Modify: `tests/test_schema.py`
 
-- [ ] **Step 1: Write `tests/fixtures/invalid/exposure-not-allowed.yaml`**
+- [x] **Step 1: Write `tests/fixtures/invalid/exposure-not-allowed.yaml`**
 
 ```yaml
 schema_version: "1.7.5"
@@ -433,11 +433,11 @@ references:
     url: "https://example.com"
 ```
 
-- [ ] **Step 2: Write `tests/fixtures/invalid/config-not-allowed.yaml`**
+- [x] **Step 2: Write `tests/fixtures/invalid/config-not-allowed.yaml`**
 
 Identical structure with `type: config` and `id: ASVE-2026-9002`.
 
-- [ ] **Step 3: Append the parametrized test to `tests/test_schema.py`**
+- [x] **Step 3: Append the parametrized test to `tests/test_schema.py`**
 
 ```python
 from jsonschema import ValidationError
@@ -450,12 +450,12 @@ def test_v0_rejects_non_vulnerability_types(schema, fixtures_dir, name):
         Draft202012Validator(schema).validate(advisory)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_schema.py -v`
 Expected: all schema tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/fixtures/invalid/exposure-not-allowed.yaml tests/fixtures/invalid/config-not-allowed.yaml tests/test_schema.py
@@ -470,7 +470,7 @@ git commit -m "test: schema rejects type: exposure and type: config in V0"
 - Create: `tools/lint.py`
 - Create: `tests/test_lint.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_lint.py
@@ -492,12 +492,12 @@ def test_lint_fails_for_invalid_fixture(fixtures_dir):
     assert "exposure" in result.output.lower() or "config" in result.output.lower()
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_lint.py -v`
 Expected: both fail (`tools.lint` module does not exist).
 
-- [ ] **Step 3: Implement `tools/lint.py` with schema-only check**
+- [x] **Step 3: Implement `tools/lint.py` with schema-only check**
 
 ```python
 """ASVE advisory linter."""
@@ -568,12 +568,12 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_lint.py -v`
 Expected: both pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/lint.py tests/test_lint.py
@@ -591,7 +591,7 @@ git commit -m "feat: linter with schema validation"
 - Modify: `tests/test_lint.py`
 - Create: `tests/fixtures/invalid/bad-cvss.yaml`
 
-- [ ] **Step 1: Write the failing CVSS unit tests**
+- [x] **Step 1: Write the failing CVSS unit tests**
 
 ```python
 # tests/test_cvss.py
@@ -619,12 +619,12 @@ def test_invalid_vectors(vector):
     assert is_valid_cvss_v4(vector) is False
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_cvss.py -v`
 Expected: fails — `tools.cvss` does not exist.
 
-- [ ] **Step 3: Implement `tools/cvss.py`**
+- [x] **Step 3: Implement `tools/cvss.py`**
 
 ```python
 """Minimal CVSS v4 vector validator.
@@ -665,12 +665,12 @@ def is_valid_cvss_v4(vector: str) -> bool:
     return True
 ```
 
-- [ ] **Step 4: Run CVSS tests to verify pass**
+- [x] **Step 4: Run CVSS tests to verify pass**
 
 Run: `uv run pytest tests/test_cvss.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Wire CVSS check into linter**
+- [x] **Step 5: Wire CVSS check into linter**
 
 Append to `tools/lint.py` (place above `main`):
 
@@ -694,7 +694,7 @@ In `main`, replace the `errors = check_schema(advisory, validator)` line with:
             errors = check_schema(advisory, validator) + check_cvss(advisory)
 ```
 
-- [ ] **Step 6: Add a CVSS-failure fixture**
+- [x] **Step 6: Add a CVSS-failure fixture**
 
 `tests/fixtures/invalid/bad-cvss.yaml`:
 
@@ -722,7 +722,7 @@ database_specific:
     component_type: mcp_server
 ```
 
-- [ ] **Step 7: Add the integration test**
+- [x] **Step 7: Add the integration test**
 
 Add to `tests/test_lint.py`:
 
@@ -738,12 +738,12 @@ def test_lint_fails_on_bad_cvss(fixtures_dir, tmp_path):
     assert "cvss" in result.output.lower()
 ```
 
-- [ ] **Step 8: Run all linter tests**
+- [x] **Step 8: Run all linter tests**
 
 Run: `uv run pytest tests/test_lint.py tests/test_cvss.py -v`
 Expected: all pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add tools/cvss.py tests/test_cvss.py tools/lint.py tests/test_lint.py tests/fixtures/invalid/bad-cvss.yaml
@@ -760,7 +760,7 @@ The advisory at path `advisories/2026/ASVE-2026-0001.yaml` must have `id: ASVE-2
 - Modify: `tools/lint.py`
 - Modify: `tests/test_lint.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/test_lint.py`:
 
@@ -776,12 +776,12 @@ def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
     assert "path" in result.output.lower()
 ```
 
-- [ ] **Step 2: Run the test to confirm failure**
+- [x] **Step 2: Run the test to confirm failure**
 
 Run: `uv run pytest tests/test_lint.py::test_lint_fails_on_path_mismatch -v`
 Expected: fails (linter currently lets path mismatches through).
 
-- [ ] **Step 3: Implement the path check in `tools/lint.py`**
+- [x] **Step 3: Implement the path check in `tools/lint.py`**
 
 Add to `tools/lint.py`:
 
@@ -817,12 +817,12 @@ In `main`, change the errors-aggregation line to:
             )
 ```
 
-- [ ] **Step 4: Run all linter tests**
+- [x] **Step 4: Run all linter tests**
 
 Run: `uv run pytest tests/test_lint.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/lint.py tests/test_lint.py
@@ -839,7 +839,7 @@ If an advisory's `aliases` array contains an `ASVE-YYYY-NNNN` ID, that record mu
 - Modify: `tools/lint.py`
 - Modify: `tests/test_lint.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/test_lint.py` (and ensure `import yaml` is at the top):
 
@@ -857,12 +857,12 @@ def test_lint_fails_on_missing_internal_alias(fixtures_dir, tmp_path):
     assert "ASVE-2026-9999" in result.output
 ```
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `uv run pytest tests/test_lint.py::test_lint_fails_on_missing_internal_alias -v`
 Expected: fails (cross-ref check not yet implemented).
 
-- [ ] **Step 3: Refactor `main` to two passes (collect IDs, then check)**
+- [x] **Step 3: Refactor `main` to two passes (collect IDs, then check)**
 
 Replace the body of `main` in `tools/lint.py`:
 
@@ -929,12 +929,12 @@ def check_internal_aliases(advisory: dict, known_ids: set[str]) -> list[str]:
     return errors
 ```
 
-- [ ] **Step 4: Run all tests**
+- [x] **Step 4: Run all tests**
 
 Run: `uv run pytest -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/lint.py tests/test_lint.py
@@ -949,7 +949,7 @@ git commit -m "feat: linter resolves internal ASVE alias cross-references"
 - Create: `tools/reserve_id.py`
 - Create: `tests/test_reserve_id.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_reserve_id.py
@@ -991,12 +991,12 @@ def test_reserve_id_year_isolated(tmp_path):
     assert result.output.strip() == "ASVE-2026-0001"
 ```
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `uv run pytest tests/test_reserve_id.py -v`
 Expected: fails (`tools.reserve_id` does not exist).
 
-- [ ] **Step 3: Implement `tools/reserve_id.py`**
+- [x] **Step 3: Implement `tools/reserve_id.py`**
 
 ```python
 """Reserve the next free ASVE-YYYY-NNNN identifier."""
@@ -1039,12 +1039,12 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_reserve_id.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/reserve_id.py tests/test_reserve_id.py
@@ -1062,7 +1062,7 @@ git commit -m "feat: ID reservation helper"
 - Create: `docs/adrs/0002-schema-extension-key.md`
 - Create: `docs/adrs/0003-single-namespace-architecture.md`
 
-- [ ] **Step 1: Write `docs/adrs/TEMPLATE.md`**
+- [x] **Step 1: Write `docs/adrs/TEMPLATE.md`**
 
 ```markdown
 ---
@@ -1093,7 +1093,7 @@ What we are NOT doing, and why.
 What this commits us to. What downstream work it enables or forecloses.
 ```
 
-- [ ] **Step 2: Write `docs/adrs/INDEX.md`**
+- [x] **Step 2: Write `docs/adrs/INDEX.md`**
 
 ```markdown
 # ADR Index
@@ -1108,7 +1108,7 @@ ADRs are immutable once accepted. Supersede rather than edit; mark the old
 record's `status: superseded` and `superseded-by` frontmatter.
 ```
 
-- [ ] **Step 3: Write `docs/adrs/0001-licenses.md`**
+- [x] **Step 3: Write `docs/adrs/0001-licenses.md`**
 
 ```markdown
 ---
@@ -1148,7 +1148,7 @@ and need different licenses.
   (advisory data) at the repo root.
 ```
 
-- [ ] **Step 4: Write `docs/adrs/0002-schema-extension-key.md`**
+- [x] **Step 4: Write `docs/adrs/0002-schema-extension-key.md`**
 
 ```markdown
 ---
@@ -1184,7 +1184,7 @@ ASVE-specific fields live under `database_specific.asve`.
 - OSV-compliant consumers ignore the extension; ASVE-aware tooling reads it.
 ```
 
-- [ ] **Step 5: Write `docs/adrs/0003-single-namespace-architecture.md`**
+- [x] **Step 5: Write `docs/adrs/0003-single-namespace-architecture.md`**
 
 ```markdown
 ---
@@ -1227,7 +1227,7 @@ schema and rejected by the linter in V0 PRs.
   `type: vulnerability` records aliased to upstream IDs.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/adrs/
@@ -1241,7 +1241,7 @@ git commit -m "docs: ADRs for license, extension key, single-namespace architect
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Write `.github/workflows/ci.yml`**
+- [x] **Step 1: Write `.github/workflows/ci.yml`**
 
 ```yaml
 name: CI
@@ -1286,7 +1286,7 @@ jobs:
 
 > `setup-uv@v3` reads `.python-version` automatically and caches the resolver; `--frozen` enforces the committed `uv.lock`.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add .github/workflows/ci.yml

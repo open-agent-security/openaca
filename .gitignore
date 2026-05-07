@@ -219,3 +219,6 @@ __marimo__/
 
 # Local git worktrees
 .worktrees/
+
+# Claude Code Action working directory
+.claude-pr/

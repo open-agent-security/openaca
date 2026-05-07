@@ -11,8 +11,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Skip the gates on chore/setup PRs that don't have Python sources yet.
+      # Without this, `uv sync --frozen` fails on a clean repo because there's
+      # no pyproject.toml/uv.lock to install from. Once the first pyproject.toml
+      # lands, the rest of the workflow runs.
+      - id: project_check
+        name: Detect Python project files
+        run: |
+          if [ -f pyproject.toml ] && [ -f uv.lock ]; then
+            echo "have_project=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_project=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pyproject.toml + uv.lock yet — skipping lint/test gates."
+          fi
+
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        if: steps.project_check.outputs.have_project == 'true'
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           # Match pyproject.toml `requires-python`. Pinning here in CI catches
@@ -22,6 +37,7 @@ jobs:
           python-version: "3.10"
 
       - name: Sync deps
+        if: steps.project_check.outputs.have_project == 'true'
         # `--frozen` forbids re-resolution: CI installs exactly what's in the
         # committed uv.lock instead of silently picking up newer transitive
         # versions. If uv.lock is missing or stale vs. pyproject.toml, this
@@ -29,13 +45,17 @@ jobs:
         run: uv sync --frozen
 
       - name: Ruff check
+        if: steps.project_check.outputs.have_project == 'true'
         run: uv run ruff check .
 
       - name: Ruff format check
+        if: steps.project_check.outputs.have_project == 'true'
         run: uv run ruff format --check .
 
       - name: Pyright
+        if: steps.project_check.outputs.have_project == 'true'
         run: uv run pyright
 
       - name: Pytest
+        if: steps.project_check.outputs.have_project == 'true'
         run: uv run pytest -v

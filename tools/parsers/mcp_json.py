@@ -136,9 +136,16 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
 def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
     """Normalize `uv tool run <pkg>` into the equivalent `uvx <pkg>` form.
 
-    Returns (effective_command, effective_args).
+    Match against the classified stem so `/usr/bin/uv` and `uv.exe` dispatch
+    the same as bare `uv`. Returns (effective_command, effective_args).
     """
-    if command == "uv" and len(args) >= 2 and args[0] == "tool" and args[1] == "run":
+    if (
+        command
+        and _classify_command(command) == "uv"
+        and len(args) >= 2
+        and args[0] == "tool"
+        and args[1] == "run"
+    ):
         return "uvx", args[2:]
     return command or "", args
 

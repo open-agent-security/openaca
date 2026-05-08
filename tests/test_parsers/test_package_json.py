@@ -20,3 +20,15 @@ def test_emits_source_metadata():
     assert cyanheads.source_manifest.endswith("package.json")
     assert cyanheads.source_locator == "dependencies"
     assert by_name["typescript"].source_locator == "devDependencies"
+
+
+def test_top_level_array_does_not_raise(tmp_path):
+    pkg = tmp_path / "package.json"
+    pkg.write_text("[]")
+    assert parse(pkg) == []
+
+
+def test_top_level_null_does_not_raise(tmp_path):
+    pkg = tmp_path / "package.json"
+    pkg.write_text("null")
+    assert parse(pkg) == []

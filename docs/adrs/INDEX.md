@@ -24,6 +24,7 @@ against the rules in effect at the time.
 - [ADR-0001 — Code Apache-2.0; advisory data CC-BY-4.0](0001-licenses.md): code under Apache-2.0 (patent grant matters for downstream incorporation); advisory data under CC-BY-4.0 to match OSV.dev and avoid share-alike viral terms blocking mixed-license consumers.
 - [ADR-0002 — Schema extension key `database_specific.asve`](0002-schema-extension-key.md): all ASVE-specific fields live under this single OSV-extension key; locked from V0 because renaming the wire format breaks every cached downstream consumer.
 - [ADR-0003 — Single namespace, type-tagged advisories](0003-single-namespace-architecture.md): one `ASVE-YYYY-NNNN` ID space with a `type` discriminator (vulnerability | exposure | config); V0 ships only `type: vulnerability`, others reserved + rejected by schema until methodology lands.
+- [ADR-0004 — `YYYY` in advisory IDs is assignment year, not alias year](0004-advisory-id-year.md): ASVE-2026-NNNN aliasing CVE-2025-XXXXX is correct — year tracks ASVE catalogue date, matching CVE/GHSA/RUSTSEC convention; rejected matching upstream alias year because multi-alias and ASVE-original records can't share that rule.
 
 ## Superseded
 

@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-6xpm-ggf7-wc3p",
+  "aliases": ["CVE-2025-6514"],
+  "summary": "OS command injection in mcp-remote when connecting to untrusted MCP servers",
+  "details": "mcp-remote is exposed to OS command injection when connecting to untrusted MCP servers due to unsanitized input from the authorization_endpoint response URL.",
+  "published": "2025-09-10T12:00:00Z",
+  "modified": "2025-09-20T12:00:00Z",
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "mcp-remote", "purl": "pkg:npm/mcp-remote"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "0.4.5"}]}]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-6xpm-ggf7-wc3p"}
+  ]
+}

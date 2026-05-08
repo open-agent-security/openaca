@@ -38,16 +38,17 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
     return None, None, False
 
 
-def parse(path: Path) -> list[ComponentRef]:
-    data = json.loads(path.read_text())
-    servers = data.get("mcpServers") or {}
+def parse_mcp_servers(
+    servers: dict, source_manifest: str, locator_prefix: str = "$.mcpServers"
+) -> list[ComponentRef]:
+    """Convert an `mcpServers` dict into ComponentRefs. Reused by claude_plugin."""
     refs: list[ComponentRef] = []
     for server_name, entry in servers.items():
         if not isinstance(entry, dict):
             continue
         command = entry.get("command")
         args = entry.get("args") or []
-        locator = f"$.mcpServers.{server_name}"
+        locator = f"{locator_prefix}.{server_name}"
         if command == "npx":
             name, version = _parse_npx_args(args)
             if name and version:
@@ -56,7 +57,7 @@ def parse(path: Path) -> list[ComponentRef]:
                         ecosystem="npm",
                         name=name,
                         version=version,
-                        source_manifest=str(path),
+                        source_manifest=source_manifest,
                         source_locator=locator,
                     )
                 )
@@ -64,7 +65,7 @@ def parse(path: Path) -> list[ComponentRef]:
                 refs.append(
                     ComponentRef(
                         component_identity=f"mcp-stdio/npx-unpinned:{name}",
-                        source_manifest=str(path),
+                        source_manifest=source_manifest,
                         source_locator=locator,
                     )
                 )
@@ -76,7 +77,7 @@ def parse(path: Path) -> list[ComponentRef]:
                         ecosystem="PyPI",
                         name=name,
                         version=version,
-                        source_manifest=str(path),
+                        source_manifest=source_manifest,
                         source_locator=locator,
                     )
                 )
@@ -84,7 +85,7 @@ def parse(path: Path) -> list[ComponentRef]:
                 refs.append(
                     ComponentRef(
                         component_identity=f"mcp-stdio/uvx-unpinned:{name}",
-                        source_manifest=str(path),
+                        source_manifest=source_manifest,
                         source_locator=locator,
                     )
                 )
@@ -92,8 +93,14 @@ def parse(path: Path) -> list[ComponentRef]:
             refs.append(
                 ComponentRef(
                     component_identity=f"mcp-stdio/binary:{command}",
-                    source_manifest=str(path),
+                    source_manifest=source_manifest,
                     source_locator=locator,
                 )
             )
     return refs
+
+
+def parse(path: Path) -> list[ComponentRef]:
+    data = json.loads(path.read_text())
+    servers = data.get("mcpServers") or {}
+    return parse_mcp_servers(servers, source_manifest=str(path))

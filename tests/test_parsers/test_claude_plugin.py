@@ -23,8 +23,7 @@ def test_plugin_dependencies():
     deps = [
         r
         for r in refs
-        if r.component_identity
-        and r.component_identity.startswith("claude-plugin-dep/")
+        if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
     ]
     identities = {r.component_identity for r in deps}
     assert "claude-plugin-dep/helper-lib" in identities
@@ -41,7 +40,6 @@ def test_plugin_inlined_mcp_servers():
     binary_mcp = [
         r
         for r in refs
-        if r.component_identity
-        and r.component_identity.startswith("mcp-stdio/binary:")
+        if r.component_identity and r.component_identity.startswith("mcp-stdio/binary:")
     ]
     assert len(binary_mcp) == 1

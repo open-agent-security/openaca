@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tools.parsers.mcp_json import parse
+from tools.parsers.mcp_json import parse, parse_mcp_servers
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
@@ -9,10 +9,7 @@ def test_npx_emits_npm_purl():
     refs = parse(REPOS / "sample-mcp" / "mcp.json")
     by_name = {r.name: r for r in refs if r.ecosystem == "npm"}
     assert by_name["@cyanheads/git-mcp-server"].version == "1.1.0"
-    assert (
-        by_name["@cyanheads/git-mcp-server"].purl
-        == "pkg:npm/%40cyanheads/git-mcp-server@1.1.0"
-    )
+    assert by_name["@cyanheads/git-mcp-server"].purl == "pkg:npm/%40cyanheads/git-mcp-server@1.1.0"
 
 
 def test_uvx_emits_pypi_purl_when_pinned():
@@ -24,9 +21,7 @@ def test_uvx_emits_pypi_purl_when_pinned():
 
 def test_uvx_unpinned_emits_native_identity():
     refs = parse(REPOS / "sample-mcp" / "mcp.json")
-    unpinned = [
-        r for r in refs if r.component_identity and "unpinned" in r.source_locator
-    ]
+    unpinned = [r for r in refs if r.component_identity and "unpinned" in r.source_locator]
     assert len(unpinned) == 1
     assert unpinned[0].component_identity == "mcp-stdio/uvx-unpinned:sketchy-mcp"
 
@@ -48,3 +43,44 @@ def test_source_locator_jsonpath():
     refs = parse(REPOS / "sample-mcp" / "mcp.json")
     git = [r for r in refs if r.name == "@cyanheads/git-mcp-server"][0]
     assert git.source_locator == "$.mcpServers.git"
+
+
+def test_url_transport_emits_no_ref():
+    """Entries without a `command` (URL/HTTP transport) must not emit binary:None."""
+    servers = {"remote": {"url": "https://example.com/mcp"}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_empty_command_emits_no_ref():
+    servers = {"weird": {"command": "", "args": []}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_mcpservers_as_list_does_not_raise():
+    """A malformed `mcpServers: [...]` should yield no refs, not AttributeError."""
+    refs = parse_mcp_servers([{"command": "npx"}], source_manifest="fake.json")  # type: ignore[arg-type]
+    assert refs == []
+
+
+def test_npx_inline_package_flag_emits_purl():
+    servers = {
+        "x": {
+            "command": "npx",
+            "args": ["--package=@scope/server@1.2.3", "--", "server-bin"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_uvx_inline_from_flag_emits_purl():
+    servers = {
+        "y": {
+            "command": "uvx",
+            "args": ["--from=weather-mcp==0.5.0", "weather-mcp"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"

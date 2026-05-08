@@ -39,7 +39,9 @@ def test_binary_command_emits_native_identity():
         if r.component_identity and r.component_identity.startswith("mcp-stdio/binary:")
     ]
     assert len(binary) == 1
-    assert "/opt/local/bin/custom-mcp-server" in binary[0].component_identity
+    identity = binary[0].component_identity
+    assert identity is not None
+    assert "/opt/local/bin/custom-mcp-server" in identity
 
 
 def test_source_locator_jsonpath():

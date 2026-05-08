@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-rwc2-f344-q6w6",
+  "aliases": ["CVE-2025-69256"],
+  "summary": "Command injection in serverless MCP Server's list-projects tool",
+  "details": "serverless MCP Server is vulnerable to command injection in the list-projects tool.",
+  "published": "2025-11-02T12:00:00Z",
+  "modified": "2025-11-12T12:00:00Z",
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "@serverless/mcp-server",
+                  "purl": "pkg:npm/%40serverless/mcp-server"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "0.5.1"}]}]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-rwc2-f344-q6w6"}
+  ]
+}

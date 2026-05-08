@@ -1,0 +1,45 @@
+schema_version: 1.7.5
+id: ASVE-2026-0002
+type: vulnerability
+aliases:
+- GHSA-6xpm-ggf7-wc3p
+- CVE-2025-6514
+summary: OS command injection in mcp-remote when connecting to untrusted MCP servers
+details: mcp-remote is exposed to OS command injection when connecting to untrusted
+  MCP servers due to unsanitized input from the authorization_endpoint response URL.
+published: '2025-09-10T12:00:00Z'
+modified: '2025-09-20T12:00:00Z'
+affected:
+- package:
+    ecosystem: npm
+    name: mcp-remote
+    purl: pkg:npm/mcp-remote
+  ranges:
+  - type: ECOSYSTEM
+    events:
+    - introduced: '0'
+    - fixed: 0.4.5
+severity:
+- type: CVSS_V4
+  score: "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N"
+references:
+- type: ADVISORY
+  url: https://github.com/advisories/GHSA-6xpm-ggf7-wc3p
+database_specific:
+  asve:
+    component_type: mcp_proxy
+    surfaces:
+    - network_egress
+    - tool_invocation
+    agent_impact:
+      repo_read: false
+      repo_write: false
+      credential_exfiltration: true
+      tool_hijack: true
+      memory_poisoning: false
+      pr_manipulation: false
+      code_execution: true
+    owasp_agentic_top10:
+    - asi04
+    - asi05
+    evidence_level: confirmed

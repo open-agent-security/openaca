@@ -54,10 +54,14 @@ def test_cli_rejects_both_source_flags(tmp_path, fixtures_dir):
     result = runner.invoke(
         main,
         [
-            "--osv-id", "GHSA-3q26-f695-pp76",
-            "--osv-file", str(src),
-            "--asve-id", "ASVE-2026-0001",
-            "--out", str(dst),
+            "--osv-id",
+            "GHSA-3q26-f695-pp76",
+            "--osv-file",
+            str(src),
+            "--asve-id",
+            "ASVE-2026-0001",
+            "--out",
+            str(dst),
         ],
     )
     assert result.exit_code != 0

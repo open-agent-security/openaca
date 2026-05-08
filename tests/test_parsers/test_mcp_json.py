@@ -162,3 +162,11 @@ def test_top_level_array_does_not_raise(tmp_path):
     cfg = tmp_path / "mcp.json"
     cfg.write_text("[]")
     assert parse(cfg) == []
+
+
+def test_uvx_positional_at_version_emits_purl():
+    """uvx weather-mcp@0.5.0 positional form should emit a pinned PyPI PURL."""
+    servers = {"y": {"command": "uvx", "args": ["weather-mcp@0.5.0"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"

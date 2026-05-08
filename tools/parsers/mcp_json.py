@@ -24,6 +24,7 @@ from tools.component_ref import ComponentRef
 
 NPM_PINNED_RE = re.compile(r"^(?P<name>(?:@[^/]+/)?[^@]+)@(?P<version>[^@\s]+)$")
 PYPI_PINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[A-Za-z0-9_.+-]+)$")
+PYPI_AT_VERSION_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)@(?P<version>[^@\s]+)$")
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 
@@ -97,10 +98,13 @@ def _classify_npm_spec(spec: str) -> tuple[str | None, str | None]:
 
 
 def _classify_pypi_spec(spec: str) -> tuple[str | None, str | None, bool]:
-    """Match a single PyPI spec like `name==1.2.3` or `name`."""
+    """Match a single PyPI spec: `name==1.2.3`, `name@1.2.3` (uvx form), or bare `name`."""
     if _has_interpolation(spec):
         return None, None, False
     m = PYPI_PINNED_RE.match(spec)
+    if m:
+        return m.group("name"), m.group("version"), True
+    m = PYPI_AT_VERSION_RE.match(spec)
     if m:
         return m.group("name"), m.group("version"), True
     m = PYPI_UNPINNED_RE.match(spec)

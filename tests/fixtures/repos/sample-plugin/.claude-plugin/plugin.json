@@ -1,0 +1,19 @@
+{
+  "name": "deployment-tools",
+  "version": "1.2.0",
+  "description": "Sample plugin",
+  "dependencies": [
+    "helper-lib",
+    {"name": "secrets-vault", "version": "~2.1.0"}
+  ],
+  "mcpServers": {
+    "db": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/servers/db-server",
+      "args": []
+    },
+    "api": {
+      "command": "npx",
+      "args": ["@company/mcp-server@1.0.4"]
+    }
+  }
+}

@@ -84,3 +84,81 @@ def test_uvx_inline_from_flag_emits_purl():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_npx_space_separated_package_flag():
+    servers = {"x": {"command": "npx", "args": ["--package", "@scope/server@1.2.3", "bin"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_npx_short_p_flag():
+    servers = {"x": {"command": "npx", "args": ["-p", "@scope/server@1.2.3", "bin"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_npx_yes_flag_does_not_become_package():
+    servers = {"x": {"command": "npx", "args": ["-y", "@scope/server@1.2.3"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_uvx_space_separated_from_flag():
+    servers = {
+        "y": {
+            "command": "uvx",
+            "args": ["--from", "weather-mcp==0.5.0", "weather-mcp"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_uv_tool_run_dispatches_as_uvx():
+    servers = {"y": {"command": "uv", "args": ["tool", "run", "weather-mcp==0.5.0"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_disabled_server_is_skipped():
+    servers = {
+        "off": {
+            "command": "npx",
+            "args": ["@scope/server@1.0.0"],
+            "disabled": True,
+        }
+    }
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_interpolated_npx_spec_emits_no_ref():
+    """`${PKG}` placeholder must not produce `pkg:npm/${PKG}` garbage."""
+    servers = {"x": {"command": "npx", "args": ["${PKG_SPEC}"]}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_interpolated_uvx_from_emits_no_ref():
+    servers = {"y": {"command": "uvx", "args": ["--from=${PKG}", "tool"]}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_vscode_servers_root_key(tmp_path):
+    """VS Code's `.vscode/mcp.json` uses `servers` instead of `mcpServers`."""
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text('{"servers": {"git": {"command": "npx", "args": ["@scope/server@1.2.3"]}}}')
+    refs = parse(cfg)
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+    assert refs[0].source_locator == "$.servers.git"
+
+
+def test_top_level_array_does_not_raise(tmp_path):
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text("[]")
+    assert parse(cfg) == []

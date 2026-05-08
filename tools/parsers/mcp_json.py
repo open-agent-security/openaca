@@ -1,4 +1,18 @@
-"""Parse mcp.json / .mcp.json files: extract MCP server installations."""
+"""Parse mcp.json / .mcp.json files: extract MCP server installations.
+
+There is no official `mcp.json` schema (see modelcontextprotocol#2219); each
+host (Claude Code, Claude Desktop, Cursor, VS Code, Codex) defines its own
+file conventions on top of the wire-protocol spec. We handle the dominant
+JSON shapes here:
+
+- `mcpServers` root (Claude Code, Claude Desktop, Cursor, plugin manifests).
+- `servers` root (VS Code's `.vscode/mcp.json`).
+
+V0 detection scope is package-pinned stdio servers (npx/uvx + binary
+fallback) so ASVE can alias upstream CVE/GHSA records via PURL. URL/HTTP
+transports, secret-surface fields (`env`/`headers`/`oauth`), and TOML
+configs are out of V0 scope.
+"""
 
 from __future__ import annotations
 
@@ -11,23 +25,71 @@ from tools.component_ref import ComponentRef
 NPM_PINNED_RE = re.compile(r"^(?P<name>(?:@[^/]+/)?[^@]+)@(?P<version>[^@\s]+)$")
 PYPI_PINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[A-Za-z0-9_.+-]+)$")
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
+INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 
 
-def _extract_inline_pkg_spec(args: list[str], flag: str) -> str | None:
-    """Return the value of `--<flag>=<value>` if present, else None.
+def _has_interpolation(spec: str) -> bool:
+    return bool(INTERPOLATION_RE.search(spec))
 
-    Handles `npx --package=<spec>` and `uvx --from=<spec>` forms; both nominate
-    the launched package out-of-band from positional args.
-    """
-    prefix = f"--{flag}="
-    for a in args:
-        if a.startswith(prefix):
-            return a[len(prefix) :]
+
+def _extract_flag_value(
+    args: list[str], flag_long: str, flag_short: str | None = None
+) -> str | None:
+    """Return the value of `--<flag_long>=<v>`, `--<flag_long> <v>`, or
+    `-<flag_short>=<v>` / `-<flag_short> <v>` if present.
+
+    Stops at `--` (option terminator)."""
+    long_eq = f"--{flag_long}="
+    long_bare = f"--{flag_long}"
+    short_eq = f"-{flag_short}=" if flag_short else None
+    short_bare = f"-{flag_short}" if flag_short else None
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            break
+        if a.startswith(long_eq):
+            return a[len(long_eq) :]
+        if a == long_bare and i + 1 < len(args):
+            return args[i + 1]
+        if short_eq and a.startswith(short_eq):
+            return a[len(short_eq) :]
+        if short_bare and a == short_bare and i + 1 < len(args):
+            return args[i + 1]
+        i += 1
     return None
+
+
+def _positional_args(args: list[str]) -> list[str]:
+    """Return positional args, treating `--` as option terminator."""
+    out: list[str] = []
+    after_terminator = False
+    skip_next = False
+    for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if after_terminator:
+            out.append(a)
+            continue
+        if a == "--":
+            after_terminator = True
+            continue
+        if a.startswith("-"):
+            # Flags consuming a separate value (handled in _extract_flag_value)
+            # would otherwise leave that value here as a "positional" — skip it.
+            if a in ("--package", "-p", "--from", "--with", "--python"):
+                skip_next = True
+            continue
+        out.append(a)
+    return out
 
 
 def _classify_npm_spec(spec: str) -> tuple[str | None, str | None]:
     """Match a single npm spec like `@scope/name@1.2.3` or `bare-name`."""
+    if _has_interpolation(spec):
+        return None, None
     m = NPM_PINNED_RE.match(spec)
     if m:
         return m.group("name"), m.group("version")
@@ -36,6 +98,8 @@ def _classify_npm_spec(spec: str) -> tuple[str | None, str | None]:
 
 def _classify_pypi_spec(spec: str) -> tuple[str | None, str | None, bool]:
     """Match a single PyPI spec like `name==1.2.3` or `name`."""
+    if _has_interpolation(spec):
+        return None, None, False
     m = PYPI_PINNED_RE.match(spec)
     if m:
         return m.group("name"), m.group("version"), True
@@ -46,37 +110,55 @@ def _classify_pypi_spec(spec: str) -> tuple[str | None, str | None, bool]:
 
 
 def _parse_npx_args(args: list[str]) -> tuple[str | None, str | None]:
-    inline = _extract_inline_pkg_spec(args, "package")
+    inline = _extract_flag_value(args, "package", "p")
     if inline is not None:
         return _classify_npm_spec(inline)
-    real_args = [a for a in args if not a.startswith("-")]
-    if not real_args:
+    positional = _positional_args(args)
+    if not positional:
         return None, None
-    return _classify_npm_spec(real_args[0])
+    return _classify_npm_spec(positional[0])
 
 
 def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
-    inline = _extract_inline_pkg_spec(args, "from")
+    inline = _extract_flag_value(args, "from")
     if inline is not None:
         return _classify_pypi_spec(inline)
-    real_args = [a for a in args if not a.startswith("-")]
-    if not real_args:
+    positional = _positional_args(args)
+    if not positional:
         return None, None, False
-    return _classify_pypi_spec(real_args[0])
+    return _classify_pypi_spec(positional[0])
+
+
+def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
+    """Normalize `uv tool run <pkg>` into the equivalent `uvx <pkg>` form.
+
+    Returns (effective_command, effective_args).
+    """
+    if command == "uv" and len(args) >= 2 and args[0] == "tool" and args[1] == "run":
+        return "uvx", args[2:]
+    return command or "", args
 
 
 def parse_mcp_servers(
     servers: dict, source_manifest: str, locator_prefix: str = "$.mcpServers"
 ) -> list[ComponentRef]:
-    """Convert an `mcpServers` dict into ComponentRefs. Reused by claude_plugin."""
+    """Convert an `mcpServers`/`servers` dict into ComponentRefs."""
     if not isinstance(servers, dict):
         return []
     refs: list[ComponentRef] = []
     for server_name, entry in servers.items():
         if not isinstance(entry, dict):
             continue
-        command = entry.get("command")
-        args = entry.get("args") or []
+        if entry.get("disabled") is True:
+            continue
+        raw_command = entry.get("command")
+        raw_args = entry.get("args") or []
+        if not isinstance(raw_args, list):
+            raw_args = []
+        command, args = _command_dispatch(
+            raw_command if isinstance(raw_command, str) else None,
+            raw_args,
+        )
         locator = f"{locator_prefix}.{server_name}"
         if command == "npx":
             name, version = _parse_npx_args(args)
@@ -118,7 +200,7 @@ def parse_mcp_servers(
                         source_locator=locator,
                     )
                 )
-        elif isinstance(command, str) and command:
+        elif command:
             refs.append(
                 ComponentRef(
                     component_identity=f"mcp-stdio/binary:{command}",
@@ -131,5 +213,21 @@ def parse_mcp_servers(
 
 def parse(path: Path) -> list[ComponentRef]:
     data = json.loads(path.read_text())
-    servers = data.get("mcpServers") or {}
-    return parse_mcp_servers(servers, source_manifest=str(path))
+    if not isinstance(data, dict):
+        return []
+    # `mcpServers` (Claude Code/Desktop/Cursor) and `servers` (VS Code) are
+    # two names for the same shape. Prefer mcpServers when both exist —
+    # only relevant if a config file straddles host conventions.
+    if isinstance(data.get("mcpServers"), dict):
+        return parse_mcp_servers(
+            data["mcpServers"],
+            source_manifest=str(path),
+            locator_prefix="$.mcpServers",
+        )
+    if isinstance(data.get("servers"), dict):
+        return parse_mcp_servers(
+            data["servers"],
+            source_manifest=str(path),
+            locator_prefix="$.servers",
+        )
+    return []

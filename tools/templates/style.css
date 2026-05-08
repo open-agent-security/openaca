@@ -1,0 +1,118 @@
+/* ASVE static site — minimal vendor-free CSS, no external resources. */
+
+:root {
+  --fg: #1a1a1a;
+  --muted: #555;
+  --bg: #fff;
+  --accent: #0050b3;
+  --border: #e0e0e0;
+  --code-bg: #f5f5f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e6e6;
+    --muted: #999;
+    --bg: #121212;
+    --accent: #6ab0ff;
+    --border: #303030;
+    --code-bg: #1e1e1e;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  max-width: 56rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+header h1 {
+  margin-bottom: 0.25rem;
+}
+
+header p.tagline {
+  color: var(--muted);
+  margin-top: 0;
+}
+
+a { color: var(--accent); }
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1.5rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th { font-weight: 600; }
+
+td.id { white-space: nowrap; font-family: ui-monospace, monospace; }
+
+input.filter {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  margin-bottom: 1rem;
+}
+
+details {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  margin: 0.5rem 0;
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+footer a { margin-right: 0.5rem; }
+
+.advisory-meta {
+  color: var(--muted);
+  font-size: 0.92em;
+  margin-bottom: 1.5rem;
+}
+
+.advisory-meta dt { font-weight: 600; display: inline; }
+.advisory-meta dd { display: inline; margin-right: 1rem; }
+.advisory-meta dd::after { content: " "; }
+
+section h2 {
+  margin-top: 2rem;
+  font-size: 1.15rem;
+}

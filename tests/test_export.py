@@ -128,3 +128,67 @@ def test_all_zip_does_not_contain_itself(sample_corpus, tmp_path, schema_path):
     build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
     with zipfile.ZipFile(dist / "all.zip") as zf:
         assert "all.zip" not in zf.namelist()
+
+
+def test_export_emits_per_advisory_html(sample_corpus, tmp_path, schema_path):
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    advisory_html = (dist / "advisories" / "2026" / "ASVE-2026-0001.html").read_text(
+        encoding="utf-8"
+    )
+    assert "ASVE-2026-0001" in advisory_html
+    assert "<!doctype html>" in advisory_html
+    assert "../../style.css" in advisory_html
+
+
+def test_export_emits_index_html_grouped_by_year(sample_corpus, tmp_path, schema_path):
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    index_html = (dist / "index.html").read_text(encoding="utf-8")
+    assert "ASVE-2026-0001" in index_html
+    assert "<details" in index_html
+    assert "<summary>2026" in index_html
+    assert 'id="filter"' in index_html
+
+
+def test_export_copies_style_css(sample_corpus, tmp_path, schema_path):
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    css = (dist / "style.css").read_text(encoding="utf-8")
+    assert "body" in css
+
+
+def test_html_autoescapes_advisory_content(tmp_path, schema_path, fixtures_dir):
+    """Jinja autoescape must neutralize HTML in advisory.summary."""
+    advisories_dir = tmp_path / "advisories" / "2026"
+    advisories_dir.mkdir(parents=True)
+    src = (fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text()
+    src = src.replace(
+        'summary: "Command injection in @cyanheads/git-mcp-server"',
+        'summary: "<script>alert(1)</script> traversal"',
+    )
+    (advisories_dir / "ASVE-2026-0001.yaml").write_text(src)
+    dist = tmp_path / "dist"
+    build(tmp_path / "advisories", schema_path=schema_path, dist=dist)
+    page = (dist / "advisories" / "2026" / "ASVE-2026-0001.html").read_text(encoding="utf-8")
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;" in page
+
+
+def test_index_html_groups_by_year_descending(tmp_path, schema_path, fixtures_dir):
+    """Year groups must be sorted newest-first so the most recent year is on top."""
+    advisories_dir_2026 = tmp_path / "advisories" / "2026"
+    advisories_dir_2027 = tmp_path / "advisories" / "2027"
+    advisories_dir_2026.mkdir(parents=True)
+    advisories_dir_2027.mkdir(parents=True)
+    src = (fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text()
+    (advisories_dir_2026 / "ASVE-2026-0001.yaml").write_text(src)
+    (advisories_dir_2027 / "ASVE-2027-0001.yaml").write_text(
+        src.replace("ASVE-2026-0001", "ASVE-2027-0001")
+    )
+    dist = tmp_path / "dist"
+    build(tmp_path / "advisories", schema_path=schema_path, dist=dist)
+    index_html = (dist / "index.html").read_text(encoding="utf-8")
+    pos_2027 = index_html.find("2027")
+    pos_2026 = index_html.find("2026")
+    assert 0 <= pos_2027 < pos_2026

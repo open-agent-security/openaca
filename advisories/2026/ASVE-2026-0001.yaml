@@ -1,0 +1,47 @@
+schema_version: 1.7.5
+id: ASVE-2026-0001
+type: vulnerability
+aliases:
+- GHSA-3q26-f695-pp76
+- CVE-2025-53107
+summary: Command injection in @cyanheads/git-mcp-server
+details: '@cyanheads/git-mcp-server is vulnerable to command injection in several
+  tools, caused by unsanitized use of input parameters within a child-process invocation,
+  enabling an attacker to inject arbitrary system commands.'
+published: '2025-09-01T12:00:00Z'
+modified: '2025-09-15T12:00:00Z'
+affected:
+- package:
+    ecosystem: npm
+    name: '@cyanheads/git-mcp-server'
+    purl: pkg:npm/%40cyanheads/git-mcp-server
+  ranges:
+  - type: ECOSYSTEM
+    events:
+    - introduced: '0'
+    - fixed: 1.2.3
+severity:
+- type: CVSS_V4
+  score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+references:
+- type: ADVISORY
+  url: https://github.com/advisories/GHSA-3q26-f695-pp76
+database_specific:
+  asve:
+    component_type: mcp_server
+    surfaces:
+    - tool_invocation
+    - stdio
+    - repo_context
+    agent_impact:
+      repo_read: true
+      repo_write: false
+      credential_exfiltration: true
+      tool_hijack: true
+      memory_poisoning: false
+      pr_manipulation: false
+      code_execution: true
+    owasp_agentic_top10:
+    - asi02
+    - asi05
+    evidence_level: confirmed

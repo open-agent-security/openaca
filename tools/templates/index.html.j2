@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ASVE — Agent Stack Vulnerabilities and Exposures</title>
+  <link rel="canonical" href="https://asve.dev/">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>ASVE</h1>
+    <p class="tagline">Open advisories for agent stack security: plugins, MCP servers, agent frameworks, model proxies.</p>
+  </header>
+
+  <input type="search" class="filter" id="filter" placeholder="Filter advisories — type to match id, summary, or aliases…" aria-label="Filter advisories">
+
+  <section>
+    {% for year, group in advisories_by_year %}
+    <details open>
+      <summary>{{ year }} <span style="color:var(--muted); font-weight:normal">({{ group|length }})</span></summary>
+      <table>
+        <thead><tr><th>ID</th><th>Summary</th><th>Modified</th></tr></thead>
+        <tbody>
+          {% for advisory in group %}
+          <tr data-search="{{ advisory.id }} {{ advisory.summary }} {{ (advisory.aliases or [])|join(' ') }}">
+            <td class="id"><a href="advisories/{{ advisory.id.split('-')[1] }}/{{ advisory.id }}.html">{{ advisory.id }}</a></td>
+            <td>{{ advisory.summary }}</td>
+            <td>{{ advisory.modified.split('T')[0] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endfor %}
+  </section>
+
+  <footer>
+    <a href="all.zip">all.zip</a>
+    <a href="modified_id.csv">modified_id.csv</a>
+    <a href="index.json">index.json</a>
+    <a href="schema/asve.schema.json">schema</a>
+  </footer>
+
+  <script>
+    // Vanilla filter: hide rows whose data-search attribute doesn't contain
+    // every space-separated token in the input. No library, no build step.
+    (function () {
+      var input = document.getElementById("filter");
+      if (!input) return;
+      input.addEventListener("input", function () {
+        var tokens = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+        document.querySelectorAll("tr[data-search]").forEach(function (row) {
+          var hay = row.getAttribute("data-search").toLowerCase();
+          var match = tokens.every(function (t) { return hay.indexOf(t) !== -1; });
+          row.style.display = match ? "" : "none";
+        });
+        // Hide year groups whose visible-row count is zero.
+        document.querySelectorAll("details").forEach(function (det) {
+          var visible = det.querySelectorAll("tbody tr:not([style*='display: none'])").length;
+          det.style.display = visible === 0 ? "none" : "";
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

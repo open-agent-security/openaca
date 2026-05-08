@@ -29,9 +29,13 @@ import csv
 import json
 import shutil
 import zipfile
+from itertools import groupby
 from pathlib import Path
 
 import yaml
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 def load_corpus(advisories_root: Path) -> list[dict]:
@@ -94,6 +98,36 @@ def _bundle_zip(dist: Path) -> None:
                 zf.write(path, arcname=path.relative_to(dist))
 
 
+def _render_html(corpus: list[dict], dist: Path) -> None:
+    """Render per-advisory pages and the grouped-by-year index."""
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATES_DIR),
+        autoescape=select_autoescape(["html", "j2"]),
+    )
+    advisory_tmpl = env.get_template("advisory.html.j2")
+    index_tmpl = env.get_template("index.html.j2")
+
+    for advisory in corpus:
+        year = advisory["id"].split("-")[1]
+        target = dist / "advisories" / year / f"{advisory['id']}.html"
+        target.write_text(advisory_tmpl.render(advisory=advisory), encoding="utf-8")
+
+    sorted_corpus = sorted(corpus, key=lambda a: a["id"])
+
+    def _year(advisory: dict) -> str:
+        return advisory["id"].split("-")[1]
+
+    by_year_sorted = sorted(sorted_corpus, key=_year, reverse=True)
+    advisories_by_year = [(year, list(group)) for year, group in groupby(by_year_sorted, key=_year)]
+    (dist / "index.html").write_text(
+        index_tmpl.render(advisories_by_year=advisories_by_year),
+        encoding="utf-8",
+    )
+
+    css_src = TEMPLATES_DIR / "style.css"
+    (dist / "style.css").write_text(css_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
     _ensure_clean(dist)
     corpus = load_corpus(advisories_root)
@@ -107,4 +141,5 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
     schema_target.write_text(schema_path.read_text())
     _emit_modified_csv(corpus, dist)
     _emit_index_json(corpus, dist)
+    _render_html(corpus, dist)
     _bundle_zip(dist)

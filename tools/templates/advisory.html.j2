@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ advisory.id }} — ASVE</title>
+  <link rel="canonical" href="https://asve.dev/advisories/{{ advisory.id.split('-')[1] }}/{{ advisory.id }}.html">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+  <header>
+    <p><a href="../../">← ASVE</a></p>
+    <h1>{{ advisory.id }}</h1>
+    <p class="tagline">{{ advisory.summary }}</p>
+  </header>
+
+  <dl class="advisory-meta">
+    <dt>Type:</dt><dd>{{ advisory.type }}</dd>
+    <dt>Published:</dt><dd>{{ advisory.published }}</dd>
+    <dt>Modified:</dt><dd>{{ advisory.modified }}</dd>
+  </dl>
+
+  {% if advisory.aliases %}
+  <section>
+    <h2>Aliases</h2>
+    <ul>
+      {% for alias in advisory.aliases %}
+      <li><code>{{ alias }}</code></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if advisory.affected %}
+  <section>
+    <h2>Affected packages</h2>
+    <table>
+      <thead><tr><th>Ecosystem</th><th>Name</th><th>Fixed in</th></tr></thead>
+      <tbody>
+        {% for entry in advisory.affected %}
+        <tr>
+          <td>{{ entry.package.ecosystem }}</td>
+          <td><code>{{ entry.package.name }}</code></td>
+          <td>
+            {%- for r in entry.ranges or [] -%}
+              {%- for ev in r.events or [] -%}
+                {%- if ev.fixed -%}<code>{{ ev.fixed }}</code>{%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if advisory.severity %}
+  <section>
+    <h2>Severity</h2>
+    <ul>
+      {% for sev in advisory.severity %}
+      <li>{{ sev.type }} — <code>{{ sev.score }}</code></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if advisory.details %}
+  <section>
+    <h2>Details</h2>
+    <p>{{ advisory.details }}</p>
+  </section>
+  {% endif %}
+
+  {% set asve = (advisory.database_specific or {}).get('asve') or {} %}
+  {% if asve %}
+  <section>
+    <h2>Agent context</h2>
+    {% if asve.component_type %}<p>Component type: <code>{{ asve.component_type }}</code></p>{% endif %}
+    {% if asve.surfaces %}<p>Surfaces: {% for s in asve.surfaces %}<code>{{ s }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    {% if asve.agent_impact %}
+    <p>Impact:
+      {%- set impacts = [] -%}
+      {%- for k, v in asve.agent_impact.items() -%}
+        {%- if v -%}{%- set _ = impacts.append(k) -%}{%- endif -%}
+      {%- endfor -%}
+      {% if impacts %}{% for i in impacts %}<code>{{ i }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<em>none</em>{% endif %}
+    </p>
+    {% endif %}
+    {% if asve.owasp_agentic_top10 %}
+    <p>OWASP Agentic Top 10: {% for c in asve.owasp_agentic_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if asve.evidence_level %}<p>Evidence: <code>{{ asve.evidence_level }}</code></p>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if advisory.references %}
+  <section>
+    <h2>References</h2>
+    <ul>
+      {% for ref in advisory.references %}
+      <li>{{ ref.type }}: <a href="{{ ref.url }}">{{ ref.url }}</a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <footer>
+    <a href="{{ advisory.id }}.json">JSON</a>
+    <a href="../../">Back to index</a>
+  </footer>
+</body>
+</html>

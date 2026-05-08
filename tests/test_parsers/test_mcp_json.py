@@ -207,3 +207,16 @@ def test_uv_absolute_path_tool_run_dispatches_as_uvx():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_windows_path_command_classified_as_npx():
+    """C:\\...\\npx.cmd must classify as npx even when running on POSIX."""
+    servers = {
+        "x": {
+            "command": "C:\\Program Files\\nodejs\\npx.cmd",
+            "args": ["@scope/server@1.2.3"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"

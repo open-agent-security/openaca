@@ -150,21 +150,30 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
     return command or "", args
 
 
+_WINDOWS_EXEC_EXTS = (".cmd", ".exe", ".bat", ".ps1")
+
+
 def _classify_command(command: str) -> str:
     """Return the canonical command name for classification purposes.
 
-    Strips directory prefix and extensions and lowercases so
-    `/usr/local/bin/npx`, `npx.cmd`, `C:\\Program Files\\nodejs\\npx.cmd`,
-    and `NPX.CMD` all classify as `"npx"`. The original string is
-    preserved separately for binary identity output.
+    Strips directory prefix and extension. The original string is preserved
+    separately for binary identity output.
+
+    Case handling is OS-aware:
+    - Windows command resolution is case-insensitive, so a Windows-shaped
+      command (backslash path or .cmd/.exe/.bat/.ps1 extension) is
+      lowercased: `C:\\...\\NPX.CMD` and `npx.cmd` both classify as `npx`.
+    - POSIX paths stay case-sensitive: `/opt/NPX` is a different binary
+      from `npx` and must not silently classify as a launcher.
 
     Backslashes are normalized manually because `Path` is OS-aware: on
     POSIX runners `Path("C:\\\\...\\\\npx.cmd").stem` would not split
-    on `\\` and would return the whole thing as the stem. Windows
-    command resolution is case-insensitive, so we lowercase too.
+    on `\\` and would return the whole thing as the stem.
     """
     basename = command.replace("\\", "/").rsplit("/", 1)[-1]
-    return Path(basename).stem.lower()
+    stem = Path(basename).stem
+    is_windows_shaped = "\\" in command or basename.lower().endswith(_WINDOWS_EXEC_EXTS)
+    return stem.lower() if is_windows_shaped else stem
 
 
 def parse_mcp_servers(

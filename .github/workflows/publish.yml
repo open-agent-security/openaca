@@ -1,0 +1,87 @@
+name: Publish
+
+# Builds the static ASVE export (`dist/`) on every push to `main` and
+# deploys it to Cloudflare Pages. Cloudflare's role is purely host +
+# CDN + SSL — the build runs here in GitHub Actions so it's identical
+# to local dev (same uv.lock, same gates as ci.yml).
+#
+# Why Cloudflare Pages, not GitHub Pages: GitHub Pages requires a
+# public repo on the free tier, and we keep `asve` private until V0
+# launch. Cloudflare Pages is free, supports private-source repos via
+# direct-upload mode (no Cloudflare GitHub-app permissions needed on
+# this repo), and the registrar already handles `asve.dev`. Migration
+# to GitHub Pages later is ~30 minutes if we ever want to consolidate.
+#
+# Required secrets (set via `gh secret set` on this repo):
+#   - CLOUDFLARE_API_TOKEN: token with the
+#     "Edit Cloudflare Workers" template (covers Pages deploy).
+#   - CLOUDFLARE_ACCOUNT_ID: from the Cloudflare dashboard sidebar.
+#   - CLOUDFLARE_PAGES_PROJECT: the Pages project name (e.g. `asve`).
+# If any are missing, the deploy step skips with a workflow warning;
+# the build still runs and the artifact is uploaded for inspection.
+#
+# Workflow-injection safety: this file does not consume any
+# user/PR-controlled input (no `github.event.issue.body`, etc.). The
+# only dynamic values are repo secrets, which are not attacker-
+# influenced inputs. No `run:` step interpolates ${{ }} expressions
+# from event payloads — everything is read via `env:` or via
+# action `with:` parameters.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Build export
+        run: uv run asve-export
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
+      - id: have_cf
+        name: Check Cloudflare secrets
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ACCOUNT_ID" ] || [ -z "$CF_PROJECT" ]; then
+            echo "::warning::Cloudflare secrets not set; skipping deploy. See .github/workflows/publish.yml header for setup."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.have_cf.outputs.skip != 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }} --branch=main

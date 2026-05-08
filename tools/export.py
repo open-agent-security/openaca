@@ -32,6 +32,7 @@ import zipfile
 from itertools import groupby
 from pathlib import Path
 
+import click
 import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -143,3 +144,32 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
     _emit_index_json(corpus, dist)
     _render_html(corpus, dist)
     _bundle_zip(dist)
+
+
+@click.command()
+@click.option(
+    "--advisories",
+    default="advisories",
+    show_default=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--schema",
+    default="schema/asve.schema.json",
+    show_default=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--dist",
+    default="dist",
+    show_default=True,
+    type=click.Path(path_type=Path),
+)
+def main(advisories: Path, schema: Path, dist: Path) -> None:
+    """Build the ASVE static export under DIST."""
+    build(advisories, schema_path=schema, dist=dist)
+    click.echo(f"wrote export to {dist}")
+
+
+if __name__ == "__main__":
+    main()

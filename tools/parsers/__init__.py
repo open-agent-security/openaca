@@ -20,8 +20,19 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 
 
 def parse_repo(root: Path) -> list[ComponentRef]:
+    """Walk `root` and return ComponentRefs from all known manifests.
+
+    A single malformed manifest (e.g., invalid JSON) must not abort the whole
+    scan — these parsers operate on arbitrary user repos, and one bad file
+    should drop only that file, not every other finding. Per-path failures
+    are silenced; we don't surface them in V0 (the reference Action will
+    accumulate per-path errors when it lands).
+    """
     refs: list[ComponentRef] = []
     for pattern, parser in REGISTRY:
         for path in root.rglob(pattern):
-            refs.extend(parser(path))
+            try:
+                refs.extend(parser(path))
+            except Exception:
+                continue
     return refs

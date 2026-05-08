@@ -151,6 +151,7 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
 
 
 _WINDOWS_EXEC_EXTS = (".cmd", ".exe", ".bat", ".ps1")
+_KNOWN_LAUNCHERS = ("npx", "uvx", "uv")
 
 
 def _classify_command(command: str) -> str:
@@ -159,21 +160,35 @@ def _classify_command(command: str) -> str:
     Strips directory prefix and extension. The original string is preserved
     separately for binary identity output.
 
-    Case handling is OS-aware:
-    - Windows command resolution is case-insensitive, so a Windows-shaped
-      command (backslash path or .cmd/.exe/.bat/.ps1 extension) is
-      lowercased: `C:\\...\\NPX.CMD` and `npx.cmd` both classify as `npx`.
-    - POSIX paths stay case-sensitive: `/opt/NPX` is a different binary
-      from `npx` and must not silently classify as a launcher.
+    Case handling has three branches:
+    - Windows-shaped command (backslash path OR .cmd/.exe/.bat/.ps1
+      extension): lowercased. `C:\\...\\NPX.CMD` → `npx`.
+    - POSIX-shaped path (`/`-separated, no Windows signals): kept
+      case-sensitive. `/opt/NPX` stays `NPX` and falls to binary
+      fallback — POSIX `/opt/NPX` is a genuinely different binary.
+    - Bare token (no separator, no extension): resolved via PATH.
+      Windows PATHEXT makes resolution case-insensitive but POSIX is
+      case-sensitive; we can't tell which the manifest targets.
+      Compromise: lowercase only when the bare token matches a known
+      launcher name. `NPX` → `npx`; `CUSTOM` stays `CUSTOM`.
 
     Backslashes are normalized manually because `Path` is OS-aware: on
     POSIX runners `Path("C:\\\\...\\\\npx.cmd").stem` would not split
     on `\\` and would return the whole thing as the stem.
     """
+    has_backslash = "\\" in command
     basename = command.replace("\\", "/").rsplit("/", 1)[-1]
     stem = Path(basename).stem
-    is_windows_shaped = "\\" in command or basename.lower().endswith(_WINDOWS_EXEC_EXTS)
-    return stem.lower() if is_windows_shaped else stem
+    has_windows_ext = basename.lower().endswith(_WINDOWS_EXEC_EXTS)
+    has_posix_path = "/" in command and not has_backslash
+
+    if has_backslash or has_windows_ext:
+        return stem.lower()
+    if has_posix_path:
+        return stem
+    if stem.lower() in _KNOWN_LAUNCHERS:
+        return stem.lower()
+    return stem
 
 
 def parse_mcp_servers(

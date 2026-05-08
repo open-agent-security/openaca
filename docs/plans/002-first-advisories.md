@@ -36,7 +36,7 @@ ASVE-2026-0003 is the **enriched** record per the V0 spec (§8 of `docs/specs/as
 - Create: `LICENSE-DATA`
 - Modify: `README.md` (already references `LICENSE-DATA` from Plan 001 work)
 
-- [ ] **Step 1: Write `LICENSE-DATA`**
+- [x] **Step 1: Write `LICENSE-DATA`**
 
 ```text
 ASVE Advisory Data is licensed under the
@@ -59,7 +59,7 @@ Attribution should reference: "ASVE — Agent Stack Vulnerabilities and
 Exposures, https://asve.dev"
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add LICENSE-DATA
@@ -73,7 +73,7 @@ git commit -m "docs: add CC-BY-4.0 license for advisory data"
 **Files:**
 - Create: `tests/fixtures/osv/ghsa-3q26-f695-pp76.json`
 
-- [ ] **Step 1: Capture a real OSV record verbatim**
+- [x] **Step 1: Capture a real OSV record verbatim**
 
 Save this JSON (this is a faithful subset of the GHSA record; trim or expand if the live record differs at implementation time, but keep this snapshot for stable tests):
 
@@ -110,7 +110,7 @@ Save this JSON (this is a faithful subset of the GHSA record; trim or expand if 
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add tests/fixtures/osv/ghsa-3q26-f695-pp76.json
@@ -124,7 +124,7 @@ git commit -m "test: capture OSV fixture for importer tests"
 **Files:**
 - Create: `tests/test_import_from_osv.py`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```python
 # tests/test_import_from_osv.py
@@ -174,7 +174,7 @@ def test_cli_writes_yaml(tmp_path, fixtures_dir):
     assert advisory["id"] == "ASVE-2026-0001"
 ```
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `uv run pytest tests/test_import_from_osv.py -v`
 Expected: fails — module does not exist yet.
@@ -186,7 +186,7 @@ Expected: fails — module does not exist yet.
 **Files:**
 - Create: `tools/import_from_osv.py`
 
-- [ ] **Step 1: Implement the importer**
+- [x] **Step 1: Implement the importer**
 
 ```python
 """Generate an ASVE advisory skeleton from an upstream OSV record."""
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Register console script**
+- [x] **Step 2: Register console script**
 
 Add to `pyproject.toml` under `[project.scripts]`:
 
@@ -282,12 +282,12 @@ asve-import-osv = "tools.import_from_osv:main"
 
 Sync deps: `uv sync`
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `uv run pytest tests/test_import_from_osv.py -v`
 Expected: all four pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tools/import_from_osv.py pyproject.toml tests/test_import_from_osv.py
@@ -301,7 +301,7 @@ git commit -m "feat: OSV importer generates ASVE skeletons"
 **Files:**
 - Create: `advisories/2026/ASVE-2026-0001.yaml`
 
-- [ ] **Step 1: Generate the skeleton**
+- [x] **Step 1: Generate the skeleton**
 
 ```bash
 mkdir -p advisories/2026
@@ -310,7 +310,7 @@ uv run asve-import-osv --osv-file tests/fixtures/osv/ghsa-3q26-f695-pp76.json \
                 --out advisories/2026/ASVE-2026-0001.yaml
 ```
 
-- [ ] **Step 2: Fill in the `database_specific.asve` block**
+- [x] **Step 2: Fill in the `database_specific.asve` block**
 
 Edit `advisories/2026/ASVE-2026-0001.yaml`. Replace the `database_specific.asve` block with:
 
@@ -336,7 +336,7 @@ database_specific:
     evidence_level: confirmed
 ```
 
-- [ ] **Step 3: Add a CVSS v4 severity entry**
+- [x] **Step 3: Add a CVSS v4 severity entry**
 
 Insert before `references:`:
 
@@ -346,12 +346,12 @@ severity:
     score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 ```
 
-- [ ] **Step 4: Lint**
+- [x] **Step 4: Lint**
 
 Run: `uv run asve-lint advisories/2026/ASVE-2026-0001.yaml`
 Expected: exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add advisories/2026/ASVE-2026-0001.yaml
@@ -366,7 +366,7 @@ git commit -m "advisory: ASVE-2026-0001 — @cyanheads/git-mcp-server command in
 - Create: `tests/fixtures/osv/ghsa-6xpm-ggf7-wc3p.json`
 - Create: `advisories/2026/ASVE-2026-0002.yaml`
 
-- [ ] **Step 1: Capture the OSV record**
+- [x] **Step 1: Capture the OSV record**
 
 ```json
 {
@@ -389,7 +389,7 @@ git commit -m "advisory: ASVE-2026-0001 — @cyanheads/git-mcp-server command in
 }
 ```
 
-- [ ] **Step 2: Generate skeleton and fill `database_specific.asve`**
+- [x] **Step 2: Generate skeleton and fill `database_specific.asve`**
 
 ```bash
 uv run asve-import-osv --osv-file tests/fixtures/osv/ghsa-6xpm-ggf7-wc3p.json \
@@ -428,7 +428,7 @@ severity:
     score: "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N"
 ```
 
-- [ ] **Step 3: Lint and commit**
+- [x] **Step 3: Lint and commit**
 
 ```bash
 uv run asve-lint advisories/2026/ASVE-2026-0002.yaml
@@ -446,7 +446,7 @@ This is the **enriched** record per the V0 spec. Same upstream CVE/GHSA, but ASV
 - Create: `tests/fixtures/osv/ghsa-3ch2-jxxc-v4xf.json`
 - Create: `advisories/2026/ASVE-2026-0003.yaml`
 
-- [ ] **Step 1: Capture the OSV record**
+- [x] **Step 1: Capture the OSV record**
 
 ```json
 {
@@ -470,7 +470,7 @@ This is the **enriched** record per the V0 spec. Same upstream CVE/GHSA, but ASV
 }
 ```
 
-- [ ] **Step 2: Generate skeleton, fill extension, add detection_hints**
+- [x] **Step 2: Generate skeleton, fill extension, add detection_hints**
 
 ```bash
 uv run asve-import-osv --osv-file tests/fixtures/osv/ghsa-3ch2-jxxc-v4xf.json \
@@ -520,7 +520,7 @@ severity:
     score: "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 ```
 
-- [ ] **Step 3: Note that `detection_hints` is currently outside the V0 schema**
+- [x] **Step 3: Note that `detection_hints` is currently outside the V0 schema**
 
 The V0 schema's `asve_extension` block uses `additionalProperties` open by default for unknown keys. Verify the schema does not reject `detection_hints` — JSON Schema's default behavior under `properties` permits unknown keys. If your Plan 001 schema closed `additionalProperties` on `asve_extension`, open it (set `"additionalProperties": true` explicitly or remove the closure).
 
@@ -533,7 +533,7 @@ git add schema/asve.schema.json
 git commit -m "schema: allow forward-compat fields under database_specific.asve"
 ```
 
-- [ ] **Step 4: Lint and commit advisory**
+- [x] **Step 4: Lint and commit advisory**
 
 ```bash
 uv run asve-lint advisories/2026/ASVE-2026-0003.yaml
@@ -549,7 +549,7 @@ git commit -m "advisory: ASVE-2026-0003 — enriched record with mcp.json detect
 - Create: `tests/fixtures/osv/ghsa-m4qw-j7mx-qv6h.json`
 - Create: `advisories/2026/ASVE-2026-0004.yaml`
 
-- [ ] **Step 1: Capture OSV fixture**
+- [x] **Step 1: Capture OSV fixture**
 
 ```json
 {
@@ -572,7 +572,7 @@ git commit -m "advisory: ASVE-2026-0003 — enriched record with mcp.json detect
 }
 ```
 
-- [ ] **Step 2: Generate, fill extension, add severity**
+- [x] **Step 2: Generate, fill extension, add severity**
 
 ```bash
 uv run asve-import-osv --osv-file tests/fixtures/osv/ghsa-m4qw-j7mx-qv6h.json \
@@ -611,7 +611,7 @@ severity:
     score: "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 ```
 
-- [ ] **Step 3: Lint and commit**
+- [x] **Step 3: Lint and commit**
 
 ```bash
 uv run asve-lint advisories/2026/ASVE-2026-0004.yaml
@@ -627,7 +627,7 @@ git commit -m "advisory: ASVE-2026-0004 — aws-mcp-server command injection"
 - Create: `tests/fixtures/osv/ghsa-rwc2-f344-q6w6.json`
 - Create: `advisories/2026/ASVE-2026-0005.yaml`
 
-- [ ] **Step 1: Capture OSV fixture**
+- [x] **Step 1: Capture OSV fixture**
 
 ```json
 {
@@ -651,7 +651,7 @@ git commit -m "advisory: ASVE-2026-0004 — aws-mcp-server command injection"
 }
 ```
 
-- [ ] **Step 2: Generate, fill, lint, commit**
+- [x] **Step 2: Generate, fill, lint, commit**
 
 ```bash
 uv run asve-import-osv --osv-file tests/fixtures/osv/ghsa-rwc2-f344-q6w6.json \
@@ -690,7 +690,7 @@ severity:
     score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 ```
 
-- [ ] **Step 3: Lint and commit**
+- [x] **Step 3: Lint and commit**
 
 ```bash
 uv run asve-lint advisories/2026/ASVE-2026-0005.yaml
@@ -702,17 +702,17 @@ git commit -m "advisory: ASVE-2026-0005 — serverless MCP server command inject
 
 ## Task 10: Lint the full corpus
 
-- [ ] **Step 1: Run linter against `advisories/`**
+- [x] **Step 1: Run linter against `advisories/`**
 
 Run: `uv run asve-lint advisories/`
 Expected: all five advisories report `ok`; exit 0.
 
-- [ ] **Step 2: Run reserve-id**
+- [x] **Step 2: Run reserve-id**
 
 Run: `uv run asve-reserve-id advisories/ --year 2026`
 Expected: prints `ASVE-2026-0006`.
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 
 Run: `uv run pytest -v`
 Expected: every test passes.

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-3ch2-jxxc-v4xf",
+  "aliases": ["CVE-2025-54994"],
+  "summary": "Command injection in @akoskm/create-mcp-server-stdio",
+  "details": "@akoskm/create-mcp-server-stdio is vulnerable to MCP server command injection through unsafe child-process invocation when handling tool inputs.",
+  "published": "2025-10-05T12:00:00Z",
+  "modified": "2025-10-15T12:00:00Z",
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "@akoskm/create-mcp-server-stdio",
+                  "purl": "pkg:npm/%40akoskm/create-mcp-server-stdio"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.4"}]}]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-3ch2-jxxc-v4xf"}
+  ]
+}

@@ -12,6 +12,8 @@ from tools.parsers.mcp_json import parse_mcp_servers
 def parse(path: Path) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
+    if not isinstance(data, dict):
+        return refs
 
     name = data.get("name")
     version = data.get("version")

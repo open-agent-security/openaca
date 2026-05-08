@@ -56,3 +56,15 @@ def test_dependencies_as_string_does_not_produce_bogus_refs(tmp_path):
         if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
     ]
     assert dep_refs == []
+
+
+def test_top_level_array_does_not_raise(tmp_path):
+    manifest = tmp_path / "plugin.json"
+    manifest.write_text("[]")
+    assert parse(manifest) == []
+
+
+def test_top_level_null_does_not_raise(tmp_path):
+    manifest = tmp_path / "plugin.json"
+    manifest.write_text("null")
+    assert parse(manifest) == []

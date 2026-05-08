@@ -13,6 +13,8 @@ DEP_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDe
 def parse(path: Path) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
+    if not isinstance(data, dict):
+        return refs
     for field_name in DEP_FIELDS:
         deps = data.get(field_name) or {}
         if not isinstance(deps, dict):

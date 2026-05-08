@@ -199,3 +199,11 @@ def test_non_string_args_are_dropped():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40scope/server@1.0.0"
+
+
+def test_uv_absolute_path_tool_run_dispatches_as_uvx():
+    """`/usr/bin/uv tool run weather-mcp==0.5.0` should emit a pinned PURL."""
+    servers = {"y": {"command": "/usr/bin/uv", "args": ["tool", "run", "weather-mcp==0.5.0"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"

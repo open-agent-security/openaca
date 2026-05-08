@@ -153,16 +153,18 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
 def _classify_command(command: str) -> str:
     """Return the canonical command name for classification purposes.
 
-    Strips directory prefix and extensions so `/usr/local/bin/npx`,
-    `npx.cmd`, and `C:\\Program Files\\nodejs\\npx.cmd` all classify as
-    `"npx"`. The original string is preserved for binary identity output.
+    Strips directory prefix and extensions and lowercases so
+    `/usr/local/bin/npx`, `npx.cmd`, `C:\\Program Files\\nodejs\\npx.cmd`,
+    and `NPX.CMD` all classify as `"npx"`. The original string is
+    preserved separately for binary identity output.
 
-    Normalize backslashes manually because `Path` is OS-aware: on POSIX
-    runners `Path("C:\\\\...\\\\npx.cmd").stem` would not split on `\\`
-    and would return the whole thing as the stem.
+    Backslashes are normalized manually because `Path` is OS-aware: on
+    POSIX runners `Path("C:\\\\...\\\\npx.cmd").stem` would not split
+    on `\\` and would return the whole thing as the stem. Windows
+    command resolution is case-insensitive, so we lowercase too.
     """
     basename = command.replace("\\", "/").rsplit("/", 1)[-1]
-    return Path(basename).stem
+    return Path(basename).stem.lower()
 
 
 def parse_mcp_servers(

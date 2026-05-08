@@ -105,6 +105,19 @@ jobs:
           additional_permissions: |
             actions: read
 
+          # Extend the action's default allowed tools with the dev-loop
+          # commands the pre-push hook gates on. Without these, Claude can
+          # commit format-broken code but the wrapped `git push` script's
+          # hook fails on `ruff format --check` and the bot has no way to
+          # run the formatter to recover. PR #8 hit this exact loop — bot
+          # wedged trying to hand-reformat to match ruff's output.
+          #
+          # Each `Bash(<cmd>:*)` entry is a glob over arg lists for that
+          # exact prefix. Keep prefixes specific so we don't open a wide
+          # `Bash(*)` hole on a write-token job.
+          claude_args: |
+            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*)"
+
           # Surface Claude's full SDK conversation in the workflow log.
           # Default is `false` (per claude-code-action upstream) which hides
           # everything as "Running Claude Code via SDK (full output hidden

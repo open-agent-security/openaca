@@ -1,0 +1,11 @@
+{
+  "name": "sample",
+  "version": "0.0.0",
+  "dependencies": {
+    "@cyanheads/git-mcp-server": "1.1.0",
+    "mcp-remote": "^0.4.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

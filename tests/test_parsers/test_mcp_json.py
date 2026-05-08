@@ -170,3 +170,19 @@ def test_uvx_positional_at_version_emits_purl():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_npx_absolute_path_classified_as_npx():
+    """Absolute path to npx should emit npm PURL, not mcp-stdio/binary:*."""
+    servers = {"x": {"command": "/usr/local/bin/npx", "args": ["@scope/server@1.2.3"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_npx_cmd_extension_classified_as_npx():
+    """npx.cmd (Windows) should emit npm PURL, not mcp-stdio/binary:*."""
+    servers = {"x": {"command": "npx.cmd", "args": ["@scope/server@1.2.3"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"

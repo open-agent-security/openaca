@@ -27,7 +27,10 @@ def parse(path: Path) -> list[ComponentRef]:
             )
         )
 
-    for i, dep in enumerate(data.get("dependencies") or []):
+    deps = data.get("dependencies")
+    if not isinstance(deps, list):
+        deps = []
+    for i, dep in enumerate(deps):
         locator = f"$.dependencies[{i}]"
         if isinstance(dep, str):
             refs.append(

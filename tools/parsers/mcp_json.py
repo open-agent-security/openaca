@@ -143,6 +143,16 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
     return command or "", args
 
 
+def _classify_command(command: str) -> str:
+    """Return the canonical command name for classification purposes.
+
+    Strips directory prefix and extensions so `/usr/local/bin/npx` and
+    `npx.cmd` both classify as `"npx"`, while the original string is
+    preserved for binary identity output.
+    """
+    return Path(command).stem
+
+
 def parse_mcp_servers(
     servers: dict, source_manifest: str, locator_prefix: str = "$.mcpServers"
 ) -> list[ComponentRef]:
@@ -164,7 +174,8 @@ def parse_mcp_servers(
             raw_args,
         )
         locator = f"{locator_prefix}.{server_name}"
-        if command == "npx":
+        cmd_class = _classify_command(command) if command else ""
+        if cmd_class == "npx":
             name, version = _parse_npx_args(args)
             if name and version:
                 refs.append(
@@ -184,7 +195,7 @@ def parse_mcp_servers(
                         source_locator=locator,
                     )
                 )
-        elif command == "uvx":
+        elif cmd_class == "uvx":
             name, version, pinned = _parse_uvx_args(args)
             if name and pinned:
                 refs.append(

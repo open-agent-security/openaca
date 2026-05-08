@@ -186,3 +186,16 @@ def test_npx_cmd_extension_classified_as_npx():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_non_string_args_are_dropped():
+    """Stray non-string args (null, int, nested) must not AttributeError."""
+    servers = {
+        "x": {
+            "command": "npx",
+            "args": [None, 42, {"nested": True}, "@scope/server@1.0.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.0.0"

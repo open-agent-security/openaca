@@ -26,3 +26,16 @@ def test_enabled_plugins_as_list_does_not_raise(tmp_path):
     manifest = tmp_path / "settings.json"
     manifest.write_text('{"enabledPlugins": ["foo-plugin"]}')
     assert parse(manifest) == []
+
+
+def test_top_level_array_does_not_raise(tmp_path):
+    """Settings file whose root is `[]` (not an object) must not crash."""
+    manifest = tmp_path / "settings.json"
+    manifest.write_text("[]")
+    assert parse(manifest) == []
+
+
+def test_top_level_null_does_not_raise(tmp_path):
+    manifest = tmp_path / "settings.json"
+    manifest.write_text("null")
+    assert parse(manifest) == []

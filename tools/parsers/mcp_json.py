@@ -169,6 +169,10 @@ def parse_mcp_servers(
         raw_args = entry.get("args") or []
         if not isinstance(raw_args, list):
             raw_args = []
+        # Drop any non-string elements: `_extract_flag_value` and
+        # `_positional_args` call `.startswith()` on each arg, so a stray
+        # `null`, integer, or nested object would AttributeError mid-scan.
+        raw_args = [a for a in raw_args if isinstance(a, str)]
         command, args = _command_dispatch(
             raw_command if isinstance(raw_command, str) else None,
             raw_args,

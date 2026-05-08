@@ -235,13 +235,50 @@ def test_npx_long_call_flag_is_not_treated_as_package():
     assert refs == []
 
 
-def test_uv_global_flag_before_tool_run_dispatches_as_uvx():
-    """Global uv options (--offline, --directory, etc.) before `tool run`
-    should not block the dispatch."""
+def test_uv_bare_global_flag_before_tool_run_dispatches_as_uvx():
+    """Bare global flags (no value) before `tool run` should not block dispatch."""
     servers = {
         "y": {
             "command": "uv",
             "args": ["--offline", "tool", "run", "weather-mcp==0.5.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_uv_value_flag_before_tool_run_dispatches_as_uvx():
+    """Value-taking global flag (--directory <path>) before `tool run` works."""
+    servers = {
+        "y": {
+            "command": "uv",
+            "args": ["--directory", "/tmp/proj", "tool", "run", "weather-mcp==0.5.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_uv_directory_named_tool_does_not_falsely_dispatch():
+    """`uv --directory tool run python` means dir=tool, run python — NOT
+    `uv tool run python`. Must not falsely classify python as a uvx tool."""
+    servers = {
+        "y": {"command": "uv", "args": ["--directory", "tool", "run", "python"]},
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl is None
+    assert refs[0].component_identity == "mcp-stdio/binary:uv"
+
+
+def test_uv_inline_value_flag_before_tool_run_dispatches_as_uvx():
+    """`uv --directory=/tmp tool run X` — inline value form."""
+    servers = {
+        "y": {
+            "command": "uv",
+            "args": ["--directory=/tmp", "tool", "run", "weather-mcp==0.5.0"],
         }
     }
     refs = parse_mcp_servers(servers, source_manifest="fake.json")

@@ -146,19 +146,49 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
     return _classify_pypi_spec(positional[0])
 
 
+# uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
+# value. Used by `_command_dispatch` to walk past option/value pairs and
+# locate the actual subcommand. Inline `--flag=value` doesn't appear here
+# (the value is embedded in the same token).
+_UV_VALUE_FLAGS = frozenset(
+    {
+        "--directory",
+        "--project",
+        "--config-file",
+        "--cache-dir",
+        "--python",
+        "--python-preference",
+        "--color",
+        "--default-index",
+        "--index",
+        "--index-url",
+        "--extra-index-url",
+        "--find-links",
+        "--keyring-provider",
+    }
+)
+
+
 def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
     """Normalize `uv tool run <pkg>` into the equivalent `uvx <pkg>` form.
 
-    Scans for an adjacent `tool run` pair anywhere in args, so global uv
-    flags like `--offline` before the subcommand (e.g.,
-    `uv --offline tool run weather-mcp==0.5.0`) still dispatch correctly.
-    Returns (effective_command, effective_args).
+    Walks past leading uv global options to find the actual subcommand,
+    so `uv --offline tool run weather-mcp==0.5.0` dispatches but
+    `uv --directory tool run python` (directory literally named `tool`,
+    then `run python`) does NOT. Returns (effective_command, effective_args).
     """
     if not command or _classify_command(command) != "uv":
         return command or "", args
-    for i in range(len(args) - 1):
-        if args[i] == "tool" and args[i + 1] == "run":
-            return "uvx", args[i + 2 :]
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if "=" in args[i]:
+            i += 1
+        elif args[i] in _UV_VALUE_FLAGS:
+            i += 2
+        else:
+            i += 1
+    if i + 1 < len(args) and args[i] == "tool" and args[i + 1] == "run":
+        return "uvx", args[i + 2 :]
     return command, args
 
 

@@ -220,3 +220,16 @@ def test_windows_path_command_classified_as_npx():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
+def test_uppercase_command_classified_case_insensitively():
+    """Windows command resolution is case-insensitive; NPX.CMD should match."""
+    servers = {
+        "x": {
+            "command": "C:\\Program Files\\nodejs\\NPX.CMD",
+            "args": ["@scope/server@1.2.3"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"

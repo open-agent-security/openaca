@@ -43,3 +43,16 @@ def test_plugin_inlined_mcp_servers():
         if r.component_identity and r.component_identity.startswith("mcp-stdio/binary:")
     ]
     assert len(binary_mcp) == 1
+
+
+def test_dependencies_as_string_does_not_produce_bogus_refs(tmp_path):
+    """Malformed `dependencies: "foo,bar"` must not iterate chars as dep names."""
+    manifest = tmp_path / "plugin.json"
+    manifest.write_text('{"name": "my-plugin", "dependencies": "foo,bar"}')
+    refs = parse(manifest)
+    dep_refs = [
+        r
+        for r in refs
+        if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
+    ]
+    assert dep_refs == []

@@ -19,3 +19,10 @@ def test_source_locator():
     refs = parse(manifest)
     locators = {r.source_locator for r in refs}
     assert any("$.enabledPlugins" in loc for loc in locators)
+
+
+def test_enabled_plugins_as_list_does_not_raise(tmp_path):
+    """Malformed enabledPlugins: [...] should return [] not raise AttributeError."""
+    manifest = tmp_path / "settings.json"
+    manifest.write_text('{"enabledPlugins": ["foo-plugin"]}')
+    assert parse(manifest) == []

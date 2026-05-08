@@ -11,7 +11,9 @@ from tools.component_ref import ComponentRef
 def parse(path: Path) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
-    enabled = data.get("enabledPlugins") or {}
+    enabled = data.get("enabledPlugins")
+    if not isinstance(enabled, dict):
+        return refs
     for plugin_spec, is_enabled in enabled.items():
         if not is_enabled:
             continue

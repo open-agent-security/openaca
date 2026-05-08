@@ -56,3 +56,75 @@ def test_build_is_idempotent_clean(sample_corpus, tmp_path, schema_path):
     stale.write_text("{}")
     build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
     assert not stale.exists()
+
+
+def test_modified_id_csv_lists_advisories(sample_corpus, tmp_path, schema_path):
+    import csv as csvlib
+
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    csv_path = dist / "modified_id.csv"
+    assert csv_path.is_file()
+    with csv_path.open(encoding="utf-8") as f:
+        rows = list(csvlib.DictReader(f))
+    assert any(r["id"] == "ASVE-2026-0001" for r in rows)
+    row = next(r for r in rows if r["id"] == "ASVE-2026-0001")
+    assert row["modified"]
+
+
+def test_modified_id_csv_sorted_by_id(tmp_path, schema_path, fixtures_dir):
+    """Multiple advisories must serialize sorted by id for stable diffs."""
+    advisories_dir = tmp_path / "advisories" / "2026"
+    advisories_dir.mkdir(parents=True)
+    src = (fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text()
+    (advisories_dir / "ASVE-2026-0002.yaml").write_text(
+        src.replace("ASVE-2026-0001", "ASVE-2026-0002")
+    )
+    (advisories_dir / "ASVE-2026-0001.yaml").write_text(src)
+    dist = tmp_path / "dist"
+    build(tmp_path / "advisories", schema_path=schema_path, dist=dist)
+    import csv as csvlib
+
+    with (dist / "modified_id.csv").open(encoding="utf-8") as f:
+        ids = [r["id"] for r in csvlib.DictReader(f)]
+    assert ids == ["ASVE-2026-0001", "ASVE-2026-0002"]
+
+
+def test_index_json_flat_summary(sample_corpus, tmp_path, schema_path):
+    """index.json is the static API surface — flat list with key fields."""
+    import json as jsonlib
+
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    index = jsonlib.loads((dist / "index.json").read_text(encoding="utf-8"))
+    assert isinstance(index, list)
+    entry = next(e for e in index if e["id"] == "ASVE-2026-0001")
+    assert entry["summary"]
+    assert entry["modified"]
+    assert isinstance(entry["affected_ecosystems"], list)
+    assert "npm" in entry["affected_ecosystems"]
+
+
+def test_all_zip_contains_each_advisory(sample_corpus, tmp_path, schema_path):
+    import zipfile
+
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    zip_path = dist / "all.zip"
+    assert zip_path.is_file()
+    with zipfile.ZipFile(zip_path) as zf:
+        names = set(zf.namelist())
+    assert "advisories/2026/ASVE-2026-0001.json" in names
+    assert "schema/asve.schema.json" in names
+    assert "modified_id.csv" in names
+    assert "index.json" in names
+
+
+def test_all_zip_does_not_contain_itself(sample_corpus, tmp_path, schema_path):
+    """Sanity: the zip must not recursively include all.zip in itself."""
+    import zipfile
+
+    dist = tmp_path / "dist"
+    build(sample_corpus / "advisories", schema_path=schema_path, dist=dist)
+    with zipfile.ZipFile(dist / "all.zip") as zf:
+        assert "all.zip" not in zf.namelist()

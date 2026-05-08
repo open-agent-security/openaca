@@ -9,8 +9,8 @@ unless noted.
 | 001 | [Schema + advisory-authoring tooling](001-schema-and-tooling.md) | ✅ Done | — |
 | 002 | [First V0 advisories + OSV importer](002-first-advisories.md) | ✅ Done | 001 |
 | 003 | [Manifest parsers](003-manifest-parsers.md) | ✅ Done | 001 (project setup) |
-| 004 | [Static export pipeline](004-static-export.md) | 🟡 Active | 001, 002 |
-| 005 | [Reference GitHub Action](005-reference-action.md) | ⏸ Pending | 003, 004 |
+| 004 | [Static export pipeline](004-static-export.md) | ✅ Done | 001, 002 |
+| 005 | [Reference GitHub Action](005-reference-action.md) | 🟡 Active | 003, 004 |
 | 006 | [Disclosure policy doc](006-disclosure-policy.md) | ⏸ Pending | — |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.

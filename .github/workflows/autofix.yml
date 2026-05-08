@@ -18,20 +18,31 @@ name: Autofix
 # Codex is silent when clean (thumbs reaction), so an unnecessary @codex
 # review on a no-op SHA costs one cheap call with no PR noise.
 #
-# Authentication: comments are posted using AUTOFIX_TRIGGER_PAT, NOT
-# secrets.GITHUB_TOKEN. GitHub explicitly suppresses workflow runs
-# triggered by events created with GITHUB_TOKEN (recursion guard) — so a
-# comment posted under github-actions[bot] would be silently dropped
-# before claude.yml ever fired. The PAT is fine-grained, owned by a repo
-# OWNER/MEMBER, with `Pull requests: Read and write`. The resulting
-# comment is authored by that user, which DOES trigger downstream
-# workflows AND naturally passes claude.yml's OWNER/MEMBER/COLLABORATOR
-# trust gate. The same PAT serves both bounces — Codex's webhook
-# listener watches @-mentions in PR comments regardless of author.
+# Authentication: comments are posted (and PR branches are rebased)
+# using AUTOFIX_TRIGGER_PAT, NOT secrets.GITHUB_TOKEN. GitHub explicitly
+# suppresses workflow runs triggered by events created with
+# GITHUB_TOKEN (recursion guard) — so a comment posted under
+# github-actions[bot] would be silently dropped before claude.yml ever
+# fired, and a rebase pushed under GITHUB_TOKEN would not re-trigger
+# CI / Codex on the rebased branch. The PAT is fine-grained, owned by
+# a repo OWNER/MEMBER, with BOTH:
+#   - `Pull requests: Read and write` — for `gh pr comment` (bounces 1
+#     and 2) and `gh pr list` (bounce 0).
+#   - `Contents: Read and write` — for `actions/checkout` to fetch and
+#     `git push` from the rebase-stale-prs job. WITHOUT this, the job
+#     fails at the `Checkout` step with `403: Write access to
+#     repository not granted` — actions/checkout asks GitHub to verify
+#     write permission upfront because the same token will push later.
+# The resulting comments/pushes are authored by that user, which DOES
+# trigger downstream workflows AND naturally passes claude.yml's
+# OWNER/MEMBER/COLLABORATOR trust gate. The same PAT serves all three
+# bounces — Codex's webhook listener watches @-mentions in PR comments
+# regardless of author.
 #
-# If AUTOFIX_TRIGGER_PAT is unset, both `gh pr comment` paths fail with
-# an auth error and the chain breaks. Manual @claude triggers are
-# unaffected.
+# If AUTOFIX_TRIGGER_PAT is unset, both `gh pr comment` paths fail
+# with an auth error and the chain breaks; rebase-stale-prs detects
+# the missing secret and skips with a workflow warning. Manual
+# @claude triggers are unaffected.
 #
 # Workflow-injection safety: every user/bot-controlled input (PR number,
 # comment body, review id) is read via env: and referenced as a shell

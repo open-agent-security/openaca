@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.7.5",
+  "id": "GHSA-3q26-f695-pp76",
+  "aliases": ["CVE-2025-53107"],
+  "summary": "Command injection in @cyanheads/git-mcp-server",
+  "details": "@cyanheads/git-mcp-server is vulnerable to command injection in several tools, caused by unsanitized use of input parameters within a child-process invocation, enabling an attacker to inject arbitrary system commands.",
+  "published": "2025-09-01T12:00:00Z",
+  "modified": "2025-09-15T12:00:00Z",
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "@cyanheads/git-mcp-server",
+        "purl": "pkg:npm/%40cyanheads/git-mcp-server"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {"introduced": "0"},
+            {"fixed": "1.2.3"}
+          ]
+        }
+      ]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-3q26-f695-pp76"}
+  ]
+}

@@ -245,3 +245,24 @@ def test_posix_uppercase_command_stays_case_sensitive():
     assert len(refs) == 1
     assert refs[0].purl is None
     assert refs[0].component_identity == "mcp-stdio/binary:/opt/NPX"
+
+
+def test_bare_uppercase_launcher_classified_case_insensitively():
+    """Bare `NPX`/`UVX` (Windows PATHEXT resolution) should match launchers."""
+    servers = {
+        "x": {"command": "NPX", "args": ["@scope/server@1.2.3"]},
+        "y": {"command": "UVX", "args": ["weather-mcp==0.5.0"]},
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    purls = {r.purl for r in refs}
+    assert "pkg:npm/%40scope/server@1.2.3" in purls
+    assert "pkg:pypi/weather-mcp@0.5.0" in purls
+
+
+def test_bare_uppercase_unknown_command_stays_case_sensitive():
+    """A bare uppercase token that isn't a known launcher must not be
+    silently lowercased; it could be a custom binary."""
+    servers = {"x": {"command": "CUSTOM", "args": []}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-stdio/binary:CUSTOM"

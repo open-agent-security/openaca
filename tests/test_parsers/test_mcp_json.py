@@ -180,8 +180,8 @@ def test_npx_absolute_path_classified_as_npx():
     assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
 
 
-def test_npx_cmd_extension_classified_as_npx():
-    """npx.cmd (Windows) should emit npm PURL, not mcp-stdio/binary:*."""
+def test_npx_dot_cmd_extension_stripped():
+    """`npx.cmd` (an extension we still strip via Path.stem) classifies as npx."""
     servers = {"x": {"command": "npx.cmd", "args": ["@scope/server@1.2.3"]}}
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
@@ -209,35 +209,9 @@ def test_uv_absolute_path_tool_run_dispatches_as_uvx():
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
 
 
-def test_windows_path_command_classified_as_npx():
-    """C:\\...\\npx.cmd must classify as npx even when running on POSIX."""
-    servers = {
-        "x": {
-            "command": "C:\\Program Files\\nodejs\\npx.cmd",
-            "args": ["@scope/server@1.2.3"],
-        }
-    }
-    refs = parse_mcp_servers(servers, source_manifest="fake.json")
-    assert len(refs) == 1
-    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
-
-
-def test_uppercase_windows_command_classified_case_insensitively():
-    """Windows command resolution is case-insensitive; NPX.CMD should match."""
-    servers = {
-        "x": {
-            "command": "C:\\Program Files\\nodejs\\NPX.CMD",
-            "args": ["@scope/server@1.2.3"],
-        }
-    }
-    refs = parse_mcp_servers(servers, source_manifest="fake.json")
-    assert len(refs) == 1
-    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
-
-
 def test_posix_uppercase_command_stays_case_sensitive():
-    """POSIX is case-sensitive; /opt/NPX is a different binary and must not
-    classify as the launcher."""
+    """POSIX is case-sensitive; /opt/NPX is a different binary, not the
+    launcher. (Windows handling deferred to V1.)"""
     servers = {
         "x": {"command": "/opt/NPX", "args": ["@scope/server@1.2.3"]},
     }
@@ -245,24 +219,3 @@ def test_posix_uppercase_command_stays_case_sensitive():
     assert len(refs) == 1
     assert refs[0].purl is None
     assert refs[0].component_identity == "mcp-stdio/binary:/opt/NPX"
-
-
-def test_bare_uppercase_launcher_classified_case_insensitively():
-    """Bare `NPX`/`UVX` (Windows PATHEXT resolution) should match launchers."""
-    servers = {
-        "x": {"command": "NPX", "args": ["@scope/server@1.2.3"]},
-        "y": {"command": "UVX", "args": ["weather-mcp==0.5.0"]},
-    }
-    refs = parse_mcp_servers(servers, source_manifest="fake.json")
-    purls = {r.purl for r in refs}
-    assert "pkg:npm/%40scope/server@1.2.3" in purls
-    assert "pkg:pypi/weather-mcp@0.5.0" in purls
-
-
-def test_bare_uppercase_unknown_command_stays_case_sensitive():
-    """A bare uppercase token that isn't a known launcher must not be
-    silently lowercased; it could be a custom binary."""
-    servers = {"x": {"command": "CUSTOM", "args": []}}
-    refs = parse_mcp_servers(servers, source_manifest="fake.json")
-    assert len(refs) == 1
-    assert refs[0].component_identity == "mcp-stdio/binary:CUSTOM"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import urllib.request
 from pathlib import Path
 
 import click
@@ -50,15 +51,10 @@ def osv_to_asve_skeleton(osv: dict, asve_id: str) -> dict:
 
 
 def fetch_osv(osv_id: str) -> dict:
-    """Fetch a single OSV record.
-
-    Lazy-imports requests so the dep is only required for --fetch use.
-    """
-    import requests  # type: ignore
-
-    response = requests.get(f"https://api.osv.dev/v1/vulns/{osv_id}", timeout=15)
-    response.raise_for_status()
-    return response.json()
+    """Fetch a single OSV record from osv.dev."""
+    url = f"https://api.osv.dev/v1/vulns/{osv_id}"
+    with urllib.request.urlopen(url, timeout=15) as response:  # noqa: S310 - fixed scheme
+        return json.loads(response.read())
 
 
 @click.command()

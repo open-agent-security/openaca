@@ -1,10 +1,12 @@
+import io
 import json
+from unittest.mock import patch
 
 import pytest
 import yaml
 from click.testing import CliRunner
 
-from tools.import_from_osv import main, osv_to_asve_skeleton
+from tools.import_from_osv import fetch_osv, main, osv_to_asve_skeleton
 
 
 @pytest.fixture
@@ -43,3 +45,10 @@ def test_cli_writes_yaml(tmp_path, fixtures_dir):
     assert result.exit_code == 0, result.output
     advisory = yaml.safe_load(dst.read_text())
     assert advisory["id"] == "ASVE-2026-0001"
+
+
+def test_fetch_osv_uses_stdlib(osv_record):
+    payload = io.BytesIO(json.dumps(osv_record).encode())
+    with patch("tools.import_from_osv.urllib.request.urlopen", return_value=payload):
+        result = fetch_osv("GHSA-3q26-f695-pp76")
+    assert result["id"] == osv_record["id"]

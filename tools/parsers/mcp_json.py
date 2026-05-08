@@ -150,6 +150,11 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
 # value. Used by `_command_dispatch` to walk past option/value pairs and
 # locate the actual subcommand. Inline `--flag=value` doesn't appear here
 # (the value is embedded in the same token).
+#
+# This list is best-effort against the uv CLI as of mid-2026. Missing
+# entries cause `uv <unknown-flag> <value> tool run X` to fall to binary
+# fallback instead of dispatching as uvx — false negative, not false
+# positive, so safe to ship and extend incrementally as new flags land.
 _UV_VALUE_FLAGS = frozenset(
     {
         "--directory",
@@ -165,6 +170,8 @@ _UV_VALUE_FLAGS = frozenset(
         "--extra-index-url",
         "--find-links",
         "--keyring-provider",
+        "--allow-insecure-host",
+        "--trusted-host",
     }
 )
 

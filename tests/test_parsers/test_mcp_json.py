@@ -284,3 +284,22 @@ def test_uv_inline_value_flag_before_tool_run_dispatches_as_uvx():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+def test_uv_allow_insecure_host_before_tool_run_dispatches_as_uvx():
+    """`uv --allow-insecure-host <HOST> tool run X` — value-taking flag."""
+    servers = {
+        "y": {
+            "command": "uv",
+            "args": [
+                "--allow-insecure-host",
+                "internal.example",
+                "tool",
+                "run",
+                "weather-mcp==0.5.0",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"

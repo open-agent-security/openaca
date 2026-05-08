@@ -219,3 +219,31 @@ def test_posix_uppercase_command_stays_case_sensitive():
     assert len(refs) == 1
     assert refs[0].purl is None
     assert refs[0].component_identity == "mcp-stdio/binary:/opt/NPX"
+
+
+def test_npx_call_flag_is_not_treated_as_package():
+    """`npx -c "echo hi"` runs a shell snippet; the snippet must not be
+    misclassified as a package name."""
+    servers = {"x": {"command": "npx", "args": ["-c", "echo hello world"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs == []
+
+
+def test_npx_long_call_flag_is_not_treated_as_package():
+    servers = {"x": {"command": "npx", "args": ["--call", "echo hello"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs == []
+
+
+def test_uv_global_flag_before_tool_run_dispatches_as_uvx():
+    """Global uv options (--offline, --directory, etc.) before `tool run`
+    should not block the dispatch."""
+    servers = {
+        "y": {
+            "command": "uv",
+            "args": ["--offline", "tool", "run", "weather-mcp==0.5.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"

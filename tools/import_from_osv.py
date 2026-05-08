@@ -75,6 +75,8 @@ def main(osv_id: str | None, osv_file: Path | None, asve_id: str, out: Path) -> 
     """Generate an ASVE advisory skeleton from an OSV record."""
     if not osv_id and not osv_file:
         raise click.UsageError("specify --osv-id or --osv-file")
+    if osv_id and osv_file:
+        raise click.UsageError("--osv-id and --osv-file are mutually exclusive")
     if osv_file:
         osv = json.loads(osv_file.read_text())
     else:

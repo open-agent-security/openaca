@@ -47,6 +47,18 @@ def test_cli_writes_yaml(tmp_path, fixtures_dir):
     assert advisory["id"] == "ASVE-2026-0001"
 
 
+def test_cli_rejects_both_source_flags(tmp_path, fixtures_dir):
+    src = fixtures_dir / "osv" / "ghsa-3q26-f695-pp76.json"
+    dst = tmp_path / "out.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["--osv-id", "GHSA-3q26-f695-pp76", "--osv-file", str(src), "--asve-id", "ASVE-2026-0001", "--out", str(dst)],
+    )
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
 def test_fetch_osv_uses_stdlib(osv_record):
     payload = io.BytesIO(json.dumps(osv_record).encode())
     with patch("tools.import_from_osv.urllib.request.urlopen", return_value=payload):

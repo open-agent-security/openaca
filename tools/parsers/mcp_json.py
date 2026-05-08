@@ -62,6 +62,19 @@ def _extract_flag_value(
     return None
 
 
+_FLAGS_WITH_VALUE = (
+    "--package",
+    "-p",
+    "--from",
+    "--with",
+    "--python",
+    # npx -c/--call takes a shell snippet; it's not a package spec and
+    # the value must be excluded from positional analysis.
+    "--call",
+    "-c",
+)
+
+
 def _positional_args(args: list[str]) -> list[str]:
     """Return positional args, treating `--` as option terminator."""
     out: list[str] = []
@@ -80,7 +93,7 @@ def _positional_args(args: list[str]) -> list[str]:
         if a.startswith("-"):
             # Flags consuming a separate value (handled in _extract_flag_value)
             # would otherwise leave that value here as a "positional" — skip it.
-            if a in ("--package", "-p", "--from", "--with", "--python"):
+            if a in _FLAGS_WITH_VALUE:
                 skip_next = True
             continue
         out.append(a)
@@ -136,18 +149,17 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
 def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
     """Normalize `uv tool run <pkg>` into the equivalent `uvx <pkg>` form.
 
-    Match against the classified stem so `/usr/bin/uv` and `uv.exe` dispatch
-    the same as bare `uv`. Returns (effective_command, effective_args).
+    Scans for an adjacent `tool run` pair anywhere in args, so global uv
+    flags like `--offline` before the subcommand (e.g.,
+    `uv --offline tool run weather-mcp==0.5.0`) still dispatch correctly.
+    Returns (effective_command, effective_args).
     """
-    if (
-        command
-        and _classify_command(command) == "uv"
-        and len(args) >= 2
-        and args[0] == "tool"
-        and args[1] == "run"
-    ):
-        return "uvx", args[2:]
-    return command or "", args
+    if not command or _classify_command(command) != "uv":
+        return command or "", args
+    for i in range(len(args) - 1):
+        if args[i] == "tool" and args[i + 1] == "run":
+            return "uvx", args[i + 2 :]
+    return command, args
 
 
 def _classify_command(command: str) -> str:

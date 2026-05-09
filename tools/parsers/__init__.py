@@ -14,6 +14,10 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
     ("mcp.json", mcp_json.parse),
     (".mcp.json", mcp_json.parse),
+    # Claude Desktop user-config: same JSON shape as `mcp.json`
+    # (`mcpServers` map of stdio launches), different filename. Reuse
+    # the same parser; the filename pattern is the only addition.
+    ("claude_desktop_config.json", mcp_json.parse),
     (".claude-plugin/plugin.json", claude_plugin.parse),
     (".claude/settings.json", claude_settings.parse),
 ]

@@ -11,7 +11,7 @@ unless noted.
 | 003 | [Manifest parsers](003-manifest-parsers.md) | ✅ Done | 001 (project setup) |
 | 004 | [Static export pipeline](004-static-export.md) | ✅ Done | 001, 002 |
 | 005 | [Reference GitHub Action](005-reference-action.md) | ✅ Done | 003, 004 |
-| 006 | [Disclosure policy doc](006-disclosure-policy.md) | 🟡 Active | — |
+| 006 | [Disclosure policy doc](006-disclosure-policy.md) | ✅ Done | — |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

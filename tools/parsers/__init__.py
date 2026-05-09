@@ -6,12 +6,19 @@ from pathlib import Path
 from typing import Callable
 
 from tools.component_ref import ComponentRef
-from tools.parsers import claude_plugin, claude_settings, mcp_json, package_json
+from tools.parsers import (
+    claude_plugin,
+    claude_settings,
+    mcp_json,
+    package_json,
+    pyproject_toml,
+)
 
 ParserFn = Callable[[Path], list[ComponentRef]]
 
 REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
+    ("pyproject.toml", pyproject_toml.parse),
     ("mcp.json", mcp_json.parse),
     (".mcp.json", mcp_json.parse),
     # Claude Desktop user-config: same JSON shape as `mcp.json`

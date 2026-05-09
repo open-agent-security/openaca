@@ -19,6 +19,7 @@ consumer can resolve.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Iterable
@@ -26,6 +27,11 @@ from typing import Iterable
 from packaging.requirements import InvalidRequirement, Requirement
 
 from tools.component_ref import ComponentRef
+
+
+def _canonical_name(name: str) -> str:
+    """PEP 503 canonical form: lowercase, collapse [-_.] runs to a single hyphen."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _pinned_version(req: Requirement) -> str | None:
@@ -55,7 +61,7 @@ def _emit_specs(specs: Iterable[object], source_manifest: str, locator: str) -> 
         refs.append(
             ComponentRef(
                 ecosystem="PyPI",
-                name=req.name,
+                name=_canonical_name(req.name),
                 version=_pinned_version(req),
                 source_manifest=source_manifest,
                 source_locator=locator,

@@ -115,6 +115,25 @@ def test_url_based_deps_are_skipped(tmp_path):
     assert "local-dep" not in names
 
 
+def test_canonical_name_normalization(tmp_path):
+    """PyPI names are case/separator-insensitive; we must emit PEP 503 canonical form.
+
+    `AWS_MCP_Server` and `AWS-MCP-SERVER` both canonicalize to `aws-mcp-server`,
+    which is the form advisories store — exact string equality in the matcher
+    requires this to avoid false negatives.
+    """
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text(
+        '[project]\nname = "x"\nversion = "0"\n'
+        'dependencies = ["AWS_MCP_Server==0.3.0", "AWS-MCP-SERVER>=1.0"]\n'
+    )
+    refs = parse(cfg)
+    names = [r.name for r in refs]
+    assert names == ["aws-mcp-server", "aws-mcp-server"]
+    assert refs[0].version == "0.3.0"
+    assert refs[1].version is None
+
+
 def test_empty_file_is_safe(tmp_path):
     cfg = tmp_path / "pyproject.toml"
     cfg.write_text("")

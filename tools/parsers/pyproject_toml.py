@@ -29,9 +29,12 @@ from tools.component_ref import ComponentRef
 
 
 def _pinned_version(req: Requirement) -> str | None:
-    """Return the pinned version if the spec is a single `==` clause, else None."""
+    """Return the pinned version if the spec is a single exact `==` clause, else None.
+
+    `==1.*` is a PEP 440 prefix match (range), not a pin — excluded here.
+    """
     specs = list(req.specifier)
-    if len(specs) == 1 and specs[0].operator == "==":
+    if len(specs) == 1 and specs[0].operator == "==" and not specs[0].version.endswith(".*"):
         return specs[0].version
     return None
 

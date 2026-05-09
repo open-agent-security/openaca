@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 from click.testing import CliRunner
 from jsonschema import Draft202012Validator
+from packaging.version import Version
 
 from tools import lint
 from tools.export import build
@@ -146,7 +147,7 @@ def test_parser_detection_intersects_corpus_advisory():
     )
     pinned = matching[0].version
     assert pinned, "parser must emit a pinned version"
-    assert pinned < fixed, (
+    assert Version(pinned) < Version(fixed), (
         f"manifest pins {pinned} but advisory says fixed in {fixed} — "
         "fixture drift means this test no longer demonstrates detection"
     )

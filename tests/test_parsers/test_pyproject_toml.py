@@ -98,6 +98,23 @@ def test_non_string_dep_entries_are_skipped(tmp_path):
     assert "valid" in names
 
 
+def test_url_based_deps_are_skipped(tmp_path):
+    """VCS and file URL requirements are not PyPI packages — must not emit a purl."""
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text(
+        '[project]\nname = "x"\nversion = "0"\ndependencies = [\n'
+        '    "good==1.0",\n'
+        '    "vcs-dep @ git+https://github.com/example/vcs-dep.git",\n'
+        '    "local-dep @ file:///path/to/local-dep",\n'
+        "]\n"
+    )
+    refs = parse(cfg)
+    names = {r.name for r in refs}
+    assert "good" in names
+    assert "vcs-dep" not in names
+    assert "local-dep" not in names
+
+
 def test_empty_file_is_safe(tmp_path):
     cfg = tmp_path / "pyproject.toml"
     cfg.write_text("")

@@ -48,6 +48,10 @@ def _emit_specs(specs: Iterable[object], source_manifest: str, locator: str) -> 
             req = Requirement(spec)
         except InvalidRequirement:
             continue
+        if req.url:
+            # Direct URL/VCS/local references (PEP 440 URL reqs) are not
+            # PyPI packages — skip to avoid false-positive purl matches.
+            continue
         refs.append(
             ComponentRef(
                 ecosystem="PyPI",

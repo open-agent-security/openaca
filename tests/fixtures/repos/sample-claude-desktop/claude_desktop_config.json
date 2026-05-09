@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "npx",
+      "args": ["@cyanheads/git-mcp-server@1.1.0"]
+    },
+    "weather": {
+      "command": "uvx",
+      "args": ["weather-mcp==0.5.0"]
+    }
+  }
+}

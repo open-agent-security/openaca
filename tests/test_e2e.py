@@ -209,3 +209,38 @@ def test_asve_scan_cli_finds_real_advisory():
         assert "error" in levels  # high-confidence pinned-version finding
     finally:
         sarif_path.unlink(missing_ok=True)
+
+
+def test_pyproject_toml_detection_against_real_corpus(tmp_path):
+    """Python-side cross-layer wiring: a pyproject.toml that pins a known-
+    vulnerable PyPI package surfaces an ASVE-2026-0004 (aws-mcp-server)
+    finding through asve-scan. Exercises the pyproject parser, the
+    matcher, and SARIF emission together."""
+    import json
+
+    from tools.scan import main as scan_main
+
+    target = tmp_path / "pyproj"
+    target.mkdir()
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0"\ndependencies = ["aws-mcp-server==0.3.0"]\n',
+        encoding="utf-8",
+    )
+    sarif_path = tmp_path / "out.sarif"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "--target",
+            str(target),
+            "--advisories",
+            str(ADVISORIES_DIR),
+            "--sarif",
+            str(sarif_path),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
+    assert "ASVE-2026-0004" in rule_ids

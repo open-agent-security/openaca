@@ -34,15 +34,31 @@ def load_corpus(advisories_root: Path) -> list[dict]:
     return [yaml.safe_load(p.read_text()) for p in sorted(advisories_root.rglob("*.yaml"))]
 
 
+def _esc_param(value: str) -> str:
+    """Percent-encode a workflow command parameter value per GitHub docs."""
+    return (
+        value.replace("%", "%25")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+        .replace(":", "%3A")
+        .replace(",", "%2C")
+    )
+
+
+def _esc_data(value: str) -> str:
+    """Percent-encode a workflow command data (message) value per GitHub docs."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 def emit_github_annotations(findings: list[Finding]) -> None:
     """Emit GitHub workflow annotations for each finding, one per line on stdout."""
     level_for = {"high": "error", "low": "warning", "unknown": "warning"}
     for f in findings:
         kind = level_for.get(f.confidence, "warning")
-        click.echo(
-            f"::{kind} file={f.component.source_manifest},title={f.advisory_id}::"
-            f"{f.reason or f.advisory_id}"
-        )
+        file_param = _esc_param(str(f.component.source_manifest))
+        title_param = _esc_param(f.advisory_id)
+        message = _esc_data(f.reason or f.advisory_id)
+        click.echo(f"::{kind} file={file_param},title={title_param}::{message}")
 
 
 @click.command()

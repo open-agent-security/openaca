@@ -3,7 +3,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from tools.scan import main
+from tools.scan import _esc_data, _esc_param, main
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -109,3 +109,22 @@ def test_scan_fail_on_none_always_exits_zero(tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
+
+
+def test_esc_param_encodes_workflow_metacharacters():
+    """Commas, colons, percent, and newlines in parameter values must be encoded
+    so the GitHub workflow command parser doesn't misread key=value pairs."""
+    assert _esc_param("path/to,file") == "path/to%2Cfile"
+    assert _esc_param("path:to") == "path%3Ato"
+    assert _esc_param("100%") == "100%25"
+    assert _esc_param("line\r\nbreak") == "line%0D%0Abreak"
+    assert _esc_param("normal/path/file.json") == "normal/path/file.json"
+
+
+def test_esc_data_encodes_message_metacharacters():
+    """Percent, CR, and LF in annotation messages must be encoded; colons/commas
+    are safe in the data portion and must pass through unchanged."""
+    assert _esc_data("100%") == "100%25"
+    assert _esc_data("line\r\nbreak") == "line%0D%0Abreak"
+    assert _esc_data("colon:comma,safe") == "colon:comma,safe"
+    assert _esc_data("plain message") == "plain message"

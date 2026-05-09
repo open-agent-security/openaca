@@ -1,0 +1,49 @@
+name: Self-scan
+
+# Dogfood the Action: scan this repo's own manifests on every PR and on
+# pushes to main. Doubles as a CI smoke-test for action.yml.
+#
+# `fail-on: none` because the database repo's manifests would naturally
+# reference advisory-targeted packages (e.g., test fixtures pin
+# @cyanheads/git-mcp-server@1.1.0 specifically to demonstrate detection
+# in test_e2e.py / test_scan.py). Findings here are self-references, not
+# vulnerabilities — we surface them in the security tab without blocking.
+#
+# Workflow-injection safety: this file does not consume any user-
+# /PR-controlled input. github.workspace and github.ref are runner-set
+# fixed values, not attacker-influenced. The Action it invokes (action.yml)
+# uses env:-based input handling for the values that ARE user-controllable
+# (target/advisories/sarif/fail-on).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: self-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  asve-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ASVE scan against this repo
+        uses: ./
+        with:
+          target: ${{ github.workspace }}
+          advisories: ${{ github.workspace }}/advisories
+          sarif: ${{ github.workspace }}/asve-results.sarif
+          fail-on: none
+
+      - name: Upload SARIF to code-scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: ${{ github.workspace }}/asve-results.sarif

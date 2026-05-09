@@ -1,0 +1,72 @@
+name: ASVE Scan
+description: Scan agent-installation manifests for ASVE advisories.
+author: open-agent-security
+branding:
+  icon: shield
+  color: gray-dark
+
+# V0 invocation surface. Future versions may add: --format json (besides
+# SARIF), explicit allow-list / suppress-list inputs, action-side caching
+# of the static export. Out of scope for V0 per docs/plans/005-reference-action.md.
+
+inputs:
+  target:
+    description: Path to scan (defaults to the consumer's GITHUB_WORKSPACE).
+    required: false
+    default: ${{ github.workspace }}
+  advisories:
+    description: |
+      Path to the advisories directory. Defaults to the action's bundled copy
+      (the same advisories that ship under `advisories/` in this repo at the
+      tagged ref). Set to a vendored mirror for air-gapped operation.
+    required: false
+    default: ${{ github.action_path }}/advisories
+  sarif:
+    description: SARIF output path (relative to the consumer's workspace).
+    required: false
+    default: asve-results.sarif
+  fail-on:
+    description: Severity threshold for non-zero exit (high | any | none).
+    required: false
+    default: any
+
+outputs:
+  sarif-path:
+    description: Path to the generated SARIF file.
+    value: ${{ steps.scan.outputs.sarif-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        python-version: "3.11"
+
+    - name: Sync action deps
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: uv sync --frozen
+
+    - id: scan
+      name: Run asve-scan
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      # Workflow-injection safety: read user-controllable inputs via env:
+      # and reference them as quoted shell vars. Direct ${{ }} interpolation
+      # in run: lets a malicious manifest filename / sarif path execute
+      # arbitrary shell. The runner sets these env vars before the script
+      # runs, so the values land via process env, not via shell substitution.
+      env:
+        TARGET: ${{ inputs.target }}
+        ADVISORIES: ${{ inputs.advisories }}
+        SARIF: ${{ inputs.sarif }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        uv run asve-scan \
+          --target "$TARGET" \
+          --advisories "$ADVISORIES" \
+          --sarif "$SARIF" \
+          --fail-on "$FAIL_ON"
+        echo "sarif-path=$SARIF" >> "$GITHUB_OUTPUT"

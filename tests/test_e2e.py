@@ -170,3 +170,41 @@ def test_asve_export_cli_against_real_corpus(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "dist" / "index.html").is_file()
+
+
+def test_asve_scan_cli_finds_real_advisory():
+    """Plan 005 cross-layer wiring: parse_repo → matcher → SARIF, end-to-end.
+
+    Invokes the registered `asve-scan` console script (the same path the
+    Action's composite step runs) against the exposed-mcp fixture using the
+    real `advisories/` corpus, and verifies it surfaces ASVE-2026-0001 with
+    a high-confidence finding. This is the V0 product promise across every
+    layer behind one CLI surface.
+    """
+    import json
+
+    from tools.scan import main as scan_main
+
+    runner = CliRunner()
+    sarif_path = Path(REPO_ROOT) / ".pytest-asve-scan.sarif"
+    try:
+        result = runner.invoke(
+            scan_main,
+            [
+                "--target",
+                str(REPO_ROOT / "tests" / "fixtures" / "repos" / "exposed-mcp"),
+                "--advisories",
+                str(ADVISORIES_DIR),
+                "--sarif",
+                str(sarif_path),
+            ],
+        )
+        # exit 1 because a finding crossed the default --fail-on=any threshold
+        assert result.exit_code == 1, result.output
+        sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+        rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
+        assert "ASVE-2026-0001" in rule_ids
+        levels = [r["level"] for r in sarif["runs"][0]["results"]]
+        assert "error" in levels  # high-confidence pinned-version finding
+    finally:
+        sarif_path.unlink(missing_ok=True)

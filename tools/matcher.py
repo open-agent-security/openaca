@@ -60,11 +60,11 @@ def _parse_version(value: Optional[str]) -> Optional[Version]:
 def _in_range(version: Version, events: list[dict]) -> bool:
     """Return True if version falls in any vulnerable window encoded in events.
 
-    OSV events alternate introduced/fixed/last_affected within a single range
-    object. A trailing introduced with no closing event means the range is
+    OSV events alternate introduced/fixed/last_affected/limit within a single
+    range object. A trailing introduced with no closing event means the range is
     open-ended (still unpatched). `last_affected` is an inclusive upper bound
-    (version <= last_affected is vulnerable); `fixed` is exclusive (version <
-    fixed is vulnerable).
+    (version <= last_affected is vulnerable); `fixed` and `limit` are exclusive
+    (version < fixed/limit is vulnerable).
     """
     intro: Optional[str] = None
     for ev in events:
@@ -77,6 +77,13 @@ def _in_range(version: Version, events: list[dict]) -> bool:
                 if version >= intro_v and version < fixed_v:
                     return True
             intro = None
+        elif "limit" in ev and intro is not None:
+            intro_v = Version("0") if intro == "0" else _parse_version(intro)
+            limit_v = _parse_version(ev["limit"])
+            if intro_v is not None and limit_v is not None:
+                if version >= intro_v and version < limit_v:
+                    return True
+            intro = None
         elif "last_affected" in ev and intro is not None:
             intro_v = Version("0") if intro == "0" else _parse_version(intro)
             last_v = _parse_version(ev["last_affected"])
@@ -84,7 +91,7 @@ def _in_range(version: Version, events: list[dict]) -> bool:
                 if version >= intro_v and version <= last_v:
                     return True
             intro = None
-    # Open-ended range: introduced with no following fixed or last_affected → still unpatched
+    # Open-ended: introduced with no fixed/limit/last_affected → still unpatched
     if intro is not None:
         intro_v = Version("0") if intro == "0" else _parse_version(intro)
         if intro_v is not None and version >= intro_v:

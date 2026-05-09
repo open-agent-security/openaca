@@ -80,9 +80,16 @@ jobs:
       REVIEW_ID: ${{ github.event.review.id }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      # Cap the auto-address loop at 3 claude runs per PR. If claude has
-      # already run 3+ times and Codex is still finding issues, the loop
+      # Cap the auto-address loop at 7 claude runs per PR. If claude has
+      # already run 7+ times and Codex is still finding issues, the loop
       # isn't converging — force human attention rather than burn cycles.
+      #
+      # Cap was 3 originally; bumped to 7 because legitimate Codex
+      # reviews on substantive PRs routinely surface 5-6 rounds of real
+      # findings (defensive type guards across sibling parsers, CLI-flag
+      # table extensions one per round, OSV event-window edge cases).
+      # 3 was capping real review work, not just runaway loops; 7 keeps
+      # the safety net while accommodating multi-round legitimate review.
       #
       # Count claude-code-action runs by counting top-level PR comments
       # authored by the bot (the action posts ONE in-progress comment
@@ -97,9 +104,9 @@ jobs:
       # suffix. The `[bot]` suffix only appears in REST surfaces (e.g.
       # `github.event.comment.user.login` at bounce-2 below). Same bot,
       # two string representations depending on which API you read.
-      - name: Cap auto-address iterations (max 3)
+      - name: Cap auto-address iterations (max 7)
         run: |
-          MAX=3
+          MAX=7
           CLAUDE_RUNS=$(gh pr view "$PR_NUM" -R "$REPO" --json comments \
             --jq '[.comments[] | select(.author.login == "claude")] | length')
           if [ "$CLAUDE_RUNS" -ge "$MAX" ]; then

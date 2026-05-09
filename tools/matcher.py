@@ -70,8 +70,9 @@ def _in_range(version: Version, events: list[dict]) -> bool:
         elif "fixed" in ev and intro is not None:
             intro_v = Version("0") if intro == "0" else _parse_version(intro)
             fixed_v = _parse_version(ev["fixed"])
-            if intro_v is not None and fixed_v is not None and version >= intro_v and version < fixed_v:
-                return True
+            if intro_v is not None and fixed_v is not None:
+                if version >= intro_v and version < fixed_v:
+                    return True
             intro = None
     # Open-ended range: introduced with no following fixed → still unpatched
     if intro is not None:

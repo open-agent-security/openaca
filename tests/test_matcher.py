@@ -157,6 +157,82 @@ def test_binary_component_identity_does_not_match():
     assert match(refs=[ref], advisories=advisories) == []
 
 
+def test_in_range_multiple_event_windows():
+    """A single OSV range can encode disjoint vulnerable intervals via alternating
+    introduced/fixed events. Versions in each window must be detected; versions
+    between windows must not be."""
+    advisory = {
+        "id": "ASVE-2026-TEST",
+        "type": "vulnerability",
+        "summary": "test",
+        "modified": "2026-05-06T00:00:00Z",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "multi-window-pkg"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [
+                            {"introduced": "1.0.0"},
+                            {"fixed": "1.2.0"},
+                            {"introduced": "2.0.0"},
+                            {"fixed": "2.1.0"},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    def ref(v: str) -> ComponentRef:
+        return ComponentRef(
+            ecosystem="npm",
+            name="multi-window-pkg",
+            version=v,
+            source_manifest="package.json",
+            source_locator="dependencies",
+        )
+
+    assert len(match([ref("1.1.0")], [advisory])) == 1  # in first window
+    assert len(match([ref("2.0.5")], [advisory])) == 1  # in second window
+    assert len(match([ref("1.5.0")], [advisory])) == 0  # between windows
+
+
+def test_in_range_open_ended_no_fixed():
+    """An advisory with no fixed event is still-unpatched — all versions at or
+    after introduced are vulnerable."""
+    advisory = {
+        "id": "ASVE-2026-TEST",
+        "type": "vulnerability",
+        "summary": "test",
+        "modified": "2026-05-06T00:00:00Z",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "unpatched-pkg"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [{"introduced": "1.0.0"}],
+                    }
+                ],
+            }
+        ],
+    }
+
+    def ref(v: str) -> ComponentRef:
+        return ComponentRef(
+            ecosystem="npm",
+            name="unpatched-pkg",
+            version=v,
+            source_manifest="package.json",
+            source_locator="dependencies",
+        )
+
+    assert len(match([ref("1.0.0")], [advisory])) == 1  # at introduced boundary
+    assert len(match([ref("9.9.9")], [advisory])) == 1  # well above introduced
+    assert len(match([ref("0.9.9")], [advisory])) == 0  # before introduced
+
+
 def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     """An advisory may list multiple ranges per affected entry (e.g.,
     discrete events). Same component+advisory pair should produce one

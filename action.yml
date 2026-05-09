@@ -64,9 +64,15 @@ runs:
         SARIF: ${{ inputs.sarif }}
         FAIL_ON: ${{ inputs.fail-on }}
       run: |
+        # Resolve relative SARIF path against caller workspace so the file lands
+        # where upload-sarif and the caller expect it, not inside the action checkout.
+        SARIF_ABS="$SARIF"
+        if [[ "$SARIF_ABS" != /* ]]; then
+          SARIF_ABS="$GITHUB_WORKSPACE/$SARIF_ABS"
+        fi
         uv run asve-scan \
           --target "$TARGET" \
           --advisories "$ADVISORIES" \
-          --sarif "$SARIF" \
+          --sarif "$SARIF_ABS" \
           --fail-on "$FAIL_ON"
-        echo "sarif-path=$SARIF" >> "$GITHUB_OUTPUT"
+        echo "sarif-path=$SARIF_ABS" >> "$GITHUB_OUTPUT"

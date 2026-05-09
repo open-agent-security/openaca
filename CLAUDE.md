@@ -274,33 +274,6 @@ Skip TDD discipline for: throwaway scripts, exploratory spikes,
 obvious one-line fixes, infrastructure config (Dockerfiles, CI YAML,
 shell scripts where tests cost more than the change is worth).
 
-## End-to-end tests live in `tests/test_e2e.py`
-
-Unit tests live next to the code under test. **Cross-layer tests
-that exercise multiple modules together against the real corpus
-(`advisories/` + `schema/` + the parser/exporter modules) belong in
-`tests/test_e2e.py`.**
-
-Why a single growing file: cross-layer tests are about the *product
-promise* (does ASVE actually detect a vulnerable agent component?),
-not about any one module. A single file makes the suite trivial to
-read, hard to lose, and naturally evolves as plans land.
-
-When a plan adds a feature that crosses module boundaries, ask:
-*what's the one-screen test that demonstrates this layer wiring up
-correctly with what's already there?* Add it to `test_e2e.py`. Examples:
-
-- Plan 005 (reference action) → action-invocation test: invoke the
-  Action's CLI surface against a fixture repo, verify it finds the
-  same advisory match the parser-only test 110 finds.
-- Plan 006 (disclosure policy) → doc-only, no addition.
-- A future "advisory diff" feature → diff-output test exercising
-  the linter + the diff renderer + the corpus together.
-
-Don't move existing unit tests here. Don't put e2e tests in module
-test files. The boundary is: *does this test fail if any one of
-several modules regresses?*
-
 ## Risky / hard-to-reverse actions
 
 Carefully consider reversibility and blast radius. Local + reversible

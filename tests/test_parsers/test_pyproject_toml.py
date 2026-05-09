@@ -66,6 +66,17 @@ def test_invalid_pep508_specs_are_skipped():
     assert "@cyanheads/git-mcp-server" not in names
 
 
+def test_wildcard_pin_emits_no_version(tmp_path):
+    """`foo==1.*` is a PEP 440 prefix match, not an exact pin — version must be unset."""
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text('[project]\nname = "x"\nversion = "0"\ndependencies = ["foo==1.*"]\n')
+    refs = parse(cfg)
+    assert len(refs) == 1
+    assert refs[0].name == "foo"
+    assert refs[0].version is None
+    assert refs[0].purl == "pkg:pypi/foo"
+
+
 def test_missing_project_table_returns_empty(tmp_path):
     cfg = tmp_path / "pyproject.toml"
     cfg.write_text('[build-system]\nrequires = ["hatchling"]\n')

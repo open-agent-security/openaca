@@ -57,24 +57,28 @@ def _parse_version(value: Optional[str]) -> Optional[Version]:
         return None
 
 
-def _intro_fixed(events: list[dict]) -> tuple[Optional[str], Optional[str]]:
-    introduced: Optional[str] = None
-    fixed: Optional[str] = None
+def _in_range(version: Version, events: list[dict]) -> bool:
+    """Return True if version falls in any vulnerable window encoded in events.
+
+    OSV events alternate introduced/fixed within a single range object.
+    A trailing introduced with no fixed means the range is open-ended.
+    """
+    intro: Optional[str] = None
     for ev in events:
         if "introduced" in ev:
-            introduced = ev["introduced"]
-        elif "fixed" in ev:
-            fixed = ev["fixed"]
-    return introduced, fixed
-
-
-def _in_range(version: Version, events: list[dict]) -> bool:
-    introduced, fixed = _intro_fixed(events)
-    intro_v = Version("0") if introduced in (None, "0") else _parse_version(introduced)
-    fixed_v = _parse_version(fixed)
-    if intro_v is None or fixed_v is None:
-        return False
-    return version >= intro_v and version < fixed_v
+            intro = ev["introduced"]
+        elif "fixed" in ev and intro is not None:
+            intro_v = Version("0") if intro == "0" else _parse_version(intro)
+            fixed_v = _parse_version(ev["fixed"])
+            if intro_v is not None and fixed_v is not None and version >= intro_v and version < fixed_v:
+                return True
+            intro = None
+    # Open-ended range: introduced with no following fixed → still unpatched
+    if intro is not None:
+        intro_v = Version("0") if intro == "0" else _parse_version(intro)
+        if intro_v is not None and version >= intro_v:
+            return True
+    return False
 
 
 def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:

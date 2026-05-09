@@ -7,7 +7,15 @@ name: Self-scan
 # reference advisory-targeted packages (e.g., test fixtures pin
 # @cyanheads/git-mcp-server@1.1.0 specifically to demonstrate detection
 # in test_e2e.py / test_scan.py). Findings here are self-references, not
-# vulnerabilities — we surface them in the security tab without blocking.
+# vulnerabilities — we surface them as a downloadable artifact without
+# blocking the build.
+#
+# Why artifact-upload instead of code-scanning SARIF upload: GitHub
+# code-scanning SARIF ingestion requires GitHub Advanced Security on
+# private repos. ASVE is private until V0 launch. When the repo goes
+# public (or GHAS is enabled), swap the `actions/upload-artifact` step
+# below for `github/codeql-action/upload-sarif@v3` and add
+# `security-events: write` to permissions.
 #
 # Workflow-injection safety: this file does not consume any user-
 # /PR-controlled input. github.workspace and github.ref are runner-set
@@ -22,7 +30,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: self-scan-${{ github.ref }}
@@ -42,8 +49,11 @@ jobs:
           sarif: ${{ github.workspace }}/asve-results.sarif
           fail-on: none
 
-      - name: Upload SARIF to code-scanning
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF as workflow artifact
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          sarif_file: ${{ github.workspace }}/asve-results.sarif
+          name: asve-self-scan-sarif
+          path: ${{ github.workspace }}/asve-results.sarif
+          retention-days: 7
+          if-no-files-found: warn

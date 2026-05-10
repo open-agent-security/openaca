@@ -125,6 +125,42 @@ def test_install_multi_entry_no_scope_match_falls_back_with_warning(tmp_path):
     assert any("foo@bar" in w and "no scope match" in w for w in warnings)
 
 
+def test_install_repo_mode_excludes_local_scope_for_entry_selection(tmp_path):
+    """In repo mode, local scope must be ignored when selecting an install entry.
+
+    If a plugin is enabled in both local and project scopes, and installed_plugins
+    has entries for both scopes, repo mode must pick the project-scope entry — not
+    the local-scope entry (which has higher precedence in SCOPE_PRECEDENCE but is
+    machine-local and not CI-relevant).
+    """
+    project_root = tmp_path / "project"
+    claude_dir = project_root / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (claude_dir / "settings.local.json").write_text(
+        json.dumps({"enabledPlugins": {"foo@bar": True}})
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "foo@bar": [
+                        {"scope": "project", "version": "1.0", "installPath": "/x"},
+                        {"scope": "local", "version": "2.0", "installPath": "/y"},
+                    ]
+                },
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path, project_root=project_root, mode="repo")
+    assert len(refs) == 1
+    assert refs[0].version == "1.0"  # project-scope entry; local must not win
+    assert warnings == []
+
+
 def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     """Defensive: a plugin key without `@marketplace` shouldn't crash."""
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"orphan-plugin": True}}))

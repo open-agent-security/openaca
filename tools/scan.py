@@ -4,7 +4,7 @@ Invocation surface (used by the action.yml composite-action wrapper
 and by humans via `uv run asve-scan`):
 
     asve-scan --target <repo> --advisories <dir> [--sarif <path>]
-              [--fail-on high|any|none]
+              [--fail-on high|any|none] [-v|--verbose]
 
 Output:
 - GitHub workflow annotations on stdout (`::error::` / `::warning::`)
@@ -25,8 +25,9 @@ from pathlib import Path
 import click
 import yaml
 
+from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
-from tools.parsers import parse_repo
+from tools.parsers import parse_repo_grouped
 from tools.sarif import to_sarif
 
 
@@ -48,6 +49,27 @@ def _esc_param(value: str) -> str:
 def _esc_data(value: str) -> str:
     """Percent-encode a workflow command data (message) value per GitHub docs."""
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _component_label(ref: ComponentRef) -> str:
+    """Human-readable identifier for a component, preferring PURL form."""
+    purl = ref.purl
+    if purl:
+        return purl
+    if ref.component_identity:
+        return ref.component_identity
+    if ref.ecosystem and ref.name:
+        if ref.version:
+            return f"{ref.ecosystem}:{ref.name}@{ref.version}"
+        return f"{ref.ecosystem}:{ref.name}"
+    return "<unidentified>"
+
+
+def _relative_to(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def emit_github_annotations(findings: list[Finding]) -> None:
@@ -87,13 +109,38 @@ def emit_github_annotations(findings: list[Finding]) -> None:
     show_default=True,
     help="Exit non-zero when findings of this severity are present.",
 )
-def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str) -> None:
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Print the per-manifest component breakdown and matched components.",
+)
+def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
     """Scan TARGET for components matching ASVE advisories."""
-    refs = parse_repo(target)
+    grouped = parse_repo_grouped(target)
+    refs = [ref for _, group in grouped for ref in group]
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}
+
+    if verbose:
+        click.echo(f"loaded {len(corpus)} advisory(ies) from {advisories}", err=True)
+        if grouped:
+            click.echo(f"scanned {len(grouped)} manifest(s), {len(refs)} component(s):", err=True)
+            for path, group in grouped:
+                click.echo(f"  {_relative_to(path, target)} — {len(group)} component(s)", err=True)
+        else:
+            click.echo(f"no manifests found under {target}", err=True)
+        if findings:
+            matched = {id(f.component): f for f in findings}
+            click.echo(f"matched {len(matched)} component(s):", err=True)
+            for f in matched.values():
+                click.echo(
+                    f"  {_component_label(f.component)} → {f.advisory_id} ({f.confidence})",
+                    err=True,
+                )
 
     if sarif is not None:
         sarif_doc = to_sarif(findings, advisory_index)
@@ -102,13 +149,17 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str) -> No
 
     emit_github_annotations(findings)
 
+    summary = f"scanned {len(grouped)} manifest(s), {len(refs)} component(s)"
     if not findings:
-        click.echo("no findings", err=True)
+        if not grouped:
+            click.echo(f"no manifests found under {target}", err=True)
+        else:
+            click.echo(f"{summary}; no findings", err=True)
         sys.exit(0)
 
     high_count = sum(1 for f in findings if f.confidence == "high")
     click.echo(
-        f"{len(findings)} finding(s); {high_count} high-confidence",
+        f"{summary}; {len(findings)} finding(s), {high_count} high-confidence",
         err=True,
     )
 

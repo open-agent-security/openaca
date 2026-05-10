@@ -111,6 +111,82 @@ def test_scan_fail_on_none_always_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
+    """Default output should always tell the user what was scanned, even
+    when there are no findings — bare 'no findings' leaves users wondering
+    if the scanner looked at anything at all."""
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "package.json").write_text(
+        '{"name":"clean","version":"0","dependencies":{"left-pad":"1.3.0"}}'
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["--target", str(clean), "--advisories", str(REPO_ROOT / "advisories")],
+    )
+    assert result.exit_code == 0
+    # CliRunner mixes stdout+stderr into result.output.
+    assert "scanned 1 manifest(s)" in result.output
+    assert "1 component(s)" in result.output
+    assert "no findings" in result.output
+
+
+def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+    )
+    assert result.exit_code == 0
+    assert "no manifests found" in result.output
+
+
+def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
+    """`-v` should enumerate every manifest scanned and every matched
+    component → advisory pairing, so users can see what the scanner
+    actually inspected."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "loaded" in result.output and "advisory(ies)" in result.output
+    assert "package.json" in result.output
+    assert "matched" in result.output and "component(s):" in result.output
+    assert "ASVE-2026-0001" in result.output
+    assert "(high)" in result.output
+
+
+def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
+    """Verbose mode against a clean repo should still show what was
+    scanned — that's the whole point of verbose."""
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "package.json").write_text('{"name":"clean","version":"0","dependencies":{}}')
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--target",
+            str(clean),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "scanned 1 manifest(s)" in result.output
+    assert "package.json" in result.output
+
+
 def test_esc_param_encodes_workflow_metacharacters():
     """Commas, colons, percent, and newlines in parameter values must be encoded
     so the GitHub workflow command parser doesn't misread key=value pairs."""

@@ -88,6 +88,18 @@ uvx --from git+https://github.com/open-agent-security/asve asve-scan \
 findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
 
+Pass `-v` / `--verbose` to print the per-manifest breakdown and every
+matched component → advisory pairing. Useful for verifying which
+files the scanner actually inspected:
+
+```text
+loaded 5 advisory(ies) from advisories
+scanned 87 manifest(s), 70 component(s):
+  external_plugins/discord/package.json — 2 component(s)
+  external_plugins/fakechat/.mcp.json — 1 component(s)
+  ...
+```
+
 ## How it works
 
 ```

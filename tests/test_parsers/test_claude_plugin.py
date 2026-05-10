@@ -68,3 +68,42 @@ def test_top_level_null_does_not_raise(tmp_path):
     manifest = tmp_path / "plugin.json"
     manifest.write_text("null")
     assert parse(manifest) == []
+
+
+def test_plugin_self_identity_carries_ecosystem_for_matcher():
+    """Plan 007: self-identity ref tags ecosystem='claude-plugin' so the
+    matcher's _match_versioned path fires on plugin advisories."""
+    manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
+    refs = parse(manifest)
+    plugin_self = next(r for r in refs if r.ecosystem == "claude-plugin")
+    assert plugin_self.name == "deployment-tools"
+    assert plugin_self.version == "1.2.0"
+    assert plugin_self.component_identity == "claude-plugin/deployment-tools@1.2.0"
+
+
+def test_mcp_servers_string_path_resolves_from_plugin_root():
+    """Plan 007 bug fix: mcpServers as a string path resolves from the plugin
+    root (manifest.parent.parent), not the manifest's directory. Resolving
+    from the manifest dir would land in `.claude-plugin/.mcp.json` instead
+    of `<plugin-root>/.mcp.json`."""
+    manifest = REPOS / "sample-plugin-string-mcp" / ".claude-plugin" / "plugin.json"
+    refs = parse(manifest)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "@example/test-mcp"
+    assert npm_refs[0].version == "1.0.0"
+
+
+def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
+    """If the string-path target file doesn't exist, the parser should
+    silently skip rather than raise."""
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(
+        '{"name": "missing-mcp-plugin", "version": "0.1.0", "mcpServers": "./.mcp.json"}'
+    )
+    # No .mcp.json file at the plugin root → just emit the self-identity ref.
+    refs = parse(manifest)
+    assert any(r.ecosystem == "claude-plugin" for r in refs)
+    assert all(r.ecosystem != "npm" for r in refs)

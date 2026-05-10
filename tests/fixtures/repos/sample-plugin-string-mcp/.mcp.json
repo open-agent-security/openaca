@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "test-server": {
+      "command": "npx",
+      "args": ["-y", "@example/test-mcp@1.0.0"]
+    }
+  }
+}

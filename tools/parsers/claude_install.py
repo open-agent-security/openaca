@@ -85,7 +85,7 @@ def parse_install(
             warnings.append(f"plugin {plugin_key} enabled but missing from installed_plugins.json")
             continue
 
-        scope = _enabling_scope(plugin_key, layers)
+        scope = _enabling_scope(plugin_key, layers, mode)
         entry, index, warning = _select_install_entry(entries, scope)
         if warning is not None:
             warnings.append(f"{plugin_key}: {warning}")
@@ -124,15 +124,19 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
     return plugin_key, None
 
 
-def _enabling_scope(plugin_key: str, layers: SettingsLayers) -> Optional[str]:
+def _enabling_scope(plugin_key: str, layers: SettingsLayers, mode: Mode = "fs") -> Optional[str]:
     """Return the highest-precedence scope where the plugin is set true.
 
     Used to break ties in `installed_plugins.json` arrays: when multiple
     entries exist, prefer the install whose `scope` field matches the scope
-    that enabled it.
+    that enabled it. In repo mode, local scope is excluded (machine-local,
+    not CI-relevant) — consistent with how `merged(mode)` filters settings.
     """
     by_scope = layers.by_scope()
+    excluded: set[str] = {"local"} if mode == "repo" else set()
     for scope in SCOPE_PRECEDENCE:
+        if scope in excluded:
+            continue
         scope_data = by_scope.get(scope, {})
         enabled = scope_data.get("enabledPlugins", {})
         if isinstance(enabled, dict) and enabled.get(plugin_key) is True:

@@ -75,8 +75,10 @@ def parse(path: Path) -> list[ComponentRef]:
         # Relative paths in plugin.json resolve from plugin root (CLAUDE_PLUGIN_ROOT
         # semantics), not from the manifest's parent directory.
         plugin_root = path.parent.parent
+        plugin_root_resolved = plugin_root.resolve()
         referenced = (plugin_root / servers).resolve()
-        if referenced.exists():
+        # Reject absolute paths and ../ traversal that escape the plugin root.
+        if referenced.is_relative_to(plugin_root_resolved) and referenced.exists():
             try:
                 refs.extend(mcp_json.parse(referenced))
             except Exception:

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from tools.parsers.claude_plugin import parse
@@ -92,6 +93,49 @@ def test_mcp_servers_string_path_resolves_from_plugin_root():
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "@example/test-mcp"
     assert npm_refs[0].version == "1.0.0"
+
+
+def test_mcp_servers_absolute_path_is_skipped(tmp_path):
+    """An absolute path as mcpServers string must be silently rejected.
+
+    Python's Path division replaces the root entirely for absolute paths:
+    `plugin_root / "/abs/path"` yields `/abs/path`, not something inside
+    the plugin root. The resolver must detect this via is_relative_to and
+    skip the file rather than reading arbitrary host paths.
+    """
+    external = tmp_path / "external.mcp.json"
+    external.write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "evil-pkg"]}}})
+    )
+    plugin_dir = tmp_path / "myplugin" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(
+        json.dumps({"name": "abs-plugin", "version": "1.0.0", "mcpServers": str(external)})
+    )
+    refs = parse(manifest)
+    assert sum(1 for r in refs if r.ecosystem == "claude-plugin") == 1
+    assert all(r.ecosystem != "npm" for r in refs)
+
+
+def test_mcp_servers_traversal_path_is_skipped(tmp_path):
+    """A relative path that escapes plugin_root via .. must be silently rejected."""
+    external = tmp_path / "external.mcp.json"
+    external.write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "evil-pkg"]}}})
+    )
+    plugin_dir = tmp_path / "myplugin" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    # Traversal from <tmp>/myplugin/ up to <tmp>/ to reach external.mcp.json
+    manifest.write_text(
+        json.dumps(
+            {"name": "trav-plugin", "version": "1.0.0", "mcpServers": "../external.mcp.json"}
+        )
+    )
+    refs = parse(manifest)
+    assert sum(1 for r in refs if r.ecosystem == "claude-plugin") == 1
+    assert all(r.ecosystem != "npm" for r in refs)
 
 
 def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):

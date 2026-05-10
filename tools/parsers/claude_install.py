@@ -35,6 +35,8 @@ from tools.component_ref import ComponentRef
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
     SettingsLayers,
+)
+from tools.parsers.settings_layers import (
     load as load_settings,
 )
 
@@ -80,9 +82,7 @@ def parse_install(
             continue
         entries = plugins_map.get(plugin_key)
         if not isinstance(entries, list) or not entries:
-            warnings.append(
-                f"plugin {plugin_key} enabled but missing from installed_plugins.json"
-            )
+            warnings.append(f"plugin {plugin_key} enabled but missing from installed_plugins.json")
             continue
 
         scope = _enabling_scope(plugin_key, layers)
@@ -155,7 +155,5 @@ def _select_install_entry(
         for index, entry in enumerate(entries):
             if entry.get("scope") == enabling_scope:
                 return entry, index, None
-    warning = (
-        f"plugin has {len(entries)} installed entries with no scope match; taking [0]"
-    )
+    warning = f"plugin has {len(entries)} installed entries with no scope match; taking [0]"
     return entries[0], 0, warning

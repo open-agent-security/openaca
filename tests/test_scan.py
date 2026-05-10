@@ -241,6 +241,7 @@ def test_esc_data_encodes_message_metacharacters():
 # Plan 007: subcommand split tests. Existing tests above call `main` with the
 # legacy flag set (no subcommand) and exercise the back-compat default to repo.
 
+
 def test_repo_subcommand_explicit():
     """Explicit `asve-scan repo` runs the same logic as the back-compat default."""
     runner = CliRunner()

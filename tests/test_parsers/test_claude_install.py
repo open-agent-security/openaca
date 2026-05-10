@@ -30,19 +30,13 @@ def test_minimal_install_emits_one_plugin_component():
 
 
 def test_install_skips_disabled_plugins(tmp_path):
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"foo@bar": False}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": False}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
         json.dumps(
             {
                 "version": 1,
-                "plugins": {
-                    "foo@bar": [
-                        {"scope": "user", "version": "1.0", "installPath": "/x"}
-                    ]
-                },
+                "plugins": {"foo@bar": [{"scope": "user", "version": "1.0", "installPath": "/x"}]},
             }
         )
     )
@@ -67,18 +61,14 @@ def test_install_warns_when_plugin_enabled_but_missing_from_lockfile(tmp_path):
 def test_install_handles_missing_lockfile_silently(tmp_path):
     """If installed_plugins.json doesn't exist, return empty refs without
     raising — the install root may be malformed, not a crash condition."""
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"foo@bar": True}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert warnings == []
 
 
 def test_install_warns_on_malformed_lockfile(tmp_path):
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"foo@bar": True}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text("{not json")
     refs, warnings = parse_install(install_root=tmp_path)
@@ -89,9 +79,7 @@ def test_install_warns_on_malformed_lockfile(tmp_path):
 def test_install_multi_entry_prefers_matching_scope(tmp_path):
     """Two install entries; the one whose `scope` matches the enabling scope
     (user, in this case) wins."""
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"foo@bar": True}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
         json.dumps(
@@ -116,9 +104,7 @@ def test_install_multi_entry_prefers_matching_scope(tmp_path):
 def test_install_multi_entry_no_scope_match_falls_back_with_warning(tmp_path):
     """No entry's scope matches the enabling user scope (entries are
     project + managed). Fall back to [0] and warn."""
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"foo@bar": True}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
         json.dumps(
@@ -141,18 +127,14 @@ def test_install_multi_entry_no_scope_match_falls_back_with_warning(tmp_path):
 
 def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     """Defensive: a plugin key without `@marketplace` shouldn't crash."""
-    (tmp_path / "settings.json").write_text(
-        json.dumps({"enabledPlugins": {"orphan-plugin": True}})
-    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"orphan-plugin": True}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
         json.dumps(
             {
                 "version": 1,
                 "plugins": {
-                    "orphan-plugin": [
-                        {"scope": "user", "version": "0.1", "installPath": "/x"}
-                    ]
+                    "orphan-plugin": [{"scope": "user", "version": "0.1", "installPath": "/x"}]
                 },
             }
         )

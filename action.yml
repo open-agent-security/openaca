@@ -79,7 +79,7 @@ runs:
         if [[ "$SARIF_ABS" != /* ]]; then
           SARIF_ABS="$GITHUB_WORKSPACE/$SARIF_ABS"
         fi
-        uv run asve-scan \
+        uv run asve-scan repo \
           --target "$TARGET_ABS" \
           --advisories "$ADVISORIES_ABS" \
           --sarif "$SARIF_ABS" \

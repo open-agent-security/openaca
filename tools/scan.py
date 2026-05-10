@@ -1,6 +1,6 @@
 """End-to-end ASVE scan: parse → match → report (SARIF + annotations).
 
-Two modes via subcommands (per ADR-0006):
+Two modes via subcommands (per ADR-0006); a subcommand is required:
 
     asve-scan repo --target <repo> --advisories <dir> [...]
         Walks declared manifests under the target repo. Used by the
@@ -12,14 +12,11 @@ Two modes via subcommands (per ADR-0006):
         active plugin; plans 008 and 009 walk into plugins for bundled and
         transitive components.
 
-    asve-scan --target ... --advisories ... [...]
-        Back-compat: with no subcommand, defaults to `repo`. Preserves
-        existing scripts and the GitHub Action's invocation surface.
+Common options (--sarif, --fail-on, -v) can be placed before or after the
+subcommand name; the group forwards them either way:
 
-Common options (shared by both subcommands):
-- --sarif <path>    Write SARIF v2.1.0 (the Action uploads to code-scanning).
-- --fail-on         Exit non-zero when findings of this severity are present.
-- -v / --verbose    Per-manifest breakdown + matched-component listing.
+    asve-scan -v repo --target X --advisories Y
+    asve-scan repo --target X --advisories Y -v   # equivalent
 
 Findings carry an optional `attributed_to` field (e.g.,
 "claude-plugin/<name>@<version>") set by parsers when a component was
@@ -153,60 +150,26 @@ _verbose_option = click.option(
 )
 
 
-# Group-level options mirror the subcommand options but are NOT required at
-# the group level — they only matter when invoked with no subcommand
-# (back-compat fallback to `repo`). When a subcommand IS invoked, Click
-# parses these eagerly first, so we keep them optional and let the
-# subcommand's required=True versions enforce on real subcommand use.
-@click.group(invoke_without_command=True)
+# Group-level shared options (sarif / fail-on / verbose) can be placed BEFORE
+# the subcommand name as a convenience; `_apply_group_opts` forwards them to
+# the chosen subcommand. A subcommand is required — there is no
+# no-subcommand fallback.
+@click.group()
 @click.pass_context
-@click.option(
-    "--target",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=None,
-    help="(back-compat) Path to scan when no subcommand is given.",
-)
-@click.option(
-    "--advisories",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=None,
-    help="(back-compat) ASVE advisories directory when no subcommand is given.",
-)
 @_sarif_option
 @_fail_on_option
 @_verbose_option
 def main(
     ctx: click.Context,
-    target: Path | None,
-    advisories: Path | None,
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
 ) -> None:
-    """ASVE vulnerability scanner. Use `repo` or `fs` subcommands.
-
-    With no subcommand, defaults to `repo` for back-compat with the GitHub
-    Action and existing scripts that invoke `asve-scan --target X --advisories Y`.
-    """
+    """ASVE vulnerability scanner. Use `repo` or `fs` subcommands."""
     ctx.ensure_object(dict)
     ctx.obj["sarif"] = sarif
     ctx.obj["fail_on"] = fail_on
     ctx.obj["verbose"] = verbose
-    if ctx.invoked_subcommand is None:
-        if target is None or advisories is None:
-            click.echo(
-                "usage: asve-scan {repo|fs} --target <path> --advisories <dir>",
-                err=True,
-            )
-            ctx.exit(2)
-        ctx.invoke(
-            repo,
-            target=target,
-            advisories=advisories,
-            sarif=sarif,
-            fail_on=fail_on,
-            verbose=verbose,
-        )
 
 
 def _apply_group_opts(

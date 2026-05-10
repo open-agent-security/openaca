@@ -25,23 +25,30 @@ ComponentRef → Finding → SARIF chain.
 
 ## Decision
 
-### 1. Two scan modes via Click subcommands; back-compat default to `repo`
+### 1. Two scan modes via Click subcommands; subcommand required
 
-`asve-scan repo <target>` keeps today's manifest-walk behavior.
-`asve-scan fs <target>` is the install-state-aware mode introduced in plan
-007 (and extended by plans 008 and 009). It follows the canonical Claude
-Code install model: `settings.json → installed_plugins.json → plugin
-install paths`.
+`asve-scan repo <target>` is the manifest-walk mode (today's behavior
+factored into an explicit subcommand). `asve-scan fs <target>` is the
+install-state-aware mode introduced in plan 007 (and extended by plans 008
+and 009), following the Claude Code install model: `settings.json →
+installed_plugins.json → plugin install paths`.
 
-`asve-scan <flags>` (no subcommand) defaults to `repo` for back-compat with
-the GitHub Action and existing scripts. The default is documented (in this
-ADR and in README), not silent magic — group-level options at the CLI are
-optional fallbacks; subcommand-level options are required.
+A subcommand is **required** — there is no no-subcommand fallback. ASVE is
+pre-V0-launch with no external consumers depending on the CLI shape, so
+back-compat hedging would cost code clarity for zero benefit. The
+GitHub Action's `action.yml` invokes `asve-scan repo` explicitly. After V0
+public launch the CLI surface becomes a contract; until then, change it
+freely if a redesign is cleaner.
 
 Trivy uses the same `repo` / `fs` / `image` split for the same reason: scan
 modes have different invariants (e.g., what to recurse into) and naming
 the mode prevents pointing-at-the-wrong-layer mistakes that produce
 misattributed output.
+
+Shared options (`--sarif`, `--fail-on`, `-v`) can be placed before or after
+the subcommand for ergonomic invocation (`asve-scan -v repo --target X`
+or `asve-scan repo --target X -v` are equivalent); subcommand-level
+`--target` / `--advisories` remain required.
 
 ### 2. `claude-plugin` is a recognized ecosystem in `affected[*].package`
 

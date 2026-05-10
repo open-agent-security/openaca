@@ -100,9 +100,10 @@ uv run asve-scan fs \
     --advisories advisories/
 ```
 
-For back-compat with existing scripts and the GitHub Action,
-`asve-scan --target X --advisories Y` (no subcommand) still works and
-defaults to `repo` mode.
+A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`)
+can sit before or after the subcommand name —
+`asve-scan -v repo --target X ...` is equivalent to
+`asve-scan repo --target X ... -v`.
 
 Or via `uvx`, which clones, builds, and runs in one shot (no manual
 checkout):

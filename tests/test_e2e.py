@@ -192,6 +192,7 @@ def test_asve_scan_cli_finds_real_advisory():
         result = runner.invoke(
             scan_main,
             [
+                "repo",
                 "--target",
                 str(REPO_ROOT / "tests" / "fixtures" / "repos" / "exposed-mcp"),
                 "--advisories",
@@ -232,6 +233,7 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     result = runner.invoke(
         scan_main,
         [
+            "repo",
             "--target",
             str(target),
             "--advisories",

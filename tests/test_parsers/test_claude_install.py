@@ -222,6 +222,20 @@ def test_install_treats_only_boolean_true_as_enabled(tmp_path):
     assert warnings == []
 
 
+def test_install_skips_entry_with_non_string_version(tmp_path):
+    """A lockfile entry with a non-string version (e.g. integer 1) must warn and
+    skip the ref. If propagated, packaging.Version raises TypeError and aborts
+    asve-scan fs."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {"foo@bar": [{"scope": "user", "version": 1}]}})
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("non-string version" in w and "foo@bar" in w for w in warnings)
+
+
 def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     """Defensive: a plugin key without `@marketplace` shouldn't crash."""
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"orphan-plugin": True}}))

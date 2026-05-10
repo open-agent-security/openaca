@@ -18,6 +18,8 @@ def parse(path: Path) -> list[ComponentRef]:
 
     name = data.get("name")
     version = data.get("version")
+    if not isinstance(version, (str, type(None))):
+        version = None
     if name:
         identity = f"claude-plugin/{name}"
         if version:

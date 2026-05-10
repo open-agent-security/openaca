@@ -138,6 +138,20 @@ def test_mcp_servers_traversal_path_is_skipped(tmp_path):
     assert all(r.ecosystem != "npm" for r in refs)
 
 
+def test_plugin_non_string_version_coerced_to_none(tmp_path):
+    """A plugin.json with a numeric version (e.g. `"version": 1`) must not crash.
+    The non-string value is coerced to None so the ref is still emitted without
+    a version rather than propagating an integer to packaging.Version."""
+    manifest = tmp_path / "plugin.json"
+    manifest.write_text(json.dumps({"name": "my-plugin", "version": 1}))
+    refs = parse(manifest)
+    plugin_self = [r for r in refs if r.ecosystem == "claude-plugin"]
+    assert len(plugin_self) == 1
+    assert plugin_self[0].name == "my-plugin"
+    assert plugin_self[0].version is None
+    assert plugin_self[0].component_identity == "claude-plugin/my-plugin"
+
+
 def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
     """If the string-path target file doesn't exist, the parser should
     silently skip rather than raise."""

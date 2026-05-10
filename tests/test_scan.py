@@ -132,6 +132,20 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     assert "no findings" in result.output
 
 
+def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
+    """A target containing only malformed manifests must not report 'no manifests
+    found' — that would hide the scan blind spot from the user."""
+    (tmp_path / "package.json").write_text("{invalid json !!!")
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+    )
+    assert result.exit_code == 0
+    assert "no manifests found" not in result.output
+    assert "none parsed successfully" in result.output
+
+
 def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

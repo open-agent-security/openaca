@@ -118,7 +118,7 @@ def emit_github_annotations(findings: list[Finding]) -> None:
 )
 def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
     """Scan TARGET for components matching ASVE advisories."""
-    grouped = parse_repo_grouped(target)
+    grouped, n_found = parse_repo_grouped(target)
     refs = [ref for _, group in grouped for ref in group]
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
@@ -131,6 +131,10 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
             click.echo(f"scanned {len(grouped)} manifest(s), {len(refs)} component(s):", err=True)
             for path, group in grouped:
                 click.echo(f"  {_relative_to(path, target)} — {len(group)} component(s)", err=True)
+        elif n_found:
+            click.echo(
+                f"found {n_found} manifest file(s) but none parsed successfully", err=True
+            )
         else:
             click.echo(f"no manifests found under {target}", err=True)
         if findings:
@@ -151,7 +155,12 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
     summary = f"scanned {len(grouped)} manifest(s), {len(refs)} component(s)"
     if not findings:
         if not grouped:
-            click.echo(f"no manifests found under {target}", err=True)
+            if n_found:
+                click.echo(
+                    f"found {n_found} manifest file(s) but none parsed successfully", err=True
+                )
+            else:
+                click.echo(f"no manifests found under {target}", err=True)
         else:
             click.echo(f"{summary}; no findings", err=True)
         sys.exit(0)

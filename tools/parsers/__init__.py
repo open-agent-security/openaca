@@ -30,30 +30,37 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 ]
 
 
-def parse_repo_grouped(root: Path) -> list[tuple[Path, list[ComponentRef]]]:
-    """Walk `root` and return per-manifest results, preserving file boundaries.
+def parse_repo_grouped(
+    root: Path,
+) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
+    """Walk `root` and return (per-manifest results, total paths matched).
 
-    Used by callers that need to report which manifests were scanned (e.g.,
-    `asve-scan --verbose`). A single malformed manifest must not abort the
-    whole scan — these parsers operate on arbitrary user repos, and one bad
-    file should drop only that file, not every other finding. Per-path
-    failures are silently dropped. Manifests with zero components (e.g., an
-    empty `dependencies` block) are still included so consumers can see the
-    file was visited.
+    The second element counts every path that matched a registry pattern,
+    regardless of whether parsing succeeded. Callers use this to distinguish
+    "target had no manifests at all" (n_found == 0) from "target had manifests
+    that all failed to parse" (n_found > 0 but grouped is empty).
+
+    Per-path parse failures are silently dropped — these parsers run against
+    arbitrary user repos and one malformed file should not abort the rest of
+    the scan. Manifests with zero components are still included so consumers
+    can see the file was visited.
     """
     grouped: list[tuple[Path, list[ComponentRef]]] = []
+    n_found = 0
     for pattern, parser in REGISTRY:
         for path in root.rglob(pattern):
+            n_found += 1
             try:
                 grouped.append((path, parser(path)))
             except Exception:
                 continue
-    return grouped
+    return grouped, n_found
 
 
 def parse_repo(root: Path) -> list[ComponentRef]:
     """Walk `root` and return ComponentRefs from all known manifests."""
     refs: list[ComponentRef] = []
-    for _, group in parse_repo_grouped(root):
+    grouped, _ = parse_repo_grouped(root)
+    for _, group in grouped:
         refs.extend(group)
     return refs

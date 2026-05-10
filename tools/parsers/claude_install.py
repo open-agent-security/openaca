@@ -100,6 +100,11 @@ def parse_install(
 
         plugin_name, marketplace = _split_plugin_key(plugin_key)
         version = entry.get("version")
+        if version is not None and not isinstance(version, str):
+            warnings.append(
+                f"{plugin_key}: non-string version {version!r} in installed_plugins.json; skipping"
+            )
+            continue
         identity = f"claude-plugin/{plugin_name}"
         if version:
             identity = f"{identity}@{version}"

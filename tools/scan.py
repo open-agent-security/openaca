@@ -356,7 +356,7 @@ def fs(
         for r in refs:
             if r.ecosystem == "claude-plugin":
                 sha = r.extra.get("gitCommitSha")
-                sha_note = f" (sha: {sha[:8]})" if sha else ""
+                sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
                 click.echo(
                     f"  {r.component_identity}{sha_note} [scope={r.extra.get('scope')}]",
                     err=True,

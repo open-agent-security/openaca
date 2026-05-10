@@ -1,0 +1,6 @@
+{
+  "name": "string-mcp-plugin",
+  "version": "0.1.0",
+  "description": "Fixture for the mcpServers string-path form (plan 007).",
+  "mcpServers": "./.mcp.json"
+}

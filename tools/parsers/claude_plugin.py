@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
+from tools.parsers import mcp_json
 from tools.parsers.mcp_json import parse_mcp_servers
 
 
@@ -21,8 +22,14 @@ def parse(path: Path) -> list[ComponentRef]:
         identity = f"claude-plugin/{name}"
         if version:
             identity = f"{identity}@{version}"
+        # Tag with ecosystem="claude-plugin" so the matcher's _match_versioned
+        # path fires on plugin advisories. component_identity stays for
+        # backwards-compatible identity reporting.
         refs.append(
             ComponentRef(
+                ecosystem="claude-plugin",
+                name=name,
+                version=version,
                 component_identity=identity,
                 source_manifest=str(path),
                 source_locator="$",
@@ -54,8 +61,8 @@ def parse(path: Path) -> list[ComponentRef]:
                 )
             )
 
-    servers = data.get("mcpServers") or {}
-    if servers:
+    servers = data.get("mcpServers")
+    if isinstance(servers, dict):
         refs.extend(
             parse_mcp_servers(
                 servers,
@@ -63,5 +70,17 @@ def parse(path: Path) -> list[ComponentRef]:
                 locator_prefix="$.mcpServers (inlined)",
             )
         )
+    elif isinstance(servers, str):
+        # plugin.json lives at <plugin-root>/.claude-plugin/plugin.json.
+        # Relative paths in plugin.json resolve from plugin root (CLAUDE_PLUGIN_ROOT
+        # semantics), not from the manifest's parent directory.
+        plugin_root = path.parent.parent
+        referenced = (plugin_root / servers).resolve()
+        if referenced.exists():
+            try:
+                refs.extend(mcp_json.parse(referenced))
+            except Exception:
+                # Malformed referenced .mcp.json should not abort plugin parsing.
+                pass
 
     return refs

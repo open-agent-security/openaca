@@ -82,7 +82,7 @@ def parse_install(
         return refs, warnings
 
     for plugin_key, is_enabled in enabled_plugins.items():
-        if not is_enabled:
+        if is_enabled is not True:
             continue
         entries = plugins_map.get(plugin_key)
         if not isinstance(entries, list) or not entries:

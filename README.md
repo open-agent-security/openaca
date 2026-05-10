@@ -61,24 +61,38 @@ Advanced Security, upload the SARIF to the Security tab via
 ### Standalone CLI
 
 The scanner is a normal Python package; run it against any local
-checkout without GitHub Actions.
+checkout without GitHub Actions. Two modes via subcommands:
 
 ```bash
 git clone https://github.com/open-agent-security/asve.git
 cd asve
 uv sync
-uv run asve-scan \
+
+# Repo mode: walks declared manifests in a code repo (today's behavior;
+# what the GitHub Action uses).
+uv run asve-scan repo \
     --target /path/to/your/repo \
     --advisories advisories/ \
     --sarif results.sarif \
     --fail-on any
+
+# fs mode: install-state-aware scan of an installed Claude Code agent
+# stack. Reads settings.json + installed_plugins.json to enumerate the
+# active plugins.
+uv run asve-scan fs \
+    --target ~/.claude \
+    --advisories advisories/
 ```
+
+For back-compat with existing scripts and the GitHub Action,
+`asve-scan --target X --advisories Y` (no subcommand) still works and
+defaults to `repo` mode.
 
 Or via `uvx`, which clones, builds, and runs in one shot (no manual
 checkout):
 
 ```bash
-uvx --from git+https://github.com/open-agent-security/asve asve-scan \
+uvx --from git+https://github.com/open-agent-security/asve asve-scan repo \
     --target /path/to/your/repo \
     --advisories advisories/ \
     --sarif results.sarif
@@ -88,17 +102,29 @@ uvx --from git+https://github.com/open-agent-security/asve asve-scan \
 findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
 
-Pass `-v` / `--verbose` to print the per-manifest breakdown and every
-matched component → advisory pairing. Useful for verifying which
-files the scanner actually inspected:
+Pass `-v` / `--verbose` for the per-manifest breakdown (repo mode) or
+the resolved active-plugin tree (fs mode):
 
 ```text
+# repo mode -v
 loaded 5 advisory(ies) from advisories
 scanned 87 manifest(s), 70 component(s):
   external_plugins/discord/package.json — 2 component(s)
   external_plugins/fakechat/.mcp.json — 1 component(s)
   ...
+
+# fs mode -v
+loaded 5 advisory(ies) from advisories
+detected install_root=/Users/.../.claude (mode=fs)
+resolved 14 active plugin(s):
+  claude-plugin/supabase@0.1.6 (sha: <short>) [scope=user]
+  claude-plugin/superpowers@5.1.0 (sha: <short>) [scope=user]
+  ...
 ```
+
+Findings carry a `via <plugin>` annotation when discovered through an
+active plugin (plans 008 and 009 populate this; plan 007 only emits
+plugin-level components).
 
 ## How it works
 

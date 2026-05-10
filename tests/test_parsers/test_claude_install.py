@@ -184,6 +184,44 @@ def test_install_skips_non_dict_install_entries(tmp_path):
     assert any("foo@bar" in w and "no valid install entries" in w for w in warnings)
 
 
+def test_install_treats_only_boolean_true_as_enabled(tmp_path):
+    """Non-boolean truthy values in enabledPlugins must NOT enable a plugin.
+
+    Claude Code settings are machine-generated but can be hand-edited. A user
+    might write `"false"` (string), `1` (int), or `{}` (dict) by mistake.
+    Only the literal JSON `true` (Python `True`) should enable a plugin;
+    anything else is treated as disabled to avoid false-positive findings.
+    This is consistent with `_enabling_scope`, which already uses `is True`.
+    """
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "string-false@m": [{"scope": "user", "version": "1.0", "installPath": "/a"}],
+                    "int-one@m": [{"scope": "user", "version": "1.0", "installPath": "/b"}],
+                    "empty-dict@m": [{"scope": "user", "version": "1.0", "installPath": "/c"}],
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {
+                    "string-false@m": "false",  # truthy string — must NOT enable
+                    "int-one@m": 1,  # truthy int   — must NOT enable
+                    "empty-dict@m": {},  # falsy dict   — must NOT enable
+                }
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert warnings == []
+
+
 def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     """Defensive: a plugin key without `@marketplace` shouldn't crash."""
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"orphan-plugin": True}}))

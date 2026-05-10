@@ -83,6 +83,16 @@ uv run pytest
    - `evidence_level`: `confirmed` | `likely` | `research` |
      `disputed` | `withdrawn`.
 
+   **Recognized `affected[*].package.ecosystem` values** the matcher
+   currently understands:
+   - `npm`, `PyPI`, `GitHub`, `Docker` — standard PURL ecosystems.
+   - `claude-plugin` — Claude Code plugins identified by `name` from
+     the plugin's `.claude-plugin/plugin.json` (per ADR-0006). Plugin
+     advisories use this ecosystem; `_match_versioned` handles the
+     range matching identically to npm/PyPI. New ecosystems get added
+     as parsers and matcher paths are extended (see plans 008 and 009
+     for `claude-skill`, `claude-hook`, etc.).
+
 4. **Add a CVSS v4 vector** under `severity[]` if known:
    ```yaml
    severity:

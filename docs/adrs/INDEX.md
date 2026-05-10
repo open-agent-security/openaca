@@ -26,6 +26,7 @@ against the rules in effect at the time.
 - [ADR-0003 — Single namespace, type-tagged advisories](0003-single-namespace-architecture.md): one `ASVE-YYYY-NNNN` ID space with a `type` discriminator (vulnerability | exposure | config); V0 ships only `type: vulnerability`, others reserved + rejected by schema until methodology lands.
 - [ADR-0004 — `YYYY` in advisory IDs is assignment year, not alias year](0004-advisory-id-year.md): ASVE-2026-NNNN aliasing CVE-2025-XXXXX is correct — year tracks ASVE catalogue date, matching CVE/GHSA/RUSTSEC convention; rejected matching upstream alias year because multi-alias and ASVE-original records can't share that rule.
 - [ADR-0005 — V0 manifest parsers are POSIX-only](0005-manifest-parsers-posix-only.md): `_classify_command` is `Path(command).stem` (case-sensitive, no backslash/PATHEXT handling); rejected always-lowercase, Windows-shape heuristic, and known-launcher allow-list because each either introduces POSIX false positives or ships V0-out-of-scope Windows support.
+- [ADR-0006 — asve-scan subcommands, claude-plugin ecosystem, attribution](0006-asve-scan-subcommands-and-attribution.md): Trivy-style `repo`/`fs` subcommand split (no-subcommand defaults to `repo` for back-compat); `claude-plugin` as a recognized `affected[*].package.ecosystem` so plugin advisories match via `_match_versioned`; `attributed_to` mirrored on ComponentRef and Finding so plans 008 and 009 can tag "via plugin X" findings.
 
 ## Superseded
 

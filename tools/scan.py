@@ -354,15 +354,19 @@ def _resolve_fs_roots(target: Path) -> tuple[Path, Path | None]:
 
     - If target has a `plugins/installed_plugins.json`, treat target as the
       Claude Code install root (the typical case for `~/.claude`).
-    - If target has `.claude/settings.json`, treat target as a project root
-      and use `~/.claude` as the install root for the lockfile + user
-      settings layer.
+    - If target has a `.claude/` directory with either `settings.json` or
+      `settings.local.json`, treat target as a project root and use
+      `~/.claude` as the install root for the lockfile + user settings
+      layer. Local-only configs are legitimate: a repo can enable plugins
+      via `settings.local.json` without ever committing a project-scope
+      `settings.json`.
     - Otherwise, target is treated as the install root regardless; the
       resolver will return empty results if the lockfile is absent.
     """
     if (target / "plugins" / "installed_plugins.json").exists():
         return target, None
-    if (target / ".claude" / "settings.json").exists():
+    claude_dir = target / ".claude"
+    if (claude_dir / "settings.json").exists() or (claude_dir / "settings.local.json").exists():
         return Path.home() / ".claude", target
     return target, None
 

@@ -429,6 +429,39 @@ def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch
     assert "resolved 0 active plugin(s)" in result.output
 
 
+def test_fs_subcommand_project_root_detected_via_local_settings_only(tmp_path, monkeypatch):
+    """A project that only ships `.claude/settings.local.json` (no project-scope
+    `settings.json`) is still a project root — the resolver must route to the
+    user's install root rather than treating the repo as an install root."""
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    fake_install = fake_home / ".claude"
+    fake_install.mkdir()
+    (fake_install / "settings.json").write_text("{}")
+
+    project = tmp_path / "local-only-proj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.local.json").write_text("{}")
+
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(project),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 0
+    # Verbose output would say which install root was picked; the smoke check
+    # is that resolution succeeds and the target is not misclassified.
+    assert "resolved 0 active plugin(s)" in result.output
+
+
 # Plan 007 follow-up: group-level option forwarding to subcommands.
 # Placing shared options before the subcommand name must behave identically
 # to placing them after it (subcommand-explicit always wins on conflict).

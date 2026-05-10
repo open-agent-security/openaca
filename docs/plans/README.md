@@ -1,8 +1,9 @@
 # ASVE V0 — Implementation Plan Index
 
-V0 implementation is split into six plans. Each produces working, testable
-software on its own. Run them in order; later plans depend on earlier ones
-unless noted.
+V0 implementation: plans 001-006 are the original V0 deliverables. Plans
+007+ are pre-V0-launch refinements that fill in gaps surfaced from
+dogfooding. Each plan produces working, testable software on its own.
+Run them in order; later plans depend on earlier ones unless noted.
 
 | # | Plan | Status | Depends on |
 |---|---|---|---|
@@ -12,6 +13,7 @@ unless noted.
 | 004 | [Static export pipeline](004-static-export.md) | ✅ Done | 001, 002 |
 | 005 | [Reference GitHub Action](005-reference-action.md) | ✅ Done | 003, 004 |
 | 006 | [Disclosure policy doc](006-disclosure-policy.md) | ✅ Done | — |
+| 007 | [fs-mode foundation: CLI split, attribution, claude-plugin matcher](007-fs-mode-cli-and-attribution.md) | 🟡 Active | 001, 003, 005 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

@@ -254,3 +254,38 @@ def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "orphan-plugin"
     assert refs[0].extra["marketplace"] is None
+
+
+def test_install_scoped_plugin_key_parses_correctly(tmp_path):
+    """Scoped plugin keys like `@acme/tool@test-market` must parse as
+    name=`@acme/tool`, marketplace=`test-market` (rsplit from right),
+    NOT name=`` + marketplace=`acme/tool@test-market` (split from left)."""
+    plugin_key = "@acme/tool@test-market"
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {plugin_key: True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {plugin_key: [{"scope": "user", "version": "1.0", "installPath": "/x"}]},
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert len(refs) == 1
+    assert refs[0].name == "@acme/tool"
+    assert refs[0].extra["marketplace"] == "test-market"
+    assert refs[0].component_identity == "claude-plugin/@acme/tool@1.0"
+
+
+def test_install_warns_on_non_object_plugins_map(tmp_path):
+    """When `installed_plugins.json` has a non-dict `plugins` value (e.g. a list),
+    warn and return empty refs rather than silently missing findings."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": ["should", "be", "an", "object"]})
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("plugins" in w and "not an object" in w for w in warnings)

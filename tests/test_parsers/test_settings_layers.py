@@ -95,6 +95,31 @@ def test_load_silently_skips_malformed_json(tmp_path):
     assert layers.user == {}
 
 
+def test_load_silently_skips_non_object_user_settings(tmp_path):
+    """Valid JSON that isn't a dict should not crash merged()."""
+    (tmp_path / "settings.json").write_text("[1, 2, 3]")
+    layers = load(install_root=tmp_path)
+    assert layers.user == {}
+    # Must not raise AttributeError in _deep_merge.
+    assert layers.merged("fs") == {}
+
+
+def test_load_silently_skips_non_object_project_settings(tmp_path):
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    project_root = tmp_path / "project"
+    project_dir = project_root / ".claude"
+    project_dir.mkdir(parents=True)
+    (project_dir / "settings.json").write_text("true")
+    (project_dir / "settings.local.json").write_text("null")
+    layers = load(install_root=install_root, project_root=project_root)
+    assert layers.project is None
+    assert layers.local is None
+    # Must not raise when merging.
+    assert layers.merged("fs") == {}
+    assert layers.merged("repo") == {}
+
+
 def test_empty_install_root_returns_empty_layers(tmp_path):
     layers = load(install_root=tmp_path)
     assert layers.user == {}

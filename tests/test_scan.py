@@ -146,6 +146,24 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
     assert "none parsed successfully" in result.output
 
 
+def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
+    """When some manifests parse and some don't, the summary must report the
+    total found count and flag how many failed — hiding partial failures gives
+    false confidence in scan coverage."""
+    (tmp_path / "package.json").write_text(
+        '{"name":"ok","version":"0","dependencies":{"left-pad":"1.3.0"}}'
+    )
+    (tmp_path / "mcp.json").write_text("{invalid json !!!")
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+    )
+    assert result.exit_code == 0
+    assert "scanned 2 manifest(s)" in result.output
+    assert "1 failed to parse" in result.output
+
+
 def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

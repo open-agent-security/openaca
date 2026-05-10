@@ -120,15 +120,21 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
     """Scan TARGET for components matching ASVE advisories."""
     grouped, n_found = parse_repo_grouped(target)
     refs = [ref for _, group in grouped for ref in group]
+    n_failed = n_found - len(grouped)
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}
 
+    parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
+
     if verbose:
         click.echo(f"loaded {len(corpus)} advisory(ies) from {advisories}", err=True)
         if grouped:
-            click.echo(f"scanned {len(grouped)} manifest(s), {len(refs)} component(s):", err=True)
+            click.echo(
+                f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
+                err=True,
+            )
             for path, group in grouped:
                 click.echo(f"  {_relative_to(path, target)} — {len(group)} component(s)", err=True)
         elif n_found:
@@ -150,7 +156,7 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
 
     emit_github_annotations(findings)
 
-    summary = f"scanned {len(grouped)} manifest(s), {len(refs)} component(s)"
+    summary = f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}"
     if not findings:
         if not grouped:
             if n_found:

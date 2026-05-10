@@ -78,6 +78,10 @@ def parse_install(
         # locked-down home, etc.).
         warnings.append(f"installed_plugins.json unreadable: {exc}")
         return refs, warnings
+    except UnicodeDecodeError as exc:
+        # Non-UTF-8 bytes (UTF-16, corrupted file). Treat as malformed-input.
+        warnings.append(f"installed_plugins.json decode error: {exc}")
+        return refs, warnings
 
     if not isinstance(lockfile, dict):
         warnings.append("installed_plugins.json: expected an object at top level")

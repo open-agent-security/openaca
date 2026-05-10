@@ -141,6 +141,28 @@ def test_load_silently_skips_unreadable_settings(tmp_path):
     assert layers.merged("fs") == {}
 
 
+def test_load_silently_skips_non_utf8_settings(tmp_path):
+    """Non-UTF-8 bytes (UTF-16 BOM, corrupted file) must not abort load()."""
+    (tmp_path / "settings.json").write_bytes(b'\xff\xfe{\x00"\x00t\x00')
+    layers = load(install_root=tmp_path)
+    assert layers.user == {}
+    assert layers.merged("fs") == {}
+
+
+def test_load_silently_skips_non_utf8_project_settings(tmp_path):
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    project_root = tmp_path / "project"
+    project_dir = project_root / ".claude"
+    project_dir.mkdir(parents=True)
+    (project_dir / "settings.json").write_bytes(b"\xff\xfe{\x00")
+    (project_dir / "settings.local.json").write_bytes(b"\xff\xfe[\x00")
+    layers = load(install_root=install_root, project_root=project_root)
+    assert layers.project is None
+    assert layers.local is None
+    assert layers.merged("fs") == {}
+
+
 def test_load_silently_skips_unreadable_project_settings(tmp_path):
     install_root = tmp_path / "install"
     install_root.mkdir()

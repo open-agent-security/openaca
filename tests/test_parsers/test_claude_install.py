@@ -333,3 +333,15 @@ def test_install_warns_on_unreadable_lockfile(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert any("unreadable" in w for w in warnings)
+
+
+def test_install_warns_on_non_utf8_lockfile(tmp_path):
+    """Non-UTF-8 bytes in installed_plugins.json must degrade with a
+    warning, not propagate UnicodeDecodeError out of the resolver."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    plugins_dir = tmp_path / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "installed_plugins.json").write_bytes(b'\xff\xfe{\x00"\x00')
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("decode error" in w for w in warnings)

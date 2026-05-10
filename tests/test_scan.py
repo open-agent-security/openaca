@@ -354,6 +354,41 @@ def test_fs_subcommand_verbose_lists_resolved_plugins():
     assert "deadbeef" in result.output  # gitCommitSha shortened
 
 
+def test_fs_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
+    """gitCommitSha from installed_plugins.json is user-editable; a non-string
+    value (e.g. integer) must not crash verbose fs output."""
+    from tools.component_ref import ComponentRef
+
+    fake_ref = ComponentRef(
+        ecosystem="claude-plugin",
+        name="bad-sha-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/bad-sha-plugin@1.0.0",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.bad-sha-plugin@test[0]",
+        attributed_to=None,
+        extra={"gitCommitSha": 123, "scope": "user", "installPath": None, "marketplace": "test"},
+    )
+    monkeypatch.setattr("tools.scan.parse_install", lambda **_kwargs: ([fake_ref], []))
+
+    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(install_root),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.exception is None
+    assert "sha:" not in result.output
+
+
 def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch):
     """When --target is a project repo with .claude/settings.json but NO
     plugins/installed_plugins.json, the resolver routes to the user's

@@ -35,6 +35,7 @@ from pathlib import Path
 
 import click
 import yaml
+from click.core import ParameterSource
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
@@ -187,6 +188,10 @@ def main(
     With no subcommand, defaults to `repo` for back-compat with the GitHub
     Action and existing scripts that invoke `asve-scan --target X --advisories Y`.
     """
+    ctx.ensure_object(dict)
+    ctx.obj["sarif"] = sarif
+    ctx.obj["fail_on"] = fail_on
+    ctx.obj["verbose"] = verbose
     if ctx.invoked_subcommand is None:
         if target is None or advisories is None:
             click.echo(
@@ -204,14 +209,46 @@ def main(
         )
 
 
+def _apply_group_opts(
+    ctx: click.Context,
+    sarif: Path | None,
+    fail_on: str,
+    verbose: bool,
+) -> tuple[Path | None, str, bool]:
+    """Forward shared options placed before the subcommand name.
+
+    When a user runs `asve-scan --fail-on none repo ...`, Click parses
+    --fail-on at the group level and the subcommand sees its own default.
+    Read the group's ctx.obj and apply any option the subcommand didn't
+    explicitly receive from the command line.
+    """
+    obj = (ctx.parent.obj if ctx.parent else None) or {}
+    if ctx.get_parameter_source("sarif") == ParameterSource.DEFAULT:
+        sarif = obj.get("sarif", sarif)
+    if ctx.get_parameter_source("fail_on") == ParameterSource.DEFAULT:
+        fail_on = obj.get("fail_on", fail_on)
+    if ctx.get_parameter_source("verbose") == ParameterSource.DEFAULT:
+        verbose = obj.get("verbose", verbose)
+    return sarif, fail_on, verbose
+
+
 @main.command()
+@click.pass_context
 @_target_option_required
 @_advisories_option_required
 @_sarif_option
 @_fail_on_option
 @_verbose_option
-def repo(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
+def repo(
+    ctx: click.Context,
+    target: Path,
+    advisories: Path,
+    sarif: Path | None,
+    fail_on: str,
+    verbose: bool,
+) -> None:
     """Scan a code repository's declared manifests."""
+    sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
     grouped, n_found = parse_repo_grouped(target)
     refs = [ref for _, group in grouped for ref in group]
     n_failed = n_found - len(grouped)
@@ -272,12 +309,20 @@ def repo(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
 
 
 @main.command()
+@click.pass_context
 @_target_option_required
 @_advisories_option_required
 @_sarif_option
 @_fail_on_option
 @_verbose_option
-def fs(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
+def fs(
+    ctx: click.Context,
+    target: Path,
+    advisories: Path,
+    sarif: Path | None,
+    fail_on: str,
+    verbose: bool,
+) -> None:
     """Scan an installed Claude Code agent stack.
 
     `--target` is either a Claude Code install root (e.g., `~/.claude`) or
@@ -289,6 +334,7 @@ def fs(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose
     inside plugin install paths (bundled MCPs, skills, hooks) is plan 008;
     plugin-internal lockfile transitive scanning is plan 009.
     """
+    sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
     install_root, project_root = _resolve_fs_roots(target)
 
     refs, warnings = parse_install(install_root=install_root, project_root=project_root, mode="fs")

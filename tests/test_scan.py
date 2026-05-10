@@ -385,3 +385,82 @@ def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch
     )
     assert result.exit_code == 0
     assert "resolved 0 active plugin(s)" in result.output
+
+
+# Plan 007 follow-up: group-level option forwarding to subcommands.
+# Placing shared options before the subcommand name must behave identically
+# to placing them after it (subcommand-explicit always wins on conflict).
+
+
+def test_group_fail_on_none_forwards_to_repo_subcommand():
+    """--fail-on none before the subcommand is honored, not silently dropped."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--fail-on",
+            "none",
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 0, result.output  # findings exist but --fail-on none → exit 0
+
+
+def test_group_sarif_forwards_to_repo_subcommand(tmp_path):
+    """--sarif before the subcommand is honored and the file is written."""
+    sarif_out = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--sarif",
+            str(sarif_out),
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert sarif_out.exists(), f"SARIF not written; exit {result.exit_code}: {result.output}"
+
+
+def test_group_verbose_forwards_to_repo_subcommand():
+    """-v before the subcommand is honored and verbose output appears."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "-v",
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert "loaded" in result.output and "advisory(ies)" in result.output
+
+
+def test_subcommand_fail_on_takes_precedence_over_group():
+    """Subcommand-explicit --fail-on beats the group-level value."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--fail-on",
+            "none",  # group level: would exit 0
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--fail-on",
+            "any",  # subcommand level: overrides → exit 1
+        ],
+    )
+    assert result.exit_code == 1, result.output

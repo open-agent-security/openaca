@@ -73,6 +73,10 @@ def parse_install(
         warnings.append(f"installed_plugins.json malformed: {exc}")
         return refs, warnings
 
+    if not isinstance(lockfile, dict):
+        warnings.append("installed_plugins.json: expected an object at top level")
+        return refs, warnings
+
     plugins_map = lockfile.get("plugins") or {}
     if not isinstance(plugins_map, dict):
         return refs, warnings
@@ -83,6 +87,10 @@ def parse_install(
         entries = plugins_map.get(plugin_key)
         if not isinstance(entries, list) or not entries:
             warnings.append(f"plugin {plugin_key} enabled but missing from installed_plugins.json")
+            continue
+        entries = [e for e in entries if isinstance(e, dict)]
+        if not entries:
+            warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
             continue
 
         scope = _enabling_scope(plugin_key, layers, mode)

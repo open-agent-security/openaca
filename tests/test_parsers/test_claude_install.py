@@ -161,6 +161,29 @@ def test_install_repo_mode_excludes_local_scope_for_entry_selection(tmp_path):
     assert warnings == []
 
 
+def test_install_warns_on_non_object_lockfile(tmp_path):
+    """installed_plugins.json is valid JSON but not an object (e.g. a list after a bad edit)."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text("[]")
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("top level" in w for w in warnings)
+
+
+def test_install_skips_non_dict_install_entries(tmp_path):
+    """Malformed lockfile where plugin entries are not dicts should warn + skip,
+    not crash with AttributeError."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {"foo@bar": ["bad"]}})
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("foo@bar" in w and "no valid install entries" in w for w in warnings)
+
+
 def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     """Defensive: a plugin key without `@marketplace` shouldn't crash."""
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"orphan-plugin": True}}))

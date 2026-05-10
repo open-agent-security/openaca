@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "plugins": {
+    "sample-plugin@test-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "<placeholder>",
+        "version": "1.2.0",
+        "installedAt": "2026-01-01T00:00:00Z",
+        "lastUpdated": "2026-01-01T00:00:00Z",
+        "gitCommitSha": "deadbeef1234"
+      }
+    ]
+  }
+}

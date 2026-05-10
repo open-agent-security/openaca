@@ -43,24 +43,25 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict[s
 
     results: list[dict[str, Any]] = []
     for f in findings:
-        results.append(
-            {
-                "ruleId": f.advisory_id,
-                "level": LEVEL_BY_CONFIDENCE.get(f.confidence, "warning"),
-                "message": {"text": f.reason or f.advisory_id},
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": {"uri": f.component.source_manifest},
-                            "region": {
-                                "startLine": 1,
-                                "snippet": {"text": f.component.source_locator},
-                            },
-                        }
+        result: dict[str, Any] = {
+            "ruleId": f.advisory_id,
+            "level": LEVEL_BY_CONFIDENCE.get(f.confidence, "warning"),
+            "message": {"text": f.reason or f.advisory_id},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": f.component.source_manifest},
+                        "region": {
+                            "startLine": 1,
+                            "snippet": {"text": f.component.source_locator},
+                        },
                     }
-                ],
-            }
-        )
+                }
+            ],
+        }
+        if f.attributed_to is not None:
+            result["properties"] = {"attributed_to": f.attributed_to}
+        results.append(result)
 
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",

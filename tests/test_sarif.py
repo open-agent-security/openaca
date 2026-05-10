@@ -88,3 +88,31 @@ def test_sarif_empty_findings_produces_valid_envelope():
     assert sarif["version"] == "2.1.0"
     assert sarif["runs"][0]["results"] == []
     assert sarif["runs"][0]["tool"]["driver"]["rules"] == []
+
+
+def test_sarif_result_carries_attributed_to_when_set():
+    """Plan 007 plumbing: when a finding has attribution, the SARIF result
+    surfaces it as `properties.attributed_to`. Plans 008/009 will rely on
+    this field for downstream tooling."""
+    finding = Finding(
+        advisory_id="ASVE-2026-0001",
+        component=_ref(),
+        confidence="high",
+        attributed_to="claude-plugin/supabase@0.1.6",
+    )
+    sarif = to_sarif([finding], {})
+    result = sarif["runs"][0]["results"][0]
+    assert result["properties"]["attributed_to"] == "claude-plugin/supabase@0.1.6"
+
+
+def test_sarif_omits_attributed_to_when_none():
+    """Direct findings (attributed_to is None) should not get a `properties`
+    block at all, keeping output tight."""
+    finding = Finding(
+        advisory_id="ASVE-2026-0001",
+        component=_ref(),
+        confidence="high",
+    )
+    sarif = to_sarif([finding], {})
+    result = sarif["runs"][0]["results"][0]
+    assert "properties" not in result

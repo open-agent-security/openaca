@@ -236,3 +236,151 @@ def test_esc_data_encodes_message_metacharacters():
     assert _esc_data("line\r\nbreak") == "line%0D%0Abreak"
     assert _esc_data("colon:comma,safe") == "colon:comma,safe"
     assert _esc_data("plain message") == "plain message"
+
+
+# Plan 007: subcommand split tests. Existing tests above call `main` with the
+# legacy flag set (no subcommand) and exercise the back-compat default to repo.
+
+def test_repo_subcommand_explicit():
+    """Explicit `asve-scan repo` runs the same logic as the back-compat default."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "ASVE-2026-0001" in result.output
+
+
+def test_no_subcommand_back_compat_invokes_repo():
+    """`asve-scan --target ... --advisories ...` with no subcommand still works
+    because the GitHub Action and existing scripts depend on this surface."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "ASVE-2026-0001" in result.output
+
+
+def test_fs_subcommand_minimal_install_no_findings():
+    """fs mode against the minimal fixture install resolves the active plugin
+    and reports no findings (V0 corpus has no plugin advisories yet)."""
+    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(install_root),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "resolved 1 active plugin(s)" in result.output
+    assert "no findings" in result.output
+
+
+def test_fs_subcommand_matches_claude_plugin_advisory(tmp_path):
+    """fs mode + a claude-plugin-ecosystem advisory + the minimal install
+    fires a finding via the matcher's existing version-range path."""
+    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    advisories_dir = tmp_path / "advisories"
+    advisories_dir.mkdir()
+    (advisories_dir / "ASVE-2026-9999.yaml").write_text(
+        """\
+schema_version: 1.7.5
+id: ASVE-2026-9999
+type: vulnerability
+summary: test plugin advisory for plan 007
+modified: '2026-05-09T00:00:00Z'
+affected:
+- package:
+    ecosystem: claude-plugin
+    name: sample-plugin
+  ranges:
+  - type: ECOSYSTEM
+    events:
+    - introduced: '0'
+    - fixed: '2.0.0'
+"""
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(install_root),
+            "--advisories",
+            str(advisories_dir),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "ASVE-2026-9999" in result.output
+
+
+def test_fs_subcommand_verbose_lists_resolved_plugins():
+    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(install_root),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "claude-plugin/sample-plugin@1.2.0" in result.output
+    assert "deadbeef" in result.output  # gitCommitSha shortened
+
+
+def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch):
+    """When --target is a project repo with .claude/settings.json but NO
+    plugins/installed_plugins.json, the resolver routes to the user's
+    install root (~/.claude). Stub Path.home() to a clean tmp dir so the
+    test doesn't pick up the real machine's installed plugins."""
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    fake_install = fake_home / ".claude"
+    fake_install.mkdir()
+    # User-scope settings exist but enable no plugins.
+    (fake_install / "settings.json").write_text("{}")
+
+    project = tmp_path / "myproj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text("{}")
+
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(project),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "resolved 0 active plugin(s)" in result.output

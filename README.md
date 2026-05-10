@@ -30,6 +30,22 @@ ASVE aliases upstream identifiers wherever they exist; it does not
 duplicate authority. The wedge is the agent-stack overlay and the
 manifest parsers, not a parallel CVE database.
 
+## Two scan modes
+
+ASVE scans two distinct surfaces, named via Trivy-style subcommands.
+The same advisory matches in both, but the surface tells you *what
+question you're asking*:
+
+| Mode | Question | Audience | Where it runs |
+|---|---|---|---|
+| `asve-scan repo` | *"What agent components will this app ship with when deployed?"* | AppSec / platform security | CI gate, PR check |
+| `asve-scan fs` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
+
+The same identifier (e.g., `@modelcontextprotocol/server-filesystem@1.0.0`)
+means different things in each context — future deployed-agent exposure
+vs. current developer-machine exposure. The scanner output makes the
+distinction explicit.
+
 ## Quickstart
 
 Two ways to run the scanner. Both produce SARIF v2.1.0 output and
@@ -154,15 +170,48 @@ plugin-level components).
 
 ## What gets scanned
 
+ASVE follows a tiered model loosely analogous to traditional SCA's
+"lockfile > manifest > source code" hierarchy:
+
+| Tier | What it reads | V0 status |
+|---|---|---|
+| **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` (fs mode) | ✅ V0; expanding in plan 008 |
+| **2. Dependency manifests** (universal) | `package.json`, `pyproject.toml`, lockfiles inside active plugins (plan 009) | ✅ V0 (lockfiles in plan 009) |
+| **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
+| **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
+
+Per-parser detail:
+
 | Manifest | Detects | Identifier emitted |
 |---|---|---|
 | `package.json` | npm dependencies (deps + devDeps) | `pkg:npm/<name>@<version>` |
 | `pyproject.toml` | PEP 621 deps, optional-deps, PEP 735 dependency-groups | `pkg:pypi/<name>@<version>` |
 | `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL when pinned; `mcp-stdio/...` otherwise |
-| `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<author>/<name>@<version>` |
-| `.claude/settings.json` | Installed plugin enumeration | same as plugin manifest |
+| `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>@<version>` |
+| `.claude/settings.json` | Enabled-plugin enumeration | same as plugin manifest |
+| `installed_plugins.json` (fs mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
 
-Cursor and Windsurf manifests are deferred to V1.
+## Limitations
+
+Be honest about what ASVE V0 doesn't see:
+
+- **Programmatic SDK configuration is invisible to repo mode.** Code
+  that constructs agents with `query({ mcpServers: [...] })` (Claude
+  Agent SDK) or `Agent(tools=[...], mcp_servers=[...])` (OpenAI Agents
+  SDK) bypasses manifest scanning entirely. Tier-3 SDK-aware extraction
+  is V1.
+- **Repo mode is Claude-family-biased today.** Tier-1 declarative parsers
+  cover Claude Code / Claude Agent SDK filesystem conventions. Cursor,
+  Windsurf, Codex CLI, VS Code agent-mode, and OpenAI Agents SDK have
+  their own conventions (or no conventions); those are V1 adapters.
+- **fs mode is Claude Code-specific.** It reads
+  `~/.claude/installed_plugins.json` and friends. Codex CLI's
+  `~/.codex/` and Cursor's local state will need their own resolvers.
+- **Repo mode is a manifest survey, not a runtime guarantee.** A
+  finding means "this manifest declares a vulnerable component";
+  whether it actually executes depends on runtime config we can't
+  see from static files alone. fs mode is closer to ground truth
+  because it reads the resolved lockfile.
 
 ## Schema and IDs
 

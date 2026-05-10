@@ -30,20 +30,30 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 ]
 
 
-def parse_repo(root: Path) -> list[ComponentRef]:
-    """Walk `root` and return ComponentRefs from all known manifests.
+def parse_repo_grouped(root: Path) -> list[tuple[Path, list[ComponentRef]]]:
+    """Walk `root` and return per-manifest results, preserving file boundaries.
 
-    A single malformed manifest (e.g., invalid JSON) must not abort the whole
-    scan — these parsers operate on arbitrary user repos, and one bad file
-    should drop only that file, not every other finding. Per-path failures
-    are silenced; we don't surface them in V0 (the reference Action will
-    accumulate per-path errors when it lands).
+    Used by callers that need to report which manifests were scanned (e.g.,
+    `asve-scan --verbose`). A single malformed manifest must not abort the
+    whole scan — these parsers operate on arbitrary user repos, and one bad
+    file should drop only that file, not every other finding. Per-path
+    failures are silently dropped. Manifests with zero components (e.g., an
+    empty `dependencies` block) are still included so consumers can see the
+    file was visited.
     """
-    refs: list[ComponentRef] = []
+    grouped: list[tuple[Path, list[ComponentRef]]] = []
     for pattern, parser in REGISTRY:
         for path in root.rglob(pattern):
             try:
-                refs.extend(parser(path))
+                grouped.append((path, parser(path)))
             except Exception:
                 continue
+    return grouped
+
+
+def parse_repo(root: Path) -> list[ComponentRef]:
+    """Walk `root` and return ComponentRefs from all known manifests."""
+    refs: list[ComponentRef] = []
+    for _, group in parse_repo_grouped(root):
+        refs.extend(group)
     return refs

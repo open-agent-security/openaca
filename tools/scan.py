@@ -132,9 +132,7 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
             for path, group in grouped:
                 click.echo(f"  {_relative_to(path, target)} — {len(group)} component(s)", err=True)
         elif n_found:
-            click.echo(
-                f"found {n_found} manifest file(s) but none parsed successfully", err=True
-            )
+            click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
             click.echo(f"no manifests found under {target}", err=True)
         if findings:

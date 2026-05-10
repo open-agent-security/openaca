@@ -2,7 +2,10 @@
 
 Per Claude Code docs, settings layer in this precedence (narrowest wins):
 
-    Managed > Local (settings.local.json) > Project (.claude/settings.json) > User (~/.claude/settings.json)
+    Managed
+      > Local (settings.local.json)
+      > Project (.claude/settings.json)
+      > User (~/.claude/settings.json)
 
 Merge rules:
 
@@ -59,13 +62,13 @@ class SettingsLayers:
     def merged(self, mode: Mode) -> dict:
         # Apply scopes lowest-precedence first; higher-precedence scopes
         # override key-by-key as we walk back up.
-        scopes_low_to_high = list(reversed(SCOPE_PRECEDENCE))
+        scopes_low_to_high: list[Scope] = list(reversed(SCOPE_PRECEDENCE))
         if mode == "repo":
             scopes_low_to_high = [s for s in scopes_low_to_high if s != "local"]
         result: dict = {}
         per_scope = self.by_scope()
         for scope in scopes_low_to_high:
-            data = per_scope.get(scope) or {}
+            data = per_scope[scope] or {}
             _deep_merge(result, data)
         return result
 

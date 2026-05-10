@@ -210,9 +210,7 @@ def main(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
-def repo(
-    target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool
-) -> None:
+def repo(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
     """Scan a code repository's declared manifests."""
     grouped, n_found = parse_repo_grouped(target)
     refs = [ref for _, group in grouped for ref in group]
@@ -236,9 +234,7 @@ def repo(
                     err=True,
                 )
         elif n_found:
-            click.echo(
-                f"found {n_found} manifest file(s) but none parsed successfully", err=True
-            )
+            click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
             click.echo(f"no manifests found under {target}", err=True)
         if findings:
@@ -281,9 +277,7 @@ def repo(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
-def fs(
-    target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool
-) -> None:
+def fs(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbose: bool) -> None:
     """Scan an installed Claude Code agent stack.
 
     `--target` is either a Claude Code install root (e.g., `~/.claude`) or
@@ -297,9 +291,7 @@ def fs(
     """
     install_root, project_root = _resolve_fs_roots(target)
 
-    refs, warnings = parse_install(
-        install_root=install_root, project_root=project_root, mode="fs"
-    )
+    refs, warnings = parse_install(install_root=install_root, project_root=project_root, mode="fs")
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
 

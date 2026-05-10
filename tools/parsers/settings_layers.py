@@ -120,7 +120,11 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
             parsed = json.loads(user_file.read_text())
             if isinstance(parsed, dict):
                 layers.user = parsed
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, OSError):
+            # JSON syntax errors AND read errors (PermissionError,
+            # IsADirectoryError, etc.) both fall through silently. Per
+            # module docstring: scan with partial settings rather than
+            # abort on one bad file.
             pass
 
     if project_root is not None:
@@ -130,7 +134,7 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
                 parsed = json.loads(project_file.read_text())
                 if isinstance(parsed, dict):
                     layers.project = parsed
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, OSError):
                 pass
         local_file = project_root / ".claude" / "settings.local.json"
         if local_file.exists():
@@ -138,7 +142,7 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
                 parsed = json.loads(local_file.read_text())
                 if isinstance(parsed, dict):
                     layers.local = parsed
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, OSError):
                 pass
 
     # Managed scope (system policy) — not loaded in V0.

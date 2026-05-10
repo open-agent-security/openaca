@@ -129,6 +129,32 @@ def test_empty_install_root_returns_empty_layers(tmp_path):
     assert layers.merged("repo") == {}
 
 
+def test_load_silently_skips_unreadable_settings(tmp_path):
+    """An unreadable settings file (e.g., a directory at the settings path,
+    or a permission-locked file) must not abort load(); it should degrade
+    to partial settings like other malformed cases."""
+    # Use a directory at the user settings path — raises IsADirectoryError
+    # (a concrete OSError subclass) on read_text(), portable across CIs.
+    (tmp_path / "settings.json").mkdir()
+    layers = load(install_root=tmp_path)
+    assert layers.user == {}
+    assert layers.merged("fs") == {}
+
+
+def test_load_silently_skips_unreadable_project_settings(tmp_path):
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    project_root = tmp_path / "project"
+    project_dir = project_root / ".claude"
+    project_dir.mkdir(parents=True)
+    (project_dir / "settings.json").mkdir()
+    (project_dir / "settings.local.json").mkdir()
+    layers = load(install_root=install_root, project_root=project_root)
+    assert layers.project is None
+    assert layers.local is None
+    assert layers.merged("fs") == {}
+
+
 def test_array_dedupe_handles_dict_items():
     """Permissions / hooks may carry dict entries; first-seen order wins."""
     layers = SettingsLayers(

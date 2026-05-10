@@ -289,3 +289,47 @@ def test_install_warns_on_non_object_plugins_map(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert any("plugins" in w and "not an object" in w for w in warnings)
+
+
+def test_install_source_locator_preserves_original_index_after_filtering(tmp_path):
+    """If installed_plugins.json has a malformed (non-dict) entry before a
+    valid one, the emitted source_locator must reference the real lockfile
+    index, not the post-filter position. Otherwise findings + debugging
+    evidence point at the wrong array slot."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "foo@bar": [
+                        "malformed-leading-entry",
+                        {"scope": "user", "version": "2.0", "installPath": "/y"},
+                    ]
+                },
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert len(refs) == 1
+    assert refs[0].version == "2.0"
+    # Index [1] is the real lockfile slot for the chosen entry, even after
+    # the malformed [0] was filtered out of consideration.
+    assert refs[0].source_locator == "$.plugins.foo@bar[1]"
+
+
+def test_install_warns_on_unreadable_lockfile(tmp_path):
+    """If installed_plugins.json exists but read_text raises (e.g.,
+    PermissionError on a root-owned file), degrade with a warning rather
+    than aborting the scan."""
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
+    plugins_dir = tmp_path / "plugins"
+    plugins_dir.mkdir()
+    # A directory at the lockfile path makes read_text raise IsADirectoryError
+    # (a concrete OSError subclass) — easier to construct portably than a
+    # permission-locked file in pytest.
+    (plugins_dir / "installed_plugins.json").mkdir()
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert refs == []
+    assert any("unreadable" in w for w in warnings)

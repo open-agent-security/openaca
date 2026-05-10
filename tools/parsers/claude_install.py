@@ -79,6 +79,7 @@ def parse_install(
 
     plugins_map = lockfile.get("plugins") or {}
     if not isinstance(plugins_map, dict):
+        warnings.append("installed_plugins.json: 'plugins' value is not an object")
         return refs, warnings
 
     for plugin_key, is_enabled in enabled_plugins.items():
@@ -132,7 +133,7 @@ def parse_install(
 
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
     if "@" in plugin_key:
-        name, marketplace = plugin_key.split("@", 1)
+        name, marketplace = plugin_key.rsplit("@", 1)
         return name, marketplace
     return plugin_key, None
 

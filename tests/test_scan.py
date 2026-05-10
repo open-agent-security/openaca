@@ -17,6 +17,7 @@ def test_scan_finds_exposed_mcp(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
             "--advisories",
@@ -40,6 +41,7 @@ def test_scan_clean_repo_exits_zero(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(clean),
             "--advisories",
@@ -58,6 +60,7 @@ def test_scan_emits_github_annotation_lines(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
             "--advisories",
@@ -84,6 +87,7 @@ def test_scan_fail_on_high_only_exits_zero_for_low_or_unknown(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(target),
             "--advisories",
@@ -100,6 +104,7 @@ def test_scan_fail_on_none_always_exits_zero(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
             "--advisories",
@@ -123,7 +128,7 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["--target", str(clean), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(clean), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
     # CliRunner mixes stdout+stderr into result.output.
@@ -139,7 +144,7 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
     assert "no manifests found" not in result.output
@@ -157,7 +162,7 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
     assert "scanned 2 manifest(s)" in result.output
@@ -168,7 +173,7 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
     assert "no manifests found" in result.output
@@ -182,6 +187,7 @@ def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
             "--advisories",
@@ -207,6 +213,7 @@ def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
     result = runner.invoke(
         main,
         [
+            "repo",
             "--target",
             str(clean),
             "--advisories",
@@ -259,9 +266,9 @@ def test_repo_subcommand_explicit():
     assert "ASVE-2026-0001" in result.output
 
 
-def test_no_subcommand_back_compat_invokes_repo():
-    """`asve-scan --target ... --advisories ...` with no subcommand still works
-    because the GitHub Action and existing scripts depend on this surface."""
+def test_no_subcommand_fails_with_usage():
+    """Invoking `asve-scan` without a subcommand should exit non-zero with
+    Click's standard usage error. There is no back-compat fallback."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -272,8 +279,8 @@ def test_no_subcommand_back_compat_invokes_repo():
             str(REPO_ROOT / "advisories"),
         ],
     )
-    assert result.exit_code == 1
-    assert "ASVE-2026-0001" in result.output
+    assert result.exit_code != 0
+    assert "no such option" in result.output.lower() or "missing command" in result.output.lower()
 
 
 def test_fs_subcommand_minimal_install_no_findings():

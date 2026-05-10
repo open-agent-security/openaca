@@ -4,7 +4,7 @@
 
 **Goal:** Ship the data model and CLI shape for install-state-aware scanning of Claude Code installations. After this plan, `asve-scan repo` is today's behavior, `asve-scan fs` is a stub for plan 008, plugin advisories match through the existing range matcher, and `attributed_to` carries through ComponentRef → Finding → SARIF.
 
-**Architecture:** Three independent changes that share a single PR because they're foundational for plans 008 and 009: (1) Click subcommand split with back-compat default; (2) `attributed_to` mirrored on ComponentRef and Finding; (3) `claude-plugin` ecosystem wired through the existing `_match_versioned` path by tagging the parser-emitted ref. Plus a real bug fix for `mcpServers: "./.mcp.json"` string-path handling, plus a minimal `claude_install.py` that emits one component per active plugin (no walking yet).
+**Architecture:** Three independent changes that share a single PR because they're foundational for plans 008 and 009: (1) Click subcommand split (subcommand required, no fallback); (2) `attributed_to` mirrored on ComponentRef and Finding; (3) `claude-plugin` ecosystem wired through the existing `_match_versioned` path by tagging the parser-emitted ref. Plus a real bug fix for `mcpServers: "./.mcp.json"` string-path handling, plus a minimal `claude_install.py` that emits one component per active plugin (no walking yet).
 
 **Tech Stack:** Python (Click, dataclasses), pytest. No new runtime deps.
 
@@ -34,7 +34,7 @@ Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `asve-
 
 | File | Status | Purpose |
 |---|---|---|
-| `tools/scan.py` | Modify | Click group with `repo`/`fs` subcommands; back-compat default to `repo` |
+| `tools/scan.py` | Modify | Click group with `repo`/`fs` subcommands; subcommand required |
 | `tools/parsers/claude_plugin.py` | Modify | Set ecosystem/name/version on self-identity ref; fix `mcpServers` string-path |
 | `tools/parsers/claude_install.py` | Create | Minimal active-plugin resolver: settings + installed_plugins.json → claude-plugin refs |
 | `tools/parsers/settings_layers.py` | Create | Provenance-aware four-scope reader (`merged(mode)` + `by_scope()`) |
@@ -42,7 +42,7 @@ Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `asve-
 | `tools/matcher.py` | Modify | Add `Finding.attributed_to`, mirror from ref when constructing findings |
 | `tools/sarif.py` | Modify | Surface `properties.attributed_to` per result |
 | `tests/test_component_ref.py` | Modify | Assert `attributed_to` defaults and round-trip |
-| `tests/test_scan.py` | Modify | Subcommand invocation + back-compat |
+| `tests/test_scan.py` | Modify | Subcommand invocation; no-subcommand exit-with-usage-error |
 | `tests/test_parsers/test_claude_plugin.py` | Modify | Ecosystem tagging + string-path mcpServers |
 | `tests/test_matcher.py` | Modify | claude-plugin range matching + attribution mirror invariant |
 | `tests/test_parsers/test_settings_layers.py` | Create | Four-scope merge + mode-specific local |
@@ -803,7 +803,7 @@ Refactor `tools/scan.py` so that:
 
 - `main` becomes a `click.group()` with `invoke_without_command=True`.
 - Two subcommands: `repo` (today's logic, factored out of the old `main`) and `fs`.
-- When invoked with no subcommand but with the legacy flags (`--target`, `--advisories`, etc.), forward to `repo` for back-compat.
+- A subcommand is required; invoking with no subcommand exits 2 with Click's usage error.
 - `-v / --verbose` and `--fail-on` are common to both subcommands.
 
 Skeleton:
@@ -954,14 +954,14 @@ affected:
 
 - [ ] **Step 3: Verify the GitHub Action still works**
 
-`action.yml` invokes `asve-scan` with positional flags. With the back-compat default to `repo`, no `action.yml` change is needed. Verify by reading the file and confirming `--target/--advisories/--sarif/--fail-on` flags still align.
+`action.yml` is updated to invoke `asve-scan repo` explicitly (no back-compat fallback exists).
 
 - [ ] **Step 4: Run all scan/install tests, commit**
 
 ```bash
 uv run pytest tests/test_scan.py tests/test_parsers/test_claude_install.py -q
 git add tools/scan.py tests/test_scan.py
-git commit -m "feat(scan): asve-scan repo and fs subcommands; back-compat default to repo"
+git commit -m "feat(scan): asve-scan repo and fs subcommands"
 ```
 
 ---
@@ -1045,7 +1045,7 @@ the future without breaking ComponentRef immutability assumptions.
 - The `claude-plugin` ecosystem string becomes part of the corpus contract.
   Future advisories targeting plugins use it.
 - The CLI surface grows by two subcommands. Back-compat is preserved by the
-  no-subcommand default.
+  no-subcommand fallback (none exists; subcommand is required).
 - All findings now carry an attribution slot, populated or not. Output
   rendering checks for None and elides the `via ...` suffix when absent.
 ```
@@ -1123,7 +1123,7 @@ After PR merges, dogfood manually:
 ```bash
 # Repo mode unchanged for the GitHub Action use case
 uv run asve-scan repo --target . --advisories advisories
-# Same as: uv run asve-scan --target . --advisories advisories  (back-compat default)
+# A subcommand is required; no no-subcommand fallback.
 
 # fs mode against the minimal fixture install
 uv run asve-scan fs \
@@ -1141,7 +1141,7 @@ uv run asve-scan fs --target ~/.claude --advisories advisories -v
 
 ## Self-review checklist
 
-- [ ] **CLI back-compat** verified: `asve-scan --target X --advisories Y` (no subcommand) still works; the GitHub Action's invocation in `action.yml` doesn't need changes.
+- [ ] **No back-compat fallback**: `asve-scan --target X --advisories Y` (no subcommand) exits 2. `action.yml` uses `asve-scan repo` explicitly.
 - [ ] **claude-plugin ecosystem** flows end-to-end: parser sets ecosystem, matcher fires, advisory matches via `_match_versioned`.
 - [ ] **`mcpServers` string-path** resolves from plugin root (`manifest.parent.parent`), not manifest dir. Test with the new fixture.
 - [ ] **Attribution mirror invariant** holds: `finding.attributed_to == finding.component.attributed_to` for every finding.

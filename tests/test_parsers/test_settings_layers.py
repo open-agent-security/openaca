@@ -1,0 +1,114 @@
+import json
+from pathlib import Path
+
+from tools.parsers.settings_layers import SettingsLayers, load
+
+
+def _write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
+
+
+def test_array_union_dedupes_across_scopes():
+    layers = SettingsLayers(
+        user={"permissions": {"allow": ["Bash(git:*)"]}},
+        project={"permissions": {"allow": ["Bash(npm:*)", "Bash(git:*)"]}},
+    )
+    merged = layers.merged("repo")
+    # First-seen order preserved; duplicates collapsed.
+    assert merged["permissions"]["allow"] == ["Bash(git:*)", "Bash(npm:*)"]
+
+
+def test_object_deep_merge_per_key():
+    """Project should override user per-key, not replace the whole object."""
+    layers = SettingsLayers(
+        user={"enabledPlugins": {"foo": True, "bar": True}},
+        project={"enabledPlugins": {"foo": False}},
+    )
+    merged = layers.merged("repo")
+    assert merged["enabledPlugins"] == {"foo": False, "bar": True}
+
+
+def test_scalar_override():
+    layers = SettingsLayers(user={"theme": "dark"}, project={"theme": "light"})
+    assert layers.merged("repo")["theme"] == "light"
+
+
+def test_repo_mode_skips_local_scope():
+    """settings.local.json is machine-local; CI/repo scans should ignore it."""
+    layers = SettingsLayers(
+        user={"theme": "dark"},
+        local={"theme": "light"},
+    )
+    assert layers.merged("repo")["theme"] == "dark"
+    assert layers.merged("fs")["theme"] == "light"
+
+
+def test_local_overrides_project_in_fs_mode():
+    layers = SettingsLayers(
+        user={"theme": "dark"},
+        project={"theme": "light"},
+        local={"theme": "neon"},
+    )
+    assert layers.merged("fs")["theme"] == "neon"
+
+
+def test_by_scope_preserves_provenance():
+    """Hooks need scope-of-origin for identity; merging would lose it."""
+    layers = SettingsLayers(
+        user={"hooks": {"PreToolUse": [{"command": "user-hook"}]}},
+        project={"hooks": {"PreToolUse": [{"command": "project-hook"}]}},
+    )
+    by_scope = layers.by_scope()
+    assert by_scope["user"]["hooks"]["PreToolUse"][0]["command"] == "user-hook"
+    assert by_scope["project"]["hooks"]["PreToolUse"][0]["command"] == "project-hook"
+    assert by_scope["managed"] == {}
+    assert by_scope["local"] == {}
+
+
+def test_load_user_only(tmp_path):
+    _write(tmp_path / "settings.json", {"theme": "dark"})
+    layers = load(install_root=tmp_path)
+    assert layers.user == {"theme": "dark"}
+    assert layers.project is None
+    assert layers.local is None
+
+
+def test_load_user_plus_project(tmp_path):
+    install_root = tmp_path / "install"
+    project_root = tmp_path / "project"
+    _write(install_root / "settings.json", {"theme": "dark"})
+    _write(project_root / ".claude" / "settings.json", {"theme": "light"})
+    _write(project_root / ".claude" / "settings.local.json", {"theme": "neon"})
+    layers = load(install_root=install_root, project_root=project_root)
+    assert layers.user == {"theme": "dark"}
+    assert layers.project == {"theme": "light"}
+    assert layers.local == {"theme": "neon"}
+    assert layers.merged("repo")["theme"] == "light"
+    assert layers.merged("fs")["theme"] == "neon"
+
+
+def test_load_silently_skips_malformed_json(tmp_path):
+    """One malformed file should not abort the whole resolver."""
+    (tmp_path / "settings.json").write_text("{not json")
+    layers = load(install_root=tmp_path)
+    assert layers.user == {}
+
+
+def test_empty_install_root_returns_empty_layers(tmp_path):
+    layers = load(install_root=tmp_path)
+    assert layers.user == {}
+    assert layers.project is None
+    assert layers.local is None
+    assert layers.merged("fs") == {}
+    assert layers.merged("repo") == {}
+
+
+def test_array_dedupe_handles_dict_items():
+    """Permissions / hooks may carry dict entries; first-seen order wins."""
+    layers = SettingsLayers(
+        user={"hooks": {"X": [{"cmd": "a"}, {"cmd": "b"}]}},
+        project={"hooks": {"X": [{"cmd": "b"}, {"cmd": "c"}]}},
+    )
+    merged = layers.merged("repo")
+    assert merged["hooks"]["X"] == [{"cmd": "a"}, {"cmd": "b"}, {"cmd": "c"}]

@@ -72,6 +72,12 @@ def parse_install(
     except json.JSONDecodeError as exc:
         warnings.append(f"installed_plugins.json malformed: {exc}")
         return refs, warnings
+    except OSError as exc:
+        # PermissionError, IsADirectoryError, etc. — degrade gracefully rather
+        # than aborting fs scans in restricted environments (root-owned files,
+        # locked-down home, etc.).
+        warnings.append(f"installed_plugins.json unreadable: {exc}")
+        return refs, warnings
 
     if not isinstance(lockfile, dict):
         warnings.append("installed_plugins.json: expected an object at top level")
@@ -85,11 +91,17 @@ def parse_install(
     for plugin_key, is_enabled in enabled_plugins.items():
         if is_enabled is not True:
             continue
-        entries = plugins_map.get(plugin_key)
-        if not isinstance(entries, list) or not entries:
+        raw_entries = plugins_map.get(plugin_key)
+        if not isinstance(raw_entries, list) or not raw_entries:
             warnings.append(f"plugin {plugin_key} enabled but missing from installed_plugins.json")
             continue
-        entries = [e for e in entries if isinstance(e, dict)]
+        # Preserve original lockfile-array indices when filtering out malformed
+        # (non-dict) entries; source_locator must reference the real slot in
+        # installed_plugins.json so findings + debugging evidence are accurate
+        # even when a malformed element precedes the chosen one.
+        entries: list[tuple[int, dict]] = [
+            (i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)
+        ]
         if not entries:
             warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
             continue
@@ -159,19 +171,29 @@ def _enabling_scope(plugin_key: str, layers: SettingsLayers, mode: Mode = "fs") 
 
 
 def _select_install_entry(
-    entries: list[dict], enabling_scope: Optional[str]
+    entries: list[tuple[int, dict]], enabling_scope: Optional[str]
 ) -> tuple[dict, int, Optional[str]]:
     """Pick the install entry to emit a component for.
 
+    `entries` is a list of `(original_index, entry)` pairs; the returned
+    `index` preserves the original position in `installed_plugins.json` so
+    `source_locator` references the real lockfile slot regardless of any
+    malformed entries that were filtered out upstream.
+
     Single-element list (the common case): take it.
     Multi-element list: prefer the entry whose `scope` matches the enabling
-    scope; fall back to `[0]` with a warning string for the caller to surface.
+    scope; fall back to the first remaining entry with a warning.
     """
     if len(entries) == 1:
-        return entries[0], 0, None
+        idx, entry = entries[0]
+        return entry, idx, None
     if enabling_scope is not None:
-        for index, entry in enumerate(entries):
+        for idx, entry in entries:
             if entry.get("scope") == enabling_scope:
-                return entry, index, None
-    warning = f"plugin has {len(entries)} installed entries with no scope match; taking [0]"
-    return entries[0], 0, warning
+                return entry, idx, None
+    warning = (
+        f"plugin has {len(entries)} installed entries with no scope match; "
+        "taking the first remaining"
+    )
+    idx, entry = entries[0]
+    return entry, idx, warning

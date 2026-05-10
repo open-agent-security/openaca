@@ -109,15 +109,17 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
     `project_root` is given, also read its `.claude/settings.json` (project
     scope) and `.claude/settings.local.json` (local scope).
 
-    Files that don't exist or fail JSON parsing are silently skipped — we'd
-    rather scan with partial settings than abort the whole resolver on one
-    malformed file.
+    Files that don't exist, fail JSON parsing, or contain a non-object top
+    level are silently skipped — we'd rather scan with partial settings than
+    abort the whole resolver on one malformed file.
     """
     layers = SettingsLayers()
     user_file = install_root / "settings.json"
     if user_file.exists():
         try:
-            layers.user = json.loads(user_file.read_text())
+            parsed = json.loads(user_file.read_text())
+            if isinstance(parsed, dict):
+                layers.user = parsed
         except json.JSONDecodeError:
             pass
 
@@ -125,13 +127,17 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
         project_file = project_root / ".claude" / "settings.json"
         if project_file.exists():
             try:
-                layers.project = json.loads(project_file.read_text())
+                parsed = json.loads(project_file.read_text())
+                if isinstance(parsed, dict):
+                    layers.project = parsed
             except json.JSONDecodeError:
                 pass
         local_file = project_root / ".claude" / "settings.local.json"
         if local_file.exists():
             try:
-                layers.local = json.loads(local_file.read_text())
+                parsed = json.loads(local_file.read_text())
+                if isinstance(parsed, dict):
+                    layers.local = parsed
             except json.JSONDecodeError:
                 pass
 

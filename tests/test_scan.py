@@ -160,7 +160,7 @@ def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
     assert result.exit_code == 1, result.output
     assert "loaded" in result.output and "advisory(ies)" in result.output
     assert "package.json" in result.output
-    assert "matched" in result.output and "component(s):" in result.output
+    assert "matched" in result.output and "finding(s):" in result.output
     assert "ASVE-2026-0001" in result.output
     assert "(high)" in result.output
 

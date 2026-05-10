@@ -134,9 +134,8 @@ def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str, verbo
         else:
             click.echo(f"no manifests found under {target}", err=True)
         if findings:
-            matched = {id(f.component): f for f in findings}
-            click.echo(f"matched {len(matched)} component(s):", err=True)
-            for f in matched.values():
+            click.echo(f"matched {len(findings)} finding(s):", err=True)
+            for f in findings:
                 click.echo(
                     f"  {_component_label(f.component)} → {f.advisory_id} ({f.confidence})",
                     err=True,

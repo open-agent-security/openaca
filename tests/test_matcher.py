@@ -322,3 +322,58 @@ def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     )
     findings = match(refs=[ref], advisories=[advisory])
     assert len(findings) == 1
+
+
+def test_match_claude_plugin_in_range():
+    """Plan 007: claude-plugin ecosystem flows through the existing
+    _match_versioned path. Plugin advisories must fire when the ref carries
+    ecosystem='claude-plugin' alongside name+version."""
+    advisories = [make_advisory("ASVE-2026-9999", "claude-plugin", "deployment-tools", "1.3.0")]
+    ref = ComponentRef(
+        ecosystem="claude-plugin",
+        name="deployment-tools",
+        version="1.2.0",
+        component_identity="claude-plugin/deployment-tools@1.2.0",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.deployment-tools@market[0]",
+    )
+    findings = match(refs=[ref], advisories=advisories)
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "ASVE-2026-9999"
+    assert findings[0].confidence == "high"
+    # Plugin itself is direct — no attribution.
+    assert findings[0].attributed_to is None
+    assert findings[0].component.attributed_to is None
+
+
+def test_finding_mirrors_component_attribution():
+    """Per ADR-0006: Finding.attributed_to mirrors ComponentRef.attributed_to.
+    Test both attribution-set and attribution-None cases."""
+    advisory = make_advisory("ASVE-2026-9998", "npm", "lodash", "5.0.0")
+
+    via_plugin = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.0",
+        attributed_to="claude-plugin/supabase@0.1.6",
+        source_manifest="package-lock.json",
+        source_locator="$.packages",
+    )
+    direct = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.0",
+        source_manifest="package.json",
+        source_locator="dependencies",
+    )
+    findings = match(refs=[via_plugin, direct], advisories=[advisory])
+    assert len(findings) == 2
+
+    via_finding = next(f for f in findings if f.component is via_plugin)
+    direct_finding = next(f for f in findings if f.component is direct)
+
+    assert via_finding.attributed_to == "claude-plugin/supabase@0.1.6"
+    assert via_finding.attributed_to == via_finding.component.attributed_to
+
+    assert direct_finding.attributed_to is None
+    assert direct_finding.component.attributed_to is None

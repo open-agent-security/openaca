@@ -46,6 +46,7 @@ class Finding:
     component: ComponentRef
     confidence: str  # "high" | "low" | "unknown"
     reason: str = ""
+    attributed_to: Optional[str] = None  # mirrored from component.attributed_to
 
 
 def _parse_version(value: Optional[str]) -> Optional[Version]:
@@ -134,6 +135,7 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
                             f"{ref.name}@{ref.version!r} is a range/spec, not a "
                             f"concrete version — pin to verify against {advisory['id']}"
                         ),
+                        attributed_to=ref.attributed_to,
                     )
                 )
                 break
@@ -144,6 +146,7 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
                         component=ref,
                         confidence="high",
                         reason=f"{ref.name}@{ref.version} matches {advisory['id']}",
+                        attributed_to=ref.attributed_to,
                     )
                 )
                 break
@@ -169,6 +172,7 @@ def _match_unpinned(
                             f"{ref.source_locator} matches {advisory['id']} — "
                             "pin the version to verify"
                         ),
+                        attributed_to=ref.attributed_to,
                     )
                 )
                 break

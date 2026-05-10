@@ -35,6 +35,7 @@ class ComponentRef:
     source_manifest: str = ""
     source_locator: str = ""
     component_identity: Optional[str] = None
+    attributed_to: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
     @property

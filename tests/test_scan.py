@@ -539,3 +539,89 @@ def test_subcommand_fail_on_takes_precedence_over_group():
         ],
     )
     assert result.exit_code == 1, result.output
+
+
+def test_fs_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
+    """--exclude-transitive: Tier-2 refs suppressed; Tier-1 still emitted."""
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    skill_dir = cache_dir / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: demo-skill\ndescription: x\n---\nbody\n")
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--exclude-transitive",
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # No lockfile refs reported. The plugin self-identity is the only
+    # claude-plugin ref; lodash should NOT appear.
+    assert "lodash" not in result.output
+    # Tier-1 skill still emitted.
+    assert "demo-skill" in result.output or "1 bundled skills" in result.output
+
+
+def test_fs_subcommand_includes_transitive_by_default(tmp_path):
+    """Without --exclude-transitive, lockfile refs are emitted."""
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+    # Use the resolver directly to inspect refs (CLI suppresses non-matching
+    # refs in its summary — the dispatch-level test is cleaner).
+    from tools.parsers.claude_install import parse_install
+
+    refs, _ = parse_install(install_root=tmp_path)
+    assert any(r.ecosystem == "npm" and r.name == "lodash" for r in refs)

@@ -323,6 +323,13 @@ def repo(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
+@click.option(
+    "--exclude-transitive",
+    is_flag=True,
+    default=False,
+    help="Skip Tier-2 dependency scanning (lockfiles + manifest fallback). "
+    "Tier-1 agent-stack inventory still emitted.",
+)
 def fs(
     ctx: click.Context,
     target: Path,
@@ -330,6 +337,7 @@ def fs(
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
+    exclude_transitive: bool,
 ) -> None:
     """Scan an installed Claude Code agent stack.
 
@@ -345,7 +353,12 @@ def fs(
     sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
     install_root, project_root = _resolve_fs_roots(target)
 
-    refs, warnings = parse_install(install_root=install_root, project_root=project_root, mode="fs")
+    refs, warnings = parse_install(
+        install_root=install_root,
+        project_root=project_root,
+        mode="fs",
+        include_transitive=not exclude_transitive,
+    )
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
 

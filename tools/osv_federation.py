@@ -72,10 +72,12 @@ def augment_corpus(
 
 
 def _collect_purls(refs: list[ComponentRef]) -> list[str]:
-    """Deduplicate PURLs from refs that have a derivable PURL."""
+    """Deduplicate PURLs from refs that have a derivable PURL with a pinned version."""
     seen: set[str] = set()
     out: list[str] = []
     for r in refs:
+        if not r.version:
+            continue
         purl = r.purl
         if purl is None:
             continue

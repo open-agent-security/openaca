@@ -123,6 +123,28 @@ def test_augment_chunks_large_batches():
     assert len(calls[1]["queries"]) == 500
 
 
+def test_augment_skips_unversioned_refs():
+    """Refs with a purl-capable ecosystem but no version (e.g., manifest fallback
+    with an unpinned dep) must NOT be queried — OSV would return advisories for
+    all versions, creating noisy/incorrect findings."""
+    refs = [
+        ComponentRef(ecosystem="PyPI", name="requests"),  # version=None
+        ComponentRef(ecosystem="npm", name="lodash", version="4.17.20"),
+    ]
+    base = []
+    queries_seen: list[list[str]] = []
+
+    def fake_post(url, payload):
+        queries_seen.append([q["package"]["purl"] for q in payload["queries"]])
+        return {"results": [{"vulns": []}]}
+
+    with patch("tools.osv_federation._post_json", fake_post):
+        augment_corpus(refs=refs, base_corpus=base)
+    assert len(queries_seen) == 1
+    purls = queries_seen[0]
+    assert purls == ["pkg:npm/lodash@4.17.20"]  # unversioned PyPI ref excluded
+
+
 def test_augment_skips_purls_without_purl_form():
     """Refs whose ecosystem isn't in the PURL map (e.g., claude-skill) aren't
     queryable via OSV.dev — skip them, query the rest."""

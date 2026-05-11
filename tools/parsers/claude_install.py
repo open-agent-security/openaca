@@ -424,6 +424,7 @@ _MANIFEST_FALLBACK: list[tuple[str, str, object]] = [
 # Absent from this dict → no filtering (all locators accepted).
 _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
     "npm": {"dependencies"},
+    "PyPI": {"project.dependencies"},
 }
 
 

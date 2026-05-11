@@ -475,3 +475,157 @@ def test_fs_mode_hook_identity_match_attributes_finding(tmp_path):
     assert "ASVE-2026-9003" in result.output
     # Attribution propagates to the finding.
     assert "via claude-plugin/hook-plugin@1.0.0" in result.output
+
+
+def test_fs_lockfile_transitive_finding_with_attribution(tmp_path):
+    """Plan 009 end-to-end: an active plugin's package-lock.json contains
+    a package that matches a real corpus advisory; the finding fires with
+    via-claude-plugin attribution and SARIF coverage=transitive."""
+    from tools.scan import main as scan_main
+
+    # Build install layout with a real cache dir (must be absolute).
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "vuln-plugin", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}
+                    ]
+                },
+            }
+        )
+    )
+
+    sarif_path = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(ADVISORIES_DIR),
+            "--sarif",
+            str(sarif_path),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "ASVE-2026-0001" in result.output
+    assert "via claude-plugin/vuln-plugin@1.0.0" in result.output
+
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    results = sarif["runs"][0]["results"]
+    matching = [r for r in results if r.get("ruleId") == "ASVE-2026-0001"]
+    assert matching
+    properties = matching[0].get("properties", {})
+    assert properties.get("coverage") == "transitive"
+    assert properties.get("transitive") is True
+    assert properties.get("attributed_to") == "claude-plugin/vuln-plugin@1.0.0"
+    assert properties.get("source") == "asve.dev"
+
+
+def test_fs_exclude_transitive_suppresses_lockfile_finding(tmp_path):
+    """The same fixture under --exclude-transitive should not fire the finding."""
+    from tools.scan import main as scan_main
+
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "vuln-plugin", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}
+                    ]
+                },
+            }
+        )
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(ADVISORIES_DIR),
+            "--exclude-transitive",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "ASVE-2026-0001" not in result.output
+
+
+def test_repo_lockfile_finds_corpus_advisory(tmp_path):
+    """Repo mode + package-lock.json at root: lockfile findings emit with
+    attributed_to=None and coverage=transitive."""
+    from tools.scan import main as scan_main
+
+    target = tmp_path / "host-repo"
+    target.mkdir()
+    (target / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "host", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    sarif_path = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(target),
+            "--advisories",
+            str(ADVISORIES_DIR),
+            "--sarif",
+            str(sarif_path),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    matching = [r for r in sarif["runs"][0]["results"] if r.get("ruleId") == "ASVE-2026-0001"]
+    assert matching
+    properties = matching[0].get("properties", {})
+    assert properties.get("coverage") == "transitive"
+    assert properties.get("attributed_to") is None or "attributed_to" not in properties

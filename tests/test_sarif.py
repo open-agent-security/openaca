@@ -116,3 +116,83 @@ def test_sarif_omits_attributed_to_when_none():
     sarif = to_sarif([finding], {})
     result = sarif["runs"][0]["results"][0]
     assert "properties" not in result
+
+
+def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
+    """A finding from a lockfile-derived ref gets coverage=transitive +
+    transitive=true in SARIF properties."""
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        attributed_to="claude-plugin/demo@1.0.0",
+        extra={"transitive": True},
+    )
+    finding = Finding(
+        advisory_id="GHSA-1",
+        component=ref,
+        confidence="high",
+        reason="match",
+        attributed_to="claude-plugin/demo@1.0.0",
+    )
+    advisory = {
+        "id": "GHSA-1",
+        "summary": "test",
+        "details": "test",
+        "database_specific": {"asve": {"source": "osv.dev"}},
+    }
+    doc = to_sarif([finding], {"GHSA-1": advisory})
+    result = doc["runs"][0]["results"][0]
+    properties = result.get("properties", {})
+    assert properties.get("coverage") == "transitive"
+    assert properties.get("transitive") is True
+    assert properties.get("source") == "osv.dev"
+    assert properties.get("attributed_to") == "claude-plugin/demo@1.0.0"
+
+
+def test_sarif_emits_direct_only_for_manifest_fallback_findings():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        attributed_to="claude-plugin/demo@1.0.0",
+        extra={"transitive": False, "fallback_reason": "no npm lockfile present"},
+    )
+    finding = Finding(
+        advisory_id="GHSA-1",
+        component=ref,
+        confidence="high",
+        reason="match",
+        attributed_to="claude-plugin/demo@1.0.0",
+    )
+    advisory = {
+        "id": "GHSA-1",
+        "summary": "test",
+        "details": "test",
+        "database_specific": {"asve": {"source": "asve.dev"}},
+    }
+    doc = to_sarif([finding], {"GHSA-1": advisory})
+    properties = doc["runs"][0]["results"][0]["properties"]
+    assert properties.get("coverage") == "direct-only"
+    assert properties.get("transitive") is False
+
+
+def test_sarif_omits_coverage_for_tier1_findings():
+    """Tier-1 inventory findings (extra without `transitive`) have no
+    coverage/transitive properties."""
+    ref = ComponentRef(
+        ecosystem="claude-skill",
+        name="vulnerable-skill",
+        version="0.9.0",
+    )
+    finding = Finding(
+        advisory_id="ASVE-2026-9001",
+        component=ref,
+        confidence="high",
+        reason="match",
+    )
+    advisory = {"id": "ASVE-2026-9001", "summary": "test", "details": "test"}
+    doc = to_sarif([finding], {"ASVE-2026-9001": advisory})
+    properties = doc["runs"][0]["results"][0].get("properties", {})
+    assert "coverage" not in properties
+    assert "transitive" not in properties

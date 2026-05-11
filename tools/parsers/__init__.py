@@ -7,14 +7,25 @@ from typing import Callable
 
 from tools.component_ref import ComponentRef
 from tools.parsers import (
+    claude_command_agent,
     claude_plugin,
     claude_settings,
+    claude_skill,
     mcp_json,
     package_json,
     pyproject_toml,
 )
 
 ParserFn = Callable[[Path], list[ComponentRef]]
+
+
+def _parse_repo_command(path: Path) -> list[ComponentRef]:
+    return claude_command_agent.parse_file(path, kind="command", scope_owner="repo")
+
+
+def _parse_repo_agent(path: Path) -> list[ComponentRef]:
+    return claude_command_agent.parse_file(path, kind="agent", scope_owner="repo")
+
 
 REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
@@ -27,6 +38,12 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     ("claude_desktop_config.json", mcp_json.parse),
     (".claude-plugin/plugin.json", claude_plugin.parse),
     (".claude/settings.json", claude_settings.parse),
+    # Plan 008: agent-stack component inventory in repo mode. These
+    # surfaces emit the same ecosystems as fs mode but with `attributed_to=None`
+    # (repo declarations are not "via a plugin"; the repo declares them).
+    (".claude/skills/*/SKILL.md", claude_skill.parse),
+    (".claude/commands/*.md", _parse_repo_command),
+    (".claude/agents/*.md", _parse_repo_agent),
 ]
 
 

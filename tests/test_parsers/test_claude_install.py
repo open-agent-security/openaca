@@ -345,3 +345,281 @@ def test_install_warns_on_non_utf8_lockfile(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert any("decode error" in w for w in warnings)
+
+
+# Plan 008: bundled-component walking inside active plugin installPaths.
+
+
+def _build_install_with_plugin(
+    tmp_path: Path,
+    plugin_key: str,
+    plugin_name: str,
+    version: str,
+) -> Path:
+    """Build a minimal fs-mode install layout pointing at a real cache dir.
+
+    Returns the installPath (so tests can populate bundled components inside
+    it).
+    """
+    install_path = tmp_path / "cache" / plugin_name / version
+    install_path.mkdir(parents=True)
+    settings = {"enabledPlugins": {plugin_key: True}}
+    (tmp_path / "settings.json").write_text(json.dumps(settings))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    plugin_key: [
+                        {
+                            "scope": "user",
+                            "version": version,
+                            "installPath": str(install_path),
+                            "gitCommitSha": "abc123",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    return install_path
+
+
+def test_install_walks_bundled_skill(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    skill_dir = install_path / "skills" / "bootstrap"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: bootstrap\ndescription: scaffold a project\n---\nbody\n"
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    assert len(skill_refs) == 1
+    assert skill_refs[0].name == "bootstrap"
+    assert skill_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_walks_bundled_hooks(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    hooks_dir = install_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "hooks.json").write_text(
+        json.dumps(
+            {
+                "description": "superpowers hooks",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo pre"}]},
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    assert len(hook_refs) == 1
+    assert hook_refs[0].component_identity == "claude-hook/superpowers/PreToolUse/0"
+    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_walks_bundled_commands_and_agents(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    (install_path / "commands").mkdir()
+    (install_path / "commands" / "deploy.md").write_text("deploy command body\n")
+    (install_path / "agents").mkdir()
+    (install_path / "agents" / "code-reviewer.md").write_text("reviewer body\n")
+    refs, _ = parse_install(install_root=tmp_path)
+    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
+    assert len(cmd_refs) == 1
+    assert cmd_refs[0].component_identity == "claude-command/superpowers/deploy"
+    assert cmd_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert len(agent_refs) == 1
+    assert agent_refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
+
+
+def test_install_walks_bundled_default_mcp(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    (install_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@x/y@1.0.0"]}}})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "@x/y"
+    assert npm_refs[0].version == "1.0.0"
+    assert npm_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_walks_plugin_json_inline_mcp_servers(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir()
+    (cp_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "superpowers",
+                "version": "5.1.0",
+                "mcpServers": {"foo": {"command": "npx", "args": ["-y", "@a/b@2.0.0"]}},
+            }
+        )
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "@a/b"
+    assert npm_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_does_not_double_emit_when_plugin_json_points_at_default_mcp(tmp_path):
+    """If plugin.json says mcpServers='./.mcp.json' and that file exists at
+    the install root, the same file gets walked once via parse_at_install_root
+    and skipped by the default-path walk via dedupe on (source_manifest, identity)."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir()
+    (cp_dir / "plugin.json").write_text(
+        json.dumps({"name": "superpowers", "version": "5.1.0", "mcpServers": "./.mcp.json"})
+    )
+    (install_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@a/b@2.0.0"]}}})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+
+
+def test_install_walks_dependencies_from_plugin_json(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir()
+    (cp_dir / "plugin.json").write_text(
+        json.dumps({"name": "superpowers", "version": "5.1.0", "dependencies": ["helper-lib"]})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    dep_refs = [
+        r
+        for r in refs
+        if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
+    ]
+    assert len(dep_refs) == 1
+    assert dep_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_bare_mcp_from_user_settings(tmp_path):
+    """`settings.json.mcpServers` (user scope) → emit npm/PyPI refs with no
+    attribution (bare MCPs are declared directly by the user)."""
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@a/b@1.0.0"]}}})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].attributed_to is None
+    assert npm_refs[0].source_manifest == str(tmp_path / "settings.json")
+
+
+def test_install_bare_hooks_per_scope_emit_distinct_identities(tmp_path):
+    """User and local scopes both declaring a hook → two refs with different
+    identity scopes. Hooks are NOT merged across scopes."""
+    project = tmp_path / "project"
+    claude_dir = project / ".claude"
+    claude_dir.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"type": "command", "command": "echo user"}]}})
+    )
+    (claude_dir / "settings.local.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"type": "command", "command": "echo local"}]}})
+    )
+    refs, _ = parse_install(install_root=tmp_path, project_root=project)
+    hook_refs = sorted(
+        (r for r in refs if r.ecosystem == "claude-hook"),
+        key=lambda r: r.component_identity or "",
+    )
+    assert len(hook_refs) == 2
+    assert hook_refs[0].component_identity == "claude-hook/settings/local/PreToolUse/0"
+    assert hook_refs[1].component_identity == "claude-hook/settings/user/PreToolUse/0"
+    assert all(r.attributed_to is None for r in hook_refs)
+
+
+def test_install_bare_hooks_repo_mode_excludes_local(tmp_path):
+    """In repo mode, settings.local.json hooks are not emitted (machine-local)."""
+    project = tmp_path / "project"
+    claude_dir = project / ".claude"
+    claude_dir.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(json.dumps({}))
+    (claude_dir / "settings.local.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"type": "command", "command": "echo local"}]}})
+    )
+    refs, _ = parse_install(install_root=tmp_path, project_root=project, mode="repo")
+    assert all(r.ecosystem != "claude-hook" for r in refs)
+
+
+def test_install_bare_skills_from_install_root_skills_dir(tmp_path):
+    """`<install_root>/skills/<name>/SKILL.md` → emit claude-skill refs, no attribution."""
+    skill_dir = tmp_path / "skills" / "linter"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: linter\ndescription: lints code\n---\nbody\n")
+    refs, _ = parse_install(install_root=tmp_path)
+    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    assert len(skill_refs) == 1
+    assert skill_refs[0].name == "linter"
+    assert skill_refs[0].attributed_to is None
+
+
+def test_install_project_scoped_mcp_json(tmp_path):
+    """`<project_root>/.mcp.json` is a project-shared MCP config — emit it."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@p/q@1.0"]}}})
+    )
+    refs, _ = parse_install(install_root=tmp_path, project_root=project)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "@p/q"
+
+
+def test_install_silent_when_installpath_missing(tmp_path):
+    """Stale lockfile pointing at a deleted install_path: emit the
+    self-identity ref from the lockfile, walk nothing bundled, no warnings.
+    (Verbose output shows zero bundled-counts; that's the signal.)"""
+    settings = {"enabledPlugins": {"orphan@m": True}}
+    (tmp_path / "settings.json").write_text(json.dumps(settings))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "orphan@m": [
+                        {
+                            "scope": "user",
+                            "version": "1.0",
+                            "installPath": str(tmp_path / "does-not-exist"),
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    plugin_refs = [r for r in refs if r.ecosystem == "claude-plugin"]
+    assert len(plugin_refs) == 1
+    # No bundled refs.
+    assert all(r.ecosystem != "claude-skill" for r in refs)
+    assert all(r.ecosystem != "claude-hook" for r in refs)

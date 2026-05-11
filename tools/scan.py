@@ -172,6 +172,29 @@ def _bare_breakdown(refs: list[ComponentRef]) -> str:
     return ", ".join(f"{n} {label}" for label, n in counts.items())
 
 
+def _bare_listing(refs: list[ComponentRef]) -> list[str]:
+    """Per-component identity strings for the bare (un-attributed) inventory.
+
+    Mirrors the per-plugin breakdown: after the "bare components: 5 skills"
+    summary line, each bare skill / hook / MCP gets its own indented line
+    so users can see exactly what was inventoried. Sorted alphabetically
+    within each ecosystem for deterministic output.
+    """
+    skills: list[str] = []
+    hooks: list[str] = []
+    mcps: list[str] = []
+    for r in refs:
+        if r.attributed_to is not None:
+            continue
+        if r.ecosystem == "claude-skill":
+            skills.append(r.component_identity or f"claude-skill/{r.name}")
+        elif r.ecosystem == "claude-hook":
+            hooks.append(r.component_identity or "claude-hook/?")
+        elif r.ecosystem in {"npm", "PyPI"}:
+            mcps.append(r.purl or _component_label(r))
+    return sorted(skills) + sorted(hooks) + sorted(mcps)
+
+
 def emit_github_annotations(findings: list[Finding]) -> None:
     """Emit GitHub workflow annotations for each finding, one per line on stdout."""
     level_for = {"high": "error", "low": "warning", "unknown": "warning"}
@@ -474,6 +497,8 @@ def fs(
         bare_summary = _bare_breakdown(refs)
         if bare_summary:
             click.echo(f"bare components: {bare_summary}", err=True)
+            for line in _bare_listing(refs):
+                click.echo(f"  {line}", err=True)
         if federate_osv:
             osv_count = sum(
                 1

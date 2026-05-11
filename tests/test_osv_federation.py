@@ -7,11 +7,34 @@ real OSV.dev endpoint.
 from unittest.mock import patch
 
 from tools.component_ref import ComponentRef
-from tools.osv_federation import augment_corpus
+from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
 
 
 def _ref(eco: str, name: str, version: str) -> ComponentRef:
     return ComponentRef(ecosystem=eco, name=name, version=version)
+
+
+def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
+    assert is_queryable(_ref("npm", "lodash", "4.17.20")) is True
+    # No version → not queryable (PURL can't be formed)
+    assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
+    # ASVE-native ecosystem → no PURL, not queryable
+    assert is_queryable(_ref("claude-plugin", "supabase", "0.1.6")) is False
+    assert is_queryable(_ref("claude-skill", "bootstrap", "1.0.0")) is False
+    # Identity-only refs (no ecosystem) → not queryable
+    assert is_queryable(ComponentRef(component_identity="claude-hook/foo/PreToolUse/0")) is False
+
+
+def test_collect_target_purls_dedupes_and_preserves_order():
+    refs = [
+        _ref("npm", "lodash", "4.17.20"),
+        _ref("PyPI", "requests", "2.31.0"),
+        _ref("npm", "lodash", "4.17.20"),  # dup
+        _ref("claude-plugin", "supabase", "0.1.6"),  # skipped
+        ComponentRef(ecosystem="npm", name="left-pad"),  # no version → skipped
+    ]
+    purls = collect_target_purls(refs)
+    assert purls == ["pkg:npm/lodash@4.17.20", "pkg:pypi/requests@2.31.0"]
 
 
 def test_augment_returns_base_corpus_when_no_refs():

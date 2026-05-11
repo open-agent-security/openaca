@@ -697,6 +697,134 @@ def test_fs_subcommand_federate_osv_augments_corpus(tmp_path):
     assert "GHSA-FAKE-LODASH" in result.output
 
 
+def test_fs_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_path):
+    """Verbose + --federate-osv surfaces the actual PURLs queried and a
+    per-ecosystem breakdown of refs that were skipped. Gives users insight
+    into what crossed the wire to osv.dev vs what was filtered locally."""
+    from unittest.mock import patch
+
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus), []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "fs",
+                "--target",
+                str(tmp_path),
+                "--advisories",
+                str(REPO_ROOT / "advisories"),
+                "--federate-osv",
+                "-v",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    # The lodash dep should appear as a queried PURL
+    assert "federation: querying 1 PURL(s) on osv.dev" in result.output
+    assert "pkg:npm/lodash@4.17.20" in result.output
+    # The plugin self-identity ref (claude-plugin) should be in the skip count
+    assert "claude-plugin=1" in result.output
+
+
+def test_repo_subcommand_federate_osv_verbose_lists_queried_purls(tmp_path):
+    """Same verbose surface in repo mode (parity with fs mode)."""
+    from unittest.mock import patch
+
+    (tmp_path / "package.json").write_text(
+        json.dumps({"name": "demo", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}})
+    )
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus), []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "repo",
+                "--target",
+                str(tmp_path),
+                "--advisories",
+                str(REPO_ROOT / "advisories"),
+                "--federate-osv",
+                "-v",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert "federation: querying" in result.output
+    assert "federation: osv.dev returned 0 additional finding(s)" in result.output
+
+
+def test_fs_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
+    """When nothing has a queryable PURL (e.g., only claude-plugin refs),
+    verbose says so explicitly rather than emitting an empty list."""
+    from unittest.mock import patch
+
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus), []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "fs",
+                "--target",
+                str(tmp_path),
+                "--advisories",
+                str(REPO_ROOT / "advisories"),
+                "--federate-osv",
+                "-v",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert "no queryable PURLs" in result.output
+
+
 def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
     """OSV.dev network failure prints unconditional stderr warning even
     without -v. Exit code stays findings-driven (= 0 when no findings)."""

@@ -36,7 +36,7 @@ from click.core import ParameterSource
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
-from tools.osv_federation import augment_corpus
+from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.sarif import to_sarif
@@ -193,6 +193,35 @@ def _bare_listing(refs: list[ComponentRef]) -> list[str]:
         elif r.ecosystem in {"npm", "PyPI"}:
             mcps.append(r.purl or _component_label(r))
     return sorted(skills) + sorted(hooks) + sorted(mcps)
+
+
+def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
+    """Render the verbose pre-query summary for `--federate-osv`.
+
+    Two parts: the queried PURL list (what was actually sent) and a count
+    of skipped refs bucketed by ecosystem (so users can see what wasn't
+    queried and why — ASVE-native ecosystems and identity-only refs have
+    no PURL; OSV.dev wouldn't have records for them).
+    """
+    queried = collect_target_purls(refs)
+    lines: list[str] = []
+    if queried:
+        lines.append(f"federation: querying {len(queried)} PURL(s) on osv.dev")
+        for p in queried:
+            lines.append(f"  {p}")
+    else:
+        lines.append("federation: no queryable PURLs (no versioned, OSV-mappable refs)")
+    skipped_by_eco: dict[str, int] = {}
+    for r in refs:
+        if is_queryable(r):
+            continue
+        eco = r.ecosystem or "<no-ecosystem>"
+        skipped_by_eco[eco] = skipped_by_eco.get(eco, 0) + 1
+    if skipped_by_eco:
+        parts = ", ".join(f"{k}={v}" for k, v in sorted(skipped_by_eco.items()))
+        total = sum(skipped_by_eco.values())
+        lines.append(f"federation: skipped {total} ref(s) without queryable PURL ({parts})")
+    return lines
 
 
 def emit_github_annotations(findings: list[Finding]) -> None:
@@ -376,6 +405,19 @@ def repo(
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
             click.echo(f"no manifests found under {target}", err=True)
+        if federate_osv:
+            for line in _federation_targets_lines(refs):
+                click.echo(line, err=True)
+            osv_count = sum(
+                1
+                for f in findings
+                if (advisory_index.get(f.advisory_id) or {})
+                .get("database_specific", {})
+                .get("asve", {})
+                .get("source")
+                == "osv.dev"
+            )
+            click.echo(f"federation: osv.dev returned {osv_count} additional finding(s)", err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:
@@ -504,6 +546,8 @@ def fs(
             for line in _bare_listing(refs):
                 click.echo(f"  {line}", err=True)
         if federate_osv:
+            for line in _federation_targets_lines(refs):
+                click.echo(line, err=True)
             osv_count = sum(
                 1
                 for f in findings

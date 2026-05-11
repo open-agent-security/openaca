@@ -303,3 +303,102 @@ def test_uv_allow_insecure_host_before_tool_run_dispatches_as_uvx():
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
+
+
+# Flat-shape `.mcp.json` (no `mcpServers` wrapper) — observed in real Claude
+# Code plugins, e.g. claude-plugins-official/playwright ships
+# `{"playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}`.
+
+
+def test_parse_flat_shape_with_command_entries(tmp_path):
+    """Top-level dict whose values are server-shaped (dict with `command`)
+    is parsed as a flat server map — same as if the keys lived under
+    `mcpServers`. Mirrors the real Claude Code plugin convention."""
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]},
+            }
+        )
+    )
+    refs = parse(path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert any(r.name == "@playwright/mcp" for r in npm_refs)
+
+
+def test_parse_flat_shape_multiple_servers(tmp_path):
+    """Flat shape with multiple entries — all parsed."""
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "a": {"command": "npx", "args": ["@org/a@1.0.0"]},
+                "b": {"command": "npx", "args": ["@org/b@2.0.0"]},
+            }
+        )
+    )
+    refs = parse(path)
+    by_name = {r.name: r for r in refs if r.ecosystem == "npm"}
+    assert "@org/a" in by_name
+    assert "@org/b" in by_name
+
+
+def test_parse_flat_shape_url_entries_do_not_crash(tmp_path):
+    """HTTP-transport (`url`) entries in flat shape are recognized by the
+    shape heuristic. V0 doesn't emit refs for them, but the parser must
+    not raise."""
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(json.dumps({"http-mcp": {"url": "https://example.com/mcp"}}))
+    refs = parse(path)
+    # Nothing emitted for URL transport in V0; just ensure no crash.
+    assert isinstance(refs, list)
+
+
+def test_parse_flat_shape_not_triggered_when_wrapper_present(tmp_path):
+    """If `mcpServers` exists, the wrapped shape wins — flat-shape detection
+    is the fallback only."""
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "real": {"command": "npx", "args": ["@org/real@1.0.0"]},
+                },
+                "playwright": {"command": "npx", "args": ["@org/should-not-appear@1.0.0"]},
+            }
+        )
+    )
+    refs = parse(path)
+    by_name = {r.name for r in refs if r.ecosystem == "npm"}
+    assert "@org/real" in by_name
+    assert "@org/should-not-appear" not in by_name
+
+
+def test_parse_flat_shape_rejects_dict_with_unrelated_keys(tmp_path):
+    """An object like `{name: "...", description: "..."}` should NOT be
+    misdetected as a flat server map. Strict all-values-server-shaped
+    check guards against this."""
+    import json
+
+    path = tmp_path / "plugin.json"
+    path.write_text(json.dumps({"name": "myplugin", "description": "stuff"}))
+    refs = parse(path)
+    assert refs == []
+
+
+def test_parse_flat_shape_rejects_empty_dict(tmp_path):
+    """An empty top-level dict isn't a flat server map."""
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(json.dumps({}))
+    assert parse(path) == []

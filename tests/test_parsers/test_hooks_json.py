@@ -12,7 +12,11 @@ Identity:
 import json
 from pathlib import Path
 
-from tools.parsers.hooks_json import parse_plugin_hooks, parse_settings_hooks
+from tools.parsers.hooks_json import (
+    parse_plugin_hooks,
+    parse_plugin_hooks_inline,
+    parse_settings_hooks,
+)
 
 
 def _write_hooks_json(path: Path, data: dict) -> Path:
@@ -171,3 +175,65 @@ def test_parse_settings_hooks_empty_block_returns_empty():
 def test_parse_plugin_hooks_empty_hooks_block_returns_empty(tmp_path):
     path = _write_hooks_json(tmp_path / "hooks.json", {"hooks": {}})
     assert parse_plugin_hooks(path, plugin_name="p", attributed_to="claude-plugin/p@1.0") == []
+
+
+# parse_plugin_hooks_inline — inline hooks declared in plugin.json["hooks"]
+
+
+def test_parse_plugin_hooks_inline_emits_refs_with_plugin_identity():
+    """Inline plugin.json hooks use same identity prefix as hooks/hooks.json."""
+    hooks_block = {
+        "PostToolUse": [{"type": "command", "command": "echo post"}],
+        "Stop": [{"type": "command", "command": "echo stop"}],
+    }
+    refs = parse_plugin_hooks_inline(
+        hooks_block=hooks_block,
+        plugin_name="superpowers",
+        source_manifest="/fake/plugin.json",
+        attributed_to="claude-plugin/superpowers@5.1.0",
+    )
+    assert len(refs) == 2
+    identities = sorted(r.component_identity or "" for r in refs)
+    assert identities == [
+        "claude-hook/superpowers/PostToolUse/0",
+        "claude-hook/superpowers/Stop/0",
+    ]
+    assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
+    assert all(r.source_manifest == "/fake/plugin.json" for r in refs)
+    assert all(r.ecosystem == "claude-hook" for r in refs)
+
+
+def test_parse_plugin_hooks_inline_source_locator_uses_hooks_jsonpath():
+    """source_locator for inline hooks uses the same $.hooks.* path as hooks/hooks.json."""
+    refs = parse_plugin_hooks_inline(
+        hooks_block={"PreToolUse": [{"type": "command", "command": "x"}]},
+        plugin_name="p",
+        source_manifest="/fake/plugin.json",
+        attributed_to="claude-plugin/p@1.0",
+    )
+    assert refs[0].source_locator == "$.hooks.PreToolUse[0]"
+
+
+def test_parse_plugin_hooks_inline_returns_empty_for_non_dict():
+    """Non-dict hooks_block (e.g., list or None) → empty."""
+    assert (
+        parse_plugin_hooks_inline(
+            hooks_block=[],  # type: ignore[arg-type]
+            plugin_name="p",
+            source_manifest="/fake/plugin.json",
+            attributed_to="claude-plugin/p@1.0",
+        )
+        == []
+    )
+
+
+def test_parse_plugin_hooks_inline_returns_empty_for_empty_block():
+    assert (
+        parse_plugin_hooks_inline(
+            hooks_block={},
+            plugin_name="p",
+            source_manifest="/fake/plugin.json",
+            attributed_to="claude-plugin/p@1.0",
+        )
+        == []
+    )

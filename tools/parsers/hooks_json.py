@@ -61,6 +61,25 @@ def parse_plugin_hooks(
     )
 
 
+def parse_plugin_hooks_inline(
+    hooks_block: dict, plugin_name: str, source_manifest: str, attributed_to: str
+) -> list[ComponentRef]:
+    """Walk a plugin.json's inline `hooks` key.
+
+    Same inner shape as hooks/hooks.json (`{event: [entry, ...]}`), but read
+    from the plugin.json manifest rather than a separate file. Both sources
+    can coexist on the same plugin — no deduplication is applied.
+    """
+    if not isinstance(hooks_block, dict):
+        return []
+    return _walk_events(
+        hooks_block,
+        identity_prefix=f"claude-hook/{plugin_name}",
+        source_manifest=source_manifest,
+        attributed_to=attributed_to,
+    )
+
+
 def parse_settings_hooks(
     settings_path: Path, hooks_block: object, scope: str
 ) -> list[ComponentRef]:

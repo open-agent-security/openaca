@@ -348,6 +348,26 @@ def _walk_plugin_install_root(
             )
         )
 
+    # Also parse inline hooks declared in plugin.json["hooks"] (same inner shape
+    # as hooks/hooks.json; both sources can coexist).
+    plugin_json_path = install_path / ".claude-plugin" / "plugin.json"
+    if plugin_json_path.is_file():
+        try:
+            plugin_data = json.loads(plugin_json_path.read_text())
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            plugin_data = {}
+        if isinstance(plugin_data, dict):
+            inline_hooks = plugin_data.get("hooks")
+            if isinstance(inline_hooks, dict):
+                refs.extend(
+                    hooks_json.parse_plugin_hooks_inline(
+                        hooks_block=inline_hooks,
+                        plugin_name=plugin_name,
+                        source_manifest=str(plugin_json_path),
+                        attributed_to=attributed_to,
+                    )
+                )
+
     refs.extend(
         claude_command_agent.enumerate_dir(
             install_path / "commands",

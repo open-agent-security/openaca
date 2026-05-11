@@ -90,6 +90,51 @@ def _finding_line(f: Finding) -> str:
     return base
 
 
+_BUNDLED_KINDS: tuple[tuple[str, str], ...] = (
+    ("npm", "MCPs"),
+    ("PyPI", "MCPs"),
+    ("claude-skill", "skills"),
+    ("claude-hook", "hooks"),
+    ("claude-command", "commands"),
+    ("claude-agent", "agents"),
+)
+
+
+def _bundled_breakdown(refs: list[ComponentRef], plugin_identity: str | None) -> str:
+    """Summarize per-plugin bundled-component counts for verbose output."""
+    if plugin_identity is None:
+        return "0 bundled"
+    counts: dict[str, int] = {label: 0 for _, label in _BUNDLED_KINDS}
+    for r in refs:
+        if r.attributed_to != plugin_identity:
+            continue
+        for eco, label in _BUNDLED_KINDS:
+            if r.ecosystem == eco:
+                counts[label] += 1
+                break
+    # MCPs span npm + PyPI; sum already happens via shared label.
+    seen_labels = list(dict.fromkeys(label for _, label in _BUNDLED_KINDS))
+    parts = [f"{counts[label]} bundled {label}" for label in seen_labels]
+    return ", ".join(parts)
+
+
+def _bare_breakdown(refs: list[ComponentRef]) -> str:
+    """Summarize bare-component counts (no attribution) for verbose output."""
+    counts: dict[str, int] = {}
+    for r in refs:
+        if r.attributed_to is not None:
+            continue
+        if r.ecosystem in {"npm", "PyPI"}:
+            counts["MCPs"] = counts.get("MCPs", 0) + 1
+        elif r.ecosystem == "claude-skill":
+            counts["skills"] = counts.get("skills", 0) + 1
+        elif r.ecosystem == "claude-hook":
+            counts["hooks"] = counts.get("hooks", 0) + 1
+    if not counts:
+        return ""
+    return ", ".join(f"{n} {label}" for label, n in counts.items())
+
+
 def emit_github_annotations(findings: list[Finding]) -> None:
     """Emit GitHub workflow annotations for each finding, one per line on stdout."""
     level_for = {"high": "error", "low": "warning", "unknown": "warning"}
@@ -320,10 +365,15 @@ def fs(
             if r.ecosystem == "claude-plugin":
                 sha = r.extra.get("gitCommitSha")
                 sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
+                bundled = _bundled_breakdown(refs, r.component_identity)
+                scope_str = r.extra.get("scope")
                 click.echo(
-                    f"  {r.component_identity}{sha_note} [scope={r.extra.get('scope')}]",
+                    f"  {r.component_identity}{sha_note} [scope={scope_str}] → {bundled}",
                     err=True,
                 )
+        bare_summary = _bare_breakdown(refs)
+        if bare_summary:
+            click.echo(f"bare components: {bare_summary}", err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:

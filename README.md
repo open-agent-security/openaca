@@ -177,9 +177,15 @@ ASVE follows a tiered model loosely analogous to traditional SCA's
 | Tier | What it reads | V0 status |
 |---|---|---|
 | **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` (fs mode), `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | ✅ V0 |
-| **2. Dependency manifests** (universal) | `package.json`, `pyproject.toml`, lockfiles inside active plugins (plan 009) | ✅ V0 (lockfiles in plan 009) |
+| **2. Dependency manifests** (universal) | `package.json`, `pyproject.toml`, lockfiles inside active plugins (plan 009) | ✅ V0 |
 | **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
 | **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
+
+**OSV.dev federation (opt-in).** Pass `--federate-osv` to either subcommand
+to query OSV.dev for additional vulnerability records covering emitted
+PURLs. Combines ASVE's install-state filtering and attribution with OSV.dev's
+full corpus — a more accurate Tier-2 scanner for agent stacks than generic
+recursive walkers. See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md`.
 
 Per-parser detail:
 

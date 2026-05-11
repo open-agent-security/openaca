@@ -1,0 +1,123 @@
+"""OSV.dev federation: batched live query against /v1/querybatch.
+
+ASVE's default scan uses only the local advisories/ corpus. This module
+provides opt-in federation via --federate-osv: given a list of emitted
+ComponentRefs, fetch matching vulnerability records from OSV.dev and
+merge them into the corpus for the matcher to consume.
+
+Behavior:
+- Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
+  name + version) are queried. Identity-only refs (claude-hook,
+  claude-command, claude-agent) and ASVE-native ecosystems
+  (claude-skill, claude-plugin) are skipped — OSV.dev wouldn't have
+  records for them anyway.
+- PURLs are deduplicated within a scan (same PURL queried once).
+- /v1/querybatch caps at 1000 packages per request; chunked into
+  multiple requests if needed.
+- Network errors fail-soft: return the base corpus unchanged with a
+  warning string. The scan continues with local-corpus-only matching.
+- Returned vuln IDs are dereferenced to full records via /v1/vulns/<id>
+  and merged into the corpus, deduped against base by `id` (base wins
+  on conflict — local advisories override upstream).
+
+Module API:
+    augment_corpus(refs, base_corpus) -> (augmented_corpus, warnings)
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from typing import Any
+
+from tools.component_ref import ComponentRef
+
+_QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
+_VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
+_BATCH_SIZE = 1000
+_TIMEOUT_SECONDS = 30
+
+
+def augment_corpus(
+    refs: list[ComponentRef], base_corpus: list[dict]
+) -> tuple[list[dict], list[str]]:
+    """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
+    purls = _collect_purls(refs)
+    if not purls:
+        return list(base_corpus), []
+    try:
+        vuln_ids = _query_batch(purls)
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        return list(base_corpus), [f"osv.dev federation failed: {exc}"]
+    if not vuln_ids:
+        return list(base_corpus), []
+    new_records: list[dict] = []
+    fetch_warnings: list[str] = []
+    for vid in vuln_ids:
+        try:
+            record = _get_vuln(vid)
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+            fetch_warnings.append(f"osv.dev fetch failed for {vid}: {exc}")
+            continue
+        if isinstance(record, dict) and record.get("id"):
+            new_records.append(record)
+    base_ids = {a.get("id") for a in base_corpus if isinstance(a, dict)}
+    merged = list(base_corpus)
+    for r in new_records:
+        if r["id"] not in base_ids:
+            merged.append(r)
+            base_ids.add(r["id"])
+    return merged, fetch_warnings
+
+
+def _collect_purls(refs: list[ComponentRef]) -> list[str]:
+    """Deduplicate PURLs from refs that have a derivable PURL."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in refs:
+        purl = r.purl
+        if purl is None:
+            continue
+        if purl in seen:
+            continue
+        seen.add(purl)
+        out.append(purl)
+    return out
+
+
+def _query_batch(purls: list[str]) -> list[str]:
+    """POST /v1/querybatch in chunks of <=1000; collect returned vuln IDs."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for i in range(0, len(purls), _BATCH_SIZE):
+        chunk = purls[i : i + _BATCH_SIZE]
+        payload = {"queries": [{"package": {"purl": p}} for p in chunk]}
+        response = _post_json(_QUERYBATCH_URL, payload)
+        for entry in response.get("results", []) or []:
+            for vuln in entry.get("vulns") or []:
+                vid = vuln.get("id")
+                if isinstance(vid, str) and vid not in seen:
+                    seen.add(vid)
+                    ids.append(vid)
+    return ids
+
+
+def _get_vuln(vuln_id: str) -> dict:
+    """GET /v1/vulns/<id> → full advisory record."""
+    return _get_json(_VULN_URL.format(id=vuln_id))
+
+
+def _post_json(url: str, payload: dict) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_json(url: str) -> dict[str, Any]:
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode("utf-8"))

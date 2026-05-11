@@ -32,6 +32,7 @@ is platform-specific and not loaded in V0; the field is reserved.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,7 +69,12 @@ class SettingsLayers:
         result: dict = {}
         per_scope = self.by_scope()
         for scope in scopes_low_to_high:
-            data = per_scope[scope] or {}
+            # Deep-copy the scope data before merging so nested dicts/lists
+            # don't alias into `result`. Without this, a later scope's
+            # `_deep_merge` would mutate the prior scope's stored value in
+            # place, corrupting `by_scope()` provenance after a `merged()`
+            # call. The copy is per-call; layer fields stay untouched.
+            data = copy.deepcopy(per_scope[scope] or {})
             _deep_merge(result, data)
         return result
 

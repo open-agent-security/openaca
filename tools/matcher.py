@@ -114,7 +114,37 @@ def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
         pkg = _unpinned_identity_to_package(ref.component_identity)
         if pkg is not None:
             return _match_unpinned(ref, pkg, advisories)
+        # Identity-only ecosystems (claude-hook, claude-command, claude-agent
+        # per ADR-0007): no version semantics, match on the literal identity
+        # string against `database_specific.asve.component_identity` in the
+        # advisory.
+        return _match_by_identity(ref, advisories)
     return []
+
+
+def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+    """Match a ref by exact `component_identity` equality.
+
+    Used by ecosystems without version semantics — V0: claude-hook,
+    claude-command, claude-agent (ADR-0007). The advisory carries the
+    target identity at `database_specific.asve.component_identity`.
+    """
+    findings: list[Finding] = []
+    for advisory in advisories:
+        ds = advisory.get("database_specific") or {}
+        asve_block = ds.get("asve") or {}
+        target = asve_block.get("component_identity")
+        if isinstance(target, str) and target == ref.component_identity:
+            findings.append(
+                Finding(
+                    advisory_id=advisory["id"],
+                    component=ref,
+                    confidence="high",
+                    reason=f"{ref.component_identity} matches {advisory['id']} (identity-only)",
+                    attributed_to=ref.attributed_to,
+                )
+            )
+    return findings
 
 
 def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from tools.parsers.claude_plugin import parse
+from tools.parsers.claude_plugin import parse, parse_at_install_root
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
@@ -165,3 +165,114 @@ def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
     refs = parse(manifest)
     assert any(r.ecosystem == "claude-plugin" for r in refs)
     assert all(r.ecosystem != "npm" for r in refs)
+
+
+# parse_at_install_root: fs-mode entry point.
+# Identical inputs to repo-mode but path resolution is anchored at the
+# install root rather than the manifest's parent directory.
+
+
+def test_parse_at_install_root_returns_empty_when_plugin_json_absent(tmp_path):
+    """No plugin.json at <install_root>/.claude-plugin/ — return []."""
+    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+
+
+def test_parse_at_install_root_emits_dependencies_with_attribution(tmp_path):
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "p",
+                "version": "1.0",
+                "dependencies": ["helper-lib", {"name": "secrets-vault", "version": "2.1.0"}],
+            }
+        )
+    )
+    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    assert len(refs) == 2
+    assert all(r.attributed_to == "claude-plugin/p@1.0" for r in refs)
+    identities = sorted(r.component_identity or "" for r in refs)
+    assert identities == ["claude-plugin-dep/helper-lib", "claude-plugin-dep/secrets-vault@2.1.0"]
+
+
+def test_parse_at_install_root_emits_inline_mcp_servers_with_attribution(tmp_path):
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "p",
+                "version": "1.0",
+                "mcpServers": {"foo": {"command": "npx", "args": ["-y", "@example/foo@1.2.3"]}},
+            }
+        )
+    )
+    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].attributed_to == "claude-plugin/p@1.0"
+
+
+def test_parse_at_install_root_string_path_resolves_from_install_root(tmp_path):
+    """A string-path mcpServers must resolve relative to install_root, not
+    relative to <install_root>/.claude-plugin/. Verify by placing .mcp.json
+    at <install_root>/.mcp.json (the install root) and pointing plugin.json
+    at "./.mcp.json" — the repo-mode resolution would land at
+    <install_root>/.claude-plugin/.mcp.json instead."""
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({"name": "p", "version": "1.0", "mcpServers": "./.mcp.json"})
+    )
+    # File at install root, NOT under .claude-plugin/.
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@x/y@1.0"]}}})
+    )
+    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "@x/y"
+    assert npm_refs[0].attributed_to == "claude-plugin/p@1.0"
+
+
+def test_parse_at_install_root_rejects_path_traversal(tmp_path):
+    """A `../` in mcpServers must not escape the install root."""
+    external = tmp_path / "outside.mcp.json"
+    external.write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "evil-pkg"]}}})
+    )
+    install_root = tmp_path / "install"
+    plugin_dir = install_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({"name": "trav", "version": "1.0", "mcpServers": "../outside.mcp.json"})
+    )
+    refs = parse_at_install_root(install_root, attributed_to="claude-plugin/trav@1.0")
+    assert all(r.ecosystem != "npm" for r in refs)
+
+
+def test_parse_at_install_root_does_not_emit_plugin_self_identity(tmp_path):
+    """The fs-mode caller emits the self-identity ref from the lockfile
+    (more accurate version + sha than plugin.json). This function must NOT
+    also emit a self-identity ref."""
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "p", "version": "1.0"}))
+    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    assert all(r.ecosystem != "claude-plugin" for r in refs)
+    assert refs == []  # no deps, no mcpServers → empty
+
+
+def test_parse_at_install_root_skips_malformed_plugin_json(tmp_path):
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text("{not json")
+    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+
+
+def test_parse_at_install_root_skips_non_object_plugin_json(tmp_path):
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text("[]")
+    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []

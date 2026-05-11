@@ -36,6 +36,7 @@ from click.core import ParameterSource
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
+from tools.osv_federation import augment_corpus
 from tools.parsers import parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.sarif import to_sarif
@@ -148,6 +149,20 @@ def emit_github_annotations(findings: list[Finding]) -> None:
         click.echo(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
 
 
+def _stamp_source(corpus: list[dict], source: str) -> None:
+    """Set `database_specific.asve.source = <source>` on every advisory
+    that doesn't already declare a source. Mutates corpus in place."""
+    for a in corpus:
+        if not isinstance(a, dict):
+            continue
+        ds = a.setdefault("database_specific", {})
+        if not isinstance(ds, dict):
+            continue
+        asve_block = ds.setdefault("asve", {})
+        if isinstance(asve_block, dict) and "source" not in asve_block:
+            asve_block["source"] = source
+
+
 def _exit_for_findings(fail_on: str, findings: list[Finding]) -> None:
     if not findings:
         sys.exit(0)
@@ -247,6 +262,12 @@ def _apply_group_opts(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
+@click.option(
+    "--federate-osv",
+    is_flag=True,
+    default=False,
+    help="Query OSV.dev for additional vulnerability records.",
+)
 def repo(
     ctx: click.Context,
     target: Path,
@@ -254,6 +275,7 @@ def repo(
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
+    federate_osv: bool,
 ) -> None:
     """Scan a code repository's declared manifests."""
     sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
@@ -261,6 +283,15 @@ def repo(
     refs = [ref for _, group in grouped for ref in group]
     n_failed = n_found - len(grouped)
     corpus = load_corpus(advisories)
+    _stamp_source(corpus, "asve.dev")
+    if federate_osv:
+        before_ids = {a.get("id") for a in corpus if isinstance(a, dict)}
+        corpus, fed_warnings = augment_corpus(refs, corpus)
+        for a in corpus:
+            if isinstance(a, dict) and a.get("id") not in before_ids:
+                _stamp_source([a], "osv.dev")
+        for fw in fed_warnings:
+            click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}
@@ -330,6 +361,14 @@ def repo(
     help="Skip Tier-2 dependency scanning (lockfiles + manifest fallback). "
     "Tier-1 agent-stack inventory still emitted.",
 )
+@click.option(
+    "--federate-osv",
+    is_flag=True,
+    default=False,
+    help="Query OSV.dev for additional vulnerability records covering "
+    "emitted PURLs. Augments the local corpus with osv.dev-sourced "
+    "findings. Network required; fails soft if OSV.dev is unreachable.",
+)
 def fs(
     ctx: click.Context,
     target: Path,
@@ -338,6 +377,7 @@ def fs(
     fail_on: str,
     verbose: bool,
     exclude_transitive: bool,
+    federate_osv: bool,
 ) -> None:
     """Scan an installed Claude Code agent stack.
 
@@ -360,6 +400,15 @@ def fs(
         include_transitive=not exclude_transitive,
     )
     corpus = load_corpus(advisories)
+    _stamp_source(corpus, "asve.dev")
+    if federate_osv:
+        before_ids = {a.get("id") for a in corpus if isinstance(a, dict)}
+        corpus, fed_warnings = augment_corpus(refs, corpus)
+        for a in corpus:
+            if isinstance(a, dict) and a.get("id") not in before_ids:
+                _stamp_source([a], "osv.dev")
+        for fw in fed_warnings:
+            click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}

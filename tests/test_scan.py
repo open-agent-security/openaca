@@ -625,3 +625,104 @@ def test_fs_subcommand_includes_transitive_by_default(tmp_path):
 
     refs, _ = parse_install(install_root=tmp_path)
     assert any(r.ecosystem == "npm" and r.name == "lodash" for r in refs)
+
+
+def test_fs_subcommand_federate_osv_augments_corpus(tmp_path):
+    """--federate-osv: augment_corpus is invoked and findings include
+    osv.dev-sourced advisories."""
+    from unittest.mock import patch
+
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+
+    fake_advisory = {
+        "schema_version": "1.7.1",
+        "id": "GHSA-FAKE-LODASH",
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "test",
+        "details": "test",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "lodash"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "5.0.0"}]}
+                ],
+            }
+        ],
+    }
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus) + [fake_advisory], []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "fs",
+                "--target",
+                str(tmp_path),
+                "--advisories",
+                str(REPO_ROOT / "advisories"),
+                "--federate-osv",
+                "-v",
+            ],
+        )
+    assert result.exit_code == 1, result.output  # finding crossed default --fail-on=any
+    assert "GHSA-FAKE-LODASH" in result.output
+
+
+def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
+    """OSV.dev network failure prints unconditional stderr warning even
+    without -v. Exit code stays findings-driven (= 0 when no findings)."""
+    from unittest.mock import patch
+
+    (tmp_path / "settings.json").write_text(json.dumps({}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus), ["osv.dev federation failed: connection refused"]
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "fs",
+                "--target",
+                str(tmp_path),
+                "--advisories",
+                str(REPO_ROOT / "advisories"),
+                "--federate-osv",
+            ],
+        )
+    assert result.exit_code == 0
+    assert "osv.dev federation failed" in result.output

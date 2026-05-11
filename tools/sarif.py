@@ -25,6 +25,33 @@ LEVEL_BY_CONFIDENCE: dict[str, str] = {
 }
 
 
+def _properties_for(finding: Finding, advisory: dict | None) -> dict:
+    """Compute the SARIF `properties` block for a single finding.
+
+    - attributed_to: from finding (plan 007).
+    - coverage / transitive: from finding.component.extra (plan 009).
+    - source: from advisory.database_specific.asve.source (plan 009).
+    Returns empty dict when no metadata is present.
+    """
+    props: dict = {}
+    if finding.attributed_to:
+        props["attributed_to"] = finding.attributed_to
+    extra = finding.component.extra or {}
+    if "transitive" in extra:
+        transitive = bool(extra["transitive"])
+        props["transitive"] = transitive
+        props["coverage"] = "transitive" if transitive else "direct-only"
+    if isinstance(advisory, dict):
+        ds = advisory.get("database_specific")
+        if isinstance(ds, dict):
+            asve_block = ds.get("asve")
+            if isinstance(asve_block, dict):
+                source = asve_block.get("source")
+                if isinstance(source, str):
+                    props["source"] = source
+    return props
+
+
 def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
@@ -59,8 +86,9 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict[s
                 }
             ],
         }
-        if f.attributed_to is not None:
-            result["properties"] = {"attributed_to": f.attributed_to}
+        props = _properties_for(f, advisory_index.get(f.advisory_id))
+        if props:
+            result["properties"] = props
         results.append(result)
 
     return {

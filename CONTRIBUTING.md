@@ -89,9 +89,23 @@ uv run pytest
    - `claude-plugin` — Claude Code plugins identified by `name` from
      the plugin's `.claude-plugin/plugin.json` (per ADR-0006). Plugin
      advisories use this ecosystem; `_match_versioned` handles the
-     range matching identically to npm/PyPI. New ecosystems get added
-     as parsers and matcher paths are extended (see plans 008 and 009
-     for `claude-skill`, `claude-hook`, etc.).
+     range matching identically to npm/PyPI.
+   - `claude-skill` — Agent skills identified by `name` from
+     `SKILL.md` frontmatter, with optional version via
+     `metadata.version` (per ADR-0007). Range matching same as
+     `claude-plugin`. Use this for SKILL.md-shaped surfaces.
+   - `claude-hook` — Hook entries identified by JSON-path slot:
+     `claude-hook/<plugin>/<event>/<index>` for plugin-bundled or
+     `claude-hook/settings/<scope>/<event>/<index>` for
+     settings-scoped (scope ∈ user|project|local). V0 is
+     identity-only matching against
+     `database_specific.asve.component_identity` — no range algebra,
+     since hooks don't have a versioning convention.
+   - `claude-command`, `claude-agent` — Slash commands and subagents
+     identified by `<eco>/<owner>/<name>`, where `<owner>` is the
+     plugin name (bundled) or the literal `repo` (declared in
+     `.claude/commands/` or `.claude/agents/`). V0 is identity-only
+     matching.
 
 4. **Add a CVSS v4 vector** under `severity[]` if known:
    ```yaml

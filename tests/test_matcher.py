@@ -305,6 +305,81 @@ def test_in_range_limit_exclusive_bound():
     assert len(match([ref("0.9.9")], [advisory])) == 0  # below introduced — not vulnerable
 
 
+def make_identity_advisory(asve_id: str, component_identity: str) -> dict:
+    return {
+        "id": asve_id,
+        "type": "vulnerability",
+        "summary": "test",
+        "modified": "2026-05-11T00:00:00Z",
+        "database_specific": {"asve": {"component_identity": component_identity}},
+    }
+
+
+def test_claude_command_identity_match():
+    """claude-command refs must route to _match_by_identity, not _match_versioned.
+    The parser sets both ecosystem+name (for inventory) but there are no version
+    semantics — the advisory carries the target identity, not a version range."""
+    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/repo/deploy")
+    ref = ComponentRef(
+        ecosystem="claude-command",
+        name="deploy",
+        component_identity="claude-command/repo/deploy",
+        source_manifest=".claude/commands/deploy.md",
+        source_locator="$",
+    )
+    findings = match(refs=[ref], advisories=[advisory])
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "ASVE-2026-9001"
+    assert findings[0].confidence == "high"
+
+
+def test_claude_agent_identity_match():
+    """claude-agent refs route to _match_by_identity."""
+    advisory = make_identity_advisory("ASVE-2026-9002", "claude-agent/repo/reviewer")
+    ref = ComponentRef(
+        ecosystem="claude-agent",
+        name="reviewer",
+        component_identity="claude-agent/repo/reviewer",
+        source_manifest=".claude/agents/reviewer.md",
+        source_locator="$",
+    )
+    findings = match(refs=[ref], advisories=[advisory])
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "ASVE-2026-9002"
+    assert findings[0].confidence == "high"
+
+
+def test_claude_command_identity_mismatch_no_finding():
+    """Different identity string — must not match even if ecosystem+name agree."""
+    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/other-plugin/deploy")
+    ref = ComponentRef(
+        ecosystem="claude-command",
+        name="deploy",
+        component_identity="claude-command/repo/deploy",
+        source_manifest=".claude/commands/deploy.md",
+        source_locator="$",
+    )
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
+def test_claude_command_does_not_false_match_via_versioned_path():
+    """Regression: before the fix, a claude-command ref with ecosystem+name would
+    short-circuit to _match_versioned and potentially match an advisory whose
+    affected[*].package.name happens to equal the command name. Must not fire."""
+    advisory = make_advisory("ASVE-2026-9003", "claude-command", "deploy", "2.0.0")
+    ref = ComponentRef(
+        ecosystem="claude-command",
+        name="deploy",
+        component_identity="claude-command/repo/deploy",
+        source_manifest=".claude/commands/deploy.md",
+        source_locator="$",
+    )
+    # The versioned advisory uses range semantics; the identity-only ref carries
+    # no version.  Under the old (broken) routing this would emit a low-confidence
+    # finding.  Under the fixed routing it must produce nothing.
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
 def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     """An advisory may list multiple ranges per affected entry (e.g.,
     discrete events). Same component+advisory pair should produce one

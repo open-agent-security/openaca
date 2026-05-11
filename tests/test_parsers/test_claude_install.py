@@ -851,6 +851,35 @@ def test_install_v1v2_lockfile_falls_back_to_manifest(tmp_path):
     assert npm_refs[0].extra.get("transitive") is False
 
 
+def test_install_pyproject_fallback_excludes_optional_and_dev_groups(tmp_path):
+    """P2 regression: pyproject.toml fallback (no uv.lock) must emit only
+    project.dependencies — optional-dependencies and dependency-groups are
+    non-runtime and should be filtered by _RUNTIME_MANIFEST_LOCATORS."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="pyp@m", plugin_name="pyp", version="1.0.0"
+    )
+    (install_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "pyp"\n'
+        'version = "1.0.0"\n'
+        'dependencies = ["requests==2.31.0"]\n'
+        "\n"
+        "[project.optional-dependencies]\n"
+        'dev = ["pytest==7.4.0"]\n'
+        'typing = ["mypy==1.8.0"]\n'
+        "\n"
+        "[dependency-groups]\n"
+        'lint = ["ruff==0.3.0"]\n'
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    pypi_refs = [r for r in refs if r.ecosystem == "PyPI"]
+    pypi_names = {r.name for r in pypi_refs}
+    assert "requests" in pypi_names
+    assert "pytest" not in pypi_names
+    assert "mypy" not in pypi_names
+    assert "ruff" not in pypi_names
+
+
 def test_install_manifest_fallback_excludes_dev_dependencies(tmp_path):
     """P2 regression: manifest fallback for npm must only emit 'dependencies',
     not devDependencies / peerDependencies / optionalDependencies."""

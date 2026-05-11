@@ -119,6 +119,36 @@ def _bundled_breakdown(refs: list[ComponentRef], plugin_identity: str | None) ->
     return ", ".join(parts)
 
 
+def _tier2_coverage_lines(refs: list[ComponentRef], plugin_identity: str | None) -> list[str]:
+    """Per-plugin Tier-2 coverage: one line per ecosystem covered.
+
+    Format:
+      npm: package-lock.json (transitive, 247 packages)
+      PyPI: package.json (direct only, 8 packages)
+    """
+    if plugin_identity is None:
+        return []
+    by_eco: dict[str, list[ComponentRef]] = {}
+    for r in refs:
+        if r.attributed_to != plugin_identity:
+            continue
+        if r.ecosystem not in {"npm", "PyPI"}:
+            continue
+        if r.extra.get("transitive") is None:
+            continue
+        by_eco.setdefault(r.ecosystem or "", []).append(r)
+    out: list[str] = []
+    for eco, ecorefs in sorted(by_eco.items()):
+        is_transitive = any(r.extra.get("transitive") is True for r in ecorefs)
+        if is_transitive:
+            source = "package-lock.json" if eco == "npm" else "uv.lock"
+            out.append(f"{eco}: {source} (transitive, {len(ecorefs)} packages)")
+        else:
+            source = "package.json" if eco == "npm" else "pyproject.toml"
+            out.append(f"{eco}: {source} (direct only, {len(ecorefs)} packages)")
+    return out
+
+
 def _bare_breakdown(refs: list[ComponentRef]) -> str:
     """Summarize bare-component counts (no attribution) for verbose output."""
     counts: dict[str, int] = {}
@@ -433,9 +463,22 @@ def fs(
                     f"  {r.component_identity}{sha_note} [scope={scope_str}] → {bundled}",
                     err=True,
                 )
+                for line in _tier2_coverage_lines(refs, r.component_identity):
+                    click.echo(f"    {line}", err=True)
         bare_summary = _bare_breakdown(refs)
         if bare_summary:
             click.echo(f"bare components: {bare_summary}", err=True)
+        if federate_osv:
+            osv_count = sum(
+                1
+                for f in findings
+                if (advisory_index.get(f.advisory_id) or {})
+                .get("database_specific", {})
+                .get("asve", {})
+                .get("source")
+                == "osv.dev"
+            )
+            click.echo(f"federation: osv.dev returned {osv_count} additional finding(s)", err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:

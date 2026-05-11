@@ -726,3 +726,84 @@ def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
         )
     assert result.exit_code == 0
     assert "osv.dev federation failed" in result.output
+
+
+def test_fs_verbose_shows_per_plugin_tier2_coverage(tmp_path):
+    """Verbose output includes a 'npm: package-lock.json (transitive, N packages)'
+    line per plugin that has Tier-2 coverage."""
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                    "node_modules/underscore": {"version": "1.13.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "npm:" in result.output
+    assert "package-lock.json" in result.output
+    assert "2 packages" in result.output or "transitive, 2" in result.output
+
+
+def test_fs_verbose_shows_manifest_fallback_line(tmp_path):
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package.json").write_text(
+        json.dumps({"name": "demo", "dependencies": {"lodash": "^4.17.0"}})
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert "direct only" in result.output
+    assert "package.json" in result.output

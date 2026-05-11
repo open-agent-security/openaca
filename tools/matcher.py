@@ -39,6 +39,11 @@ _UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
     "mcp-stdio/uvx-unpinned:": "PyPI",
 }
 
+# Ecosystems with no version semantics in V0 — matched on component_identity only (ADR-0007 §3).
+_IDENTITY_ONLY_ECOSYSTEMS: frozenset[str] = frozenset(
+    {"claude-hook", "claude-command", "claude-agent"}
+)
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -108,16 +113,20 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
 
 
 def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+    # Identity-only ecosystems must be routed before the ecosystem+name check
+    # because their parsers populate both fields (for inventory) but have no
+    # version semantics — routing to _match_versioned would produce false
+    # matches by name alone, ignoring the identity's owner/scope (ADR-0007 §3).
+    if ref.ecosystem in _IDENTITY_ONLY_ECOSYSTEMS:
+        if ref.component_identity:
+            return _match_by_identity(ref, advisories)
+        return []
     if ref.ecosystem and ref.name:
         return _match_versioned(ref, advisories)
     if ref.component_identity:
         pkg = _unpinned_identity_to_package(ref.component_identity)
         if pkg is not None:
             return _match_unpinned(ref, pkg, advisories)
-        # Identity-only ecosystems (claude-hook, claude-command, claude-agent
-        # per ADR-0007): no version semantics, match on the literal identity
-        # string against `database_specific.asve.component_identity` in the
-        # advisory.
         return _match_by_identity(ref, advisories)
     return []
 

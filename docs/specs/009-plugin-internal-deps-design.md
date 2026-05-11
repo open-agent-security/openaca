@@ -169,13 +169,15 @@ Default-off keeps the default ASVE experience focused on the agent-stack corpus 
 
 This is what makes ASVE more accurate than trivy/osv-scanner for the agent stack. Without it, federation would still be useful (the corpus is bigger) but without filtering, ASVE wouldn't offer a UX advantage over `osv-scanner --recursive`. Active-state filtering is the load-bearing differentiator.
 
-## Open questions
+## Resolved details
 
-1. **`Finding.extra` propagation.** Currently `Finding` carries `attributed_to` as a top-level field (mirror of `ref.attributed_to`). `coverage` / `transitive` / `source` live in `ComponentRef.extra` for Tier-2 refs and in the advisory record for `source`. The SARIF emitter reads from both. Should we mirror more fields onto `Finding` for symmetry, or let the SARIF emitter dereference from ref/advisory? **Lean:** keep `Finding` minimal; SARIF emitter dereferences. Less data duplication.
+1. **`Finding.extra` propagation.** `Finding` stays minimal: only `attributed_to` (mirror from plan 007) plus `advisory_id`, `confidence`, `component`, `reason`. `coverage` / `transitive` / `source` live in `ComponentRef.extra` and on the advisory record; the SARIF emitter dereferences from both. Rationale: `coverage`/`transitive` are pure ref properties (no per-finding override case), and `source` is a pure advisory property — the plan 007 rationale for mirroring `attributed_to` (per-finding override + immutability) doesn't extend.
 
-2. **OSV.dev result caching within a scan.** A `~/.claude` scan with 14 active plugins might emit several hundred PURLs across them. Batched `/v1/querybatch` handles this. Should we cache results across plugins within the same scan run (same PURL queried twice)? **Lean:** yes, in-process dict, no persistence.
+2. **OSV.dev batch query: single pass, no in-process cache.** Collect every emitted PURL into one set, chunk into batches of ≤1000 packages, POST to `/v1/querybatch`, fetch full vulnerability records via `/v1/vulns/<id>`. OSV.dev deduplicates the batch on its end; no cache layer needed. Simpler code; fewer round trips.
 
-3. **Network failure UX.** Fail-soft means: log warning, continue with corpus-only. Should the scan exit code reflect "federation requested but unreachable" differently from "scan succeeded clean"? **Lean:** no — exit code reflects findings only, not federation availability. Warning visible in `-v` and a single line on stderr otherwise.
+3. **Network failure UX.**
+   - **Exit code stays findings-driven.** Network failure is a coverage gap, not a finding. Exit code reflects `--fail-on` semantics only.
+   - **Unconditional stderr warning when federation fails.** If the user passed `--federate-osv` and the network call fails (timeout, non-200, malformed response), print a one-line warning to stderr regardless of `-v`. The user explicitly opted in; silent fallback to corpus-only violates principle of least surprise.
 
 ## Acceptance criteria
 

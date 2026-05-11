@@ -862,3 +862,62 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
     assert "1 bundled MCPs" in result.output
     # The Tier-2 line should still appear separately.
     assert "transitive" in result.output and "2 packages" in result.output
+
+
+def test_fs_verbose_lists_bare_skills_individually(tmp_path):
+    """The 'bare components: N skills' summary line should be followed by
+    one indented line per bare skill identity, so users can see exactly
+    what was inventoried — mirroring the per-plugin breakdown."""
+    skills_root = tmp_path / "skills"
+    for name in ("zebra-skill", "alpha-skill", "middle-skill"):
+        skill_dir = skills_root / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\ndescription: test\n---\nbody\n")
+    (tmp_path / "settings.json").write_text("{}")
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "bare components: 3 skills" in result.output
+    # Each skill identity appears on its own line, sorted alphabetically.
+    alpha_idx = result.output.find("claude-skill/alpha-skill")
+    middle_idx = result.output.find("claude-skill/middle-skill")
+    zebra_idx = result.output.find("claude-skill/zebra-skill")
+    assert alpha_idx >= 0 and middle_idx >= 0 and zebra_idx >= 0
+    assert alpha_idx < middle_idx < zebra_idx  # sorted order
+
+
+def test_fs_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
+    """No bare components → no summary line and no per-component list."""
+    (tmp_path / "settings.json").write_text("{}")
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "bare components:" not in result.output

@@ -110,8 +110,15 @@ def flatten_grouped(
     seen: set[tuple] = set()
     for _, group in grouped:
         for r in group:
+            # Resolve source_manifest to an absolute path so that relative
+            # and absolute references to the same file collapse to the same
+            # key. Without this, `--target .` produces a relative path from
+            # the direct rglob hit while _parse_mcp_servers_from_plugin_json
+            # calls Path.resolve() internally, yielding different strings for
+            # the same file and breaking dedup.
+            manifest_key = str(Path(r.source_manifest).resolve()) if r.source_manifest else ""
             key = (
-                r.source_manifest,
+                manifest_key,
                 r.source_locator,
                 r.ecosystem,
                 r.name,

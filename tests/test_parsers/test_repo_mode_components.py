@@ -53,3 +53,17 @@ def test_repo_mode_dedupes_mcp_when_plugin_json_string_path_overlaps():
     npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/test-mcp"]
     # Exactly one ref despite two discovery paths.
     assert len(npm_refs) == 1
+
+
+def test_repo_mode_dedupes_mcp_with_relative_target(monkeypatch):
+    """Dedup must work even when --target is a relative path.
+
+    With a relative root, the direct rglob hit of .mcp.json produces a
+    relative source_manifest string while _parse_mcp_servers_from_plugin_json
+    calls Path.resolve() internally, yielding an absolute path. Without
+    normalizing to absolute in flatten_grouped, the dedup key differs and
+    the duplicate leaks through."""
+    monkeypatch.chdir(REPOS)
+    refs = parse_repo(Path("sample-plugin-string-mcp"))
+    npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/test-mcp"]
+    assert len(npm_refs) == 1

@@ -35,7 +35,17 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from tools.component_ref import ComponentRef
-from tools.parsers import claude_command_agent, claude_plugin, claude_skill, hooks_json, mcp_json
+from tools.parsers import (
+    claude_command_agent,
+    claude_plugin,
+    claude_skill,
+    hooks_json,
+    mcp_json,
+    package_json,
+    package_lock_json,
+    pyproject_toml,
+    uv_lock,
+)
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
     SettingsLayers,
@@ -51,6 +61,7 @@ def parse_install(
     install_root: Path,
     project_root: Optional[Path] = None,
     mode: Mode = "fs",
+    include_transitive: bool = True,
 ) -> tuple[list[ComponentRef], list[str]]:
     """Read declared+lockfile state and emit one ComponentRef per active plugin.
 
@@ -80,6 +91,7 @@ def parse_install(
             lockfile_path=lockfile_path,
             layers=layers,
             mode=mode,
+            include_transitive=include_transitive,
         )
         refs.extend(plugin_refs)
         warnings.extend(plugin_walk_warnings)
@@ -128,6 +140,7 @@ def _walk_active_plugins(
     lockfile_path: Path,
     layers: SettingsLayers,
     mode: Mode,
+    include_transitive: bool = True,
 ) -> tuple[list[ComponentRef], list[str]]:
     """Process each enabled plugin: emit self-identity + bundled refs.
 
@@ -197,6 +210,12 @@ def _walk_active_plugins(
             refs.extend(bundled_refs)
             for w in bundled_warnings:
                 warnings.append(f"{plugin_key}: {w}")
+
+            if include_transitive:
+                tier2_refs = _walk_plugin_implementation_deps(
+                    Path(install_path), attributed_to=identity
+                )
+                refs.extend(tier2_refs)
 
     return refs, warnings
 
@@ -386,6 +405,62 @@ def _walk_plugin_install_root(
     )
 
     return refs, warnings
+
+
+# (ecosystem, lockfile_filename, parser_callable) — parsed in order; multiple
+# ecosystems can coexist (a single plugin can ship JS + embedded Python).
+_LOCKFILE_DISPATCH: list[tuple[str, str, object]] = [
+    ("npm", "package-lock.json", package_lock_json.parse),
+    ("PyPI", "uv.lock", uv_lock.parse),
+]
+
+# Manifest fallback runs ONLY for ecosystems not already covered by a lockfile.
+_MANIFEST_FALLBACK: list[tuple[str, str, object]] = [
+    ("npm", "package.json", package_json.parse),
+    ("PyPI", "pyproject.toml", pyproject_toml.parse),
+]
+
+
+def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> list[ComponentRef]:
+    """Tier-2 walk: parse every supported lockfile at the installPath, then
+    manifest-fall-back for ecosystems not covered by a lockfile.
+
+    ADR-0008: lockfile = full transitive; manifest fallback = direct deps
+    only with extra["transitive"]=False. Parse ALL supported lockfiles, not
+    first-match, so multi-language plugins emit refs for every ecosystem.
+    All emissions tagged with the caller-supplied attributed_to.
+    """
+    if not install_path.is_dir():
+        return []
+    refs: list[ComponentRef] = []
+    covered: set[str] = set()
+    for ecosystem, filename, parser in _LOCKFILE_DISPATCH:
+        lockfile = install_path / filename
+        if not lockfile.is_file():
+            continue
+        try:
+            lock_refs = parser(lockfile)  # type: ignore[operator]
+        except Exception:
+            continue
+        for r in lock_refs:
+            refs.append(replace(r, attributed_to=attributed_to))
+        covered.add(ecosystem)
+    for ecosystem, filename, parser in _MANIFEST_FALLBACK:
+        if ecosystem in covered:
+            continue
+        manifest = install_path / filename
+        if not manifest.is_file():
+            continue
+        try:
+            manifest_refs = parser(manifest)  # type: ignore[operator]
+        except Exception:
+            continue
+        for r in manifest_refs:
+            extra = dict(r.extra)
+            extra["transitive"] = False
+            extra["fallback_reason"] = f"no {ecosystem} lockfile present"
+            refs.append(replace(r, attributed_to=attributed_to, extra=extra))
+    return refs
 
 
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:

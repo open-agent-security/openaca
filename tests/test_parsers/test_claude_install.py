@@ -688,3 +688,143 @@ def test_install_silent_when_installpath_missing(tmp_path):
     # No bundled refs.
     assert all(r.ecosystem != "claude-skill" for r in refs)
     assert all(r.ecosystem != "claude-hook" for r in refs)
+
+
+# Plan 009 Task 4: Tier-2 fs-mode dispatch (lockfile + manifest fallback).
+
+
+def test_install_emits_npm_lockfile_refs_for_active_plugin(tmp_path):
+    """A plugin with package-lock.json at its installPath emits transitive
+    npm refs, all attributed to the plugin."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "webp", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "lodash"
+    assert npm_refs[0].version == "4.17.20"
+    assert npm_refs[0].attributed_to == "claude-plugin/webp@1.0.0"
+    assert npm_refs[0].extra["transitive"] is True
+
+
+def test_install_falls_back_to_package_json_when_no_lockfile(tmp_path):
+    """No package-lock.json but package.json exists → emit direct deps with
+    transitive=False and a fallback_reason."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package.json").write_text(
+        json.dumps({"name": "webp", "dependencies": {"lodash": "^4.17.0"}})
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "lodash"
+    assert npm_refs[0].extra.get("transitive") is False
+    assert "no npm lockfile" in (npm_refs[0].extra.get("fallback_reason") or "")
+    assert npm_refs[0].attributed_to == "claude-plugin/webp@1.0.0"
+
+
+def test_install_parses_both_npm_and_pypi_lockfiles_per_plugin(tmp_path):
+    """A plugin shipping JS + embedded Python: parse BOTH lockfiles, not
+    first-match. Validates ADR-0008's parse-all-lockfiles decision."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="multi@m", plugin_name="multi", version="1.0.0"
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "multi", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    (install_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    ecosystems = {r.ecosystem for r in refs}
+    assert "npm" in ecosystems
+    assert "PyPI" in ecosystems
+
+
+def test_install_lockfile_wins_when_both_lockfile_and_manifest_present(tmp_path):
+    """Lockfile gets parsed; manifest fallback skipped for the covered ecosystem."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "webp", "version": "1.0.0"},
+                    "node_modules/from-lock": {"version": "1.0.0"},
+                },
+            }
+        )
+    )
+    (install_path / "package.json").write_text(
+        json.dumps({"name": "webp", "dependencies": {"from-manifest": "^1.0.0"}})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_names = {r.name for r in refs if r.ecosystem == "npm"}
+    assert "from-lock" in npm_names
+    assert "from-manifest" not in npm_names
+
+
+def test_install_include_transitive_false_skips_lockfile_and_manifest(tmp_path):
+    """When include_transitive=False, Tier-2 walk is skipped entirely;
+    Tier-1 components still emit."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "webp", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    skill_dir = install_path / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\nbody\n")
+    refs, _ = parse_install(install_root=tmp_path, include_transitive=False)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    assert npm_refs == []
+    assert len(skill_refs) == 1  # Tier-1 still emitted
+
+
+def test_install_pyproject_fallback_when_no_uv_lock(tmp_path):
+    """No uv.lock but pyproject.toml exists → emit direct deps with transitive=False."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="pyp@m", plugin_name="pyp", version="1.0.0"
+    )
+    (install_path / "pyproject.toml").write_text(
+        '[project]\nname = "pyp"\nversion = "1.0.0"\ndependencies = ["requests==2.31.0"]\n'
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    pypi_refs = [r for r in refs if r.ecosystem == "PyPI"]
+    assert any(r.name == "requests" for r in pypi_refs)
+    requests_ref = next(r for r in pypi_refs if r.name == "requests")
+    assert requests_ref.extra.get("transitive") is False

@@ -13,7 +13,9 @@ from tools.parsers import (
     claude_skill,
     mcp_json,
     package_json,
+    package_lock_json,
     pyproject_toml,
+    uv_lock,
 )
 
 ParserFn = Callable[[Path], list[ComponentRef]]
@@ -44,6 +46,11 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     (".claude/skills/*/SKILL.md", claude_skill.parse),
     (".claude/commands/*.md", _parse_repo_command),
     (".claude/agents/*.md", _parse_repo_agent),
+    # Plan 009: lockfile parsers for repo-mode transitive coverage.
+    # Refs from these patterns have attributed_to=None (host repo is direct);
+    # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
+    ("package-lock.json", package_lock_json.parse),
+    ("uv.lock", uv_lock.parse),
 ]
 
 

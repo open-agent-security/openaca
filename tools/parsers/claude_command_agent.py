@@ -27,6 +27,31 @@ from tools.component_ref import ComponentRef
 Kind = Literal["command", "agent"]
 
 
+def parse_file(
+    md_path: Path,
+    kind: Kind,
+    scope_owner: str = "repo",
+    attributed_to: Optional[str] = None,
+) -> list[ComponentRef]:
+    """Emit one ref for a single `*.md` file. Used by the repo-mode
+    registry where `rglob` discovers paths individually."""
+    if not md_path.is_file() or md_path.suffix != ".md":
+        return []
+    name = _resolve_name(md_path)
+    ecosystem = f"claude-{kind}"
+    identity = f"{ecosystem}/{scope_owner}/{name}"
+    return [
+        ComponentRef(
+            ecosystem=ecosystem,
+            name=name,
+            component_identity=identity,
+            source_manifest=str(md_path),
+            source_locator="$",
+            attributed_to=attributed_to,
+        )
+    ]
+
+
 def enumerate_dir(
     dir_path: Path,
     kind: Kind,

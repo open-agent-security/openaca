@@ -46,7 +46,7 @@ def parse(path: Path) -> list[ComponentRef]:
                 name=name,
                 version=version,
                 source_manifest=str(path),
-                source_locator=f"$.packages.{key!r}",
+                source_locator=f"$.packages[{key!r}]",
                 extra={"transitive": True},
             )
         )

@@ -37,7 +37,7 @@ from click.core import ParameterSource
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus
-from tools.parsers import parse_repo_grouped
+from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.sarif import to_sarif
 
@@ -339,7 +339,11 @@ def repo(
     """Scan a code repository's declared manifests."""
     sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
     grouped, n_found = parse_repo_grouped(target)
-    refs = [ref for _, group in grouped for ref in group]
+    # Dedup across discovery paths — the same logical component can appear in
+    # multiple groups (e.g., a plugin's .mcp.json walked both directly and
+    # indirectly via plugin.json's string-path mcpServers). Verbose output
+    # still shows raw `grouped` so users see what each manifest declared.
+    refs = flatten_grouped(grouped)
     n_failed = n_found - len(grouped)
     corpus = load_corpus(advisories)
     _stamp_source(corpus, "asve.dev")

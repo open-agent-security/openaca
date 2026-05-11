@@ -13,8 +13,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 004 | [Static export pipeline](004-static-export.md) | ✅ Done | 001, 002 |
 | 005 | [Reference GitHub Action](005-reference-action.md) | ✅ Done | 003, 004 |
 | 006 | [Disclosure policy doc](006-disclosure-policy.md) | ✅ Done | — |
-| 007 | [fs-mode foundation: CLI split, attribution, claude-plugin matcher](007-fs-mode-cli-and-attribution.md) | 🟡 Active | 001, 003, 005 |
-| 008 | [Component inventory: declared (repo) and active (fs) agent stack](008-component-inventory.md) | ⏸ Pending | 007 |
+| 007 | [fs-mode foundation: CLI split, attribution, claude-plugin matcher](007-fs-mode-cli-and-attribution.md) | ✅ Done | 001, 003, 005 |
+| 008 | [Component inventory: declared (repo) and active (fs) agent stack](008-component-inventory.md) | 🟡 Active | 007 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

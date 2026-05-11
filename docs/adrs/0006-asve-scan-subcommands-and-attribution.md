@@ -99,9 +99,12 @@ Surface points:
 - The `claude-plugin` ecosystem string becomes part of the corpus contract.
   Future advisories targeting plugins use it. CONTRIBUTING.md ecosystem
   list documents it.
-- The CLI surface grows by two subcommands. Back-compat is preserved by the
-  no-subcommand default; the GitHub Action's `action.yml` doesn't need to
-  change.
+- The CLI surface grows by two subcommands; either `repo` or `fs` is required.
+  The GitHub Action's `action.yml` was updated to invoke `asve-scan repo`
+  explicitly. (This Consequences bullet originally claimed a no-subcommand
+  default preserved back-compat — that fallback was removed before any
+  external consumer existed. See the Decision section above for the
+  authoritative current behavior; this bullet is corrected to match.)
 - All findings now carry an attribution slot, populated or not. Output
   rendering checks for None and elides the `via ...` suffix when absent.
 - Plans 008 and 009 build directly on this foundation: plan 008 walks

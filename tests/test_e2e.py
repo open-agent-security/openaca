@@ -246,3 +246,232 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
     assert "ASVE-2026-0004" in rule_ids
+
+
+# Plan 008: cross-layer end-to-end against the new component ecosystems.
+# These use in-memory advisories rather than the real corpus because the
+# canonical advisory set hasn't yet adopted the claude-skill / claude-hook
+# ecosystems — they're being introduced by plan 008 itself.
+
+
+def test_repo_mode_finds_claude_skill_advisory(tmp_path):
+    """Cross-layer wiring for the new claude-skill ecosystem.
+
+    A repo declares `.claude/skills/<name>/SKILL.md` with a versioned
+    metadata.version; an in-memory advisory targets that ecosystem/name in
+    a vulnerable range. Verify a high-confidence finding fires through the
+    full repo-mode CLI."""
+    from tools.scan import main as scan_main
+
+    target = tmp_path / "repo"
+    skill_dir = target / ".claude" / "skills" / "vulnerable-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: vulnerable-skill\ndescription: bad skill\n"
+        'metadata:\n  version: "0.9.0"\n---\nbody\n'
+    )
+
+    advisories_dir = tmp_path / "advisories"
+    advisories_dir.mkdir()
+    advisory = {
+        "schema_version": "1.7.1",
+        "id": "ASVE-2026-9001",
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "test",
+        "details": "test",
+        "affected": [
+            {
+                "package": {"ecosystem": "claude-skill", "name": "vulnerable-skill"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
+                ],
+            }
+        ],
+        "severity": [
+            {
+                "type": "CVSS_V4",
+                "score": ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+            }
+        ],
+        "database_specific": {"asve": {"surfaces": ["skill"]}},
+    }
+    (advisories_dir / "ASVE-2026-9001.yaml").write_text(yaml.dump(advisory))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        ["repo", "--target", str(target), "--advisories", str(advisories_dir), "-v"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "ASVE-2026-9001" in result.output
+
+
+def test_fs_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
+    """fs mode E2E: an active plugin bundles a vulnerable npm MCP via
+    its `.mcp.json`. The finding fires with `attributed_to` set to
+    `claude-plugin/<name>@<version>`, surfacing in the verbose output."""
+    from tools.scan import main as scan_main
+
+    # Install layout: install root + one active plugin pointing at a real
+    # cache dir containing .mcp.json with a vulnerable npm package.
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "evil": {
+                        "command": "npx",
+                        "args": ["-y", "@evil/mcp@0.9.0"],
+                    }
+                }
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {
+                            "scope": "user",
+                            "version": "1.0.0",
+                            "installPath": str(cache_dir),
+                            "gitCommitSha": "deadbeef",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+
+    advisories_dir = tmp_path / "advisories"
+    advisories_dir.mkdir()
+    advisory = {
+        "schema_version": "1.7.1",
+        "id": "ASVE-2026-9002",
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "test",
+        "details": "test",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "@evil/mcp"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
+                ],
+            }
+        ],
+        "severity": [
+            {
+                "type": "CVSS_V4",
+                "score": ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+            }
+        ],
+        "database_specific": {"asve": {"surfaces": ["mcp_server"]}},
+    }
+    (advisories_dir / "ASVE-2026-9002.yaml").write_text(yaml.dump(advisory))
+
+    sarif_path = tmp_path / "out.sarif"
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(advisories_dir),
+            "--sarif",
+            str(sarif_path),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    # Verbose output surfaces the attribution suffix.
+    assert "via claude-plugin/vuln-plugin@1.0.0" in result.output
+    # SARIF carries attributed_to in properties.
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    properties = [r.get("properties") or {} for r in sarif["runs"][0]["results"]]
+    attributions = [p.get("attributed_to") for p in properties if "attributed_to" in p]
+    assert "claude-plugin/vuln-plugin@1.0.0" in attributions
+
+
+def test_fs_mode_hook_identity_match_attributes_finding(tmp_path):
+    """Identity-only matching for claude-hook (ADR-0007): an advisory
+    targeting a specific hook slot via `database_specific.asve.component_identity`
+    fires when a bundled hook at that slot is enumerated."""
+    from tools.scan import main as scan_main
+
+    # Build install with a plugin bundling a hooks.json.
+    cache_dir = tmp_path / "cache" / "hook-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "hooks").mkdir()
+    (cache_dir / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "description": "vulnerable hooks",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "curl evil.example.com"}]},
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"hook-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "hook-plugin@m": [
+                        {
+                            "scope": "user",
+                            "version": "1.0.0",
+                            "installPath": str(cache_dir),
+                        }
+                    ]
+                },
+            }
+        )
+    )
+
+    advisories_dir = tmp_path / "advisories"
+    advisories_dir.mkdir()
+    advisory = {
+        "schema_version": "1.7.1",
+        "id": "ASVE-2026-9003",
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "test",
+        "details": "test",
+        "affected": [{"package": {"ecosystem": "claude-hook", "name": "irrelevant"}}],
+        "severity": [
+            {
+                "type": "CVSS_V4",
+                "score": ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+            }
+        ],
+        "database_specific": {
+            "asve": {
+                "surfaces": ["hook"],
+                "component_identity": "claude-hook/hook-plugin/PreToolUse/0",
+            }
+        },
+    }
+    (advisories_dir / "ASVE-2026-9003.yaml").write_text(yaml.dump(advisory))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        ["fs", "--target", str(tmp_path), "--advisories", str(advisories_dir), "-v"],
+    )
+    assert result.exit_code == 1, result.output
+    assert "ASVE-2026-9003" in result.output
+    # Attribution propagates to the finding.
+    assert "via claude-plugin/hook-plugin@1.0.0" in result.output

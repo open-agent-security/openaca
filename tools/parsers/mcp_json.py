@@ -7,6 +7,10 @@ JSON shapes here:
 
 - `mcpServers` root (Claude Code, Claude Desktop, Cursor, plugin manifests).
 - `servers` root (VS Code's `.vscode/mcp.json`).
+- Flat root (no wrapper) — observed in real Claude Code plugin `.mcp.json`
+  files (e.g. the `claude-plugins-official/playwright` plugin ships
+  `{"playwright": {"command": "npx", "args": [...]}}` at top level).
+  Detected when every value is a dict with `command` or `url`.
 
 V0 detection scope is package-pinned stdio servers (npx/uvx + binary
 fallback) so ASVE can alias upstream CVE/GHSA records via PURL. URL/HTTP
@@ -310,4 +314,22 @@ def parse(path: Path) -> list[ComponentRef]:
             source_manifest=str(path),
             locator_prefix="$.servers",
         )
+    # Flat shape (no wrapper). Some real Claude Code plugins ship `.mcp.json`
+    # as a bare `{server_name: {command, args}}` map without the conventional
+    # `mcpServers` envelope. Detect by requiring every value to be a dict
+    # with a server-shaped key (`command` for stdio, `url` for HTTP). Strict
+    # all-or-nothing avoids false positives on top-level configs that happen
+    # to contain a server-shaped sub-object alongside unrelated keys.
+    if _looks_like_flat_server_map(data):
+        return parse_mcp_servers(
+            data,
+            source_manifest=str(path),
+            locator_prefix="$",
+        )
     return []
+
+
+def _looks_like_flat_server_map(data: dict) -> bool:
+    if not data:
+        return False
+    return all(isinstance(v, dict) and ("command" in v or "url" in v) for v in data.values())

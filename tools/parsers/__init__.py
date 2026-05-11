@@ -68,6 +68,13 @@ def parse_repo_grouped(
     arbitrary user repos and one malformed file should not abort the rest of
     the scan. Manifests with zero components are still included so consumers
     can see the file was visited.
+
+    Per-manifest groups preserve duplicates intentionally — verbose output
+    should show what each manifest declared, even if another manifest's parse
+    path discovered the same component. Use `flatten_grouped` (or `parse_repo`)
+    when a deduplicated cross-manifest ref list is needed for matching/SARIF;
+    those callers want one finding per logical component, not per discovery
+    path.
     """
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
@@ -81,10 +88,44 @@ def parse_repo_grouped(
     return grouped, n_found
 
 
-def parse_repo(root: Path) -> list[ComponentRef]:
-    """Walk `root` and return ComponentRefs from all known manifests."""
+def flatten_grouped(
+    grouped: list[tuple[Path, list[ComponentRef]]],
+) -> list[ComponentRef]:
+    """Flatten per-manifest groups into a deduplicated ref list.
+
+    The same logical component can be discovered via multiple registry paths
+    — e.g., a `.mcp.json` walked directly AND followed indirectly through a
+    `.claude-plugin/plugin.json` whose `mcpServers` is the string path
+    `"./.mcp.json"`. Both routes emit identical refs (same source_manifest +
+    source_locator + identity). Without dedup, matching produces duplicate
+    findings and SARIF emits duplicate results.
+
+    Dedup key intentionally excludes `extra` (a dict, so unhashable; also
+    discovery-path-dependent in some cases) and `attributed_to` (always None
+    in repo-mode; differs by route in theoretical edge cases). What identifies
+    a logical component for matching is the (where, what) tuple:
+    (source_manifest, source_locator, ecosystem, name, version, component_identity).
+    """
     refs: list[ComponentRef] = []
-    grouped, _ = parse_repo_grouped(root)
+    seen: set[tuple] = set()
     for _, group in grouped:
-        refs.extend(group)
+        for r in group:
+            key = (
+                r.source_manifest,
+                r.source_locator,
+                r.ecosystem,
+                r.name,
+                r.version,
+                r.component_identity,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(r)
     return refs
+
+
+def parse_repo(root: Path) -> list[ComponentRef]:
+    """Walk `root` and return deduplicated ComponentRefs from all known manifests."""
+    grouped, _ = parse_repo_grouped(root)
+    return flatten_grouped(grouped)

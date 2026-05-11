@@ -41,3 +41,15 @@ def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
     assert len(agent_refs) == 1
     assert agent_refs[0].component_identity == "claude-agent/repo/code-reviewer"
     assert agent_refs[0].attributed_to is None
+
+
+def test_repo_mode_dedupes_mcp_when_plugin_json_string_path_overlaps():
+    """The sample-plugin-string-mcp fixture has BOTH a .mcp.json at root AND
+    a plugin.json that points at the same file via `mcpServers: "./.mcp.json"`.
+    The registry walks both paths; without dedup, the same npm package would
+    emit twice. parse_repo (via flatten_grouped) must dedup so matching and
+    SARIF report each component once."""
+    refs = parse_repo(REPOS / "sample-plugin-string-mcp")
+    npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/test-mcp"]
+    # Exactly one ref despite two discovery paths.
+    assert len(npm_refs) == 1

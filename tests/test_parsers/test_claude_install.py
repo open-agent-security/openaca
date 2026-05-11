@@ -828,3 +828,50 @@ def test_install_pyproject_fallback_when_no_uv_lock(tmp_path):
     assert any(r.name == "requests" for r in pypi_refs)
     requests_ref = next(r for r in pypi_refs if r.name == "requests")
     assert requests_ref.extra.get("transitive") is False
+
+
+def test_install_v1v2_lockfile_falls_back_to_manifest(tmp_path):
+    """P1 regression: npm v1/v2 lockfile (no 'packages' key) returns [] from the
+    parser — manifest fallback must still fire rather than being silently suppressed."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    # v1/v2 lockfile: has 'dependencies' key, not 'packages' → parser returns []
+    (install_path / "package-lock.json").write_text(
+        json.dumps({"lockfileVersion": 1, "dependencies": {"lodash": {"version": "4.17.20"}}})
+    )
+    (install_path / "package.json").write_text(
+        json.dumps({"name": "webp", "dependencies": {"lodash": "^4.17.0"}})
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    # v1/v2 lockfile yields nothing; manifest fallback should kick in
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "lodash"
+    assert npm_refs[0].extra.get("transitive") is False
+
+
+def test_install_manifest_fallback_excludes_dev_dependencies(tmp_path):
+    """P2 regression: manifest fallback for npm must only emit 'dependencies',
+    not devDependencies / peerDependencies / optionalDependencies."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "webp",
+                "dependencies": {"lodash": "^4.17.0"},
+                "devDependencies": {"jest": "^29.0.0"},
+                "peerDependencies": {"react": "^18.0.0"},
+                "optionalDependencies": {"fsevents": "^2.0.0"},
+            }
+        )
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    npm_names = {r.name for r in npm_refs}
+    assert "lodash" in npm_names
+    assert "jest" not in npm_names
+    assert "react" not in npm_names
+    assert "fsevents" not in npm_names

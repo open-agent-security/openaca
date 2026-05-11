@@ -420,6 +420,12 @@ _MANIFEST_FALLBACK: list[tuple[str, str, object]] = [
     ("PyPI", "pyproject.toml", pyproject_toml.parse),
 ]
 
+# Restrict manifest fallback to runtime-only source_locators per ecosystem.
+# Absent from this dict → no filtering (all locators accepted).
+_RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
+    "npm": {"dependencies"},
+}
+
 
 def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> list[ComponentRef]:
     """Tier-2 walk: parse every supported lockfile at the installPath, then
@@ -444,7 +450,8 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             continue
         for r in lock_refs:
             refs.append(replace(r, attributed_to=attributed_to))
-        covered.add(ecosystem)
+        if lock_refs:
+            covered.add(ecosystem)
     for ecosystem, filename, parser in _MANIFEST_FALLBACK:
         if ecosystem in covered:
             continue
@@ -455,7 +462,10 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             manifest_refs = parser(manifest)  # type: ignore[operator]
         except Exception:
             continue
+        runtime_locators = _RUNTIME_MANIFEST_LOCATORS.get(ecosystem)
         for r in manifest_refs:
+            if runtime_locators is not None and r.source_locator not in runtime_locators:
+                continue
             extra = dict(r.extra)
             extra["transitive"] = False
             extra["fallback_reason"] = f"no {ecosystem} lockfile present"

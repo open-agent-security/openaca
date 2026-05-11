@@ -904,3 +904,176 @@ def test_install_manifest_fallback_excludes_dev_dependencies(tmp_path):
     assert "jest" not in npm_names
     assert "react" not in npm_names
     assert "fsevents" not in npm_names
+
+
+# ── Custom plugin.json path handling ─────────────────────────────────────────
+#
+# Real plugins (e.g., supabase) declare custom paths in plugin.json for
+# `skills`, `commands`, `agents`, and `hooks`. Per Claude Code semantics,
+# custom paths *merge with* the defaults rather than replacing them — both
+# trees are walked. Dedup is by resolved absolute path so a custom path
+# that points at the default location doesn't double-emit.
+
+
+def _write_plugin_json(install_path: Path, body: dict) -> None:
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir(exist_ok=True)
+    (cp_dir / "plugin.json").write_text(
+        json.dumps({"name": "superpowers", "version": "5.1.0", **body})
+    )
+
+
+def test_install_walks_custom_commands_path_from_plugin_json(tmp_path):
+    """`plugin.json["commands"]: "./tools/cmds/"` walks the custom dir too."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    custom_dir = install_path / "tools" / "cmds"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "deploy.md").write_text("body\n")
+    _write_plugin_json(install_path, {"commands": "./tools/cmds/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    assert any(r.component_identity == "claude-command/superpowers/deploy" for r in cmd_refs)
+    assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in cmd_refs)
+
+
+def test_install_walks_default_and_custom_commands_paths_together(tmp_path):
+    """Defaults merge with custom paths — both trees walked. Dedup by resolved
+    path means a plugin pointing custom=default doesn't double-emit."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    (install_path / "commands").mkdir()
+    (install_path / "commands" / "deploy.md").write_text("body\n")
+    custom_dir = install_path / "tools" / "cmds"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "release.md").write_text("body\n")
+    _write_plugin_json(install_path, {"commands": "./tools/cmds/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    cmd_names = sorted(r.name or "" for r in refs if r.ecosystem == "claude-command")
+    assert cmd_names == ["deploy", "release"]
+
+
+def test_install_dedupes_custom_commands_equal_to_default(tmp_path):
+    """Plugin declaring `commands: "./commands/"` (same as default) → no dup."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    (install_path / "commands").mkdir()
+    (install_path / "commands" / "deploy.md").write_text("body\n")
+    _write_plugin_json(install_path, {"commands": "./commands/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    assert len(cmd_refs) == 1
+
+
+def test_install_walks_custom_agents_path_from_plugin_json(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    custom_dir = install_path / "tools" / "ag"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "reviewer.md").write_text("body\n")
+    _write_plugin_json(install_path, {"agents": "./tools/ag/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
+    assert any(r.component_identity == "claude-agent/superpowers/reviewer" for r in agent_refs)
+
+
+def test_install_walks_custom_skills_path_from_plugin_json(tmp_path):
+    """Supabase-shape: `"skills": "./skills/"`. Custom + default resolve to the
+    same directory and dedup keeps it to one walk."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    skills_dir = install_path / "skills" / "bootstrap"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: bootstrap\ndescription: scaffold a project\n---\nbody\n"
+    )
+    _write_plugin_json(install_path, {"skills": "./skills/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    assert len(skill_refs) == 1
+    assert skill_refs[0].name == "bootstrap"
+
+
+def test_install_walks_custom_skills_path_distinct_from_default(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    # Default
+    (install_path / "skills" / "alpha").mkdir(parents=True)
+    (install_path / "skills" / "alpha" / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: x\n---\n"
+    )
+    # Custom location distinct from default
+    custom_root = install_path / "extras" / "skills"
+    (custom_root / "beta").mkdir(parents=True)
+    (custom_root / "beta" / "SKILL.md").write_text("---\nname: beta\ndescription: y\n---\n")
+    _write_plugin_json(install_path, {"skills": "./extras/skills/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    skill_names = sorted(r.name or "" for r in refs if r.ecosystem == "claude-skill")
+    assert skill_names == ["alpha", "beta"]
+
+
+def test_install_walks_string_path_hooks_from_plugin_json(tmp_path):
+    """`plugin.json["hooks"]: "./custom-hooks.json"` (string form) is walked
+    as a hooks.json file with the same plugin-scope identity."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    custom_hooks = install_path / "custom-hooks.json"
+    custom_hooks.write_text(
+        json.dumps(
+            {
+                "description": "custom",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo pre"}]},
+            }
+        )
+    )
+    _write_plugin_json(install_path, {"hooks": "./custom-hooks.json"})
+    refs, _ = parse_install(install_root=tmp_path)
+    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    assert len(hook_refs) == 1
+    assert hook_refs[0].component_identity == "claude-hook/superpowers/PreToolUse/0"
+    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+
+
+def test_install_string_path_hooks_dedupes_against_default(tmp_path):
+    """Default hooks/hooks.json AND custom string-path pointing at the same
+    file → walked once, not twice."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    hooks_dir = install_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "hooks.json").write_text(
+        json.dumps(
+            {
+                "description": "default",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo pre"}]},
+            }
+        )
+    )
+    _write_plugin_json(install_path, {"hooks": "./hooks/hooks.json"})
+    refs, _ = parse_install(install_root=tmp_path)
+    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    assert len(hook_refs) == 1
+
+
+def test_install_rejects_custom_path_traversal(tmp_path):
+    """A plugin.json that tries to escape the install root via `..` must be
+    rejected — the walker never descends outside the plugin's tree."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    # Create a sibling dir outside install_path with a stray command file.
+    sibling = install_path.parent / "outside"
+    sibling.mkdir()
+    (sibling / "evil.md").write_text("body\n")
+    _write_plugin_json(install_path, {"commands": "../outside/"})
+    refs, _ = parse_install(install_root=tmp_path)
+    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    assert cmd_refs == []

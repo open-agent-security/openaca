@@ -593,6 +593,71 @@ def test_install_project_scoped_mcp_json(tmp_path):
     assert npm_refs[0].name == "@p/q"
 
 
+def test_install_walks_inline_plugin_json_hooks(tmp_path):
+    """A plugin declaring hooks in plugin.json (not hooks/hooks.json) emits
+    claude-hook refs. Regression test for the P2 Codex fix."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir()
+    (cp_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "superpowers",
+                "version": "5.1.0",
+                "hooks": {"PostToolUse": [{"type": "command", "command": "echo post"}]},
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    assert len(hook_refs) == 1
+    assert hook_refs[0].component_identity == "claude-hook/superpowers/PostToolUse/0"
+    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert hook_refs[0].source_manifest.endswith("plugin.json")
+
+
+def test_install_emits_both_file_and_inline_plugin_hooks(tmp_path):
+    """A plugin with both hooks/hooks.json AND inline plugin.json hooks emits
+    refs from both sources — no deduplication is applied."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    hooks_dir = install_path / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "hooks.json").write_text(
+        json.dumps(
+            {
+                "description": "superpowers hooks",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo pre"}]},
+            }
+        )
+    )
+    cp_dir = install_path / ".claude-plugin"
+    cp_dir.mkdir()
+    (cp_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "superpowers",
+                "version": "5.1.0",
+                "hooks": {"PostToolUse": [{"type": "command", "command": "echo post"}]},
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    hook_refs = sorted(
+        (r for r in refs if r.ecosystem == "claude-hook"),
+        key=lambda r: r.component_identity or "",
+    )
+    assert len(hook_refs) == 2
+    identities = [r.component_identity for r in hook_refs]
+    assert "claude-hook/superpowers/PostToolUse/0" in identities
+    assert "claude-hook/superpowers/PreToolUse/0" in identities
+
+
 def test_install_silent_when_installpath_missing(tmp_path):
     """Stale lockfile pointing at a deleted install_path: emit the
     self-identity ref from the lockfile, walk nothing bundled, no warnings.

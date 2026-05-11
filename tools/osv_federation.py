@@ -39,11 +39,22 @@ _BATCH_SIZE = 1000
 _TIMEOUT_SECONDS = 30
 
 
+def is_queryable(ref: ComponentRef) -> bool:
+    """A ref is sent to OSV.dev iff it has a version AND a PURL we can derive.
+
+    Identity-only refs (claude-hook, claude-command, claude-agent) and
+    ASVE-native ecosystems (claude-skill, claude-plugin) have `purl=None`
+    so they're skipped here — OSV.dev wouldn't have records for them.
+    Same rule for any ecosystem-tagged ref missing a version.
+    """
+    return bool(ref.version) and ref.purl is not None
+
+
 def augment_corpus(
     refs: list[ComponentRef], base_corpus: list[dict]
 ) -> tuple[list[dict], list[str]]:
     """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
-    purls = _collect_purls(refs)
+    purls = collect_target_purls(refs)
     if not purls:
         return list(base_corpus), []
     try:
@@ -71,16 +82,20 @@ def augment_corpus(
     return merged, fetch_warnings
 
 
-def _collect_purls(refs: list[ComponentRef]) -> list[str]:
-    """Deduplicate PURLs from refs that have a derivable PURL with a pinned version."""
+def collect_target_purls(refs: list[ComponentRef]) -> list[str]:
+    """Deduplicated, query-ready PURLs (versioned, PURL-mappable ecosystem).
+
+    Public so the CLI verbose path can surface what was sent to OSV.dev
+    without re-implementing the filter. Order is the order refs first
+    contributed a unique PURL — stable for reproducible verbose output.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for r in refs:
-        if not r.version:
+        if not is_queryable(r):
             continue
         purl = r.purl
-        if purl is None:
-            continue
+        assert purl is not None  # narrowed by is_queryable
         if purl in seen:
             continue
         seen.add(purl)

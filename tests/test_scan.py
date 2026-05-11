@@ -807,3 +807,58 @@ def test_fs_verbose_shows_manifest_fallback_line(tmp_path):
     )
     assert "direct only" in result.output
     assert "package.json" in result.output
+
+
+def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
+    """A plugin with 1 Tier-1 bundled MCP (from .mcp.json) + multiple
+    Tier-2 lockfile npm deps should show '1 bundled MCPs' in verbose output,
+    not inflated counts."""
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    # Tier-1: a default .mcp.json with one bundled MCP server.
+    (cache_dir / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@org/foo@1.0.0"]}}})
+    )
+    # Tier-2: a package-lock.json with multiple transitive deps.
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                    "node_modules/underscore": {"version": "1.13.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # The breakdown line should show 1 bundled MCP (the Tier-1 .mcp.json one),
+    # NOT 3 (1 Tier-1 + 2 Tier-2 lockfile deps).
+    assert "1 bundled MCPs" in result.output
+    # The Tier-2 line should still appear separately.
+    assert "transitive" in result.output and "2 packages" in result.output

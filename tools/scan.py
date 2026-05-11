@@ -102,12 +102,18 @@ _BUNDLED_KINDS: tuple[tuple[str, str], ...] = (
 
 
 def _bundled_breakdown(refs: list[ComponentRef], plugin_identity: str | None) -> str:
-    """Summarize per-plugin bundled-component counts for verbose output."""
+    """Summarize per-plugin bundled-component counts for verbose output.
+
+    Excludes Tier-2 lockfile refs (those with extra["transitive"] set);
+    they are surfaced separately by _tier2_coverage_lines."""
     if plugin_identity is None:
         return "0 bundled"
     counts: dict[str, int] = {label: 0 for _, label in _BUNDLED_KINDS}
     for r in refs:
         if r.attributed_to != plugin_identity:
+            continue
+        # Skip Tier-2 lockfile refs; they're not bundled components.
+        if r.extra.get("transitive") is not None:
             continue
         for eco, label in _BUNDLED_KINDS:
             if r.ecosystem == eco:

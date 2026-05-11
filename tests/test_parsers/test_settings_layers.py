@@ -177,6 +177,36 @@ def test_load_silently_skips_unreadable_project_settings(tmp_path):
     assert layers.merged("fs") == {}
 
 
+def test_merged_does_not_mutate_scope_provenance():
+    """After a `merged()` call, `by_scope()` must still return the raw
+    per-scope dicts — `_deep_merge` must not alias nested scope values
+    into the merged result and mutate them across scopes."""
+    layers = SettingsLayers(
+        user={"enabledPlugins": {"a": True, "b": True}},
+        project={"enabledPlugins": {"a": False}},
+    )
+    # Force a merge that would alias if the implementation is wrong.
+    _ = layers.merged("repo")
+    by_scope = layers.by_scope()
+    # User scope must still have its original values; project's override
+    # must not have leaked into user's dict.
+    assert by_scope["user"]["enabledPlugins"] == {"a": True, "b": True}
+    assert by_scope["project"]["enabledPlugins"] == {"a": False}
+
+
+def test_merged_does_not_mutate_scope_arrays():
+    """Same provenance guarantee for arrays — array union must not append
+    later-scope items into the earlier scope's original list."""
+    layers = SettingsLayers(
+        user={"permissions": {"allow": ["Bash(git:*)"]}},
+        project={"permissions": {"allow": ["Bash(npm:*)"]}},
+    )
+    _ = layers.merged("repo")
+    by_scope = layers.by_scope()
+    assert by_scope["user"]["permissions"]["allow"] == ["Bash(git:*)"]
+    assert by_scope["project"]["permissions"]["allow"] == ["Bash(npm:*)"]
+
+
 def test_array_dedupe_handles_dict_items():
     """Permissions / hooks may carry dict entries; first-seen order wins."""
     layers = SettingsLayers(

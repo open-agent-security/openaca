@@ -1200,10 +1200,12 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
 # ── --format mode behavior ────────────────────────────────────────────────
 
 
-def test_scan_default_format_is_text(tmp_path, monkeypatch):
-    """Default output is grouped text, NOT GitHub workflow annotations."""
-    # Clear GITHUB_ACTIONS so auto-detection doesn't override the default.
-    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+def test_scan_default_format_is_text(tmp_path):
+    """Default output is grouped text, NOT GitHub workflow annotations.
+
+    (GITHUB_ACTIONS auto-promotion is suppressed by the autouse fixture in
+    conftest.py; tests that need it set it explicitly.)
+    """
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -1345,14 +1347,15 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
 # ── --db / agent-composition scope ────────────────────────────────────────
 
 
-def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path, monkeypatch):
+def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
     """A vulnerable npm dep declared in a non-plugin repo (no
     .claude-plugin/plugin.json sibling) is classified as software-dependency
     and suppressed — ASVE V0 is agent-composition analysis. The ACA framing
-    footer explains the silence and points to osv-scanner / Trivy."""
-    # The ACA footer is part of the `text` renderer; clear GITHUB_ACTIONS so
-    # CI runs don't auto-promote to `github` format and silently miss it.
-    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    footer explains the silence and points to osv-scanner / Trivy.
+
+    (GITHUB_ACTIONS auto-promotion is suppressed by the autouse fixture in
+    conftest.py — the footer only renders in `text` format.)
+    """
     (tmp_path / "package.json").write_text(
         json.dumps(
             {

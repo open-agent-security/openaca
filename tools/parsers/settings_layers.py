@@ -19,7 +19,7 @@ This module exposes two views, picked by the caller based on identity needs:
 - `merged(mode)` returns a single effective dict. Used for things where
   merging makes sense (the active enabledPlugins set, scalar feature flags).
   Mode-specific: `repo` skips Local (`settings.local.json` is machine-local
-  and not CI-relevant); `fs` includes it.
+  and not CI-relevant); `endpoint` includes it.
 
 - `by_scope()` returns each scope's settings preserved unmerged. Used by
   parsers that need scope-of-origin for identity (notably hooks, where
@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 Scope = Literal["managed", "local", "project", "user"]
-Mode = Literal["repo", "fs"]
+Mode = Literal["repo", "endpoint"]
 
 # Highest-precedence first.
 SCOPE_PRECEDENCE: list[Scope] = ["managed", "local", "project", "user"]

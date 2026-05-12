@@ -1,4 +1,4 @@
-"""Install-state-aware Claude Code reader for fs-mode scanning.
+"""Install-state-aware Claude Code reader for endpoint scanning.
 
 Resolves Claude Code's four-layer install model:
 
@@ -23,7 +23,7 @@ Plan 008 adds:
   `attributed_to = "claude-plugin/<name>@<version>"`.
 
 Settings layering is mode-specific:
-- `fs` mode reads user + project + local (via `settings_layers.merged("fs")`).
+- `endpoint` mode reads user + project + local.
 - `repo` mode skips local (machine-local, not CI-relevant).
 """
 
@@ -54,20 +54,20 @@ from tools.parsers.settings_layers import (
     load as load_settings,
 )
 
-Mode = Literal["repo", "fs"]
+Mode = Literal["repo", "endpoint"]
 
 
 def parse_install(
     install_root: Path,
     project_root: Optional[Path] = None,
-    mode: Mode = "fs",
+    mode: Mode = "endpoint",
     include_transitive: bool = True,
 ) -> tuple[list[ComponentRef], list[str]]:
     """Read declared+lockfile state and emit one ComponentRef per active plugin.
 
     Returns `(refs, warnings)`. Warnings are surfaced in `-v` output by the
-    `asve-scan fs` command so users see resolver caveats (multi-scope ambiguity,
-    missing lockfile entries) without aborting the scan.
+    `asve-scan endpoint` command so users see resolver caveats (multi-scope
+    ambiguity, missing lockfile entries) without aborting the scan.
     """
     refs: list[ComponentRef] = []
     warnings: list[str] = []
@@ -228,7 +228,7 @@ def _walk_bare_components(
 ) -> list[ComponentRef]:
     """Enumerate components declared outside of any plugin.
 
-    Three surfaces in fs mode:
+    Three surfaces in endpoint mode:
 
     1. **Bare MCPs**:
        - `settings.<scope>.mcpServers` (per scope via `by_scope()`).
@@ -556,7 +556,9 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
     return plugin_key, None
 
 
-def _enabling_scope(plugin_key: str, layers: SettingsLayers, mode: Mode = "fs") -> Optional[str]:
+def _enabling_scope(
+    plugin_key: str, layers: SettingsLayers, mode: Mode = "endpoint"
+) -> Optional[str]:
     """Return the highest-precedence scope where the plugin is set true.
 
     Used to break ties in `installed_plugins.json` arrays: when multiple

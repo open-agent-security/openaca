@@ -5,7 +5,7 @@ Two entry points:
 - `parse(path)` — repo-mode: a single `plugin.json` read in isolation, with
   relative paths in `mcpServers` resolved from the plugin root
   (`path.parent.parent`). Emits plugin self-identity + dependencies + MCPs.
-- `parse_at_install_root(install_root, attributed_to)` — fs-mode:
+- `parse_at_install_root(install_root, attributed_to)` — endpoint mode:
   resolves the same plugin.json from `<install_root>/.claude-plugin/plugin.json`
   with relative paths anchored at `install_root` (CLAUDE_PLUGIN_ROOT
   semantics). Does NOT re-emit the plugin self-identity — caller already
@@ -80,7 +80,7 @@ def parse(path: Path) -> list[ComponentRef]:
             )
 
     # In repo mode the manifest lives at <plugin-root>/.claude-plugin/plugin.json,
-    # so the plugin root is `path.parent.parent`. fs mode goes through
+    # so the plugin root is `path.parent.parent`. Endpoint mode goes through
     # `parse_at_install_root` and anchors relative paths at the install root
     # instead — see _parse_mcp_servers_from_plugin_json.
     refs.extend(
@@ -98,7 +98,7 @@ def parse_at_install_root(install_root: Path, attributed_to: str) -> list[Compon
     """Read `<install_root>/.claude-plugin/plugin.json` and emit refs anchored
     at the install root (CLAUDE_PLUGIN_ROOT semantics).
 
-    Does NOT emit the plugin self-identity ref — the fs-mode caller emits
+    Does NOT emit the plugin self-identity ref — the endpoint caller emits
     that from `installed_plugins.json` using the lockfile's version and
     gitCommitSha (more accurate than the manifest's declared version).
 
@@ -170,7 +170,7 @@ def _parse_mcp_servers_from_plugin_json(
     parent). Absolute paths and `..`-traversal that escapes the root are
     rejected. The caller decides what `plugin_root` means:
     - repo mode: `manifest.parent.parent`
-    - fs mode: the active install root
+    - endpoint mode: the active install root
     """
     refs: list[ComponentRef] = []
     servers = data.get("mcpServers")

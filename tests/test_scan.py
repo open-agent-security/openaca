@@ -245,12 +245,12 @@ def test_esc_data_encodes_message_metacharacters():
     assert _esc_data("plain message") == "plain message"
 
 
-# Plan 007: subcommand split tests. Existing tests above call `main` with the
-# legacy flag set (no subcommand) and exercise the back-compat default to repo.
+# Plan 007: subcommand split tests. ASVE is pre-launch, so a subcommand is
+# required rather than preserving a no-subcommand compatibility shim.
 
 
 def test_repo_subcommand_explicit():
-    """Explicit `asve-scan repo` runs the same logic as the back-compat default."""
+    """Explicit `asve-scan repo` scans repository manifests."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -283,17 +283,17 @@ def test_no_subcommand_fails_with_usage():
     assert "no such option" in result.output.lower() or "missing command" in result.output.lower()
 
 
-def test_fs_subcommand_minimal_install_no_findings():
-    """fs mode against the minimal fixture install resolves the active plugin
+def test_endpoint_subcommand_minimal_install_no_findings():
+    """endpoint mode against the minimal fixture install resolves the active plugin
     and reports no findings (V0 corpus has no plugin advisories yet)."""
-    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
-            str(install_root),
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
             "--advisories",
             str(REPO_ROOT / "advisories"),
         ],
@@ -303,10 +303,10 @@ def test_fs_subcommand_minimal_install_no_findings():
     assert "no findings" in result.output
 
 
-def test_fs_subcommand_matches_claude_plugin_advisory(tmp_path):
-    """fs mode + a claude-plugin-ecosystem advisory + the minimal install
+def test_endpoint_subcommand_matches_claude_plugin_advisory(tmp_path):
+    """endpoint mode + a claude-plugin-ecosystem advisory + the minimal install
     fires a finding via the matcher's existing version-range path."""
-    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories_dir = tmp_path / "advisories"
     advisories_dir.mkdir()
     (advisories_dir / "ASVE-2026-9999.yaml").write_text(
@@ -331,9 +331,9 @@ affected:
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
-            str(install_root),
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
             "--advisories",
             str(advisories_dir),
         ],
@@ -342,15 +342,15 @@ affected:
     assert "ASVE-2026-9999" in result.output
 
 
-def test_fs_subcommand_verbose_lists_resolved_plugins():
-    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+def test_endpoint_subcommand_verbose_lists_resolved_plugins():
+    config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
-            str(install_root),
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
             "--advisories",
             str(REPO_ROOT / "advisories"),
             "-v",
@@ -361,9 +361,9 @@ def test_fs_subcommand_verbose_lists_resolved_plugins():
     assert "deadbeef" in result.output  # gitCommitSha shortened
 
 
-def test_fs_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
+def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     """gitCommitSha from installed_plugins.json is user-editable; a non-string
-    value (e.g. integer) must not crash verbose fs output."""
+    value (e.g. integer) must not crash verbose endpoint output."""
     from tools.component_ref import ComponentRef
 
     fake_ref = ComponentRef(
@@ -378,14 +378,14 @@ def test_fs_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     )
     monkeypatch.setattr("tools.scan.parse_install", lambda **_kwargs: ([fake_ref], []))
 
-    install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
-            str(install_root),
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
             "--advisories",
             str(REPO_ROOT / "advisories"),
             "-v",
@@ -396,30 +396,26 @@ def test_fs_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     assert "sha:" not in result.output
 
 
-def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch):
-    """When --target is a project repo with .claude/settings.json but NO
-    plugins/installed_plugins.json, the resolver routes to the user's
-    install root (~/.claude). Stub Path.home() to a clean tmp dir so the
-    test doesn't pick up the real machine's installed plugins."""
+def test_endpoint_subcommand_project_layers_with_config_dir(tmp_path):
+    """--project adds project settings context on top of --config-dir."""
     fake_home = tmp_path / "fake-home"
     fake_home.mkdir()
-    fake_install = fake_home / ".claude"
-    fake_install.mkdir()
-    # User-scope settings exist but enable no plugins.
-    (fake_install / "settings.json").write_text("{}")
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}")
 
     project = tmp_path / "myproj"
     (project / ".claude").mkdir(parents=True)
     (project / ".claude" / "settings.json").write_text("{}")
 
-    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
-
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
+            "--project",
             str(project),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -429,28 +425,27 @@ def test_fs_subcommand_project_root_uses_user_install_root(tmp_path, monkeypatch
     assert "resolved 0 active plugin(s)" in result.output
 
 
-def test_fs_subcommand_project_root_detected_via_local_settings_only(tmp_path, monkeypatch):
-    """A project that only ships `.claude/settings.local.json` (no project-scope
-    `settings.json`) is still a project root — the resolver must route to the
-    user's install root rather than treating the repo as an install root."""
+def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_path):
+    """A project that only ships `.claude/settings.local.json` can still be
+    supplied as endpoint project context."""
     fake_home = tmp_path / "fake-home"
     fake_home.mkdir()
-    fake_install = fake_home / ".claude"
-    fake_install.mkdir()
-    (fake_install / "settings.json").write_text("{}")
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}")
 
     project = tmp_path / "local-only-proj"
     (project / ".claude").mkdir(parents=True)
     (project / ".claude" / "settings.local.json").write_text("{}")
 
-    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
-
     runner = CliRunner()
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
+            "--project",
             str(project),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -460,6 +455,74 @@ def test_fs_subcommand_project_root_detected_via_local_settings_only(tmp_path, m
     # Verbose output would say which install root was picked; the smoke check
     # is that resolution succeeds and the target is not misclassified.
     assert "resolved 0 active plugin(s)" in result.output
+
+
+def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
+    config_dir = tmp_path / "claude-config"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}")
+    (config_dir / "plugins").mkdir()
+    (config_dir / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"config_dir={config_dir}" in result.output
+    assert "mode=endpoint" in result.output
+
+
+def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+    (config_dir / "plugins").mkdir()
+    (config_dir / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "-v",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"config_dir={config_dir}" in result.output
+    assert "mode=endpoint" in result.output
+
+
+def test_fs_subcommand_is_not_kept_as_alias():
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "fs",
+            "--target",
+            str(REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "no such command" in result.output.lower()
 
 
 # Plan 007 follow-up: group-level option forwarding to subcommands.
@@ -541,7 +604,7 @@ def test_subcommand_fail_on_takes_precedence_over_group():
     assert result.exit_code == 1, result.output
 
 
-def test_fs_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
+def test_endpoint_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
     """--exclude-transitive: Tier-2 refs suppressed; Tier-1 still emitted."""
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
     cache_dir.mkdir(parents=True)
@@ -575,8 +638,8 @@ def test_fs_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -592,7 +655,7 @@ def test_fs_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
     assert "demo-skill" in result.output or "1 bundled skills" in result.output
 
 
-def test_fs_subcommand_includes_transitive_by_default(tmp_path):
+def test_endpoint_subcommand_includes_transitive_by_default(tmp_path):
     """Without --exclude-transitive, lockfile refs are emitted."""
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
     cache_dir.mkdir(parents=True)
@@ -627,7 +690,7 @@ def test_fs_subcommand_includes_transitive_by_default(tmp_path):
     assert any(r.ecosystem == "npm" and r.name == "lodash" for r in refs)
 
 
-def test_fs_subcommand_federate_osv_augments_corpus(tmp_path):
+def test_endpoint_subcommand_federate_osv_augments_corpus(tmp_path):
     """--federate-osv: augment_corpus is invoked and findings include
     osv.dev-sourced advisories."""
     from unittest.mock import patch
@@ -684,8 +747,8 @@ def test_fs_subcommand_federate_osv_augments_corpus(tmp_path):
         result = runner.invoke(
             main,
             [
-                "fs",
-                "--target",
+                "endpoint",
+                "--config-dir",
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
@@ -697,7 +760,7 @@ def test_fs_subcommand_federate_osv_augments_corpus(tmp_path):
     assert "GHSA-FAKE-LODASH" in result.output
 
 
-def test_fs_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_path):
+def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_path):
     """Verbose + --federate-osv surfaces the actual PURLs queried and a
     per-ecosystem breakdown of refs that were skipped. Gives users insight
     into what crossed the wire to osv.dev vs what was filtered locally."""
@@ -737,8 +800,8 @@ def test_fs_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_pa
         result = runner.invoke(
             main,
             [
-                "fs",
-                "--target",
+                "endpoint",
+                "--config-dir",
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
@@ -755,7 +818,7 @@ def test_fs_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_pa
 
 
 def test_repo_subcommand_federate_osv_verbose_lists_queried_purls(tmp_path):
-    """Same verbose surface in repo mode (parity with fs mode)."""
+    """Same verbose surface in repo mode (parity with endpoint mode)."""
     from unittest.mock import patch
 
     (tmp_path / "package.json").write_text(
@@ -784,7 +847,7 @@ def test_repo_subcommand_federate_osv_verbose_lists_queried_purls(tmp_path):
     assert "federation: osv.dev returned 0 additional finding(s)" in result.output
 
 
-def test_fs_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
+def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
     """When nothing has a queryable PURL (e.g., only claude-plugin refs),
     verbose says so explicitly rather than emitting an empty list."""
     from unittest.mock import patch
@@ -812,8 +875,8 @@ def test_fs_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
         result = runner.invoke(
             main,
             [
-                "fs",
-                "--target",
+                "endpoint",
+                "--config-dir",
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
@@ -825,7 +888,7 @@ def test_fs_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
     assert "no queryable PURLs" in result.output
 
 
-def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
+def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
     """OSV.dev network failure prints unconditional stderr warning even
     without -v. Exit code stays findings-driven (= 0 when no findings)."""
     from unittest.mock import patch
@@ -844,8 +907,8 @@ def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
         result = runner.invoke(
             main,
             [
-                "fs",
-                "--target",
+                "endpoint",
+                "--config-dir",
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
@@ -856,7 +919,7 @@ def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
     assert "osv.dev federation failed" in result.output
 
 
-def test_fs_verbose_shows_per_plugin_tier2_coverage(tmp_path):
+def test_endpoint_verbose_shows_per_plugin_tier2_coverage(tmp_path):
     """Verbose output includes a 'npm: package-lock.json (transitive, N packages)'
     line per plugin that has Tier-2 coverage."""
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
@@ -889,8 +952,8 @@ def test_fs_verbose_shows_per_plugin_tier2_coverage(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -903,7 +966,7 @@ def test_fs_verbose_shows_per_plugin_tier2_coverage(tmp_path):
     assert "2 packages" in result.output or "transitive, 2" in result.output
 
 
-def test_fs_verbose_shows_manifest_fallback_line(tmp_path):
+def test_endpoint_verbose_shows_manifest_fallback_line(tmp_path):
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
     cache_dir.mkdir(parents=True)
     (cache_dir / "package.json").write_text(
@@ -925,8 +988,8 @@ def test_fs_verbose_shows_manifest_fallback_line(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -976,8 +1039,8 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -992,7 +1055,7 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
     assert "transitive" in result.output and "2 packages" in result.output
 
 
-def test_fs_verbose_lists_bare_skills_individually(tmp_path):
+def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
     """The 'bare components: N skills' summary line should be followed by
     one indented line per bare skill identity, so users can see exactly
     what was inventoried — mirroring the per-plugin breakdown."""
@@ -1010,8 +1073,8 @@ def test_fs_verbose_lists_bare_skills_individually(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),
@@ -1028,7 +1091,7 @@ def test_fs_verbose_lists_bare_skills_individually(tmp_path):
     assert alpha_idx < middle_idx < zebra_idx  # sorted order
 
 
-def test_fs_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
+def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
     """No bare components → no summary line and no per-component list."""
     (tmp_path / "settings.json").write_text("{}")
     (tmp_path / "plugins").mkdir()
@@ -1039,8 +1102,8 @@ def test_fs_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
     result = runner.invoke(
         main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(REPO_ROOT / "advisories"),

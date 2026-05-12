@@ -7,7 +7,7 @@ matcher's `_match_versioned` path can fire against `claude-plugin` advisories
 (ADR-0006). With no version, matches are emitted at "low" confidence with a
 "pin to verify" reason — accurate for unversioned-declaration matching.
 
-fs mode resolves versions through `installed_plugins.json` (see
+Endpoint mode resolves versions through `installed_plugins.json` (see
 `claude_install.py`). Repo mode has no such lockfile, so settings declarations
 stay version-less here.
 """

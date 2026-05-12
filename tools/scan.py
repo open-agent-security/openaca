@@ -6,11 +6,12 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
         Walks declared manifests under the target repo. Used by the
         GitHub Action and standalone CLI scans of code repositories.
 
-    asve-scan fs --target <claude-install-or-project> --advisories <dir> [...]
-        Install-state-aware scan: reads settings.json + installed_plugins.json
-        to enumerate the active agent stack. Plan 007 emits one component per
-        active plugin; plans 008 and 009 walk into plugins for bundled and
-        transitive components.
+    asve-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
+        --advisories <dir> [...]
+        Install-state-aware endpoint scan: reads settings.json +
+        installed_plugins.json to enumerate the active agent stack. Defaults
+        to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers project/local
+        settings when scanning a repo's endpoint context.
 
 Common options (--sarif, --fail-on, -v) can be placed before or after the
 subcommand name; the group forwards them either way:
@@ -27,6 +28,7 @@ when present; SARIF surfaces it in `properties.attributed_to`.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -262,13 +264,24 @@ def _exit_for_findings(fail_on: str, findings: list[Finding]) -> None:
     sys.exit(1)
 
 
-# Subcommand-required option decorators (required=True): subcommand callers
-# must always pass --target / --advisories explicitly.
+# Subcommand option decorators.
 _target_option_required = click.option(
     "--target",
     required=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Path to scan.",
+)
+_config_dir_option = click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
+)
+_project_option = click.option(
+    "--project",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Project root whose .claude settings are layered into endpoint resolution.",
 )
 _advisories_option_required = click.option(
     "--advisories",
@@ -313,7 +326,7 @@ def main(
     fail_on: str,
     verbose: bool,
 ) -> None:
-    """ASVE vulnerability scanner. Use `repo` or `fs` subcommands."""
+    """ASVE vulnerability scanner. Use `repo` or `endpoint` subcommands."""
     ctx.ensure_object(dict)
     ctx.obj["sarif"] = sarif
     ctx.obj["fail_on"] = fail_on
@@ -454,7 +467,8 @@ def repo(
 
 @main.command()
 @click.pass_context
-@_target_option_required
+@_config_dir_option
+@_project_option
 @_advisories_option_required
 @_sarif_option
 @_fail_on_option
@@ -474,9 +488,10 @@ def repo(
     "emitted PURLs. Augments the local corpus with osv.dev-sourced "
     "findings. Network required; fails soft if OSV.dev is unreachable.",
 )
-def fs(
+def endpoint(
     ctx: click.Context,
-    target: Path,
+    config_dir: Path | None,
+    project: Path | None,
     advisories: Path,
     sarif: Path | None,
     fail_on: str,
@@ -484,24 +499,14 @@ def fs(
     exclude_transitive: bool,
     federate_osv: bool,
 ) -> None:
-    """Scan an installed Claude Code agent stack.
-
-    `--target` is either a Claude Code install root (e.g., `~/.claude`) or
-    a project root that has a `.claude/settings.json`. In the project case,
-    user-scope settings at `~/.claude` are also layered in.
-
-    Plan 007 scope: emits one ComponentRef per active plugin from the
-    intersection of `enabledPlugins` and `installed_plugins.json`. Walking
-    inside plugin install paths (bundled MCPs, skills, hooks) is plan 008;
-    plugin-internal lockfile transitive scanning is plan 009.
-    """
+    """Scan the active agent stack installed on this endpoint."""
     sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
-    install_root, project_root = _resolve_fs_roots(target)
+    config_dir = _resolve_endpoint_config_dir(config_dir)
 
     refs, warnings = parse_install(
-        install_root=install_root,
-        project_root=project_root,
-        mode="fs",
+        install_root=config_dir,
+        project_root=project,
+        mode="endpoint",
         include_transitive=not exclude_transitive,
     )
     corpus = load_corpus(advisories)
@@ -521,10 +526,10 @@ def fs(
 
     if verbose:
         click.echo(f"loaded {len(corpus)} advisory(ies) from {advisories}", err=True)
-        roots_note = f"install_root={install_root}"
-        if project_root is not None:
-            roots_note += f", project_root={project_root}"
-        click.echo(f"detected {roots_note} (mode=fs)", err=True)
+        roots_note = f"config_dir={config_dir}"
+        if project is not None:
+            roots_note += f", project={project}"
+        click.echo(f"detected {roots_note} (mode=endpoint)", err=True)
         for w in warnings:
             click.echo(f"  warning: {w}", err=True)
         click.echo(f"resolved {plugin_count} active plugin(s):", err=True)
@@ -583,26 +588,18 @@ def fs(
     _exit_for_findings(fail_on, findings)
 
 
-def _resolve_fs_roots(target: Path) -> tuple[Path, Path | None]:
-    """Decide which paths to read settings from, given a `--target`.
+def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
+    """Resolve endpoint config directory defaults.
 
-    - If target has a `plugins/installed_plugins.json`, treat target as the
-      Claude Code install root (the typical case for `~/.claude`).
-    - If target has a `.claude/` directory with either `settings.json` or
-      `settings.local.json`, treat target as a project root and use
-      `~/.claude` as the install root for the lockfile + user settings
-      layer. Local-only configs are legitimate: a repo can enable plugins
-      via `settings.local.json` without ever committing a project-scope
-      `settings.json`.
-    - Otherwise, target is treated as the install root regardless; the
-      resolver will return empty results if the lockfile is absent.
+    Explicit `--config-dir` wins. Otherwise use `$CLAUDE_CONFIG_DIR` when set,
+    then fall back to Claude Code's default user config directory.
     """
-    if (target / "plugins" / "installed_plugins.json").exists():
-        return target, None
-    claude_dir = target / ".claude"
-    if (claude_dir / "settings.json").exists() or (claude_dir / "settings.local.json").exists():
-        return Path.home() / ".claude", target
-    return target, None
+    if config_dir is not None:
+        return config_dir.expanduser()
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".claude"
 
 
 if __name__ == "__main__":

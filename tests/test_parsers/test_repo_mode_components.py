@@ -1,6 +1,6 @@
 """Plan 008 Task 6: repo-mode component inventory.
 
-The same parsers that fire in fs mode also fire in repo mode via the
+The same parsers that fire in endpoint mode also fire in repo mode via the
 manifest registry, so a repo declaring `.claude/skills/`, `.claude/commands/`,
 or `.claude/agents/` produces inventory components. Repo declarations are
 not "via a plugin"; they're declared by the repo itself, so attribution

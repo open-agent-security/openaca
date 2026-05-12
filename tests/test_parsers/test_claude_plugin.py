@@ -167,7 +167,7 @@ def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
     assert all(r.ecosystem != "npm" for r in refs)
 
 
-# parse_at_install_root: fs-mode entry point.
+# parse_at_install_root: endpoint-mode entry point.
 # Identical inputs to repo-mode but path resolution is anchored at the
 # install root rather than the manifest's parent directory.
 
@@ -253,7 +253,7 @@ def test_parse_at_install_root_rejects_path_traversal(tmp_path):
 
 
 def test_parse_at_install_root_does_not_emit_plugin_self_identity(tmp_path):
-    """The fs-mode caller emits the self-identity ref from the lockfile
+    """The endpoint caller emits the self-identity ref from the lockfile
     (more accurate version + sha than plugin.json). This function must NOT
     also emit a self-identity ref."""
     plugin_dir = tmp_path / ".claude-plugin"

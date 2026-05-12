@@ -20,7 +20,7 @@ flow through the matcher.
 Doing this now matters because: (a) authors need stable ecosystem
 strings to file advisories against, and changing them later breaks every
 cached corpus consumer; (b) the same parsers run in both `repo` and
-`fs` modes, so the wrapping decisions ("who declared this?") have to be
+`endpoint` modes, so the wrapping decisions ("who declared this?") have to be
 consistent across modes from day one; (c) Codex's framing of endpoint vs
 application SCA needs to be captured durably so it doesn't keep getting
 re-litigated against new parser additions.
@@ -47,7 +47,7 @@ SDK-configuration being invisible until Tier 3 lands.
 - **`repo` mode = application SCA**: "What will this app ship with?" Runs
   against committed config in the repo. The Tier-3 gap is real and
   honest: programmatic SDK config is invisible.
-- **`fs` mode = endpoint agent-stack SCA**: "What's installed and active
+- **`endpoint` mode = endpoint agent-stack SCA**: "What's installed and active
   on this machine?" Lockfile-rooted; orphaned cache versions don't count.
 
 Both modes use the same parsers and emit the same ecosystems. The
@@ -103,7 +103,7 @@ that depend on the developer's machine state.
 Relative paths inside `plugin.json` (notably `mcpServers: "./.mcp.json"`)
 resolve from the plugin root, not from `plugin.json`'s parent directory.
 In repo mode, the plugin root is `manifest.parent.parent` (since the
-manifest lives at `<plugin-root>/.claude-plugin/plugin.json`). In fs
+manifest lives at `<plugin-root>/.claude-plugin/plugin.json`). In endpoint
 mode, the plugin root is the active `installPath`. Both modes reject
 absolute paths and `..`-traversal that escapes the root.
 

@@ -1396,11 +1396,11 @@ def test_stamp_source_sets_source_on_unstamped_records():
     from tools.scan import _stamp_source
 
     # Record without any source yet — should be stamped.
-    unstamped = {"id": "GHSA-1", "database_specific": {}}
+    unstamped: dict = {"id": "GHSA-1", "database_specific": {}}
     # Record with source already set — should be left untouched.
-    prestamped = {"id": "GHSA-2", "database_specific": {"asve": {"source": "other"}}}
+    prestamped: dict = {"id": "GHSA-2", "database_specific": {"asve": {"source": "other"}}}
     # Record with no database_specific block — should get one.
-    bare = {"id": "GHSA-3"}
+    bare: dict = {"id": "GHSA-3"}
 
     corpus = [unstamped, prestamped, bare]
     _stamp_source(corpus, "osv.dev")

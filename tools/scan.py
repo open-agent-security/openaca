@@ -593,12 +593,23 @@ def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
 
     Explicit `--config-dir` wins. Otherwise use `$CLAUDE_CONFIG_DIR` when set,
     then fall back to Claude Code's default user config directory.
+
+    Raises click.UsageError when an explicitly-configured path does not exist
+    or is not a directory — prevents silent false-negative scans from a stale
+    or typoed env var / --config-dir value. The default ~/.claude fallback is
+    not validated: a machine without Claude installed should scan cleanly and
+    return 0 plugins, not error.
     """
     if config_dir is not None:
         return config_dir.expanduser()
     configured = os.environ.get("CLAUDE_CONFIG_DIR")
     if configured:
-        return Path(configured).expanduser()
+        resolved = Path(configured).expanduser()
+        if not resolved.is_dir():
+            raise click.UsageError(
+                f"CLAUDE_CONFIG_DIR={configured!r} does not exist or is not a directory"
+            )
+        return resolved
     return Path.home() / ".claude"
 
 

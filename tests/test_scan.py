@@ -509,6 +509,43 @@ def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch
     assert "mode=endpoint" in result.output
 
 
+def test_endpoint_explicit_config_dir_missing_errors(tmp_path):
+    """--config-dir pointing at a non-existent path must error, not silently
+    produce a false-negative 'no findings' result. Click validates this via
+    exists=True on the option type."""
+    missing = tmp_path / "does-not-exist"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(missing),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
+
+
+def test_endpoint_claude_config_dir_env_missing_errors(tmp_path, monkeypatch):
+    """CLAUDE_CONFIG_DIR set to a non-existent path must error, not silently
+    produce a false-negative 'no findings' result."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "does-not-exist"))
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not exist or is not a directory" in result.output
+
+
 def test_fs_subcommand_is_not_kept_as_alias():
     runner = CliRunner()
     result = runner.invoke(

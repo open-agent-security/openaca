@@ -55,6 +55,43 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 ]
 
 
+def _filter_secondary_refs(
+    refs: list[ComponentRef],
+    primary: Path,
+    root: Path,
+    spec,
+) -> list[ComponentRef]:
+    """Drop refs whose source_manifest is a secondary gitignored file.
+
+    Some parsers (e.g. claude_plugin when mcpServers is a string path)
+    follow references to other files on disk. Those secondary files bypass
+    the rglob filter applied in parse_repo_grouped, so we re-apply the
+    same spec check here. Refs from the primary file are always kept.
+
+    When spec=None (include_gitignored=True), is_ignored only blocks .git/
+    paths — consistent with the rglob-hit filtering logic above.
+    """
+    primary_resolved = primary.resolve()
+    root_resolved = root.resolve()
+    out: list[ComponentRef] = []
+    for r in refs:
+        if not r.source_manifest:
+            out.append(r)
+            continue
+        src = Path(r.source_manifest).resolve()
+        if src == primary_resolved:
+            out.append(r)
+            continue
+        try:
+            rel = src.relative_to(root_resolved)
+        except ValueError:
+            out.append(r)  # outside root; path safety enforced by the parser
+            continue
+        if not is_ignored(rel, spec):
+            out.append(r)
+    return out
+
+
 def parse_repo_grouped(
     root: Path,
     include_gitignored: bool = False,
@@ -103,7 +140,9 @@ def parse_repo_grouped(
                 continue
             n_found += 1
             try:
-                grouped.append((path, parser(path)))
+                refs = parser(path)
+                refs = _filter_secondary_refs(refs, path, root, spec)
+                grouped.append((path, refs))
             except Exception:
                 continue
     return grouped, n_found

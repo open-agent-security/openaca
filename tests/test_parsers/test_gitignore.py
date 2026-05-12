@@ -108,6 +108,52 @@ def test_is_ignored_handles_none_spec(tmp_path):
     assert is_ignored(Path("node_modules/foo/package.json"), None) is False
 
 
+def test_secondary_manifest_gitignored_via_plugin_string_mcp(tmp_path):
+    """claude_plugin.parse() follows a string mcpServers path to a secondary
+    .mcp.json. If that secondary file is gitignored, refs from it must be
+    dropped even though the primary plugin.json is not gitignored.
+
+    Regression target for the Codex P1 review comment on PR #28: parsers
+    that follow secondary files bypass the rglob filter, so parse_repo_grouped
+    must re-apply the gitignore spec to source_manifest of returned refs.
+    """
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({
+            "name": "my-plugin",
+            "version": "1.0.0",
+            "mcpServers": "./dist/.mcp.json",
+        })
+    )
+
+    # Secondary .mcp.json lives in dist/, which is gitignored.
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    (dist_dir / ".mcp.json").write_text(
+        json.dumps({
+            "mcpServers": {
+                "server": {"command": "npx", "args": ["-y", "@vuln/pkg@1.0.0"]}
+            }
+        })
+    )
+
+    (tmp_path / ".gitignore").write_text("dist/\n")
+
+    grouped, n_found = parse_repo_grouped(tmp_path)
+
+    # Only plugin.json survives rglob filtering (dist/.mcp.json is gitignored).
+    assert n_found == 1
+    all_refs = [r for _, refs in grouped for r in refs]
+    source_manifests = {r.source_manifest for r in all_refs}
+    # Plugin self-identity ref (source_manifest = plugin.json) is present.
+    assert any(".claude-plugin" in str(m) for m in source_manifests)
+    # No ref should point to the gitignored secondary dist/.mcp.json.
+    assert not any("dist" in str(m) for m in source_manifests), (
+        f"Gitignored secondary ref leaked: {source_manifests}"
+    )
+
+
 def test_dotclaude_paths_not_accidentally_gitignored(tmp_path):
     """Common gitignore patterns shouldn't accidentally hide .claude/ files.
     Repos that put `.claude/settings.local.json` in .gitignore (a common

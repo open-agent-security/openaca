@@ -125,6 +125,39 @@ def test_fixed_in_returns_none_when_no_match():
     assert _fixed_in_for_finding(finding, advisory) is None
 
 
+def test_fixed_in_selects_matched_window():
+    """Multi-window advisory: returns the fix for the window the version falls in.
+
+    Window 1: [0, 1.5.0) — fixed at 1.5.0
+    Window 2: [2.0.0, 2.3.0) — fixed at 2.3.0
+
+    A component at 2.1.0 is in window 2; returning 1.5.0 (window 1's fix, the
+    first fixed event encountered) would be wrong — 2.1.0 > 1.5.0 and is still
+    vulnerable.
+    """
+    advisory = {
+        "id": "MULTI",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "lib"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [
+                            {"introduced": "0"},
+                            {"fixed": "1.5.0"},
+                            {"introduced": "2.0.0"},
+                            {"fixed": "2.3.0"},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    assert _fixed_in_for_finding(_finding("MULTI", "lib", "2.1.0"), advisory) == "2.3.0"
+    assert _fixed_in_for_finding(_finding("MULTI", "lib", "1.2.0"), advisory) == "1.5.0"
+
+
 def test_aggregate_fix_picks_max():
     """Two findings, fixed in 2.6.4 and 2.7.0 → group fix is 2.7.0 (the
     smallest version that clears BOTH)."""

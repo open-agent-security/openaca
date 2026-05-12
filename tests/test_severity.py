@@ -124,5 +124,22 @@ def test_derive_score_returns_none_when_only_upstream_label():
     assert derive_severity_score(advisory) is None
 
 
+def test_derive_score_returns_none_when_upstream_label_wins_over_cvss():
+    """When upstream label wins, score is None even if a CVSS vector is
+    present. Prevents emitting a score that contradicts the label (e.g.
+    label=HIGH but score=1.8 from a low vector)."""
+    advisory = _advisory(
+        database_specific={"severity": "HIGH"},
+        severity=[
+            {
+                "type": "CVSS_V3",
+                # This vector computes to ~1.8 (LOW) — must not leak through.
+                "score": "CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N",
+            }
+        ],
+    )
+    assert derive_severity_score(advisory) is None
+
+
 def test_derive_score_returns_none_for_unknown_advisory():
     assert derive_severity_score(_advisory()) is None

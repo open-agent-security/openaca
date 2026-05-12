@@ -105,10 +105,28 @@ uv run asve-scan endpoint \
     --advisories advisories/
 ```
 
-A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`)
-can sit before or after the subcommand name —
+A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
+`--format`, `--no-color`) can sit before or after the subcommand name —
 `asve-scan -v repo --target X ...` is equivalent to
 `asve-scan repo --target X ... -v`.
+
+### Output formats
+
+`asve-scan` emits three formats; pick with `--format`:
+
+- **`text`** *(default)* — grouped human-readable output. One block per
+  affected package, severity per finding, ANSI-colored when stdout is a
+  TTY. Add `-v` for per-finding `surfaces` / `agent_impact` metadata.
+- **`github`** — GitHub workflow annotation lines (`::error file=...::`).
+  Auto-selected when `GITHUB_ACTIONS=true` so the included Action keeps
+  working without configuration. Use explicitly to emit annotations
+  outside CI.
+- **`json`** — structured per-finding records plus a `stats` block. For
+  programmatic consumption.
+
+`--sarif <path>` is orthogonal and writes a SARIF 2.1.0 artifact in
+addition to the chosen stdout format. `--no-color` disables ANSI in text
+output (color is also off automatically when stdout isn't a TTY).
 
 Or via `uvx`, which clones, builds, and runs in one shot (no manual
 checkout):

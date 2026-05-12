@@ -525,10 +525,11 @@ def _bundled_categories(
 
 def _tier2_summary(
     refs: list[ComponentRef], plugin_identity: str
-) -> list[tuple[str, str, int, str]]:
+) -> list[tuple[str, str, int, str, list[ComponentRef]]]:
     """Aggregate Tier-2 refs per ecosystem. Returns a list of
-    (ecosystem, coverage_kind, count, source_file) so the tree can render
-    one node per ecosystem instead of hundreds of transitive leaves."""
+    (ecosystem, coverage_kind, count, source_file, ecorefs) so the tree can
+    render one node per ecosystem instead of hundreds of transitive leaves.
+    `ecorefs` lets callers check findings against the individual refs."""
     by_eco: dict[str, list[ComponentRef]] = {}
     for r in refs:
         if r.attributed_to != plugin_identity:
@@ -536,7 +537,7 @@ def _tier2_summary(
         if r.extra.get("transitive") is None:
             continue
         by_eco.setdefault(r.ecosystem or "", []).append(r)
-    out: list[tuple[str, str, int, str]] = []
+    out: list[tuple[str, str, int, str, list[ComponentRef]]] = []
     for eco in sorted(by_eco):
         ecorefs = by_eco[eco]
         transitive = any(r.extra.get("transitive") is True for r in ecorefs)
@@ -546,7 +547,7 @@ def _tier2_summary(
         else:
             kind = "direct only"
             source = "package.json" if eco == "npm" else "pyproject.toml"
-        out.append((eco, kind, len(ecorefs), source))
+        out.append((eco, kind, len(ecorefs), source, ecorefs))
     return out
 
 
@@ -608,8 +609,12 @@ def _build_plugin_node(
             )
         root.children.append(cat_node)
 
-    for eco, kind, count, source in tier2:
-        root.children.append(_TreeNode(label=f"{eco}/ deps ({count} {kind} via {source})"))
+    for eco, kind, count, source, ecorefs in tier2:
+        eco_ids = [id for r in ecorefs for id in findings_by_ref.get(_ref_key(r), [])]
+        eco_marker = _finding_marker(eco_ids, use_color)
+        root.children.append(
+            _TreeNode(label=f"{eco}/ deps ({count} {kind} via {source}){eco_marker}")
+        )
 
     if not root.children:
         root.children.append(_TreeNode(label="(no bundled components)"))

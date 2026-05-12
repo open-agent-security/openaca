@@ -609,6 +609,29 @@ def test_tree_tier2_direct_only_when_no_lockfile():
     assert "npm/ deps (1 direct only via package.json)" in out
 
 
+def test_tree_tier2_aggregate_carries_finding_marker():
+    """A finding on a transitive dep must surface as [! ...] on the aggregate line."""
+    tier2_ref = _bundled(
+        "npm",
+        "lodash",
+        "4.17.20",
+        attributed_to="claude-plugin/demo@1.0.0",
+        extra={"transitive": True},
+        source_manifest="package-lock.json",
+    )
+    refs = [_plugin_ref("demo", "1.0.0"), tier2_ref]
+    finding = Finding(
+        advisory_id="ASVE-2026-0001",
+        component=tier2_ref,
+        confidence="high",
+        reason="lodash@4.17.20 matches ASVE-2026-0001",
+        attributed_to="claude-plugin/demo@1.0.0",
+    )
+    out = render_inventory_tree(refs, [finding], use_unicode=True, use_color=False)
+    assert "[! ASVE-2026-0001]" in out
+    assert "npm/ deps" in out
+
+
 def test_tree_bare_components_render_as_separate_root():
     refs = [
         _bundled(

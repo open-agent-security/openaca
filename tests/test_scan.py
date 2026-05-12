@@ -1385,6 +1385,34 @@ def test_repo_dep_co_located_with_plugin_json_surfaces_as_agent_dep(tmp_path):
     assert "GHSA-3q26-f695-pp76" in result.output
 
 
+def test_stamp_source_sets_source_on_unstamped_records():
+    """_stamp_source stamps source=<value> only on records that lack it.
+
+    This guards the SARIF contract in docs/sarif-conventions.md:
+    source="osv.dev" must appear on every OSV-backed finding; overlay_source
+    must appear only on overlay-matched records (set by apply_overlays, not
+    by _stamp_source).
+    """
+    from tools.scan import _stamp_source
+
+    # Record without any source yet — should be stamped.
+    unstamped = {"id": "GHSA-1", "database_specific": {}}
+    # Record with source already set — should be left untouched.
+    prestamped = {"id": "GHSA-2", "database_specific": {"asve": {"source": "other"}}}
+    # Record with no database_specific block — should get one.
+    bare = {"id": "GHSA-3"}
+
+    corpus = [unstamped, prestamped, bare]
+    _stamp_source(corpus, "osv.dev")
+
+    assert unstamped["database_specific"]["asve"]["source"] == "osv.dev"
+    assert prestamped["database_specific"]["asve"]["source"] == "other"  # not overwritten
+    assert bare["database_specific"]["asve"]["source"] == "osv.dev"
+    # overlay_source is set only by apply_overlays, not by _stamp_source.
+    assert "overlay_source" not in unstamped["database_specific"]["asve"]
+    assert "overlay_source" not in bare["database_specific"]["asve"]
+
+
 def test_repo_rejects_removed_db_option(tmp_path):
     """Overlay-only V0 has no user-selectable advisory DB flag."""
     runner = CliRunner()

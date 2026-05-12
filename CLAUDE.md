@@ -42,8 +42,8 @@ is it positioning ASVE *against* something? The first is fine; the second is out
 - `docs/plans/NNN-<topic>.md` — one implementation plan per V0 deliverable.
 - `docs/adrs/NNNN-<topic>.md` — durable architecture decisions.
 - `schema/asve.schema.json` — canonical advisory schema.
-- `advisories/YYYY/ASVE-YYYY-NNNN.yaml` — the advisory corpus.
-- `tools/` — linter, ID reservation, OSV importer, static export.
+- `overlays/<ID>.yaml` — bundled ASVE overlays (upstream IDs; ASVE agent-context metadata).
+- `tools/` — linter, scanner, static export, render, and overlay helpers.
 - `action.yml` — reference GitHub Action at repo root.
 - `CONTRIBUTING.md` — contributor flow, advisory authoring guide.
 
@@ -60,7 +60,9 @@ is it positioning ASVE *against* something? The first is fine; the second is out
 
 ### Schema and IDs
 
-- Single namespace: `ASVE-YYYY-NNNN`.
+- V0 overlays use upstream IDs (`GHSA-*`, `CVE-*`). ASVE does not mint its own
+  advisory IDs in V0. See ADR-0009.
+- Overlay files live under `overlays/` named `<upstream-id>.yaml`.
 - Type-tagged records: `type: vulnerability` (V0); `type: exposure` and
   `type: config` are reserved in schema but **rejected in V0 PRs** pending
   methodology docs.
@@ -92,11 +94,11 @@ V0 ships:
 1. Schema with `type` field branching per-type required fields.
 2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
    `.claude/settings.json`. Cursor/Windsurf manifests are V1.
-3. 3-5 hand-curated `type: vulnerability` advisories (mostly CVE/GHSA aliases,
-   ≥1 enriched with manifest detection that catches what lockfile-only SCA
-   misses).
+3. 5+ bundled ASVE overlays (`overlays/*.yaml`) keyed on upstream CVE/GHSA IDs,
+   enriching OSV records with agent-context metadata (component type, surfaces,
+   agent impact). Scans query OSV.dev and apply overlays implicitly.
 4. Linter + CI per discipline above.
-5. Static export pipeline: `advisories/*.yaml → JSON → all.zip → modified_id.csv`.
+5. Static export pipeline: `overlays/*.yaml → JSON → all.zip → modified_id.csv`.
 6. Reference GitHub Action: `open-agent-security/asve@v1` with `action.yml` at
    repo root.
 7. Disclosure policy doc (OpenSSF baseline + ASVE-specific defaults).

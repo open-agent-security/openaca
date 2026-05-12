@@ -13,8 +13,9 @@ Behavior:
 - PURLs are deduplicated within a scan (same PURL queried once).
 - /v1/querybatch caps at 1000 packages per request; chunked into
   multiple requests if needed.
-- Network errors fail-soft: return the base corpus unchanged with a
-  warning string. The scan continues with local-corpus-only matching.
+- Network errors fail-soft: return the base corpus (always empty in V0
+  because the caller passes `base_corpus=[]`) with a warning string.
+  There is no local advisory corpus to fall back to under the overlay model.
 - Returned vuln IDs are dereferenced to full records via /v1/vulns/<id>
   and merged into the corpus, deduped by alias graph.
 

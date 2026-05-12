@@ -153,7 +153,7 @@ def build(overlays_root: Path, schema_path: Path, dist: Path) -> None:
 )
 def main(schema: Path, dist: Path) -> None:
     """Build the ASVE static export under DIST."""
-    build(Path("overlays"), schema_path=schema, dist=dist)
+    build(Path(__file__).resolve().parent.parent / "overlays", schema_path=schema, dist=dist)
     click.echo(f"wrote export to {dist}")
 
 

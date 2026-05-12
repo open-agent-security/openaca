@@ -106,6 +106,8 @@ def _fixed_in_for_finding(finding: Finding, advisory: dict) -> Optional[str]:
     except (InvalidVersion, TypeError):
         version = None
 
+    raw_fallback: Optional[str] = None
+
     for entry in advisory.get("affected") or []:
         if not isinstance(entry, dict):
             continue
@@ -127,6 +129,11 @@ def _fixed_in_for_finding(finding: Finding, advisory: dict) -> Optional[str]:
                         intro_v = Version("0") if intro == "0" else Version(intro)
                         fixed_v = Version(ev["fixed"])
                     except InvalidVersion:
+                        # Non-PEP440 boundary (e.g. npm prerelease like 1.0.0-beta.1) —
+                        # can't range-narrow; record raw fixed string as fallback so the
+                        # per-finding row shows "fixed in X" rather than "fixed in no fix".
+                        if raw_fallback is None:
+                            raw_fallback = str(ev["fixed"])
                         intro = None
                         continue
                     if version >= intro_v and version < fixed_v:
@@ -135,7 +142,7 @@ def _fixed_in_for_finding(finding: Finding, advisory: dict) -> Optional[str]:
                 else:
                     # last_affected or limit — close window, no parseable fix target.
                     intro = None
-    return None
+    return raw_fallback
 
 
 def _summary_for_advisory(advisory: dict) -> str:

@@ -98,10 +98,12 @@ def derive_severity_label(advisory: dict) -> str:
 def derive_severity_score(advisory: dict) -> Optional[float]:
     """Return the numeric CVSS base score for `advisory`, or None.
 
-    Only the computed-from-vector path produces a number; upstream
-    qualitative labels can't be back-derived into a score. The JSON
-    renderer uses this to emit both the label and the score (when
-    available); the text renderer uses only the label.
+    Follows the same precedence as `derive_severity_label`: when
+    `database_specific.severity` is present, the upstream label wins and
+    this returns None (qualitative labels can't be back-derived into a
+    number). The CVSS path only runs when no upstream label is available.
     """
-    _score, _label = _computed_score_and_label(advisory)
-    return _score
+    if _upstream_label(advisory) is not None:
+        return None
+    score, _label = _computed_score_and_label(advisory)
+    return score

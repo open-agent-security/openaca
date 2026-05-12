@@ -1,11 +1,11 @@
 # Contributing to ASVE
 
-ASVE is an open-source advisory database. Contributions are welcome:
-new advisories, parser improvements, schema clarifications,
+ASVE is an open-source overlay corpus and reference scanner.
+Contributions are welcome: new overlays, parser improvements, schema clarifications,
 documentation, and bug fixes.
 
 This guide covers the most common contribution flow: filing or
-updating an advisory.
+updating an overlay.
 
 ## Before you start
 
@@ -39,14 +39,12 @@ and installs all runtime + dev dependencies.
 
 You should now have these CLIs (invoked via `uv run`):
 
-- `uv run asve-lint <path>` — validate advisories.
-- `uv run asve-reserve-id <advisories-dir> --year YYYY` — print the
-  next free ID.
-- `uv run asve-import-osv --osv-file FILE --asve-id ID --out PATH` —
-  generate an advisory skeleton from an OSV record.
+- `uv run asve-lint <path>` — validate overlays.
 - `uv run asve-export` — build the static export under `dist/`.
-- `uv run asve-scan --target REPO --advisories DIR --sarif OUT` — run
-  the reference scanner.
+- `uv run asve-scan repo --target REPO --sarif OUT` — run the
+  reference scanner against a repository.
+- `uv run asve-scan endpoint --project REPO` — run the reference
+  scanner against a Claude Code endpoint context.
 
 Run the test suite:
 
@@ -54,27 +52,16 @@ Run the test suite:
 uv run pytest
 ```
 
-## Filing an advisory
+## Filing an overlay
 
-1. **Reserve an ID** for the current year:
-   ```bash
-   uv run asve-reserve-id advisories/ --year 2026
-   # ASVE-2026-NNNN
-   ```
+1. **Start from an upstream vulnerability ID.** V0 overlays use the
+   upstream OSV/GHSA/CVE identifier as the file name:
+   `overlays/GHSA-XXXX-YYYY-ZZZZ.yaml` or `overlays/CVE-YYYY-NNNN.yaml`.
+   Do not mint an `ASVE-YYYY-NNNN` ID in V0.
 
-2. **Generate a skeleton** if the vulnerability already has an OSV/GHSA
-   record:
-   ```bash
-   uv run asve-import-osv --osv-id GHSA-XXXX-YYYY-ZZZZ \
-                          --asve-id ASVE-2026-NNNN \
-                          --out advisories/2026/ASVE-2026-NNNN.yaml
-   ```
-   Or hand-write the YAML using
-   [`tests/fixtures/valid/asve-2026-0001.yaml`](tests/fixtures/valid/asve-2026-0001.yaml)
-   as a model.
-
-3. **Fill in the `database_specific.asve` block** — this is what
-   distinguishes an ASVE record from a passthrough alias:
+2. **Write only the ASVE agent-context block.** OSV/GHSA/CVE owns
+   vulnerability identity, affected ranges, severity, fixes, summary,
+   and details. ASVE overlays add agent-context metadata:
    - `component_type` (e.g., `mcp_server`, `claude_plugin`,
      `model_proxy`, `agent_framework`, `skill_bundle`).
    - `surfaces`: which agent surfaces the component touches.
@@ -83,69 +70,35 @@ uv run pytest
    - `evidence_level`: `confirmed` | `likely` | `research` |
      `disputed` | `withdrawn`.
 
-   **Recognized `affected[*].package.ecosystem` values** the matcher
-   currently understands:
-   - `npm`, `PyPI`, `GitHub`, `Docker` — standard PURL ecosystems.
-   - `claude-plugin` — Claude Code plugins identified by `name` from
-     the plugin's `.claude-plugin/plugin.json` (per ADR-0006). Plugin
-     advisories use this ecosystem; `_match_versioned` handles the
-     range matching identically to npm/PyPI.
-   - `claude-skill` — Agent skills identified by `name` from
-     `SKILL.md` frontmatter, with optional version via
-     `metadata.version` (per ADR-0007). Range matching same as
-     `claude-plugin`. Use this for SKILL.md-shaped surfaces.
-   - `claude-hook` — Hook entries identified by JSON-path slot:
-     `claude-hook/<plugin>/<event>/<index>` for plugin-bundled or
-     `claude-hook/settings/<scope>/<event>/<index>` for
-     settings-scoped (scope ∈ user|project|local). V0 is
-     identity-only matching against
-     `database_specific.asve.component_identity` — no range algebra,
-     since hooks don't have a versioning convention.
-   - `claude-command`, `claude-agent` — Slash commands and subagents
-     identified by `<eco>/<owner>/<name>`, where `<owner>` is the
-     plugin name (bundled) or the literal `repo` (declared in
-     `.claude/commands/` or `.claude/agents/`). V0 is identity-only
-     matching.
-
-4. **Add a CVSS v3 or v4 vector** under `severity[]` if known:
+   Minimal shape:
    ```yaml
-   # ASVE-authored record — prefer v4:
-   severity:
-     - type: CVSS_V4
-       score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
-
-   # Alias / enrichment record — preserve upstream verbatim, do not translate:
-   severity:
-     - type: CVSS_V3
-       score: "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+   schema_version: "1.7.1"
+   id: GHSA-XXXX-YYYY-ZZZZ
+   aliases:
+     - CVE-YYYY-NNNN
+   modified: "2026-05-12T00:00:00Z"
+   database_specific:
+     asve:
+       component_type: mcp_server
+       surfaces:
+         - tool_invocation
+       agent_impact:
+         credential_exfiltration: false
+         repo_write: false
+         command_execution: true
+       owasp_agentic_top10:
+         - asi02
+       evidence_level: confirmed
    ```
 
-   Policy:
-   - **Prefer v4 for ASVE-authored records**. The v4 schema captures
-     attack-vector context more precisely than v3.1.
-   - **For alias/enrichment records, preserve the upstream vector as-is**
-     — do not fabricate v4 translations. The score belongs to the
-     upstream CNA; ASVE's value-add lives in `database_specific.asve`.
-   - **Score Base metrics only.** Agent-context impact belongs in
-     `database_specific.asve.agent_impact`, not in CVSS environmental
-     metrics (which are meant to be consumer/environment-specific, not
-     part of a public advisory).
-
-5. **Lint locally**:
+3. **Lint locally**:
    ```bash
-   uv run asve-lint advisories/2026/ASVE-2026-NNNN.yaml
+   uv run asve-lint overlays/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    Fix any failures before opening a PR.
 
-6. **Open a PR** with the advisory file and a one-paragraph summary
-   of what the advisory covers.
-
-## V0 record-type policy
-
-V0 accepts only `type: vulnerability` records. PRs proposing
-`type: exposure` or `type: config` records are closed with a pointer
-to the V1 methodology track. The schema reserves these values;
-runtime acceptance is gated by an explicit V1 process.
+4. **Open a PR** with the overlay file and a one-paragraph summary
+   of what agent context the overlay adds.
 
 ## Linter discipline
 
@@ -154,11 +107,8 @@ The CI linter has two tiers:
 **Hard fail** (your PR will not merge):
 
 - Schema validation.
-- ID format and uniqueness within `ASVE-YYYY-NNNN`.
-- Required fields per `type`.
-- CVSS v4 vector parses.
+- File name matches `id`.
 - OWASP ASI categories are valid (`asi01`–`asi10`).
-- File path matches ID year and number.
 - Internal cross-references resolve.
 
 **Warning only** (separate scheduled job):
@@ -172,13 +122,12 @@ full corpus, so transient remote-API failures don't block authors.
 
 ## Aliasing policy
 
-- If your advisory aliases an existing CVE/GHSA/OSV, list the upstream
-  IDs in `aliases[]`. ASVE creates the alias and overlays
-  agent-context metadata. **No new upstream filing required.**
-- If your advisory is ASVE-original, attempt upstream disclosure to
-  CVE/GHSA where the affected ecosystem is accepted upstream. ASVE
-  will carry the authoritative record only when upstream pipelines
-  don't fit.
+- List equivalent upstream IDs in `aliases[]` so the scanner can merge
+  overlays with OSV records by alias graph.
+- V0 does not carry ASVE-original vulnerability records. If a
+  vulnerability has no upstream ID, use upstream disclosure channels
+  first; an ASVE-native advisory lane requires a later governance
+  decision.
 
 ## Code contributions (parsers, linter, scanner)
 

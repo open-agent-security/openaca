@@ -1,9 +1,8 @@
-"""OSV.dev federation: batched live query against /v1/querybatch.
+"""OSV.dev matching: batched live query against /v1/querybatch.
 
-ASVE's default scan uses only the local advisories/ corpus. This module
-provides opt-in federation via --federate-osv: given a list of emitted
-ComponentRefs, fetch matching vulnerability records from OSV.dev and
-merge them into the corpus for the matcher to consume.
+Given a list of emitted ComponentRefs, fetch matching vulnerability
+records from OSV.dev for the matcher to consume. ASVE overlays are
+applied by `tools.overlays` after these records are fetched.
 
 Behavior:
 - Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
@@ -17,8 +16,7 @@ Behavior:
 - Network errors fail-soft: return the base corpus unchanged with a
   warning string. The scan continues with local-corpus-only matching.
 - Returned vuln IDs are dereferenced to full records via /v1/vulns/<id>
-  and merged into the corpus, deduped against base by `id` (base wins
-  on conflict — local advisories override upstream).
+  and merged into the corpus, deduped by alias graph.
 
 Module API:
     augment_corpus(refs, base_corpus) -> (augmented_corpus, warnings)
@@ -32,6 +30,7 @@ import urllib.request
 from typing import Any
 
 from tools.component_ref import ComponentRef
+from tools.overlays import id_set
 
 _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 _VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
@@ -73,12 +72,16 @@ def augment_corpus(
             continue
         if isinstance(record, dict) and record.get("id"):
             new_records.append(record)
-    base_ids = {a.get("id") for a in base_corpus if isinstance(a, dict)}
+    covered_ids: set[str] = set()
+    for advisory in base_corpus:
+        if isinstance(advisory, dict):
+            covered_ids.update(id_set(advisory))
     merged = list(base_corpus)
     for r in new_records:
-        if r["id"] not in base_ids:
+        ids = id_set(r)
+        if ids.isdisjoint(covered_ids):
             merged.append(r)
-            base_ids.add(r["id"])
+            covered_ids.update(ids)
     return merged, fetch_warnings
 
 

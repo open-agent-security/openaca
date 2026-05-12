@@ -1,0 +1,24 @@
+schema_version: 1.7.5
+id: GHSA-3q26-f695-pp76
+aliases:
+- CVE-2025-53107
+modified: '2025-09-15T12:00:00Z'
+database_specific:
+  asve:
+    component_type: mcp_server
+    surfaces:
+    - tool_invocation
+    - stdio
+    - repo_context
+    agent_impact:
+      repo_read: true
+      repo_write: false
+      credential_exfiltration: true
+      tool_hijack: true
+      memory_poisoning: false
+      pr_manipulation: false
+      code_execution: true
+    owasp_agentic_top10:
+    - asi02
+    - asi05
+    evidence_level: confirmed

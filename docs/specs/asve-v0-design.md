@@ -1,7 +1,14 @@
 # ASVE V0 — Design Specification
 
-*Status*: V0 design, locked.
-*Last updated*: 2026-05-06.
+*Status*: Superseded in part by [ADR-0009](../adrs/0009-overlay-only-v0.md).
+*Last updated*: 2026-05-12.
+
+> Note: this original V0 design described ASVE as an advisory database with
+> ASVE-issued IDs. ADR-0009 changes V0 to an overlay-only model: upstream
+> OSV/GHSA/CVE records own vulnerability identity, affected ranges, severity,
+> and fixes; ASVE owns `database_specific.asve` agent-context overlays and the
+> reference scanner. Historical sections below remain for parser and identity
+> context until this spec is fully rewritten.
 
 ## 1. Overview
 

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import yaml
 from click.testing import CliRunner
 
 from tools.render import _esc_data, _esc_param
@@ -29,7 +30,7 @@ def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0
 
 def test_scan_finds_exposed_mcp(tmp_path):
     """Scan picks up the @cyanheads/git-mcp-server@1.1.0 in package.json
-    and matches ASVE-2026-0001 (fixed in 1.2.3)."""
+    and matches GHSA-3q26-f695-pp76 (fixed in 1.2.3)."""
     sarif_out = tmp_path / "out.sarif"
     runner = CliRunner()
     result = runner.invoke(
@@ -38,8 +39,6 @@ def test_scan_finds_exposed_mcp(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--sarif",
             str(sarif_out),
         ],
@@ -47,7 +46,7 @@ def test_scan_finds_exposed_mcp(tmp_path):
     assert result.exit_code == 1, result.output
     sarif = json.loads(sarif_out.read_text())
     rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
-    assert "ASVE-2026-0001" in rule_ids
+    assert "GHSA-3q26-f695-pp76" in rule_ids
 
 
 def test_scan_clean_repo_exits_zero(tmp_path):
@@ -62,8 +61,6 @@ def test_scan_clean_repo_exits_zero(tmp_path):
             "repo",
             "--target",
             str(clean),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--sarif",
             str(sarif_out),
         ],
@@ -82,8 +79,6 @@ def test_scan_emits_github_annotation_lines(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "github",
         ],
@@ -91,7 +86,7 @@ def test_scan_emits_github_annotation_lines(tmp_path):
     assert result.exit_code == 1
     annotations = [line for line in result.output.splitlines() if line.startswith("::")]
     assert annotations
-    assert any("ASVE-2026-0001" in line for line in annotations)
+    assert any("GHSA-3q26-f695-pp76" in line for line in annotations)
     assert any("file=" in line and "package.json" in line for line in annotations)
 
 
@@ -112,8 +107,6 @@ def test_scan_fail_on_high_only_exits_zero_for_low_or_unknown(tmp_path):
             "repo",
             "--target",
             str(target),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--fail-on",
             "high",
         ],
@@ -129,8 +122,6 @@ def test_scan_fail_on_none_always_exits_zero(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--fail-on",
             "none",
         ],
@@ -155,8 +146,6 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
             "repo",
             "--target",
             str(clean),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -181,8 +170,6 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -209,8 +196,6 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -228,8 +213,6 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -251,16 +234,14 @@ def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "loaded" in result.output and "advisory(ies)" in result.output
+    assert "loaded" in result.output and "ASVE overlay(s)" in result.output
     assert "package.json" in result.output
     assert "matched" in result.output and "finding(s):" in result.output
-    assert "ASVE-2026-0001" in result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
     assert "(high)" in result.output
 
 
@@ -277,8 +258,6 @@ def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
             "repo",
             "--target",
             str(clean),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -319,12 +298,10 @@ def test_repo_subcommand_explicit():
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 1
-    assert "ASVE-2026-0001" in result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
 
 
 def test_no_subcommand_fails_with_usage():
@@ -336,8 +313,6 @@ def test_no_subcommand_fails_with_usage():
         [
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code != 0
@@ -355,8 +330,6 @@ def test_endpoint_subcommand_minimal_install_no_findings():
             "endpoint",
             "--config-dir",
             str(config_dir),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -391,16 +364,19 @@ affected:
 """
     )
     runner = CliRunner()
-    result = runner.invoke(
-        main,
-        [
-            "endpoint",
-            "--config-dir",
-            str(config_dir),
-            "--advisories",
-            str(advisories_dir),
-        ],
-    )
+    from unittest.mock import patch
+
+    advisory = yaml.safe_load((advisories_dir / "ASVE-2026-9999.yaml").read_text())
+
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+        result = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(config_dir),
+            ],
+        )
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9999" in result.output
 
@@ -414,8 +390,6 @@ def test_endpoint_subcommand_verbose_lists_resolved_plugins():
             "endpoint",
             "--config-dir",
             str(config_dir),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -449,8 +423,6 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
             "endpoint",
             "--config-dir",
             str(config_dir),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -480,8 +452,6 @@ def test_endpoint_subcommand_project_layers_with_config_dir(tmp_path):
             str(config_dir),
             "--project",
             str(project),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -512,8 +482,6 @@ def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_p
             str(config_dir),
             "--project",
             str(project),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -539,8 +507,6 @@ def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
         main,
         [
             "endpoint",
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -566,8 +532,6 @@ def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch
         main,
         [
             "endpoint",
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -584,8 +548,6 @@ def test_fs_subcommand_is_not_kept_as_alias():
             "fs",
             "--target",
             str(REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code != 0
@@ -608,8 +570,6 @@ def test_group_fail_on_none_forwards_to_repo_subcommand():
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 0, result.output  # findings exist but --fail-on none → exit 0
@@ -627,8 +587,6 @@ def test_group_sarif_forwards_to_repo_subcommand(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert sarif_out.exists(), f"SARIF not written; exit {result.exit_code}: {result.output}"
@@ -644,11 +602,9 @@ def test_group_verbose_forwards_to_repo_subcommand():
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
-    assert "loaded" in result.output and "advisory(ies)" in result.output
+    assert "loaded" in result.output and "ASVE overlay(s)" in result.output
 
 
 def test_subcommand_fail_on_takes_precedence_over_group():
@@ -662,8 +618,6 @@ def test_subcommand_fail_on_takes_precedence_over_group():
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--fail-on",
             "any",  # subcommand level: overrides → exit 1
         ],
@@ -706,9 +660,8 @@ def test_endpoint_subcommand_includes_transitive_by_default(tmp_path):
     assert any(r.ecosystem == "npm" and r.name == "lodash" for r in refs)
 
 
-def test_endpoint_subcommand_federate_osv_augments_corpus(tmp_path):
-    """--federate-osv: augment_corpus is invoked and findings include
-    osv.dev-sourced advisories."""
+def test_endpoint_subcommand_queries_osv_by_default(tmp_path):
+    """OSV augmentation is always invoked for versioned agent refs."""
     from unittest.mock import patch
 
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
@@ -766,10 +719,6 @@ def test_endpoint_subcommand_federate_osv_augments_corpus(tmp_path):
                 "endpoint",
                 "--config-dir",
                 str(tmp_path),
-                "--advisories",
-                str(REPO_ROOT / "advisories"),
-                "--db",
-                "asve,osv",
                 "-v",
             ],
         )
@@ -777,10 +726,81 @@ def test_endpoint_subcommand_federate_osv_augments_corpus(tmp_path):
     assert "GHSA-FAKE-LODASH" in result.output
 
 
-def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(tmp_path):
-    """Verbose + --federate-osv surfaces the actual PURLs queried and a
-    per-ecosystem breakdown of refs that were skipped. Gives users insight
-    into what crossed the wire to osv.dev vs what was filtered locally."""
+def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
+    """Overlay-only V0 has no local matchable advisory DB. Scans query OSV for
+    versioned agent refs by default, then apply bundled ASVE agent-context
+    overlays by alias."""
+    from unittest.mock import patch
+
+    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+
+    fake_advisory = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-3q26-f695-pp76",
+        "aliases": ["CVE-2025-53107"],
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "@cyanheads/git-mcp-server command injection",
+        "details": "test",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "@cyanheads/git-mcp-server"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.1.5"}]}
+                ],
+            }
+        ],
+    }
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus) + [fake_advisory], []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(tmp_path),
+                "--format",
+                "text",
+                "-v",
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
+    assert "surfaces: tool_invocation, stdio, repo_context" in result.output
+
+
+def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
+    """Verbose output surfaces queried PURLs and skipped refs."""
     from unittest.mock import patch
 
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
@@ -820,10 +840,6 @@ def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(
                 "endpoint",
                 "--config-dir",
                 str(tmp_path),
-                "--advisories",
-                str(REPO_ROOT / "advisories"),
-                "--db",
-                "asve,osv",
                 "-v",
             ],
         )
@@ -835,7 +851,7 @@ def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(
     assert "claude-plugin=1" in result.output
 
 
-def test_repo_subcommand_db_asve_osv_verbose_lists_queried_purls(tmp_path):
+def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
     """Same verbose surface in repo mode (parity with endpoint mode)."""
     from unittest.mock import patch
 
@@ -855,16 +871,12 @@ def test_repo_subcommand_db_asve_osv_verbose_lists_queried_purls(tmp_path):
                 "repo",
                 "--target",
                 str(tmp_path),
-                "--advisories",
-                str(REPO_ROOT / "advisories"),
-                "--db",
-                "asve,osv",
                 "-v",
             ],
         )
     assert result.exit_code == 0, result.output
     assert "federation: querying" in result.output
-    assert "federation: osv.dev returned 0 additional finding(s)" in result.output
+    assert "loaded 0 OSV advisory record(s)" in result.output
 
 
 def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
@@ -898,10 +910,6 @@ def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
                 "endpoint",
                 "--config-dir",
                 str(tmp_path),
-                "--advisories",
-                str(REPO_ROOT / "advisories"),
-                "--db",
-                "asve,osv",
                 "-v",
             ],
         )
@@ -931,10 +939,6 @@ def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd
                 "endpoint",
                 "--config-dir",
                 str(tmp_path),
-                "--advisories",
-                str(REPO_ROOT / "advisories"),
-                "--db",
-                "asve,osv",
             ],
         )
     assert result.exit_code == 0
@@ -977,8 +981,6 @@ def test_endpoint_verbose_shows_per_plugin_tier2_coverage(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -1014,8 +1016,6 @@ def test_endpoint_verbose_shows_manifest_fallback_line(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -1066,8 +1066,6 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -1100,8 +1098,6 @@ def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -1133,8 +1129,6 @@ def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "-v",
         ],
     )
@@ -1175,8 +1169,6 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result_default.exit_code == 0, result_default.output
@@ -1187,14 +1179,12 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--include-gitignored",
         ],
     )
-    # Now the vendored package.json gets walked; ASVE-2026-0001 fires.
+    # Now the vendored package.json gets walked; GHSA-3q26-f695-pp76 fires.
     assert result_opt_in.exit_code == 1, result_opt_in.output
-    assert "ASVE-2026-0001" in result_opt_in.output
+    assert "GHSA-3q26-f695-pp76" in result_opt_in.output
 
 
 # ── --format mode behavior ────────────────────────────────────────────────
@@ -1213,8 +1203,6 @@ def test_scan_default_format_is_text(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 1, result.output
@@ -1237,8 +1225,6 @@ def test_scan_format_json_produces_parseable_document(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "json",
         ],
@@ -1272,8 +1258,6 @@ def test_scan_format_github_emits_annotations(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "github",
         ],
@@ -1295,8 +1279,6 @@ def test_scan_github_actions_env_var_auto_selects_github_format(tmp_path, monkey
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 1, result.output
@@ -1314,8 +1296,6 @@ def test_scan_explicit_format_text_overrides_github_actions_env(tmp_path, monkey
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--format",
             "text",
         ],
@@ -1335,8 +1315,6 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--no-color",
         ],
     )
@@ -1344,14 +1322,14 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
     assert "\x1b[" not in result.output
 
 
-# ── --db / agent-composition scope ────────────────────────────────────────
+# ── Removed DB flag / agent-composition scope ─────────────────────────────
 
 
 def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
     """A vulnerable npm dep declared in a non-plugin repo (no
     .claude-plugin/plugin.json sibling) is classified as software-dependency
     and suppressed — ASVE V0 is agent-composition analysis. The ACA framing
-    footer explains the silence and points to osv-scanner / Trivy.
+    footer explains the silence.
 
     (GITHUB_ACTIONS auto-promotion is suppressed by the autouse fixture in
     conftest.py — the footer only renders in `text` format.)
@@ -1372,14 +1350,12 @@ def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "ASVE-2026-0001" not in result.output
+    assert "GHSA-3q26-f695-pp76" not in result.output
     assert "no findings" in result.output
-    assert "osv-scanner or Trivy" in result.output
+    assert "general-purpose SCA scanner" in result.output
 
 
 def test_repo_dep_co_located_with_plugin_json_surfaces_as_agent_dep(tmp_path):
@@ -1403,16 +1379,14 @@ def test_repo_dep_co_located_with_plugin_json_surfaces_as_agent_dep(tmp_path):
             "repo",
             "--target",
             str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-0001" in result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
 
 
-def test_repo_rejects_unknown_db_value(tmp_path):
-    """`--db` only accepts the two V0 backends; other strings error out."""
+def test_repo_rejects_removed_db_option(tmp_path):
+    """Overlay-only V0 has no user-selectable advisory DB flag."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -1420,11 +1394,9 @@ def test_repo_rejects_unknown_db_value(tmp_path):
             "repo",
             "--target",
             str(FIXTURES / "repos" / "exposed-mcp"),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
             "--db",
             "ghsa",
         ],
     )
     assert result.exit_code != 0
-    assert "Invalid value" in result.output or "invalid choice" in result.output.lower()
+    assert "No such option" in result.output

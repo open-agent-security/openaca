@@ -4,19 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ advisory.id }} — ASVE</title>
-  <link rel="canonical" href="https://asve.dev/advisories/{{ advisory.id.split('-')[1] }}/{{ advisory.id }}.html">
-  <link rel="stylesheet" href="../../style.css">
+  <link rel="canonical" href="https://asve.dev/overlays/{{ advisory.id }}.html">
+  <link rel="stylesheet" href="../style.css">
 </head>
 <body>
   <header>
-    <p><a href="../../">← ASVE</a></p>
+    <p><a href="../">← ASVE</a></p>
     <h1>{{ advisory.id }}</h1>
-    <p class="tagline">{{ advisory.summary }}</p>
+    <p class="tagline">ASVE agent-context overlay</p>
   </header>
 
   <dl class="advisory-meta">
-    <dt>Type:</dt><dd>{{ advisory.type }}</dd>
-    <dt>Published:</dt><dd>{{ advisory.published }}</dd>
     <dt>Modified:</dt><dd>{{ advisory.modified }}</dd>
   </dl>
 
@@ -108,7 +106,7 @@
 
   <footer>
     <a href="{{ advisory.id }}.json">JSON</a>
-    <a href="../../">Back to index</a>
+    <a href="../">Back to index</a>
   </footer>
 </body>
 </html>

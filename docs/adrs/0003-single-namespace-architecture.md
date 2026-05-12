@@ -1,10 +1,10 @@
 ---
 id: 0003
 title: Single namespace, type-tagged advisories
-status: accepted
+status: superseded
 date: 2026-05-06
 supersedes: null
-superseded-by: null
+superseded-by: 0009
 ---
 
 ## Context

@@ -1,10 +1,11 @@
 # ASVE
 
-**Agent Stack Vulnerabilities and Exposures** — an open, OSV-compatible
-advisory database for AI agent infrastructure: plugins, MCP servers,
-skills, agent frameworks, model proxies, and runtime components.
+**Agent Stack Vulnerabilities and Exposures** — OSV-compatible
+agent-context overlays and a reference scanner for AI agent
+infrastructure: plugins, MCP servers, skills, agent frameworks, model
+proxies, and runtime components.
 
-> Open advisories for agent stack security.
+> Agent-context overlays for upstream security advisories.
 
 ## Why ASVE
 
@@ -13,16 +14,15 @@ Composition Analysis (SCA). It is targeted at the agent stack: which
 plugins, MCP servers, skills, hooks, and commands compose an agent —
 and which of those have known security advisories. For general
 software dependency scans (your app's transitive npm/PyPI tree, your
-container image, etc.), use [osv-scanner](https://github.com/google/osv-scanner)
-or [Trivy](https://github.com/aquasecurity/trivy) alongside ASVE; the
-layers stack.
+container image, etc.), use a general-purpose SCA scanner alongside
+ASVE; the layers stack.
 
 Traditional Software Composition Analysis (SCA) reads `package.json`
 and lockfiles. Agents install components a different way: an MCP
 server invoked from `mcp.json` via `uvx package==1.4.0`, a Claude
 Code plugin declared in `.claude-plugin/plugin.json`, a skill bundle
-referenced by stable identifier. None of those manifests are parsed
-by Snyk, Dependabot, or OSV-Scanner today.
+referenced by stable identifier. Most general-purpose SCA scanners do
+not parse those manifests today.
 
 ASVE fills two gaps:
 
@@ -35,9 +35,9 @@ ASVE fills two gaps:
    `agent_impact` (e.g., `repo_write`, `credential_exfiltration`,
    `tool_hijack`), and OWASP Agentic Top 10 (ASI) category mapping.
 
-ASVE aliases upstream identifiers wherever they exist; it does not
-duplicate authority. The wedge is the agent-stack overlay and the
-manifest parsers, not a parallel CVE database.
+ASVE does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
+vulnerability identity, affected ranges, severity, and fixes. ASVE owns
+the agent-stack overlay and the manifest parsers.
 
 ## Two scan modes
 
@@ -109,21 +109,19 @@ uv sync
 # what the GitHub Action uses).
 uv run asve-scan repo \
     --target /path/to/your/repo \
-    --advisories advisories/ \
     --sarif results.sarif \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
 # agent stack. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
 uv run asve-scan endpoint \
-    --advisories advisories/
+    --fail-on any
 
 # Or scan a specific endpoint config directory and layer in project/local
 # settings from a repo.
 uv run asve-scan endpoint \
     --config-dir ~/.claude \
-    --project /path/to/your/repo \
-    --advisories advisories/
+    --project /path/to/your/repo
 ```
 
 A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
@@ -155,7 +153,6 @@ checkout):
 ```bash
 uvx --from git+https://github.com/open-agent-security/asve asve-scan repo \
     --target /path/to/your/repo \
-    --advisories advisories/ \
     --sarif results.sarif
 ```
 
@@ -168,14 +165,16 @@ the resolved active-plugin tree (endpoint mode):
 
 ```text
 # repo mode -v
-loaded 5 advisory(ies) from advisories
+loaded 6 ASVE overlay(s)
+loaded 1 OSV advisory record(s)
 scanned 87 manifest(s), 70 component(s):
   external_plugins/discord/package.json — 2 component(s)
   external_plugins/fakechat/.mcp.json — 1 component(s)
   ...
 
 # endpoint mode -v
-loaded 5 advisory(ies) from advisories
+loaded 6 ASVE overlay(s)
+loaded 1 OSV advisory record(s)
 detected config_dir=/Users/.../.claude (mode=endpoint)
 resolved 14 active plugin(s):
   claude-plugin/supabase@0.1.6 (sha: <short>) [scope=user]
@@ -190,7 +189,7 @@ plugin-level components).
 ## How it works
 
 ```
-   Your repo                    ASVE corpus
+   Your repo                    OSV.dev + ASVE overlays
        |                             |
        v                             v
   Manifest parsers  --->  Three-tier matcher  --->  SARIF + GitHub annotations
@@ -203,8 +202,9 @@ plugin-level components).
    `pkg:pypi/...`) where possible, ASVE-native identifiers
    (`mcp-stdio/uvx-unpinned:<package>`) where standard PURLs don't
    apply.
-2. **Match** each identifier against advisories under
-   `--advisories/`. Confidence tiers:
+2. **Match** queryable PURLs against OSV.dev records, then merge
+   ASVE overlays from the bundled `overlays/` directory by alias-set
+   intersection. Confidence tiers:
    - **high** — concrete pinned version inside an OSV ECOSYSTEM
      range (`introduced` / `fixed` / `last_affected` / `limit`).
    - **low** — version present but unparseable (e.g., `^1.0.0`).
@@ -225,16 +225,9 @@ ASVE follows a tiered model loosely analogous to traditional SCA's
 | **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
 | **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
 
-**Advisory database selection.** `--db` controls which backends are
-consulted:
-
-- `--db asve` (default) — local ASVE corpus only.
-- `--db asve,osv` — also query OSV.dev for additional vulnerability
-  records covering emitted PURLs. Network required; fails soft if
-  OSV.dev is unreachable.
-
-See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md` for the
-federation design.
+OSV.dev is queried by default for versioned package refs. Network
+failures are fail-soft: ASVE still reports inventory and parse coverage,
+but overlay-backed vulnerability matching needs upstream OSV records.
 
 **Agent-composition scope.** Repo-mode dependency manifests
 (`package.json`, `pyproject.toml`, `package-lock.json`, `uv.lock`) are
@@ -243,10 +236,10 @@ classified as **agent-dependency** only when co-located with a
 *of a plugin's implementation*. Bare dep manifests in repos that
 aren't plugins are classified as **software-dependency** and
 suppressed from output (and from OSV.dev queries) — that's
-general-purpose SCA territory, not ACA. Scan those with osv-scanner
-or Trivy instead. A non-empty repo with only software-dependency
-refs produces an explicit footer pointing to those tools rather than
-a silent "no findings."
+general-purpose SCA territory, not ACA. Scan those with a
+general-purpose SCA scanner instead. A non-empty repo with only
+software-dependency refs produces an explicit footer rather than a
+silent "no findings."
 
 Per-parser detail:
 
@@ -294,20 +287,20 @@ Be honest about what ASVE V0 doesn't see:
   `~/.claude/installed_plugins.json` and friends. Codex CLI's
   `~/.codex/` and Cursor's local state will need their own resolvers.
 
-## Schema and IDs
+## Overlay Schema
 
-- **ID format**: `ASVE-YYYY-NNNN` (single namespace).
-- **Type-tagged records**: `type: vulnerability` is the only public
-  V0 record type. `type: exposure` and `type: config` are reserved
-  in the schema for V1.
-- **Severity**: CVSS v4 base + environmental.
+- **ID format**: upstream advisory ID, usually the OSV record ID
+  (`GHSA-*`, `CVE-*`, `PYSEC-*`, etc.).
+- **Aliases**: overlays list known equivalent IDs so they can merge
+  with any OSV record whose alias set intersects.
+- **Severity and fixes**: owned by upstream OSV/GHSA/CVE records, not
+  duplicated in ASVE overlays.
 - **Category**: OWASP Agentic Top 10 (`asi01`–`asi10`).
-- **Aliasing**: every record aliases existing CVE/GHSA/OSV
-  identifiers where available. ASVE adds the agent-context overlay;
-  it does not duplicate upstream authority.
+- **Agent context**: `database_specific.asve` carries
+  `component_type`, `surfaces`, `agent_impact`, and evidence metadata.
 
-Sample advisory:
-[`advisories/2026/ASVE-2026-0001.yaml`](advisories/2026/ASVE-2026-0001.yaml).
+Sample overlay:
+[`overlays/GHSA-3q26-f695-pp76.yaml`](overlays/GHSA-3q26-f695-pp76.yaml).
 Schema source of truth:
 [`schema/asve.schema.json`](schema/asve.schema.json).
 
@@ -321,12 +314,11 @@ implementation plans.
 ## License
 
 - **Code**: [Apache License 2.0](LICENSE).
-- **Advisory data**: [CC-BY-4.0](LICENSE-DATA) (matches OSV.dev).
+- **Overlay data**: [CC-BY-4.0](LICENSE-DATA) (matches OSV.dev).
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the advisory authoring
-guide, linter discipline, ID reservation flow, and PR workflow.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance.
 
 ## Coordinated disclosure
 

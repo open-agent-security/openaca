@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://asve.dev/schema/asve.schema.json",
-  "title": "ASVE Advisory",
+  "title": "ASVE Overlay",
   "type": "object",
-  "required": ["schema_version", "id", "type", "summary", "details", "published", "modified", "references"],
+  "required": ["schema_version", "id", "modified", "database_specific"],
   "properties": {
     "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "id": {"type": "string", "pattern": "^ASVE-[0-9]{4}-[0-9]{4}$"},
+    "id": {"type": "string", "minLength": 1},
     "type": {"type": "string", "enum": ["vulnerability", "exposure", "config"]},
     "aliases": {"type": "array", "items": {"type": "string"}},
     "summary": {"type": "string", "minLength": 1, "maxLength": 200},
@@ -19,20 +19,6 @@
     "affected": {"type": "array", "items": {"$ref": "#/$defs/affected"}},
     "database_specific": {"$ref": "#/$defs/database_specific"}
   },
-  "allOf": [
-    {
-      "if": {"properties": {"type": {"const": "vulnerability"}}},
-      "then": {"required": ["affected"]}
-    },
-    {
-      "if": {"properties": {"type": {"const": "exposure"}}},
-      "then": {"not": {"description": "exposure records are reserved; rejected in V0"}}
-    },
-    {
-      "if": {"properties": {"type": {"const": "config"}}},
-      "then": {"not": {"description": "config records are reserved; rejected in V0"}}
-    }
-  ],
   "$defs": {
     "severity": {
       "type": "object",

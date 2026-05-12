@@ -247,12 +247,10 @@ def test_text_no_findings_pluralizes_correctly():
 
 
 def test_text_no_findings_appends_aca_framing_footer():
-    """Zero-findings output points users at osv-scanner/Trivy so they don't
-    conclude ASVE is broken when their general software deps simply weren't
-    in scope (V0 is agent-composition analysis, not general SCA)."""
+    """Zero-findings output explains that general software deps are out of scope."""
     out = render_text([], {}, _stats())
     assert "agent composition" in out
-    assert "osv-scanner or Trivy" in out
+    assert "general-purpose SCA scanner" in out
 
 
 def test_text_grouped_block_per_component():

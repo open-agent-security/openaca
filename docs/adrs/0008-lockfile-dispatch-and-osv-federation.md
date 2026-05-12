@@ -1,10 +1,10 @@
 ---
 id: 0008
 title: Lockfile dispatch; manifest fallback; OSV.dev federation as opt-in
-status: accepted
+status: superseded
 date: 2026-05-10
 supersedes: null
-superseded-by: null
+superseded-by: 0009
 ---
 
 ## Context

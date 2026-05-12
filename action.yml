@@ -1,5 +1,5 @@
 name: ASVE Scan
-description: Scan agent-installation manifests for ASVE advisories.
+description: Scan agent-installation manifests with ASVE overlays.
 author: open-agent-security
 branding:
   icon: shield
@@ -14,13 +14,6 @@ inputs:
     description: Path to scan (defaults to the consumer's GITHUB_WORKSPACE).
     required: false
     default: ${{ github.workspace }}
-  advisories:
-    description: |
-      Path to the advisories directory. Defaults to the action's bundled copy
-      (the same advisories that ship under `advisories/` in this repo at the
-      tagged ref). Set to a vendored mirror for air-gapped operation.
-    required: false
-    default: ${{ github.action_path }}/advisories
   sarif:
     description: SARIF output path (relative to the consumer's workspace).
     required: false
@@ -60,7 +53,6 @@ runs:
       # runs, so the values land via process env, not via shell substitution.
       env:
         TARGET: ${{ inputs.target }}
-        ADVISORIES: ${{ inputs.advisories }}
         SARIF: ${{ inputs.sarif }}
         FAIL_ON: ${{ inputs.fail-on }}
       run: |
@@ -71,17 +63,12 @@ runs:
         if [[ "$TARGET_ABS" != /* ]]; then
           TARGET_ABS="$GITHUB_WORKSPACE/$TARGET_ABS"
         fi
-        ADVISORIES_ABS="$ADVISORIES"
-        if [[ "$ADVISORIES_ABS" != /* ]]; then
-          ADVISORIES_ABS="$GITHUB_WORKSPACE/$ADVISORIES_ABS"
-        fi
         SARIF_ABS="$SARIF"
         if [[ "$SARIF_ABS" != /* ]]; then
           SARIF_ABS="$GITHUB_WORKSPACE/$SARIF_ABS"
         fi
         uv run asve-scan repo \
           --target "$TARGET_ABS" \
-          --advisories "$ADVISORIES_ABS" \
           --sarif "$SARIF_ABS" \
           --fail-on "$FAIL_ON" \
           --format github

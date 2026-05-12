@@ -21,7 +21,7 @@ name: Self-scan
 # /PR-controlled input. github.workspace and github.ref are runner-set
 # fixed values, not attacker-influenced. The Action it invokes (action.yml)
 # uses env:-based input handling for the values that ARE user-controllable
-# (target/advisories/sarif/fail-on).
+# (target/sarif/fail-on).
 
 on:
   pull_request:
@@ -45,7 +45,6 @@ jobs:
         uses: ./
         with:
           target: ${{ github.workspace }}
-          advisories: ${{ github.workspace }}/advisories
           sarif: ${{ github.workspace }}/asve-results.sarif
           fail-on: none
 

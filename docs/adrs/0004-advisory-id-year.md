@@ -1,10 +1,10 @@
 ---
 id: 0004
 title: Year in ASVE-YYYY-NNNN is assignment year, not alias year
-status: accepted
+status: superseded
 date: 2026-05-08
 supersedes: null
-superseded-by: null
+superseded-by: 0009
 ---
 
 ## Context

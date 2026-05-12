@@ -24,6 +24,8 @@ def test_valid_v4_vectors(vector):
         "CVSS:4.0",
         # duplicate base metric
         "CVSS:4.0/AV:N/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        # non-base supplemental metric (S = Safety in v4; base-only policy)
+        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/S:P",
     ],
 )
 def test_invalid_v4_vectors(vector):
@@ -64,6 +66,8 @@ def test_valid_v3_vectors(vector):
         "CVSS:3.1/AV:N",
         # Duplicate metric
         "CVSS:3.1/AV:N/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        # Temporal metric beyond base set (base-only policy)
+        "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H/E:H",
     ],
 )
 def test_invalid_v3_vectors(vector):

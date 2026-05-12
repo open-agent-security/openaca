@@ -8,20 +8,20 @@ summary: Command injection in @akoskm/create-mcp-server-stdio
 details: '@akoskm/create-mcp-server-stdio is vulnerable to MCP server command injection
   through unsafe child-process invocation when handling tool inputs.'
 published: '2025-10-05T12:00:00Z'
-modified: '2025-10-15T12:00:00Z'
+modified: '2026-05-12T20:44:01Z'
 affected:
 - package:
     ecosystem: npm
     name: '@akoskm/create-mcp-server-stdio'
     purl: pkg:npm/%40akoskm/create-mcp-server-stdio
   ranges:
-  - type: ECOSYSTEM
+  - type: SEMVER
     events:
     - introduced: '0'
-    - fixed: 1.0.4
+    - fixed: 0.0.13
 severity:
 - type: CVSS_V4
-  score: "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+  score: CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N
 references:
 - type: ADVISORY
   url: https://github.com/advisories/GHSA-3ch2-jxxc-v4xf

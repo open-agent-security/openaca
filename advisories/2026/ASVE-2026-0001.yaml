@@ -9,20 +9,20 @@ details: '@cyanheads/git-mcp-server is vulnerable to command injection in severa
   tools, caused by unsanitized use of input parameters within a child-process invocation,
   enabling an attacker to inject arbitrary system commands.'
 published: '2025-09-01T12:00:00Z'
-modified: '2025-09-15T12:00:00Z'
+modified: '2026-05-12T20:44:00Z'
 affected:
 - package:
     ecosystem: npm
     name: '@cyanheads/git-mcp-server'
     purl: pkg:npm/%40cyanheads/git-mcp-server
   ranges:
-  - type: ECOSYSTEM
+  - type: SEMVER
     events:
     - introduced: '0'
-    - fixed: 1.2.3
+    - fixed: 2.1.5
 severity:
-- type: CVSS_V4
-  score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+- type: CVSS_V3
+  score: CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H
 references:
 - type: ADVISORY
   url: https://github.com/advisories/GHSA-3q26-f695-pp76

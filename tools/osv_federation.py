@@ -53,7 +53,16 @@ def is_queryable(ref: ComponentRef) -> bool:
 def augment_corpus(
     refs: list[ComponentRef], base_corpus: list[dict]
 ) -> tuple[list[dict], list[str]]:
-    """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
+    """Return `(merged_corpus, warnings)`. Fail-soft on any network issue.
+
+    Dedup is alias-aware: an OSV record is skipped when its `id` OR any
+    of its `aliases` overlaps with the same set on any base advisory.
+    The base corpus wins — ASVE records carry the agent overlay, so we
+    keep our record rather than the upstream duplicate. Without this,
+    `ASVE-2026-0001` (aliasing `GHSA-3q26-f695-pp76`) and OSV's
+    `GHSA-3q26-f695-pp76` would both fire on the same component as if
+    they were independent vulnerabilities.
+    """
     purls = collect_target_purls(refs)
     if not purls:
         return list(base_corpus), []
@@ -73,13 +82,37 @@ def augment_corpus(
             continue
         if isinstance(record, dict) and record.get("id"):
             new_records.append(record)
-    base_ids = {a.get("id") for a in base_corpus if isinstance(a, dict)}
+    blocklist = _collect_alias_graph(base_corpus)
     merged = list(base_corpus)
     for r in new_records:
-        if r["id"] not in base_ids:
-            merged.append(r)
-            base_ids.add(r["id"])
+        ids = _record_alias_keys(r)
+        if ids & blocklist:
+            continue
+        merged.append(r)
+        blocklist |= ids
     return merged, fetch_warnings
+
+
+def _record_alias_keys(record: dict) -> set[str]:
+    """Identity set for a record: its `id` plus every entry in `aliases`."""
+    keys: set[str] = set()
+    rec_id = record.get("id")
+    if isinstance(rec_id, str) and rec_id:
+        keys.add(rec_id)
+    for a in record.get("aliases") or []:
+        if isinstance(a, str) and a:
+            keys.add(a)
+    return keys
+
+
+def _collect_alias_graph(corpus: list[dict]) -> set[str]:
+    """Union of every record's identity set — what an incoming record
+    would have to not overlap to be considered new."""
+    out: set[str] = set()
+    for r in corpus:
+        if isinstance(r, dict):
+            out |= _record_alias_keys(r)
+    return out
 
 
 def collect_target_purls(refs: list[ComponentRef]) -> list[str]:

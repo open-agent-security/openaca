@@ -36,6 +36,41 @@ REQUIRED_BASE_METRICS = {
     "SA": {"H", "L", "N"},
 }
 
+# Optional v4 metric groups: Threat, Environmental, Supplemental. Each
+# accepts the corresponding values from the FIRST v4.0 spec PLUS `X`
+# ("Not Defined"). OSV records imported from GHSA/NVD frequently carry
+# the full vector with `:X` on all unset optional metrics, so the grammar
+# must allow it — we validate but don't score the optional groups.
+_OPTIONAL_V4_METRICS = {
+    # Threat
+    "E": {"X", "A", "P", "U"},
+    # Environmental — requirements
+    "CR": {"X", "H", "M", "L"},
+    "IR": {"X", "H", "M", "L"},
+    "AR": {"X", "H", "M", "L"},
+    # Environmental — modified attack metrics
+    "MAV": {"X", "N", "A", "L", "P"},
+    "MAC": {"X", "L", "H"},
+    "MAT": {"X", "N", "P"},
+    "MPR": {"X", "N", "L", "H"},
+    "MUI": {"X", "N", "P", "A"},
+    # Environmental — modified vulnerable-system impact
+    "MVC": {"X", "H", "L", "N"},
+    "MVI": {"X", "H", "L", "N"},
+    "MVA": {"X", "H", "L", "N"},
+    # Environmental — modified subsequent-system impact
+    "MSC": {"X", "H", "L", "N"},
+    "MSI": {"X", "H", "L", "N", "S"},
+    "MSA": {"X", "H", "L", "N", "S"},
+    # Supplemental
+    "S": {"X", "N", "P"},
+    "AU": {"X", "N", "Y"},
+    "R": {"X", "A", "U", "I"},
+    "V": {"X", "D", "C"},
+    "RE": {"X", "L", "M", "H"},
+    "U": {"X", "Clear", "Green", "Amber", "Red"},
+}
+
 _V3_BASE_METRICS = {
     "AV": {"N", "A", "L", "P"},
     "AC": {"L", "H"},
@@ -51,7 +86,12 @@ _V3_PREFIXES = ("CVSS:3.0/", "CVSS:3.1/")
 _V4_PREFIX = "CVSS:4.0/"
 
 
-def _validate_vector(vector: str, prefix: str, required: dict[str, set[str]]) -> bool:
+def _validate_vector(
+    vector: str,
+    prefix: str,
+    required: dict[str, set[str]],
+    optional: dict[str, set[str]] | None = None,
+) -> bool:
     if not vector.startswith(prefix):
         return False
     parts = vector[len(prefix) :].split("/")
@@ -66,13 +106,22 @@ def _validate_vector(vector: str, prefix: str, required: dict[str, set[str]]) ->
     for key, allowed in required.items():
         if key not in metrics or metrics[key] not in allowed:
             return False
-    if metrics.keys() - required.keys():
-        return False  # non-base metric present; base-only policy
+    allowed_optional = optional or {}
+    unknown_keys = metrics.keys() - required.keys() - allowed_optional.keys()
+    if unknown_keys:
+        return False
+    for key, allowed in allowed_optional.items():
+        if key in metrics and metrics[key] not in allowed:
+            return False
     return True
 
 
 def is_valid_cvss_v4(vector: str) -> bool:
-    return _validate_vector(vector, _V4_PREFIX, REQUIRED_BASE_METRICS)
+    """Accepts the Base metrics plus optional Threat / Environmental /
+    Supplemental groups (per FIRST CVSS v4.0 spec §2). OSV records
+    imported from GHSA frequently carry the full vector with `:X` on all
+    unset optional metrics."""
+    return _validate_vector(vector, _V4_PREFIX, REQUIRED_BASE_METRICS, _OPTIONAL_V4_METRICS)
 
 
 def is_valid_cvss_v3(vector: str) -> bool:

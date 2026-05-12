@@ -185,3 +185,65 @@ def test_augment_skips_purls_without_purl_form():
 
     with patch("tools.osv_federation._post_json", fake_post):
         augment_corpus(refs=refs, base_corpus=base)
+
+
+def test_augment_dedupes_upstream_record_aliased_by_base():
+    """When ASVE-2026-0001 aliases GHSA-3q26-..., the OSV record arriving
+    under the same GHSA id is a duplicate and must NOT be added — otherwise
+    a single real vulnerability fires twice on the same component."""
+    refs = [_ref("npm", "git-mcp-server", "1.1.0")]
+    base = [
+        {
+            "id": "ASVE-2026-0001",
+            "aliases": ["GHSA-3q26-f695-pp76", "CVE-2025-53107"],
+            "affected": [{"package": {"ecosystem": "npm", "name": "git-mcp-server"}}],
+        }
+    ]
+    osv_record = {
+        "id": "GHSA-3q26-f695-pp76",
+        "affected": [{"package": {"ecosystem": "npm", "name": "git-mcp-server"}}],
+    }
+
+    def fake_post(url, payload):
+        return {"results": [{"vulns": [{"id": "GHSA-3q26-f695-pp76"}]}]}
+
+    def fake_get(url):
+        return osv_record
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
+    assert warnings == []
+    assert {a["id"] for a in augmented} == {"ASVE-2026-0001"}
+
+
+def test_augment_dedupes_when_osv_record_aliases_overlap_base():
+    """Symmetric case: the OSV record's own `aliases` list overlaps the
+    base record's id. Same de-dup outcome."""
+    refs = [_ref("npm", "demo", "1.0.0")]
+    base = [
+        {
+            "id": "GHSA-base-aaaa-bbbb",
+            "affected": [{"package": {"ecosystem": "npm", "name": "demo"}}],
+        }
+    ]
+    osv_record = {
+        "id": "GHSA-upstream-cccc-dddd",
+        "aliases": ["GHSA-base-aaaa-bbbb"],
+        "affected": [{"package": {"ecosystem": "npm", "name": "demo"}}],
+    }
+
+    def fake_post(url, payload):
+        return {"results": [{"vulns": [{"id": "GHSA-upstream-cccc-dddd"}]}]}
+
+    def fake_get(url):
+        return osv_record
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
+    assert {a["id"] for a in augmented} == {"GHSA-base-aaaa-bbbb"}

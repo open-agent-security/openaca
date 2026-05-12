@@ -19,6 +19,7 @@ dependencies = [
 asve-lint = "tools.lint:main"
 asve-reserve-id = "tools.reserve_id:main"
 asve-import-osv = "tools.import_from_osv:main"
+asve-resync = "tools.resync_from_aliases:main"
 asve-export = "tools.export:main"
 asve-scan = "tools.scan:main"
 

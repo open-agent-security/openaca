@@ -3,7 +3,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from tools.scan import _esc_data, _esc_param, main
+from tools.render import _esc_data, _esc_param
+from tools.scan import main
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -55,7 +56,8 @@ def test_scan_clean_repo_exits_zero(tmp_path):
 
 def test_scan_emits_github_annotation_lines(tmp_path):
     """The annotation lines must use ::error::/::warning:: format and reference
-    the manifest path so PR reviewers see findings inline."""
+    the manifest path so PR reviewers see findings inline. Format moved to a
+    dedicated --format github mode; the content didn't change."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -65,6 +67,8 @@ def test_scan_emits_github_annotation_lines(tmp_path):
             str(FIXTURES / "repos" / "exposed-mcp"),
             "--advisories",
             str(REPO_ROOT / "advisories"),
+            "--format",
+            "github",
         ],
     )
     assert result.exit_code == 1
@@ -131,15 +135,15 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
         ["repo", "--target", str(clean), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
-    # CliRunner mixes stdout+stderr into result.output.
-    assert "scanned 1 manifest(s)" in result.output
-    assert "1 component(s)" in result.output
+    # Text format footer reports the totals.
+    assert "Scanned 1 manifest" in result.output
+    assert "1 component" in result.output
     assert "no findings" in result.output
 
 
 def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
-    """A target containing only malformed manifests must not report 'no manifests
-    found' — that would hide the scan blind spot from the user."""
+    """A target containing only malformed manifests must surface the parse
+    failure rather than silently reporting no findings on zero manifests."""
     (tmp_path / "package.json").write_text("{invalid json !!!")
     runner = CliRunner()
     result = runner.invoke(
@@ -147,12 +151,14 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
         ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
-    assert "no manifests found" not in result.output
-    assert "none parsed successfully" in result.output
+    # The text-format footer reflects the parse failure: 1 manifest found,
+    # 0 components, with the failure note.
+    assert "Scanned 1 manifest" in result.output
+    assert "failed to parse" in result.output
 
 
 def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
-    """When some manifests parse and some don't, the summary must report the
+    """When some manifests parse and some don't, the footer must report the
     total found count and flag how many failed — hiding partial failures gives
     false confidence in scan coverage."""
     (tmp_path / "package.json").write_text(
@@ -165,7 +171,7 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
         ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
-    assert "scanned 2 manifest(s)" in result.output
+    assert "Scanned 2 manifests" in result.output
     assert "1 failed to parse" in result.output
 
 
@@ -176,7 +182,9 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
         ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
     )
     assert result.exit_code == 0
-    assert "no manifests found" in result.output
+    # No manifests visited → 0/0 footer with the "no findings" suffix.
+    assert "Scanned 0 manifests" in result.output
+    assert "no findings" in result.output
 
 
 def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
@@ -299,7 +307,7 @@ def test_endpoint_subcommand_minimal_install_no_findings():
         ],
     )
     assert result.exit_code == 0
-    assert "resolved 1 active plugin(s)" in result.output
+    assert "Scanned 1 active plugin" in result.output
     assert "no findings" in result.output
 
 
@@ -422,7 +430,7 @@ def test_endpoint_subcommand_project_layers_with_config_dir(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    assert "resolved 0 active plugin(s)" in result.output
+    assert "Scanned 0 active plugins" in result.output
 
 
 def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_path):
@@ -454,7 +462,7 @@ def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_p
     assert result.exit_code == 0
     # Verbose output would say which install root was picked; the smoke check
     # is that resolution succeeds and the target is not misclassified.
-    assert "resolved 0 active plugin(s)" in result.output
+    assert "Scanned 0 active plugins" in result.output
 
 
 def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
@@ -1161,3 +1169,146 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
     # Now the vendored package.json gets walked; ASVE-2026-0001 fires.
     assert result_opt_in.exit_code == 1, result_opt_in.output
     assert "ASVE-2026-0001" in result_opt_in.output
+
+
+# ── --format mode behavior ────────────────────────────────────────────────
+
+
+def test_scan_default_format_is_text(tmp_path):
+    """Default output is grouped text, NOT GitHub workflow annotations."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    # No GitHub annotation lines in the default output.
+    assert not any(line.startswith("::error") for line in result.output.splitlines())
+    # Grouped text format: "Found N vulnerabilities" header, severity label per
+    # finding, grouped block per component.
+    assert "Found " in result.output
+    assert "vulnerabilit" in result.output  # vulnerability/ies
+    # Severity label present.
+    assert any(s in result.output for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"))
+
+
+def test_scan_format_json_produces_parseable_document(tmp_path):
+    """`--format json` emits a JSON document with findings + stats."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    # Extract the JSON document from stdout (stderr summary is also captured
+    # by CliRunner but the JSON block stands on its own).
+    output = result.output
+    start = output.index("{")
+    # Find the matching close — the document is well-formed and indented;
+    # walk to the last `}` on a line by itself for robustness.
+    parsed = None
+    for end in range(len(output), start, -1):
+        try:
+            parsed = json.loads(output[start:end])
+            break
+        except json.JSONDecodeError:
+            continue
+    assert parsed is not None
+    assert isinstance(parsed["findings"], list)
+    assert parsed["findings"]
+    assert {"id", "severity", "package", "location"} <= parsed["findings"][0].keys()
+    assert "stats" in parsed
+
+
+def test_scan_format_github_emits_annotations(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "github",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    annotations = [line for line in result.output.splitlines() if line.startswith("::")]
+    assert annotations
+    assert any("file=" in line for line in annotations)
+
+
+def test_scan_github_actions_env_var_auto_selects_github_format(tmp_path, monkeypatch):
+    """When GITHUB_ACTIONS=true and --format is not passed, output should be
+    annotations — preserves CI behavior without requiring action.yml updates."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    annotations = [line for line in result.output.splitlines() if line.startswith("::")]
+    assert annotations
+
+
+def test_scan_explicit_format_text_overrides_github_actions_env(tmp_path, monkeypatch):
+    """`--format text` wins over GITHUB_ACTIONS=true."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert not any(line.startswith("::error") for line in result.output.splitlines())
+    assert "Found " in result.output
+
+
+def test_scan_no_color_strips_ansi_from_text(tmp_path):
+    runner = CliRunner()
+    # CliRunner's output isn't a TTY so color is already off; but exercise
+    # the --no-color flag path explicitly and confirm no ANSI in output.
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--no-color",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "\x1b[" not in result.output

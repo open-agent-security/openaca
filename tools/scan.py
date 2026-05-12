@@ -41,27 +41,14 @@ from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
+from tools.render import ScanStats, render_github, render_json, render_text
 from tools.sarif import to_sarif
+
+_FORMAT_CHOICES = ("text", "github", "json")
 
 
 def load_corpus(advisories_root: Path) -> list[dict]:
     return [yaml.safe_load(p.read_text()) for p in sorted(advisories_root.rglob("*.yaml"))]
-
-
-def _esc_param(value: str) -> str:
-    """Percent-encode a workflow command parameter value per GitHub docs."""
-    return (
-        value.replace("%", "%25")
-        .replace("\r", "%0D")
-        .replace("\n", "%0A")
-        .replace(":", "%3A")
-        .replace(",", "%2C")
-    )
-
-
-def _esc_data(value: str) -> str:
-    """Percent-encode a workflow command data (message) value per GitHub docs."""
-    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def _component_label(ref: ComponentRef) -> str:
@@ -226,19 +213,6 @@ def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
     return lines
 
 
-def emit_github_annotations(findings: list[Finding]) -> None:
-    """Emit GitHub workflow annotations for each finding, one per line on stdout."""
-    level_for = {"high": "error", "low": "warning", "unknown": "warning"}
-    for f in findings:
-        kind = level_for.get(f.confidence, "warning")
-        file_param = _esc_param(str(f.component.source_manifest))
-        title_param = _esc_param(f.advisory_id)
-        message = f.reason or f.advisory_id
-        if f.attributed_to:
-            message = f"{message} (via {f.attributed_to})"
-        click.echo(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
-
-
 def _stamp_source(corpus: list[dict], source: str) -> None:
     """Set `database_specific.asve.source = <source>` on every advisory
     that doesn't already declare a source. Mutates corpus in place."""
@@ -309,6 +283,24 @@ _verbose_option = click.option(
     default=False,
     help="Print the per-manifest component breakdown and matched components.",
 )
+_format_option = click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(_FORMAT_CHOICES),
+    default="text",
+    show_default=True,
+    help=(
+        "Output format. `text` (default) is grouped human-readable. `github` "
+        "emits workflow annotation lines (auto-enabled when GITHUB_ACTIONS=true). "
+        "`json` emits a structured document for tool consumption."
+    ),
+)
+_no_color_option = click.option(
+    "--no-color",
+    is_flag=True,
+    default=False,
+    help="Disable ANSI colors in text output. Colors are also off when stdout is not a TTY.",
+)
 
 
 # Group-level shared options (sarif / fail-on / verbose) can be placed BEFORE
@@ -320,17 +312,28 @@ _verbose_option = click.option(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
+@_format_option
+@_no_color_option
 def main(
     ctx: click.Context,
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
+    output_format: str,
+    no_color: bool,
 ) -> None:
     """ASVE vulnerability scanner. Use `repo` or `endpoint` subcommands."""
     ctx.ensure_object(dict)
     ctx.obj["sarif"] = sarif
     ctx.obj["fail_on"] = fail_on
     ctx.obj["verbose"] = verbose
+    # Track whether each option was explicitly set at the group level; the
+    # subcommand may inherit the explicit value over its own default.
+    ctx.obj["format"] = output_format
+    ctx.obj["format_explicit"] = (
+        ctx.get_parameter_source("output_format") != ParameterSource.DEFAULT
+    )
+    ctx.obj["no_color"] = no_color
 
 
 def _apply_group_opts(
@@ -338,13 +341,18 @@ def _apply_group_opts(
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
-) -> tuple[Path | None, str, bool]:
+    output_format: str,
+    no_color: bool,
+) -> tuple[Path | None, str, bool, str, bool]:
     """Forward shared options placed before the subcommand name.
 
     When a user runs `asve-scan --fail-on none repo ...`, Click parses
     --fail-on at the group level and the subcommand sees its own default.
     Read the group's ctx.obj and apply any option the subcommand didn't
     explicitly receive from the command line.
+
+    `output_format` also auto-promotes to `github` when GITHUB_ACTIONS=true
+    and the user didn't pass `--format` explicitly at either level.
     """
     obj = (ctx.parent.obj if ctx.parent else None) or {}
     if ctx.get_parameter_source("sarif") == ParameterSource.DEFAULT:
@@ -353,7 +361,87 @@ def _apply_group_opts(
         fail_on = obj.get("fail_on", fail_on)
     if ctx.get_parameter_source("verbose") == ParameterSource.DEFAULT:
         verbose = obj.get("verbose", verbose)
-    return sarif, fail_on, verbose
+
+    sub_format_explicit = ctx.get_parameter_source("output_format") != ParameterSource.DEFAULT
+    if not sub_format_explicit:
+        if obj.get("format_explicit"):
+            output_format = obj.get("format", output_format)
+        elif os.environ.get("GITHUB_ACTIONS") == "true":
+            output_format = "github"
+
+    if ctx.get_parameter_source("no_color") == ParameterSource.DEFAULT:
+        no_color = obj.get("no_color", no_color)
+    return sarif, fail_on, verbose, output_format, no_color
+
+
+def _use_color(no_color: bool, output_format: str) -> bool:
+    """Color is on for `text` only, when stdout is a TTY, and not opted out."""
+    if no_color or output_format != "text":
+        return False
+    try:
+        return sys.stdout.isatty()
+    except (AttributeError, OSError):
+        return False
+
+
+def _emit(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    output_format: str,
+    use_color: bool,
+    verbose: bool,
+) -> None:
+    """Dispatch to the chosen renderer and write to stdout."""
+    if output_format == "github":
+        rendered = render_github(findings)
+    elif output_format == "json":
+        rendered = render_json(findings, advisory_index, stats)
+    else:
+        rendered = render_text(
+            findings, advisory_index, stats, use_color=use_color, verbose=verbose
+        )
+    if rendered:
+        click.echo(rendered)
+
+
+def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
+    """Pull `database_specific.asve.source` from every advisory in the corpus."""
+    sources: set[str] = set()
+    for a in corpus:
+        if not isinstance(a, dict):
+            continue
+        ds = a.get("database_specific")
+        if not isinstance(ds, dict):
+            continue
+        asve = ds.get("asve")
+        if not isinstance(asve, dict):
+            continue
+        src = asve.get("source")
+        if isinstance(src, str) and src:
+            sources.add(src)
+    return sources
+
+
+def _stderr_summary(
+    findings: list[Finding],
+    summary_prefix: str,
+    output_format: str,
+) -> None:
+    """For non-text formats only: emit the existing one-line stderr summary
+    so machine consumers (CI parsers, json pipelines) still see the totals.
+    The text renderer's own footer covers this for terminal users."""
+    if output_format == "text":
+        return
+    if not findings:
+        click.echo(f"{summary_prefix}; no findings", err=True)
+        return
+    high_count = sum(1 for f in findings if f.confidence == "high")
+    click.echo(
+        f"{summary_prefix}; {len(findings)} finding(s), {high_count} high-confidence",
+        err=True,
+    )
 
 
 @main.command()
@@ -363,6 +451,8 @@ def _apply_group_opts(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
+@_format_option
+@_no_color_option
 @click.option(
     "--federate-osv",
     is_flag=True,
@@ -386,11 +476,15 @@ def repo(
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
+    output_format: str,
+    no_color: bool,
     federate_osv: bool,
     include_gitignored: bool,
 ) -> None:
     """Scan a code repository's declared manifests."""
-    sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
+    sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
+        ctx, sarif, fail_on, verbose, output_format, no_color
+    )
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     # Dedup across discovery paths — the same logical component can appear in
     # multiple groups (e.g., a plugin's .mcp.json walked both directly and
@@ -452,25 +546,38 @@ def repo(
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
-    emit_github_annotations(findings)
+    stats = ScanStats(
+        unit_count=n_found,
+        unit_label="manifest",
+        component_count=len(refs),
+        parse_failed=n_failed,
+        sources=_collect_corpus_sources(corpus),
+    )
+    _emit(
+        findings,
+        advisory_index,
+        stats,
+        output_format=output_format,
+        use_color=_use_color(no_color, output_format),
+        verbose=verbose,
+    )
 
-    summary = f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}"
-    if not findings:
-        if not grouped:
-            if n_found:
-                click.echo(
-                    f"found {n_found} manifest file(s) but none parsed successfully",
-                    err=True,
-                )
-            else:
-                click.echo(f"no manifests found under {target}", err=True)
+    # For machine formats (github, json), keep the existing one-line stderr
+    # summary so consumers parsing only stdout still get totals on stderr.
+    # text format's footer already includes them.
+    if not grouped and output_format != "text":
+        if n_found:
+            click.echo(
+                f"found {n_found} manifest file(s) but none parsed successfully",
+                err=True,
+            )
         else:
-            click.echo(f"{summary}; no findings", err=True)
+            click.echo(f"no manifests found under {target}", err=True)
     else:
-        high_count = sum(1 for f in findings if f.confidence == "high")
-        click.echo(
-            f"{summary}; {len(findings)} finding(s), {high_count} high-confidence",
-            err=True,
+        _stderr_summary(
+            findings,
+            f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}",
+            output_format,
         )
 
     _exit_for_findings(fail_on, findings)
@@ -484,6 +591,8 @@ def repo(
 @_sarif_option
 @_fail_on_option
 @_verbose_option
+@_format_option
+@_no_color_option
 @click.option(
     "--exclude-transitive",
     is_flag=True,
@@ -507,11 +616,15 @@ def endpoint(
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
+    output_format: str,
+    no_color: bool,
     exclude_transitive: bool,
     federate_osv: bool,
 ) -> None:
     """Scan the active agent stack installed on this endpoint."""
-    sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
+    sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
+        ctx, sarif, fail_on, verbose, output_format, no_color
+    )
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
     refs, warnings = parse_install(
@@ -584,17 +697,21 @@ def endpoint(
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
-    emit_github_annotations(findings)
-
-    summary = f"resolved {plugin_count} active plugin(s)"
-    if not findings:
-        click.echo(f"{summary}; no findings", err=True)
-    else:
-        high_count = sum(1 for f in findings if f.confidence == "high")
-        click.echo(
-            f"{summary}; {len(findings)} finding(s), {high_count} high-confidence",
-            err=True,
-        )
+    stats = ScanStats(
+        unit_count=plugin_count,
+        unit_label="active plugin",
+        component_count=len(refs),
+        sources=_collect_corpus_sources(corpus),
+    )
+    _emit(
+        findings,
+        advisory_index,
+        stats,
+        output_format=output_format,
+        use_color=_use_color(no_color, output_format),
+        verbose=verbose,
+    )
+    _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 
     _exit_for_findings(fail_on, findings)
 

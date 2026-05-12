@@ -411,3 +411,301 @@ def render_json(findings: list[Finding], advisory_index: dict[str, dict], stats:
         },
     }
     return json.dumps(document, indent=2, sort_keys=False)
+
+
+# ── Inventory tree (verbose endpoint/repo output) ────────────────────────────
+
+
+_TREE_UNICODE = {"branch": "├── ", "last": "└── ", "vert": "│   ", "space": "    "}
+_TREE_ASCII = {"branch": "|-- ", "last": "`-- ", "vert": "|   ", "space": "    "}
+
+# Bundled-component ecosystem → category label mapping. Order matters: the
+# tree renders categories in this declared order so all plugins read the same
+# way (MCPs first, agents last).
+_TREE_CATEGORIES: tuple[tuple[str, set[str]], ...] = (
+    ("MCPs", {"npm", "PyPI"}),
+    ("skills", {"claude-skill"}),
+    ("hooks", {"claude-hook"}),
+    ("commands", {"claude-command"}),
+    ("agents", {"claude-agent"}),
+)
+
+
+@dataclass
+class _TreeNode:
+    label: str
+    children: list["_TreeNode"] = field(default_factory=list)
+
+
+def _ref_key(ref: ComponentRef) -> tuple:
+    """Identity used to look up findings against a given component ref.
+
+    Combines the most stable identifiers the matcher would have produced —
+    enough to dedupe across discovery paths while distinguishing the same
+    package at different versions or in different manifests.
+    """
+    return (
+        ref.ecosystem or "",
+        ref.name or "",
+        ref.version or "",
+        str(ref.source_manifest or ""),
+        ref.component_identity or "",
+    )
+
+
+def _findings_by_ref(findings: list[Finding]) -> dict[tuple, list[str]]:
+    out: dict[tuple, list[str]] = {}
+    for f in findings:
+        out.setdefault(_ref_key(f.component), []).append(f.advisory_id)
+    return out
+
+
+def _finding_marker(ids: list[str], use_color: bool) -> str:
+    """Render the `[! <ids>]` suffix that flags an affected leaf or plugin
+    header. Returns the empty string when no findings matched."""
+    if not ids:
+        return ""
+    text = f"  [! {', '.join(sorted(set(ids)))}]"
+    if not use_color:
+        return text
+    return f"\x1b[31m{text}\x1b[0m"
+
+
+def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
+    """Short identifier rendered on a tree leaf.
+
+    Strips the ecosystem prefix (`claude-skill/`, `claude-hook/`, etc.) — the
+    parent category label already states the kind. When `parent_plugin` is
+    supplied, also strips that segment from identities shaped like
+    `claude-<kind>/<plugin>/<rest>` so a command under the `supabase` block
+    shows as just `<rest>` rather than `supabase/<rest>`.
+    """
+    if ref.ecosystem in {"npm", "PyPI"}:
+        if ref.name and ref.version:
+            return f"{ref.name}@{ref.version}"
+        return ref.name or "<unnamed>"
+    if ref.component_identity:
+        ident = ref.component_identity
+        # Strip ecosystem prefix (e.g., `claude-command/`).
+        first_slash = ident.find("/")
+        if first_slash > 0 and ident.startswith("claude-"):
+            ident = ident[first_slash + 1 :]
+        # Strip the parent plugin segment if it leads the remaining identity.
+        # Bundled commands/agents/hooks identities are
+        # `claude-<kind>/<plugin>/<rest>`; under that plugin's block, drop
+        # `<plugin>/` so the leaf reads as `<rest>`.
+        if parent_plugin:
+            prefix = f"{parent_plugin}/"
+            if ident.startswith(prefix):
+                ident = ident[len(prefix) :]
+        return ident
+    if ref.name:
+        return ref.name
+    return "<unidentified>"
+
+
+def _bundled_categories(
+    refs: list[ComponentRef], plugin_identity: str
+) -> dict[str, list[ComponentRef]]:
+    """Group a plugin's bundled refs by category. Tier-2 lockfile/manifest
+    refs (those with `extra["transitive"]` set) are excluded — they aggregate
+    into a separate deps line, not the bundled category leaves."""
+    by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
+    for r in refs:
+        if r.attributed_to != plugin_identity:
+            continue
+        if r.extra.get("transitive") is not None:
+            continue
+        for label, ecos in _TREE_CATEGORIES:
+            if r.ecosystem in ecos:
+                by_cat[label].append(r)
+                break
+    return {k: v for k, v in by_cat.items() if v}
+
+
+def _tier2_summary(
+    refs: list[ComponentRef], plugin_identity: str
+) -> list[tuple[str, str, int, str]]:
+    """Aggregate Tier-2 refs per ecosystem. Returns a list of
+    (ecosystem, coverage_kind, count, source_file) so the tree can render
+    one node per ecosystem instead of hundreds of transitive leaves."""
+    by_eco: dict[str, list[ComponentRef]] = {}
+    for r in refs:
+        if r.attributed_to != plugin_identity:
+            continue
+        if r.extra.get("transitive") is None:
+            continue
+        by_eco.setdefault(r.ecosystem or "", []).append(r)
+    out: list[tuple[str, str, int, str]] = []
+    for eco in sorted(by_eco):
+        ecorefs = by_eco[eco]
+        transitive = any(r.extra.get("transitive") is True for r in ecorefs)
+        if transitive:
+            kind = "transitive"
+            source = "package-lock.json" if eco == "npm" else "uv.lock"
+        else:
+            kind = "direct only"
+            source = "package.json" if eco == "npm" else "pyproject.toml"
+        out.append((eco, kind, len(ecorefs), source))
+    return out
+
+
+def _bare_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]]:
+    """Group refs with `attributed_to is None` by category (no plugin parent)."""
+    by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
+    for r in refs:
+        if r.attributed_to is not None:
+            continue
+        if r.ecosystem == "claude-plugin":
+            continue
+        for label, ecos in _TREE_CATEGORIES:
+            if r.ecosystem in ecos:
+                by_cat[label].append(r)
+                break
+    return {k: v for k, v in by_cat.items() if v}
+
+
+def _plugin_name_from_identity(plugin_identity: str) -> str:
+    """Extract `<plugin>` from `claude-plugin/<plugin>[@version]`. Returns the
+    empty string when the identity doesn't match that shape."""
+    if not plugin_identity.startswith("claude-plugin/"):
+        return ""
+    rest = plugin_identity[len("claude-plugin/") :]
+    at = rest.rfind("@")
+    return rest if at < 0 else rest[:at]
+
+
+def _build_plugin_node(
+    plugin_ref: ComponentRef,
+    all_refs: list[ComponentRef],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+) -> _TreeNode:
+    sha = plugin_ref.extra.get("gitCommitSha")
+    sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
+    scope = plugin_ref.extra.get("scope")
+    marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
+    header = f"{plugin_ref.component_identity}{sha_note} [scope={scope}]{marker}"
+    root = _TreeNode(label=header)
+
+    plugin_identity = plugin_ref.component_identity or ""
+    # Derive `<plugin>` from `claude-plugin/<plugin>[@version]`; we strip it
+    # from bundled command/agent/hook leaf labels under this plugin's block
+    # so the leaf reads as `<name>` rather than `<plugin>/<name>`.
+    parent_plugin = _plugin_name_from_identity(plugin_identity)
+    categories = _bundled_categories(all_refs, plugin_identity)
+    tier2 = _tier2_summary(all_refs, plugin_identity)
+
+    for label, _ in _TREE_CATEGORIES:
+        items = categories.get(label)
+        if not items:
+            continue
+        cat_node = _TreeNode(label=f"{label}/ ({len(items)})")
+        for r in sorted(items, key=lambda x: _leaf_label(x, parent_plugin).lower()):
+            leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
+            cat_node.children.append(
+                _TreeNode(label=f"{_leaf_label(r, parent_plugin)}{leaf_marker}")
+            )
+        root.children.append(cat_node)
+
+    for eco, kind, count, source in tier2:
+        root.children.append(_TreeNode(label=f"{eco}/ deps ({count} {kind} via {source})"))
+
+    if not root.children:
+        root.children.append(_TreeNode(label="(no bundled components)"))
+    return root
+
+
+def _build_bare_node(
+    refs: list[ComponentRef],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+) -> _TreeNode | None:
+    cats = _bare_categories(refs)
+    if not cats:
+        return None
+    root = _TreeNode(label="bare components/")
+    for label, _ in _TREE_CATEGORIES:
+        items = cats.get(label)
+        if not items:
+            continue
+        cat = _TreeNode(label=f"{label}/ ({len(items)})")
+        for r in sorted(items, key=lambda x: _leaf_label(x).lower()):
+            leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
+            cat.children.append(_TreeNode(label=f"{_leaf_label(r)}{leaf_marker}"))
+        root.children.append(cat)
+    return root
+
+
+def _format_tree_lines(node: _TreeNode, chars: dict) -> list[str]:
+    """Render a root node and its descendants as box-drawing tree lines."""
+    out = [node.label]
+    last_idx = len(node.children) - 1
+    for i, child in enumerate(node.children):
+        _format_subtree(child, "", i == last_idx, chars, out)
+    return out
+
+
+def _format_subtree(
+    node: _TreeNode, prefix: str, is_last: bool, chars: dict, out: list[str]
+) -> None:
+    connector = chars["last"] if is_last else chars["branch"]
+    out.append(prefix + connector + node.label)
+    next_prefix = prefix + (chars["space"] if is_last else chars["vert"])
+    last_idx = len(node.children) - 1
+    for i, child in enumerate(node.children):
+        _format_subtree(child, next_prefix, i == last_idx, chars, out)
+
+
+def render_inventory_tree(
+    refs: list[ComponentRef],
+    findings: list[Finding],
+    *,
+    use_color: bool = False,
+    use_unicode: bool = True,
+) -> str:
+    """Render the active-plugin and bare-component inventory as a tree.
+
+    One root block per plugin; each shows its bundled components organized by
+    category (MCPs/skills/hooks/commands/agents) plus a Tier-2 deps summary
+    line per ecosystem. Plugins with zero bundled components emit
+    `└── (no bundled components)` rather than an empty subtree, so the user
+    can see the plugin was resolved even if it ships nothing of its own.
+
+    Bare components (no plugin attribution) render as a final root block.
+
+    Components that matched a finding carry a `[! <id1>, <id2>]` suffix in red
+    (when `use_color=True`); plugin headers are similarly marked when a
+    `claude-plugin` advisory fired against the plugin itself.
+
+    `use_unicode=False` swaps box-drawing characters for ASCII (`|--`, `\\`--`),
+    useful on terminals or CI logs that mangle UTF-8.
+    """
+    chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
+    findings_by_ref = _findings_by_ref(findings)
+
+    plugins = sorted(
+        (r for r in refs if r.ecosystem == "claude-plugin"),
+        key=lambda r: (r.component_identity or "").lower(),
+    )
+    bare_node = _build_bare_node(refs, findings_by_ref, use_color)
+    n_plugins = len(plugins)
+    n_bare = sum(len(v) for v in _bare_categories(refs).values())
+    # Total components = everything minus the plugin self-identity refs.
+    n_total = sum(1 for r in refs if r.ecosystem != "claude-plugin")
+
+    out: list[str] = []
+    out.append(
+        f"{_pluralize(n_plugins, 'active plugin')}, "
+        f"{_pluralize(n_bare, 'bare component')}, "
+        f"{_pluralize(n_total, 'total component')}"
+    )
+    out.append("")
+    for plugin_ref in plugins:
+        node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color)
+        out.extend(_format_tree_lines(node, chars))
+        out.append("")
+    if bare_node is not None:
+        out.extend(_format_tree_lines(bare_node, chars))
+        out.append("")
+    return "\n".join(out).rstrip()

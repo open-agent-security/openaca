@@ -47,13 +47,25 @@ question you're asking*:
 
 | Mode | Question | Audience | Where it runs |
 |---|---|---|---|
-| `asve-scan repo` | *"What agent components will this app ship with when deployed?"* | AppSec / platform security | CI gate, PR check |
+| `asve-scan repo` | *"What agent-stack manifests are committed in this repository?"* | AppSec / platform security | CI gate, PR check |
 | `asve-scan endpoint` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
 
+What `repo` actually covers: (a) **committed project-host config** —
+`.claude/settings.json`, `.claude/skills`, `.claude/commands`,
+`.claude/agents`, etc., which describes what Claude Code will load
+when run *in this repo*; and (b) **manifest-backed SDK config** like
+a root `.mcp.json` an app loads via Claude Agent SDK's
+`query({ options: { mcpConfig: "..." } })`. It does **not** cover
+SDK-inline definitions (`query({ mcpServers: { ... } })`,
+`Agent(tools=[...])`), tools registered programmatically, or anything
+extracted from source code — those are V1, gated on SDK-aware
+extraction. Treat `repo` findings as *declared* composition, not
+deployed-app composition.
+
 The same identifier (e.g., `@modelcontextprotocol/server-filesystem@1.0.0`)
-means different things in each context — future deployed-agent exposure
-vs. current developer-machine exposure. The scanner output makes the
-distinction explicit.
+means different things in each context — declared-in-source-control
+exposure vs. installed-on-this-machine exposure. The scanner output
+makes the distinction explicit.
 
 ## Quickstart
 
@@ -258,8 +270,22 @@ Be honest about what ASVE V0 doesn't see:
 - **Programmatic SDK configuration is invisible to repo mode.** Code
   that constructs agents with `query({ mcpServers: [...] })` (Claude
   Agent SDK) or `Agent(tools=[...], mcp_servers=[...])` (OpenAI Agents
-  SDK) bypasses manifest scanning entirely. Tier-3 SDK-aware extraction
-  is V1.
+  SDK) bypasses manifest scanning entirely. Manifest-backed paths like
+  `query({ mcpConfig: ".mcp.json" })` *are* covered because `.mcp.json`
+  is a parsed manifest; the inline / code-defined forms need Tier-3
+  SDK-aware extraction (V1).
+- **Repo mode is a survey of *declared* agent-stack manifests, not a
+  guarantee about what a deployed app loads.** A finding means "this
+  manifest declares a vulnerable component"; whether the deployed
+  application actually executes that component depends on runtime
+  configuration we can't see from static files. Endpoint mode is
+  closer to ground truth because it reads resolved install state.
+- **`.claude/*` in repo mode describes project-host posture, not app
+  runtime.** Files like `.claude/settings.json` and `.claude/commands`
+  describe what Claude Code will load when a developer runs Claude Code
+  *in this repo* — not what an agent application built from the repo
+  uses at runtime. Useful for reviewing committed developer-agent
+  posture; not a substitute for runtime composition analysis.
 - **Repo mode is Claude-family-biased today.** Tier-1 declarative parsers
   cover Claude Code / Claude Agent SDK filesystem conventions. Cursor,
   Windsurf, Codex CLI, VS Code agent-mode, and OpenAI Agents SDK have
@@ -267,11 +293,6 @@ Be honest about what ASVE V0 doesn't see:
 - **Endpoint mode is Claude Code-specific.** It reads
   `~/.claude/installed_plugins.json` and friends. Codex CLI's
   `~/.codex/` and Cursor's local state will need their own resolvers.
-- **Repo mode is a manifest survey, not a runtime guarantee.** A
-  finding means "this manifest declares a vulnerable component";
-  whether it actually executes depends on runtime config we can't
-  see from static files alone. Endpoint mode is closer to ground truth
-  because it reads the resolved lockfile.
 
 ## Schema and IDs
 

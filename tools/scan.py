@@ -3,8 +3,16 @@
 Two modes via subcommands (per ADR-0006); a subcommand is required:
 
     asve-scan repo --target <repo> --advisories <dir> [...]
-        Walks declared manifests under the target repo. Used by the
-        GitHub Action and standalone CLI scans of code repositories.
+        Walks supported agent-stack manifests committed in the target
+        repository. Covers (a) project-host config under `.claude/*`
+        (which describes what Claude Code loads when run in this repo,
+        i.e. developer-agent posture committed to source), and
+        (b) manifest-backed SDK config like a root `.mcp.json` an app
+        loads via `query({ options: { mcpConfig: "..." } })`. Does NOT
+        cover SDK-inline definitions, code-registered tools, or anything
+        requiring source-code extraction — those are V1. Treat repo
+        findings as *declared* composition, not deployed-app
+        composition.
 
     asve-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
         --advisories <dir> [...]
@@ -423,7 +431,14 @@ def repo(
     db: str,
     include_gitignored: bool,
 ) -> None:
-    """Scan a code repository's declared manifests."""
+    """Scan supported agent-stack manifests committed in a repository.
+
+    Reports declared composition only: project-host config under
+    `.claude/*` (what Claude Code would load if run in this repo) and
+    manifest-backed SDK config like a root `.mcp.json`. SDK-inline and
+    code-defined agent composition (e.g., `Agent(tools=[...])`,
+    `query({ mcpServers: ... })`) are out of V0 scope and not surfaced.
+    """
     sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color
     )

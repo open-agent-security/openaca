@@ -45,7 +45,7 @@ from click.core import ParameterSource
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
-from tools.overlays import apply_overlays, load_overlays
+from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.render import (
@@ -347,11 +347,14 @@ def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
     return sources
 
 
-def _load_osv_with_overlays(refs: list[ComponentRef]) -> tuple[list[dict], list[str], int]:
+def _load_osv_with_overlays(
+    refs: list[ComponentRef],
+) -> tuple[list[dict], list[str], int, dict[str, str]]:
     """Query OSV for refs and merge ASVE overlays into returned records."""
     overlays = load_overlays(default_overlays_dir())
     corpus, warnings = augment_corpus(refs, [])
-    return apply_overlays(corpus, overlays), warnings, len(overlays)
+    alias_map = build_alias_to_overlay_id_map(overlays)
+    return apply_overlays(corpus, overlays), warnings, len(overlays), alias_map
 
 
 def _stderr_summary(
@@ -427,7 +430,7 @@ def repo(
     refs = _filter_agent_scope_refs(all_refs)
     suppressed_software = len(all_refs) - len(refs)
     n_failed = n_found - len(grouped)
-    corpus, fed_warnings, overlay_count = _load_osv_with_overlays(refs)
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
@@ -468,7 +471,7 @@ def repo(
                 click.echo(f"  {_finding_line(f)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index)
+        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
@@ -540,7 +543,7 @@ def endpoint(
         mode="endpoint",
         include_transitive=True,
     )
-    corpus, fed_warnings, overlay_count = _load_osv_with_overlays(refs)
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
@@ -574,7 +577,7 @@ def endpoint(
                 click.echo(f"  {_finding_line(f)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index)
+        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 

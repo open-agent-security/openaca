@@ -72,6 +72,17 @@ def test_sarif_help_uri_points_at_asve_dev():
     assert rule["helpUri"] == "https://asve.dev/overlays/ASVE-2026-0003.html"
 
 
+def test_sarif_help_uri_resolves_alias_to_overlay_canonical_id():
+    """When OSV returns a CVE alias as the record id but our overlay is named
+    for the GHSA id, the helpUri must point to the overlay's canonical id, not
+    the alias. Without this, helpUri is a dead link."""
+    findings = [Finding(advisory_id="CVE-2025-53107", component=_ref(), confidence="high")]
+    overlay_id_map = {"CVE-2025-53107": "GHSA-3q26-f695-pp76", "GHSA-3q26-f695-pp76": "GHSA-3q26-f695-pp76"}
+    sarif = to_sarif(findings, {}, overlay_id_map)
+    rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
+    assert rule["helpUri"] == "https://asve.dev/overlays/GHSA-3q26-f695-pp76.html"
+
+
 def test_sarif_no_duplicate_rules_when_multiple_findings_share_advisory():
     findings = [
         Finding(advisory_id="ASVE-2026-0001", component=_ref(), confidence="high"),

@@ -55,18 +55,26 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
     return props
 
 
-def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict[str, Any]:
+def to_sarif(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    overlay_id_map: dict[str, str] | None = None,
+) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
     for advisory_id in rule_ids:
         meta = advisory_index.get(advisory_id, {})
+        # Resolve to the overlay's canonical id (the filename stem). OSV may
+        # return a record under an alias (e.g. CVE-*) while our overlay file
+        # is named for the GHSA id; without resolution the helpUri is a dead link.
+        resolved_id = overlay_id_map.get(advisory_id, advisory_id) if overlay_id_map else advisory_id
         rules.append(
             {
                 "id": advisory_id,
                 "name": advisory_id,
                 "shortDescription": {"text": meta.get("summary", advisory_id)},
                 "fullDescription": {"text": meta.get("details", meta.get("summary", advisory_id))},
-                "helpUri": f"https://asve.dev/overlays/{advisory_id}.html",
+                "helpUri": f"https://asve.dev/overlays/{resolved_id}.html",
             }
         )
 

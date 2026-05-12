@@ -59,6 +59,21 @@ def check_path_consistency(overlay: dict, path: Path) -> list[str]:
     return errors
 
 
+def check_duplicate_id(
+    overlay: dict,
+    path: Path,
+    duplicate_ids: set[str],
+    id_to_first_path: dict[str, Path],
+) -> list[str]:
+    if "overlays" not in path.parts:
+        return []
+    oid = overlay.get("id", "")
+    if oid in duplicate_ids:
+        first = id_to_first_path.get(oid, path)
+        return [f"id: overlay id {oid!r} also declared in {first}"]
+    return []
+
+
 def check_cvss(overlay: dict) -> list[str]:
     errors: list[str] = []
     for i, sev in enumerate(overlay.get("severity") or []):
@@ -105,9 +120,11 @@ def main(target: Path) -> None:
         click.echo(f"no overlay YAML files found under {target}", err=True)
         sys.exit(0)
 
-    # Pass 1: load all overlays; collect known IDs.
+    # Pass 1: load all overlays; collect known IDs; detect cross-path duplicates.
     loaded: list[tuple[Path, dict | None, str | None]] = []
     known_ids: set[str] = set()
+    id_to_first_path: dict[str, Path] = {}
+    duplicate_ids: set[str] = set()
     for path in overlays:
         try:
             overlay = yaml.safe_load(path.read_text())
@@ -116,7 +133,12 @@ def main(target: Path) -> None:
             continue
         loaded.append((path, overlay, None))
         if isinstance(overlay, dict) and isinstance(overlay.get("id"), str):
-            known_ids.add(overlay["id"])
+            oid = overlay["id"]
+            known_ids.add(oid)
+            if oid in id_to_first_path:
+                duplicate_ids.add(oid)
+            else:
+                id_to_first_path[oid] = path
 
     # Pass 2: per-overlay checks.
     failed = 0
@@ -129,6 +151,7 @@ def main(target: Path) -> None:
             check_schema(overlay, validator)
             + check_cvss(overlay)
             + check_path_consistency(overlay, path)
+            + check_duplicate_id(overlay, path, duplicate_ids, id_to_first_path)
             + check_internal_aliases(overlay, known_ids)
         )
         if errors:

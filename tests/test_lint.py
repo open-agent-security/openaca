@@ -128,6 +128,41 @@ def test_lint_fails_on_duplicate_overlay_id_across_subdirs(fixtures_dir, tmp_pat
     assert "id:" in result.output.lower()
 
 
+def test_lint_rejects_malformed_overlay_id(tmp_path):
+    """An overlay id that doesn't match GHSA-*, CVE-*, or OSV-* must be rejected.
+    Guards the SARIF helpUri, export path, and alias-merge contracts (ADR-0009)."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "NOTANID-broken",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {"asve": {"component_type": "mcp_server"}},
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "NOTANID-broken.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert "id:" in result.output.lower()
+    assert "upstream" in result.output.lower()
+
+
+def test_lint_accepts_valid_upstream_id_formats(tmp_path):
+    """GHSA-*, CVE-*, and OSV-* ids all pass format validation."""
+    base = {
+        "schema_version": "1.7.5",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {"asve": {"component_type": "mcp_server"}},
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    for oid in ("GHSA-abcd-ef12-3456", "CVE-2026-12345", "OSV-2026-1234"):
+        (target / f"{oid}.yaml").write_text(yaml.dump({**base, "id": oid}))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code == 0, result.output
+
+
 def test_lint_rejects_exposure_type_in_v0(tmp_path):
     """type:exposure is reserved; the schema must reject it even when all other
     required fields are present. Guards the V0 contract in CLAUDE.md."""

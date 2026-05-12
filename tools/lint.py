@@ -35,6 +35,10 @@ def _check_uri(value: object) -> bool:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 ID_RE = re.compile(r"^ASVE-(\d{4})-\d{4}$")
+# Recognized upstream ID families per ADR-0009 (overlays/<upstream-id>.yaml).
+UPSTREAM_ID_RE = re.compile(
+    r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+|OSV-\d{4}-\d+)$"
+)
 
 
 def load_schema() -> dict:
@@ -57,6 +61,15 @@ def check_path_consistency(overlay: dict, path: Path) -> list[str]:
     if path.name != expected_filename:
         errors.append(f"path: filename {path.name!r} should be {expected_filename!r}")
     return errors
+
+
+def check_id_format(overlay: dict, path: Path) -> list[str]:
+    if "overlays" not in path.parts:
+        return []
+    oid = overlay.get("id", "")
+    if not isinstance(oid, str) or not UPSTREAM_ID_RE.match(oid):
+        return [f"id: {oid!r} is not a recognized upstream ID format (GHSA-*, CVE-*, or OSV-*)"]
+    return []
 
 
 def check_duplicate_id(
@@ -150,6 +163,7 @@ def main(target: Path) -> None:
         errors = (
             check_schema(overlay, validator)
             + check_cvss(overlay)
+            + check_id_format(overlay, path)
             + check_path_consistency(overlay, path)
             + check_duplicate_id(overlay, path, duplicate_ids, id_to_first_path)
             + check_internal_aliases(overlay, known_ids)

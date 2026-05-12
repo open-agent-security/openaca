@@ -41,7 +41,7 @@ def test_repo_mode_skips_local_scope():
         local={"theme": "light"},
     )
     assert layers.merged("repo")["theme"] == "dark"
-    assert layers.merged("fs")["theme"] == "light"
+    assert layers.merged("endpoint")["theme"] == "light"
 
 
 def test_local_overrides_project_in_fs_mode():
@@ -50,7 +50,7 @@ def test_local_overrides_project_in_fs_mode():
         project={"theme": "light"},
         local={"theme": "neon"},
     )
-    assert layers.merged("fs")["theme"] == "neon"
+    assert layers.merged("endpoint")["theme"] == "neon"
 
 
 def test_by_scope_preserves_provenance():
@@ -85,7 +85,7 @@ def test_load_user_plus_project(tmp_path):
     assert layers.project == {"theme": "light"}
     assert layers.local == {"theme": "neon"}
     assert layers.merged("repo")["theme"] == "light"
-    assert layers.merged("fs")["theme"] == "neon"
+    assert layers.merged("endpoint")["theme"] == "neon"
 
 
 def test_load_silently_skips_malformed_json(tmp_path):
@@ -101,7 +101,7 @@ def test_load_silently_skips_non_object_user_settings(tmp_path):
     layers = load(install_root=tmp_path)
     assert layers.user == {}
     # Must not raise AttributeError in _deep_merge.
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
 
 
 def test_load_silently_skips_non_object_project_settings(tmp_path):
@@ -116,7 +116,7 @@ def test_load_silently_skips_non_object_project_settings(tmp_path):
     assert layers.project is None
     assert layers.local is None
     # Must not raise when merging.
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
     assert layers.merged("repo") == {}
 
 
@@ -125,7 +125,7 @@ def test_empty_install_root_returns_empty_layers(tmp_path):
     assert layers.user == {}
     assert layers.project is None
     assert layers.local is None
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
     assert layers.merged("repo") == {}
 
 
@@ -138,7 +138,7 @@ def test_load_silently_skips_unreadable_settings(tmp_path):
     (tmp_path / "settings.json").mkdir()
     layers = load(install_root=tmp_path)
     assert layers.user == {}
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
 
 
 def test_load_silently_skips_non_utf8_settings(tmp_path):
@@ -146,7 +146,7 @@ def test_load_silently_skips_non_utf8_settings(tmp_path):
     (tmp_path / "settings.json").write_bytes(b'\xff\xfe{\x00"\x00t\x00')
     layers = load(install_root=tmp_path)
     assert layers.user == {}
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
 
 
 def test_load_silently_skips_non_utf8_project_settings(tmp_path):
@@ -160,7 +160,7 @@ def test_load_silently_skips_non_utf8_project_settings(tmp_path):
     layers = load(install_root=install_root, project_root=project_root)
     assert layers.project is None
     assert layers.local is None
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
 
 
 def test_load_silently_skips_unreadable_project_settings(tmp_path):
@@ -174,7 +174,7 @@ def test_load_silently_skips_unreadable_project_settings(tmp_path):
     layers = load(install_root=install_root, project_root=project_root)
     assert layers.project is None
     assert layers.local is None
-    assert layers.merged("fs") == {}
+    assert layers.merged("endpoint") == {}
 
 
 def test_merged_does_not_mutate_scope_provenance():

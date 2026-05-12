@@ -6,7 +6,7 @@
 
 ## Goal
 
-Extend ASVE scanning to Tier-2 — implementation dependencies inside active plugins (fs mode) and the host repo itself (repo mode) — while preserving the unique value-add empirically validated against `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache`: install-state filtering and per-plugin attribution.
+Extend ASVE scanning to Tier-2 — implementation dependencies inside active plugins (endpoint mode) and the host repo itself (repo mode) — while preserving the unique value-add empirically validated against `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache`: install-state filtering and per-plugin attribution.
 
 Optional opt-in federation with OSV.dev's API gives users the option to combine ASVE's filtering with OSV.dev's full generic-CVE corpus, delivering a better-UX alternative to existing recursive scanners for agent stacks specifically.
 
@@ -18,12 +18,12 @@ Trivy and osv-scanner walk filesystems blindly. Against `~/.claude/plugins/cache
 2. **Test fixtures counted as runtime.** Both reported `superpowers/<version>/tests/brainstorm-server/package-lock.json`. That's a plugin-development test fixture, not a runtime path. Findings against it are false positives.
 3. **No attribution.** Output is keyed on file path. The user can't tell which active plugin owns the vulnerable dep — making remediation guesswork.
 
-ASVE's `fs` mode walks per `installed_plugins.json` only, traverses plugin-declared/default paths (no `rglob` inside the install root, so `tests/` is skipped), and tags every emitted ref with `attributed_to = "claude-plugin/<name>@<version>"`. These properties propagate from `ComponentRef` to `Finding` to SARIF.
+ASVE's `endpoint` mode walks per `installed_plugins.json` only, traverses plugin-declared/default paths (no `rglob` inside the install root, so `tests/` is skipped), and tags every emitted ref with `attributed_to = "claude-plugin/<name>@<version>"`. These properties propagate from `ComponentRef` to `Finding` to SARIF.
 
 ## Architecture
 
 ```
-fs mode:
+endpoint mode:
   parse_install
     ├─ _walk_active_plugins (per active plugin from installed_plugins.json)
     │    ├─ <existing> emit plugin self-identity
@@ -104,7 +104,7 @@ New `properties` keys on each result (documented in `docs/sarif-conventions.md`)
 
 ## Verbose output
 
-Per-plugin coverage line added to the existing fs-mode `-v` block:
+Per-plugin coverage line added to the existing endpoint-mode `-v` block:
 
 ```
 resolved 14 active plugin(s):
@@ -165,7 +165,7 @@ Default-off keeps the default ASVE experience focused on the agent-stack corpus 
 
 ### Active-state filtering as ASVE's edge
 
-**Decision:** ASVE's `fs` mode walks per `installed_plugins.json` and per plugin.json defaults — not via filesystem `rglob`.
+**Decision:** ASVE's `endpoint` mode walks per `installed_plugins.json` and per plugin.json defaults — not via filesystem `rglob`.
 
 This is what makes ASVE more accurate than trivy/osv-scanner for the agent stack. Without it, federation would still be useful (the corpus is bigger) but without filtering, ASVE wouldn't offer a UX advantage over `osv-scanner --recursive`. Active-state filtering is the load-bearing differentiator.
 
@@ -181,7 +181,7 @@ This is what makes ASVE more accurate than trivy/osv-scanner for the agent stack
 
 ## Acceptance criteria
 
-- `asve-scan fs --target ~/.claude --advisories advisories -v` shows per-plugin Tier-2 coverage lines.
+- `asve-scan endpoint --config-dir ~/.claude --advisories advisories -v` shows per-plugin Tier-2 coverage lines.
 - `--exclude-transitive` suppresses lockfile/manifest walks; Tier-1 unchanged.
 - `--federate-osv` queries OSV.dev for emitted PURLs; merged corpus produces additional findings with `source=osv.dev`; fail-soft on network errors.
 - Repo mode lockfile scanning works on a host repo's `package-lock.json` and `uv.lock` at root.

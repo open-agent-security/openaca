@@ -41,7 +41,7 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     (".claude-plugin/plugin.json", claude_plugin.parse),
     (".claude/settings.json", claude_settings.parse),
     # Plan 008: agent-stack component inventory in repo mode. These
-    # surfaces emit the same ecosystems as fs mode but with `attributed_to=None`
+    # surfaces emit the same ecosystems as endpoint mode but with `attributed_to=None`
     # (repo declarations are not "via a plugin"; the repo declares them).
     (".claude/skills/*/SKILL.md", claude_skill.parse),
     (".claude/commands/*.md", _parse_repo_command),

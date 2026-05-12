@@ -32,14 +32,14 @@ manifest parsers, not a parallel CVE database.
 
 ## Two scan modes
 
-ASVE scans two distinct surfaces, named via Trivy-style subcommands.
+ASVE scans two distinct surfaces, named via explicit subcommands.
 The same advisory matches in both, but the surface tells you *what
 question you're asking*:
 
 | Mode | Question | Audience | Where it runs |
 |---|---|---|---|
 | `asve-scan repo` | *"What agent components will this app ship with when deployed?"* | AppSec / platform security | CI gate, PR check |
-| `asve-scan fs` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
+| `asve-scan endpoint` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
 
 The same identifier (e.g., `@modelcontextprotocol/server-filesystem@1.0.0`)
 means different things in each context — future deployed-agent exposure
@@ -92,11 +92,16 @@ uv run asve-scan repo \
     --sarif results.sarif \
     --fail-on any
 
-# fs mode: install-state-aware scan of an installed Claude Code agent
-# stack. Reads settings.json + installed_plugins.json to enumerate the
-# active plugins.
-uv run asve-scan fs \
-    --target ~/.claude \
+# Endpoint mode: install-state-aware scan of an installed Claude Code
+# agent stack. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
+uv run asve-scan endpoint \
+    --advisories advisories/
+
+# Or scan a specific endpoint config directory and layer in project/local
+# settings from a repo.
+uv run asve-scan endpoint \
+    --config-dir ~/.claude \
+    --project /path/to/your/repo \
     --advisories advisories/
 ```
 
@@ -120,7 +125,7 @@ findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
 
 Pass `-v` / `--verbose` for the per-manifest breakdown (repo mode) or
-the resolved active-plugin tree (fs mode):
+the resolved active-plugin tree (endpoint mode):
 
 ```text
 # repo mode -v
@@ -130,9 +135,9 @@ scanned 87 manifest(s), 70 component(s):
   external_plugins/fakechat/.mcp.json — 1 component(s)
   ...
 
-# fs mode -v
+# endpoint mode -v
 loaded 5 advisory(ies) from advisories
-detected install_root=/Users/.../.claude (mode=fs)
+detected config_dir=/Users/.../.claude (mode=endpoint)
 resolved 14 active plugin(s):
   claude-plugin/supabase@0.1.6 (sha: <short>) [scope=user]
   claude-plugin/superpowers@5.1.0 (sha: <short>) [scope=user]
@@ -176,7 +181,7 @@ ASVE follows a tiered model loosely analogous to traditional SCA's
 
 | Tier | What it reads | V0 status |
 |---|---|---|
-| **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` (fs mode), `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | ✅ V0 |
+| **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` (endpoint mode), `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | ✅ V0 |
 | **2. Dependency manifests** (universal) | `package.json`, `pyproject.toml`, lockfiles inside active plugins (plan 009) | ✅ V0 |
 | **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
 | **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
@@ -196,7 +201,7 @@ Per-parser detail:
 | `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL when pinned; `mcp-stdio/...` otherwise |
 | `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>@<version>` |
 | `.claude/settings.json` | Enabled-plugin enumeration; bare `mcpServers`; bare `hooks` per scope | mixed (see surface-specific rows) |
-| `installed_plugins.json` (fs mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
+| `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
 | `SKILL.md` (`.claude/skills/*/` or `<plugin>/skills/*/`) | Agent skills | `claude-skill/<name>[@<metadata.version>]` |
 | `hooks/hooks.json` (plugin) or `settings.json.hooks` (bare) | Hook entries by event + index | `claude-hook/<plugin>/<event>/<i>` (bundled) or `claude-hook/settings/<scope>/<event>/<i>` (bare) |
 | `.claude/commands/*.md` and `<plugin>/commands/*.md` | Slash commands | `claude-command/<owner>/<name>` (owner = plugin or `repo`) |
@@ -215,13 +220,13 @@ Be honest about what ASVE V0 doesn't see:
   cover Claude Code / Claude Agent SDK filesystem conventions. Cursor,
   Windsurf, Codex CLI, VS Code agent-mode, and OpenAI Agents SDK have
   their own conventions (or no conventions); those are V1 adapters.
-- **fs mode is Claude Code-specific.** It reads
+- **Endpoint mode is Claude Code-specific.** It reads
   `~/.claude/installed_plugins.json` and friends. Codex CLI's
   `~/.codex/` and Cursor's local state will need their own resolvers.
 - **Repo mode is a manifest survey, not a runtime guarantee.** A
   finding means "this manifest declares a vulnerable component";
   whether it actually executes depends on runtime config we can't
-  see from static files alone. fs mode is closer to ground truth
+  see from static files alone. Endpoint mode is closer to ground truth
   because it reads the resolved lockfile.
 
 ## Schema and IDs

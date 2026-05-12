@@ -225,7 +225,7 @@ def test_install_treats_only_boolean_true_as_enabled(tmp_path):
 def test_install_skips_entry_with_non_string_version(tmp_path):
     """A lockfile entry with a non-string version (e.g. integer 1) must warn and
     skip the ref. If propagated, packaging.Version raises TypeError and aborts
-    asve-scan fs."""
+    asve-scan endpoint."""
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"foo@bar": True}}))
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
@@ -356,7 +356,7 @@ def _build_install_with_plugin(
     plugin_name: str,
     version: str,
 ) -> Path:
-    """Build a minimal fs-mode install layout pointing at a real cache dir.
+    """Build a minimal endpoint-mode install layout pointing at a real cache dir.
 
     Returns the installPath (so tests can populate bundled components inside
     it).
@@ -690,7 +690,7 @@ def test_install_silent_when_installpath_missing(tmp_path):
     assert all(r.ecosystem != "claude-hook" for r in refs)
 
 
-# Plan 009 Task 4: Tier-2 fs-mode dispatch (lockfile + manifest fallback).
+# Plan 009 Task 4: Tier-2 endpoint-mode dispatch (lockfile + manifest fallback).
 
 
 def test_install_emits_npm_lockfile_refs_for_active_plugin(tmp_path):

@@ -308,8 +308,8 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
     assert "ASVE-2026-9001" in result.output
 
 
-def test_fs_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
-    """fs mode E2E: an active plugin bundles a vulnerable npm MCP via
+def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
+    """endpoint mode E2E: an active plugin bundles a vulnerable npm MCP via
     its `.mcp.json`. The finding fires with `attributed_to` set to
     `claude-plugin/<name>@<version>`, surfacing in the verbose output."""
     from tools.scan import main as scan_main
@@ -383,8 +383,8 @@ def test_fs_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     result = runner.invoke(
         scan_main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(advisories_dir),
@@ -403,7 +403,7 @@ def test_fs_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     assert "claude-plugin/vuln-plugin@1.0.0" in attributions
 
 
-def test_fs_mode_hook_identity_match_attributes_finding(tmp_path):
+def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     """Identity-only matching for claude-hook (ADR-0007): an advisory
     targeting a specific hook slot via `database_specific.asve.component_identity`
     fires when a bundled hook at that slot is enumerated."""
@@ -469,7 +469,7 @@ def test_fs_mode_hook_identity_match_attributes_finding(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         scan_main,
-        ["fs", "--target", str(tmp_path), "--advisories", str(advisories_dir), "-v"],
+        ["endpoint", "--config-dir", str(tmp_path), "--advisories", str(advisories_dir), "-v"],
     )
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9003" in result.output
@@ -477,7 +477,7 @@ def test_fs_mode_hook_identity_match_attributes_finding(tmp_path):
     assert "via claude-plugin/hook-plugin@1.0.0" in result.output
 
 
-def test_fs_lockfile_transitive_finding_with_attribution(tmp_path):
+def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
     """Plan 009 end-to-end: an active plugin's package-lock.json contains
     a package that matches a real corpus advisory; the finding fires with
     via-claude-plugin attribution and SARIF coverage=transitive."""
@@ -517,8 +517,8 @@ def test_fs_lockfile_transitive_finding_with_attribution(tmp_path):
     result = runner.invoke(
         scan_main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(ADVISORIES_DIR),
@@ -542,7 +542,7 @@ def test_fs_lockfile_transitive_finding_with_attribution(tmp_path):
     assert properties.get("source") == "asve.dev"
 
 
-def test_fs_exclude_transitive_suppresses_lockfile_finding(tmp_path):
+def test_endpoint_exclude_transitive_suppresses_lockfile_finding(tmp_path):
     """The same fixture under --exclude-transitive should not fire the finding."""
     from tools.scan import main as scan_main
 
@@ -578,8 +578,8 @@ def test_fs_exclude_transitive_suppresses_lockfile_finding(tmp_path):
     result = runner.invoke(
         scan_main,
         [
-            "fs",
-            "--target",
+            "endpoint",
+            "--config-dir",
             str(tmp_path),
             "--advisories",
             str(ADVISORIES_DIR),

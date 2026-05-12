@@ -27,11 +27,17 @@ ComponentRef → Finding → SARIF chain.
 
 ### 1. Two scan modes via Click subcommands; subcommand required
 
-`asve-scan repo <target>` is the manifest-walk mode (today's behavior
-factored into an explicit subcommand). `asve-scan fs <target>` is the
-install-state-aware mode introduced in plan 007 (and extended by plans 008
-and 009), following the Claude Code install model: `settings.json →
-installed_plugins.json → plugin install paths`.
+`asve-scan repo --target <repo>` is the manifest-walk mode (today's
+behavior factored into an explicit subcommand). `asve-scan endpoint` is
+the install-state-aware endpoint mode introduced in plan 007 (and extended
+by plans 008 and 009), following the Claude Code install model:
+`settings.json → installed_plugins.json → plugin install paths`.
+
+Endpoint mode reads a Claude Code config directory from `--config-dir`.
+When omitted, it defaults to `$CLAUDE_CONFIG_DIR` if set, else `~/.claude`.
+Project settings are opt-in through `--project <repo>`, which layers that
+repo's `.claude/settings.json` and `.claude/settings.local.json` on top of
+the endpoint config.
 
 A subcommand is **required** — there is no no-subcommand fallback. ASVE is
 pre-V0-launch with no external consumers depending on the CLI shape, so
@@ -40,15 +46,18 @@ GitHub Action's `action.yml` invokes `asve-scan repo` explicitly. After V0
 public launch the CLI surface becomes a contract; until then, change it
 freely if a redesign is cleaner.
 
-Trivy uses the same `repo` / `fs` / `image` split for the same reason: scan
-modes have different invariants (e.g., what to recurse into) and naming
-the mode prevents pointing-at-the-wrong-layer mistakes that produce
-misattributed output.
+The endpoint subcommand was originally named `fs`, mirroring generic
+filesystem scanners. That name was rejected pre-launch: this mode is not a
+blind recursive filesystem walk, and it should not infer "project target"
+from a repo-shaped path. Naming it `endpoint` makes the scan target explicit:
+the installed agent stack on a developer machine, CI runner, or similar
+host.
 
 Shared options (`--sarif`, `--fail-on`, `-v`) can be placed before or after
 the subcommand for ergonomic invocation (`asve-scan -v repo --target X`
-or `asve-scan repo --target X -v` are equivalent); subcommand-level
-`--target` / `--advisories` remain required.
+or `asve-scan repo --target X -v` are equivalent). Repo mode requires
+`--target`; endpoint mode has optional `--config-dir` plus optional
+`--project`.
 
 ### 2. `claude-plugin` is a recognized ecosystem in `affected[*].package`
 
@@ -99,7 +108,7 @@ Surface points:
 - The `claude-plugin` ecosystem string becomes part of the corpus contract.
   Future advisories targeting plugins use it. CONTRIBUTING.md ecosystem
   list documents it.
-- The CLI surface grows by two subcommands; either `repo` or `fs` is required.
+- The CLI surface grows by two subcommands; either `repo` or `endpoint` is required.
   The GitHub Action's `action.yml` was updated to invoke `asve-scan repo`
   explicitly. (This Consequences bullet originally claimed a no-subcommand
   default preserved back-compat — that fallback was removed before any

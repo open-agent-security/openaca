@@ -126,3 +126,41 @@ def test_lint_fails_on_duplicate_overlay_id_across_subdirs(fixtures_dir, tmp_pat
     result = runner.invoke(main, [str(tmp_path / "overlays")])
     assert result.exit_code != 0
     assert "id:" in result.output.lower()
+
+
+def test_lint_rejects_exposure_type_in_v0(tmp_path):
+    """type:exposure is reserved; the schema must reject it even when all other
+    required fields are present. Guards the V0 contract in CLAUDE.md."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-expo",
+        "type": "exposure",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {"asve": {"component_type": "mcp_server"}},
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "GHSA-test-expo.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert "reserved" in result.output.lower()
+
+
+def test_lint_rejects_config_type_in_v0(tmp_path):
+    """type:config is reserved; the schema must reject it even when all other
+    required fields are present."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-conf",
+        "type": "config",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {"asve": {"component_type": "mcp_server"}},
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "GHSA-test-conf.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert "reserved" in result.output.lower()

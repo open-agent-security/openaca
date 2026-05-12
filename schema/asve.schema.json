@@ -19,6 +19,16 @@
     "affected": {"type": "array", "items": {"$ref": "#/$defs/affected"}},
     "database_specific": {"$ref": "#/$defs/database_specific"}
   },
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"const": "exposure"}}, "required": ["type"]},
+      "then": {"not": {"description": "exposure records are reserved; rejected in V0"}}
+    },
+    {
+      "if": {"properties": {"type": {"const": "config"}}, "required": ["type"]},
+      "then": {"not": {"description": "config records are reserved; rejected in V0"}}
+    }
+  ],
   "$defs": {
     "severity": {
       "type": "object",

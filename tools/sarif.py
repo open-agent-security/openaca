@@ -64,19 +64,24 @@ def to_sarif(
     rules: list[dict[str, Any]] = []
     for advisory_id in rule_ids:
         meta = advisory_index.get(advisory_id, {})
-        # Resolve to the overlay's canonical id (the filename stem). OSV may
-        # return a record under an alias (e.g. CVE-*) while our overlay file
-        # is named for the GHSA id; without resolution the helpUri is a dead link.
-        resolved_id = (
-            overlay_id_map.get(advisory_id, advisory_id) if overlay_id_map else advisory_id
-        )
+        # Resolve to the overlay's canonical id. OSV may return a record under
+        # an alias (e.g. CVE-*) while our overlay file is named for the GHSA id.
+        # When the map is present but the advisory has no overlay, fall back to
+        # the OSV URL so the helpUri is never a dead link.
+        if overlay_id_map is not None:
+            if advisory_id in overlay_id_map:
+                help_uri = f"https://asve.dev/overlays/{overlay_id_map[advisory_id]}.html"
+            else:
+                help_uri = f"https://osv.dev/vulnerability/{advisory_id}"
+        else:
+            help_uri = f"https://asve.dev/overlays/{advisory_id}.html"
         rules.append(
             {
                 "id": advisory_id,
                 "name": advisory_id,
                 "shortDescription": {"text": meta.get("summary", advisory_id)},
                 "fullDescription": {"text": meta.get("details", meta.get("summary", advisory_id))},
-                "helpUri": f"https://asve.dev/overlays/{resolved_id}.html",
+                "helpUri": help_uri,
             }
         )
 

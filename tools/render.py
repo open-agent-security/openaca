@@ -89,11 +89,23 @@ def _color(label: str, use_color: bool) -> str:
 
 
 def _fixed_in_for_finding(finding: Finding, advisory: dict) -> Optional[str]:
-    """Walk advisory.affected[*] for the entry matching finding.component
-    and return the first `fixed` event encountered. Returns None when no
-    affected entry matches or none of the matching ranges declare a fix."""
+    """Return the `fixed` version for the window that contains the component version.
+
+    For advisories with multiple introduced/fixed windows (e.g. backported
+    patches), returns the fix closing the *matched* window rather than the
+    first fixed event, which may belong to a prior patch series the component
+    has already surpassed.
+
+    Falls back to the first fixed event when the component version is not
+    parseable (low/unknown confidence findings cannot be range-narrowed).
+    """
     eco = finding.component.ecosystem
     name = finding.component.name
+    try:
+        version: Optional[Version] = Version(finding.component.version or "")
+    except (InvalidVersion, TypeError):
+        version = None
+
     for entry in advisory.get("affected") or []:
         if not isinstance(entry, dict):
             continue
@@ -101,9 +113,28 @@ def _fixed_in_for_finding(finding: Finding, advisory: dict) -> Optional[str]:
         if pkg.get("ecosystem") != eco or pkg.get("name") != name:
             continue
         for r in entry.get("ranges") or []:
+            intro: Optional[str] = None
             for ev in r.get("events") or []:
-                if isinstance(ev, dict) and "fixed" in ev:
-                    return str(ev["fixed"])
+                if not isinstance(ev, dict):
+                    continue
+                if "introduced" in ev:
+                    intro = ev["introduced"]
+                elif "fixed" in ev and intro is not None:
+                    if version is None:
+                        # Unparseable version — can't narrow to a window; return first fixed.
+                        return str(ev["fixed"])
+                    try:
+                        intro_v = Version("0") if intro == "0" else Version(intro)
+                        fixed_v = Version(ev["fixed"])
+                    except InvalidVersion:
+                        intro = None
+                        continue
+                    if version >= intro_v and version < fixed_v:
+                        return str(ev["fixed"])
+                    intro = None
+                else:
+                    # last_affected or limit — close window, no parseable fix target.
+                    intro = None
     return None
 
 

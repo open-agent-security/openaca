@@ -83,5 +83,6 @@ runs:
           --target "$TARGET_ABS" \
           --advisories "$ADVISORIES_ABS" \
           --sarif "$SARIF_ABS" \
-          --fail-on "$FAIL_ON"
+          --fail-on "$FAIL_ON" \
+          --format github
         echo "sarif-path=$SARIF_ABS" >> "$GITHUB_OUTPUT"

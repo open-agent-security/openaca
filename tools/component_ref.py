@@ -37,6 +37,18 @@ class ComponentRef:
     component_identity: Optional[str] = None
     attributed_to: Optional[str] = None
     extra: dict = field(default_factory=dict)
+    # Composition classification, set by the repo walker post-parse:
+    #   "agent-component"     — agent-stack surface (plugins, MCP servers,
+    #                           skills, commands, agents, hooks, settings)
+    #   "agent-dependency"    — software dep co-located with a plugin
+    #                           manifest (.claude-plugin/plugin.json sibling)
+    #   "software-dependency" — software dep with no plugin co-location;
+    #                           suppressed from output in V0 (out of scope
+    #                           for agent-composition analysis)
+    # Endpoint refs are always agent-component or agent-dependency; the
+    # filter at scan-time drops software-dependency refs before matching,
+    # federation, and rendering.
+    scope: str = "agent-component"
 
     @property
     def purl(self) -> Optional[str]:

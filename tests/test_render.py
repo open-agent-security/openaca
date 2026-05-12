@@ -246,6 +246,15 @@ def test_text_no_findings_pluralizes_correctly():
     assert "1 component" in out
 
 
+def test_text_no_findings_appends_aca_framing_footer():
+    """Zero-findings output points users at osv-scanner/Trivy so they don't
+    conclude ASVE is broken when their general software deps simply weren't
+    in scope (V0 is agent-composition analysis, not general SCA)."""
+    out = render_text([], {}, _stats())
+    assert "agent composition" in out
+    assert "osv-scanner or Trivy" in out
+
+
 def test_text_grouped_block_per_component():
     """One package, two findings → single group with two finding rows."""
     findings = [

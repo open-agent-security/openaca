@@ -1,0 +1,5 @@
+{
+  "name": "exposed",
+  "version": "0.0.0",
+  "description": "Test fixture: a plugin repo whose package.json declares a vulnerable MCP server dep. Marks this directory as agent-scope so package.json deps are classified as agent-dependency rather than suppressed as software-dependency."
+}

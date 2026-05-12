@@ -10,6 +10,23 @@ REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0") -> None:
+    """Write `.claude-plugin/plugin.json` to mark `root` as a plugin repo.
+
+    Under V0 agent-composition scope, dep manifests (package.json,
+    pyproject.toml, package-lock.json, uv.lock) are classified as
+    "software-dependency" and suppressed unless co-located with this
+    marker — at which point they become "agent-dependency" and surface
+    in scan output. Tests that build dep manifests in tmp_path and
+    expect findings need this helper.
+    """
+    plugin_dir = root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({"name": name, "version": version}), encoding="utf-8"
+    )
+
+
 def test_scan_finds_exposed_mcp(tmp_path):
     """Scan picks up the @cyanheads/git-mcp-server@1.1.0 in package.json
     and matches ASVE-2026-0001 (fixed in 1.2.3)."""
@@ -84,6 +101,7 @@ def test_scan_fail_on_high_only_exits_zero_for_low_or_unknown(tmp_path):
     concrete-version vulnerabilities."""
     target = tmp_path / "loose"
     target.mkdir()
+    _mark_as_plugin(target, name="loose")
     (target / "package.json").write_text(
         '{"name":"loose","version":"0","dependencies":{"@cyanheads/git-mcp-server":"^1.0.0"}}'
     )
@@ -126,6 +144,7 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     if the scanner looked at anything at all."""
     clean = tmp_path / "clean"
     clean.mkdir()
+    _mark_as_plugin(clean, name="clean")
     (clean / "package.json").write_text(
         '{"name":"clean","version":"0","dependencies":{"left-pad":"1.3.0"}}'
     )
@@ -143,9 +162,11 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    # Text format footer reports the totals.
-    assert "Scanned 1 manifest" in result.output
-    assert "1 component" in result.output
+    # Text format footer reports the totals. The fixture has both a
+    # plugin.json (self-identity ref) and a package.json (one dep), so
+    # two manifests and two components.
+    assert "Scanned 2 manifests" in result.output
+    assert "2 components" in result.output
     assert "no findings" in result.output
 
 
@@ -650,59 +671,8 @@ def test_subcommand_fail_on_takes_precedence_over_group():
     assert result.exit_code == 1, result.output
 
 
-def test_endpoint_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
-    """--exclude-transitive: Tier-2 refs suppressed; Tier-1 still emitted."""
-    cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "package-lock.json").write_text(
-        json.dumps(
-            {
-                "lockfileVersion": 3,
-                "packages": {
-                    "": {"name": "demo", "version": "1.0.0"},
-                    "node_modules/lodash": {"version": "4.17.20"},
-                },
-            }
-        )
-    )
-    skill_dir = cache_dir / "skills" / "demo-skill"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: demo-skill\ndescription: x\n---\nbody\n")
-    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@m": True}}))
-    (tmp_path / "plugins").mkdir()
-    (tmp_path / "plugins" / "installed_plugins.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "plugins": {
-                    "demo@m": [{"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}]
-                },
-            }
-        )
-    )
-    runner = CliRunner()
-    result = runner.invoke(
-        main,
-        [
-            "endpoint",
-            "--config-dir",
-            str(tmp_path),
-            "--advisories",
-            str(REPO_ROOT / "advisories"),
-            "--exclude-transitive",
-            "-v",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    # No lockfile refs reported. The plugin self-identity is the only
-    # claude-plugin ref; lodash should NOT appear.
-    assert "lodash" not in result.output
-    # Tier-1 skill still emitted.
-    assert "demo-skill" in result.output or "1 bundled skills" in result.output
-
-
 def test_endpoint_subcommand_includes_transitive_by_default(tmp_path):
-    """Without --exclude-transitive, lockfile refs are emitted."""
+    """Endpoint mode emits Tier-2 lockfile refs in addition to Tier-1."""
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
     cache_dir.mkdir(parents=True)
     (cache_dir / "package-lock.json").write_text(
@@ -798,7 +768,8 @@ def test_endpoint_subcommand_federate_osv_augments_corpus(tmp_path):
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
-                "--federate-osv",
+                "--db",
+                "asve,osv",
                 "-v",
             ],
         )
@@ -851,7 +822,8 @@ def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
-                "--federate-osv",
+                "--db",
+                "asve,osv",
                 "-v",
             ],
         )
@@ -863,10 +835,11 @@ def test_endpoint_subcommand_federate_osv_verbose_lists_queried_purls_and_skips(
     assert "claude-plugin=1" in result.output
 
 
-def test_repo_subcommand_federate_osv_verbose_lists_queried_purls(tmp_path):
+def test_repo_subcommand_db_asve_osv_verbose_lists_queried_purls(tmp_path):
     """Same verbose surface in repo mode (parity with endpoint mode)."""
     from unittest.mock import patch
 
+    _mark_as_plugin(tmp_path, name="demo")
     (tmp_path / "package.json").write_text(
         json.dumps({"name": "demo", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}})
     )
@@ -884,7 +857,8 @@ def test_repo_subcommand_federate_osv_verbose_lists_queried_purls(tmp_path):
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
-                "--federate-osv",
+                "--db",
+                "asve,osv",
                 "-v",
             ],
         )
@@ -926,7 +900,8 @@ def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
-                "--federate-osv",
+                "--db",
+                "asve,osv",
                 "-v",
             ],
         )
@@ -958,7 +933,8 @@ def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd
                 str(tmp_path),
                 "--advisories",
                 str(REPO_ROOT / "advisories"),
-                "--federate-osv",
+                "--db",
+                "asve,osv",
             ],
         )
     assert result.exit_code == 0
@@ -1171,11 +1147,17 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
     gitignored node_modules/lodash/package.json contains a vulnerable shape.
     Without the flag, the gitignored file is skipped → exit 0. With
     --include-gitignored, it gets walked."""
+    _mark_as_plugin(tmp_path, name="host")
     (tmp_path / "package.json").write_text(
         json.dumps({"name": "host", "version": "1.0.0", "dependencies": {}})
     )
-    (tmp_path / "node_modules" / "@cyanheads" / "git-mcp-server").mkdir(parents=True)
-    (tmp_path / "node_modules" / "@cyanheads" / "git-mcp-server" / "package.json").write_text(
+    nm_dir = tmp_path / "node_modules" / "@cyanheads" / "git-mcp-server"
+    nm_dir.mkdir(parents=True)
+    # The vendored package.json itself needs its own plugin marker — otherwise
+    # the dep is classified as software-dependency and suppressed even when
+    # gitignored walking is enabled.
+    _mark_as_plugin(nm_dir, name="vendored", version="1.1.0")
+    (nm_dir / "package.json").write_text(
         json.dumps(
             {
                 "name": "@cyanheads/git-mcp-server",
@@ -1358,3 +1340,87 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
     )
     assert result.exit_code == 1, result.output
     assert "\x1b[" not in result.output
+
+
+# ── --db / agent-composition scope ────────────────────────────────────────
+
+
+def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
+    """A vulnerable npm dep declared in a non-plugin repo (no
+    .claude-plugin/plugin.json sibling) is classified as software-dependency
+    and suppressed — ASVE V0 is agent-composition analysis. The ACA framing
+    footer explains the silence and points to osv-scanner / Trivy."""
+    monkeypatch_ga = None  # only used for clarity; CliRunner inherits env
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "regular-app",
+                "version": "1.0.0",
+                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    del monkeypatch_ga
+    assert result.exit_code == 0, result.output
+    assert "ASVE-2026-0001" not in result.output
+    assert "no findings" in result.output
+    assert "osv-scanner or Trivy" in result.output
+
+
+def test_repo_dep_co_located_with_plugin_json_surfaces_as_agent_dep(tmp_path):
+    """The same vulnerable npm dep, but the repo carries a
+    .claude-plugin/plugin.json sibling — its package.json deps are now
+    classified as agent-dependency and fire findings as expected."""
+    _mark_as_plugin(tmp_path, name="some-plugin", version="1.0.0")
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "some-plugin",
+                "version": "1.0.0",
+                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "ASVE-2026-0001" in result.output
+
+
+def test_repo_rejects_unknown_db_value(tmp_path):
+    """`--db` only accepts the two V0 backends; other strings error out."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--db",
+            "ghsa",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Invalid value" in result.output or "invalid choice" in result.output.lower()

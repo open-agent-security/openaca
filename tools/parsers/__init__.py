@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -30,6 +31,20 @@ def _parse_repo_agent(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(path, kind="agent", scope_owner="repo")
 
 
+# Patterns whose parsers emit software-dependency refs (npm/PyPI deps from
+# manifests + lockfiles). These get scope-classified based on co-location
+# with a plugin manifest. All other registry patterns emit agent-component
+# refs (plugin/MCP/skill/command/agent/hook/settings surfaces).
+_DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
+    {
+        "package.json",
+        "pyproject.toml",
+        "package-lock.json",
+        "uv.lock",
+    }
+)
+
+
 REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
     ("pyproject.toml", pyproject_toml.parse),
@@ -53,6 +68,26 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     ("package-lock.json", package_lock_json.parse),
     ("uv.lock", uv_lock.parse),
 ]
+
+
+def _classify_dep_manifest(manifest_path: Path) -> str:
+    """Classify a software-dep manifest as agent- or software-scoped.
+
+    A dep manifest is "agent-dependency" iff a `.claude-plugin/plugin.json`
+    exists in its parent directory — i.e., the manifest declares deps for a
+    plugin's own implementation code. Otherwise the manifest belongs to
+    regular software (a normal app/library that happens to live in the
+    repo), and its deps are "software-dependency" — out of scope for V0
+    agent-composition analysis.
+
+    The check is intentionally narrow: only the *immediate* parent dir
+    matters. A `pyproject.toml` two levels above a plugin manifest is the
+    host repo's deps, not the plugin's.
+    """
+    plugin_marker = manifest_path.parent / ".claude-plugin" / "plugin.json"
+    if plugin_marker.is_file():
+        return "agent-dependency"
+    return "software-dependency"
 
 
 def _filter_secondary_refs(
@@ -142,6 +177,9 @@ def parse_repo_grouped(
             try:
                 refs = parser(path)
                 refs = _filter_secondary_refs(refs, path, root, spec)
+                if pattern in _DEP_MANIFEST_PATTERNS:
+                    scope = _classify_dep_manifest(path)
+                    refs = [replace(r, scope=scope) for r in refs]
                 grouped.append((path, refs))
             except Exception:
                 continue

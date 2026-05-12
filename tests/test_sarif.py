@@ -69,7 +69,7 @@ def test_sarif_help_uri_points_at_asve_dev():
     findings = [Finding(advisory_id="ASVE-2026-0003", component=_ref(), confidence="high")]
     sarif = to_sarif(findings, {})
     rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
-    assert rule["helpUri"] == "https://asve.dev/advisories/2026/ASVE-2026-0003.html"
+    assert rule["helpUri"] == "https://asve.dev/overlays/ASVE-2026-0003.html"
 
 
 def test_sarif_no_duplicate_rules_when_multiple_findings_share_advisory():

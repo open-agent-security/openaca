@@ -1,7 +1,7 @@
 [project]
 name = "asve"
 version = "0.0.1"
-description = "Open advisories for agent stack security."
+description = "Agent-context overlays and scanner for agent stack security."
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
@@ -17,8 +17,6 @@ dependencies = [
 
 [project.scripts]
 asve-lint = "tools.lint:main"
-asve-reserve-id = "tools.reserve_id:main"
-asve-import-osv = "tools.import_from_osv:main"
 asve-export = "tools.export:main"
 asve-scan = "tools.scan:main"
 
@@ -28,6 +26,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools"]
+force-include = { "overlays" = "overlays" }
 
 [dependency-groups]
 dev = [

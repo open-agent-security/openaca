@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,38 @@ def _isolate_github_actions_env(monkeypatch: pytest.MonkeyPatch) -> None:
     `test_scan_auto_promotes_format_to_github_under_actions`.
     """
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _offline_osv_for_scan_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep CLI tests offline while preserving OSV-backed scan semantics."""
+
+    def fake_augment(refs, base_corpus):
+        records = list(base_corpus)
+        seen = {record.get("id") for record in records if isinstance(record, dict)}
+        for ref in refs:
+            fixture = _osv_fixture_for_ref(ref)
+            if fixture is None or fixture["id"] in seen:
+                continue
+            records.append(fixture)
+            seen.add(fixture["id"])
+        return records, []
+
+    monkeypatch.setattr("tools.scan.augment_corpus", fake_augment)
+
+
+def _osv_fixture_for_ref(ref):
+    fixture_by_package = {
+        ("npm", "@cyanheads/git-mcp-server"): "ghsa-3q26-f695-pp76.json",
+        ("npm", "mcp-remote"): "ghsa-6xpm-ggf7-wc3p.json",
+        ("npm", "@akoskm/create-mcp-server-stdio"): "ghsa-3ch2-jxxc-v4xf.json",
+        ("PyPI", "aws-mcp-server"): "ghsa-m4qw-j7mx-qv6h.json",
+        ("npm", "@serverless/mcp-server"): "ghsa-rwc2-f344-q6w6.json",
+    }
+    filename = fixture_by_package.get((ref.ecosystem, ref.name))
+    if filename is None:
+        return None
+    return json.loads((FIXTURES / "osv" / filename).read_text(encoding="utf-8"))
 
 
 @pytest.fixture

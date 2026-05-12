@@ -1,0 +1,23 @@
+schema_version: 1.7.5
+id: GHSA-rwc2-f344-q6w6
+aliases:
+- CVE-2025-69256
+modified: '2025-11-12T12:00:00Z'
+database_specific:
+  asve:
+    component_type: mcp_server
+    surfaces:
+    - tool_invocation
+    - stdio
+    agent_impact:
+      repo_read: false
+      repo_write: false
+      credential_exfiltration: false
+      tool_hijack: true
+      memory_poisoning: false
+      pr_manipulation: false
+      code_execution: true
+    owasp_agentic_top10:
+    - asi02
+    - asi05
+    evidence_level: confirmed

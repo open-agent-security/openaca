@@ -1,8 +1,8 @@
-"""Build the static ASVE export.
+"""Build the static ASVE overlay export.
 
-Loads every advisory YAML under `advisories/`, emits OSV-shaped JSON per
-advisory under `dist/advisories/<year>/<id>.json`, copies the canonical
-schema to `dist/schema/asve.schema.json`, and produces three top-level
+Loads every overlay YAML under `overlays/`, emits JSON per overlay under
+`dist/overlays/<id>.json`, copies the canonical schema to
+`dist/schema/asve.schema.json`, and produces three top-level
 index artifacts for downstream consumers:
 
 - `all.zip` — every JSON file + the schema, for offline mirroring (the
@@ -29,7 +29,6 @@ import csv
 import json
 import shutil
 import zipfile
-from itertools import groupby
 from pathlib import Path
 
 import click
@@ -39,9 +38,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
-def load_corpus(advisories_root: Path) -> list[dict]:
+def load_corpus(overlays_root: Path) -> list[dict]:
     corpus: list[dict] = []
-    for path in sorted(advisories_root.rglob("*.yaml")):
+    for path in sorted(overlays_root.rglob("*.yaml")):
         corpus.append(yaml.safe_load(path.read_text()))
     return corpus
 
@@ -100,7 +99,7 @@ def _bundle_zip(dist: Path) -> None:
 
 
 def _render_html(corpus: list[dict], dist: Path) -> None:
-    """Render per-advisory pages and the grouped-by-year index."""
+    """Render per-overlay pages and index."""
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         autoescape=select_autoescape(["html", "j2"]),
@@ -109,19 +108,13 @@ def _render_html(corpus: list[dict], dist: Path) -> None:
     index_tmpl = env.get_template("index.html.j2")
 
     for advisory in corpus:
-        year = advisory["id"].split("-")[1]
-        target = dist / "advisories" / year / f"{advisory['id']}.html"
+        target = dist / "overlays" / f"{advisory['id']}.html"
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(advisory_tmpl.render(advisory=advisory), encoding="utf-8")
 
     sorted_corpus = sorted(corpus, key=lambda a: a["id"])
-
-    def _year(advisory: dict) -> str:
-        return advisory["id"].split("-")[1]
-
-    by_year_sorted = sorted(sorted_corpus, key=_year, reverse=True)
-    advisories_by_year = [(year, list(group)) for year, group in groupby(by_year_sorted, key=_year)]
     (dist / "index.html").write_text(
-        index_tmpl.render(advisories_by_year=advisories_by_year),
+        index_tmpl.render(advisories_by_year=[("Overlays", sorted_corpus)]),
         encoding="utf-8",
     )
 
@@ -129,14 +122,13 @@ def _render_html(corpus: list[dict], dist: Path) -> None:
     (dist / "style.css").write_text(css_src.read_text(encoding="utf-8"), encoding="utf-8")
 
 
-def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
+def build(overlays_root: Path, schema_path: Path, dist: Path) -> None:
     _ensure_clean(dist)
-    corpus = load_corpus(advisories_root)
-    for advisory in corpus:
-        year = advisory["id"].split("-")[1]
-        target = dist / "advisories" / year / f"{advisory['id']}.json"
+    corpus = load_corpus(overlays_root)
+    for overlay in corpus:
+        target = dist / "overlays" / f"{overlay['id']}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(_dump_json(advisory))
+        target.write_text(_dump_json(overlay))
     schema_target = dist / "schema" / "asve.schema.json"
     schema_target.parent.mkdir(parents=True, exist_ok=True)
     schema_target.write_text(schema_path.read_text())
@@ -147,12 +139,6 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
 
 
 @click.command()
-@click.option(
-    "--advisories",
-    default="advisories",
-    show_default=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-)
 @click.option(
     "--schema",
     default="schema/asve.schema.json",
@@ -165,9 +151,9 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
     show_default=True,
     type=click.Path(path_type=Path),
 )
-def main(advisories: Path, schema: Path, dist: Path) -> None:
+def main(schema: Path, dist: Path) -> None:
     """Build the ASVE static export under DIST."""
-    build(advisories, schema_path=schema, dist=dist)
+    build(Path("overlays"), schema_path=schema, dist=dist)
     click.echo(f"wrote export to {dist}")
 
 

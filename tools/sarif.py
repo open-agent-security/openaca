@@ -49,6 +49,9 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
                 source = asve_block.get("source")
                 if isinstance(source, str):
                     props["source"] = source
+                overlay_source = asve_block.get("overlay_source")
+                if isinstance(overlay_source, str):
+                    props["overlay_source"] = overlay_source
     return props
 
 
@@ -57,14 +60,13 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict[s
     rules: list[dict[str, Any]] = []
     for advisory_id in rule_ids:
         meta = advisory_index.get(advisory_id, {})
-        year = advisory_id.split("-")[1]
         rules.append(
             {
                 "id": advisory_id,
                 "name": advisory_id,
                 "shortDescription": {"text": meta.get("summary", advisory_id)},
                 "fullDescription": {"text": meta.get("details", meta.get("summary", advisory_id))},
-                "helpUri": f"https://asve.dev/advisories/{year}/{advisory_id}.html",
+                "helpUri": f"https://asve.dev/overlays/{advisory_id}.html",
             }
         )
 

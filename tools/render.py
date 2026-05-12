@@ -254,7 +254,7 @@ def render_text(
         # nothing" when their general software deps weren't even in scope.
         return " ".join(parts) + (
             "\nASVE scans agent composition; for general software dependency "
-            "scans, use osv-scanner or Trivy."
+            "scans, use a general-purpose SCA scanner."
         )
 
     groups = _group_findings(findings)

@@ -1,4 +1,4 @@
-"""ASVE advisory linter."""
+"""ASVE overlay linter."""
 
 from __future__ import annotations
 
@@ -41,35 +41,27 @@ def load_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text())
 
 
-def find_advisories(target: Path) -> list[Path]:
+def find_overlays(target: Path) -> list[Path]:
     if target.is_file():
         return [target] if target.suffix in {".yaml", ".yml"} else []
     return sorted(p for p in target.rglob("*.yaml"))
 
 
-def check_path_consistency(advisory: dict, path: Path) -> list[str]:
-    # Exempt files outside the advisories corpus tree (e.g., test fixtures).
-    # Real advisories must live at advisories/YYYY/ASVE-YYYY-NNNN.yaml; files
-    # elsewhere (tests/fixtures/, scripts, etc.) are intentionally exempt.
-    if "advisories" not in path.parts:
+def check_path_consistency(overlay: dict, path: Path) -> list[str]:
+    # Exempt files outside the overlays corpus tree (e.g., test fixtures).
+    if "overlays" not in path.parts:
         return []
-    advisory_id = advisory.get("id", "")
-    m = ID_RE.match(advisory_id)
-    if not m:
-        return []  # schema check covers this
-    year = m.group(1)
-    expected_filename = f"{advisory_id}.yaml"
+    overlay_id = overlay.get("id", "")
+    expected_filename = f"{overlay_id}.yaml"
     errors: list[str] = []
     if path.name != expected_filename:
         errors.append(f"path: filename {path.name!r} should be {expected_filename!r}")
-    if path.parent.name != year:
-        errors.append(f"path: parent dir {path.parent.name!r} should be {year!r}")
     return errors
 
 
-def check_cvss(advisory: dict) -> list[str]:
+def check_cvss(overlay: dict) -> list[str]:
     errors: list[str] = []
-    for i, sev in enumerate(advisory.get("severity") or []):
+    for i, sev in enumerate(overlay.get("severity") or []):
         sev_type = sev.get("type")
         score = sev.get("score", "")
         if sev_type in {"CVSS_V3", "CVSS_V4"} and not is_valid_cvss(sev_type, score):
@@ -80,64 +72,64 @@ def check_cvss(advisory: dict) -> list[str]:
     return errors
 
 
-def check_internal_aliases(advisory: dict, known_ids: set[str]) -> list[str]:
+def check_internal_aliases(overlay: dict, known_ids: set[str]) -> list[str]:
     errors: list[str] = []
-    for alias in advisory.get("aliases") or []:
+    for alias in overlay.get("aliases") or []:
         if isinstance(alias, str) and ID_RE.match(alias):
-            if alias != advisory.get("id") and alias not in known_ids:
+            if alias != overlay.get("id") and alias not in known_ids:
                 errors.append(f"alias: ASVE alias {alias!r} not found in corpus")
     return errors
 
 
-def check_schema(advisory: dict, validator: Draft202012Validator) -> list[str]:
+def check_schema(overlay: dict, validator: Draft202012Validator) -> list[str]:
     errors = []
-    for e in validator.iter_errors(advisory):
+    for e in validator.iter_errors(overlay):
         path = "/".join(map(str, e.absolute_path)) or "<root>"
         errors.append(f"schema: {e.message} (at {path})")
         # When type-branching rejects exposure/config, surface the type
         # explicitly so contributors see why the record was rejected.
-        if e.validator == "not" and isinstance(advisory, dict) and "type" in advisory:
-            errors.append(f"schema: type '{advisory['type']}' is reserved; rejected in V0")
+        if e.validator == "not" and isinstance(overlay, dict) and "type" in overlay:
+            errors.append(f"schema: type '{overlay['type']}' is reserved; rejected in V0")
     return errors
 
 
 @click.command()
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 def main(target: Path) -> None:
-    """Lint ASVE advisories under TARGET (file or directory)."""
+    """Lint ASVE overlays under TARGET (file or directory)."""
     schema = load_schema()
     validator = Draft202012Validator(schema, format_checker=_FORMAT_CHECKER)
-    advisories = find_advisories(target)
+    overlays = find_overlays(target)
 
-    if not advisories:
-        click.echo(f"no advisory YAML files found under {target}", err=True)
+    if not overlays:
+        click.echo(f"no overlay YAML files found under {target}", err=True)
         sys.exit(0)
 
-    # Pass 1: load all advisories; collect known IDs.
+    # Pass 1: load all overlays; collect known IDs.
     loaded: list[tuple[Path, dict | None, str | None]] = []
     known_ids: set[str] = set()
-    for path in advisories:
+    for path in overlays:
         try:
-            advisory = yaml.safe_load(path.read_text())
+            overlay = yaml.safe_load(path.read_text())
         except yaml.YAMLError as e:
             loaded.append((path, None, f"yaml: {e}"))
             continue
-        loaded.append((path, advisory, None))
-        if isinstance(advisory, dict) and isinstance(advisory.get("id"), str):
-            known_ids.add(advisory["id"])
+        loaded.append((path, overlay, None))
+        if isinstance(overlay, dict) and isinstance(overlay.get("id"), str):
+            known_ids.add(overlay["id"])
 
-    # Pass 2: per-advisory checks.
+    # Pass 2: per-overlay checks.
     failed = 0
-    for path, advisory, parse_error in loaded:
-        if parse_error is not None or advisory is None:
+    for path, overlay, parse_error in loaded:
+        if parse_error is not None or overlay is None:
             click.echo(f"{path}: {parse_error or 'failed to load'}", err=True)
             failed += 1
             continue
         errors = (
-            check_schema(advisory, validator)
-            + check_cvss(advisory)
-            + check_path_consistency(advisory, path)
-            + check_internal_aliases(advisory, known_ids)
+            check_schema(overlay, validator)
+            + check_cvss(overlay)
+            + check_path_consistency(overlay, path)
+            + check_internal_aliases(overlay, known_ids)
         )
         if errors:
             failed += 1
@@ -147,7 +139,7 @@ def main(target: Path) -> None:
             click.echo(f"{path}: ok")
 
     if failed:
-        click.echo(f"\n{failed} of {len(advisories)} advisories failed", err=True)
+        click.echo(f"\n{failed} of {len(overlays)} overlays failed", err=True)
         sys.exit(1)
 
 

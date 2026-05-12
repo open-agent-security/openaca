@@ -56,8 +56,8 @@ After the next push to `main` (or a manual `workflow_dispatch`):
 - `gh run watch -R open-agent-security/asve` on the Publish workflow
   should show `Deploy to Cloudflare Pages` succeeding.
 - `https://asve.dev/` serves the index page.
-- `https://asve.dev/advisories/2026/ASVE-2026-0001.json` returns the
-  JSON record.
+- `https://asve.dev/overlays/GHSA-3q26-f695-pp76.json` returns the
+  JSON overlay.
 - `https://asve.dev/index.json`, `/modified_id.csv`, `/all.zip`,
   `/schema/asve.schema.json` all 200.
 
@@ -79,6 +79,6 @@ Out of V0 scope; this is the V1 plan if we consolidate on GitHub:
    Pages apex IPs.
 5. Remove the `CLOUDFLARE_*` secrets.
 
-The static URL pattern (`/advisories/<year>/<id>.json`,
-`/index.json`, etc.) does not change, so any tooling consuming
+The static URL pattern (`/overlays/<id>.json`, `/index.json`, etc.)
+does not change, so any tooling consuming
 `https://asve.dev/...` is unaffected by the migration.

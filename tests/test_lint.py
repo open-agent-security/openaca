@@ -28,12 +28,11 @@ def test_lint_fails_on_bad_cvss(fixtures_dir, tmp_path):
     assert "cvss" in result.output.lower()
 
 
-def test_lint_fails_on_misplaced_advisory(fixtures_dir, tmp_path):
+def test_lint_fails_on_overlay_filename_mismatch(fixtures_dir, tmp_path):
     src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
-    # Advisory placed directly under advisories/ without a year subdirectory.
-    target = tmp_path / "advisories"
+    target = tmp_path / "overlays"
     target.mkdir()
-    (target / "ASVE-2026-0001.yaml").write_text(src.read_text())
+    (target / "wrong-name.yaml").write_text(src.read_text())
     runner = CliRunner()
     result = runner.invoke(main, [str(target)])
     assert result.exit_code != 0
@@ -53,11 +52,11 @@ def test_lint_fails_on_bad_datetime(fixtures_dir, tmp_path):
 
 def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
     src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
-    misplaced = tmp_path / "advisories" / "2025" / "ASVE-2026-0001.yaml"
+    misplaced = tmp_path / "overlays" / "ASVE-2026-0002.yaml"
     misplaced.parent.mkdir(parents=True)
     misplaced.write_text(src.read_text())
     runner = CliRunner()
-    result = runner.invoke(main, [str(tmp_path / "advisories")])
+    result = runner.invoke(main, [str(tmp_path / "overlays")])
     assert result.exit_code != 0
     assert "path" in result.output.lower()
 

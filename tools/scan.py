@@ -1,8 +1,8 @@
-"""End-to-end ASVE scan: parse → match → report (SARIF + annotations).
+"""End-to-end ASVE scan: parse → OSV match → overlay → report.
 
 Two modes via subcommands (per ADR-0006); a subcommand is required:
 
-    asve-scan repo --target <repo> --advisories <dir> [...]
+    asve-scan repo --target <repo> [...]
         Walks supported agent-stack manifests committed in the target
         repository. Covers (a) project-host config under `.claude/*`
         (which describes what Claude Code loads when run in this repo,
@@ -15,7 +15,6 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
         composition.
 
     asve-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
-        --advisories <dir> [...]
         Install-state-aware endpoint scan: reads settings.json +
         installed_plugins.json to enumerate the active agent stack. Defaults
         to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers project/local
@@ -24,8 +23,8 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
 Common options (--sarif, --fail-on, -v) can be placed before or after the
 subcommand name; the group forwards them either way:
 
-    asve-scan -v repo --target X --advisories Y
-    asve-scan repo --target X --advisories Y -v   # equivalent
+    asve-scan -v repo --target X
+    asve-scan repo --target X -v   # equivalent
 
 Findings carry an optional `attributed_to` field (e.g.,
 "claude-plugin/<name>@<version>") set by parsers when a component was
@@ -41,12 +40,12 @@ import sys
 from pathlib import Path
 
 import click
-import yaml
 from click.core import ParameterSource
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
+from tools.overlays import apply_overlays, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.render import (
@@ -60,22 +59,9 @@ from tools.sarif import to_sarif
 
 _FORMAT_CHOICES = ("text", "github", "json")
 
-# `--db` choices. V0 ships two combinations; the comma form is a literal
-# string the user types — Click `Choice` does exact matching. Adding a
-# third backend later (e.g., GHSA direct) means appending to this tuple
-# and teaching `_parse_db_selection` the new token.
-_DB_CHOICES = ("asve", "asve,osv")
-
-
-def _parse_db_selection(value: str) -> set[str]:
-    """Tokenize a `--db` value into a set of backend names."""
-    return {tok.strip() for tok in value.split(",") if tok.strip()}
-
-
 # Internal ref classifications that are surfaced to users in V0. Everything
 # else (software-dependency) is suppressed from matching, federation, and
-# rendering — ASVE V0 is agent-composition analysis; for general software
-# dep scans, point users at osv-scanner / Trivy (see footer + README).
+# rendering — ASVE V0 is agent-composition analysis.
 _AGENT_SCOPES: frozenset[str] = frozenset({"agent-component", "agent-dependency"})
 
 
@@ -84,8 +70,8 @@ def _filter_agent_scope_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
     return [r for r in refs if r.scope in _AGENT_SCOPES]
 
 
-def load_corpus(advisories_root: Path) -> list[dict]:
-    return [yaml.safe_load(p.read_text()) for p in sorted(advisories_root.rglob("*.yaml"))]
+def default_overlays_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "overlays"
 
 
 def _component_label(ref: ComponentRef) -> str:
@@ -118,7 +104,7 @@ def _finding_line(f: Finding) -> str:
 
 
 def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
-    """Render the verbose pre-query summary for `--db asve,osv`.
+    """Render the verbose pre-query summary for OSV.dev matching.
 
     Two parts: the queried PURL list (what was actually sent) and a count
     of skipped refs bucketed by ecosystem (so users can see what wasn't
@@ -190,12 +176,6 @@ _project_option = click.option(
     default=None,
     help="Project root whose .claude settings are layered into endpoint resolution.",
 )
-_advisories_option_required = click.option(
-    "--advisories",
-    required=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="ASVE advisories directory (YAML records).",
-)
 _sarif_option = click.option(
     "--sarif",
     type=click.Path(dir_okay=False, path_type=Path),
@@ -234,18 +214,6 @@ _no_color_option = click.option(
     default=False,
     help="Disable ANSI colors in text output. Colors are also off when stdout is not a TTY.",
 )
-_db_option = click.option(
-    "--db",
-    "db",
-    type=click.Choice(_DB_CHOICES),
-    default="asve",
-    show_default=True,
-    help=(
-        "Advisory database(s) to consult. `asve` (default) uses only the local "
-        "ASVE corpus. `asve,osv` also queries OSV.dev for additional records "
-        "covering emitted PURLs; network required, fails soft if unreachable."
-    ),
-)
 
 
 # Group-level shared options (sarif / fail-on / verbose) can be placed BEFORE
@@ -267,7 +235,7 @@ def main(
     output_format: str,
     no_color: bool,
 ) -> None:
-    """ASVE vulnerability scanner. Use `repo` or `endpoint` subcommands."""
+    """ASVE scanner. Use `repo` or `endpoint` subcommands."""
     ctx.ensure_object(dict)
     ctx.obj["sarif"] = sarif
     ctx.obj["fail_on"] = fail_on
@@ -379,6 +347,13 @@ def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
     return sources
 
 
+def _load_osv_with_overlays(refs: list[ComponentRef]) -> tuple[list[dict], list[str], int]:
+    """Query OSV for refs and merge ASVE overlays into returned records."""
+    overlays = load_overlays(default_overlays_dir())
+    corpus, warnings = augment_corpus(refs, [])
+    return apply_overlays(corpus, overlays), warnings, len(overlays)
+
+
 def _stderr_summary(
     findings: list[Finding],
     summary_prefix: str,
@@ -402,13 +377,11 @@ def _stderr_summary(
 @main.command()
 @click.pass_context
 @_target_option_required
-@_advisories_option_required
 @_sarif_option
 @_fail_on_option
 @_verbose_option
 @_format_option
 @_no_color_option
-@_db_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -422,13 +395,11 @@ def _stderr_summary(
 def repo(
     ctx: click.Context,
     target: Path,
-    advisories: Path,
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
     output_format: str,
     no_color: bool,
-    db: str,
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-stack manifests committed in a repository.
@@ -442,8 +413,6 @@ def repo(
     sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color
     )
-    backends = _parse_db_selection(db)
-    federate_osv = "osv" in backends
 
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     # Dedup across discovery paths — the same logical component can appear in
@@ -458,23 +427,18 @@ def repo(
     refs = _filter_agent_scope_refs(all_refs)
     suppressed_software = len(all_refs) - len(refs)
     n_failed = n_found - len(grouped)
-    corpus = load_corpus(advisories)
-    _stamp_source(corpus, "asve.dev")
-    if federate_osv:
-        before_ids = {a.get("id") for a in corpus if isinstance(a, dict)}
-        corpus, fed_warnings = augment_corpus(refs, corpus)
-        for a in corpus:
-            if isinstance(a, dict) and a.get("id") not in before_ids:
-                _stamp_source([a], "osv.dev")
-        for fw in fed_warnings:
-            click.echo(f"warning: {fw}", err=True)
+    corpus, fed_warnings, overlay_count = _load_osv_with_overlays(refs)
+    _stamp_source(corpus, "osv.dev")
+    for fw in fed_warnings:
+        click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
 
     if verbose:
-        click.echo(f"loaded {len(corpus)} advisory(ies) from {advisories}", err=True)
+        click.echo(f"loaded {overlay_count} ASVE overlay(s)", err=True)
+        click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         if grouped:
             click.echo(
                 f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
@@ -489,26 +453,15 @@ def repo(
             if suppressed_software:
                 click.echo(
                     f"  ({suppressed_software} software-dependency ref(s) suppressed; "
-                    "use osv-scanner or Trivy for general software scans)",
+                    "use a general-purpose SCA scanner for general software scans)",
                     err=True,
                 )
         elif n_found:
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
             click.echo(f"no manifests found under {target}", err=True)
-        if federate_osv:
-            for line in _federation_targets_lines(refs):
-                click.echo(line, err=True)
-            osv_count = sum(
-                1
-                for f in findings
-                if (advisory_index.get(f.advisory_id) or {})
-                .get("database_specific", {})
-                .get("asve", {})
-                .get("source")
-                == "osv.dev"
-            )
-            click.echo(f"federation: osv.dev returned {osv_count} additional finding(s)", err=True)
+        for line in _federation_targets_lines(refs):
+            click.echo(line, err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:
@@ -560,31 +513,25 @@ def repo(
 @click.pass_context
 @_config_dir_option
 @_project_option
-@_advisories_option_required
 @_sarif_option
 @_fail_on_option
 @_verbose_option
 @_format_option
 @_no_color_option
-@_db_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
     project: Path | None,
-    advisories: Path,
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
     output_format: str,
     no_color: bool,
-    db: str,
 ) -> None:
     """Scan the active agent stack installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color
     )
-    backends = _parse_db_selection(db)
-    federate_osv = "osv" in backends
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
     refs, warnings = parse_install(
@@ -593,23 +540,18 @@ def endpoint(
         mode="endpoint",
         include_transitive=True,
     )
-    corpus = load_corpus(advisories)
-    _stamp_source(corpus, "asve.dev")
-    if federate_osv:
-        before_ids = {a.get("id") for a in corpus if isinstance(a, dict)}
-        corpus, fed_warnings = augment_corpus(refs, corpus)
-        for a in corpus:
-            if isinstance(a, dict) and a.get("id") not in before_ids:
-                _stamp_source([a], "osv.dev")
-        for fw in fed_warnings:
-            click.echo(f"warning: {fw}", err=True)
+    corpus, fed_warnings, overlay_count = _load_osv_with_overlays(refs)
+    _stamp_source(corpus, "osv.dev")
+    for fw in fed_warnings:
+        click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
 
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if r.ecosystem == "claude-plugin")
 
     if verbose:
-        click.echo(f"loaded {len(corpus)} advisory(ies) from {advisories}", err=True)
+        click.echo(f"loaded {overlay_count} ASVE overlay(s)", err=True)
+        click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         roots_note = f"config_dir={config_dir}"
         if project is not None:
             roots_note += f", project={project}"
@@ -624,19 +566,8 @@ def endpoint(
         )
         if tree:
             click.echo(tree, err=True)
-        if federate_osv:
-            for line in _federation_targets_lines(refs):
-                click.echo(line, err=True)
-            osv_count = sum(
-                1
-                for f in findings
-                if (advisory_index.get(f.advisory_id) or {})
-                .get("database_specific", {})
-                .get("asve", {})
-                .get("source")
-                == "osv.dev"
-            )
-            click.echo(f"federation: osv.dev returned {osv_count} additional finding(s)", err=True)
+        for line in _federation_targets_lines(refs):
+            click.echo(line, err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:

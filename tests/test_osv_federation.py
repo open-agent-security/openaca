@@ -99,6 +99,45 @@ def test_augment_batches_purls_and_merges_results():
     assert ids == {"ASVE-2026-0001", "GHSA-1111", "GHSA-2222"}
 
 
+def test_augment_dedupes_returned_records_by_alias_graph():
+    refs = [_ref("npm", "@cyanheads/git-mcp-server", "1.1.0")]
+    querybatch_response = {
+        "results": [
+            {
+                "vulns": [
+                    {"id": "GHSA-3q26-f695-pp76"},
+                    {"id": "CVE-2025-53107"},
+                ]
+            }
+        ]
+    }
+    vuln_records = {
+        "GHSA-3q26-f695-pp76": {
+            "id": "GHSA-3q26-f695-pp76",
+            "aliases": ["CVE-2025-53107"],
+        },
+        "CVE-2025-53107": {
+            "id": "CVE-2025-53107",
+            "aliases": ["GHSA-3q26-f695-pp76"],
+        },
+    }
+
+    def fake_post(url, payload):
+        return querybatch_response
+
+    def fake_get(url):
+        return vuln_records[url.rsplit("/", 1)[-1]]
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augmented, warnings = augment_corpus(refs=refs, base_corpus=[])
+
+    assert warnings == []
+    assert [record["id"] for record in augmented] == ["GHSA-3q26-f695-pp76"]
+
+
 def test_augment_fails_soft_on_network_error():
     """If the batch query raises, return base corpus + a warning string."""
     refs = [_ref("npm", "lodash", "4.17.20")]

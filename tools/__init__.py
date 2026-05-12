@@ -1,1 +1,1 @@
-"""ASVE advisory database tooling."""
+"""ASVE overlay and scanner tooling."""

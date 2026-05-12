@@ -8,9 +8,9 @@ and how disputes are handled.
 ## V0 status
 
 ASVE V0 documents this policy. **V0 does not operate an active
-disclosure program.** Submissions described here will not be processed
-at scale until V1, which is gated on the readiness criteria in
-[`docs/specs/asve-v0-design.md`](specs/asve-v0-design.md) §10.
+disclosure program or mint ASVE vulnerability IDs.** Submissions
+described here will not be processed at scale until a future
+ASVE-native advisory lane is designed.
 
 When V0 receives a report that meets the bar for inclusion, the
 maintainers will run a single end-to-end coordinated-disclosure case as
@@ -110,7 +110,7 @@ can see what changed and why.
 
 ## Out of scope (escalation, indemnity, payment)
 
-ASVE V0 is an OSS advisory database. We do not:
+ASVE V0 is an OSS overlay corpus and scanner. We do not:
 
 - Pay bug bounties. Reporters seeking payouts should consider
   bounty-focused programs such as [huntr](https://huntr.com/).

@@ -2,7 +2,7 @@
 
 These exercise multiple layers together — schema/lint, exporter, parsers,
 and the cross-layer "detection layer × corpus layer" promise — using the
-checked-in `advisories/` directory and real schema, not synthetic fixtures.
+checked-in `overlays/` directory and real schema, not synthetic fixtures.
 
 Add new tests here as features land. Plan 005 (reference action) will add
 an action-invocation roundtrip; plan 006 (disclosure policy) is doc-only
@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from click.testing import CliRunner
@@ -25,7 +26,7 @@ from tools.export import build
 from tools.parsers.mcp_json import parse as parse_mcp
 
 REPO_ROOT = Path(__file__).parent.parent
-ADVISORIES_DIR = REPO_ROOT / "advisories"
+OVERLAYS_DIR = REPO_ROOT / "overlays"
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 
 
@@ -47,13 +48,13 @@ def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0
 
 
 def _load_corpus() -> list[tuple[Path, dict]]:
-    return [(p, yaml.safe_load(p.read_text())) for p in sorted(ADVISORIES_DIR.rglob("*.yaml"))]
+    return [(p, yaml.safe_load(p.read_text())) for p in sorted(OVERLAYS_DIR.rglob("*.yaml"))]
 
 
 def test_real_corpus_lints_clean():
     """Every checked-in advisory passes the full linter against the canonical schema."""
     corpus = _load_corpus()
-    assert corpus, "expected at least one advisory under advisories/"
+    assert corpus, "expected at least one overlay under overlays/"
 
     schema = lint.load_schema()
     validator = Draft202012Validator(schema, format_checker=lint._FORMAT_CHECKER)
@@ -78,12 +79,11 @@ def test_real_corpus_exports_cleanly(tmp_path):
     expected_ids = {a["id"] for _, a in corpus}
 
     dist = tmp_path / "dist"
-    build(ADVISORIES_DIR, schema_path=SCHEMA_PATH, dist=dist)
+    build(OVERLAYS_DIR, schema_path=SCHEMA_PATH, dist=dist)
 
     for path, advisory in corpus:
-        year = advisory["id"].split("-")[1]
-        json_path = dist / "advisories" / year / f"{advisory['id']}.json"
-        html_path = dist / "advisories" / year / f"{advisory['id']}.html"
+        json_path = dist / "overlays" / f"{advisory['id']}.json"
+        html_path = dist / "overlays" / f"{advisory['id']}.html"
         assert json_path.is_file(), f"missing JSON for {advisory['id']}"
         assert html_path.is_file(), f"missing HTML for {advisory['id']}"
         # JSON parity with source YAML
@@ -102,8 +102,7 @@ def test_real_corpus_exports_cleanly(tmp_path):
     with zipfile.ZipFile(dist / "all.zip") as zf:
         zip_names = set(zf.namelist())
     for advisory_id in expected_ids:
-        year = advisory_id.split("-")[1]
-        assert f"advisories/{year}/{advisory_id}.json" in zip_names
+        assert f"overlays/{advisory_id}.json" in zip_names
 
 
 _HREF_RE = re.compile(r'href="([^"]+)"')
@@ -112,7 +111,7 @@ _HREF_RE = re.compile(r'href="([^"]+)"')
 def test_index_html_links_resolve(tmp_path):
     """Every relative link in dist/index.html must point to a real file in dist/."""
     dist = tmp_path / "dist"
-    build(ADVISORIES_DIR, schema_path=SCHEMA_PATH, dist=dist)
+    build(OVERLAYS_DIR, schema_path=SCHEMA_PATH, dist=dist)
     html = (dist / "index.html").read_text(encoding="utf-8")
 
     broken: list[str] = []
@@ -131,10 +130,10 @@ def test_parser_detection_intersects_corpus_advisory():
 
     Constructs a minimal mcp.json that launches @cyanheads/git-mcp-server@1.1.0
     via npx, parses it, and verifies the emitted PURL matches the package
-    identified in ASVE-2026-0001's affected[*].
+    identified in GHSA-3q26-f695-pp76's affected[*].
     """
-    target_id = "ASVE-2026-0001"
-    advisory_path = ADVISORIES_DIR / "2026" / f"{target_id}.yaml"
+    target_id = "GHSA-3q26-f695-pp76"
+    advisory_path = OVERLAYS_DIR / f"{target_id}.yaml"
     if not advisory_path.exists():
         # Fixture-corpus shape can drift; skip rather than fail to avoid
         # blocking V0 evolution if the canonical sample advisory moves.
@@ -143,8 +142,7 @@ def test_parser_detection_intersects_corpus_advisory():
         pytest.skip(f"{target_id} not in corpus")
 
     advisory = yaml.safe_load(advisory_path.read_text())
-    affected = advisory["affected"][0]["package"]
-    assert affected["ecosystem"] == "npm"
+    affected = {"ecosystem": "npm", "name": "@cyanheads/git-mcp-server"}
 
     manifest_dir = Path(__file__).parent / "fixtures" / "repos" / "sample-mcp"
     refs = parse_mcp(manifest_dir / "mcp.json")
@@ -156,12 +154,9 @@ def test_parser_detection_intersects_corpus_advisory():
     )
     # And the version pinned in the manifest is in the vulnerable range
     # (introduced=0, fixed=<some version>).
-    fixed = next(
-        ev["fixed"]
-        for r in advisory["affected"][0]["ranges"]
-        for ev in r["events"]
-        if "fixed" in ev
-    )
+    osv_fixture = Path(__file__).parent / "fixtures" / "osv" / "ghsa-3q26-f695-pp76.json"
+    osv = json.loads(osv_fixture.read_text())
+    fixed = next(ev["fixed"] for ev in osv["affected"][0]["ranges"][0]["events"] if "fixed" in ev)
     pinned = matching[0].version
     assert pinned, "parser must emit a pinned version"
     assert Version(pinned) < Version(fixed), (
@@ -178,8 +173,6 @@ def test_asve_export_cli_against_real_corpus(tmp_path):
     result = runner.invoke(
         export_main,
         [
-            "--advisories",
-            str(ADVISORIES_DIR),
             "--schema",
             str(SCHEMA_PATH),
             "--dist",
@@ -195,7 +188,7 @@ def test_asve_scan_cli_finds_real_advisory():
 
     Invokes the registered `asve-scan` console script (the same path the
     Action's composite step runs) against the exposed-mcp fixture using the
-    real `advisories/` corpus, and verifies it surfaces ASVE-2026-0001 with
+    real `advisories/` corpus, and verifies it surfaces GHSA-3q26-f695-pp76 with
     a high-confidence finding. This is the V0 product promise across every
     layer behind one CLI surface.
     """
@@ -212,8 +205,6 @@ def test_asve_scan_cli_finds_real_advisory():
                 "repo",
                 "--target",
                 str(REPO_ROOT / "tests" / "fixtures" / "repos" / "exposed-mcp"),
-                "--advisories",
-                str(ADVISORIES_DIR),
                 "--sarif",
                 str(sarif_path),
             ],
@@ -222,7 +213,7 @@ def test_asve_scan_cli_finds_real_advisory():
         assert result.exit_code == 1, result.output
         sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
         rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
-        assert "ASVE-2026-0001" in rule_ids
+        assert "GHSA-3q26-f695-pp76" in rule_ids
         levels = [r["level"] for r in sarif["runs"][0]["results"]]
         assert "error" in levels  # high-confidence pinned-version finding
     finally:
@@ -231,7 +222,7 @@ def test_asve_scan_cli_finds_real_advisory():
 
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
-    vulnerable PyPI package surfaces an ASVE-2026-0004 (aws-mcp-server)
+    vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)
     finding through asve-scan. Exercises the pyproject parser, the
     matcher, and SARIF emission together."""
     import json
@@ -254,8 +245,6 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
             "repo",
             "--target",
             str(target),
-            "--advisories",
-            str(ADVISORIES_DIR),
             "--sarif",
             str(sarif_path),
         ],
@@ -263,7 +252,7 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     assert result.exit_code == 1, result.output
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
-    assert "ASVE-2026-0004" in rule_ids
+    assert "GHSA-m4qw-j7mx-qv6h" in rule_ids
 
 
 # Plan 008: cross-layer end-to-end against the new component ecosystems.
@@ -318,10 +307,8 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
     (advisories_dir / "ASVE-2026-9001.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    result = runner.invoke(
-        scan_main,
-        ["repo", "--target", str(target), "--advisories", str(advisories_dir), "-v"],
-    )
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+        result = runner.invoke(scan_main, ["repo", "--target", str(target), "-v"])
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9001" in result.output
 
@@ -398,19 +385,18 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
 
     sarif_path = tmp_path / "out.sarif"
     runner = CliRunner()
-    result = runner.invoke(
-        scan_main,
-        [
-            "endpoint",
-            "--config-dir",
-            str(tmp_path),
-            "--advisories",
-            str(advisories_dir),
-            "--sarif",
-            str(sarif_path),
-            "-v",
-        ],
-    )
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+        result = runner.invoke(
+            scan_main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(tmp_path),
+                "--sarif",
+                str(sarif_path),
+                "-v",
+            ],
+        )
     assert result.exit_code == 1, result.output
     # Verbose output surfaces the attribution suffix.
     assert "via claude-plugin/vuln-plugin@1.0.0" in result.output
@@ -485,10 +471,8 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     (advisories_dir / "ASVE-2026-9003.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    result = runner.invoke(
-        scan_main,
-        ["endpoint", "--config-dir", str(tmp_path), "--advisories", str(advisories_dir), "-v"],
-    )
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+        result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9003" in result.output
     # Attribution propagates to the finding.
@@ -538,26 +522,25 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
             "endpoint",
             "--config-dir",
             str(tmp_path),
-            "--advisories",
-            str(ADVISORIES_DIR),
             "--sarif",
             str(sarif_path),
             "-v",
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-0001" in result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
     assert "via claude-plugin/vuln-plugin@1.0.0" in result.output
 
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     results = sarif["runs"][0]["results"]
-    matching = [r for r in results if r.get("ruleId") == "ASVE-2026-0001"]
+    matching = [r for r in results if r.get("ruleId") == "GHSA-3q26-f695-pp76"]
     assert matching
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
     assert properties.get("transitive") is True
     assert properties.get("attributed_to") == "claude-plugin/vuln-plugin@1.0.0"
-    assert properties.get("source") == "asve.dev"
+    assert properties.get("source") == "osv.dev"
+    assert properties.get("overlay_source") == "asve.dev"
 
 
 def test_repo_lockfile_finds_corpus_advisory(tmp_path):
@@ -587,15 +570,13 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
             "repo",
             "--target",
             str(target),
-            "--advisories",
-            str(ADVISORIES_DIR),
             "--sarif",
             str(sarif_path),
         ],
     )
     assert result.exit_code == 1, result.output
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
-    matching = [r for r in sarif["runs"][0]["results"] if r.get("ruleId") == "ASVE-2026-0001"]
+    matching = [r for r in sarif["runs"][0]["results"] if r.get("ruleId") == "GHSA-3q26-f695-pp76"]
     assert matching
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"

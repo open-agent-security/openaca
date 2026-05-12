@@ -120,22 +120,22 @@ def test_secondary_manifest_gitignored_via_plugin_string_mcp(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text(
-        json.dumps({
-            "name": "my-plugin",
-            "version": "1.0.0",
-            "mcpServers": "./dist/.mcp.json",
-        })
+        json.dumps(
+            {
+                "name": "my-plugin",
+                "version": "1.0.0",
+                "mcpServers": "./dist/.mcp.json",
+            }
+        )
     )
 
     # Secondary .mcp.json lives in dist/, which is gitignored.
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
     (dist_dir / ".mcp.json").write_text(
-        json.dumps({
-            "mcpServers": {
-                "server": {"command": "npx", "args": ["-y", "@vuln/pkg@1.0.0"]}
-            }
-        })
+        json.dumps(
+            {"mcpServers": {"server": {"command": "npx", "args": ["-y", "@vuln/pkg@1.0.0"]}}}
+        )
     )
 
     (tmp_path / ".gitignore").write_text("dist/\n")

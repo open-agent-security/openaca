@@ -369,6 +369,16 @@ def _apply_group_opts(
     default=False,
     help="Query OSV.dev for additional vulnerability records.",
 )
+@click.option(
+    "--include-gitignored",
+    is_flag=True,
+    default=False,
+    help=(
+        "Walk paths matched by <target>/.gitignore. Default skips them to avoid "
+        "noisy findings from node_modules/, .venv/, dist/, and other build "
+        "artifacts. .git/ is always skipped."
+    ),
+)
 def repo(
     ctx: click.Context,
     target: Path,
@@ -377,10 +387,11 @@ def repo(
     fail_on: str,
     verbose: bool,
     federate_osv: bool,
+    include_gitignored: bool,
 ) -> None:
     """Scan a code repository's declared manifests."""
     sarif, fail_on, verbose = _apply_group_opts(ctx, sarif, fail_on, verbose)
-    grouped, n_found = parse_repo_grouped(target)
+    grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     # Dedup across discovery paths — the same logical component can appear in
     # multiple groups (e.g., a plugin's .mcp.json walked both directly and
     # indirectly via plugin.json's string-path mcpServers). Verbose output

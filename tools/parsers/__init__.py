@@ -17,6 +17,7 @@ from tools.parsers import (
     pyproject_toml,
     uv_lock,
 )
+from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 
 ParserFn = Callable[[Path], list[ComponentRef]]
 
@@ -56,13 +57,21 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 
 def parse_repo_grouped(
     root: Path,
+    include_gitignored: bool = False,
 ) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
     """Walk `root` and return (per-manifest results, total paths matched).
 
-    The second element counts every path that matched a registry pattern,
-    regardless of whether parsing succeeded. Callers use this to distinguish
-    "target had no manifests at all" (n_found == 0) from "target had manifests
-    that all failed to parse" (n_found > 0 but grouped is empty).
+    The second element counts every path that matched a registry pattern AND
+    survived `.gitignore` filtering. Callers use this to distinguish "target
+    had no manifests at all" (n_found == 0) from "target had manifests that
+    all failed to parse" (n_found > 0 but grouped is empty).
+
+    By default, paths matching entries in `<root>/.gitignore` are excluded —
+    typical repos pull `node_modules/`, `.venv/`, `dist/`, etc. into rglob
+    hits and emit noisy/wrong findings (a vendored `package.json` deep inside
+    `node_modules/` shouldn't be attributed to the host repo). Set
+    `include_gitignored=True` to walk those anyway (e.g., to audit a vendored
+    dependency tree). `.git/` is always skipped.
 
     Per-path parse failures are silently dropped — these parsers run against
     arbitrary user repos and one malformed file should not abort the rest of
@@ -76,10 +85,22 @@ def parse_repo_grouped(
     those callers want one finding per logical component, not per discovery
     path.
     """
+    spec = None if include_gitignored else load_gitignore_spec(root)
+    # `.git/` is always skipped, even when include_gitignored is True.
+    enforce_git_skip = include_gitignored
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     for pattern, parser in REGISTRY:
         for path in root.rglob(pattern):
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                rel = path
+            if enforce_git_skip:
+                if rel.parts and rel.parts[0] == ".git":
+                    continue
+            elif is_ignored(rel, spec):
+                continue
             n_found += 1
             try:
                 grouped.append((path, parser(path)))
@@ -132,7 +153,7 @@ def flatten_grouped(
     return refs
 
 
-def parse_repo(root: Path) -> list[ComponentRef]:
+def parse_repo(root: Path, include_gitignored: bool = False) -> list[ComponentRef]:
     """Walk `root` and return deduplicated ComponentRefs from all known manifests."""
-    grouped, _ = parse_repo_grouped(root)
+    grouped, _ = parse_repo_grouped(root, include_gitignored=include_gitignored)
     return flatten_grouped(grouped)

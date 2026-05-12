@@ -1112,3 +1112,52 @@ def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
     )
     assert result.exit_code == 0
     assert "bare components:" not in result.output
+
+
+def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
+    """End-to-end: a host package.json declares no vulnerable dep, but a
+    gitignored node_modules/lodash/package.json contains a vulnerable shape.
+    Without the flag, the gitignored file is skipped → exit 0. With
+    --include-gitignored, it gets walked."""
+    (tmp_path / "package.json").write_text(
+        json.dumps({"name": "host", "version": "1.0.0", "dependencies": {}})
+    )
+    (tmp_path / "node_modules" / "@cyanheads" / "git-mcp-server").mkdir(parents=True)
+    (tmp_path / "node_modules" / "@cyanheads" / "git-mcp-server" / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "@cyanheads/git-mcp-server",
+                "version": "1.1.0",
+                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
+            }
+        )
+    )
+    (tmp_path / ".gitignore").write_text("node_modules/\n")
+
+    runner = CliRunner()
+    result_default = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result_default.exit_code == 0, result_default.output
+
+    result_opt_in = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--include-gitignored",
+        ],
+    )
+    # Now the vendored package.json gets walked; ASVE-2026-0001 fires.
+    assert result_opt_in.exit_code == 1, result_opt_in.output
+    assert "ASVE-2026-0001" in result_opt_in.output

@@ -1007,9 +1007,10 @@ def test_endpoint_verbose_shows_per_plugin_tier2_coverage(tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "npm:" in result.output
+    # Tier-2 coverage now renders as a tree leaf under the plugin block.
     assert "package-lock.json" in result.output
-    assert "2 packages" in result.output or "transitive, 2" in result.output
+    assert "2 transitive" in result.output
+    assert "npm/ deps" in result.output
 
 
 def test_endpoint_verbose_shows_manifest_fallback_line(tmp_path):
@@ -1044,6 +1045,7 @@ def test_endpoint_verbose_shows_manifest_fallback_line(tmp_path):
     )
     assert "direct only" in result.output
     assert "package.json" in result.output
+    assert "npm/ deps" in result.output
 
 
 def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
@@ -1094,11 +1096,11 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    # The breakdown line should show 1 bundled MCP (the Tier-1 .mcp.json one),
-    # NOT 3 (1 Tier-1 + 2 Tier-2 lockfile deps).
-    assert "1 bundled MCPs" in result.output
-    # The Tier-2 line should still appear separately.
-    assert "transitive" in result.output and "2 packages" in result.output
+    # The tree's MCPs/ category counts only the Tier-1 .mcp.json ref (1),
+    # NOT 3 (1 Tier-1 + 2 Tier-2 lockfile deps). Tier-2 aggregates separately.
+    assert "MCPs/ (1)" in result.output
+    # The Tier-2 aggregate line appears as its own tree leaf.
+    assert "2 transitive" in result.output
 
 
 def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
@@ -1128,13 +1130,17 @@ def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "bare components: 3 skills" in result.output
-    # Each skill identity appears on its own line, sorted alphabetically.
-    alpha_idx = result.output.find("claude-skill/alpha-skill")
-    middle_idx = result.output.find("claude-skill/middle-skill")
-    zebra_idx = result.output.find("claude-skill/zebra-skill")
+    # Tree renders a `bare components/` root with a `skills/ (3)` branch.
+    assert "bare components/" in result.output
+    assert "skills/ (3)" in result.output
+    # Each skill name appears as a leaf, sorted alphabetically. The tree
+    # strips the `claude-skill/` ecosystem prefix from leaf labels (the
+    # parent category line already states the kind).
+    alpha_idx = result.output.find("alpha-skill")
+    middle_idx = result.output.find("middle-skill")
+    zebra_idx = result.output.find("zebra-skill")
     assert alpha_idx >= 0 and middle_idx >= 0 and zebra_idx >= 0
-    assert alpha_idx < middle_idx < zebra_idx  # sorted order
+    assert alpha_idx < middle_idx < zebra_idx
 
 
 def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):

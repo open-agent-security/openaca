@@ -19,6 +19,7 @@ from tools.render import (
     _fixed_in_for_finding,
     _group_findings,
     render_github,
+    render_inventory_tree,
     render_json,
     render_text,
 )
@@ -454,3 +455,274 @@ def test_json_score_none_when_only_upstream_label():
     # Severity label still HIGH (from upstream), but no numeric score.
     assert parsed["findings"][0]["severity"] == "HIGH"
     assert parsed["findings"][0]["score"] is None
+
+
+# ── render_inventory_tree ────────────────────────────────────────────────────
+
+
+def _plugin_ref(name: str, version: str, scope: str = "user", sha: str = "") -> ComponentRef:
+    return ComponentRef(
+        ecosystem="claude-plugin",
+        name=name,
+        version=version,
+        component_identity=f"claude-plugin/{name}@{version}",
+        source_manifest="installed_plugins.json",
+        source_locator=f"$.plugins.{name}",
+        extra={"scope": scope, "gitCommitSha": sha},
+    )
+
+
+def _bundled(
+    eco: str,
+    name: str | None,
+    version: str | None,
+    attributed_to: str | None,
+    **kw,
+) -> ComponentRef:
+    ident = kw.get("component_identity")
+    return ComponentRef(
+        ecosystem=eco,
+        name=name,
+        version=version,
+        component_identity=ident,
+        source_manifest=kw.get("source_manifest", "fake"),
+        attributed_to=attributed_to,
+        extra=kw.get("extra", {}),
+    )
+
+
+def test_tree_header_counts_plugins_bare_total():
+    refs = [
+        _plugin_ref("a", "1.0.0"),
+        _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0"),
+        _bundled(
+            "claude-skill",
+            "bare-skill",
+            None,
+            attributed_to=None,  # bare
+            component_identity="claude-skill/bare-skill",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    # Header: 1 plugin, 1 bare component, 2 total components (skill + bundled MCP).
+    assert "1 active plugin, 1 bare component, 2 total components" in out
+
+
+def test_tree_groups_bundled_components_by_category():
+    refs = [
+        _plugin_ref("supabase", "0.1.6"),
+        _bundled(
+            "claude-skill",
+            "supa-skill",
+            None,
+            attributed_to="claude-plugin/supabase@0.1.6",
+            component_identity="claude-skill/supa-skill",
+        ),
+        _bundled(
+            "npm",
+            "@supabase/mcp",
+            "1.0.0",
+            attributed_to="claude-plugin/supabase@0.1.6",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    assert "claude-plugin/supabase@0.1.6" in out
+    # Both categories appear with counts.
+    assert "MCPs/ (1)" in out
+    assert "skills/ (1)" in out
+    # MCPs render before skills (declared category order).
+    assert out.index("MCPs/") < out.index("skills/")
+
+
+def test_tree_empty_plugin_shows_no_bundled_components():
+    refs = [_plugin_ref("github", "unknown")]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    assert "claude-plugin/github@unknown" in out
+    assert "(no bundled components)" in out
+
+
+def test_tree_strips_redundant_plugin_prefix_from_leaf_labels():
+    """Bundled commands/agents/hooks have identity `claude-<kind>/<plugin>/<rest>`.
+    Under that plugin's block, the leaf label should drop `<plugin>/` so it
+    reads as just `<rest>` — the plugin context is already in the header."""
+    refs = [
+        _plugin_ref("supabase", "0.1.6"),
+        _bundled(
+            "claude-command",
+            "deploy",
+            None,
+            attributed_to="claude-plugin/supabase@0.1.6",
+            component_identity="claude-command/supabase/deploy",
+        ),
+        _bundled(
+            "claude-hook",
+            None,
+            None,
+            attributed_to="claude-plugin/supabase@0.1.6",
+            component_identity="claude-hook/supabase/PreToolUse/0",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    assert "deploy" in out
+    assert "supabase/deploy" not in out
+    assert "PreToolUse/0" in out
+    assert "supabase/PreToolUse" not in out
+
+
+def test_tree_aggregates_tier2_deps_into_single_line():
+    refs = [
+        _plugin_ref("demo", "1.0.0"),
+        _bundled(
+            "npm",
+            "lodash",
+            "4.17.20",
+            attributed_to="claude-plugin/demo@1.0.0",
+            extra={"transitive": True},
+        ),
+        _bundled(
+            "npm",
+            "underscore",
+            "1.13.0",
+            attributed_to="claude-plugin/demo@1.0.0",
+            extra={"transitive": True},
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    # No individual lodash/underscore leaves — they aggregate.
+    assert "lodash" not in out
+    assert "underscore" not in out
+    assert "npm/ deps (2 transitive via package-lock.json)" in out
+
+
+def test_tree_tier2_direct_only_when_no_lockfile():
+    refs = [
+        _plugin_ref("demo", "1.0.0"),
+        _bundled(
+            "npm",
+            "lodash",
+            "4.17.20",
+            attributed_to="claude-plugin/demo@1.0.0",
+            extra={"transitive": False},
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    assert "npm/ deps (1 direct only via package.json)" in out
+
+
+def test_tree_bare_components_render_as_separate_root():
+    refs = [
+        _bundled(
+            "claude-skill",
+            "foo",
+            None,
+            attributed_to=None,
+            component_identity="claude-skill/foo",
+        ),
+        _bundled(
+            "claude-skill",
+            "bar",
+            None,
+            attributed_to=None,
+            component_identity="claude-skill/bar",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    assert "bare components/" in out
+    assert "skills/ (2)" in out
+    # Alphabetical: bar before foo.
+    assert out.index("bar") < out.index("foo")
+
+
+def test_tree_marks_affected_leaves_with_finding_id():
+    """When a finding fires against a component, the leaf gets a `[! <id>]`
+    suffix so users can locate vulnerabilities inside the inventory tree."""
+    plugin = _plugin_ref("playwright", "1.0.0")
+    ref = _bundled(
+        "npm",
+        "@playwright/mcp",
+        "latest",
+        attributed_to="claude-plugin/playwright@1.0.0",
+    )
+    finding = Finding(
+        advisory_id="GHSA-X",
+        component=ref,
+        confidence="high",
+        reason="match",
+        attributed_to="claude-plugin/playwright@1.0.0",
+    )
+    out = render_inventory_tree([plugin, ref], [finding], use_unicode=True)
+    assert "[! GHSA-X]" in out
+    # The marker sits adjacent to the affected leaf, not on the plugin header.
+    assert "@playwright/mcp@latest  [! GHSA-X]" in out
+
+
+def test_tree_marks_plugin_header_when_plugin_advisory_matches():
+    plugin = _plugin_ref("supabase", "0.1.0")
+    finding = Finding(
+        advisory_id="ASVE-2026-XXXX",
+        component=plugin,
+        confidence="high",
+        reason="match",
+    )
+    out = render_inventory_tree([plugin], [finding], use_unicode=True)
+    # Header line carries the marker; the empty-plugin "(no bundled)" line
+    # is separate.
+    plugin_line = [line for line in out.splitlines() if "claude-plugin/supabase@0.1.0" in line][0]
+    assert "[! ASVE-2026-XXXX]" in plugin_line
+
+
+def test_tree_ascii_fallback_uses_ascii_chars():
+    refs = [
+        _plugin_ref("a", "1.0.0"),
+        _bundled(
+            "claude-skill",
+            "x",
+            None,
+            attributed_to="claude-plugin/a@1.0.0",
+            component_identity="claude-skill/x",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=False)
+    # ASCII connector chars present; Unicode absent.
+    assert "├──" not in out
+    assert "└──" not in out
+    assert "`-- " in out or "|-- " in out
+
+
+def test_tree_unicode_default():
+    refs = [
+        _plugin_ref("a", "1.0.0"),
+        _bundled(
+            "claude-skill",
+            "x",
+            None,
+            attributed_to="claude-plugin/a@1.0.0",
+            component_identity="claude-skill/x",
+        ),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    # Unicode connectors present.
+    assert ("├──" in out) or ("└──" in out)
+
+
+def test_tree_plugins_sorted_alphabetically():
+    refs = [
+        _plugin_ref("zeta", "1.0.0"),
+        _plugin_ref("alpha", "1.0.0"),
+        _plugin_ref("mu", "1.0.0"),
+    ]
+    out = render_inventory_tree(refs, [], use_unicode=True)
+    alpha_idx = out.index("claude-plugin/alpha")
+    mu_idx = out.index("claude-plugin/mu")
+    zeta_idx = out.index("claude-plugin/zeta")
+    assert alpha_idx < mu_idx < zeta_idx
+
+
+def test_tree_finding_marker_color_when_enabled():
+    plugin = _plugin_ref("a", "1.0.0")
+    ref = _bundled("npm", "x", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    finding = Finding(advisory_id="X", component=ref, confidence="high")
+    colored = render_inventory_tree([plugin, ref], [finding], use_color=True, use_unicode=True)
+    plain = render_inventory_tree([plugin, ref], [finding], use_color=False, use_unicode=True)
+    assert "\x1b[31m" in colored
+    assert "\x1b[" not in plain

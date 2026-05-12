@@ -41,7 +41,13 @@ from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
-from tools.render import ScanStats, render_github, render_json, render_text
+from tools.render import (
+    ScanStats,
+    render_github,
+    render_inventory_tree,
+    render_json,
+    render_text,
+)
 from tools.sarif import to_sarif
 
 _FORMAT_CHOICES = ("text", "github", "json")
@@ -78,110 +84,6 @@ def _finding_line(f: Finding) -> str:
     if f.attributed_to:
         return f"{base} via {f.attributed_to}"
     return base
-
-
-_BUNDLED_KINDS: tuple[tuple[str, str], ...] = (
-    ("npm", "MCPs"),
-    ("PyPI", "MCPs"),
-    ("claude-skill", "skills"),
-    ("claude-hook", "hooks"),
-    ("claude-command", "commands"),
-    ("claude-agent", "agents"),
-)
-
-
-def _bundled_breakdown(refs: list[ComponentRef], plugin_identity: str | None) -> str:
-    """Summarize per-plugin bundled-component counts for verbose output.
-
-    Excludes Tier-2 lockfile refs (those with extra["transitive"] set);
-    they are surfaced separately by _tier2_coverage_lines."""
-    if plugin_identity is None:
-        return "0 bundled"
-    counts: dict[str, int] = {label: 0 for _, label in _BUNDLED_KINDS}
-    for r in refs:
-        if r.attributed_to != plugin_identity:
-            continue
-        # Skip Tier-2 lockfile refs; they're not bundled components.
-        if r.extra.get("transitive") is not None:
-            continue
-        for eco, label in _BUNDLED_KINDS:
-            if r.ecosystem == eco:
-                counts[label] += 1
-                break
-    # MCPs span npm + PyPI; sum already happens via shared label.
-    seen_labels = list(dict.fromkeys(label for _, label in _BUNDLED_KINDS))
-    parts = [f"{counts[label]} bundled {label}" for label in seen_labels]
-    return ", ".join(parts)
-
-
-def _tier2_coverage_lines(refs: list[ComponentRef], plugin_identity: str | None) -> list[str]:
-    """Per-plugin Tier-2 coverage: one line per ecosystem covered.
-
-    Format:
-      npm: package-lock.json (transitive, 247 packages)
-      PyPI: package.json (direct only, 8 packages)
-    """
-    if plugin_identity is None:
-        return []
-    by_eco: dict[str, list[ComponentRef]] = {}
-    for r in refs:
-        if r.attributed_to != plugin_identity:
-            continue
-        if r.ecosystem not in {"npm", "PyPI"}:
-            continue
-        if r.extra.get("transitive") is None:
-            continue
-        by_eco.setdefault(r.ecosystem or "", []).append(r)
-    out: list[str] = []
-    for eco, ecorefs in sorted(by_eco.items()):
-        is_transitive = any(r.extra.get("transitive") is True for r in ecorefs)
-        if is_transitive:
-            source = "package-lock.json" if eco == "npm" else "uv.lock"
-            out.append(f"{eco}: {source} (transitive, {len(ecorefs)} packages)")
-        else:
-            source = "package.json" if eco == "npm" else "pyproject.toml"
-            out.append(f"{eco}: {source} (direct only, {len(ecorefs)} packages)")
-    return out
-
-
-def _bare_breakdown(refs: list[ComponentRef]) -> str:
-    """Summarize bare-component counts (no attribution) for verbose output."""
-    counts: dict[str, int] = {}
-    for r in refs:
-        if r.attributed_to is not None:
-            continue
-        if r.ecosystem in {"npm", "PyPI"}:
-            counts["MCPs"] = counts.get("MCPs", 0) + 1
-        elif r.ecosystem == "claude-skill":
-            counts["skills"] = counts.get("skills", 0) + 1
-        elif r.ecosystem == "claude-hook":
-            counts["hooks"] = counts.get("hooks", 0) + 1
-    if not counts:
-        return ""
-    return ", ".join(f"{n} {label}" for label, n in counts.items())
-
-
-def _bare_listing(refs: list[ComponentRef]) -> list[str]:
-    """Per-component identity strings for the bare (un-attributed) inventory.
-
-    Mirrors the per-plugin breakdown: after the "bare components: 5 skills"
-    summary line, each bare skill / hook / MCP gets its own indented line
-    so users can see exactly what was inventoried. Sorted alphabetically
-    within each ecosystem for deterministic output.
-    """
-    skills: list[str] = []
-    hooks: list[str] = []
-    mcps: list[str] = []
-    for r in refs:
-        if r.attributed_to is not None:
-            continue
-        if r.ecosystem == "claude-skill":
-            skills.append(r.component_identity or f"claude-skill/{r.name}")
-        elif r.ecosystem == "claude-hook":
-            hooks.append(r.component_identity or "claude-hook/?")
-        elif r.ecosystem in {"npm", "PyPI"}:
-            mcps.append(r.purl or _component_label(r))
-    return sorted(skills) + sorted(hooks) + sorted(mcps)
 
 
 def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
@@ -382,6 +284,16 @@ def _use_color(no_color: bool, output_format: str) -> bool:
         return sys.stdout.isatty()
     except (AttributeError, OSError):
         return False
+
+
+def _use_unicode(no_color: bool) -> bool:
+    """Use Unicode box-drawing for the inventory tree when the locale supports
+    UTF-8. Falls back to ASCII when `--no-color` is set or the encoding looks
+    non-UTF-8 — CI logs and minimal terminals get a clean parseable rendering."""
+    if no_color:
+        return False
+    encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
+    return "utf" in encoding
 
 
 def _emit(
@@ -656,24 +568,14 @@ def endpoint(
         click.echo(f"detected {roots_note} (mode=endpoint)", err=True)
         for w in warnings:
             click.echo(f"  warning: {w}", err=True)
-        click.echo(f"resolved {plugin_count} active plugin(s):", err=True)
-        for r in refs:
-            if r.ecosystem == "claude-plugin":
-                sha = r.extra.get("gitCommitSha")
-                sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
-                bundled = _bundled_breakdown(refs, r.component_identity)
-                scope_str = r.extra.get("scope")
-                click.echo(
-                    f"  {r.component_identity}{sha_note} [scope={scope_str}] → {bundled}",
-                    err=True,
-                )
-                for line in _tier2_coverage_lines(refs, r.component_identity):
-                    click.echo(f"    {line}", err=True)
-        bare_summary = _bare_breakdown(refs)
-        if bare_summary:
-            click.echo(f"bare components: {bare_summary}", err=True)
-            for line in _bare_listing(refs):
-                click.echo(f"  {line}", err=True)
+        tree = render_inventory_tree(
+            refs,
+            findings,
+            use_color=_use_color(no_color, output_format),
+            use_unicode=_use_unicode(no_color),
+        )
+        if tree:
+            click.echo(tree, err=True)
         if federate_osv:
             for line in _federation_targets_lines(refs):
                 click.echo(line, err=True)

@@ -13,7 +13,7 @@ import click
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 
-from tools.cvss import is_valid_cvss_v4
+from tools.cvss import is_valid_cvss
 
 _FORMAT_CHECKER = FormatChecker()
 
@@ -70,10 +70,13 @@ def check_path_consistency(advisory: dict, path: Path) -> list[str]:
 def check_cvss(advisory: dict) -> list[str]:
     errors: list[str] = []
     for i, sev in enumerate(advisory.get("severity") or []):
-        if sev.get("type") == "CVSS_V4":
-            score = sev.get("score", "")
-            if not is_valid_cvss_v4(score):
-                errors.append(f"cvss: severity[{i}].score is not a valid CVSS v4 vector: {score!r}")
+        sev_type = sev.get("type")
+        score = sev.get("score", "")
+        if sev_type in {"CVSS_V3", "CVSS_V4"} and not is_valid_cvss(sev_type, score):
+            label = sev_type.replace("CVSS_V", "v")
+            errors.append(
+                f"cvss: severity[{i}].score is not a valid CVSS {label} vector: {score!r}"
+            )
     return errors
 
 

@@ -1,0 +1,48 @@
+schema_version: 1.7.5
+id: ASVE-2026-0006
+type: vulnerability
+aliases:
+- CVE-2026-20205
+summary: Token leak via logs in Splunk MCP Server
+details: Splunk MCP Server below 1.0.3 improperly handles sensitive authentication
+  data during logging operations, exposing session and authorization tokens in clear
+  text. Users with access to the `_internal` index or the `mcp_tool_admin` capability
+  can extract credentials from log files (CWE-532). The vulnerability requires Splunk
+  admin-level privileges to exploit.
+published: '2026-04-15T00:00:00Z'
+modified: '2026-04-17T00:00:00Z'
+affected:
+- package:
+    ecosystem: splunk-app
+    name: splunk-mcp-server
+  ranges:
+  - type: ECOSYSTEM
+    events:
+    - introduced: '0'
+    - fixed: 1.0.3
+severity:
+- type: CVSS_V3
+  score: "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+references:
+- type: ADVISORY
+  url: https://advisory.splunk.com/advisories/SVD-2026-0407
+- type: WEB
+  url: https://www.sentinelone.com/vulnerability-database/cve-2026-20205/
+database_specific:
+  asve:
+    component_type: mcp_server
+    surfaces:
+    - tool_invocation
+    - logging
+    - auth_tokens
+    agent_impact:
+      repo_read: false
+      repo_write: false
+      credential_exfiltration: true
+      tool_hijack: false
+      memory_poisoning: false
+      pr_manipulation: false
+      code_execution: false
+    owasp_agentic_top10:
+    - asi05
+    evidence_level: confirmed

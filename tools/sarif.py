@@ -67,7 +67,9 @@ def to_sarif(
         # Resolve to the overlay's canonical id (the filename stem). OSV may
         # return a record under an alias (e.g. CVE-*) while our overlay file
         # is named for the GHSA id; without resolution the helpUri is a dead link.
-        resolved_id = overlay_id_map.get(advisory_id, advisory_id) if overlay_id_map else advisory_id
+        resolved_id = (
+            overlay_id_map.get(advisory_id, advisory_id) if overlay_id_map else advisory_id
+        )
         rules.append(
             {
                 "id": advisory_id,

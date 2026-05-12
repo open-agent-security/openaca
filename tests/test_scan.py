@@ -132,8 +132,15 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(clean), "--advisories", str(REPO_ROOT / "advisories"),
-         "--format", "text"],
+        [
+            "repo",
+            "--target",
+            str(clean),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
+        ],
     )
     assert result.exit_code == 0
     # Text format footer reports the totals.
@@ -149,8 +156,15 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
-         "--format", "text"],
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
+        ],
     )
     assert result.exit_code == 0
     # The text-format footer reflects the parse failure: 1 manifest found,
@@ -170,8 +184,15 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
-         "--format", "text"],
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
+        ],
     )
     assert result.exit_code == 0
     assert "Scanned 2 manifests" in result.output
@@ -182,8 +203,15 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
-         "--format", "text"],
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
+        ],
     )
     assert result.exit_code == 0
     # No manifests visited → 0/0 footer with the "no findings" suffix.

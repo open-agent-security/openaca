@@ -1345,12 +1345,14 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
 # ── --db / agent-composition scope ────────────────────────────────────────
 
 
-def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
+def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path, monkeypatch):
     """A vulnerable npm dep declared in a non-plugin repo (no
     .claude-plugin/plugin.json sibling) is classified as software-dependency
     and suppressed — ASVE V0 is agent-composition analysis. The ACA framing
     footer explains the silence and points to osv-scanner / Trivy."""
-    monkeypatch_ga = None  # only used for clarity; CliRunner inherits env
+    # The ACA footer is part of the `text` renderer; clear GITHUB_ACTIONS so
+    # CI runs don't auto-promote to `github` format and silently miss it.
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     (tmp_path / "package.json").write_text(
         json.dumps(
             {
@@ -1371,7 +1373,6 @@ def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
             str(REPO_ROOT / "advisories"),
         ],
     )
-    del monkeypatch_ga
     assert result.exit_code == 0, result.output
     assert "ASVE-2026-0001" not in result.output
     assert "no findings" in result.output

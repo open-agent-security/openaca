@@ -158,6 +158,36 @@ def test_fixed_in_selects_matched_window():
     assert _fixed_in_for_finding(_finding("MULTI", "lib", "1.2.0"), advisory) == "1.5.0"
 
 
+def test_fixed_in_falls_back_to_raw_string_for_non_pep440_boundary():
+    """Non-PEP 440 fixed version (e.g. npm prerelease) returns the raw string.
+
+    The per-finding row shows "fixed in 1.0.0-beta.1" rather than "fixed in no
+    fix", so users see that a fix exists even though version comparison is
+    impossible. Note that _aggregate_fix still returns None for such strings
+    (can't compute max), so the group fix: header correctly shows "see findings".
+    """
+    advisory = {
+        "id": "GHSA-PREREL",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "mylib"},
+                "ranges": [
+                    {
+                        "type": "SEMVER",
+                        "events": [
+                            {"introduced": "0"},
+                            {"fixed": "1.0.0-beta.1"},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    assert (
+        _fixed_in_for_finding(_finding("GHSA-PREREL", "mylib", "0.9.0"), advisory) == "1.0.0-beta.1"
+    )
+
+
 def test_aggregate_fix_picks_max():
     """Two findings, fixed in 2.6.4 and 2.7.0 → group fix is 2.7.0 (the
     smallest version that clears BOTH)."""

@@ -28,3 +28,19 @@ def test_v0_rejects_non_vulnerability_types(schema, fixtures_dir, name):
     advisory = yaml.safe_load((fixtures_dir / "invalid" / f"{name}.yaml").read_text())
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(advisory)
+
+
+@pytest.mark.parametrize(
+    "sev_type,score",
+    [
+        # v3 declaration with a v4 vector body
+        ("CVSS_V3", "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+        # v4 declaration with a v3 vector body
+        ("CVSS_V4", "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"),
+    ],
+)
+def test_schema_rejects_mismatched_severity_type_and_score(schema, sample_valid, sev_type, score):
+    advisory = dict(sample_valid)
+    advisory["severity"] = [{"type": sev_type, "score": score}]
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)

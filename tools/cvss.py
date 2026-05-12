@@ -53,6 +53,8 @@ def _validate_vector(vector: str, prefix: str, required: dict[str, set[str]]) ->
     for key, allowed in required.items():
         if key not in metrics or metrics[key] not in allowed:
             return False
+    if metrics.keys() - required.keys():
+        return False  # non-base metric present; base-only policy
     return True
 
 

@@ -509,6 +509,40 @@ def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch
     assert "mode=endpoint" in result.output
 
 
+def test_endpoint_claude_config_dir_env_nonexistent_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "does-not-exist"))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not exist or is not a directory" in result.output
+
+
+def test_endpoint_claude_config_dir_env_file_not_dir_errors(tmp_path, monkeypatch):
+    bad_path = tmp_path / "not-a-dir"
+    bad_path.write_text("oops")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(bad_path))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--advisories",
+            str(REPO_ROOT / "advisories"),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "does not exist or is not a directory" in result.output
+
+
 def test_fs_subcommand_is_not_kept_as_alias():
     runner = CliRunner()
     result = runner.invoke(

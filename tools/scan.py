@@ -598,7 +598,12 @@ def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
         return config_dir.expanduser()
     configured = os.environ.get("CLAUDE_CONFIG_DIR")
     if configured:
-        return Path(configured).expanduser()
+        resolved = Path(configured).expanduser()
+        if not resolved.is_dir():
+            raise click.UsageError(
+                f"CLAUDE_CONFIG_DIR={configured!r} does not exist or is not a directory"
+            )
+        return resolved
     return Path.home() / ".claude"
 
 

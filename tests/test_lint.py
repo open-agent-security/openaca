@@ -111,3 +111,18 @@ def test_lint_fails_on_missing_internal_alias(fixtures_dir, tmp_path):
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code != 0
     assert "ASVE-2026-9999" in result.output
+
+
+def test_lint_fails_on_duplicate_overlay_id_across_subdirs(fixtures_dir, tmp_path):
+    """Two files in different subdirectories with the same overlay id both fail lint."""
+    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    content = src.read_text()
+    # Place the same overlay under two different subdirectory paths.
+    for subdir in ("overlays/a", "overlays/b"):
+        d = tmp_path / subdir
+        d.mkdir(parents=True)
+        (d / "ASVE-2026-0001.yaml").write_text(content)
+    runner = CliRunner()
+    result = runner.invoke(main, [str(tmp_path / "overlays")])
+    assert result.exit_code != 0
+    assert "id:" in result.output.lower()

@@ -13,6 +13,25 @@ def load_overlays(overlays_root: Path) -> list[dict]:
     return [yaml.safe_load(p.read_text()) for p in sorted(overlays_root.rglob("*.yaml"))]
 
 
+def build_alias_to_overlay_id_map(overlays: list[dict]) -> dict[str, str]:
+    """Map every id/alias in each overlay to that overlay's canonical id.
+
+    Needed for SARIF helpUri: OSV may return a record under a CVE alias while
+    the overlay file is named for the GHSA id. Without this map, the helpUri
+    points to a URL that has no corresponding overlay page.
+    """
+    result: dict[str, str] = {}
+    for overlay in overlays:
+        overlay_id = overlay.get("id")
+        if not isinstance(overlay_id, str):
+            continue
+        result[overlay_id] = overlay_id
+        for alias in overlay.get("aliases") or []:
+            if isinstance(alias, str):
+                result[alias] = overlay_id
+    return result
+
+
 def id_set(record: dict) -> set[str]:
     """Return the vulnerability identity set for an OSV-shaped record."""
     ids: set[str] = set()

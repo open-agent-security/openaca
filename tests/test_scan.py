@@ -368,7 +368,7 @@ affected:
 
     advisory = yaml.safe_load((advisories_dir / "ASVE-2026-9999.yaml").read_text())
 
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(
             main,
             [

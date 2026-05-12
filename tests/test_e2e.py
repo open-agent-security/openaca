@@ -307,7 +307,7 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
     (advisories_dir / "ASVE-2026-9001.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["repo", "--target", str(target), "-v"])
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9001" in result.output
@@ -385,7 +385,7 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
 
     sarif_path = tmp_path / "out.sarif"
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(
             scan_main,
             [
@@ -471,7 +471,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     (advisories_dir / "ASVE-2026-9003.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0)):
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
     assert result.exit_code == 1, result.output
     assert "ASVE-2026-9003" in result.output

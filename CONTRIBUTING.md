@@ -107,12 +107,29 @@ uv run pytest
      `.claude/commands/` or `.claude/agents/`). V0 is identity-only
      matching.
 
-4. **Add a CVSS v4 vector** under `severity[]` if known:
+4. **Add a CVSS v3 or v4 vector** under `severity[]` if known:
    ```yaml
+   # ASVE-authored record — prefer v4:
    severity:
      - type: CVSS_V4
        score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+
+   # Alias / enrichment record — preserve upstream verbatim, do not translate:
+   severity:
+     - type: CVSS_V3
+       score: "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
    ```
+
+   Policy:
+   - **Prefer v4 for ASVE-authored records**. The v4 schema captures
+     attack-vector context more precisely than v3.1.
+   - **For alias/enrichment records, preserve the upstream vector as-is**
+     — do not fabricate v4 translations. The score belongs to the
+     upstream CNA; ASVE's value-add lives in `database_specific.asve`.
+   - **Score Base metrics only.** Agent-context impact belongs in
+     `database_specific.asve.agent_impact`, not in CVSS environmental
+     metrics (which are meant to be consumer/environment-specific, not
+     part of a public advisory).
 
 5. **Lint locally**:
    ```bash

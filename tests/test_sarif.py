@@ -86,6 +86,17 @@ def test_sarif_help_uri_resolves_alias_to_overlay_canonical_id():
     assert rule["helpUri"] == "https://asve.dev/overlays/GHSA-3q26-f695-pp76.html"
 
 
+def test_sarif_help_uri_falls_back_to_osv_when_no_overlay():
+    """When the scanner matches an OSV advisory that has no ASVE overlay, the
+    helpUri must fall back to the OSV URL rather than a dead asve.dev link."""
+    findings = [Finding(advisory_id="GHSA-no-overlay", component=_ref(), confidence="high")]
+    # Map is present but does not contain GHSA-no-overlay.
+    overlay_id_map = {"GHSA-other": "GHSA-other"}
+    sarif = to_sarif(findings, {}, overlay_id_map)
+    rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
+    assert rule["helpUri"] == "https://osv.dev/vulnerability/GHSA-no-overlay"
+
+
 def test_sarif_no_duplicate_rules_when_multiple_findings_share_advisory():
     findings = [
         Finding(advisory_id="ASVE-2026-0001", component=_ref(), confidence="high"),

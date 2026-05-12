@@ -132,7 +132,8 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(clean), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(clean), "--advisories", str(REPO_ROOT / "advisories"),
+         "--format", "text"],
     )
     assert result.exit_code == 0
     # Text format footer reports the totals.
@@ -148,7 +149,8 @@ def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
+         "--format", "text"],
     )
     assert result.exit_code == 0
     # The text-format footer reflects the parse failure: 1 manifest found,
@@ -168,7 +170,8 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
+         "--format", "text"],
     )
     assert result.exit_code == 0
     assert "Scanned 2 manifests" in result.output
@@ -179,7 +182,8 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories")],
+        ["repo", "--target", str(tmp_path), "--advisories", str(REPO_ROOT / "advisories"),
+         "--format", "text"],
     )
     assert result.exit_code == 0
     # No manifests visited → 0/0 footer with the "no findings" suffix.
@@ -304,6 +308,8 @@ def test_endpoint_subcommand_minimal_install_no_findings():
             str(config_dir),
             "--advisories",
             str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
         ],
     )
     assert result.exit_code == 0
@@ -427,6 +433,8 @@ def test_endpoint_subcommand_project_layers_with_config_dir(tmp_path):
             str(project),
             "--advisories",
             str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
         ],
     )
     assert result.exit_code == 0
@@ -457,6 +465,8 @@ def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_p
             str(project),
             "--advisories",
             str(REPO_ROOT / "advisories"),
+            "--format",
+            "text",
         ],
     )
     assert result.exit_code == 0
@@ -1174,8 +1184,10 @@ def test_repo_subcommand_skips_gitignored_by_default(tmp_path):
 # ── --format mode behavior ────────────────────────────────────────────────
 
 
-def test_scan_default_format_is_text(tmp_path):
+def test_scan_default_format_is_text(tmp_path, monkeypatch):
     """Default output is grouped text, NOT GitHub workflow annotations."""
+    # Clear GITHUB_ACTIONS so auto-detection doesn't override the default.
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     runner = CliRunner()
     result = runner.invoke(
         main,

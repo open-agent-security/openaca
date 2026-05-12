@@ -62,6 +62,45 @@ def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
     assert "path" in result.output.lower()
 
 
+def test_lint_passes_for_v3_severity(fixtures_dir, tmp_path):
+    """An advisory with a CVSS v3.1 severity block should pass the linter
+    end-to-end. v3 is now an accepted upstream-preservation format."""
+    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    advisory = yaml.safe_load(src.read_text())
+    advisory["severity"] = [
+        {
+            "type": "CVSS_V3",
+            "score": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+        }
+    ]
+    target_dir = tmp_path / "advisories" / "2026"
+    target_dir.mkdir(parents=True)
+    (target_dir / "ASVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(tmp_path / "advisories")])
+    assert result.exit_code == 0, result.output
+
+
+def test_lint_fails_on_v3_type_with_v4_vector(fixtures_dir, tmp_path):
+    """Declared type and vector body must agree — a v3 declaration with a
+    v4-shaped score body is malformed and must be rejected."""
+    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    advisory = yaml.safe_load(src.read_text())
+    advisory["severity"] = [
+        {
+            "type": "CVSS_V3",
+            "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        }
+    ]
+    target_dir = tmp_path / "advisories" / "2026"
+    target_dir.mkdir(parents=True)
+    (target_dir / "ASVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(tmp_path / "advisories")])
+    assert result.exit_code != 0
+    assert "cvss" in result.output.lower()
+
+
 def test_lint_fails_on_missing_internal_alias(fixtures_dir, tmp_path):
     src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
     target_dir = tmp_path / "advisories" / "2026"

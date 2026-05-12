@@ -250,7 +250,12 @@ def render_text(
         if stats.parse_failed:
             parts.append(f"({stats.parse_failed} failed to parse)")
         parts.append("— no findings.")
-        return " ".join(parts)
+        # ACA framing footer: keep users from concluding "ASVE found
+        # nothing" when their general software deps weren't even in scope.
+        return " ".join(parts) + (
+            "\nASVE scans agent composition; for general software dependency "
+            "scans, use osv-scanner or Trivy."
+        )
 
     groups = _group_findings(findings)
     ranked: list[tuple[int, str, GroupKey, list[Finding]]] = []

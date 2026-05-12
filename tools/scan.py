@@ -52,6 +52,29 @@ from tools.sarif import to_sarif
 
 _FORMAT_CHOICES = ("text", "github", "json")
 
+# `--db` choices. V0 ships two combinations; the comma form is a literal
+# string the user types — Click `Choice` does exact matching. Adding a
+# third backend later (e.g., GHSA direct) means appending to this tuple
+# and teaching `_parse_db_selection` the new token.
+_DB_CHOICES = ("asve", "asve,osv")
+
+
+def _parse_db_selection(value: str) -> set[str]:
+    """Tokenize a `--db` value into a set of backend names."""
+    return {tok.strip() for tok in value.split(",") if tok.strip()}
+
+
+# Internal ref classifications that are surfaced to users in V0. Everything
+# else (software-dependency) is suppressed from matching, federation, and
+# rendering — ASVE V0 is agent-composition analysis; for general software
+# dep scans, point users at osv-scanner / Trivy (see footer + README).
+_AGENT_SCOPES: frozenset[str] = frozenset({"agent-component", "agent-dependency"})
+
+
+def _filter_agent_scope_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
+    """Drop software-dependency refs before they reach matching/federation/rendering."""
+    return [r for r in refs if r.scope in _AGENT_SCOPES]
+
 
 def load_corpus(advisories_root: Path) -> list[dict]:
     return [yaml.safe_load(p.read_text()) for p in sorted(advisories_root.rglob("*.yaml"))]
@@ -87,7 +110,7 @@ def _finding_line(f: Finding) -> str:
 
 
 def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
-    """Render the verbose pre-query summary for `--federate-osv`.
+    """Render the verbose pre-query summary for `--db asve,osv`.
 
     Two parts: the queried PURL list (what was actually sent) and a count
     of skipped refs bucketed by ecosystem (so users can see what wasn't
@@ -202,6 +225,18 @@ _no_color_option = click.option(
     is_flag=True,
     default=False,
     help="Disable ANSI colors in text output. Colors are also off when stdout is not a TTY.",
+)
+_db_option = click.option(
+    "--db",
+    "db",
+    type=click.Choice(_DB_CHOICES),
+    default="asve",
+    show_default=True,
+    help=(
+        "Advisory database(s) to consult. `asve` (default) uses only the local "
+        "ASVE corpus. `asve,osv` also queries OSV.dev for additional records "
+        "covering emitted PURLs; network required, fails soft if unreachable."
+    ),
 )
 
 
@@ -365,12 +400,7 @@ def _stderr_summary(
 @_verbose_option
 @_format_option
 @_no_color_option
-@click.option(
-    "--federate-osv",
-    is_flag=True,
-    default=False,
-    help="Query OSV.dev for additional vulnerability records.",
-)
+@_db_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -390,19 +420,28 @@ def repo(
     verbose: bool,
     output_format: str,
     no_color: bool,
-    federate_osv: bool,
+    db: str,
     include_gitignored: bool,
 ) -> None:
     """Scan a code repository's declared manifests."""
     sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color
     )
+    backends = _parse_db_selection(db)
+    federate_osv = "osv" in backends
+
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     # Dedup across discovery paths — the same logical component can appear in
     # multiple groups (e.g., a plugin's .mcp.json walked both directly and
     # indirectly via plugin.json's string-path mcpServers). Verbose output
     # still shows raw `grouped` so users see what each manifest declared.
-    refs = flatten_grouped(grouped)
+    all_refs = flatten_grouped(grouped)
+    # V0: drop software-dependency refs (deps from non-plugin manifests).
+    # ASVE is agent-composition analysis; deps belonging to general
+    # software in the repo are out of scope and would mislead users into
+    # thinking ASVE is a general SCA tool. See README for framing.
+    refs = _filter_agent_scope_refs(all_refs)
+    suppressed_software = len(all_refs) - len(refs)
     n_failed = n_found - len(grouped)
     corpus = load_corpus(advisories)
     _stamp_source(corpus, "asve.dev")
@@ -427,8 +466,15 @@ def repo(
                 err=True,
             )
             for path, group in grouped:
+                kept = _filter_agent_scope_refs(group)
                 click.echo(
-                    f"  {_relative_to(path, target)} — {len(group)} component(s)",
+                    f"  {_relative_to(path, target)} — {len(kept)} component(s)",
+                    err=True,
+                )
+            if suppressed_software:
+                click.echo(
+                    f"  ({suppressed_software} software-dependency ref(s) suppressed; "
+                    "use osv-scanner or Trivy for general software scans)",
                     err=True,
                 )
         elif n_found:
@@ -505,21 +551,7 @@ def repo(
 @_verbose_option
 @_format_option
 @_no_color_option
-@click.option(
-    "--exclude-transitive",
-    is_flag=True,
-    default=False,
-    help="Skip Tier-2 dependency scanning (lockfiles + manifest fallback). "
-    "Tier-1 agent-stack inventory still emitted.",
-)
-@click.option(
-    "--federate-osv",
-    is_flag=True,
-    default=False,
-    help="Query OSV.dev for additional vulnerability records covering "
-    "emitted PURLs. Augments the local corpus with osv.dev-sourced "
-    "findings. Network required; fails soft if OSV.dev is unreachable.",
-)
+@_db_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
@@ -530,20 +562,21 @@ def endpoint(
     verbose: bool,
     output_format: str,
     no_color: bool,
-    exclude_transitive: bool,
-    federate_osv: bool,
+    db: str,
 ) -> None:
     """Scan the active agent stack installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color
     )
+    backends = _parse_db_selection(db)
+    federate_osv = "osv" in backends
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
     refs, warnings = parse_install(
         install_root=config_dir,
         project_root=project,
         mode="endpoint",
-        include_transitive=not exclude_transitive,
+        include_transitive=True,
     )
     corpus = load_corpus(advisories)
     _stamp_source(corpus, "asve.dev")

@@ -29,6 +29,23 @@ ADVISORIES_DIR = REPO_ROOT / "advisories"
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 
 
+def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0") -> None:
+    """Write `.claude-plugin/plugin.json` to mark `root` as a plugin repo.
+
+    Under V0 agent-composition scope, dep manifests (package.json,
+    pyproject.toml, package-lock.json, uv.lock) are classified as
+    "software-dependency" and suppressed unless co-located with this
+    marker — at which point they become "agent-dependency" and surface
+    in scan output. Tests that build dep manifests in tmp_path and
+    expect findings need this helper.
+    """
+    plugin_dir = root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({"name": name, "version": version}), encoding="utf-8"
+    )
+
+
 def _load_corpus() -> list[tuple[Path, dict]]:
     return [(p, yaml.safe_load(p.read_text())) for p in sorted(ADVISORIES_DIR.rglob("*.yaml"))]
 
@@ -223,6 +240,7 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
 
     target = tmp_path / "pyproj"
     target.mkdir()
+    _mark_as_plugin(target)
     (target / "pyproject.toml").write_text(
         '[project]\nname = "x"\nversion = "0"\ndependencies = ["aws-mcp-server==0.3.0"]\n',
         encoding="utf-8",
@@ -542,54 +560,6 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
     assert properties.get("source") == "asve.dev"
 
 
-def test_endpoint_exclude_transitive_suppresses_lockfile_finding(tmp_path):
-    """The same fixture under --exclude-transitive should not fire the finding."""
-    from tools.scan import main as scan_main
-
-    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "package-lock.json").write_text(
-        json.dumps(
-            {
-                "lockfileVersion": 3,
-                "packages": {
-                    "": {"name": "vuln-plugin", "version": "1.0.0"},
-                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
-                },
-            }
-        )
-    )
-    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
-    (tmp_path / "plugins").mkdir()
-    (tmp_path / "plugins" / "installed_plugins.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "plugins": {
-                    "vuln-plugin@m": [
-                        {"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}
-                    ]
-                },
-            }
-        )
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(
-        scan_main,
-        [
-            "endpoint",
-            "--config-dir",
-            str(tmp_path),
-            "--advisories",
-            str(ADVISORIES_DIR),
-            "--exclude-transitive",
-        ],
-    )
-    assert result.exit_code == 0
-    assert "ASVE-2026-0001" not in result.output
-
-
 def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     """Repo mode + package-lock.json at root: lockfile findings emit with
     attributed_to=None and coverage=transitive."""
@@ -597,6 +567,7 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
 
     target = tmp_path / "host-repo"
     target.mkdir()
+    _mark_as_plugin(target, name="host", version="1.0.0")
     (target / "package-lock.json").write_text(
         json.dumps(
             {

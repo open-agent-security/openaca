@@ -8,6 +8,15 @@ skills, agent frameworks, model proxies, and runtime components.
 
 ## Why ASVE
 
+ASVE is **Agent Composition Analysis (ACA)**, not general Software
+Composition Analysis (SCA). It is targeted at the agent stack: which
+plugins, MCP servers, skills, hooks, and commands compose an agent —
+and which of those have known security advisories. For general
+software dependency scans (your app's transitive npm/PyPI tree, your
+container image, etc.), use [osv-scanner](https://github.com/google/osv-scanner)
+or [Trivy](https://github.com/aquasecurity/trivy) alongside ASVE; the
+layers stack.
+
 Traditional Software Composition Analysis (SCA) reads `package.json`
 and lockfiles. Agents install components a different way: an MCP
 server invoked from `mcp.json` via `uvx package==1.4.0`, a Claude
@@ -204,11 +213,28 @@ ASVE follows a tiered model loosely analogous to traditional SCA's
 | **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
 | **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
 
-**OSV.dev federation (opt-in).** Pass `--federate-osv` to either subcommand
-to query OSV.dev for additional vulnerability records covering emitted
-PURLs. Combines ASVE's install-state filtering and attribution with OSV.dev's
-full corpus — a more accurate Tier-2 scanner for agent stacks than generic
-recursive walkers. See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md`.
+**Advisory database selection.** `--db` controls which backends are
+consulted:
+
+- `--db asve` (default) — local ASVE corpus only.
+- `--db asve,osv` — also query OSV.dev for additional vulnerability
+  records covering emitted PURLs. Network required; fails soft if
+  OSV.dev is unreachable.
+
+See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md` for the
+federation design.
+
+**Agent-composition scope.** Repo-mode dependency manifests
+(`package.json`, `pyproject.toml`, `package-lock.json`, `uv.lock`) are
+classified as **agent-dependency** only when co-located with a
+`.claude-plugin/plugin.json` sibling — i.e., they declare the deps
+*of a plugin's implementation*. Bare dep manifests in repos that
+aren't plugins are classified as **software-dependency** and
+suppressed from output (and from OSV.dev queries) — that's
+general-purpose SCA territory, not ACA. Scan those with osv-scanner
+or Trivy instead. A non-empty repo with only software-dependency
+refs produces an explicit footer pointing to those tools rather than
+a silent "no findings."
 
 Per-parser detail:
 

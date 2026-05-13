@@ -274,6 +274,67 @@ def test_seed_reads_per_ecosystem_modified_index(tmp_path):
     assert (out / "MAL-2026-1234.yaml").exists()
 
 
+def test_seed_reads_per_ecosystem_modified_index_from_all_zip(tmp_path):
+    records = tmp_path / "records" / "PyPI"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    with zipfile.ZipFile(records / "all.zip", "w") as zf:
+        zf.writestr("MAL-2026-1234.json", json.dumps(_mal_record()))
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text("2026-05-13T00:00:00Z,MAL-2026-1234\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(records),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "MAL-2026-1234.yaml").exists()
+
+
+def test_seed_reads_top_level_modified_index_from_ecosystem_all_zip(tmp_path):
+    records = tmp_path / "records"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    (records / "npm").mkdir(parents=True)
+    existing.mkdir()
+    with zipfile.ZipFile(records / "npm" / "all.zip", "w") as zf:
+        zf.writestr("GHSA-abcd-ef12-3456.json", json.dumps(_ghsa_record()))
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "2026-05-13T00:00:00Z,npm/GHSA-abcd-ef12-3456\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(records),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
 def test_seed_dry_run_does_not_update_incremental_state(tmp_path):
     records = tmp_path / "records" / "npm"
     out = tmp_path / "candidates"

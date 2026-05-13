@@ -96,13 +96,18 @@ uv run pytest
 
 3. **Optionally seed candidates from an OSV dump**:
    ```bash
+   bash scripts/seed-osv-overlays.sh
+
    uv run asve-seed /path/to/osv/all.zip
    uv run asve-seed --modified-index /path/to/osv/modified_id.csv \
      --records-root /path/to/osv --state .asve-seed-state.json
    uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
-   Review and edit candidate YAML before promotion. `asve-promote`
-   writes a minimal canonical overlay under `overlays/`.
+   The script downloads the npm and PyPI `modified_id.csv` + `all.zip`
+   dumps into `${ASVE_OSV_CACHE_DIR:-$TMPDIR/asve-osv}` and advances the
+   committed per-ecosystem seed cursors. Review and edit candidate YAML
+   before promotion. `asve-promote` writes a minimal canonical overlay
+   under `overlays/`.
 
 4. **Lint locally**:
    ```bash

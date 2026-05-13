@@ -78,3 +78,22 @@
 - [ ] Run `git diff --check`.
 - [ ] Review diff for accidental main-worktree spike carryover or canonical overlay noise.
 - [ ] Commit, push, and open a ready PR.
+
+### Task 6: npm/PyPI Incremental Seed Workflow
+
+**Files:**
+- Create: `scripts/seed-osv-overlays.sh`
+- Create: `.asve-seed-state-npm.json`
+- Create: `.asve-seed-state-pypi.json`
+- Modify: `tools/seed/__main__.py`
+- Modify: `CONTRIBUTING.md`
+- Test: `tests/test_seed_cli.py`
+- Test: `tests/test_seed_workflow_script.py`
+
+- [x] Write tests for `modified_id.csv` rows resolving from ecosystem `all.zip` files.
+- [x] Write a script smoke test with fake `gcloud` and `uv`.
+- [x] Teach incremental seeding to resolve records from extracted JSON, ecosystem `all.zip`, and root `all.zip`.
+- [x] Add a repeatable script that downloads npm and PyPI OSV dumps and runs `asve-seed` with committed cursor files.
+- [x] Document the scripted workflow.
+- [x] Run focused seeder and script tests.
+- [x] Run full verification before PR.

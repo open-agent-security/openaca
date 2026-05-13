@@ -126,3 +126,56 @@ printf '%s\\n' "$*" >> "$UV_LOG"
     assert log.count("--llm-provider openai") == 2
     assert log.count("--llm-model test-model") == 2
     assert "test-key" not in log
+
+
+def test_seed_osv_workflow_passes_optional_seed_limit(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_gcs = tmp_path / "gcs"
+    cache = tmp_path / "cache"
+    uv_log = tmp_path / "uv.log"
+    fake_bin.mkdir()
+
+    for ecosystem in ("npm", "PyPI"):
+        root = fake_gcs / ecosystem
+        root.mkdir(parents=True)
+        (root / "modified_id.csv").write_text("2026-05-13T00:00:00Z,GHSA-test\n", encoding="utf-8")
+        (root / "all.zip").write_bytes(b"zip")
+
+    _write_executable(
+        fake_bin / "gcloud",
+        """#!/usr/bin/env bash
+set -euo pipefail
+rel="${3#gs://osv-vulnerabilities/}"
+mkdir -p "$(dirname "$4")"
+cp "$FAKE_GCS_ROOT/$rel" "$4"
+""",
+    )
+    _write_executable(
+        fake_bin / "uv",
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$UV_LOG"
+""",
+    )
+
+    env = {
+        **os.environ,
+        "ASVE_OSV_CACHE_DIR": str(cache),
+        "ASVE_SEED_LIMIT": "3",
+        "FAKE_GCS_ROOT": str(fake_gcs),
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "UV_LOG": str(uv_log),
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/seed-osv-overlays.sh"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    log = uv_log.read_text(encoding="utf-8")
+    assert log.count("--limit 3") == 2

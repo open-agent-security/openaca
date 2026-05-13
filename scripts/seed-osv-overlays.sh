@@ -35,6 +35,9 @@ seed_ecosystem() {
   if [[ "${ASVE_SEED_DRY_RUN:-}" == "1" ]]; then
     seed_args+=(--dry-run)
   fi
+  if [[ -n "${ASVE_SEED_LIMIT:-}" ]]; then
+    seed_args+=(--limit "$ASVE_SEED_LIMIT")
+  fi
   uv run asve-seed "${seed_args[@]}"
 }
 

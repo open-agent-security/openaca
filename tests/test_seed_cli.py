@@ -210,7 +210,16 @@ def test_seed_reads_only_new_records_from_top_level_modified_index(tmp_path):
         encoding="utf-8",
     )
     state = tmp_path / "state.json"
-    state.write_text('{"last_modified": "2026-05-12T00:00:00Z"}\n', encoding="utf-8")
+    state.write_text(
+        json.dumps(
+            {
+                "last_modified": "2026-05-12T00:00:00Z",
+                "last_modified_ids": ["PyPI/MAL-2026-9999"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     result = CliRunner().invoke(
         main,
@@ -232,7 +241,8 @@ def test_seed_reads_only_new_records_from_top_level_modified_index(tmp_path):
     assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
     assert not (out / "MAL-2026-9999.yaml").exists()
     assert yaml.safe_load(state.read_text(encoding="utf-8")) == {
-        "last_modified": "2026-05-13T00:00:00Z"
+        "last_modified": "2026-05-13T00:00:00Z",
+        "last_modified_ids": ["npm/GHSA-abcd-ef12-3456"],
     }
 
 
@@ -345,3 +355,77 @@ def test_seed_modified_index_deduplicates_aliases_within_run(tmp_path):
     assert result.exit_code == 0, result.output
     assert len(list(out.glob("*.yaml"))) == 1
     assert "1 already curated" in result.output
+
+
+def test_seed_incremental_does_not_drop_records_at_cursor_timestamp(tmp_path):
+    """OSV may publish new rows at the same timestamp as the cursor; they must not be skipped."""
+    records = tmp_path / "records" / "npm"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir(parents=True)
+    existing.mkdir()
+
+    # Two records with the same modified timestamp — GHSA was seen in a prior run,
+    # CVE-NEW is freshly published at the same second.
+    _write_json(records / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    new_record = {
+        "schema_version": "1.7.5",
+        "id": "CVE-2026-99999",
+        "modified": "2026-05-13T00:00:00Z",
+        "summary": "New mcp-demo vulnerability at same timestamp",
+        "affected": [{"package": {"ecosystem": "npm", "name": "mcp-demo"}}],
+    }
+    _write_json(records / "CVE-2026-99999.json", new_record)
+
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "\n".join(
+            [
+                "2026-05-13T00:00:00Z,npm/CVE-2026-99999",
+                "2026-05-13T00:00:00Z,npm/GHSA-abcd-ef12-3456",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # Simulate a prior run that saw GHSA but not CVE-99999 (published later at same timestamp)
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "last_modified": "2026-05-13T00:00:00Z",
+                "last_modified_ids": ["npm/GHSA-abcd-ef12-3456"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(tmp_path / "records"),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    # CVE-99999 is new at the cursor timestamp — must be seeded
+    assert (out / "CVE-2026-99999.yaml").exists()
+    # GHSA was already seen — must not be duplicated
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    # State accumulates both IDs at the cursor timestamp
+    saved = yaml.safe_load(state.read_text(encoding="utf-8"))
+    assert saved["last_modified"] == "2026-05-13T00:00:00Z"
+    assert set(saved["last_modified_ids"]) == {
+        "npm/CVE-2026-99999",
+        "npm/GHSA-abcd-ef12-3456",
+    }

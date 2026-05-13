@@ -128,15 +128,18 @@ def iter_records(source: Path) -> Iterable[dict[str, Any]]:
             yield data
 
 
-def _load_state(state: Path | None) -> str | None:
+def _load_state(state: Path | None) -> tuple[str | None, set[str]]:
     if state is None or not state.exists():
-        return None
+        return None, set()
     try:
         data = json.loads(state.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
+        return None, set()
     last_modified = data.get("last_modified")
-    return last_modified if isinstance(last_modified, str) else None
+    ts = last_modified if isinstance(last_modified, str) else None
+    raw_ids = data.get("last_modified_ids")
+    ids: set[str] = set(raw_ids) if isinstance(raw_ids, list) else set()
+    return ts, ids
 
 
 def _record_path(records_root: Path, row_id: str) -> Path:
@@ -149,31 +152,42 @@ def _record_path(records_root: Path, row_id: str) -> Path:
 
 
 def iter_modified_records(
-    modified_index: Path, records_root: Path, last_modified: str | None
-) -> Iterator[tuple[str, dict[str, Any]]]:
+    modified_index: Path,
+    records_root: Path,
+    last_modified: str | None,
+    last_modified_ids: set[str],
+) -> Iterator[tuple[str, str, dict[str, Any]]]:
     for raw_line in modified_index.read_text(encoding="utf-8").splitlines():
         if not raw_line.strip():
             continue
         modified, sep, row_id = raw_line.partition(",")
         if not sep or not modified or not row_id:
             continue
-        if last_modified is not None and modified <= last_modified:
-            break
+        if last_modified is not None:
+            if modified < last_modified:
+                break
+            if modified == last_modified and row_id in last_modified_ids:
+                continue
         path = _record_path(records_root, row_id)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         if isinstance(data, dict):
-            yield modified, data
+            yield modified, row_id, data
 
 
-def _write_state(state: Path | None, newest_modified: str | None) -> None:
+def _write_state(state: Path | None, newest_modified: str | None, newest_ids: set[str]) -> None:
     if state is None or newest_modified is None:
         return
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(
-        json.dumps({"last_modified": newest_modified}, indent=2) + "\n", encoding="utf-8"
+        json.dumps(
+            {"last_modified": newest_modified, "last_modified_ids": sorted(newest_ids)},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -315,22 +329,30 @@ def main(
     curated = _curated_keys(existing_overlays)
     scanned = matched = skipped = written = 0
     newest_modified: str | None = None
+    newest_modified_ids: set[str] = set()
 
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
     out_dir_resolved = out_dir.resolve()
 
+    last_modified, last_modified_ids = _load_state(state)
+
     if modified_index is not None:
         assert records_root is not None
-        records = iter_modified_records(modified_index, records_root, _load_state(state))
+        records: Iterable[tuple[str | None, str | None, dict[str, Any]]] = iter_modified_records(
+            modified_index, records_root, last_modified, last_modified_ids
+        )
     else:
         assert source is not None
-        records = ((None, record) for record in iter_records(source))
+        records = ((None, None, record) for record in iter_records(source))
 
-    for modified, record in records:
+    for modified, row_id, record in records:
         scanned += 1
-        if modified is not None and newest_modified is None:
-            newest_modified = modified
+        if modified is not None:
+            if newest_modified is None:
+                newest_modified = modified
+            if modified == newest_modified and row_id is not None:
+                newest_modified_ids.add(row_id)
         matched_by = discovery_reasons(record)
         if not matched_by:
             continue
@@ -358,8 +380,11 @@ def main(
         written += 1
         curated.update(_identity(record))
 
+    if newest_modified is not None and newest_modified == last_modified:
+        newest_modified_ids |= last_modified_ids
+
     if not dry_run:
-        _write_state(state, newest_modified)
+        _write_state(state, newest_modified, newest_modified_ids)
 
     click.echo(
         f"scanned {scanned} records, {matched} matched, "

@@ -155,7 +155,8 @@ def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
-    assert "1 already curated" in result.output
+    assert "1 already in overlays" in result.output
+    assert "0 duplicate aliases" in result.output
 
 
 def test_seed_dry_run_does_not_write_candidates(tmp_path):
@@ -223,7 +224,8 @@ def test_seed_deduplicates_aliases_within_run(tmp_path):
     assert result.exit_code == 0, result.output
     written_files = list(out.glob("*.yaml"))
     assert len(written_files) == 1
-    assert "1 already curated" in result.output
+    assert "0 already in overlays" in result.output
+    assert "1 duplicate alias" in result.output
 
 
 def test_seed_reads_osv_all_zip(tmp_path):
@@ -471,7 +473,8 @@ def test_seed_modified_index_deduplicates_aliases_within_run(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert len(list(out.glob("*.yaml"))) == 1
-    assert "1 already curated" in result.output
+    assert "0 already in overlays" in result.output
+    assert "1 duplicate alias" in result.output
 
 
 def test_seed_incremental_does_not_drop_records_at_cursor_timestamp(tmp_path):

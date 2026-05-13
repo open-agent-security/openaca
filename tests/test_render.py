@@ -835,3 +835,67 @@ def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
     assert "@example/mcp@2.0.0" in out
     assert "software deps suppressed/ (1)" in out
     assert "left-pad" not in out
+
+
+def test_repo_tree_deduplicates_refs_from_overlapping_discovery_paths(tmp_path):
+    """Components discovered via two registry paths (e.g. direct rglob AND via
+    plugin.json string-path) must appear exactly once in the tree, not twice."""
+    plugin_json = tmp_path / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir()
+    mcp_json = tmp_path / ".mcp.json"
+    plugin = ComponentRef(
+        ecosystem="claude-plugin",
+        name="demo-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/demo-plugin@1.0.0",
+        source_manifest=str(plugin_json),
+    )
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@example/server",
+        version="2.0.0",
+        source_manifest=str(mcp_json),
+        scope="agent-component",
+    )
+    # same mcp ref appears under two discovery paths (direct walk + plugin.json ref)
+    grouped = [
+        (mcp_json, [mcp]),
+        (plugin_json, [plugin, mcp]),
+    ]
+    out = render_repo_inventory_tree(tmp_path, grouped, [], use_unicode=True)
+
+    assert out.count("@example/server@2.0.0") == 1
+
+
+def test_repo_tree_attributes_nested_manifest_to_plugin(tmp_path):
+    """An mcpServers string-path like './config/.mcp.json' resolves to a
+    manifest nested under the plugin root; it must appear under the plugin
+    subtree, not under bare components."""
+    plugin_json = tmp_path / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir()
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    nested_mcp = config_dir / ".mcp.json"
+    plugin = ComponentRef(
+        ecosystem="claude-plugin",
+        name="my-plugin",
+        version="0.1.0",
+        component_identity="claude-plugin/my-plugin@0.1.0",
+        source_manifest=str(plugin_json),
+    )
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@example/nested-server",
+        version="1.0.0",
+        source_manifest=str(nested_mcp),
+        scope="agent-component",
+    )
+    grouped = [(plugin_json, [plugin]), (nested_mcp, [mcp])]
+    out = render_repo_inventory_tree(tmp_path, grouped, [], use_unicode=True)
+
+    lines = out.splitlines()
+    plugin_line = next(i for i, line in enumerate(lines) if "my-plugin" in line)
+    server_line = next(i for i, line in enumerate(lines) if "nested-server" in line)
+    # server must appear after plugin (i.e. as a descendant)
+    assert server_line > plugin_line
+    assert "bare components/" not in out

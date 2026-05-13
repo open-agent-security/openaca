@@ -30,6 +30,7 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.parsers import flatten_grouped
 from tools.severity import derive_severity_label, derive_severity_score
 
 
@@ -740,7 +741,7 @@ def render_repo_inventory_tree(
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
-    all_refs = [r for _, refs in grouped for r in refs]
+    all_refs = flatten_grouped(grouped)
     plugin_refs = sorted(
         (r for r in all_refs if r.ecosystem == "claude-plugin"),
         key=lambda r: (r.component_identity or "").lower(),
@@ -849,7 +850,7 @@ def _repo_ref_in_dir(ref: ComponentRef, directory: Path) -> bool:
     if not ref.source_manifest:
         return False
     try:
-        return Path(ref.source_manifest).resolve().parent == directory.resolve()
+        return Path(ref.source_manifest).resolve().is_relative_to(directory.resolve())
     except OSError:
         return False
 

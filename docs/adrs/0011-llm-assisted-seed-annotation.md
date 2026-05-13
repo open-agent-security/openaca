@@ -24,10 +24,9 @@ harvesting, or host escape.
 
 ASVE keeps deterministic discovery and alias deduplication, but supports
 opt-in LLM annotation through explicit provider settings:
-`asve-seed --llm-provider <openai|anthropic|claude> --llm-model <name>`.
-The API key comes from `--llm-api-key`, `ASVE_SEED_LLM_API_KEY`, or the
-provider-standard `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment
-variables. The seeder loads `docs/frameworks/*.md`, passes those
+`asve-seed --llm-provider <openai|anthropic> --llm-model <name>`.
+The API key comes from `--llm-api-key` or `ASVE_LLM_API_KEY`. The seeder
+loads `docs/frameworks/*.md`, passes those
 framework summaries, the OSV record, and a neutral annotation schema to
 the provider, and expects a JSON ASVE annotation in the response. In LLM
 mode, the LLM owns the ASVE annotation; deterministic classification is

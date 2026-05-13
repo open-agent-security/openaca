@@ -112,22 +112,19 @@ uv run pytest
    under `overlays/`.
 
    To use LLM-assisted annotation with the scripted workflow, set a
-   supported provider and model. API keys can come from
-   `ASVE_SEED_LLM_API_KEY`, or from the provider-standard
-   `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment variables:
+   supported provider, model, and API key:
 
    ```bash
-   ASVE_SEED_LLM_PROVIDER=openai \
-   ASVE_SEED_LLM_MODEL="<model-name>" \
-   OPENAI_API_KEY="<api-key>" \
+   ASVE_LLM_PROVIDER=openai \
+   ASVE_LLM_MODEL="<model-name>" \
+   ASVE_LLM_API_KEY="<api-key>" \
      bash scripts/seed-osv-overlays.sh
    ```
 
-   `ASVE_SEED_LLM_PROVIDER` accepts `openai`, `anthropic`, or `claude`
-   (`claude` is an alias for Anthropic). LLM mode receives the OSV
-   record plus `docs/frameworks/*.md` as classification context. It
-   still writes candidates only; every canonical overlay must be
-   reviewed and promoted explicitly.
+   `ASVE_LLM_PROVIDER` accepts `openai` or `anthropic`. LLM mode
+   receives the OSV record plus `docs/frameworks/*.md` as classification
+   context. It still writes candidates only; every canonical overlay
+   must be reviewed and promoted explicitly.
 
 4. **Lint locally**:
    ```bash

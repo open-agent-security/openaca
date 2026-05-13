@@ -631,14 +631,14 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert candidate["_evidence"] == [{"field": "details", "quote": "tool description"}]
 
 
-def test_seed_llm_provider_can_read_provider_specific_api_key_env(tmp_path, monkeypatch):
+def test_seed_llm_provider_can_read_api_key_env(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
+    monkeypatch.setenv("ASVE_LLM_API_KEY", "env-key")
     calls = []
 
     def fake_annotate(provider, model, api_key, request):
@@ -665,15 +665,15 @@ def test_seed_llm_provider_can_read_provider_specific_api_key_env(tmp_path, monk
             "--existing",
             str(existing),
             "--llm-provider",
-            "claude",
+            "anthropic",
             "--llm-model",
-            "claude-test",
+            "anthropic-test",
         ],
     )
 
     assert result.exit_code == 0, result.output
     assert calls[0][0] == "anthropic"
-    assert calls[0][1] == "claude-test"
+    assert calls[0][1] == "anthropic-test"
     assert calls[0][2] == "env-key"
 
 

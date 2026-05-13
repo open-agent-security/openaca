@@ -104,9 +104,9 @@ printf '%s\\n' "$*" >> "$UV_LOG"
     env = {
         **os.environ,
         "ASVE_OSV_CACHE_DIR": str(cache),
-        "ASVE_SEED_LLM_PROVIDER": "openai",
-        "ASVE_SEED_LLM_MODEL": "test-model",
-        "ASVE_SEED_LLM_API_KEY": "test-key",
+        "ASVE_LLM_PROVIDER": "openai",
+        "ASVE_LLM_MODEL": "test-model",
+        "ASVE_LLM_API_KEY": "test-key",
         "FAKE_GCS_ROOT": str(fake_gcs),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(uv_log),

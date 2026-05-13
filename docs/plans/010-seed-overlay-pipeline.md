@@ -129,7 +129,7 @@
 - [x] Write tests proving LLM mode does not backfill missing annotation fields from deterministic heuristics.
 - [x] Implement OpenAI and Anthropic provider adapters for LLM annotation.
 - [x] Keep deterministic discovery and deterministic annotation as the no-LLM fallback path.
-- [x] Add `ASVE_SEED_LLM_PROVIDER` and `ASVE_SEED_LLM_MODEL` support to the npm/PyPI workflow script.
+- [x] Add `ASVE_LLM_PROVIDER` and `ASVE_LLM_MODEL` support to the npm/PyPI workflow script.
 - [x] Document usage in `CONTRIBUTING.md`.
 - [x] Run focused seeder and workflow tests.
 - [x] Run full verification before PR.

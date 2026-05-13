@@ -635,6 +635,49 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert candidate["_evidence"] == [{"field": "details", "quote": "tool description"}]
 
 
+def test_seed_llm_provider_prints_progress_before_annotation(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        return (
+            {
+                "component_type": "mcp_server",
+                "surfaces": ["tool_invocation", "stdio"],
+                "agent_impact": {"code_execution": True},
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            },
+            None,
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "anthropic",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "llm: annotating GHSA-abcd-ef12-3456 with anthropic/test-model" in result.output
+
+
 def test_seed_llm_provider_can_read_api_key_env(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
@@ -795,6 +838,55 @@ def test_seed_api_key_env_alone_does_not_enable_llm_mode(tmp_path, monkeypatch):
     assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
     assert candidate["_candidate"]["annotation_source"] == "deterministic"
+
+
+def test_seed_limit_stops_after_requested_candidates_without_advancing_state(tmp_path):
+    records = tmp_path / "records" / "npm"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    state = tmp_path / "state.json"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    first = _ghsa_record()
+    second = _ghsa_record()
+    second["id"] = "GHSA-bbbb-ef12-3456"
+    second["aliases"] = ["CVE-2026-22222"]
+    _write_json(records / "GHSA-abcd-ef12-3456.json", first)
+    _write_json(records / "GHSA-bbbb-ef12-3456.json", second)
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "\n".join(
+            [
+                "2026-05-13T00:01:00Z,npm/GHSA-abcd-ef12-3456",
+                "2026-05-13T00:00:00Z,npm/GHSA-bbbb-ef12-3456",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(tmp_path / "records"),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--limit",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(list(out.glob("*.yaml"))) == 1
+    assert "limit 1 reached" in result.output
+    assert not state.exists()
 
 
 def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(

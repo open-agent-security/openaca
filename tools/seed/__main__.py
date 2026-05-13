@@ -457,6 +457,12 @@ def _resolve_llm_config(
     envvar="ASVE_LLM_API_KEY",
     help="LLM API key. Prefer ASVE_LLM_API_KEY.",
 )
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    envvar="ASVE_SEED_LIMIT",
+    help="Stop after writing this many candidates. Does not advance --state.",
+)
 def main(
     source: Path | None,
     modified_index: Path | None,
@@ -468,6 +474,7 @@ def main(
     llm_provider: str | None,
     llm_model: str | None,
     llm_api_key: str | None,
+    limit: int | None,
 ) -> None:
     """Generate deterministic review candidates from an OSV JSON directory or zip."""
     if modified_index is not None and records_root is None:
@@ -525,6 +532,10 @@ def main(
             assert resolved_llm_model is not None
             assert resolved_llm_api_key is not None
             request = llm.build_request(record, matched_by, framework_documents)
+            click.echo(
+                f"llm: annotating {record.get('id')} "
+                f"with {normalized_llm_provider}/{resolved_llm_model}"
+            )
             try:
                 asve_annotation, evidence = llm.annotate_with_provider(
                     normalized_llm_provider,
@@ -563,11 +574,14 @@ def main(
             target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
         written += 1
         seen_keys.update(identity)
+        if limit is not None and written >= limit:
+            click.echo(f"limit {limit} reached; state not advanced")
+            break
 
     if newest_modified is not None and newest_modified == last_modified:
         newest_modified_ids |= last_modified_ids
 
-    if not dry_run:
+    if not dry_run and limit is None:
         _write_state(state, newest_modified, newest_modified_ids)
 
     click.echo(

@@ -97,3 +97,16 @@
 - [x] Document the scripted workflow.
 - [x] Run focused seeder and script tests.
 - [x] Run full verification before PR.
+
+### Task 7: Deterministic Agent-Stack Discovery Expansion
+
+**Files:**
+- Modify: `tools/seed/__main__.py`
+- Modify: `tests/test_seed_cli.py`
+
+- [x] Write failing tests for known agent-stack packages without an `mcp` token.
+- [x] Write failing tests for AI-feature topics in generic package names.
+- [x] Add conservative package-name discovery patterns for agent frameworks, agent builders, coding agents, LLM gateways, SDKs, and vector/RAG components.
+- [x] Add topic discovery for prompt injection, AI assistants, agent tools, memory tools, RAG poisoning, and related AI-feature wording.
+- [x] Run focused seeder tests.
+- [x] Run full verification before PR.

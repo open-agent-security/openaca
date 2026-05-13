@@ -19,6 +19,41 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _NAME_PATTERN = re.compile(r"(?:^|[/_\-@])mcp(?:[/_\-]|$)", re.IGNORECASE)
 _SUMMARY_HINTS = ("model context protocol", "mcp server", "mcp client", " mcp ")
+_AGENT_STACK_PACKAGE_PATTERN = re.compile(
+    r"(^|[/@_\-])("
+    r"fastmcp|"
+    r"langchain|langgraph|langsmith|langfuse|"
+    r"llama[-_]?index|"
+    r"litellm|vllm|open[-_]?webui|"
+    r"semantic[-_]?kernel|pydantic[-_]?ai|dspy|agno|"
+    r"praisonai(?:agents)?|openclaw|openclaude|"
+    r"flowise(?:[-_]?components)?|langflow|dify|"
+    r"aider(?:[-_]?chat)?|cline|"
+    r"anthropic|claude[-_]?code|copilot|"
+    r"openai[/_\-]codex|"
+    r"qdrant[-_]?client|pymilvus|milvus|hnswlib"
+    r")($|[/@_\-])",
+    re.IGNORECASE,
+)
+_AGENT_AI_FEATURE_HINTS = (
+    "prompt injection",
+    "indirect prompt",
+    "system prompt injection",
+    "ai assistant",
+    "large language model",
+    "gemini connector",
+    "claude sdk",
+    "memory tool",
+    "ai agent",
+    "agent tool",
+    "csv agent",
+    "read_skill_file",
+    "skill file",
+    "rag poisoning",
+    "knowledge base",
+)
+_AGENT_TOOL_HINTS = ("tool call", "tool invocation", "function calling")
+_AGENT_TOOL_CONTEXT_HINTS = ("ai", "agent", "llm", "gemini", "claude", "openai", "assistant")
 
 _IMPACT_KEYS = (
     "repo_read",
@@ -96,12 +131,25 @@ def _package_names(record: dict[str, Any]) -> list[str]:
 
 def discovery_reasons(record: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
-    if any(_NAME_PATTERN.search(name) for name in _package_names(record)):
+    package_names = _package_names(record)
+    if any(_NAME_PATTERN.search(name) for name in package_names):
         reasons.append("package_name_mcp")
+    if any(_AGENT_STACK_PACKAGE_PATTERN.search(name) for name in package_names):
+        reasons.append("package_name_agent_stack")
     text = _text(record)
     if any(hint in text for hint in _SUMMARY_HINTS):
         reasons.append("summary_mentions_mcp")
+    if _mentions_agent_ai_feature(text):
+        reasons.append("topic_agent_ai_feature")
     return reasons
+
+
+def _mentions_agent_ai_feature(text: str) -> bool:
+    if any(hint in text for hint in _AGENT_AI_FEATURE_HINTS):
+        return True
+    return any(hint in text for hint in _AGENT_TOOL_HINTS) and any(
+        context in text for context in _AGENT_TOOL_CONTEXT_HINTS
+    )
 
 
 def iter_records(source: Path) -> Iterable[dict[str, Any]]:

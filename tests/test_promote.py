@@ -87,6 +87,21 @@ def test_promote_cli_writes_overlay_by_id(tmp_path):
     assert "summary" not in promoted
 
 
+def test_promote_rejects_unsafe_overlay_id(tmp_path):
+    candidate_dir = tmp_path / "candidates"
+    overlays_dir = tmp_path / "overlays"
+    candidate_dir.mkdir()
+    bad = _candidate()
+    bad["id"] = "../evil"
+    source = candidate_dir / "evil.yaml"
+    source.write_text(yaml.safe_dump(bad, sort_keys=False), encoding="utf-8")
+
+    result = CliRunner().invoke(main, [str(source), "--overlays", str(overlays_dir)])
+
+    assert result.exit_code != 0
+    assert not (tmp_path / "evil.yaml").exists()
+
+
 def test_promote_cli_refuses_to_overwrite_existing_overlay(tmp_path):
     candidate_dir = tmp_path / "candidates"
     overlays_dir = tmp_path / "overlays"

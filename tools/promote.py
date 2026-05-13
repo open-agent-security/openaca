@@ -63,6 +63,9 @@ def main(candidate: Path, overlays_dir: Path, force: bool) -> None:
 
     overlay_id = overlay["id"]
     target = overlays_dir / f"{overlay_id}.yaml"
+    if target.resolve().parent != overlays_dir.resolve():
+        click.echo(f"{overlay_id!r}: unsafe overlay ID", err=True)
+        sys.exit(1)
     if target.exists() and not force:
         click.echo(f"{target}: already exists; use --force to overwrite", err=True)
         sys.exit(1)

@@ -8,7 +8,7 @@ from tools.seed import llm
 def _request() -> dict:
     return {
         "instructions": llm.INSTRUCTIONS,
-        "annotation_schema": llm.ANNOTATION_SCHEMA,
+        "annotation_schema": llm.load_annotation_schema(),
         "framework_documents": {"owasp-mcp-top-10-2025.md": "MCP docs"},
         "matched_by": ["package_name_mcp"],
         "osv_record": {"id": "GHSA-abcd-ef12-3456", "summary": "mcp command injection"},
@@ -92,3 +92,23 @@ def test_llm_provider_rejects_unsupported_provider():
 def test_llm_provider_does_not_alias_claude_to_anthropic():
     with pytest.raises(llm.LLMAnnotationError, match="unsupported LLM provider"):
         llm.annotate_with_provider("claude", "model", "key", _request())
+
+
+def test_load_annotation_schema_extracts_asve_extension_from_schema_file(tmp_path):
+    schema = json.loads(llm.SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema["$defs"]["asve_extension"]["properties"]["review_note"] = {"type": "string"}
+    schema_path = tmp_path / "asve.schema.json"
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+
+    annotation_schema = llm.load_annotation_schema(schema_path)
+
+    assert annotation_schema["required"] == ["component_type"]
+    assert annotation_schema["properties"]["component_type"] == {"type": "string"}
+    assert annotation_schema["properties"]["review_note"] == {"type": "string"}
+    assert (
+        annotation_schema["properties"]["taxonomies"]["properties"]["owasp_mcp_top10"]["items"][
+            "pattern"
+        ]
+        == "^mcp(0[1-9]|10):[0-9]{4}$"
+    )
+    assert "$ref" not in json.dumps(annotation_schema)

@@ -609,7 +609,8 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert model == "test-model"
     assert api_key == "test-key"
     assert request["osv_record"]["id"] == "GHSA-abcd-ef12-3456"
-    assert request["annotation_schema"]["component_type"]["default"] == "mcp_server"
+    assert request["annotation_schema"]["required"] == ["component_type"]
+    assert request["annotation_schema"]["properties"]["component_type"] == {"type": "string"}
     assert "mitre-atlas.md" in request["framework_documents"]
     assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))

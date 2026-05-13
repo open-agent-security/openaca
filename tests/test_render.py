@@ -835,3 +835,58 @@ def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
     assert "@example/mcp@2.0.0" in out
     assert "software deps suppressed/ (1)" in out
     assert "left-pad" not in out
+
+
+def test_repo_tree_deduplicates_refs_from_overlapping_discovery_paths(tmp_path):
+    """Refs discovered via two routes (direct rglob + plugin.json string-path)
+    must appear once in the tree, not twice."""
+    plugin_json = tmp_path / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir()
+    mcp_json = tmp_path / ".mcp.json"
+    plugin = ComponentRef(
+        ecosystem="claude-plugin",
+        name="demo-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/demo-plugin@1.0.0",
+        source_manifest=str(plugin_json),
+    )
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@cyanheads/git-mcp-server",
+        version="1.1.0",
+        source_manifest=str(mcp_json),
+        source_locator="@cyanheads/git-mcp-server",
+        scope="agent-component",
+    )
+    # Same component discovered twice (direct rglob hit and via plugin.json reference).
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(mcp_json, [mcp]), (plugin_json, [plugin, mcp])],
+        [],
+        use_unicode=True,
+    )
+
+    assert out.count("@cyanheads/git-mcp-server@1.1.0") == 1
+
+
+def test_repo_tree_shows_orphan_agent_dependency_in_bare_section(tmp_path):
+    """agent-dependency refs with no matching plugin identity (e.g., plugin.json
+    exists but failed to parse) must appear in the bare components section."""
+    package_json = tmp_path / "package.json"
+    orphan_dep = ComponentRef(
+        ecosystem="npm",
+        name="express",
+        version="4.18.0",
+        source_manifest=str(package_json),
+        scope="agent-dependency",
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(package_json, [orphan_dep])],
+        [],
+        use_unicode=True,
+    )
+
+    assert "bare components/" in out
+    assert "express@4.18.0" in out

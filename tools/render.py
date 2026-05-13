@@ -30,6 +30,7 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.parsers import flatten_grouped
 from tools.severity import derive_severity_label, derive_severity_score
 
 
@@ -740,7 +741,7 @@ def render_repo_inventory_tree(
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
-    all_refs = [r for _, refs in grouped for r in refs]
+    all_refs = flatten_grouped(grouped)
     plugin_refs = sorted(
         (r for r in all_refs if r.ecosystem == "claude-plugin"),
         key=lambda r: (r.component_identity or "").lower(),
@@ -764,7 +765,7 @@ def render_repo_inventory_tree(
         r
         for r in all_refs
         if r.ecosystem != "claude-plugin"
-        and r.scope == "agent-component"
+        and r.scope in {"agent-component", "agent-dependency"}
         and _ref_key(r) not in assigned_keys
     ]
     bare_node = _build_bare_node(bare_refs, findings_by_ref, use_color)

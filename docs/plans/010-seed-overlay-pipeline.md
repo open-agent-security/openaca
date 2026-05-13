@@ -1,6 +1,6 @@
 # Plan 010 — Seed Overlay Pipeline
 
-**Goal:** Add a V0-safe deterministic workflow for seeding reviewed ASVE overlays from OSV bulk dumps.
+**Goal:** Add a V0-safe deterministic workflow for seeding reviewed ASVE overlays from OSV bulk dumps and OSV `modified_id.csv` indexes.
 
 **Architecture:** Canonical `overlays/` stays scanner-visible and minimal. The seeder writes heuristic candidates to `candidates/`, outside the scanner/export path. A human reviews and edits each candidate, then `asve-promote` projects it into the canonical overlay shape and validates it before writing `overlays/<id>.yaml`.
 
@@ -59,9 +59,9 @@
 - Modify: `pyproject.toml`
 - Test: `tests/test_seed_cli.py`
 
-- [ ] Write CLI tests for deterministic discovery, candidate output, curated overlay dedup, MAL record handling, and dry-run output.
+- [ ] Write CLI tests for deterministic discovery, candidate output, curated overlay dedup, MAL record handling, `modified_id.csv` incremental seeding, and dry-run output.
 - [ ] Run focused seeder tests and confirm they fail.
-- [ ] Implement OSV dump iteration, MCP/agent discovery heuristics, rule-based draft annotations, candidate validation, and `candidates/` output.
+- [ ] Implement OSV dump iteration, `modified_id.csv` incremental iteration, MCP/agent discovery heuristics, rule-based draft annotations, candidate validation, and `candidates/` output.
 - [ ] Register `asve-seed` in `pyproject.toml`.
 - [ ] Run focused seeder tests.
 

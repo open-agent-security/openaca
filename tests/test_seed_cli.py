@@ -184,3 +184,164 @@ def test_seed_reads_osv_all_zip(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
+def test_seed_reads_only_new_records_from_top_level_modified_index(tmp_path):
+    records = tmp_path / "records"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir()
+    existing.mkdir()
+    (records / "npm").mkdir()
+    (records / "PyPI").mkdir()
+    _write_json(records / "npm" / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    older = _mal_record()
+    older["id"] = "MAL-2026-9999"
+    _write_json(records / "PyPI" / "MAL-2026-9999.json", older)
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "\n".join(
+            [
+                "2026-05-13T00:00:00Z,npm/GHSA-abcd-ef12-3456",
+                "2026-05-12T00:00:00Z,PyPI/MAL-2026-9999",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state = tmp_path / "state.json"
+    state.write_text('{"last_modified": "2026-05-12T00:00:00Z"}\n', encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(records),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    assert not (out / "MAL-2026-9999.yaml").exists()
+    assert yaml.safe_load(state.read_text(encoding="utf-8")) == {
+        "last_modified": "2026-05-13T00:00:00Z"
+    }
+
+
+def test_seed_reads_per_ecosystem_modified_index(tmp_path):
+    records = tmp_path / "records" / "PyPI"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    _write_json(records / "MAL-2026-1234.json", _mal_record())
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text("2026-05-13T00:00:00Z,MAL-2026-1234\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(records),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "MAL-2026-1234.yaml").exists()
+
+
+def test_seed_dry_run_does_not_update_incremental_state(tmp_path):
+    records = tmp_path / "records" / "npm"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    _write_json(records / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text("2026-05-13T00:00:00Z,npm/GHSA-abcd-ef12-3456\n", encoding="utf-8")
+    state = tmp_path / "state.json"
+    state.write_text('{"last_modified": "2026-05-12T00:00:00Z"}\n', encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(tmp_path / "records"),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load(state.read_text(encoding="utf-8")) == {
+        "last_modified": "2026-05-12T00:00:00Z"
+    }
+
+
+def test_seed_modified_index_deduplicates_aliases_within_run(tmp_path):
+    records = tmp_path / "records" / "npm"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    ghsa = _ghsa_record()
+    cve = {
+        "schema_version": "1.7.5",
+        "id": "CVE-2026-12345",
+        "aliases": ["GHSA-abcd-ef12-3456"],
+        "modified": "2026-05-13T00:00:00Z",
+        "summary": "mcp-demo allows command injection",
+        "affected": [{"package": {"ecosystem": "npm", "name": "mcp-demo"}}],
+    }
+    _write_json(records / "GHSA-abcd-ef12-3456.json", ghsa)
+    _write_json(records / "CVE-2026-12345.json", cve)
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "\n".join(
+            [
+                "2026-05-13T00:01:00Z,npm/GHSA-abcd-ef12-3456",
+                "2026-05-13T00:00:00Z,npm/CVE-2026-12345",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(tmp_path / "records"),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(list(out.glob("*.yaml"))) == 1
+    assert "1 already curated" in result.output

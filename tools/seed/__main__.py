@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -127,6 +128,55 @@ def iter_records(source: Path) -> Iterable[dict[str, Any]]:
             yield data
 
 
+def _load_state(state: Path | None) -> str | None:
+    if state is None or not state.exists():
+        return None
+    try:
+        data = json.loads(state.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    last_modified = data.get("last_modified")
+    return last_modified if isinstance(last_modified, str) else None
+
+
+def _record_path(records_root: Path, row_id: str) -> Path:
+    path = records_root / f"{row_id}.json"
+    resolved_root = records_root.resolve()
+    resolved_path = path.resolve()
+    if resolved_path.parent != resolved_root and resolved_root not in resolved_path.parents:
+        raise ValueError(f"unsafe modified_id.csv record id: {row_id!r}")
+    return path
+
+
+def iter_modified_records(
+    modified_index: Path, records_root: Path, last_modified: str | None
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    for raw_line in modified_index.read_text(encoding="utf-8").splitlines():
+        if not raw_line.strip():
+            continue
+        modified, sep, row_id = raw_line.partition(",")
+        if not sep or not modified or not row_id:
+            continue
+        if last_modified is not None and modified <= last_modified:
+            break
+        path = _record_path(records_root, row_id)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(data, dict):
+            yield modified, data
+
+
+def _write_state(state: Path | None, newest_modified: str | None) -> None:
+    if state is None or newest_modified is None:
+        return
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(
+        json.dumps({"last_modified": newest_modified}, indent=2) + "\n", encoding="utf-8"
+    )
+
+
 def _classify(record: dict[str, Any]) -> dict[str, Any]:
     impact = {key: False for key in _IMPACT_KEYS}
     taxonomies: dict[str, set[str]] = {"owasp_agentic_top10": set()}
@@ -214,7 +264,22 @@ def _curated_keys(existing_overlays: Path) -> set[str]:
 
 
 @click.command()
-@click.argument("source", type=click.Path(exists=True, path_type=Path))
+@click.argument("source", required=False, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--modified-index",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="OSV modified_id.csv file. Reads only records newer than --state.",
+)
+@click.option(
+    "--records-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Root directory containing JSON records referenced by --modified-index.",
+)
+@click.option(
+    "--state",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="JSON state file containing last_modified for incremental seeding.",
+)
 @click.option(
     "--out",
     "out_dir",
@@ -232,17 +297,40 @@ def _curated_keys(existing_overlays: Path) -> set[str]:
     help="Existing overlay corpus used for alias deduplication.",
 )
 @click.option("--dry-run", is_flag=True, help="Print candidates without writing files.")
-def main(source: Path, out_dir: Path, existing_overlays: Path, dry_run: bool) -> None:
+def main(
+    source: Path | None,
+    modified_index: Path | None,
+    records_root: Path | None,
+    state: Path | None,
+    out_dir: Path,
+    existing_overlays: Path,
+    dry_run: bool,
+) -> None:
     """Generate deterministic review candidates from an OSV JSON directory or zip."""
+    if modified_index is not None and records_root is None:
+        raise click.UsageError("--records-root is required with --modified-index")
+    if modified_index is None and source is None:
+        raise click.UsageError("SOURCE is required unless --modified-index is provided")
+
     curated = _curated_keys(existing_overlays)
     scanned = matched = skipped = written = 0
+    newest_modified: str | None = None
 
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
     out_dir_resolved = out_dir.resolve()
 
-    for record in iter_records(source):
+    if modified_index is not None:
+        assert records_root is not None
+        records = iter_modified_records(modified_index, records_root, _load_state(state))
+    else:
+        assert source is not None
+        records = ((None, record) for record in iter_records(source))
+
+    for modified, record in records:
         scanned += 1
+        if modified is not None and newest_modified is None:
+            newest_modified = modified
         matched_by = discovery_reasons(record)
         if not matched_by:
             continue
@@ -269,6 +357,9 @@ def main(source: Path, out_dir: Path, existing_overlays: Path, dry_run: bool) ->
             target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
         written += 1
         curated.update(_identity(record))
+
+    if not dry_run:
+        _write_state(state, newest_modified)
 
     click.echo(
         f"scanned {scanned} records, {matched} matched, "

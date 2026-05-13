@@ -88,15 +88,17 @@ uv run pytest
          credential_exfiltration: false
          repo_write: false
          command_execution: true
-      taxonomies:
-        owasp_agentic_top10:
-          - asi02
-      evidence_level: confirmed
+       taxonomies:
+         owasp_agentic_top10:
+           - asi02
+       evidence_level: confirmed
    ```
 
 3. **Optionally seed candidates from an OSV dump**:
    ```bash
    uv run asve-seed /path/to/osv/all.zip
+   uv run asve-seed --modified-index /path/to/osv/modified_id.csv \
+     --records-root /path/to/osv --state .asve-seed-state.json
    uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    Review and edit candidate YAML before promotion. `asve-promote`

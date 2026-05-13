@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
 import click
 import yaml
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
+
+from tools.lint import UPSTREAM_ID_RE
+
+_FORMAT_CHECKER = FormatChecker()
+
+
+@_FORMAT_CHECKER.checks("date-time", raises=ValueError)
+def _check_date_time(value: object) -> bool:
+    if isinstance(value, str):
+        datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return True
+
+
+@_FORMAT_CHECKER.checks("uri", raises=ValueError)
+def _check_uri(value: object) -> bool:
+    if isinstance(value, str) and not urllib.parse.urlparse(value).scheme:
+        raise ValueError(f"not a valid URI: {value!r}")
+    return True
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
@@ -35,7 +56,7 @@ def _load_schema() -> dict[str, Any]:
 
 
 def _validate_overlay(overlay: dict[str, Any]) -> None:
-    Draft202012Validator(_load_schema()).validate(overlay)
+    Draft202012Validator(_load_schema(), format_checker=_FORMAT_CHECKER).validate(overlay)
 
 
 @click.command()
@@ -65,6 +86,9 @@ def main(candidate: Path, overlays_dir: Path, force: bool) -> None:
     target = overlays_dir / f"{overlay_id}.yaml"
     if target.resolve().parent != overlays_dir.resolve():
         click.echo(f"{overlay_id!r}: unsafe overlay ID", err=True)
+        sys.exit(1)
+    if not UPSTREAM_ID_RE.match(overlay_id):
+        click.echo(f"{overlay_id!r}: not a recognized upstream ID family", err=True)
         sys.exit(1)
     if target.exists() and not force:
         click.echo(f"{target}: already exists; use --force to overwrite", err=True)

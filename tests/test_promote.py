@@ -102,6 +102,37 @@ def test_promote_rejects_unsafe_overlay_id(tmp_path):
     assert not (tmp_path / "evil.yaml").exists()
 
 
+def test_promote_rejects_non_upstream_id(tmp_path):
+    candidate_dir = tmp_path / "candidates"
+    overlays_dir = tmp_path / "overlays"
+    candidate_dir.mkdir()
+    bad = _candidate()
+    bad["id"] = "GO-2026-1234"
+    source = candidate_dir / "GO-2026-1234.yaml"
+    source.write_text(yaml.safe_dump(bad, sort_keys=False), encoding="utf-8")
+
+    result = CliRunner().invoke(main, [str(source), "--overlays", str(overlays_dir)])
+
+    assert result.exit_code != 0
+    assert "not a recognized upstream ID family" in result.output
+    assert not (overlays_dir / "GO-2026-1234.yaml").exists()
+
+
+def test_promote_rejects_malformed_modified_datetime(tmp_path):
+    candidate_dir = tmp_path / "candidates"
+    overlays_dir = tmp_path / "overlays"
+    candidate_dir.mkdir()
+    bad = _candidate()
+    bad["modified"] = "not-a-date"
+    source = candidate_dir / "GHSA-abcd-ef12-3456.yaml"
+    source.write_text(yaml.safe_dump(bad, sort_keys=False), encoding="utf-8")
+
+    result = CliRunner().invoke(main, [str(source), "--overlays", str(overlays_dir)])
+
+    assert result.exit_code != 0
+    assert not (overlays_dir / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
 def test_promote_cli_refuses_to_overwrite_existing_overlay(tmp_path):
     candidate_dir = tmp_path / "candidates"
     overlays_dir = tmp_path / "overlays"

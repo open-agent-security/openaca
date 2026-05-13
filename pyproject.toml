@@ -28,7 +28,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools"]
-force-include = { "overlays" = "overlays", "docs/frameworks" = "docs/frameworks" }
+force-include = { "overlays" = "overlays", "docs/frameworks" = "docs/frameworks", "schema" = "schema" }
 
 [dependency-groups]
 dev = [

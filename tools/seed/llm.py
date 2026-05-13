@@ -98,8 +98,6 @@ def build_request(
 
 def normalize_provider(provider: str) -> str:
     normalized = provider.strip().lower()
-    if normalized == "claude":
-        return "anthropic"
     if normalized in {"openai", "anthropic"}:
         return normalized
     raise LLMAnnotationError(f"unsupported LLM provider: {provider}")

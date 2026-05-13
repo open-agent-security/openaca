@@ -66,8 +66,8 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
         return {"content": [{"type": "text", "text": _response_text()}]}
 
     asve, evidence = llm.annotate_with_provider(
-        "claude",
-        "claude-test",
+        "anthropic",
+        "anthropic-test",
         "test-key",
         _request(),
         post_json=fake_post_json,
@@ -77,7 +77,7 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
     assert url == "https://api.anthropic.com/v1/messages"
     assert headers["x-api-key"] == "test-key"
     assert headers["anthropic-version"] == "2023-06-01"
-    assert payload["model"] == "claude-test"
+    assert payload["model"] == "anthropic-test"
     assert payload["system"] == llm.INSTRUCTIONS
     assert payload["messages"][0]["role"] == "user"
     assert asve["component_type"] == "mcp_server"
@@ -87,3 +87,8 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
 def test_llm_provider_rejects_unsupported_provider():
     with pytest.raises(llm.LLMAnnotationError, match="unsupported LLM provider"):
         llm.annotate_with_provider("local", "model", "key", _request())
+
+
+def test_llm_provider_does_not_alias_claude_to_anthropic():
+    with pytest.raises(llm.LLMAnnotationError, match="unsupported LLM provider"):
+        llm.annotate_with_provider("claude", "model", "key", _request())

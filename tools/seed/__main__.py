@@ -401,16 +401,9 @@ def _resolve_llm_config(
         normalized = llm.normalize_provider(provider)
     except llm.LLMAnnotationError as exc:
         raise click.UsageError(str(exc)) from exc
-    resolved_key = api_key or os.environ.get("ASVE_SEED_LLM_API_KEY")
-    if resolved_key is None and normalized == "openai":
-        resolved_key = os.environ.get("OPENAI_API_KEY")
-    if resolved_key is None and normalized == "anthropic":
-        resolved_key = os.environ.get("ANTHROPIC_API_KEY")
+    resolved_key = api_key or os.environ.get("ASVE_LLM_API_KEY")
     if not resolved_key:
-        raise click.UsageError(
-            "LLM API key is required via --llm-api-key, ASVE_SEED_LLM_API_KEY, "
-            "OPENAI_API_KEY, or ANTHROPIC_API_KEY"
-        )
+        raise click.UsageError("LLM API key is required via --llm-api-key or ASVE_LLM_API_KEY")
     return normalized, model, resolved_key
 
 
@@ -450,19 +443,19 @@ def _resolve_llm_config(
 @click.option("--dry-run", is_flag=True, help="Print candidates without writing files.")
 @click.option(
     "--llm-provider",
-    type=click.Choice(["openai", "anthropic", "claude"], case_sensitive=False),
-    envvar="ASVE_SEED_LLM_PROVIDER",
+    type=click.Choice(["openai", "anthropic"], case_sensitive=False),
+    envvar="ASVE_LLM_PROVIDER",
     help="LLM provider for framework-grounded annotations.",
 )
 @click.option(
     "--llm-model",
-    envvar="ASVE_SEED_LLM_MODEL",
+    envvar="ASVE_LLM_MODEL",
     help="LLM model name for framework-grounded annotations.",
 )
 @click.option(
     "--llm-api-key",
-    envvar="ASVE_SEED_LLM_API_KEY",
-    help="LLM API key. Prefer ASVE_SEED_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.",
+    envvar="ASVE_LLM_API_KEY",
+    help="LLM API key. Prefer ASVE_LLM_API_KEY.",
 )
 def main(
     source: Path | None,

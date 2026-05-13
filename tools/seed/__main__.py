@@ -475,8 +475,9 @@ def main(
     if modified_index is None and source is None:
         raise click.UsageError("SOURCE is required unless --modified-index is provided")
 
-    curated = _curated_keys(existing_overlays)
-    scanned = matched = skipped = written = 0
+    existing_keys = _curated_keys(existing_overlays)
+    seen_keys = set(existing_keys)
+    scanned = matched = already_in_overlays = duplicate_aliases = written = 0
     newest_modified: str | None = None
     newest_modified_ids: set[str] = set()
 
@@ -511,8 +512,12 @@ def main(
         if not matched_by:
             continue
         matched += 1
-        if _identity(record) & curated:
-            skipped += 1
+        identity = _identity(record)
+        if identity & seen_keys:
+            if identity & existing_keys:
+                already_in_overlays += 1
+            else:
+                duplicate_aliases += 1
             continue
 
         if normalized_llm_provider:
@@ -557,7 +562,7 @@ def main(
         else:
             target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
         written += 1
-        curated.update(_identity(record))
+        seen_keys.update(identity)
 
     if newest_modified is not None and newest_modified == last_modified:
         newest_modified_ids |= last_modified_ids
@@ -567,7 +572,9 @@ def main(
 
     click.echo(
         f"scanned {scanned} records, {matched} matched, "
-        f"{skipped} already curated, {written} candidate{'s' if written != 1 else ''} "
+        f"{already_in_overlays} already in overlays, "
+        f"{duplicate_aliases} duplicate alias{'es' if duplicate_aliases != 1 else ''}, "
+        f"{written} candidate{'s' if written != 1 else ''} "
         f"{'(dry-run)' if dry_run else 'written'}"
     )
 

@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRAMEWORKS_ROOT = REPO_ROOT / "docs" / "frameworks"
+SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
@@ -26,36 +27,6 @@ support the classification. Do not copy severity, affected ranges, CWE, or other
 upstream-owned vulnerability data into database_specific.asve.
 """
 
-ANNOTATION_SCHEMA = {
-    "component_type": {"type": "string", "default": "mcp_server"},
-    "surfaces": {"type": "array", "items": "string"},
-    "agent_impact": {
-        "type": "object",
-        "values": "boolean",
-        "known_keys": [
-            "repo_read",
-            "repo_write",
-            "credential_exfiltration",
-            "tool_hijack",
-            "memory_poisoning",
-            "pr_manipulation",
-            "code_execution",
-        ],
-    },
-    "threat_kind": {"type": "string", "example": "malicious_package"},
-    "taxonomies": {
-        "owasp_agentic_top10": "array of asi01..asi10",
-        "owasp_mcp_top10": "array like mcp04:2025",
-        "owasp_agentic_skills_top10": "array like ast04:2026",
-        "owasp_llm_top10": "array like llm05:2025",
-        "mitre_atlas": "array like AML.T0010.005",
-    },
-    "evidence_level": {
-        "type": "string",
-        "enum": ["confirmed", "likely", "research", "disputed", "withdrawn"],
-    },
-}
-
 
 class LLMAnnotationError(ValueError):
     """Raised when an LLM annotation command cannot produce a usable draft."""
@@ -70,16 +41,35 @@ def load_framework_documents(root: Path = FRAMEWORKS_ROOT) -> dict[str, str]:
     return docs
 
 
+def load_annotation_schema(schema_path: Path = SCHEMA_PATH) -> dict[str, Any]:
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LLMAnnotationError(f"could not load ASVE schema from {schema_path}: {exc}") from exc
+    if not isinstance(schema, dict):
+        raise LLMAnnotationError("ASVE schema must be a JSON object")
+
+    database_specific = _resolve_local_refs(
+        _expect_object(schema.get("properties"), "schema.properties")["database_specific"],
+        schema,
+    )
+    asve_schema = _expect_object(
+        database_specific.get("properties"), "database_specific.properties"
+    )["asve"]
+    return _resolve_local_refs(asve_schema, schema)
+
+
 def build_request(
     record: dict[str, Any],
     matched_by: list[str],
     framework_documents: dict[str, str],
 ) -> dict[str, Any]:
+    annotation_schema = load_annotation_schema()
     return {
         "instructions": INSTRUCTIONS,
-        "annotation_schema": ANNOTATION_SCHEMA,
+        "annotation_schema": annotation_schema,
         "response_shape": {
-            "database_specific": {"asve": ANNOTATION_SCHEMA},
+            "database_specific": {"asve": annotation_schema},
             "evidence": [{"field": "summary", "quote": "short quote from the OSV record"}],
         },
         "confidence_rubric": {
@@ -94,6 +84,34 @@ def build_request(
         "matched_by": matched_by,
         "osv_record": record,
     }
+
+
+def _resolve_local_refs(value: Any, schema: dict[str, Any]) -> Any:
+    if isinstance(value, dict):
+        ref = value.get("$ref")
+        if isinstance(ref, str):
+            return _resolve_local_refs(_lookup_local_ref(schema, ref), schema)
+        return {key: _resolve_local_refs(item, schema) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_local_refs(item, schema) for item in value]
+    return copy.deepcopy(value)
+
+
+def _lookup_local_ref(schema: dict[str, Any], ref: str) -> Any:
+    if not ref.startswith("#/"):
+        raise LLMAnnotationError(f"unsupported schema ref: {ref}")
+    current: Any = schema
+    for part in ref[2:].split("/"):
+        if not isinstance(current, dict) or part not in current:
+            raise LLMAnnotationError(f"unresolved schema ref: {ref}")
+        current = current[part]
+    return current
+
+
+def _expect_object(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise LLMAnnotationError(f"{name} must be an object")
+    return value
 
 
 def normalize_provider(provider: str) -> str:

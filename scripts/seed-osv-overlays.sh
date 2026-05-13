@@ -28,8 +28,9 @@ seed_ecosystem() {
     --records-root "$dir"
     --state "$state"
   )
-  if [[ -n "${ASVE_SEED_LLM_COMMAND:-}" ]]; then
-    seed_args+=(--llm-command "$ASVE_SEED_LLM_COMMAND")
+  if [[ -n "${ASVE_SEED_LLM_PROVIDER:-}" || -n "${ASVE_SEED_LLM_MODEL:-}" ]]; then
+    seed_args+=(--llm-provider "${ASVE_SEED_LLM_PROVIDER:-}")
+    seed_args+=(--llm-model "${ASVE_SEED_LLM_MODEL:-}")
   fi
   if [[ "${ASVE_SEED_DRY_RUN:-}" == "1" ]]; then
     seed_args+=(--dry-run)

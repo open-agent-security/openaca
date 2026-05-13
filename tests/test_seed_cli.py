@@ -1,20 +1,15 @@
 import json
-import sys
 import zipfile
 
 import yaml
 from click.testing import CliRunner
 
+from tools.seed import llm as seed_llm
 from tools.seed.__main__ import discovery_reasons, main
 
 
 def _write_json(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
-
-
-def _write_llm_script(path, source):
-    path.write_text(source, encoding="utf-8")
-    path.chmod(0o755)
 
 
 def _ghsa_record() -> dict:
@@ -553,7 +548,7 @@ def test_seed_incremental_does_not_drop_records_at_cursor_timestamp(tmp_path):
     }
 
 
-def test_seed_llm_command_receives_framework_docs_and_overrides_annotation(tmp_path):
+def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
@@ -563,22 +558,13 @@ def test_seed_llm_command_receives_framework_docs_and_overrides_annotation(tmp_p
     record["summary"] = "mcp-demo allows prompt injection through tool metadata"
     record["details"] = "A malicious MCP tool description can hijack agent tool calls."
     _write_json(dump / "GHSA-abcd-ef12-3456.json", record)
-    llm = tmp_path / "llm.py"
-    _write_llm_script(
-        llm,
-        """
-import json
-import sys
 
-request = json.load(sys.stdin)
-assert request["osv_record"]["id"] == "GHSA-abcd-ef12-3456"
-assert request["annotation_schema"]["component_type"]["default"] == "mcp_server"
-assert "mitre-atlas.md" in request["framework_documents"]
-assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
-json.dump(
-    {
-        "database_specific": {
-            "asve": {
+    calls = []
+
+    def fake_annotate(provider, model, api_key, request):
+        calls.append((provider, model, api_key, request))
+        return (
+            {
                 "component_type": "mcp_server",
                 "surfaces": ["tool_invocation", "stdio", "repo_context"],
                 "agent_impact": {
@@ -593,14 +579,11 @@ json.dump(
                     "mitre_atlas": ["AML.T0051.001", "AML.T0053"],
                 },
                 "evidence_level": "likely",
-            }
-        },
-        "evidence": [{"field": "details", "quote": "tool description"}],
-    },
-    sys.stdout,
-)
-""",
-    )
+            },
+            [{"field": "details", "quote": "tool description"}],
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
     result = CliRunner().invoke(
         main,
@@ -610,16 +593,31 @@ json.dump(
             str(out),
             "--existing",
             str(existing),
-            "--llm-command",
-            f"{sys.executable} {llm}",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
         ],
     )
 
     assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    provider, model, api_key, request = calls[0]
+    assert provider == "openai"
+    assert model == "test-model"
+    assert api_key == "test-key"
+    assert request["osv_record"]["id"] == "GHSA-abcd-ef12-3456"
+    assert request["annotation_schema"]["component_type"]["default"] == "mcp_server"
+    assert "mitre-atlas.md" in request["framework_documents"]
+    assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
     metadata = candidate["_candidate"]
     asve = candidate["database_specific"]["asve"]
     assert metadata["annotation_source"] == "llm"
+    assert metadata["llm_provider"] == "openai"
+    assert metadata["llm_model"] == "test-model"
     assert "mitre-atlas.md" in metadata["framework_documents"]
     assert asve["surfaces"] == ["tool_invocation", "stdio", "repo_context"]
     assert asve["agent_impact"]["tool_hijack"] is True
@@ -633,15 +631,30 @@ json.dump(
     assert candidate["_evidence"] == [{"field": "details", "quote": "tool description"}]
 
 
-def test_seed_llm_command_invalid_json_fails_without_writing_candidate(tmp_path):
+def test_seed_llm_provider_can_read_provider_specific_api_key_env(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    llm = tmp_path / "llm.py"
-    _write_llm_script(llm, "print('not json')\n")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
+    calls = []
+
+    def fake_annotate(provider, model, api_key, request):
+        calls.append((provider, model, api_key, request))
+        return (
+            {
+                "component_type": "mcp_server",
+                "surfaces": ["tool_invocation", "stdio"],
+                "agent_impact": {"code_execution": True, "tool_hijack": True},
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            },
+            None,
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
     result = CliRunner().invoke(
         main,
@@ -651,34 +664,59 @@ def test_seed_llm_command_invalid_json_fails_without_writing_candidate(tmp_path)
             str(out),
             "--existing",
             str(existing),
-            "--llm-command",
-            f"{sys.executable} {llm}",
+            "--llm-provider",
+            "claude",
+            "--llm-model",
+            "claude-test",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0][0] == "anthropic"
+    assert calls[0][1] == "claude-test"
+    assert calls[0][2] == "env-key"
+
+
+def test_seed_llm_provider_requires_model_when_enabled(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-api-key",
+            "test-key",
         ],
     )
 
     assert result.exit_code != 0
-    assert "LLM command returned invalid JSON" in result.output
-    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    assert "--llm-model is required" in result.output
+    assert not out.exists()
 
 
-def test_seed_llm_command_non_dict_database_specific_raises_clean_error(tmp_path):
+def test_seed_llm_provider_error_fails_without_writing_candidate(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    llm = tmp_path / "llm.py"
-    _write_llm_script(
-        llm,
-        """
-import json
-import sys
 
-json.load(sys.stdin)
-json.dump({"database_specific": ["not", "a", "dict"]}, sys.stdout)
-""",
-    )
+    def fake_annotate(provider, model, api_key, request):
+        raise seed_llm.LLMAnnotationError("LLM provider returned invalid JSON")
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
     result = CliRunner().invoke(
         main,
@@ -688,8 +726,47 @@ json.dump({"database_specific": ["not", "a", "dict"]}, sys.stdout)
             str(out),
             "--existing",
             str(existing),
-            "--llm-command",
-            f"{sys.executable} {llm}",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "LLM provider returned invalid JSON" in result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
+def test_seed_llm_provider_non_dict_database_specific_raises_clean_error(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        return seed_llm._project_response({"database_specific": ["not", "a", "dict"]})
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
         ],
     )
 
@@ -698,31 +775,20 @@ json.dump({"database_specific": ["not", "a", "dict"]}, sys.stdout)
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
 
 
-def test_seed_llm_command_does_not_backfill_missing_annotation_from_heuristics(tmp_path):
+def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
+    tmp_path, monkeypatch
+):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    llm = tmp_path / "llm.py"
-    _write_llm_script(
-        llm,
-        """
-import json
-import sys
 
-json.load(sys.stdin)
-json.dump(
-    {
-        "database_specific": {
-            "asve": {}
-        }
-    },
-    sys.stdout,
-)
-""",
-    )
+    def fake_annotate(provider, model, api_key, request):
+        return {}, None
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
     result = CliRunner().invoke(
         main,
@@ -732,8 +798,12 @@ json.dump(
             str(out),
             "--existing",
             str(existing),
-            "--llm-command",
-            f"{sys.executable} {llm}",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
         ],
     )
 

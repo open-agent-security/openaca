@@ -102,7 +102,7 @@ uv run pytest
    uv run asve-seed --modified-index /path/to/osv/modified_id.csv \
      --records-root /path/to/osv --state .asve-seed-state.json
    uv run asve-seed /path/to/osv/all.zip \
-     --llm-command "/path/to/seed-annotator"
+     --llm-provider openai --llm-model "<model-name>"
    uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    The script downloads the npm and PyPI `modified_id.csv` + `all.zip`
@@ -111,18 +111,23 @@ uv run pytest
    before promotion. `asve-promote` writes a minimal canonical overlay
    under `overlays/`.
 
-   To use LLM-assisted annotation with the scripted workflow, set
-   `ASVE_SEED_LLM_COMMAND` to a local command that reads the seed request
-   JSON from stdin and writes JSON to stdout:
+   To use LLM-assisted annotation with the scripted workflow, set a
+   supported provider and model. API keys can come from
+   `ASVE_SEED_LLM_API_KEY`, or from the provider-standard
+   `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment variables:
 
    ```bash
-   ASVE_SEED_LLM_COMMAND="/path/to/seed-annotator" \
+   ASVE_SEED_LLM_PROVIDER=openai \
+   ASVE_SEED_LLM_MODEL="<model-name>" \
+   OPENAI_API_KEY="<api-key>" \
      bash scripts/seed-osv-overlays.sh
    ```
 
-   LLM mode receives the OSV record plus `docs/frameworks/*.md` as
-   classification context. It still writes candidates only; every
-   canonical overlay must be reviewed and promoted explicitly.
+   `ASVE_SEED_LLM_PROVIDER` accepts `openai`, `anthropic`, or `claude`
+   (`claude` is an alias for Anthropic). LLM mode receives the OSV
+   record plus `docs/frameworks/*.md` as classification context. It
+   still writes candidates only; every canonical overlay must be
+   reviewed and promoted explicitly.
 
 4. **Lint locally**:
    ```bash

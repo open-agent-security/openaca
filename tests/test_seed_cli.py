@@ -1,4 +1,5 @@
 import json
+import sys
 import zipfile
 
 import yaml
@@ -9,6 +10,11 @@ from tools.seed.__main__ import discovery_reasons, main
 
 def _write_json(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _write_llm_script(path, source):
+    path.write_text(source, encoding="utf-8")
+    path.chmod(0o755)
 
 
 def _ghsa_record() -> dict:
@@ -545,3 +551,155 @@ def test_seed_incremental_does_not_drop_records_at_cursor_timestamp(tmp_path):
         "npm/CVE-2026-99999",
         "npm/GHSA-abcd-ef12-3456",
     }
+
+
+def test_seed_llm_command_receives_framework_docs_and_overrides_annotation(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    record = _ghsa_record()
+    record["summary"] = "mcp-demo allows prompt injection through tool metadata"
+    record["details"] = "A malicious MCP tool description can hijack agent tool calls."
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", record)
+    llm = tmp_path / "llm.py"
+    _write_llm_script(
+        llm,
+        """
+import json
+import sys
+
+request = json.load(sys.stdin)
+assert request["osv_record"]["id"] == "GHSA-abcd-ef12-3456"
+assert request["annotation_schema"]["component_type"]["default"] == "mcp_server"
+assert "mitre-atlas.md" in request["framework_documents"]
+assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
+json.dump(
+    {
+        "database_specific": {
+            "asve": {
+                "component_type": "mcp_server",
+                "surfaces": ["tool_invocation", "stdio", "repo_context"],
+                "agent_impact": {
+                    "tool_hijack": True,
+                    "memory_poisoning": True,
+                    "code_execution": False,
+                },
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi01"],
+                    "owasp_mcp_top10": ["mcp03:2025"],
+                    "owasp_llm_top10": ["llm01:2025"],
+                    "mitre_atlas": ["AML.T0051.001", "AML.T0053"],
+                },
+                "evidence_level": "likely",
+            }
+        },
+        "evidence": [{"field": "details", "quote": "tool description"}],
+    },
+    sys.stdout,
+)
+""",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-command",
+            f"{sys.executable} {llm}",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    metadata = candidate["_candidate"]
+    asve = candidate["database_specific"]["asve"]
+    assert metadata["annotation_source"] == "llm"
+    assert "mitre-atlas.md" in metadata["framework_documents"]
+    assert asve["surfaces"] == ["tool_invocation", "stdio", "repo_context"]
+    assert asve["agent_impact"]["tool_hijack"] is True
+    assert asve["agent_impact"]["memory_poisoning"] is True
+    assert asve["taxonomies"] == {
+        "owasp_agentic_top10": ["asi01"],
+        "owasp_mcp_top10": ["mcp03:2025"],
+        "owasp_llm_top10": ["llm01:2025"],
+        "mitre_atlas": ["AML.T0051.001", "AML.T0053"],
+    }
+    assert candidate["_evidence"] == [{"field": "details", "quote": "tool description"}]
+
+
+def test_seed_llm_command_invalid_json_fails_without_writing_candidate(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    llm = tmp_path / "llm.py"
+    _write_llm_script(llm, "print('not json')\n")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-command",
+            f"{sys.executable} {llm}",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "LLM command returned invalid JSON" in result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
+def test_seed_llm_command_does_not_backfill_missing_annotation_from_heuristics(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    llm = tmp_path / "llm.py"
+    _write_llm_script(
+        llm,
+        """
+import json
+import sys
+
+json.load(sys.stdin)
+json.dump(
+    {
+        "database_specific": {
+            "asve": {}
+        }
+    },
+    sys.stdout,
+)
+""",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-command",
+            f"{sys.executable} {llm}",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "component_type" in result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()

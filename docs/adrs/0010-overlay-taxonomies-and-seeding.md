@@ -1,10 +1,10 @@
 ---
 id: 0010
 title: Use deterministic candidate seeding and nested overlay taxonomies
-status: accepted
+status: superseded
 date: 2026-05-13
 supersedes: null
-superseded-by: null
+superseded-by: 0011
 ---
 
 ## Context

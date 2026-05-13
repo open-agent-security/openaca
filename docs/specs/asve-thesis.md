@@ -117,7 +117,9 @@ Six things ASVE's records contain that a generic OSV/GHSA record does not:
    categories (`repo_read`, `repo_write`, `credential_exfiltration`,
    `tool_hijack`, `memory_poisoning`, `pr_manipulation`, `code_execution`).
    CVSS C/I/A doesn't speak agentic.
-4. **`owasp_agentic_top10[]`** — array referencing ASI01–ASI10 categories.
+4. **`taxonomies{}`** — mapping of ASVE-owned agent-context taxonomy
+   families, including `owasp_agentic_top10[]` entries referencing
+   ASI01–ASI10 categories.
    Lets consumers triage findings by the framework category instead of just
    CVE list.
 5. **`component_identity`** (in `database_specific.asve`) — ASVE-native
@@ -172,7 +174,7 @@ Three layers survive an OSV expansion:
 1. **The agent-context overlay.** OSV/GHSA's data model is generic; they have
    no obvious reason to add an agent-context extension. ASVE = the schema
    authority for what makes a record *agentic* (component_type, surfaces,
-   agent_impact, ASI mapping, evidence_level). Even if OSV ingests ASVE
+   agent_impact, taxonomy mappings, evidence_level). Even if OSV ingests ASVE
    records, they do so under the `database_specific.asve` namespace ASVE
    defines.
 2. **Class-level types.** OSV's data model is anchored on `affected[]` — a

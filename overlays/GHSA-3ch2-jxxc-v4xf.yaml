@@ -17,9 +17,10 @@ database_specific:
       memory_poisoning: false
       pr_manipulation: false
       code_execution: true
-    owasp_agentic_top10:
-    - asi02
-    - asi05
+    taxonomies:
+      owasp_agentic_top10:
+      - asi02
+      - asi05
     evidence_level: confirmed
     detection_hints:
       manifests:

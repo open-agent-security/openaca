@@ -148,7 +148,7 @@ def test_lint_rejects_malformed_overlay_id(tmp_path):
 
 
 def test_lint_accepts_valid_upstream_id_formats(tmp_path):
-    """GHSA-*, CVE-*, and OSV-* ids all pass format validation."""
+    """GHSA-*, CVE-*, OSV-*, PYSEC-*, and MAL-* ids all pass format validation."""
     base = {
         "schema_version": "1.7.5",
         "modified": "2026-01-01T00:00:00Z",
@@ -156,7 +156,13 @@ def test_lint_accepts_valid_upstream_id_formats(tmp_path):
     }
     target = tmp_path / "overlays"
     target.mkdir()
-    for oid in ("GHSA-abcd-ef12-3456", "CVE-2026-12345", "OSV-2026-1234"):
+    for oid in (
+        "GHSA-abcd-ef12-3456",
+        "CVE-2026-12345",
+        "OSV-2026-1234",
+        "PYSEC-2026-123",
+        "MAL-2026-1234",
+    ):
         (target / f"{oid}.yaml").write_text(yaml.dump({**base, "id": oid}))
     runner = CliRunner()
     result = runner.invoke(main, [str(target)])

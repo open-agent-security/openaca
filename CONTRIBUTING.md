@@ -66,7 +66,9 @@ uv run pytest
      `model_proxy`, `agent_framework`, `skill_bundle`).
    - `surfaces`: which agent surfaces the component touches.
    - `agent_impact`: boolean table of attainable impacts.
-   - `owasp_agentic_top10`: array of `asi01`–`asi10` categories.
+   - `taxonomies`: agent-context taxonomy mappings such as
+     `owasp_agentic_top10` (`asi01`–`asi10`) and `owasp_mcp_top10`
+     (`mcp01:2025`–`mcp10:2025`).
    - `evidence_level`: `confirmed` | `likely` | `research` |
      `disputed` | `withdrawn`.
 
@@ -86,18 +88,27 @@ uv run pytest
          credential_exfiltration: false
          repo_write: false
          command_execution: true
-       owasp_agentic_top10:
-         - asi02
-       evidence_level: confirmed
+      taxonomies:
+        owasp_agentic_top10:
+          - asi02
+      evidence_level: confirmed
    ```
 
-3. **Lint locally**:
+3. **Optionally seed candidates from an OSV dump**:
+   ```bash
+   uv run asve-seed /path/to/osv/all.zip
+   uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
+   ```
+   Review and edit candidate YAML before promotion. `asve-promote`
+   writes a minimal canonical overlay under `overlays/`.
+
+4. **Lint locally**:
    ```bash
    uv run asve-lint overlays/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    Fix any failures before opening a PR.
 
-4. **Open a PR** with the overlay file and a one-paragraph summary
+5. **Open a PR** with the overlay file and a one-paragraph summary
    of what agent context the overlay adds.
 
 ## Linter discipline

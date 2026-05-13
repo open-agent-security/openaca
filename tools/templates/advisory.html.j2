@@ -86,8 +86,24 @@
       {% if impacts %}{% for i in impacts %}<code>{{ i }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<em>none</em>{% endif %}
     </p>
     {% endif %}
-    {% if asve.owasp_agentic_top10 %}
-    <p>OWASP Agentic Top 10: {% for c in asve.owasp_agentic_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% if asve.threat_kind %}<p>Threat kind: <code>{{ asve.threat_kind }}</code></p>{% endif %}
+    {% set taxonomies = asve.taxonomies or {} %}
+    {% if taxonomies %}
+      {% if taxonomies.owasp_agentic_top10 %}
+      <p>OWASP Agentic Top 10: {% for c in taxonomies.owasp_agentic_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      {% if taxonomies.owasp_mcp_top10 %}
+      <p>OWASP MCP Top 10: {% for c in taxonomies.owasp_mcp_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      {% if taxonomies.owasp_agentic_skills_top10 %}
+      <p>OWASP Agentic Skills Top 10: {% for c in taxonomies.owasp_agentic_skills_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      {% if taxonomies.owasp_llm_top10 %}
+      <p>OWASP LLM Top 10: {% for c in taxonomies.owasp_llm_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      {% if taxonomies.mitre_atlas %}
+      <p>MITRE ATLAS: {% for c in taxonomies.mitre_atlas %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
     {% endif %}
     {% if asve.evidence_level %}<p>Evidence: <code>{{ asve.evidence_level }}</code></p>{% endif %}
   </section>

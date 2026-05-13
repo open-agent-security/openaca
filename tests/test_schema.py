@@ -23,6 +23,34 @@ def test_sample_advisory_passes_schema(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
 
 
+def test_schema_accepts_taxonomies_block_and_threat_kind(schema, sample_valid):
+    advisory = dict(sample_valid)
+    asve = dict(advisory["database_specific"]["asve"])
+    asve.pop("owasp_agentic_top10", None)
+    asve["threat_kind"] = "malicious_package"
+    asve["taxonomies"] = {
+        "owasp_agentic_top10": ["asi02", "asi05"],
+        "owasp_mcp_top10": ["mcp05:2025"],
+        "owasp_agentic_skills_top10": ["ast03:2025"],
+        "owasp_llm_top10": ["llm01:2025"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+    advisory["database_specific"]["asve"] = asve
+
+    Draft202012Validator(schema).validate(advisory)
+
+
+def test_schema_rejects_malformed_taxonomy_codes(schema, sample_valid):
+    advisory = dict(sample_valid)
+    asve = dict(advisory["database_specific"]["asve"])
+    asve.pop("owasp_agentic_top10", None)
+    asve["taxonomies"] = {"owasp_agentic_top10": ["ASI02"]}
+    advisory["database_specific"]["asve"] = asve
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)
+
+
 @pytest.mark.parametrize("name", ["exposure-not-allowed", "config-not-allowed"])
 def test_v0_rejects_non_vulnerability_types(schema, fixtures_dir, name):
     advisory = yaml.safe_load((fixtures_dir / "invalid" / f"{name}.yaml").read_text())

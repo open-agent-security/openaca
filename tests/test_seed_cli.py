@@ -661,6 +661,43 @@ def test_seed_llm_command_invalid_json_fails_without_writing_candidate(tmp_path)
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
 
 
+def test_seed_llm_command_non_dict_database_specific_raises_clean_error(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    llm = tmp_path / "llm.py"
+    _write_llm_script(
+        llm,
+        """
+import json
+import sys
+
+json.load(sys.stdin)
+json.dump({"database_specific": ["not", "a", "dict"]}, sys.stdout)
+""",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-command",
+            f"{sys.executable} {llm}",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "database_specific.asve" in result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
 def test_seed_llm_command_does_not_backfill_missing_annotation_from_heuristics(tmp_path):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"

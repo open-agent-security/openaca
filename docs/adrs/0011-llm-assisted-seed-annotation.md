@@ -23,13 +23,16 @@ harvesting, or host escape.
 ## Decision
 
 ASVE keeps deterministic discovery and alias deduplication, but supports
-opt-in LLM annotation through `asve-seed --llm-command`. The seeder loads
-`docs/frameworks/*.md`, passes those framework summaries, the OSV record,
-and a neutral annotation schema to the command over stdin, and expects a
-JSON ASVE annotation on stdout. In LLM mode, the LLM owns the ASVE
-annotation; deterministic classification is not used as a fallback or
-merge source. Invalid LLM output fails candidate generation instead of
-writing a suspect candidate.
+opt-in LLM annotation through explicit provider settings:
+`asve-seed --llm-provider <openai|anthropic|claude> --llm-model <name>`.
+The API key comes from `--llm-api-key`, `ASVE_SEED_LLM_API_KEY`, or the
+provider-standard `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` environment
+variables. The seeder loads `docs/frameworks/*.md`, passes those
+framework summaries, the OSV record, and a neutral annotation schema to
+the provider, and expects a JSON ASVE annotation in the response. In LLM
+mode, the LLM owns the ASVE annotation; deterministic classification is
+not used as a fallback or merge source. Invalid LLM output fails
+candidate generation instead of writing a suspect candidate.
 
 Canonical publication remains unchanged: generated files are candidates
 only, and a human still promotes reviewed candidates through
@@ -46,10 +49,13 @@ authority.
   heuristic mappings can silently survive even when the LLM would have
   omitted or contradicted them. In LLM mode, missing required fields
   should fail validation and force review.
-- **Hard-code a hosted LLM provider**: rejected because seeding is a
-  maintainer workflow and provider credentials do not belong in the
-  project. A command interface keeps the repo provider-neutral and easy
-  to test with local fixtures.
+- **Use an arbitrary local command hook**: rejected because the review
+  workflow is clearer when the seed command takes the provider, model,
+  and API key directly. First-party adapters for OpenAI and Anthropic
+  are enough for V0 and remain testable without network access.
+- **Support every hosted LLM provider**: rejected for V0. The project
+  only needs the two providers maintainers expect to use immediately;
+  additional providers can be added when there is a concrete need.
 - **Auto-promote high-confidence LLM output**: rejected for V0. The
   framework docs improve drafting quality, but ASVE credibility still
   depends on human-reviewed canonical overlays.
@@ -57,19 +63,17 @@ authority.
 ## Consequences
 
 The normal seed path remains usable without any LLM dependency. Maintainers
-who want framework-grounded drafts can provide a local command that wraps
-their model of choice. The command boundary also makes the behavior
-testable without network access.
+who want framework-grounded drafts provide a provider, model name, and API
+key. Provider adapters are small and tested with mocked HTTP calls, so CI
+does not need network access.
 
-The downside is that prompt and provider behavior live outside this repo
-for now. Reproducibility depends on the wrapper command the maintainer
-uses. Candidate YAMLs still need review, and reviewers should treat LLM
-evidence as a drafting aid rather than proof.
+The downside is that adding a new provider now requires code instead of a
+wrapper script. Candidate YAMLs still need review, and reviewers should
+treat LLM evidence as a drafting aid rather than proof.
 
 ## When to revisit
 
-Revisit when ASVE standardizes on a checked-in prompt and replayable
-LLM-recording harness, or when candidate volume justifies stricter
-automation such as verifier-based bucketing. Revisit provider neutrality
-only if maintaining external wrapper commands becomes more costly than
-supporting a small first-party provider adapter.
+Revisit when ASVE standardizes on a replayable LLM-recording harness, or
+when candidate volume justifies stricter automation such as verifier-based
+bucketing. Revisit the provider list when maintainers need a third hosted
+provider or a local model adapter.

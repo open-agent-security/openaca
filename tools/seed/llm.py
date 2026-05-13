@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import copy
 import json
-import shlex
-import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRAMEWORKS_ROOT = REPO_ROOT / "docs" / "frameworks"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 INSTRUCTIONS = """\
 You are annotating an ASVE overlay candidate.
@@ -94,38 +96,130 @@ def build_request(
     }
 
 
-def annotate_with_command(
-    command: str,
+def normalize_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized == "claude":
+        return "anthropic"
+    if normalized in {"openai", "anthropic"}:
+        return normalized
+    raise LLMAnnotationError(f"unsupported LLM provider: {provider}")
+
+
+def annotate_with_provider(
+    provider: str,
+    model: str,
+    api_key: str,
     request: dict[str, Any],
+    post_json: Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, str]] | None]:
-    args = shlex.split(command)
-    if not args:
-        raise LLMAnnotationError("LLM command is empty")
-
-    try:
-        completed = subprocess.run(
-            args,
-            input=json.dumps(request),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise LLMAnnotationError(f"LLM command failed: {exc}") from exc
-
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise LLMAnnotationError(f"LLM command exited {completed.returncode}: {detail}")
-
-    try:
-        response = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise LLMAnnotationError("LLM command returned invalid JSON") from exc
-    if not isinstance(response, dict):
-        raise LLMAnnotationError("LLM command must return a JSON object")
-
+    normalized = normalize_provider(provider)
+    if not model:
+        raise LLMAnnotationError("LLM model is required")
+    if not api_key:
+        raise LLMAnnotationError("LLM API key is required")
+    post = post_json or _post_json
+    if normalized == "openai":
+        response = _call_openai(model, api_key, request, post)
+    else:
+        response = _call_anthropic(model, api_key, request, post)
     return _project_response(response)
+
+
+def _call_openai(
+    model: str,
+    api_key: str,
+    request: dict[str, Any],
+    post_json: Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": INSTRUCTIONS},
+            {"role": "user", "content": json.dumps(request, indent=2, sort_keys=True)},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    response = post_json(
+        OPENAI_URL,
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        payload,
+    )
+    try:
+        content = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LLMAnnotationError("OpenAI response did not include message content") from exc
+    if not isinstance(content, str):
+        raise LLMAnnotationError("OpenAI message content must be a string")
+    return _loads_response_json(content)
+
+
+def _call_anthropic(
+    model: str,
+    api_key: str,
+    request: dict[str, Any],
+    post_json: Callable[[str, dict[str, str], dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    payload = {
+        "model": model,
+        "max_tokens": 4000,
+        "system": INSTRUCTIONS,
+        "messages": [
+            {"role": "user", "content": json.dumps(request, indent=2, sort_keys=True)},
+        ],
+    }
+    response = post_json(
+        ANTHROPIC_URL,
+        {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        },
+        payload,
+    )
+    try:
+        blocks = response["content"]
+    except KeyError as exc:
+        raise LLMAnnotationError("Anthropic response did not include content") from exc
+    if not isinstance(blocks, list):
+        raise LLMAnnotationError("Anthropic response content must be a list")
+    text = "".join(
+        block.get("text", "")
+        for block in blocks
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+    if not text:
+        raise LLMAnnotationError("Anthropic response did not include text content")
+    return _loads_response_json(text)
+
+
+def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise LLMAnnotationError(f"LLM provider returned HTTP {exc.code}: {detail}") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LLMAnnotationError(f"LLM provider request failed: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LLMAnnotationError("LLM provider response must be a JSON object")
+    return data
+
+
+def _loads_response_json(text: str) -> dict[str, Any]:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise LLMAnnotationError("LLM provider returned invalid JSON") from exc
+    if not isinstance(data, dict):
+        raise LLMAnnotationError("LLM provider must return a JSON object")
+    return data
 
 
 def _project_response(

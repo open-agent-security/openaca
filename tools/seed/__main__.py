@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import zipfile
@@ -324,6 +325,8 @@ def build_candidate(
     evidence: list[dict[str, str]] | None = None,
     annotation_source: str = "deterministic",
     framework_documents: list[str] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
 ) -> dict[str, Any]:
     rec_id = record.get("id")
     if not isinstance(rec_id, str) or not rec_id:
@@ -338,6 +341,10 @@ def build_candidate(
     }
     if framework_documents:
         candidate_metadata["framework_documents"] = framework_documents
+    if llm_provider:
+        candidate_metadata["llm_provider"] = llm_provider
+    if llm_model:
+        candidate_metadata["llm_model"] = llm_model
     candidate: dict[str, Any] = {
         "schema_version": record.get("schema_version") or "1.7.5",
         "id": rec_id,
@@ -379,6 +386,34 @@ def _curated_keys(existing_overlays: Path) -> set[str]:
     return keys
 
 
+def _resolve_llm_config(
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    if not any((provider, model, api_key)):
+        return None, None, None
+    if not provider:
+        raise click.UsageError("--llm-provider is required when LLM annotation is enabled")
+    if not model:
+        raise click.UsageError("--llm-model is required when LLM annotation is enabled")
+    try:
+        normalized = llm.normalize_provider(provider)
+    except llm.LLMAnnotationError as exc:
+        raise click.UsageError(str(exc)) from exc
+    resolved_key = api_key or os.environ.get("ASVE_SEED_LLM_API_KEY")
+    if resolved_key is None and normalized == "openai":
+        resolved_key = os.environ.get("OPENAI_API_KEY")
+    if resolved_key is None and normalized == "anthropic":
+        resolved_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not resolved_key:
+        raise click.UsageError(
+            "LLM API key is required via --llm-api-key, ASVE_SEED_LLM_API_KEY, "
+            "OPENAI_API_KEY, or ANTHROPIC_API_KEY"
+        )
+    return normalized, model, resolved_key
+
+
 @click.command()
 @click.argument("source", required=False, type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -414,8 +449,20 @@ def _curated_keys(existing_overlays: Path) -> set[str]:
 )
 @click.option("--dry-run", is_flag=True, help="Print candidates without writing files.")
 @click.option(
-    "--llm-command",
-    help="Command that reads an annotation request JSON from stdin and writes JSON to stdout.",
+    "--llm-provider",
+    type=click.Choice(["openai", "anthropic", "claude"], case_sensitive=False),
+    envvar="ASVE_SEED_LLM_PROVIDER",
+    help="LLM provider for framework-grounded annotations.",
+)
+@click.option(
+    "--llm-model",
+    envvar="ASVE_SEED_LLM_MODEL",
+    help="LLM model name for framework-grounded annotations.",
+)
+@click.option(
+    "--llm-api-key",
+    envvar="ASVE_SEED_LLM_API_KEY",
+    help="LLM API key. Prefer ASVE_SEED_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.",
 )
 def main(
     source: Path | None,
@@ -425,7 +472,9 @@ def main(
     out_dir: Path,
     existing_overlays: Path,
     dry_run: bool,
-    llm_command: str | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+    llm_api_key: str | None,
 ) -> None:
     """Generate deterministic review candidates from an OSV JSON directory or zip."""
     if modified_index is not None and records_root is None:
@@ -438,12 +487,16 @@ def main(
     newest_modified: str | None = None
     newest_modified_ids: set[str] = set()
 
+    normalized_llm_provider, resolved_llm_model, resolved_llm_api_key = _resolve_llm_config(
+        llm_provider, llm_model, llm_api_key
+    )
+    framework_documents = llm.load_framework_documents() if normalized_llm_provider else None
+
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
     out_dir_resolved = out_dir.resolve()
 
     last_modified, last_modified_ids = _load_state(state)
-    framework_documents = llm.load_framework_documents() if llm_command else None
 
     if modified_index is not None:
         assert records_root is not None
@@ -469,11 +522,18 @@ def main(
             skipped += 1
             continue
 
-        if llm_command:
+        if normalized_llm_provider:
             assert framework_documents is not None
+            assert resolved_llm_model is not None
+            assert resolved_llm_api_key is not None
             request = llm.build_request(record, matched_by, framework_documents)
             try:
-                asve_annotation, evidence = llm.annotate_with_command(llm_command, request)
+                asve_annotation, evidence = llm.annotate_with_provider(
+                    normalized_llm_provider,
+                    resolved_llm_model,
+                    resolved_llm_api_key,
+                    request,
+                )
             except llm.LLMAnnotationError as exc:
                 raise click.ClickException(str(exc)) from exc
             candidate = build_candidate(
@@ -483,6 +543,8 @@ def main(
                 evidence=evidence,
                 annotation_source="llm",
                 framework_documents=sorted(framework_documents),
+                llm_provider=normalized_llm_provider,
+                llm_model=resolved_llm_model,
             )
         else:
             candidate = build_candidate(record, matched_by)

@@ -121,14 +121,15 @@
 - Modify: `docs/adrs/0010-overlay-taxonomies-and-seeding.md`
 - Modify: `docs/adrs/INDEX.md`
 - Test: `tests/test_seed_cli.py`
+- Test: `tests/test_seed_llm.py`
 - Test: `tests/test_seed_workflow_script.py`
 
-- [x] Write tests proving `--llm-command` receives the OSV record, framework documents, and neutral annotation schema.
+- [x] Write tests proving `--llm-provider` receives the OSV record, framework documents, and neutral annotation schema.
 - [x] Write tests proving invalid LLM output fails without writing a candidate.
 - [x] Write tests proving LLM mode does not backfill missing annotation fields from deterministic heuristics.
-- [x] Implement provider-neutral command execution for LLM annotation.
+- [x] Implement OpenAI and Anthropic provider adapters for LLM annotation.
 - [x] Keep deterministic discovery and deterministic annotation as the no-LLM fallback path.
-- [x] Add `ASVE_SEED_LLM_COMMAND` support to the npm/PyPI workflow script.
+- [x] Add `ASVE_SEED_LLM_PROVIDER` and `ASVE_SEED_LLM_MODEL` support to the npm/PyPI workflow script.
 - [x] Document usage in `CONTRIBUTING.md`.
 - [x] Run focused seeder and workflow tests.
 - [x] Run full verification before PR.

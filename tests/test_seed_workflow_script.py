@@ -71,7 +71,7 @@ printf '%s\\n' "$*" >> "$UV_LOG"
     assert "--state .asve-seed-state-pypi.json" in log
 
 
-def test_seed_osv_workflow_passes_optional_llm_command(tmp_path):
+def test_seed_osv_workflow_passes_optional_llm_provider_and_model(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_gcs = tmp_path / "gcs"
     cache = tmp_path / "cache"
@@ -104,7 +104,9 @@ printf '%s\\n' "$*" >> "$UV_LOG"
     env = {
         **os.environ,
         "ASVE_OSV_CACHE_DIR": str(cache),
-        "ASVE_SEED_LLM_COMMAND": "python tools/seed_llm.py",
+        "ASVE_SEED_LLM_PROVIDER": "openai",
+        "ASVE_SEED_LLM_MODEL": "test-model",
+        "ASVE_SEED_LLM_API_KEY": "test-key",
         "FAKE_GCS_ROOT": str(fake_gcs),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(uv_log),
@@ -121,4 +123,6 @@ printf '%s\\n' "$*" >> "$UV_LOG"
 
     assert result.returncode == 0, result.stderr
     log = uv_log.read_text(encoding="utf-8")
-    assert log.count("--llm-command python tools/seed_llm.py") == 2
+    assert log.count("--llm-provider openai") == 2
+    assert log.count("--llm-model test-model") == 2
+    assert "test-key" not in log

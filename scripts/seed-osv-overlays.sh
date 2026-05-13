@@ -23,18 +23,18 @@ seed_ecosystem() {
   gcloud storage cp "gs://osv-vulnerabilities/$ecosystem/modified_id.csv" "$dir/modified_id.csv"
   gcloud storage cp "gs://osv-vulnerabilities/$ecosystem/all.zip" "$dir/all.zip"
 
-  if [[ "${ASVE_SEED_DRY_RUN:-}" == "1" ]]; then
-    uv run asve-seed \
-      --modified-index "$dir/modified_id.csv" \
-      --records-root "$dir" \
-      --state "$state" \
-      --dry-run
-  else
-    uv run asve-seed \
-      --modified-index "$dir/modified_id.csv" \
-      --records-root "$dir" \
-      --state "$state"
+  local seed_args=(
+    --modified-index "$dir/modified_id.csv"
+    --records-root "$dir"
+    --state "$state"
+  )
+  if [[ -n "${ASVE_SEED_LLM_COMMAND:-}" ]]; then
+    seed_args+=(--llm-command "$ASVE_SEED_LLM_COMMAND")
   fi
+  if [[ "${ASVE_SEED_DRY_RUN:-}" == "1" ]]; then
+    seed_args+=(--dry-run)
+  fi
+  uv run asve-seed "${seed_args[@]}"
 }
 
 seed_ecosystem "npm" ".asve-seed-state-npm.json"

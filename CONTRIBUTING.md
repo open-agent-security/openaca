@@ -101,6 +101,8 @@ uv run pytest
    uv run asve-seed /path/to/osv/all.zip
    uv run asve-seed --modified-index /path/to/osv/modified_id.csv \
      --records-root /path/to/osv --state .asve-seed-state.json
+   uv run asve-seed /path/to/osv/all.zip \
+     --llm-command "/path/to/seed-annotator"
    uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    The script downloads the npm and PyPI `modified_id.csv` + `all.zip`
@@ -108,6 +110,19 @@ uv run pytest
    committed per-ecosystem seed cursors. Review and edit candidate YAML
    before promotion. `asve-promote` writes a minimal canonical overlay
    under `overlays/`.
+
+   To use LLM-assisted annotation with the scripted workflow, set
+   `ASVE_SEED_LLM_COMMAND` to a local command that reads the seed request
+   JSON from stdin and writes JSON to stdout:
+
+   ```bash
+   ASVE_SEED_LLM_COMMAND="/path/to/seed-annotator" \
+     bash scripts/seed-osv-overlays.sh
+   ```
+
+   LLM mode receives the OSV record plus `docs/frameworks/*.md` as
+   classification context. It still writes candidates only; every
+   canonical overlay must be reviewed and promoted explicitly.
 
 4. **Lint locally**:
    ```bash

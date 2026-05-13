@@ -1,8 +1,8 @@
 # Plan 010 — Seed Overlay Pipeline
 
-**Goal:** Add a V0-safe deterministic workflow for seeding reviewed ASVE overlays from OSV bulk dumps and OSV `modified_id.csv` indexes.
+**Goal:** Add a V0-safe workflow for seeding reviewed ASVE overlays from OSV bulk dumps and OSV `modified_id.csv` indexes.
 
-**Architecture:** Canonical `overlays/` stays scanner-visible and minimal. The seeder writes heuristic candidates to `candidates/`, outside the scanner/export path. A human reviews and edits each candidate, then `asve-promote` projects it into the canonical overlay shape and validates it before writing `overlays/<id>.yaml`.
+**Architecture:** Canonical `overlays/` stays scanner-visible and minimal. The seeder writes reviewable candidates to `candidates/`, outside the scanner/export path. Discovery remains deterministic; annotation can be deterministic or opt-in LLM-assisted with `docs/frameworks/*.md` as context. A human reviews and edits each candidate, then `asve-promote` projects it into the canonical overlay shape and validates it before writing `overlays/<id>.yaml`.
 
 **Tech Stack:** Python 3.11, Click CLIs, PyYAML, JSON Schema, pytest, existing ASVE schema/linter/export tooling.
 
@@ -109,4 +109,26 @@
 - [x] Add conservative package-name discovery patterns for agent frameworks, agent builders, coding agents, LLM gateways, SDKs, and vector/RAG components.
 - [x] Add topic discovery for prompt injection, AI assistants, agent tools, memory tools, RAG poisoning, and related AI-feature wording.
 - [x] Run focused seeder tests.
+
+### Task 8: LLM-Assisted Candidate Annotation
+
+**Files:**
+- Create: `tools/seed/llm.py`
+- Create: `docs/adrs/0011-llm-assisted-seed-annotation.md`
+- Modify: `tools/seed/__main__.py`
+- Modify: `scripts/seed-osv-overlays.sh`
+- Modify: `CONTRIBUTING.md`
+- Modify: `docs/adrs/0010-overlay-taxonomies-and-seeding.md`
+- Modify: `docs/adrs/INDEX.md`
+- Test: `tests/test_seed_cli.py`
+- Test: `tests/test_seed_workflow_script.py`
+
+- [x] Write tests proving `--llm-command` receives the OSV record, framework documents, and neutral annotation schema.
+- [x] Write tests proving invalid LLM output fails without writing a candidate.
+- [x] Write tests proving LLM mode does not backfill missing annotation fields from deterministic heuristics.
+- [x] Implement provider-neutral command execution for LLM annotation.
+- [x] Keep deterministic discovery and deterministic annotation as the no-LLM fallback path.
+- [x] Add `ASVE_SEED_LLM_COMMAND` support to the npm/PyPI workflow script.
+- [x] Document usage in `CONTRIBUTING.md`.
+- [x] Run focused seeder and workflow tests.
 - [x] Run full verification before PR.

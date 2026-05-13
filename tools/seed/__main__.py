@@ -13,6 +13,7 @@ from typing import Any, Iterable
 import click
 import yaml
 
+from tools.seed import llm
 from tools.seed.validator import validate_candidate
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -316,25 +317,38 @@ def _classify(record: dict[str, Any]) -> dict[str, Any]:
     return asve
 
 
-def build_candidate(record: dict[str, Any], matched_by: list[str]) -> dict[str, Any]:
+def build_candidate(
+    record: dict[str, Any],
+    matched_by: list[str],
+    asve_annotation: dict[str, Any] | None = None,
+    evidence: list[dict[str, str]] | None = None,
+    annotation_source: str = "deterministic",
+    framework_documents: list[str] | None = None,
+) -> dict[str, Any]:
     rec_id = record.get("id")
     if not isinstance(rec_id, str) or not rec_id:
         raise ValueError("OSV record is missing id")
 
     aliases = [a for a in record.get("aliases") or [] if isinstance(a, str) and a != rec_id]
+    candidate_metadata: dict[str, Any] = {
+        "review_status": "needs_review",
+        "matched_by": matched_by,
+        "package_names": _package_names(record),
+        "annotation_source": annotation_source,
+    }
+    if framework_documents:
+        candidate_metadata["framework_documents"] = framework_documents
     candidate: dict[str, Any] = {
         "schema_version": record.get("schema_version") or "1.7.5",
         "id": rec_id,
         "modified": record.get("modified") or record.get("published") or "1970-01-01T00:00:00Z",
-        "_candidate": {
-            "review_status": "needs_review",
-            "matched_by": matched_by,
-            "package_names": _package_names(record),
+        "_candidate": candidate_metadata,
+        "_evidence": evidence
+        if evidence is not None
+        else [{"field": "summary", "quote": record.get("summary") or ""}],
+        "database_specific": {
+            "asve": asve_annotation if asve_annotation is not None else _classify(record)
         },
-        "_evidence": [
-            {"field": "summary", "quote": record.get("summary") or ""},
-        ],
-        "database_specific": {"asve": _classify(record)},
     }
     if aliases:
         candidate["aliases"] = aliases
@@ -399,6 +413,10 @@ def _curated_keys(existing_overlays: Path) -> set[str]:
     help="Existing overlay corpus used for alias deduplication.",
 )
 @click.option("--dry-run", is_flag=True, help="Print candidates without writing files.")
+@click.option(
+    "--llm-command",
+    help="Command that reads an annotation request JSON from stdin and writes JSON to stdout.",
+)
 def main(
     source: Path | None,
     modified_index: Path | None,
@@ -407,6 +425,7 @@ def main(
     out_dir: Path,
     existing_overlays: Path,
     dry_run: bool,
+    llm_command: str | None,
 ) -> None:
     """Generate deterministic review candidates from an OSV JSON directory or zip."""
     if modified_index is not None and records_root is None:
@@ -424,6 +443,7 @@ def main(
     out_dir_resolved = out_dir.resolve()
 
     last_modified, last_modified_ids = _load_state(state)
+    framework_documents = llm.load_framework_documents() if llm_command else None
 
     if modified_index is not None:
         assert records_root is not None
@@ -449,7 +469,23 @@ def main(
             skipped += 1
             continue
 
-        candidate = build_candidate(record, matched_by)
+        if llm_command:
+            assert framework_documents is not None
+            request = llm.build_request(record, matched_by, framework_documents)
+            try:
+                asve_annotation, evidence = llm.annotate_with_command(llm_command, request)
+            except llm.LLMAnnotationError as exc:
+                raise click.ClickException(str(exc)) from exc
+            candidate = build_candidate(
+                record,
+                matched_by,
+                asve_annotation=asve_annotation,
+                evidence=evidence,
+                annotation_source="llm",
+                framework_documents=sorted(framework_documents),
+            )
+        else:
+            candidate = build_candidate(record, matched_by)
         errors = validate_candidate(candidate)
         if errors:
             click.echo(f"{candidate.get('id')}: candidate validation failed", err=True)

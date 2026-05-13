@@ -119,6 +119,57 @@ def test_seed_dry_run_does_not_write_candidates(tmp_path):
     assert not out.exists()
 
 
+def test_seed_skips_candidate_with_unsafe_id(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    bad = {
+        "schema_version": "1.7.5",
+        "id": "../evil",
+        "modified": "2026-05-13T00:00:00Z",
+        "summary": "mcp server command injection",
+        "affected": [{"package": {"ecosystem": "npm", "name": "mcp-demo"}}],
+    }
+    _write_json(dump / "evil.json", bad)
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0
+    assert not (tmp_path / "evil.yaml").exists()
+    assert "unsafe" in result.output
+    assert "0 candidate" in result.output
+
+
+def test_seed_deduplicates_aliases_within_run(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    ghsa = _ghsa_record()  # id=GHSA-abcd-ef12-3456, aliases=[CVE-2026-12345]
+    cve = {
+        "schema_version": "1.7.5",
+        "id": "CVE-2026-12345",
+        "aliases": ["GHSA-abcd-ef12-3456"],
+        "modified": "2026-05-13T00:00:00Z",
+        "summary": "mcp-demo allows command injection",
+        "affected": [{"package": {"ecosystem": "npm", "name": "mcp-demo"}}],
+        "references": [{"type": "ADVISORY", "url": "https://example.test/advisory"}],
+    }
+    # Sorted iteration processes GHSA first, then CVE should be deduplicated
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", ghsa)
+    _write_json(dump / "CVE-2026-12345.json", cve)
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0, result.output
+    written_files = list(out.glob("*.yaml"))
+    assert len(written_files) == 1
+    assert "1 already curated" in result.output
+
+
 def test_seed_reads_osv_all_zip(tmp_path):
     zip_path = tmp_path / "all.zip"
     out = tmp_path / "candidates"

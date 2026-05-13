@@ -239,6 +239,7 @@ def main(source: Path, out_dir: Path, existing_overlays: Path, dry_run: bool) ->
 
     if not dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_resolved = out_dir.resolve()
 
     for record in iter_records(source):
         scanned += 1
@@ -259,11 +260,15 @@ def main(source: Path, out_dir: Path, existing_overlays: Path, dry_run: bool) ->
             sys.exit(1)
 
         target = out_dir / f"{candidate['id']}.yaml"
+        if target.resolve().parent != out_dir_resolved:
+            click.echo(f"{candidate['id']!r}: unsafe candidate ID, skipping", err=True)
+            continue
         if dry_run:
             click.echo(f"would write {target}: {candidate.get('summary', '')[:80]}")
         else:
             target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
         written += 1
+        curated.update(_identity(record))
 
     click.echo(
         f"scanned {scanned} records, {matched} matched, "

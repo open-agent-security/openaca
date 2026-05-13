@@ -131,7 +131,8 @@ def annotate_with_command(
 def _project_response(
     response: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, str]] | None]:
-    raw_asve = (response.get("database_specific") or {}).get("asve")
+    db_specific = response.get("database_specific")
+    raw_asve = db_specific.get("asve") if isinstance(db_specific, dict) else None
     if raw_asve is None:
         raw_asve = response.get("asve")
     if not isinstance(raw_asve, dict):

@@ -889,6 +889,49 @@ def test_seed_limit_stops_after_requested_candidates_without_advancing_state(tmp
     assert not state.exists()
 
 
+def test_seed_limit_not_reached_still_advances_state(tmp_path):
+    """When --limit is provided but the run exhausts all records before hitting it,
+    state should be written so the next run does not reprocess the same records."""
+    records = tmp_path / "records" / "npm"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    state = tmp_path / "state.json"
+    records.mkdir(parents=True)
+    existing.mkdir()
+    record = _ghsa_record()
+    _write_json(records / "GHSA-abcd-ef12-3456.json", record)
+    modified = tmp_path / "modified_id.csv"
+    modified.write_text(
+        "2026-05-13T00:01:00Z,npm/GHSA-abcd-ef12-3456\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--modified-index",
+            str(modified),
+            "--records-root",
+            str(tmp_path / "records"),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--limit",
+            "10",  # higher than the 1 matching record
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(list(out.glob("*.yaml"))) == 1
+    assert "limit" not in result.output
+    assert state.exists(), "state must be written when limit was not the reason for stopping"
+    saved = yaml.safe_load(state.read_text(encoding="utf-8"))
+    assert saved["last_modified"] == "2026-05-13T00:01:00Z"
+
+
 def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
     tmp_path, monkeypatch
 ):

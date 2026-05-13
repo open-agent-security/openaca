@@ -485,6 +485,7 @@ def main(
     existing_keys = _curated_keys(existing_overlays)
     seen_keys = set(existing_keys)
     scanned = matched = already_in_overlays = duplicate_aliases = written = 0
+    limit_hit = False
     newest_modified: str | None = None
     newest_modified_ids: set[str] = set()
 
@@ -575,13 +576,14 @@ def main(
         written += 1
         seen_keys.update(identity)
         if limit is not None and written >= limit:
+            limit_hit = True
             click.echo(f"limit {limit} reached; state not advanced")
             break
 
     if newest_modified is not None and newest_modified == last_modified:
         newest_modified_ids |= last_modified_ids
 
-    if not dry_run and limit is None:
+    if not dry_run and not limit_hit:
         _write_state(state, newest_modified, newest_modified_ids)
 
     click.echo(

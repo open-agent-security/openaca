@@ -4,7 +4,7 @@ import zipfile
 import yaml
 from click.testing import CliRunner
 
-from tools.seed.__main__ import main
+from tools.seed.__main__ import discovery_reasons, main
 
 
 def _write_json(path, data):
@@ -33,6 +33,61 @@ def _mal_record() -> dict:
         "details": "This package executes arbitrary code during install.",
         "affected": [{"package": {"ecosystem": "PyPI", "name": "mcp-runcmd-server"}}],
     }
+
+
+def _record(package_name: str, summary: str, details: str = "") -> dict:
+    return {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-test-test",
+        "modified": "2026-05-13T00:00:00Z",
+        "summary": summary,
+        "details": details,
+        "affected": [{"package": {"ecosystem": "PyPI", "name": package_name}}],
+    }
+
+
+def test_discovery_matches_known_agent_stack_packages_without_mcp_token():
+    examples = [
+        _record(
+            "fastmcp",
+            "FastMCP has a command injection vulnerability",
+        ),
+        _record(
+            "langchain-core",
+            "LangChain serialization injection vulnerability enables secret extraction",
+        ),
+        _record(
+            "praisonaiagents",
+            "PraisonAIAgents: path traversal via unvalidated glob pattern",
+        ),
+        _record(
+            "@anthropic-ai/sdk",
+            "Claude SDK has insecure default file permissions in local filesystem memory tool",
+        ),
+    ]
+
+    for record in examples:
+        assert "package_name_agent_stack" in discovery_reasons(record)
+
+
+def test_discovery_matches_agent_ai_feature_topics_in_generic_packages():
+    examples = [
+        _record(
+            "gitlab",
+            "GitLab Duo prompt injection can exfiltrate issue data",
+        ),
+        _record(
+            "kibana",
+            "Kibana Gemini connector leaks credentials through AI assistant tool calls",
+        ),
+        _record(
+            "cursor",
+            "Cursor terminal Cmd-K command execution via prompt injection",
+        ),
+    ]
+
+    for record in examples:
+        assert "topic_agent_ai_feature" in discovery_reasons(record)
 
 
 def test_seed_writes_reviewable_candidate_for_mcp_record(tmp_path):

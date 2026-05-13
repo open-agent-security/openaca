@@ -151,30 +151,70 @@ def _record_path(records_root: Path, row_id: str) -> Path:
     return path
 
 
+def _modified_record_zip_paths(records_root: Path, row_id: str) -> list[Path]:
+    paths: list[Path] = []
+    ecosystem, sep, _record_id = row_id.partition("/")
+    if sep:
+        paths.append(records_root / ecosystem / "all.zip")
+    paths.append(records_root / "all.zip")
+    return paths
+
+
+def _load_modified_record(
+    records_root: Path,
+    row_id: str,
+    zip_cache: dict[Path, zipfile.ZipFile],
+) -> dict[str, Any] | None:
+    path = _record_path(records_root, row_id)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        data = None
+    if isinstance(data, dict):
+        return data
+
+    member = f"{Path(row_id).name}.json"
+    for zip_path in _modified_record_zip_paths(records_root, row_id):
+        if not zip_path.exists():
+            continue
+        try:
+            if zip_path not in zip_cache:
+                zip_cache[zip_path] = zipfile.ZipFile(zip_path)
+            zf = zip_cache[zip_path]
+            data = json.loads(zf.read(member))
+        except (KeyError, json.JSONDecodeError, OSError, zipfile.BadZipFile):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def iter_modified_records(
     modified_index: Path,
     records_root: Path,
     last_modified: str | None,
     last_modified_ids: set[str],
 ) -> Iterator[tuple[str, str, dict[str, Any]]]:
-    for raw_line in modified_index.read_text(encoding="utf-8").splitlines():
-        if not raw_line.strip():
-            continue
-        modified, sep, row_id = raw_line.partition(",")
-        if not sep or not modified or not row_id:
-            continue
-        if last_modified is not None:
-            if modified < last_modified:
-                break
-            if modified == last_modified and row_id in last_modified_ids:
+    zip_cache: dict[Path, zipfile.ZipFile] = {}
+    try:
+        for raw_line in modified_index.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
                 continue
-        path = _record_path(records_root, row_id)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        if isinstance(data, dict):
+            modified, sep, row_id = raw_line.partition(",")
+            if not sep or not modified or not row_id:
+                continue
+            if last_modified is not None:
+                if modified < last_modified:
+                    break
+                if modified == last_modified and row_id in last_modified_ids:
+                    continue
+            data = _load_modified_record(records_root, row_id, zip_cache)
+            if data is None:
+                continue
             yield modified, row_id, data
+    finally:
+        for zf in zip_cache.values():
+            zf.close()
 
 
 def _write_state(state: Path | None, newest_modified: str | None, newest_ids: set[str]) -> None:

@@ -24,13 +24,13 @@ Agentic Skills Top 10, OWASP LLM Top 10, and MITRE ATLAS.
 ## Decision
 
 ASVE V0 uses a deterministic seeding workflow. Seeders read OSV bulk
-dumps, apply rule-based discovery/classification heuristics, and write
-reviewable files under `candidates/`. Candidate files may include
-review-only metadata and upstream excerpts, but canonical `overlays/`
-files remain minimal and scanner-visible. Promotion is an explicit human
-step through `asve-promote`, which projects a candidate into the
-canonical overlay shape and validates it before writing
-`overlays/<upstream-id>.yaml`.
+dumps or OSV `modified_id.csv` indexes, apply rule-based
+discovery/classification heuristics, and write reviewable files under
+`candidates/`. Candidate files may include review-only metadata and
+upstream excerpts, but canonical `overlays/` files remain minimal and
+scanner-visible. Promotion is an explicit human step through
+`asve-promote`, which projects a candidate into the canonical overlay
+shape and validates it before writing `overlays/<upstream-id>.yaml`.
 
 ASVE-specific taxonomy mappings live under
 `database_specific.asve.taxonomies`. `owasp_agentic_top10` moves into

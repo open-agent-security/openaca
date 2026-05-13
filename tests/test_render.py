@@ -21,6 +21,7 @@ from tools.render import (
     render_github,
     render_inventory_tree,
     render_json,
+    render_repo_inventory_tree,
     render_text,
 )
 
@@ -756,3 +757,81 @@ def test_tree_finding_marker_color_when_enabled():
     plain = render_inventory_tree([plugin, ref], [finding], use_color=False, use_unicode=True)
     assert "\x1b[31m" in colored
     assert "\x1b[" not in plain
+
+
+# ── render_repo_inventory_tree ───────────────────────────────────────────────
+
+
+def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
+    plugin_json = tmp_path / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir()
+    package_json = tmp_path / "package.json"
+    mcp_json = tmp_path / ".mcp.json"
+    plugin = ComponentRef(
+        ecosystem="claude-plugin",
+        name="demo-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/demo-plugin@1.0.0",
+        source_manifest=str(plugin_json),
+    )
+    dep = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest=str(package_json),
+        scope="agent-dependency",
+    )
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@cyanheads/git-mcp-server",
+        version="1.1.0",
+        source_manifest=str(mcp_json),
+        scope="agent-component",
+    )
+    finding = Finding(advisory_id="GHSA-L", component=dep, confidence="high")
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(package_json, [dep]), (mcp_json, [mcp]), (plugin_json, [plugin])],
+        [finding],
+        use_unicode=True,
+    )
+
+    assert f"repo {tmp_path}" in out
+    assert "claude-plugin/demo-plugin@1.0.0" in out
+    assert "package deps/ (1)" in out
+    assert "lodash@4.17.20  [! GHSA-L]" in out
+    assert "MCPs/ (1)" in out
+    assert "@cyanheads/git-mcp-server@1.1.0" in out
+
+
+def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
+    package_json = tmp_path / "package.json"
+    mcp_json = tmp_path / ".mcp.json"
+    software_dep = ComponentRef(
+        ecosystem="npm",
+        name="left-pad",
+        version="1.0.0",
+        source_manifest=str(package_json),
+        scope="software-dependency",
+    )
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@example/mcp",
+        version="2.0.0",
+        source_manifest=str(mcp_json),
+        scope="agent-component",
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(package_json, [software_dep]), (mcp_json, [mcp])],
+        [],
+        use_unicode=True,
+    )
+
+    assert "bare components/" in out
+    assert "MCPs/ (1)" in out
+    assert "@example/mcp@2.0.0" in out
+    assert "software deps suppressed/ (1)" in out
+    assert "left-pad" not in out

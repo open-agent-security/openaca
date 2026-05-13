@@ -53,6 +53,7 @@ from tools.render import (
     render_github,
     render_inventory_tree,
     render_json,
+    render_repo_inventory_tree,
     render_text,
 )
 from tools.sarif import to_sarif
@@ -86,13 +87,6 @@ def _component_label(ref: ComponentRef) -> str:
             return f"{ref.ecosystem}:{ref.name}@{ref.version}"
         return f"{ref.ecosystem}:{ref.name}"
     return "<unidentified>"
-
-
-def _relative_to(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
 
 
 def _finding_line(f: Finding) -> str:
@@ -428,7 +422,6 @@ def repo(
     # software in the repo are out of scope and would mislead users into
     # thinking ASVE is a general SCA tool. See README for framing.
     refs = _filter_agent_scope_refs(all_refs)
-    suppressed_software = len(all_refs) - len(refs)
     n_failed = n_found - len(grouped)
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -447,18 +440,15 @@ def repo(
                 f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
                 err=True,
             )
-            for path, group in grouped:
-                kept = _filter_agent_scope_refs(group)
-                click.echo(
-                    f"  {_relative_to(path, target)} — {len(kept)} component(s)",
-                    err=True,
-                )
-            if suppressed_software:
-                click.echo(
-                    f"  ({suppressed_software} software-dependency ref(s) suppressed; "
-                    "use a general-purpose SCA scanner for general software scans)",
-                    err=True,
-                )
+            tree = render_repo_inventory_tree(
+                target,
+                grouped,
+                findings,
+                use_color=_use_color(no_color, output_format),
+                use_unicode=_use_unicode(no_color),
+            )
+            if tree:
+                click.echo(tree, err=True)
         elif n_found:
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:

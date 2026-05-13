@@ -62,7 +62,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history. `fetch-depth: 1` (default) breaks rebase tasks:
+          # `git merge-base origin/main HEAD` returns empty on a shallow
+          # clone whose ancestor commit isn't in the local object store,
+          # and the action then mis-reports the branch as having "no
+          # common ancestor" / "unrelated histories" — see PR #38 where
+          # this caused a clean rebase to be replaced with a merge commit
+          # on a falsely-claimed unrelated-histories premise. Cost is
+          # one slower checkout; correctness is not optional.
+          fetch-depth: 0
           # For `issue_comment` on a PR, GitHub sets `github.sha` to the
           # default branch's HEAD — NOT the PR head. Checking out that SHA
           # means PR-only files don't exist on disk and the action crashes

@@ -37,7 +37,7 @@ SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
 ID_RE = re.compile(r"^ASVE-(\d{4})-\d{4}$")
 # Recognized upstream ID families per ADR-0009 (overlays/<upstream-id>.yaml).
 UPSTREAM_ID_RE = re.compile(
-    r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+|OSV-\d{4}-\d+)$"
+    r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+|OSV-\d{4}-\d+|PYSEC-\d{4}-\d+|MAL-\d{4}-\d+)$"
 )
 
 
@@ -68,7 +68,10 @@ def check_id_format(overlay: dict, path: Path) -> list[str]:
         return []
     oid = overlay.get("id", "")
     if not isinstance(oid, str) or not UPSTREAM_ID_RE.match(oid):
-        return [f"id: {oid!r} is not a recognized upstream ID format (GHSA-*, CVE-*, or OSV-*)"]
+        return [
+            f"id: {oid!r} is not a recognized upstream ID format "
+            "(GHSA-*, CVE-*, OSV-*, PYSEC-*, or MAL-*)"
+        ]
     return []
 
 

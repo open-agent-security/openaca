@@ -147,8 +147,10 @@ possible.
         "pr_manipulation": false,
         "code_execution": true
       },
-      "owasp_agentic_top10": ["asi03", "asi05"],
-      "owasp_agentic_skills_top10": [],     // optional, for skill advisories
+      "taxonomies": {
+        "owasp_agentic_top10": ["asi03", "asi05"],
+        "owasp_agentic_skills_top10": []     // optional, for skill advisories
+      },
       "evidence_level": "confirmed"
     }
   }

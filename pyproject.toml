@@ -19,6 +19,8 @@ dependencies = [
 asve-lint = "tools.lint:main"
 asve-export = "tools.export:main"
 asve-scan = "tools.scan:main"
+asve-promote = "tools.promote:main"
+asve-seed = "tools.seed.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

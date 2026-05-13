@@ -33,7 +33,8 @@ ASVE fills two gaps:
 2. **Agent-context metadata** layered on top of existing
    CVE/GHSA/OSV records: `component_type`, `surfaces`,
    `agent_impact` (e.g., `repo_write`, `credential_exfiltration`,
-   `tool_hijack`), and OWASP Agentic Top 10 (ASI) category mapping.
+   `tool_hijack`), and agent-context taxonomy mappings such as OWASP
+   Agentic Top 10.
 
 ASVE does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
 vulnerability identity, affected ranges, severity, and fixes. ASVE owns
@@ -295,7 +296,10 @@ Be honest about what ASVE V0 doesn't see:
   with any OSV record whose alias set intersects.
 - **Severity and fixes**: owned by upstream OSV/GHSA/CVE records, not
   duplicated in ASVE overlays.
-- **Category**: OWASP Agentic Top 10 (`asi01`–`asi10`).
+- **Taxonomies**: `database_specific.asve.taxonomies` carries ASVE-owned
+  mappings such as OWASP Agentic Top 10 (`asi01`–`asi10`) and OWASP MCP
+  Top 10 (`mcp01:2025`–`mcp10:2025`). CWE is not duplicated by default
+  when upstream already provides it.
 - **Agent context**: `database_specific.asve` carries
   `component_type`, `surfaces`, `agent_impact`, and evidence metadata.
 

@@ -100,19 +100,46 @@
           "type": "object",
           "additionalProperties": {"type": "boolean"}
         },
-        "owasp_agentic_top10": {
-          "type": "array",
-          "items": {"type": "string", "pattern": "^asi(0[1-9]|10)$"}
-        },
-        "owasp_agentic_skills_top10": {
-          "type": "array",
-          "items": {"type": "string"}
-        },
+        "threat_kind": {"type": "string"},
+        "taxonomies": {"$ref": "#/$defs/asve_taxonomies"},
         "evidence_level": {
           "type": "string",
           "enum": ["confirmed", "likely", "research", "disputed", "withdrawn"]
         }
       }
+    },
+    "asve_taxonomies": {
+      "type": "object",
+      "properties": {
+        "owasp_agentic_top10": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^asi(0[1-9]|10)$"}
+        },
+        "owasp_mcp_top10": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^mcp(0[1-9]|10):[0-9]{4}$"}
+        },
+        "owasp_agentic_skills_top10": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^ast(0[1-9]|10):[0-9]{4}$"}
+        },
+        "owasp_llm_top10": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^llm(0[1-9]|10):[0-9]{4}$"}
+        },
+        "mitre_atlas": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^AML\\.T[0-9]{4}(\\.[0-9]{3})?$"}
+        },
+        "supplemental_taxonomies": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

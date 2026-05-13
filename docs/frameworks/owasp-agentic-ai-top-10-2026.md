@@ -2,9 +2,6 @@
 
 Sources:
 - https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/
-- `OWASP-Top-10-for-Agentic-Applications-2026.md` in the ASVE working
-  tree, derived from the OWASP Top 10 for Agentic Applications 2026
-  guide.
 
 Accessed: 2026-05-13
 

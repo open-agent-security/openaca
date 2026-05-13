@@ -775,6 +775,24 @@ def test_seed_llm_provider_non_dict_database_specific_raises_clean_error(tmp_pat
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
 
 
+def test_seed_api_key_env_alone_does_not_enable_llm_mode(tmp_path, monkeypatch):
+    """ASVE_SEED_LLM_API_KEY in env must not trigger LLM mode; plain asve-seed must still work."""
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+    monkeypatch.setenv("ASVE_SEED_LLM_API_KEY", "secret-key")
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0, result.output
+    assert (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    assert candidate["_candidate"]["annotation_source"] == "deterministic"
+
+
 def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
     tmp_path, monkeypatch
 ):

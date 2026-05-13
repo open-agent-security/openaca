@@ -391,7 +391,7 @@ def _resolve_llm_config(
     model: str | None,
     api_key: str | None,
 ) -> tuple[str | None, str | None, str | None]:
-    if not any((provider, model, api_key)):
+    if not any((provider, model)):
         return None, None, None
     if not provider:
         raise click.UsageError("--llm-provider is required when LLM annotation is enabled")

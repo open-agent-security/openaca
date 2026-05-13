@@ -879,6 +879,58 @@ def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
     assert "loaded 0 OSV advisory record(s)" in result.output
 
 
+def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
+    """Repo verbose output should explain composition with the same tree shape
+    endpoint mode uses, not just a flat manifest count list."""
+    from unittest.mock import patch
+
+    _mark_as_plugin(tmp_path, name="demo-plugin")
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "demo-plugin",
+                "version": "1.0.0",
+                "dependencies": {"lodash": "4.17.20"},
+            }
+        )
+    )
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "git": {
+                        "command": "npx",
+                        "args": ["@cyanheads/git-mcp-server@1.1.0"],
+                    }
+                }
+            }
+        )
+    )
+
+    def fake_augment(refs, base_corpus):
+        return list(base_corpus), []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "repo",
+                "--target",
+                str(tmp_path),
+                "-v",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert f"repo {tmp_path}" in result.output
+    assert "claude-plugin/demo-plugin@1.0.0" in result.output
+    assert "package deps/ (1)" in result.output
+    assert "lodash@4.17.20" in result.output
+    assert "MCPs/ (1)" in result.output
+    assert "@cyanheads/git-mcp-server@1.1.0" in result.output
+
+
 def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
     """When nothing has a queryable PURL (e.g., only claude-plugin refs),
     verbose says so explicitly rather than emitting an empty list."""

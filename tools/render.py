@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from packaging.version import InvalidVersion, Version
@@ -719,3 +720,142 @@ def render_inventory_tree(
         out.extend(_format_tree_lines(bare_node, chars))
         out.append("")
     return "\n".join(out).rstrip()
+
+
+def render_repo_inventory_tree(
+    root: Path,
+    grouped: list[tuple[Path, list[ComponentRef]]],
+    findings: list[Finding],
+    *,
+    use_color: bool = False,
+    use_unicode: bool = True,
+) -> str:
+    """Render repo-mode inventory as a composition tree.
+
+    Repo mode has no endpoint install state, so the tree is derived from
+    manifest co-location. A `<dir>/.claude-plugin/plugin.json` ref creates a
+    plugin root; agent-dependency refs declared by manifests in `<dir>` render
+    below that plugin, while bare agent components render under a final
+    `bare components/` block.
+    """
+    chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
+    findings_by_ref = _findings_by_ref(findings)
+    all_refs = [r for _, refs in grouped for r in refs]
+    plugin_refs = sorted(
+        (r for r in all_refs if r.ecosystem == "claude-plugin"),
+        key=lambda r: (r.component_identity or "").lower(),
+    )
+
+    root_node = _TreeNode(label=f"repo {root}")
+    assigned_keys: set[tuple] = set()
+    for plugin_ref in plugin_refs:
+        plugin_dir = _repo_plugin_dir(plugin_ref)
+        node, assigned = _build_repo_plugin_node(
+            plugin_ref,
+            plugin_dir,
+            all_refs,
+            findings_by_ref,
+            use_color,
+        )
+        assigned_keys.update(assigned)
+        root_node.children.append(node)
+
+    bare_refs = [
+        r
+        for r in all_refs
+        if r.ecosystem != "claude-plugin"
+        and r.scope == "agent-component"
+        and _ref_key(r) not in assigned_keys
+    ]
+    bare_node = _build_bare_node(bare_refs, findings_by_ref, use_color)
+    if bare_node is not None:
+        root_node.children.append(bare_node)
+
+    suppressed = sum(1 for r in all_refs if r.scope == "software-dependency")
+    if suppressed:
+        root_node.children.append(_TreeNode(label=f"software deps suppressed/ ({suppressed})"))
+
+    if not root_node.children:
+        if grouped:
+            scanned = _TreeNode(label=f"manifests scanned/ ({len(grouped)})")
+            for path, _ in sorted(grouped, key=lambda x: str(x[0])):
+                scanned.children.append(_TreeNode(label=_repo_rel(path, root)))
+            root_node.children.append(scanned)
+        else:
+            root_node.children.append(_TreeNode(label="(no agent components)"))
+    return "\n".join(_format_tree_lines(root_node, chars))
+
+
+def _repo_plugin_dir(plugin_ref: ComponentRef) -> Path:
+    manifest = Path(plugin_ref.source_manifest)
+    if manifest.name == "plugin.json" and manifest.parent.name == ".claude-plugin":
+        return manifest.parent.parent
+    return manifest.parent
+
+
+def _build_repo_plugin_node(
+    plugin_ref: ComponentRef,
+    plugin_dir: Path,
+    all_refs: list[ComponentRef],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+) -> tuple[_TreeNode, set[tuple]]:
+    marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
+    root = _TreeNode(label=f"{plugin_ref.component_identity}{marker}")
+    assigned: set[tuple] = set()
+
+    deps: list[ComponentRef] = []
+    categories: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
+    for ref in all_refs:
+        if ref is plugin_ref or ref.ecosystem == "claude-plugin":
+            continue
+        if not _repo_ref_in_dir(ref, plugin_dir):
+            continue
+        if ref.scope == "agent-dependency":
+            deps.append(ref)
+            assigned.add(_ref_key(ref))
+            continue
+        if ref.scope != "agent-component":
+            continue
+        for label, ecos in _TREE_CATEGORIES:
+            if ref.ecosystem in ecos:
+                categories[label].append(ref)
+                assigned.add(_ref_key(ref))
+                break
+
+    if deps:
+        dep_node = _TreeNode(label=f"package deps/ ({len(deps)})")
+        for ref in sorted(deps, key=lambda x: _leaf_label(x).lower()):
+            marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
+            dep_node.children.append(_TreeNode(label=f"{_leaf_label(ref)}{marker}"))
+        root.children.append(dep_node)
+
+    for label, _ in _TREE_CATEGORIES:
+        items = categories.get(label) or []
+        if not items:
+            continue
+        cat = _TreeNode(label=f"{label}/ ({len(items)})")
+        for ref in sorted(items, key=lambda x: _leaf_label(x).lower()):
+            marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
+            cat.children.append(_TreeNode(label=f"{_leaf_label(ref)}{marker}"))
+        root.children.append(cat)
+
+    if not root.children:
+        root.children.append(_TreeNode(label="(no declared components)"))
+    return root, assigned
+
+
+def _repo_ref_in_dir(ref: ComponentRef, directory: Path) -> bool:
+    if not ref.source_manifest:
+        return False
+    try:
+        return Path(ref.source_manifest).resolve().parent == directory.resolve()
+    except OSError:
+        return False
+
+
+def _repo_rel(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)

@@ -187,8 +187,6 @@ def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> di
 
 
 def _response_taxonomy_property(key: str, value: Any) -> dict[str, Any]:
-    if key == "supplemental_taxonomies":
-        return {"type": "object", "additionalProperties": False, "properties": {}}
     return copy.deepcopy(_expect_object(value, f"asve.taxonomies.properties.{key}"))
 
 
@@ -263,7 +261,7 @@ def _call_openai(
             "type": "json_schema",
             "json_schema": {
                 "name": "asve_seed_annotation",
-                "strict": True,
+                "strict": False,
                 "schema": request.get("response_schema") or build_response_schema(),
             },
         },

@@ -6,11 +6,15 @@ frontmatter may override it via a `name:` field.
 
 Identity:
 
-- Commands: `claude-command/<name>`
-- Agents:   `claude-agent/<name>`
+- Plugin-bundled commands: `claude-command/<owner>/<name>`
+- Plugin-bundled agents:   `claude-agent/<owner>/<name>`
+- Repo-declared commands:  `claude-command/<name>`
+- Repo-declared agents:    `claude-agent/<name>`
 
-Repo/plugin location is observation metadata (`source_manifest` and
-`attributed_to`), not part of the logical component identity.
+For plugin-bundled components the plugin name is part of logical identity
+because the same command name can appear in multiple plugins (ADR-0013).
+For repo-declared components the "repo" prefix is observation metadata, not
+a logical owner, so it is carried in `extra` but not in the identity path.
 
 V0 has no version field for commands or agents; matcher fires on
 identity-only (name-only) matching. Sufficient for inventory; T3
@@ -41,7 +45,11 @@ def parse_file(
         return []
     name = _resolve_name(md_path)
     ecosystem = f"claude-{kind}"
-    identity = f"{ecosystem}/{name}"
+    identity = (
+        f"{ecosystem}/{scope_owner}/{name}"
+        if scope_owner and scope_owner != "repo"
+        else f"{ecosystem}/{name}"
+    )
     return [
         ComponentRef(
             ecosystem=ecosystem,
@@ -78,7 +86,11 @@ def enumerate_dir(
         if not child.is_file() or child.suffix != ".md":
             continue
         name = _resolve_name(child)
-        identity = f"{ecosystem}/{name}"
+        identity = (
+            f"{ecosystem}/{scope_owner}/{name}"
+            if scope_owner and scope_owner != "repo"
+            else f"{ecosystem}/{name}"
+        )
         refs.append(
             ComponentRef(
                 ecosystem=ecosystem,

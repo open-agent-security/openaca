@@ -439,10 +439,10 @@ def test_install_walks_bundled_commands_and_agents(tmp_path):
     cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
     agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
     assert len(cmd_refs) == 1
-    assert cmd_refs[0].component_identity == "claude-command/deploy"
+    assert cmd_refs[0].component_identity == "claude-command/superpowers/deploy"
     assert cmd_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
     assert len(agent_refs) == 1
-    assert agent_refs[0].component_identity == "claude-agent/code-reviewer"
+    assert agent_refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
 
 
 def test_install_walks_bundled_default_mcp(tmp_path):
@@ -937,7 +937,7 @@ def test_install_walks_custom_commands_path_from_plugin_json(tmp_path):
     _write_plugin_json(install_path, {"commands": "./tools/cmds/"})
     refs, _ = parse_install(install_root=tmp_path)
     cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
-    assert any(r.component_identity == "claude-command/deploy" for r in cmd_refs)
+    assert any(r.component_identity == "claude-command/superpowers/deploy" for r in cmd_refs)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in cmd_refs)
 
 
@@ -981,7 +981,7 @@ def test_install_walks_custom_agents_path_from_plugin_json(tmp_path):
     _write_plugin_json(install_path, {"agents": "./tools/ag/"})
     refs, _ = parse_install(install_root=tmp_path)
     agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
-    assert any(r.component_identity == "claude-agent/reviewer" for r in agent_refs)
+    assert any(r.component_identity == "claude-agent/superpowers/reviewer" for r in agent_refs)
 
 
 def test_install_walks_custom_skills_path_from_plugin_json(tmp_path):

@@ -112,6 +112,40 @@ def check_internal_aliases(overlay: dict, known_ids: set[str]) -> list[str]:
     return errors
 
 
+def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
+    """threat_kind valid only on MAL-* ids/aliases (mirrors validator.py)."""
+    asve = (overlay.get("database_specific") or {}).get("asve") or {}
+    if "threat_kind" not in asve:
+        return []
+    record_id = overlay.get("id") or ""
+    aliases = overlay.get("aliases") or []
+    if isinstance(record_id, str) and record_id.startswith("MAL-"):
+        return []
+    if any(isinstance(a, str) and a.startswith("MAL-") for a in aliases):
+        return []
+    return [
+        f"threat_kind set on non-MAL record {record_id or '<unknown id>'}; "
+        "threat_kind is only valid on MAL-* ids or aliases"
+    ]
+
+
+def check_no_empty_taxonomy_buckets(overlay: dict) -> list[str]:
+    """Reject empty arrays/dicts under taxonomies (mirrors validator.py)."""
+    asve = (overlay.get("database_specific") or {}).get("asve") or {}
+    taxonomies = asve.get("taxonomies")
+    if not isinstance(taxonomies, dict):
+        return []
+    errors: list[str] = []
+    for key, value in taxonomies.items():
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            kind = "array" if isinstance(value, list) else "object"
+            errors.append(
+                f"empty taxonomy bucket {key!r}; "
+                f"omit the key instead of emitting an empty {kind}"
+            )
+    return errors
+
+
 def check_schema(overlay: dict, validator: Draft202012Validator) -> list[str]:
     errors = []
     for e in validator.iter_errors(overlay):
@@ -170,6 +204,8 @@ def main(target: Path) -> None:
             + check_path_consistency(overlay, path)
             + check_duplicate_id(overlay, path, duplicate_ids, id_to_first_path)
             + check_internal_aliases(overlay, known_ids)
+            + check_threat_kind_id_coupling(overlay)
+            + check_no_empty_taxonomy_buckets(overlay)
         )
         if errors:
             failed += 1

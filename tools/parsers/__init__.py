@@ -24,11 +24,11 @@ ParserFn = Callable[[Path], list[ComponentRef]]
 
 
 def _parse_repo_command(path: Path) -> list[ComponentRef]:
-    return claude_command_agent.parse_file(path, kind="command", scope_owner="repo")
+    return claude_command_agent.parse_file(path, kind="command")
 
 
 def _parse_repo_agent(path: Path) -> list[ComponentRef]:
-    return claude_command_agent.parse_file(path, kind="agent", scope_owner="repo")
+    return claude_command_agent.parse_file(path, kind="agent")
 
 
 # Patterns whose parsers emit software-dependency refs (npm/PyPI deps from

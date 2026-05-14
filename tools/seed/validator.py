@@ -30,6 +30,7 @@ def validate_candidate(candidate: dict[str, Any]) -> list[str]:
         return errors
 
     errors.extend(_check_threat_kind_id_coupling(candidate))
+    errors.extend(_check_no_empty_taxonomy_buckets(candidate))
 
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
@@ -54,3 +55,20 @@ def _check_threat_kind_id_coupling(candidate: dict[str, Any]) -> list[str]:
         f"threat_kind set on non-MAL record {record_id or '<unknown id>'}; "
         "threat_kind is only valid on MAL-* ids or aliases"
     ]
+
+
+def _check_no_empty_taxonomy_buckets(candidate: dict[str, Any]) -> list[str]:
+    """Reject empty arrays/dicts under taxonomies; omit the key instead."""
+    asve = (candidate.get("database_specific") or {}).get("asve") or {}
+    taxonomies = asve.get("taxonomies")
+    if not isinstance(taxonomies, dict):
+        return []
+    errors: list[str] = []
+    for key, value in taxonomies.items():
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            kind = "array" if isinstance(value, list) else "object"
+            errors.append(
+                f"empty taxonomy bucket {key!r}; omit the key instead of "
+                f"emitting an empty {kind}"
+            )
+    return errors

@@ -88,3 +88,25 @@ def test_validate_candidate_accepts_threat_kind_on_mal_alias():
     candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
 
     assert validate_candidate(candidate) == []
+
+
+def test_validate_candidate_rejects_empty_taxonomy_array():
+    candidate = _candidate()
+    candidate["database_specific"]["asve"]["taxonomies"]["owasp_mcp_top10"] = []
+
+    errors = validate_candidate(candidate)
+
+    assert any(
+        "empty taxonomy bucket" in e and "owasp_mcp_top10" in e for e in errors
+    ), f"expected empty-bucket error naming owasp_mcp_top10, got: {errors}"
+
+
+def test_validate_candidate_rejects_empty_supplemental_taxonomies():
+    candidate = _candidate()
+    candidate["database_specific"]["asve"]["taxonomies"]["supplemental_taxonomies"] = {}
+
+    errors = validate_candidate(candidate)
+
+    assert any(
+        "empty taxonomy bucket" in e and "supplemental_taxonomies" in e for e in errors
+    ), f"expected empty-bucket error naming supplemental_taxonomies, got: {errors}"

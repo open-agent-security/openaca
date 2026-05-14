@@ -349,24 +349,28 @@ def build_rejected_candidate(
     framework_documents: list[str],
     llm_provider: str,
     llm_model: str,
+    llm_error: str | None = None,
 ) -> dict[str, Any]:
     rec_id = record.get("id")
     if not isinstance(rec_id, str) or not rec_id:
         raise ValueError("OSV record is missing id")
+    candidate_metadata: dict[str, Any] = {
+        "review_status": "rejected",
+        "matched_by": matched_by,
+        "package_names": _package_names(record),
+        "annotation_source": "llm",
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "framework_documents": framework_documents,
+        "reject_reason": reject_reason,
+    }
+    if llm_error:
+        candidate_metadata["llm_error"] = llm_error
     return {
         "schema_version": record.get("schema_version") or "1.7.5",
         "id": rec_id,
         "modified": record.get("modified") or record.get("published") or "1970-01-01T00:00:00Z",
-        "_candidate": {
-            "review_status": "rejected",
-            "matched_by": matched_by,
-            "package_names": _package_names(record),
-            "annotation_source": "llm",
-            "llm_provider": llm_provider,
-            "llm_model": llm_model,
-            "framework_documents": framework_documents,
-            "reject_reason": reject_reason,
-        },
+        "_candidate": candidate_metadata,
         "_evidence": evidence
         if evidence is not None
         else [{"field": "summary", "quote": record.get("summary") or ""}],
@@ -554,7 +558,34 @@ def main(
                     request,
                 )
             except llm.LLMAnnotationError as exc:
-                raise click.ClickException(str(exc)) from exc
+                candidate = build_rejected_candidate(
+                    record,
+                    matched_by,
+                    "unsupported_record",
+                    None,
+                    sorted(framework_documents),
+                    normalized_llm_provider,
+                    resolved_llm_model,
+                    llm_error=str(exc),
+                )
+                rejected_dir_resolved = (out_dir / "rejected").resolve()
+                target = out_dir / "rejected" / f"{candidate['id']}.yaml"
+                if target.resolve().parent != rejected_dir_resolved:
+                    click.echo(f"{candidate['id']!r}: unsafe candidate ID, skipping", err=True)
+                    continue
+                click.echo(f"llm: rejected {candidate['id']} after provider error")
+                if dry_run:
+                    click.echo(f"would reject {target}: unsupported_record")
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
+                written += 1
+                seen_keys.update(identity)
+                if limit is not None and written >= limit:
+                    limit_hit = True
+                    click.echo(f"limit {limit} reached; state not advanced")
+                    break
+                continue
             if annotation.decision == "reject":
                 assert annotation.reject_reason is not None
                 candidate = build_rejected_candidate(

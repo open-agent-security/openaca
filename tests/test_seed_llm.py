@@ -51,7 +51,14 @@ def test_openai_provider_posts_chat_completion_and_extracts_json():
     assert payload["model"] == "gpt-test"
     assert payload["messages"][0]["role"] == "system"
     assert payload["messages"][1]["role"] == "user"
-    assert payload["response_format"] == {"type": "json_object"}
+    response_format = payload["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "asve_seed_annotation"
+    response_schema = response_format["json_schema"]["schema"]
+    assert response_schema["properties"]["decision"]["enum"] == ["annotate", "reject"]
+    reject_reason = response_schema["properties"]["reject_reason"]
+    assert "not_agent_stack" in reject_reason["enum"]
+    assert "unsupported_record" in reject_reason["enum"]
     assert result.decision == "annotate"
     assert result.asve == {
         "taxonomies": {"owasp_agentic_top10": ["asi05"]},
@@ -65,7 +72,15 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
 
     def fake_post_json(url, headers, payload):
         calls.append((url, headers, payload))
-        return {"content": [{"type": "text", "text": _response_text()}]}
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "asve_seed_annotation",
+                    "input": json.loads(_response_text()),
+                }
+            ]
+        }
 
     result = llm.annotate_with_provider(
         "anthropic",
@@ -82,6 +97,15 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
     assert payload["model"] == "anthropic-test"
     assert payload["system"] == llm.INSTRUCTIONS
     assert payload["messages"][0]["role"] == "user"
+    assert payload["tools"][0]["name"] == "asve_seed_annotation"
+    assert payload["tools"][0]["input_schema"]["properties"]["decision"]["enum"] == [
+        "annotate",
+        "reject",
+    ]
+    reject_reason = payload["tools"][0]["input_schema"]["properties"]["reject_reason"]
+    assert "not_agent_stack" in reject_reason["enum"]
+    assert "unsupported_record" in reject_reason["enum"]
+    assert payload["tool_choice"] == {"type": "tool", "name": "asve_seed_annotation"}
     assert result.decision == "annotate"
     assert result.asve == {
         "taxonomies": {"owasp_agentic_top10": ["asi05"]},
@@ -114,6 +138,47 @@ def test_llm_provider_can_return_rejection_decision():
     assert result.reject_reason == "not_agent_stack"
     assert result.asve is None
     assert result.evidence == [{"field": "summary", "quote": "generic package"}]
+
+
+def test_llm_provider_coerces_unknown_reject_reason_to_unsupported_record():
+    response_text = json.dumps(
+        {
+            "decision": "reject",
+            "reject_reason": "not relevant",
+            "evidence": [{"field": "summary", "quote": "generic package"}],
+        }
+    )
+
+    def fake_post_json(_url, _headers, _payload):
+        return {"choices": [{"message": {"content": response_text}}]}
+
+    result = llm.annotate_with_provider(
+        "openai",
+        "gpt-test",
+        "test-key",
+        _request(),
+        post_json=fake_post_json,
+    )
+
+    assert result.decision == "reject"
+    assert result.reject_reason == "unsupported_record"
+    assert result.asve is None
+
+
+def test_response_schema_uses_canonical_asve_enums():
+    annotation_schema = llm.load_annotation_schema()
+
+    response_schema = llm.build_response_schema(annotation_schema)
+
+    asve_schema = response_schema["properties"]["database_specific"]["properties"]["asve"]
+    assert (
+        asve_schema["properties"]["evidence_level"]["enum"]
+        == annotation_schema["properties"]["evidence_level"]["enum"]
+    )
+    assert asve_schema["properties"]["threat_kind"]["enum"] == [
+        *annotation_schema["properties"]["threat_kind"]["enum"],
+        None,
+    ]
 
 
 def test_llm_provider_rejects_unsupported_provider():

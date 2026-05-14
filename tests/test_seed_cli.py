@@ -784,7 +784,7 @@ def test_seed_llm_provider_requires_model_when_enabled(tmp_path):
     assert not out.exists()
 
 
-def test_seed_llm_provider_error_fails_without_writing_candidate(tmp_path, monkeypatch):
+def test_seed_llm_provider_error_writes_rejected_candidate_artifact(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
@@ -814,12 +814,20 @@ def test_seed_llm_provider_error_fails_without_writing_candidate(tmp_path, monke
         ],
     )
 
-    assert result.exit_code != 0
-    assert "LLM provider returned invalid JSON" in result.output
-    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    assert result.exit_code == 0
+    assert "llm: rejected GHSA-abcd-ef12-3456 after provider error" in result.output
+    rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
+    assert rejected["_candidate"]["review_status"] == "rejected"
+    assert rejected["_candidate"]["reject_reason"] == "unsupported_record"
+    assert rejected["_candidate"]["llm_error"] == "LLM provider returned invalid JSON"
+    assert rejected["_evidence"] == [
+        {"field": "summary", "quote": "mcp-demo allows command injection"}
+    ]
 
 
-def test_seed_llm_provider_non_dict_database_specific_raises_clean_error(tmp_path, monkeypatch):
+def test_seed_llm_provider_invalid_annotation_writes_rejected_candidate_artifact(
+    tmp_path, monkeypatch
+):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
@@ -849,9 +857,12 @@ def test_seed_llm_provider_non_dict_database_specific_raises_clean_error(tmp_pat
         ],
     )
 
-    assert result.exit_code != 0
-    assert "database_specific.asve" in result.output
-    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    assert result.exit_code == 0
+    assert "llm: rejected GHSA-abcd-ef12-3456 after provider error" in result.output
+    rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
+    assert rejected["_candidate"]["review_status"] == "rejected"
+    assert rejected["_candidate"]["reject_reason"] == "unsupported_record"
+    assert rejected["_candidate"]["llm_error"] == "LLM response must include database_specific.asve"
 
 
 def test_seed_api_key_env_alone_does_not_enable_llm_mode(tmp_path, monkeypatch):

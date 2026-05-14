@@ -308,6 +308,32 @@ Sample overlay:
 Schema source of truth:
 [`schema/asve.schema.json`](schema/asve.schema.json).
 
+### Local annotation via Claude Code (subscription quota)
+
+For human-in-the-loop triage without burning API credits:
+
+1. Run the deterministic seeder to populate `candidates/`:
+   ```
+   uv run asve-seed candidates/ --no-llm
+   ```
+2. Copy the skill template into your Claude Code skills directory:
+   ```
+   cp -r examples/skills/claude/asve-candidate-review ~/.claude/skills/
+   ```
+3. From a Claude Code session in this repo, invoke the skill:
+   ```
+   /asve-candidate-review candidates/
+   ```
+   The agent reads `docs/seed-review-rules.md` and
+   `docs/frameworks/*.md`, applies them to each candidate, and runs
+   `asve-lint` on the result. See
+   [`docs/seed-review-rules.md`](docs/seed-review-rules.md) for the
+   exact editable surface (`taxonomies` + `evidence_level` only;
+   everything else is seeder-owned or upstream-owned).
+
+API-mode annotation (`--llm-provider openai|anthropic`) remains
+available for CI and batch runs.
+
 ## Status
 
 V0, in development. See

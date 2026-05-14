@@ -60,3 +60,31 @@ def test_validate_candidate_allows_upstream_owned_fields_because_promotion_strip
     candidate["severity"] = [{"type": "CVSS_V3", "score": "not a vector"}]
 
     assert validate_candidate(candidate) == []
+
+
+def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
+    """threat_kind is seeder-owned and only valid on MAL-* ids/aliases."""
+    candidate = _candidate()
+    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+
+    errors = validate_candidate(candidate)
+
+    assert any(
+        "threat_kind" in e and "MAL-" in e for e in errors
+    ), f"expected actionable threat_kind error, got: {errors}"
+
+
+def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
+    candidate = _candidate()
+    candidate["id"] = "MAL-2026-0001"
+    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+
+    assert validate_candidate(candidate) == []
+
+
+def test_validate_candidate_accepts_threat_kind_on_mal_alias():
+    candidate = _candidate()
+    candidate["aliases"] = ["MAL-2026-0042"]
+    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+
+    assert validate_candidate(candidate) == []

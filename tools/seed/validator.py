@@ -68,7 +68,6 @@ def _check_no_empty_taxonomy_buckets(candidate: dict[str, Any]) -> list[str]:
         if isinstance(value, (list, dict)) and len(value) == 0:
             kind = "array" if isinstance(value, list) else "object"
             errors.append(
-                f"empty taxonomy bucket {key!r}; omit the key instead of "
-                f"emitting an empty {kind}"
+                f"empty taxonomy bucket {key!r}; omit the key instead of emitting an empty {kind}"
             )
     return errors

@@ -40,7 +40,8 @@ CANONICAL_KEYS = ("schema_version", "id", "aliases", "modified", "database_speci
 
 def project_candidate_to_overlay(candidate: dict[str, Any]) -> dict[str, Any]:
     """Return the canonical overlay projection for a reviewed candidate."""
-    asve = (candidate.get("database_specific") or {}).get("asve")
+    db = candidate.get("database_specific")
+    asve = (db if isinstance(db, dict) else {}).get("asve")
     if not isinstance(asve, dict):
         raise ValueError("candidate must include database_specific.asve")
 

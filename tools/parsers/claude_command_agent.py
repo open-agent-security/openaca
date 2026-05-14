@@ -46,9 +46,7 @@ def parse_file(
     name = _resolve_name(md_path)
     ecosystem = f"claude-{kind}"
     identity = (
-        f"{ecosystem}/{scope_owner}/{name}"
-        if scope_owner is not None
-        else f"{ecosystem}/{name}"
+        f"{ecosystem}/{scope_owner}/{name}" if scope_owner is not None else f"{ecosystem}/{name}"
     )
     return [
         ComponentRef(

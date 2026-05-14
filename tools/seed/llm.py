@@ -37,6 +37,10 @@ class LLMAnnotationError(ValueError):
     """Raised when an LLM annotation command cannot produce a usable draft."""
 
 
+class LLMProviderError(LLMAnnotationError):
+    """Raised when the LLM provider itself fails (HTTP error, network error)."""
+
+
 @dataclass(frozen=True)
 class LLMAnnotationResult:
     decision: Literal["annotate", "reject"]
@@ -353,11 +357,11 @@ def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> di
             data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise LLMAnnotationError(f"LLM provider returned HTTP {exc.code}: {detail}") from exc
+        raise LLMProviderError(f"LLM provider returned HTTP {exc.code}: {detail}") from exc
     except (OSError, json.JSONDecodeError) as exc:
-        raise LLMAnnotationError(f"LLM provider request failed: {exc}") from exc
+        raise LLMProviderError(f"LLM provider request failed: {exc}") from exc
     if not isinstance(data, dict):
-        raise LLMAnnotationError("LLM provider response must be a JSON object")
+        raise LLMProviderError("LLM provider response must be a JSON object")
     return data
 
 

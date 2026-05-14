@@ -194,6 +194,17 @@ def test_response_schema_supplemental_taxonomies_allows_arbitrary_string_array_v
     assert supp["additionalProperties"]["type"] == "array"
 
 
+def test_response_schema_taxonomy_families_are_not_required():
+    response_schema = llm.build_response_schema()
+
+    taxonomies = response_schema["properties"]["database_specific"]["properties"]["asve"][
+        "properties"
+    ]["taxonomies"]
+    assert "required" not in taxonomies, (
+        "taxonomy families must be optional to match the canonical asve_taxonomies schema"
+    )
+
+
 def test_build_request_removes_threat_kind_from_llm_annotation_schema():
     request = llm.build_request(
         {"id": "MAL-2026-1234", "summary": "Malicious code in mcp-demo"},

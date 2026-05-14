@@ -219,3 +219,74 @@ def test_lint_rejects_config_type_in_v0(tmp_path):
     result = runner.invoke(main, [str(target)])
     assert result.exit_code != 0
     assert "reserved" in result.output.lower()
+
+
+def test_lint_rejects_threat_kind_on_non_mal_overlay(tmp_path):
+    """threat_kind is only valid on MAL-* ids/aliases; reject elsewhere."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-tkind-aaaa",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {
+            "asve": {
+                "threat_kind": "malicious_package",
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            }
+        },
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "GHSA-test-tkind-aaaa.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert "threat_kind" in result.output
+    assert "MAL-" in result.output
+
+
+def test_lint_accepts_threat_kind_on_mal_overlay(tmp_path):
+    """Sibling test: a MAL-* id makes threat_kind valid."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "MAL-2026-0001",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {
+            "asve": {
+                "threat_kind": "malicious_package",
+                "taxonomies": {"owasp_agentic_top10": ["asi04"]},
+                "evidence_level": "confirmed",
+            }
+        },
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "MAL-2026-0001.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code == 0, result.output
+
+
+def test_lint_rejects_empty_taxonomy_bucket_in_overlay(tmp_path):
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-empty-bbbb",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": {
+            "asve": {
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi05"],
+                    "owasp_mcp_top10": [],
+                },
+                "evidence_level": "likely",
+            }
+        },
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "GHSA-test-empty-bbbb.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert "empty taxonomy bucket" in result.output
+    assert "owasp_mcp_top10" in result.output

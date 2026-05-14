@@ -28,8 +28,9 @@ taxonomy context. Return decision="reject" when the OSV record is not an
 agent-stack candidate or lacks evidence. For reject decisions, reject_reason
 MUST be exactly one of: not_agent_stack, insufficient_evidence,
 duplicate_scope, unsupported_record. Evidence quotes must come from the OSV
-record. Do not copy severity, affected ranges, CWE, or other upstream-owned
-vulnerability data into database_specific.asve.
+record. Do not return threat_kind; the seeder derives that deterministically
+from MAL-* OSV IDs and aliases. Do not copy severity, affected ranges, CWE, or
+other upstream-owned vulnerability data into database_specific.asve.
 """
 
 
@@ -87,7 +88,7 @@ def build_request(
     matched_by: list[str],
     framework_documents: dict[str, str],
 ) -> dict[str, Any]:
-    annotation_schema = load_annotation_schema()
+    annotation_schema = build_llm_annotation_schema(load_annotation_schema())
     response_schema = build_response_schema(annotation_schema)
     return {
         "instructions": INSTRUCTIONS,
@@ -115,9 +116,18 @@ def build_request(
     }
 
 
+def build_llm_annotation_schema(annotation_schema: dict[str, Any]) -> dict[str, Any]:
+    schema = copy.deepcopy(annotation_schema)
+    properties = _expect_object(schema.get("properties"), "annotation_schema.properties")
+    properties.pop("threat_kind", None)
+    if isinstance(schema.get("required"), list):
+        schema["required"] = [key for key in schema["required"] if key != "threat_kind"]
+    return schema
+
+
 def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> dict[str, Any]:
     if annotation_schema is None:
-        annotation_schema = load_annotation_schema()
+        annotation_schema = build_llm_annotation_schema(load_annotation_schema())
     annotation_properties = _expect_object(
         annotation_schema.get("properties"), "annotation_schema.properties"
     )
@@ -129,7 +139,6 @@ def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> di
         key: _response_taxonomy_property(key, value) for key, value in taxonomy_properties.items()
     }
     evidence_level_schema = copy.deepcopy(annotation_properties["evidence_level"])
-    threat_kind_schema = _nullable_schema(annotation_properties["threat_kind"])
     return {
         "type": "object",
         "additionalProperties": False,
@@ -148,7 +157,7 @@ def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> di
                     "asve": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["taxonomies", "evidence_level", "threat_kind"],
+                        "required": ["taxonomies", "evidence_level"],
                         "properties": {
                             "taxonomies": {
                                 "type": "object",
@@ -157,7 +166,6 @@ def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> di
                                 "properties": taxonomy_response_properties,
                             },
                             "evidence_level": evidence_level_schema,
-                            "threat_kind": threat_kind_schema,
                         },
                     }
                 },
@@ -182,20 +190,6 @@ def _response_taxonomy_property(key: str, value: Any) -> dict[str, Any]:
     if key == "supplemental_taxonomies":
         return {"type": "object", "additionalProperties": False, "properties": {}}
     return copy.deepcopy(_expect_object(value, f"asve.taxonomies.properties.{key}"))
-
-
-def _nullable_schema(schema: Any) -> dict[str, Any]:
-    value = copy.deepcopy(_expect_object(schema, "schema"))
-    raw_type = value.get("type")
-    if isinstance(raw_type, list):
-        if "null" not in raw_type:
-            value["type"] = [*raw_type, "null"]
-    elif isinstance(raw_type, str):
-        value["type"] = [raw_type, "null"]
-    enum = value.get("enum")
-    if isinstance(enum, list) and None not in enum:
-        value["enum"] = [*enum, None]
-    return value
 
 
 def _resolve_local_refs(value: Any, schema: dict[str, Any]) -> Any:
@@ -412,8 +406,7 @@ def _project_response(
 
 
 def _normalize_asve(asve: dict[str, Any]) -> None:
-    if asve.get("threat_kind") is None:
-        asve.pop("threat_kind", None)
+    asve.pop("threat_kind", None)
     taxonomies = asve.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return

@@ -165,7 +165,7 @@ def test_llm_provider_coerces_unknown_reject_reason_to_unsupported_record():
     assert result.asve is None
 
 
-def test_response_schema_uses_canonical_asve_enums():
+def test_response_schema_omits_deterministic_threat_kind_but_uses_canonical_enums():
     annotation_schema = llm.load_annotation_schema()
 
     response_schema = llm.build_response_schema(annotation_schema)
@@ -175,10 +175,19 @@ def test_response_schema_uses_canonical_asve_enums():
         asve_schema["properties"]["evidence_level"]["enum"]
         == annotation_schema["properties"]["evidence_level"]["enum"]
     )
-    assert asve_schema["properties"]["threat_kind"]["enum"] == [
-        *annotation_schema["properties"]["threat_kind"]["enum"],
-        None,
-    ]
+    assert "threat_kind" not in asve_schema["properties"]
+    assert "threat_kind" not in asve_schema["required"]
+
+
+def test_build_request_removes_threat_kind_from_llm_annotation_schema():
+    request = llm.build_request(
+        {"id": "MAL-2026-1234", "summary": "Malicious code in mcp-demo"},
+        ["package_name_mcp"],
+        {"owasp-mcp-top-10-2025.md": "MCP docs"},
+    )
+
+    assert "threat_kind" not in request["annotation_schema"]["properties"]
+    assert "Do not return threat_kind" in request["instructions"]
 
 
 def test_post_json_raises_provider_error_on_http_failure():

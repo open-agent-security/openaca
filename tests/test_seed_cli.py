@@ -132,6 +132,65 @@ def test_seed_marks_mal_records_as_malicious_package(tmp_path):
     assert asve["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
 
 
+def test_seed_marks_ghsa_records_with_mal_alias_as_malicious_package(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    record = _ghsa_record()
+    record["aliases"] = ["CVE-2026-12345", "MAL-2026-1234"]
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", record)
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0, result.output
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    asve = candidate["database_specific"]["asve"]
+    assert asve["threat_kind"] == "malicious_package"
+
+
+def test_seed_llm_provider_ignores_threat_kind_for_non_mal_records(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        return _llm_annotate_result(
+            {
+                "taxonomies": {"owasp_agentic_top10": ["asi03"]},
+                "evidence_level": "likely",
+                "threat_kind": "malicious_package",
+            }
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    assert "threat_kind" not in candidate["database_specific"]["asve"]
+
+
 def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"

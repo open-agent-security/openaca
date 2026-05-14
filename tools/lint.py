@@ -112,9 +112,15 @@ def check_internal_aliases(overlay: dict, known_ids: set[str]) -> list[str]:
     return errors
 
 
+def _get_asve_dict(record: dict) -> dict:
+    db = record.get("database_specific")
+    asve = (db if isinstance(db, dict) else {}).get("asve")
+    return asve if isinstance(asve, dict) else {}
+
+
 def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
     """threat_kind valid only on MAL-* ids/aliases (mirrors validator.py)."""
-    asve = (overlay.get("database_specific") or {}).get("asve") or {}
+    asve = _get_asve_dict(overlay)
     if "threat_kind" not in asve:
         return []
     record_id = overlay.get("id") or ""
@@ -131,7 +137,7 @@ def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
 
 def check_no_empty_taxonomy_buckets(overlay: dict) -> list[str]:
     """Reject empty arrays/dicts under taxonomies (mirrors validator.py)."""
-    asve = (overlay.get("database_specific") or {}).get("asve") or {}
+    asve = _get_asve_dict(overlay)
     taxonomies = asve.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return []

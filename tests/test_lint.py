@@ -1,7 +1,7 @@
 import yaml
 from click.testing import CliRunner
 
-from tools.lint import main
+from tools.lint import check_no_empty_taxonomy_buckets, check_threat_kind_id_coupling, main
 
 
 def test_lint_passes_for_valid_fixture(fixtures_dir):
@@ -290,3 +290,36 @@ def test_lint_rejects_empty_taxonomy_bucket_in_overlay(tmp_path):
     assert result.exit_code != 0
     assert "empty taxonomy bucket" in result.output
     assert "owasp_mcp_top10" in result.output
+
+
+def test_check_threat_kind_id_coupling_tolerates_non_dict_database_specific():
+    """A truthy non-dict database_specific must not crash the check."""
+    assert check_threat_kind_id_coupling({"database_specific": "oops"}) == []
+    assert check_threat_kind_id_coupling({"database_specific": 42}) == []
+    assert check_threat_kind_id_coupling({"database_specific": ["list"]}) == []
+
+
+def test_check_no_empty_taxonomy_buckets_tolerates_non_dict_database_specific():
+    """A truthy non-dict database_specific must not crash the check."""
+    assert check_no_empty_taxonomy_buckets({"database_specific": "oops"}) == []
+    assert check_no_empty_taxonomy_buckets({"database_specific": 42}) == []
+
+
+def test_lint_tolerates_non_dict_database_specific_in_overlay(tmp_path):
+    """A record with database_specific as a scalar must fail lint with schema
+    errors, not crash with AttributeError."""
+    overlay = {
+        "schema_version": "1.7.5",
+        "id": "GHSA-test-nond-icti",
+        "modified": "2026-01-01T00:00:00Z",
+        "database_specific": "not-a-dict",
+    }
+    target = tmp_path / "overlays"
+    target.mkdir()
+    (target / "GHSA-test-nond-icti.yaml").write_text(yaml.dump(overlay))
+    runner = CliRunner()
+    result = runner.invoke(main, [str(target)])
+    assert result.exit_code != 0
+    assert not isinstance(result.exception, AttributeError), (
+        f"linter crashed with AttributeError: {result.exception}"
+    )

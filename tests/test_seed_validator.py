@@ -149,3 +149,26 @@ def test_fixture_flowise_corrected_good_validates():
     )
 
     assert validate_candidate(candidate) == []
+
+
+def test_validate_candidate_tolerates_non_dict_database_specific():
+    """A truthy non-dict database_specific must return schema errors, not
+    crash with AttributeError."""
+    candidate = _candidate()
+    candidate["database_specific"] = "not-a-dict"
+
+    errors = validate_candidate(candidate)
+
+    assert isinstance(errors, list), "validate_candidate must return a list, not raise"
+    assert len(errors) > 0, "schema violation must be reported"
+
+
+def test_validate_candidate_tolerates_non_dict_asve_value():
+    """A truthy non-dict asve value must return schema errors, not crash."""
+    candidate = _candidate()
+    candidate["database_specific"] = {"asve": "not-a-dict"}
+
+    errors = validate_candidate(candidate)
+
+    assert isinstance(errors, list), "validate_candidate must return a list, not raise"
+    assert len(errors) > 0, "schema violation must be reported"

@@ -30,8 +30,8 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
     assert len(refs) == 2
     identities = sorted(r.component_identity or "" for r in refs)
     assert identities == [
-        "claude-command/bar",
-        "claude-command/foo",
+        "claude-command/superpowers/bar",
+        "claude-command/superpowers/foo",
     ]
     assert all(r.ecosystem == "claude-command" for r in refs)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
@@ -144,7 +144,7 @@ def test_enumerate_propagates_scope_owner_for_plugin_bundled_agents(tmp_path):
         attributed_to="claude-plugin/superpowers@5.1.0",
     )
     assert len(refs) == 1
-    assert refs[0].component_identity == "claude-agent/code-reviewer"
+    assert refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
     assert refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
 
 

@@ -843,7 +843,7 @@ def test_seed_llm_provider_requires_model_when_enabled(tmp_path):
     assert not out.exists()
 
 
-def test_seed_llm_provider_error_writes_rejected_candidate_artifact(tmp_path, monkeypatch):
+def test_seed_llm_annotation_error_writes_rejected_candidate_artifact(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
@@ -852,7 +852,7 @@ def test_seed_llm_provider_error_writes_rejected_candidate_artifact(tmp_path, mo
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
 
     def fake_annotate(provider, model, api_key, request):
-        raise seed_llm.LLMAnnotationError("LLM provider returned invalid JSON")
+        return seed_llm._project_response({"evidence": ["not an evidence object"]})
 
     monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
@@ -874,11 +874,14 @@ def test_seed_llm_provider_error_writes_rejected_candidate_artifact(tmp_path, mo
     )
 
     assert result.exit_code == 0
-    assert "llm: rejected GHSA-abcd-ef12-3456 after provider error" in result.output
+    assert "llm: rejected GHSA-abcd-ef12-3456 after annotation error" in result.output
     rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
     assert rejected["_candidate"]["review_status"] == "rejected"
     assert rejected["_candidate"]["reject_reason"] == "unsupported_record"
-    assert rejected["_candidate"]["llm_error"] == "LLM provider returned invalid JSON"
+    assert (
+        rejected["_candidate"]["llm_error"]
+        == "LLM response evidence must be a list of {field, quote} objects"
+    )
     assert rejected["_evidence"] == [
         {"field": "summary", "quote": "mcp-demo allows command injection"}
     ]
@@ -954,7 +957,7 @@ def test_seed_llm_provider_invalid_annotation_writes_rejected_candidate_artifact
     )
 
     assert result.exit_code == 0
-    assert "llm: rejected GHSA-abcd-ef12-3456 after provider error" in result.output
+    assert "llm: rejected GHSA-abcd-ef12-3456 after annotation error" in result.output
     rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
     assert rejected["_candidate"]["review_status"] == "rejected"
     assert rejected["_candidate"]["reject_reason"] == "unsupported_record"

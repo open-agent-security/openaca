@@ -208,6 +208,51 @@ def test_post_json_raises_provider_error_on_http_failure():
             llm._post_json("https://api.openai.com/v1/chat/completions", {}, {})
 
 
+def test_call_openai_raises_provider_error_when_choices_missing():
+    def fake_post_json(_url, _headers, _payload):
+        return {"unexpected": []}
+
+    with pytest.raises(llm.LLMProviderError, match="OpenAI response did not include"):
+        llm._call_openai("gpt-test", "test-key", _request(), fake_post_json)
+
+
+def test_call_openai_raises_provider_error_when_content_is_not_string():
+    def fake_post_json(_url, _headers, _payload):
+        return {"choices": [{"message": {"content": [{"type": "text"}]}}]}
+
+    with pytest.raises(llm.LLMProviderError, match="OpenAI message content"):
+        llm._call_openai("gpt-test", "test-key", _request(), fake_post_json)
+
+
+def test_call_anthropic_raises_provider_error_when_tool_input_is_not_dict():
+    def fake_post_json(_url, _headers, _payload):
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "asve_seed_annotation",
+                    "input": "not-json",
+                }
+            ]
+        }
+
+    with pytest.raises(llm.LLMProviderError, match="Anthropic tool input"):
+        llm._call_anthropic("anthropic-test", "test-key", _request(), fake_post_json)
+
+
+def test_call_anthropic_raises_provider_error_when_no_tool_use_or_text():
+    def fake_post_json(_url, _headers, _payload):
+        return {"content": [{"type": "thinking", "text": ""}]}
+
+    with pytest.raises(llm.LLMProviderError, match="Anthropic response did not include"):
+        llm._call_anthropic("anthropic-test", "test-key", _request(), fake_post_json)
+
+
+def test_loads_response_json_raises_provider_error_for_invalid_json():
+    with pytest.raises(llm.LLMProviderError, match="invalid JSON"):
+        llm._loads_response_json("not json")
+
+
 def test_provider_error_is_subclass_of_annotation_error():
     assert issubclass(llm.LLMProviderError, llm.LLMAnnotationError)
 

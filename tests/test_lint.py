@@ -135,7 +135,12 @@ def test_lint_rejects_malformed_overlay_id(tmp_path):
         "schema_version": "1.7.5",
         "id": "NOTANID-broken",
         "modified": "2026-01-01T00:00:00Z",
-        "database_specific": {"asve": {"component_type": "mcp_server"}},
+        "database_specific": {
+            "asve": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "confirmed",
+            }
+        },
     }
     target = tmp_path / "overlays"
     target.mkdir()
@@ -152,7 +157,12 @@ def test_lint_accepts_valid_upstream_id_formats(tmp_path):
     base = {
         "schema_version": "1.7.5",
         "modified": "2026-01-01T00:00:00Z",
-        "database_specific": {"asve": {"component_type": "mcp_server"}},
+        "database_specific": {
+            "asve": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "confirmed",
+            }
+        },
     }
     target = tmp_path / "overlays"
     target.mkdir()
@@ -177,7 +187,9 @@ def test_lint_rejects_exposure_type_in_v0(tmp_path):
         "id": "GHSA-test-expo",
         "type": "exposure",
         "modified": "2026-01-01T00:00:00Z",
-        "database_specific": {"asve": {"component_type": "mcp_server"}},
+        "database_specific": {
+            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+        },
     }
     target = tmp_path / "overlays"
     target.mkdir()
@@ -196,7 +208,9 @@ def test_lint_rejects_config_type_in_v0(tmp_path):
         "id": "GHSA-test-conf",
         "type": "config",
         "modified": "2026-01-01T00:00:00Z",
-        "database_specific": {"asve": {"component_type": "mcp_server"}},
+        "database_specific": {
+            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+        },
     }
     target = tmp_path / "overlays"
     target.mkdir()

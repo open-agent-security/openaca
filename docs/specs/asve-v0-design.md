@@ -81,17 +81,17 @@ preferred wherever applicable**:
 - `pkg:docker/<image>@<digest>`
 
 For agent-stack registries that don't map to existing PURL ecosystems (Claude
-Code plugins, Cursor extensions, MCP-stdio launches, etc.), identity goes in
-`database_specific.asve.component_identity` with a registry-prefixed scheme:
+Code plugins, Cursor extensions, MCP-stdio launches, etc.), the scanner emits
+an ASVE-native `ComponentRef.component_identity` with a registry-prefixed
+scheme:
 
 - `claude-plugin/<author>/<plugin>@<version>`
 - `mcp-stdio/<package>@<version>`
 - `cursor-ext/<author>/<plugin>@<version>` *(V1)*
 
 Promoting these to standard PURL types is a future standards-proposal track,
-not a V0 dependency. Generic PURL/OSV consumers may not accept custom PURL
-types today, so V0 keeps custom identity inside the `database_specific.asve`
-extension where it doesn't break standard tooling.
+not a V0 dependency. Canonical V0 overlays do not use native component identity
+as a matching key; they enrich upstream OSV records by ID/alias.
 
 ### 4-tier detection mechanism
 
@@ -135,31 +135,21 @@ possible.
 {
   "database_specific": {
     "asve": {
-      "component_type": "mcp_server",      // open vocabulary string
-      "component_identity": "...",          // ASVE-native identity when no standard PURL applies
-      "surfaces": ["repo_context", "stdio", "tool_invocation"],
-      "agent_impact": {
-        "repo_read": true,
-        "repo_write": false,
-        "credential_exfiltration": true,
-        "tool_hijack": true,
-        "memory_poisoning": false,
-        "pr_manipulation": false,
-        "code_execution": true
-      },
       "taxonomies": {
         "owasp_agentic_top10": ["asi03", "asi05"],
         "owasp_agentic_skills_top10": []     // optional, for skill advisories
       },
-      "evidence_level": "confirmed"
+      "evidence_level": "confirmed",
+      "threat_kind": "malicious_package"      // optional; only for malware overlays
     }
   }
 }
 ```
 
-`component_type` is an **open-vocabulary string**, not a closed enum, so new
-component categories (browser-use agents, A2A protocols, etc.) can be added
-without a schema migration.
+Canonical overlays stay intentionally minimal. Scanner-observed component
+context, such as whether a finding came from an MCP server, command, skill, or
+hook, stays in scan output. Candidate review evidence and LLM provenance stay
+in `candidates/` and run artifacts, not promoted overlays.
 
 There is no `agent_blast_radius` enum or other custom severity score. Severity
 comes from CVSS v4; categorization comes from OWASP ASI.
@@ -248,11 +238,9 @@ ASVE-native authority concentrates on:
 ### Enriched aliasing pattern
 
 At least one V0 advisory should be an *enriched* record demonstrating that
-ASVE catches what lockfile-only SCA misses. Same upstream CVE/GHSA ID, but the
-ASVE record:
+ASVE catches what lockfile-only SCA misses. Same upstream CVE/GHSA ID, but ASVE:
 
-- Adds ASVE component identity (plugin/package/source/commit).
-- Adds agent metadata (`component_type`, `surfaces`, OWASP ASI).
+- Adds reviewed taxonomy mappings and evidence level to the upstream record.
 - The reference Action detects it from `mcp.json` /
   `.claude-plugin/plugin.json` / `.claude/settings.json`, not from
   `package.json`.
@@ -324,7 +312,7 @@ V1 entry conditions plus:
 | Code license | **Apache-2.0** |
 | Data license | **CC-BY-4.0** (matches OSV.dev) |
 | Schema extension key | `database_specific.asve` from day 1 |
-| `component_type` field | Open-vocabulary string |
+| Canonical overlay fields | Minimal: taxonomies, evidence level, optional threat kind |
 | Severity | CVSS v4 base + environmental |
 | Category taxonomy | OWASP Agentic Top 10 (`asi01`–`asi10`) |
 | Custom severity enum | None (no `agent_blast_radius` etc.) |
@@ -362,9 +350,9 @@ Gates, not weeks. Ship when each gate passes.
 - **Manifest**: a file that declares installed or referenced components.
   Examples: `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
   `.claude/settings.json`.
-- **Component identity**: a stable string identifying a specific component
-  version. Standard PURL where applicable; ASVE-native identity in
-  `database_specific.asve.component_identity` otherwise.
+- **Component identity**: a stable scanner-side string identifying a
+  non-package component where standard PURLs do not apply. It lives on
+  `ComponentRef`, not canonical overlays.
 - **Enriched record**: an advisory that aliases an existing upstream ID and
   adds ASVE-specific metadata that makes it detectable through agent-stack
   manifests (not just lockfiles).

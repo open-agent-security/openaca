@@ -316,14 +316,17 @@ def render_text(
                 ds_asve = (adv.get("database_specific") or {}).get("asve") or {}
                 if not isinstance(ds_asve, dict):
                     ds_asve = {}
-                surfaces = ds_asve.get("surfaces")
-                if isinstance(surfaces, list) and surfaces:
-                    out.append(f"        surfaces: {', '.join(str(s) for s in surfaces)}")
-                agent_impact = ds_asve.get("agent_impact") or {}
-                if isinstance(agent_impact, dict):
-                    impacts = [k for k, v in agent_impact.items() if v]
-                    if impacts:
-                        out.append(f"        agent_impact: {', '.join(impacts)}")
+                taxonomies = ds_asve.get("taxonomies") or {}
+                if isinstance(taxonomies, dict):
+                    taxonomy_parts = []
+                    for family, values in sorted(taxonomies.items()):
+                        if isinstance(values, list) and values:
+                            taxonomy_parts.append(f"{family}={','.join(str(v) for v in values)}")
+                    if taxonomy_parts:
+                        out.append(f"        taxonomies: {'; '.join(taxonomy_parts)}")
+                evidence_level = ds_asve.get("evidence_level")
+                if isinstance(evidence_level, str):
+                    out.append(f"        evidence_level: {evidence_level}")
                 out.append(f"        confidence: {f.confidence}")
         out.append("")
 
@@ -480,30 +483,29 @@ def _finding_marker(ids: list[str], use_color: bool) -> str:
 def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     """Short identifier rendered on a tree leaf.
 
-    Strips the ecosystem prefix (`claude-skill/`, `claude-hook/`, etc.) — the
-    parent category label already states the kind. When `parent_plugin` is
-    supplied, also strips that segment from identities shaped like
-    `claude-<kind>/<plugin>/<rest>` so a command under the `supabase` block
-    shows as just `<rest>` rather than `supabase/<rest>`.
+    Strips the ecosystem prefix (`claude-skill/`, `claude-command/`, etc.) —
+    the parent category label already states the kind. Hooks use their
+    observation metadata for display so users see the configured command
+    instead of the logical identity hash.
     """
     if ref.ecosystem in {"npm", "PyPI"}:
         if ref.name and ref.version:
             return f"{ref.name}@{ref.version}"
         return ref.name or "<unnamed>"
+    if ref.ecosystem == "claude-hook":
+        command = ref.extra.get("command")
+        event = ref.extra.get("event")
+        index = ref.extra.get("index")
+        label = command if isinstance(command, str) and command else ref.component_identity
+        if isinstance(event, str) and isinstance(index, int):
+            return f"{event}[{index}]: {label}"
+        return label or "<hook>"
     if ref.component_identity:
         ident = ref.component_identity
         # Strip ecosystem prefix (e.g., `claude-command/`).
         first_slash = ident.find("/")
         if first_slash > 0 and ident.startswith("claude-"):
             ident = ident[first_slash + 1 :]
-        # Strip the parent plugin segment if it leads the remaining identity.
-        # Bundled commands/agents/hooks identities are
-        # `claude-<kind>/<plugin>/<rest>`; under that plugin's block, drop
-        # `<plugin>/` so the leaf reads as `<rest>`.
-        if parent_plugin:
-            prefix = f"{parent_plugin}/"
-            if ident.startswith(prefix):
-                ident = ident[len(prefix) :]
         return ident
     if ref.name:
         return ref.name

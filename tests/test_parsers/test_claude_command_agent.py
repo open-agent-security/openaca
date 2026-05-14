@@ -4,10 +4,7 @@ Slash commands and subagents are markdown files under a directory.
 Identity = filename basename (without `.md`). Optional YAML frontmatter
 may override the name via a `name:` field.
 
-Identity scopes:
-- Plugin-bundled commands: claude-command/<plugin>/<name>
-- Plugin-bundled agents:   claude-agent/<plugin>/<name>
-- Repo-declared:           claude-command/repo/<name>, claude-agent/repo/<name>
+Identity is name-based; repo/plugin location is carried separately.
 """
 
 from pathlib import Path
@@ -33,11 +30,12 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
     assert len(refs) == 2
     identities = sorted(r.component_identity or "" for r in refs)
     assert identities == [
-        "claude-command/superpowers/bar",
-        "claude-command/superpowers/foo",
+        "claude-command/bar",
+        "claude-command/foo",
     ]
     assert all(r.ecosystem == "claude-command" for r in refs)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
+    assert all(r.extra["scope_owner"] == "superpowers" for r in refs)
 
 
 def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
@@ -50,9 +48,10 @@ def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
     )
     assert len(refs) == 1
     assert refs[0].name == "reviewer"
-    assert refs[0].component_identity == "claude-agent/repo/reviewer"
+    assert refs[0].component_identity == "claude-agent/reviewer"
     assert refs[0].source_manifest == str(path)
     assert refs[0].attributed_to is None
+    assert refs[0].extra["scope_owner"] == "repo"
 
 
 def test_enumerate_frontmatter_name_overrides_filename(tmp_path):
@@ -69,7 +68,7 @@ def test_enumerate_frontmatter_name_overrides_filename(tmp_path):
     )
     assert len(refs) == 1
     assert refs[0].name == "declared-cmd"
-    assert refs[0].component_identity == "claude-command/repo/declared-cmd"
+    assert refs[0].component_identity == "claude-command/declared-cmd"
 
 
 def test_enumerate_invalid_frontmatter_falls_back_to_filename(tmp_path):
@@ -145,7 +144,7 @@ def test_enumerate_propagates_scope_owner_for_plugin_bundled_agents(tmp_path):
         attributed_to="claude-plugin/superpowers@5.1.0",
     )
     assert len(refs) == 1
-    assert refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
+    assert refs[0].component_identity == "claude-agent/code-reviewer"
     assert refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
 
 

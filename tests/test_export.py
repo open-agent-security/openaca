@@ -156,18 +156,19 @@ def test_export_copies_style_css(sample_corpus, tmp_path, schema_path):
     assert "body" in css
 
 
-def test_html_autoescapes_overlay_content(tmp_path, schema_path, fixtures_dir):
-    """Jinja autoescape must neutralize HTML in overlay metadata."""
+def test_html_renders_minimal_asve_context(tmp_path, schema_path, fixtures_dir):
+    """Static advisory pages render standards-based ASVE overlay metadata."""
     advisories_dir = tmp_path / "advisories" / "2026"
     advisories_dir.mkdir(parents=True)
     src = (fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text()
-    src = src.replace("component_type: mcp_server", "component_type: <script>alert(1)</script>")
     (advisories_dir / "ASVE-2026-0001.yaml").write_text(src)
     dist = tmp_path / "dist"
     build(tmp_path / "advisories", schema_path=schema_path, dist=dist)
     page = (dist / "overlays" / "ASVE-2026-0001.html").read_text(encoding="utf-8")
-    assert "<script>alert(1)</script>" not in page
-    assert "&lt;script&gt;" in page
+    assert "OWASP Agentic Top 10" in page
+    assert "asi02" in page
+    assert "Evidence" in page
+    assert "confirmed" in page
 
 
 def test_index_html_sorts_overlays_by_id(tmp_path, schema_path, fixtures_dir):

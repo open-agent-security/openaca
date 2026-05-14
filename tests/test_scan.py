@@ -796,7 +796,8 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
 
     assert result.exit_code == 1, result.output
     assert "GHSA-3q26-f695-pp76" in result.output
-    assert "surfaces: tool_invocation, stdio, repo_context" in result.output
+    assert "taxonomies: owasp_agentic_top10=asi02,asi05" in result.output
+    assert "evidence_level: confirmed" in result.output
 
 
 def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):

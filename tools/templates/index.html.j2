@@ -13,20 +13,20 @@
     <p class="tagline">Agent-context overlays for upstream security advisories.</p>
   </header>
 
-  <input type="search" class="filter" id="filter" placeholder="Filter overlays — type to match id, component type, or aliases…" aria-label="Filter overlays">
+  <input type="search" class="filter" id="filter" placeholder="Filter overlays — type to match id, evidence level, or aliases…" aria-label="Filter overlays">
 
   <section>
     {% for year, group in advisories_by_year %}
     <details open>
       <summary>{{ year }} <span style="color:var(--muted); font-weight:normal">({{ group|length }})</span></summary>
       <table>
-        <thead><tr><th>ID</th><th>Summary</th><th>Modified</th></tr></thead>
+        <thead><tr><th>ID</th><th>Evidence</th><th>Modified</th></tr></thead>
         <tbody>
           {% for advisory in group %}
           {% set asve = (advisory.database_specific or {}).get('asve') or {} %}
-          <tr data-search="{{ advisory.id }} {{ asve.component_type }} {{ (advisory.aliases or [])|join(' ') }}">
+          <tr data-search="{{ advisory.id }} {{ asve.evidence_level }} {{ (advisory.aliases or [])|join(' ') }}">
             <td class="id"><a href="overlays/{{ advisory.id }}.html">{{ advisory.id }}</a></td>
-            <td>{{ asve.component_type }}</td>
+            <td>{{ asve.evidence_level }}</td>
             <td>{{ advisory.modified.split('T')[0] }}</td>
           </tr>
           {% endfor %}

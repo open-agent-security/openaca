@@ -9,15 +9,10 @@ Two input shapes wrap the same inner format:
 
 Each entry is `{"type": "command"|"prompt", "command": "...", "matcher": "..."?}`.
 
-Identity scopes:
-
-- Plugin-bundled: `claude-hook/<plugin>/<event>/<index>`
-- Settings-scoped: `claude-hook/settings/<scope>/<event>/<index>`
-  (scope ∈ user, project, local — settings_layers.SCOPE_PRECEDENCE)
-
-`type` / `command` / `matcher` live in `extra` so identity is stable
-across config edits at the same slot (the slot is the unit of inventory,
-not the command string).
+Identity is derived from the hook payload, not where the hook is declared.
+`event`, array `index`, settings `scope`, `type`, `command`, and `matcher`
+live in `extra`; `source_manifest` and `source_locator` carry the observed
+location.
 
 Skipped silently on read or parse errors so one malformed hooks block
 doesn't abort the wider scan.
@@ -25,6 +20,7 @@ doesn't abort the wider scan.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Optional
@@ -55,9 +51,9 @@ def parse_plugin_hooks(
         return []
     return _walk_events(
         hooks_block,
-        identity_prefix=f"claude-hook/{plugin_name}",
         source_manifest=str(hooks_json_path),
         attributed_to=attributed_to,
+        scope=None,
     )
 
 
@@ -74,9 +70,9 @@ def parse_plugin_hooks_inline(
         return []
     return _walk_events(
         hooks_block,
-        identity_prefix=f"claude-hook/{plugin_name}",
         source_manifest=source_manifest,
         attributed_to=attributed_to,
+        scope=None,
     )
 
 
@@ -86,45 +82,45 @@ def parse_settings_hooks(
     """Walk a settings.json's `hooks` block for a specific scope.
 
     Settings hooks are NOT attributed to any plugin — they're declared
-    directly by the user/project/local config. The scope is part of the
-    identity so the same logical hook at multiple scopes emits distinct
-    components rather than being merged.
+    directly by the user/project/local config. The scope is observation
+    metadata, not part of the logical component identity.
     """
     if not isinstance(hooks_block, dict):
         return []
     return _walk_events(
         hooks_block,
-        identity_prefix=f"claude-hook/settings/{scope}",
         source_manifest=str(settings_path),
         attributed_to=None,
+        scope=scope,
     )
 
 
 def _walk_events(
     hooks_block: dict,
-    identity_prefix: str,
     source_manifest: str,
     attributed_to: Optional[str],
+    scope: Optional[str],
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     for event, entries in hooks_block.items():
         if not isinstance(event, str) or not isinstance(entries, list):
             continue
         for index, entry in enumerate(entries):
-            # Skip malformed entries but preserve the index — identity at
-            # slot N must be stable regardless of malformed neighbors.
             if not isinstance(entry, dict):
                 continue
-            identity = f"{identity_prefix}/{event}/{index}"
             extra = {
+                "event": event,
+                "index": index,
                 "type": entry.get("type"),
                 "command": entry.get("command"),
                 "matcher": entry.get("matcher"),
             }
+            if scope is not None:
+                extra["scope"] = scope
             refs.append(
                 ComponentRef(
                     ecosystem="claude-hook",
-                    component_identity=identity,
+                    component_identity=_hook_identity(entry),
                     source_manifest=source_manifest,
                     source_locator=f"$.hooks.{event}[{index}]",
                     attributed_to=attributed_to,
@@ -132,3 +128,18 @@ def _walk_events(
                 )
             )
     return refs
+
+
+def _hook_identity(entry: dict) -> str:
+    hook_type = entry.get("type")
+    command = entry.get("command")
+    prompt = entry.get("prompt")
+    payload = {
+        "type": hook_type if isinstance(hook_type, str) else "",
+        "command": command if isinstance(command, str) else "",
+        "prompt": prompt if isinstance(prompt, str) else "",
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()[:16]
+    kind = payload["type"] or "hook"
+    return f"claude-hook/{kind}:{digest}"

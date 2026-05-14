@@ -15,9 +15,6 @@ def _candidate() -> dict:
         "_evidence": [{"field": "summary", "quote": "command injection"}],
         "database_specific": {
             "asve": {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio"],
-                "agent_impact": {"code_execution": True},
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             }
@@ -47,9 +44,9 @@ def test_validate_candidate_rejects_bad_taxonomy_code():
     assert any("schema" in e and "taxonomies" in e for e in errors)
 
 
-def test_validate_candidate_rejects_invalid_impact_shape():
+def test_validate_candidate_rejects_non_canonical_asve_fields():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["agent_impact"]["code_execution"] = "yes"
+    candidate["database_specific"]["asve"]["agent_impact"] = {"code_execution": True}
 
     errors = validate_candidate(candidate)
 

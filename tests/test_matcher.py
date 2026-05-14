@@ -319,11 +319,11 @@ def test_claude_command_identity_match():
     """claude-command refs must route to _match_by_identity, not _match_versioned.
     The parser sets both ecosystem+name (for inventory) but there are no version
     semantics — the advisory carries the target identity, not a version range."""
-    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/repo/deploy")
+    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/deploy")
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
-        component_identity="claude-command/repo/deploy",
+        component_identity="claude-command/deploy",
         source_manifest=".claude/commands/deploy.md",
         source_locator="$",
     )
@@ -335,11 +335,11 @@ def test_claude_command_identity_match():
 
 def test_claude_agent_identity_match():
     """claude-agent refs route to _match_by_identity."""
-    advisory = make_identity_advisory("ASVE-2026-9002", "claude-agent/repo/reviewer")
+    advisory = make_identity_advisory("ASVE-2026-9002", "claude-agent/reviewer")
     ref = ComponentRef(
         ecosystem="claude-agent",
         name="reviewer",
-        component_identity="claude-agent/repo/reviewer",
+        component_identity="claude-agent/reviewer",
         source_manifest=".claude/agents/reviewer.md",
         source_locator="$",
     )
@@ -351,11 +351,11 @@ def test_claude_agent_identity_match():
 
 def test_claude_command_identity_mismatch_no_finding():
     """Different identity string — must not match even if ecosystem+name agree."""
-    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/other-plugin/deploy")
+    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/other-command")
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
-        component_identity="claude-command/repo/deploy",
+        component_identity="claude-command/deploy",
         source_manifest=".claude/commands/deploy.md",
         source_locator="$",
     )
@@ -370,7 +370,7 @@ def test_claude_command_does_not_false_match_via_versioned_path():
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
-        component_identity="claude-command/repo/deploy",
+        component_identity="claude-command/deploy",
         source_manifest=".claude/commands/deploy.md",
         source_locator="$",
     )

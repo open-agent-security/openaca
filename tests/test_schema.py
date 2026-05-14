@@ -23,10 +23,13 @@ def test_sample_advisory_passes_schema(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
 
 
-def test_schema_accepts_taxonomies_block_and_threat_kind(schema, sample_valid):
+def test_schema_accepts_minimal_asve_overlay(schema, sample_valid):
+    Draft202012Validator(schema).validate(sample_valid)
+
+
+def test_schema_accepts_taxonomies_block_and_malicious_package_threat_kind(schema, sample_valid):
     advisory = dict(sample_valid)
     asve = dict(advisory["database_specific"]["asve"])
-    asve.pop("owasp_agentic_top10", None)
     asve["threat_kind"] = "malicious_package"
     asve["taxonomies"] = {
         "owasp_agentic_top10": ["asi02", "asi05"],
@@ -40,10 +43,38 @@ def test_schema_accepts_taxonomies_block_and_threat_kind(schema, sample_valid):
     Draft202012Validator(schema).validate(advisory)
 
 
+def test_schema_rejects_unknown_threat_kind(schema, sample_valid):
+    advisory = dict(sample_valid)
+    asve = dict(advisory["database_specific"]["asve"])
+    asve["threat_kind"] = "ssrf_via_mcp_tool"
+    advisory["database_specific"]["asve"] = asve
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("component_identity", "claude-hook/settings/project/PreToolUse/0"),
+        ("component_type", "mcp_server"),
+        ("surfaces", ["tool_invocation"]),
+        ("agent_impact", {"code_execution": True}),
+    ],
+)
+def test_schema_rejects_non_canonical_asve_fields(schema, sample_valid, field, value):
+    advisory = dict(sample_valid)
+    asve = dict(advisory["database_specific"]["asve"])
+    asve[field] = value
+    advisory["database_specific"]["asve"] = asve
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)
+
+
 def test_schema_rejects_malformed_taxonomy_codes(schema, sample_valid):
     advisory = dict(sample_valid)
     asve = dict(advisory["database_specific"]["asve"])
-    asve.pop("owasp_agentic_top10", None)
     asve["taxonomies"] = {"owasp_agentic_top10": ["ASI02"]}
     advisory["database_specific"]["asve"] = asve
 

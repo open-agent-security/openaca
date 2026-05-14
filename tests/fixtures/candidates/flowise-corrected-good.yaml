@@ -1,0 +1,26 @@
+schema_version: 1.7.5
+id: GHSA-mq53-pc65-wjc4
+modified: '2026-05-14T16:40:00.445224Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+    - package_name_agent_stack
+  package_names:
+    - flowise
+  annotation_source: llm
+  llm_provider: anthropic
+  llm_model: claude-opus-4-7
+_evidence:
+  - field: summary
+    quote: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
+  - field: details
+    quote: 'Evaluation runs (which may include captured prompts, model outputs, scoring data) can be moved cross-workspace via `workspaceId` overwrite.'
+database_specific:
+  asve:
+    taxonomies:
+      owasp_agentic_top10:
+        - asi03
+      owasp_llm_top10:
+        - llm02:2025
+    evidence_level: likely
+summary: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'

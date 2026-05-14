@@ -139,3 +139,15 @@ def test_fixture_flowise_nano_bad_is_rejected_with_actionable_errors():
         or "owasp_agentic_skills_top10" in joined
         or "supplemental_taxonomies" in joined
     ), joined
+
+
+def test_fixture_flowise_corrected_good_validates():
+    """Forward-compatible record of 'this is what a correct annotation
+    looks like': opus-style asi03 + llm02:2025, no threat_kind, no
+    empty taxonomy buckets, no ATLAS supply-chain misclassification.
+    """
+    candidate = yaml.safe_load(
+        (FIXTURES / "flowise-corrected-good.yaml").read_text(encoding="utf-8")
+    )
+
+    assert validate_candidate(candidate) == []

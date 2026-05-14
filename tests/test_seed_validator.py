@@ -1,4 +1,10 @@
+from pathlib import Path
+
+import yaml
+
 from tools.seed.validator import validate_candidate
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "candidates"
 
 
 def _candidate() -> dict:
@@ -110,3 +116,26 @@ def test_validate_candidate_rejects_empty_supplemental_taxonomies():
     assert any(
         "empty taxonomy bucket" in e and "supplemental_taxonomies" in e for e in errors
     ), f"expected empty-bucket error naming supplemental_taxonomies, got: {errors}"
+
+
+def test_fixture_flowise_nano_bad_is_rejected_with_actionable_errors():
+    """The literal nano-style annotation for GHSA-mq53-pc65-wjc4 must be
+    rejected, and each violation must surface in errors with wording
+    specific enough for a reviewer or agent to self-correct.
+    """
+    candidate = yaml.safe_load(
+        (FIXTURES / "flowise-nano-bad.yaml").read_text(encoding="utf-8")
+    )
+
+    errors = validate_candidate(candidate)
+
+    joined = "\n".join(errors)
+    # threat_kind on non-MAL record
+    assert "threat_kind" in joined and "MAL-" in joined, joined
+    # at least one empty-bucket error, naming a specific bucket
+    assert "empty taxonomy bucket" in joined, joined
+    assert (
+        "owasp_mcp_top10" in joined
+        or "owasp_agentic_skills_top10" in joined
+        or "supplemental_taxonomies" in joined
+    ), joined

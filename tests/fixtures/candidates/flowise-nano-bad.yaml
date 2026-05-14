@@ -1,0 +1,30 @@
+schema_version: 1.7.5
+id: GHSA-mq53-pc65-wjc4
+modified: '2026-05-14T16:40:00.445224Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+    - package_name_agent_stack
+  package_names:
+    - flowise
+  annotation_source: llm
+  llm_provider: openai
+  llm_model: gpt-5.4-nano
+_evidence:
+  - field: summary
+    quote: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
+database_specific:
+  asve:
+    evidence_level: likely
+    taxonomies:
+      mitre_atlas:
+        - AML.T0010.001
+      owasp_agentic_skills_top10: []
+      owasp_agentic_top10:
+        - asi04
+      owasp_llm_top10:
+        - llm03:2025
+      owasp_mcp_top10: []
+      supplemental_taxonomies: {}
+    threat_kind: malicious_package
+summary: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'

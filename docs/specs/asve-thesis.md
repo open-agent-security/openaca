@@ -104,34 +104,22 @@ format. ASVE is the database that closes the loop.
 
 ## What ASVE adds beyond OSV
 
-Six things ASVE's records contain that a generic OSV/GHSA record does not:
+Three things ASVE's records contain that a generic OSV/GHSA record does not:
 
-1. **`component_type`** — open-vocabulary string identifying the kind of
-   agent-stack component (`mcp_server`, `claude_plugin`, `cursor_extension`,
-   `agent_framework`, `model_proxy`, etc.). Different blast radii live in
-   different bins.
-2. **`surfaces[]`** — array enumerating attack surfaces the component
-   exposes (`tool_invocation`, `stdio`, `repo_context`, `network`, `memory`,
-   `filesystem`, etc.).
-3. **`agent_impact{}`** — boolean table over standard agent-relevant impact
-   categories (`repo_read`, `repo_write`, `credential_exfiltration`,
-   `tool_hijack`, `memory_poisoning`, `pr_manipulation`, `code_execution`).
-   CVSS C/I/A doesn't speak agentic.
-4. **`taxonomies{}`** — mapping of ASVE-owned agent-context taxonomy
+1. **`taxonomies{}`** — mapping of ASVE-owned agent-context taxonomy
    families, including `owasp_agentic_top10[]` entries referencing
    ASI01–ASI10 categories.
    Lets consumers triage findings by the framework category instead of just
    CVE list.
-5. **`component_identity`** (in `database_specific.asve`) — ASVE-native
-   identity for components that do not map to standard PURL ecosystems.
-   Examples: `claude-plugin/<author>/<plugin>@<version>`,
-   `cursor-ext/<publisher>/<ext>@<version>`,
-   `mcp-stdio/<launcher>/<args-hash>`. Where standard PURLs work
-   (`pkg:npm/...`, `pkg:pypi/...`, `pkg:github/...`, `pkg:docker/...`), ASVE
-   uses them; the native identity covers the gap.
-6. **`evidence_level`** — enum `confirmed | likely | research | disputed |
+2. **`evidence_level`** — enum `confirmed | likely | research | disputed |
    withdrawn`. Lets consumers filter noise. Auto-fix on confirmed,
    ticket-only on research-grade.
+3. **`threat_kind`** — a narrow ASVE-owned classification for records where
+   upstream OSV shape is too generic. V0 only allows `malicious_package`.
+
+Scanner output still carries observed component context such as package PURLs,
+MCP launch declarations, plugin attribution, and non-PURL `ComponentRef`
+identity. That context is deliberately not duplicated into canonical overlays.
 
 These fields all live under `database_specific.asve` in the OSV schema. OSV
 reserves that namespace exactly for per-database extensions. ASVE-aware
@@ -173,10 +161,9 @@ Three layers survive an OSV expansion:
 
 1. **The agent-context overlay.** OSV/GHSA's data model is generic; they have
    no obvious reason to add an agent-context extension. ASVE = the schema
-   authority for what makes a record *agentic* (component_type, surfaces,
-   agent_impact, taxonomy mappings, evidence_level). Even if OSV ingests ASVE
-   records, they do so under the `database_specific.asve` namespace ASVE
-   defines.
+   authority for reviewed agent-stack taxonomy mappings and evidence level.
+   Even if OSV ingests ASVE records, they do so under the
+   `database_specific.asve` namespace ASVE defines.
 2. **Class-level types.** OSV's data model is anchored on `affected[]` — a
    per-package vulnerability shape. There's no native way to represent
    *"any record matching pattern X is risky"* without a specific instance.

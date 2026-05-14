@@ -8,6 +8,10 @@ from tools.seed import llm as seed_llm
 from tools.seed.__main__ import discovery_reasons, main
 
 
+def _llm_annotate_result(asve: dict, evidence=None):
+    return seed_llm.LLMAnnotationResult(decision="annotate", asve=asve, evidence=evidence)
+
+
 def _write_json(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -107,8 +111,6 @@ def test_seed_writes_reviewable_candidate_for_mcp_record(tmp_path):
     assert candidate["aliases"] == ["CVE-2026-12345"]
     assert candidate["_candidate"]["review_status"] == "needs_review"
     assert "package_name_mcp" in candidate["_candidate"]["matched_by"]
-    assert candidate["database_specific"]["asve"]["component_type"] == "mcp_server"
-    assert candidate["database_specific"]["asve"]["agent_impact"]["code_execution"] is True
     assert candidate["database_specific"]["asve"]["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
     assert candidate["summary"] == "mcp-demo allows command injection"
 
@@ -127,8 +129,7 @@ def test_seed_marks_mal_records_as_malicious_package(tmp_path):
     candidate = yaml.safe_load((out / "MAL-2026-1234.yaml").read_text(encoding="utf-8"))
     asve = candidate["database_specific"]["asve"]
     assert asve["threat_kind"] == "malicious_package"
-    assert asve["agent_impact"]["code_execution"] is True
-    assert asve["agent_impact"]["credential_exfiltration"] is True
+    assert asve["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
 
 
 def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
@@ -145,7 +146,12 @@ def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
                 "id": "CVE-2026-12345",
                 "aliases": ["GHSA-abcd-ef12-3456"],
                 "modified": "2026-05-13T00:00:00Z",
-                "database_specific": {"asve": {"component_type": "mcp_server"}},
+                "database_specific": {
+                    "asve": {
+                        "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                        "evidence_level": "likely",
+                    }
+                },
             }
         ),
         encoding="utf-8",
@@ -566,15 +572,8 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
 
     def fake_annotate(provider, model, api_key, request):
         calls.append((provider, model, api_key, request))
-        return (
+        return _llm_annotate_result(
             {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio", "repo_context"],
-                "agent_impact": {
-                    "tool_hijack": True,
-                    "memory_poisoning": True,
-                    "code_execution": False,
-                },
                 "taxonomies": {
                     "owasp_agentic_top10": ["asi01"],
                     "owasp_mcp_top10": ["mcp03:2025"],
@@ -612,8 +611,8 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert model == "test-model"
     assert api_key == "test-key"
     assert request["osv_record"]["id"] == "GHSA-abcd-ef12-3456"
-    assert request["annotation_schema"]["required"] == ["component_type"]
-    assert request["annotation_schema"]["properties"]["component_type"] == {"type": "string"}
+    assert request["annotation_schema"]["required"] == ["taxonomies", "evidence_level"]
+    assert "component_type" not in request["annotation_schema"]["properties"]
     assert "mitre-atlas.md" in request["framework_documents"]
     assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
@@ -623,9 +622,6 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert metadata["llm_provider"] == "openai"
     assert metadata["llm_model"] == "test-model"
     assert "mitre-atlas.md" in metadata["framework_documents"]
-    assert asve["surfaces"] == ["tool_invocation", "stdio", "repo_context"]
-    assert asve["agent_impact"]["tool_hijack"] is True
-    assert asve["agent_impact"]["memory_poisoning"] is True
     assert asve["taxonomies"] == {
         "owasp_agentic_top10": ["asi01"],
         "owasp_mcp_top10": ["mcp03:2025"],
@@ -644,11 +640,8 @@ def test_seed_llm_provider_prints_progress_before_annotation(tmp_path, monkeypat
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
 
     def fake_annotate(provider, model, api_key, request):
-        return (
+        return _llm_annotate_result(
             {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio"],
-                "agent_impact": {"code_execution": True},
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             },
@@ -690,11 +683,8 @@ def test_seed_llm_provider_can_read_api_key_env(tmp_path, monkeypatch):
 
     def fake_annotate(provider, model, api_key, request):
         calls.append((provider, model, api_key, request))
-        return (
+        return _llm_annotate_result(
             {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio"],
-                "agent_impact": {"code_execution": True, "tool_hijack": True},
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             },
@@ -722,6 +712,48 @@ def test_seed_llm_provider_can_read_api_key_env(tmp_path, monkeypatch):
     assert calls[0][0] == "anthropic"
     assert calls[0][1] == "anthropic-test"
     assert calls[0][2] == "env-key"
+
+
+def test_seed_llm_provider_writes_rejected_candidate_artifact(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        return seed_llm.LLMAnnotationResult(
+            decision="reject",
+            reject_reason="not_agent_stack",
+            evidence=[{"field": "summary", "quote": "mcp-demo"}],
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+    rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
+    assert rejected["_candidate"]["review_status"] == "rejected"
+    assert rejected["_candidate"]["reject_reason"] == "not_agent_stack"
+    assert rejected["_evidence"] == [{"field": "summary", "quote": "mcp-demo"}]
 
 
 def test_seed_llm_provider_requires_model_when_enabled(tmp_path):
@@ -943,7 +975,7 @@ def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
 
     def fake_annotate(provider, model, api_key, request):
-        return {}, None
+        return seed_llm.LLMAnnotationResult(decision="annotate", asve={}, evidence=None)
 
     monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
@@ -965,5 +997,40 @@ def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
     )
 
     assert result.exit_code != 0
-    assert "component_type" in result.output
+    assert "taxonomies" in result.output
+    assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()
+
+
+def test_seed_llm_provider_rejects_missing_annotation_block(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        return seed_llm.LLMAnnotationResult(decision="annotate", asve=None, evidence=None)
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "test-model",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "database_specific.asve" in result.output
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()

@@ -22,7 +22,7 @@ def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
     assert is_queryable(_ref("claude-plugin", "supabase", "0.1.6")) is False
     assert is_queryable(_ref("claude-skill", "bootstrap", "1.0.0")) is False
     # Identity-only refs (no ecosystem) → not queryable
-    assert is_queryable(ComponentRef(component_identity="claude-hook/foo/PreToolUse/0")) is False
+    assert is_queryable(ComponentRef(component_identity="claude-hook/command:abcd1234")) is False
 
 
 def test_collect_target_purls_dedupes_and_preserves_order():
@@ -48,7 +48,7 @@ def test_augment_returns_base_corpus_when_no_versioned_refs():
     """Refs without ecosystem+name+version (e.g., identity-only hooks)
     can't be queried via OSV.dev — they're skipped, base corpus returned."""
     refs = [
-        ComponentRef(component_identity="claude-hook/p/PreToolUse/0"),
+        ComponentRef(component_identity="claude-hook/command:abcd1234"),
         ComponentRef(ecosystem="claude-skill", name="x"),  # no version
     ]
     base = [{"id": "ASVE-2026-0001"}]

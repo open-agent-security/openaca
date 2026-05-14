@@ -24,9 +24,6 @@ def _candidate() -> dict:
         "_evidence": [{"field": "summary", "quote": "command injection"}],
         "database_specific": {
             "asve": {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio"],
-                "agent_impact": {"code_execution": True},
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             }
@@ -44,9 +41,6 @@ def test_project_candidate_to_overlay_strips_candidate_and_upstream_owned_fields
         "modified": "2026-05-13T00:00:00Z",
         "database_specific": {
             "asve": {
-                "component_type": "mcp_server",
-                "surfaces": ["tool_invocation", "stdio"],
-                "agent_impact": {"code_execution": True},
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             }

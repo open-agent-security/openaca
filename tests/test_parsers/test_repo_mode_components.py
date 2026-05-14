@@ -29,7 +29,7 @@ def test_repo_mode_emits_declared_command():
     refs = parse_repo(REPOS / "declared-components")
     cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
     assert len(cmd_refs) == 1
-    assert cmd_refs[0].component_identity == "claude-command/repo/deploy"
+    assert cmd_refs[0].component_identity == "claude-command/deploy"
     assert cmd_refs[0].attributed_to is None
 
 
@@ -39,7 +39,7 @@ def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
     refs = parse_repo(REPOS / "declared-components")
     agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
     assert len(agent_refs) == 1
-    assert agent_refs[0].component_identity == "claude-agent/repo/code-reviewer"
+    assert agent_refs[0].component_identity == "claude-agent/code-reviewer"
     assert agent_refs[0].attributed_to is None
 
 

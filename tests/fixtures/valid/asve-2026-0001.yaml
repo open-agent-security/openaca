@@ -28,19 +28,6 @@ references:
     url: "https://github.com/advisories/GHSA-3q26-f695-pp76"
 database_specific:
   asve:
-    component_type: mcp_server
-    surfaces:
-      - tool_invocation
-      - stdio
-      - repo_context
-    agent_impact:
-      repo_read: true
-      repo_write: false
-      credential_exfiltration: true
-      tool_hijack: true
-      memory_poisoning: false
-      pr_manipulation: false
-      code_execution: true
     taxonomies:
       owasp_agentic_top10:
         - asi02

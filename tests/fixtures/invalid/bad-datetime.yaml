@@ -18,4 +18,7 @@ references:
     url: "https://example.com"
 database_specific:
   asve:
-    component_type: mcp_server
+    taxonomies:
+      owasp_agentic_top10:
+        - asi05
+    evidence_level: confirmed

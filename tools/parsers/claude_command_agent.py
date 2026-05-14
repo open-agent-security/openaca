@@ -4,11 +4,13 @@ Both surfaces use the same shape — a directory of markdown files where
 the filename basename is the canonical name and optional YAML
 frontmatter may override it via a `name:` field.
 
-Identity scopes:
+Identity:
 
-- Plugin-bundled commands: `claude-command/<plugin>/<name>`
-- Plugin-bundled agents:   `claude-agent/<plugin>/<name>`
-- Repo-declared:           `claude-command/repo/<name>`, `claude-agent/repo/<name>`
+- Commands: `claude-command/<name>`
+- Agents:   `claude-agent/<name>`
+
+Repo/plugin location is observation metadata (`source_manifest` and
+`attributed_to`), not part of the logical component identity.
 
 V0 has no version field for commands or agents; matcher fires on
 identity-only (name-only) matching. Sufficient for inventory; T3
@@ -39,7 +41,7 @@ def parse_file(
         return []
     name = _resolve_name(md_path)
     ecosystem = f"claude-{kind}"
-    identity = f"{ecosystem}/{scope_owner}/{name}"
+    identity = f"{ecosystem}/{name}"
     return [
         ComponentRef(
             ecosystem=ecosystem,
@@ -48,6 +50,7 @@ def parse_file(
             source_manifest=str(md_path),
             source_locator="$",
             attributed_to=attributed_to,
+            extra={"scope_owner": scope_owner},
         )
     ]
 
@@ -61,8 +64,9 @@ def enumerate_dir(
     """Walk `dir_path/*.md`, emit one ComponentRef per file.
 
     `scope_owner` is the plugin name for bundled components, or the
-    literal "repo" for repo-declared ones. `attributed_to` is the parent
-    plugin's identity for bundled components, or None for repo-declared.
+    literal "repo" for repo-declared ones. It is retained in `extra` as
+    observation metadata. `attributed_to` is the parent plugin's identity
+    for bundled components, or None for repo-declared.
     """
     if not dir_path.is_dir():
         return []
@@ -74,7 +78,7 @@ def enumerate_dir(
         if not child.is_file() or child.suffix != ".md":
             continue
         name = _resolve_name(child)
-        identity = f"{ecosystem}/{scope_owner}/{name}"
+        identity = f"{ecosystem}/{name}"
         refs.append(
             ComponentRef(
                 ecosystem=ecosystem,
@@ -83,6 +87,7 @@ def enumerate_dir(
                 source_manifest=str(child),
                 source_locator="$",
                 attributed_to=attributed_to,
+                extra={"scope_owner": scope_owner},
             )
         )
     return refs

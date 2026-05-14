@@ -5,31 +5,8 @@ aliases:
 modified: '2025-10-15T12:00:00Z'
 database_specific:
   asve:
-    component_type: mcp_server
-    surfaces:
-    - tool_invocation
-    - stdio
-    agent_impact:
-      repo_read: false
-      repo_write: false
-      credential_exfiltration: false
-      tool_hijack: true
-      memory_poisoning: false
-      pr_manipulation: false
-      code_execution: true
     taxonomies:
       owasp_agentic_top10:
       - asi02
       - asi05
     evidence_level: confirmed
-    detection_hints:
-      manifests:
-      - file: mcp.json
-        path: $.mcpServers.*.command
-        match_args:
-        - npx @akoskm/create-mcp-server-stdio
-        - npx -y @akoskm/create-mcp-server-stdio
-      - file: .claude-plugin/plugin.json
-        path: $.mcpServers.*.command
-        match_args:
-        - npx @akoskm/create-mcp-server-stdio

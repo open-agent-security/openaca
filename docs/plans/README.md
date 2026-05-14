@@ -16,7 +16,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 007 | [fs-mode foundation: CLI split, attribution, claude-plugin matcher](007-fs-mode-cli-and-attribution.md) | ✅ Done | 001, 003, 005 |
 | 008 | [Component inventory: declared (repo) and active (fs) agent stack](008-component-inventory.md) | ✅ Done | 007 |
 | 009 | [Plugin-internal implementation deps (lockfile transitive scanning) + OSV.dev federation](009-plugin-internal-deps.md) | ✅ Done | 008 |
-| 010 | [Seed overlay pipeline](010-seed-overlay-pipeline.md) | 🟡 Active | 009 |
+| 010 | [Seed overlay pipeline](010-seed-overlay-pipeline.md) | ✅ Done | 009 |
+| 011 | [Minimal overlay schema](011-minimal-overlay-schema.md) | 🟡 Active | 010 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

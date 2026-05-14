@@ -91,22 +91,16 @@
     },
     "asve_extension": {
       "type": "object",
-      "required": ["component_type"],
+      "required": ["taxonomies", "evidence_level"],
       "properties": {
-        "component_type": {"type": "string"},
-        "component_identity": {"type": "string"},
-        "surfaces": {"type": "array", "items": {"type": "string"}},
-        "agent_impact": {
-          "type": "object",
-          "additionalProperties": {"type": "boolean"}
-        },
-        "threat_kind": {"type": "string"},
+        "threat_kind": {"type": "string", "enum": ["malicious_package"]},
         "taxonomies": {"$ref": "#/$defs/asve_taxonomies"},
         "evidence_level": {
           "type": "string",
           "enum": ["confirmed", "likely", "research", "disputed", "withdrawn"]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "asve_taxonomies": {
       "type": "object",

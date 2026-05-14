@@ -57,16 +57,6 @@ _AGENT_AI_FEATURE_HINTS = (
 _AGENT_TOOL_HINTS = ("tool call", "tool invocation", "function calling")
 _AGENT_TOOL_CONTEXT_HINTS = ("ai", "agent", "llm", "gemini", "claude", "openai", "assistant")
 
-_IMPACT_KEYS = (
-    "repo_read",
-    "repo_write",
-    "credential_exfiltration",
-    "tool_hijack",
-    "memory_poisoning",
-    "pr_manipulation",
-    "code_execution",
-)
-
 _CLASS_RULES: list[tuple[tuple[str, ...], dict[str, Any]]] = [
     (
         (
@@ -82,35 +72,30 @@ _CLASS_RULES: list[tuple[tuple[str, ...], dict[str, Any]]] = [
             "execute arbitrary",
         ),
         {
-            "agent_impact": {"code_execution": True, "tool_hijack": True},
             "taxonomies": {"owasp_agentic_top10": {"asi05"}},
         },
     ),
     (
         ("path traversal", "directory traversal", "arbitrary file read", "file disclosure"),
         {
-            "agent_impact": {"repo_read": True},
             "taxonomies": {"owasp_agentic_top10": {"asi08"}},
         },
     ),
     (
         ("ssrf", "server-side request forgery"),
         {
-            "agent_impact": {"credential_exfiltration": True},
             "taxonomies": {"owasp_agentic_top10": {"asi02"}},
         },
     ),
     (
         ("authentication bypass", "auth bypass", "missing authentication", "unauthenticated"),
         {
-            "agent_impact": {"tool_hijack": True},
             "taxonomies": {"owasp_agentic_top10": {"asi02"}},
         },
     ),
     (
         ("prompt injection", "indirect prompt"),
         {
-            "agent_impact": {"memory_poisoning": True, "tool_hijack": True},
             "taxonomies": {"owasp_agentic_top10": {"asi01"}},
         },
     ),
@@ -282,22 +267,16 @@ def _write_state(state: Path | None, newest_modified: str | None, newest_ids: se
 
 
 def _classify(record: dict[str, Any]) -> dict[str, Any]:
-    impact = {key: False for key in _IMPACT_KEYS}
     taxonomies: dict[str, set[str]] = {"owasp_agentic_top10": set()}
     text = _text(record)
 
     for keywords, payload in _CLASS_RULES:
         if not any(keyword in text for keyword in keywords):
             continue
-        for key, value in (payload.get("agent_impact") or {}).items():
-            if value:
-                impact[key] = True
         for family, values in (payload.get("taxonomies") or {}).items():
             taxonomies.setdefault(family, set()).update(values)
 
     if str(record.get("id") or "").startswith("MAL-"):
-        impact["code_execution"] = True
-        impact["credential_exfiltration"] = True
         threat_kind = "malicious_package"
     else:
         threat_kind = None
@@ -307,9 +286,6 @@ def _classify(record: dict[str, Any]) -> dict[str, Any]:
         taxonomy_lists = {"owasp_agentic_top10": ["asi05"]}
 
     asve: dict[str, Any] = {
-        "component_type": "mcp_server",
-        "surfaces": ["tool_invocation", "stdio"],
-        "agent_impact": impact,
         "taxonomies": taxonomy_lists,
         "evidence_level": "likely",
     }
@@ -363,6 +339,39 @@ def build_candidate(
         if key in record:
             candidate[key] = record[key]
     return candidate
+
+
+def build_rejected_candidate(
+    record: dict[str, Any],
+    matched_by: list[str],
+    reject_reason: str,
+    evidence: list[dict[str, str]] | None,
+    framework_documents: list[str],
+    llm_provider: str,
+    llm_model: str,
+) -> dict[str, Any]:
+    rec_id = record.get("id")
+    if not isinstance(rec_id, str) or not rec_id:
+        raise ValueError("OSV record is missing id")
+    return {
+        "schema_version": record.get("schema_version") or "1.7.5",
+        "id": rec_id,
+        "modified": record.get("modified") or record.get("published") or "1970-01-01T00:00:00Z",
+        "_candidate": {
+            "review_status": "rejected",
+            "matched_by": matched_by,
+            "package_names": _package_names(record),
+            "annotation_source": "llm",
+            "llm_provider": llm_provider,
+            "llm_model": llm_model,
+            "framework_documents": framework_documents,
+            "reject_reason": reject_reason,
+        },
+        "_evidence": evidence
+        if evidence is not None
+        else [{"field": "summary", "quote": record.get("summary") or ""}],
+        "summary": record.get("summary") or "",
+    }
 
 
 def _identity(record: dict[str, Any]) -> set[str]:
@@ -538,7 +547,7 @@ def main(
                 f"with {normalized_llm_provider}/{resolved_llm_model}"
             )
             try:
-                asve_annotation, evidence = llm.annotate_with_provider(
+                annotation = llm.annotate_with_provider(
                     normalized_llm_provider,
                     resolved_llm_model,
                     resolved_llm_api_key,
@@ -546,11 +555,41 @@ def main(
                 )
             except llm.LLMAnnotationError as exc:
                 raise click.ClickException(str(exc)) from exc
+            if annotation.decision == "reject":
+                assert annotation.reject_reason is not None
+                candidate = build_rejected_candidate(
+                    record,
+                    matched_by,
+                    annotation.reject_reason,
+                    annotation.evidence,
+                    sorted(framework_documents),
+                    normalized_llm_provider,
+                    resolved_llm_model,
+                )
+                rejected_dir_resolved = (out_dir / "rejected").resolve()
+                target = out_dir / "rejected" / f"{candidate['id']}.yaml"
+                if target.resolve().parent != rejected_dir_resolved:
+                    click.echo(f"{candidate['id']!r}: unsafe candidate ID, skipping", err=True)
+                    continue
+                if dry_run:
+                    click.echo(f"would reject {target}: {annotation.reject_reason}")
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
+                written += 1
+                seen_keys.update(identity)
+                if limit is not None and written >= limit:
+                    limit_hit = True
+                    click.echo(f"limit {limit} reached; state not advanced")
+                    break
+                continue
+            if annotation.asve is None:
+                raise click.ClickException("LLM annotation must include database_specific.asve")
             candidate = build_candidate(
                 record,
                 matched_by,
-                asve_annotation=asve_annotation,
-                evidence=evidence,
+                asve_annotation=annotation.asve,
+                evidence=annotation.evidence,
                 annotation_source="llm",
                 framework_documents=sorted(framework_documents),
                 llm_provider=normalized_llm_provider,

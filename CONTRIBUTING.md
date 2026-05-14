@@ -59,18 +59,15 @@ uv run pytest
    `overlays/GHSA-XXXX-YYYY-ZZZZ.yaml` or `overlays/CVE-YYYY-NNNN.yaml`.
    Do not mint an `ASVE-YYYY-NNNN` ID in V0.
 
-2. **Write only the ASVE agent-context block.** OSV/GHSA/CVE owns
+2. **Write only the ASVE overlay block.** OSV/GHSA/CVE owns
    vulnerability identity, affected ranges, severity, fixes, summary,
-   and details. ASVE overlays add agent-context metadata:
-   - `component_type` (e.g., `mcp_server`, `claude_plugin`,
-     `model_proxy`, `agent_framework`, `skill_bundle`).
-   - `surfaces`: which agent surfaces the component touches.
-   - `agent_impact`: boolean table of attainable impacts.
-   - `taxonomies`: agent-context taxonomy mappings such as
+   and details. ASVE overlays add reviewed agent-context metadata:
+   - `taxonomies`: standards-based taxonomy mappings such as
      `owasp_agentic_top10` (`asi01`–`asi10`) and `owasp_mcp_top10`
      (`mcp01:2025`–`mcp10:2025`).
    - `evidence_level`: `confirmed` | `likely` | `research` |
      `disputed` | `withdrawn`.
+   - `threat_kind`: optional; V0 currently allows `malicious_package`.
 
    Minimal shape:
    ```yaml
@@ -81,13 +78,6 @@ uv run pytest
    modified: "2026-05-12T00:00:00Z"
    database_specific:
      asve:
-       component_type: mcp_server
-       surfaces:
-         - tool_invocation
-       agent_impact:
-         credential_exfiltration: false
-         repo_write: false
-         command_execution: true
        taxonomies:
          owasp_agentic_top10:
            - asi02

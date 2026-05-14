@@ -7,8 +7,6 @@ frameworks instead of mirroring full upstream documents.
 Use them as stable prompt context when drafting:
 
 - `database_specific.asve.taxonomies`
-- `database_specific.asve.surfaces`
-- `database_specific.asve.agent_impact`
 - `database_specific.asve.threat_kind`
 
 Rules for updates:

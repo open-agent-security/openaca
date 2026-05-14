@@ -351,21 +351,20 @@ def test_text_color_escapes_present_when_enabled():
     assert "\x1b[" not in out_plain
 
 
-def test_text_verbose_adds_surfaces_and_impact():
+def test_text_verbose_adds_taxonomies_and_evidence_level():
     findings = [_finding("X", "pkg", "1.0.0")]
     advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
-    advisory["database_specific"]["asve"]["surfaces"] = ["tool_invocation", "stdio"]
-    advisory["database_specific"]["asve"]["agent_impact"] = {
-        "credential_exfiltration": True,
-        "code_execution": False,
+    advisory["database_specific"]["asve"]["taxonomies"] = {
+        "owasp_agentic_top10": ["asi02", "asi05"]
     }
+    advisory["database_specific"]["asve"]["evidence_level"] = "confirmed"
     index = {"X": advisory}
     out_v = render_text(findings, index, _stats(), verbose=True)
     out_p = render_text(findings, index, _stats(), verbose=False)
-    assert "surfaces: tool_invocation, stdio" in out_v
-    assert "agent_impact: credential_exfiltration" in out_v
+    assert "taxonomies: owasp_agentic_top10=asi02,asi05" in out_v
+    assert "evidence_level: confirmed" in out_v
     assert "confidence:" in out_v
-    assert "surfaces:" not in out_p
+    assert "taxonomies:" not in out_p
 
 
 def test_text_footer_lists_sources():
@@ -549,10 +548,9 @@ def test_tree_empty_plugin_shows_no_bundled_components():
     assert "(no bundled components)" in out
 
 
-def test_tree_strips_redundant_plugin_prefix_from_leaf_labels():
-    """Bundled commands/agents/hooks have identity `claude-<kind>/<plugin>/<rest>`.
-    Under that plugin's block, the leaf label should drop `<plugin>/` so it
-    reads as just `<rest>` — the plugin context is already in the header."""
+def test_tree_renders_logical_identities_without_location_prefix():
+    """Bundled commands render by logical command name; hooks render the
+    observed command and trigger metadata instead of the identity hash."""
     refs = [
         _plugin_ref("supabase", "0.1.6"),
         _bundled(
@@ -560,21 +558,22 @@ def test_tree_strips_redundant_plugin_prefix_from_leaf_labels():
             "deploy",
             None,
             attributed_to="claude-plugin/supabase@0.1.6",
-            component_identity="claude-command/supabase/deploy",
+            component_identity="claude-command/deploy",
         ),
         _bundled(
             "claude-hook",
             None,
             None,
             attributed_to="claude-plugin/supabase@0.1.6",
-            component_identity="claude-hook/supabase/PreToolUse/0",
+            component_identity="claude-hook/command:abcd1234",
+            extra={"event": "PreToolUse", "index": 0, "command": "echo pre"},
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
     assert "deploy" in out
     assert "supabase/deploy" not in out
-    assert "PreToolUse/0" in out
-    assert "supabase/PreToolUse" not in out
+    assert "PreToolUse[0]: echo pre" in out
+    assert "command:abcd1234" not in out
 
 
 def test_tree_aggregates_tier2_deps_into_single_line():

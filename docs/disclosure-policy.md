@@ -42,9 +42,7 @@ Email `security@asve.dev` with:
 
 - Affected component (name + version or commit SHA).
 - Reproduction steps or proof-of-concept.
-- Impact analysis: which `agent_impact` dimensions are reachable
-  (`repo_read`, `repo_write`, `credential_exfiltration`, `tool_hijack`,
-  `memory_poisoning`, `pr_manipulation`, `code_execution`).
+- Impact analysis: what an attacker can reach through the agent stack.
 - OWASP Agentic Top 10 categories you believe apply (`asi01`–`asi10`).
 - Whether you have already contacted the affected maintainer.
 

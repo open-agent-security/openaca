@@ -150,6 +150,41 @@ def test_seed_marks_ghsa_records_with_mal_alias_as_malicious_package(tmp_path):
     assert asve["threat_kind"] == "malicious_package"
 
 
+def test_seed_does_not_crash_when_aliases_is_non_list_scalar(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    record = _ghsa_record()
+    record["aliases"] = "MAL-2026-9999"  # bare string — treated as absent, not iterated as chars
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", record)
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0, result.output
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    # non-list aliases are skipped; no MAL- prefix on the record ID itself
+    assert "threat_kind" not in candidate["database_specific"]["asve"]
+
+
+def test_seed_does_not_crash_when_aliases_contains_non_string_entry(tmp_path):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    record = _ghsa_record()
+    record["aliases"] = [42, None, "MAL-2026-9999"]  # non-string entries must be skipped
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", record)
+
+    result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
+
+    assert result.exit_code == 0, result.output
+    candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
+    assert candidate["database_specific"]["asve"]["threat_kind"] == "malicious_package"
+
+
 def test_seed_llm_provider_ignores_threat_kind_for_non_mal_records(tmp_path, monkeypatch):
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"

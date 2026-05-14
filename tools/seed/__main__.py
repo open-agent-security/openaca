@@ -268,7 +268,11 @@ def _write_state(state: Path | None, newest_modified: str | None, newest_ids: se
 
 
 def _has_malicious_package_id(record: dict[str, Any]) -> bool:
-    ids = [record.get("id"), *(record.get("aliases") or [])]
+    raw_aliases = record.get("aliases")
+    ids = [
+        record.get("id"),
+        *(a for a in (raw_aliases if isinstance(raw_aliases, list) else []) if isinstance(a, str)),
+    ]
     return any(isinstance(value, str) and value.startswith("MAL-") for value in ids)
 
 

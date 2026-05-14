@@ -162,7 +162,6 @@ def build_response_schema(annotation_schema: dict[str, Any] | None = None) -> di
                             "taxonomies": {
                                 "type": "object",
                                 "additionalProperties": False,
-                                "required": sorted(taxonomy_response_properties),
                                 "properties": taxonomy_response_properties,
                             },
                             "evidence_level": evidence_level_schema,

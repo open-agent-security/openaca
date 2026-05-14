@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -266,6 +267,21 @@ def _write_state(state: Path | None, newest_modified: str | None, newest_ids: se
     )
 
 
+def _has_malicious_package_id(record: dict[str, Any]) -> bool:
+    ids = [record.get("id"), *(record.get("aliases") or [])]
+    return any(isinstance(value, str) and value.startswith("MAL-") for value in ids)
+
+
+def _apply_deterministic_asve_fields(
+    record: dict[str, Any], asve: dict[str, Any]
+) -> dict[str, Any]:
+    annotation = copy.deepcopy(asve)
+    annotation.pop("threat_kind", None)
+    if _has_malicious_package_id(record):
+        annotation["threat_kind"] = "malicious_package"
+    return annotation
+
+
 def _classify(record: dict[str, Any]) -> dict[str, Any]:
     taxonomies: dict[str, set[str]] = {"owasp_agentic_top10": set()}
     text = _text(record)
@@ -276,11 +292,6 @@ def _classify(record: dict[str, Any]) -> dict[str, Any]:
         for family, values in (payload.get("taxonomies") or {}).items():
             taxonomies.setdefault(family, set()).update(values)
 
-    if str(record.get("id") or "").startswith("MAL-"):
-        threat_kind = "malicious_package"
-    else:
-        threat_kind = None
-
     taxonomy_lists = {key: sorted(value) for key, value in taxonomies.items() if value}
     if not taxonomy_lists:
         taxonomy_lists = {"owasp_agentic_top10": ["asi05"]}
@@ -289,9 +300,7 @@ def _classify(record: dict[str, Any]) -> dict[str, Any]:
         "taxonomies": taxonomy_lists,
         "evidence_level": "likely",
     }
-    if threat_kind:
-        asve["threat_kind"] = threat_kind
-    return asve
+    return _apply_deterministic_asve_fields(record, asve)
 
 
 def build_candidate(
@@ -321,6 +330,7 @@ def build_candidate(
         candidate_metadata["llm_provider"] = llm_provider
     if llm_model:
         candidate_metadata["llm_model"] = llm_model
+    asve = asve_annotation if asve_annotation is not None else _classify(record)
     candidate: dict[str, Any] = {
         "schema_version": record.get("schema_version") or "1.7.5",
         "id": rec_id,
@@ -329,9 +339,7 @@ def build_candidate(
         "_evidence": evidence
         if evidence is not None
         else [{"field": "summary", "quote": record.get("summary") or ""}],
-        "database_specific": {
-            "asve": asve_annotation if asve_annotation is not None else _classify(record)
-        },
+        "database_specific": {"asve": _apply_deterministic_asve_fields(record, asve)},
     }
     if aliases:
         candidate["aliases"] = aliases

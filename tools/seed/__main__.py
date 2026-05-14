@@ -583,7 +583,7 @@ def main(
                 if target.resolve().parent != rejected_dir_resolved:
                     click.echo(f"{candidate['id']!r}: unsafe candidate ID, skipping", err=True)
                     continue
-                click.echo(f"llm: rejected {candidate['id']} after provider error")
+                click.echo(f"llm: rejected {candidate['id']} after annotation error")
                 if dry_run:
                     click.echo(f"would reject {target}: unsupported_record")
                 else:

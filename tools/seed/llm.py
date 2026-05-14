@@ -276,9 +276,9 @@ def _call_openai(
     try:
         content = response["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise LLMAnnotationError("OpenAI response did not include message content") from exc
+        raise LLMProviderError("OpenAI response did not include message content") from exc
     if not isinstance(content, str):
-        raise LLMAnnotationError("OpenAI message content must be a string")
+        raise LLMProviderError("OpenAI message content must be a string")
     return _loads_response_json(content)
 
 
@@ -316,9 +316,9 @@ def _call_anthropic(
     try:
         blocks = response["content"]
     except KeyError as exc:
-        raise LLMAnnotationError("Anthropic response did not include content") from exc
+        raise LLMProviderError("Anthropic response did not include content") from exc
     if not isinstance(blocks, list):
-        raise LLMAnnotationError("Anthropic response content must be a list")
+        raise LLMProviderError("Anthropic response content must be a list")
     for block in blocks:
         if (
             isinstance(block, dict)
@@ -327,7 +327,7 @@ def _call_anthropic(
         ):
             tool_input = block.get("input")
             if not isinstance(tool_input, dict):
-                raise LLMAnnotationError("Anthropic tool input must be a JSON object")
+                raise LLMProviderError("Anthropic tool input must be a JSON object")
             return tool_input
     text = "".join(
         block.get("text", "")
@@ -335,7 +335,7 @@ def _call_anthropic(
         if isinstance(block, dict) and block.get("type") == "text"
     )
     if not text:
-        raise LLMAnnotationError("Anthropic response did not include text content")
+        raise LLMProviderError("Anthropic response did not include text content")
     return _loads_response_json(text)
 
 
@@ -363,9 +363,9 @@ def _loads_response_json(text: str) -> dict[str, Any]:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise LLMAnnotationError("LLM provider returned invalid JSON") from exc
+        raise LLMProviderError("LLM provider returned invalid JSON") from exc
     if not isinstance(data, dict):
-        raise LLMAnnotationError("LLM provider must return a JSON object")
+        raise LLMProviderError("LLM provider must return a JSON object")
     return data
 
 

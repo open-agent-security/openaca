@@ -557,6 +557,8 @@ def main(
                     resolved_llm_api_key,
                     request,
                 )
+            except llm.LLMProviderError as exc:
+                raise click.ClickException(str(exc)) from exc
             except llm.LLMAnnotationError as exc:
                 candidate = build_rejected_candidate(
                     record,

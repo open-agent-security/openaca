@@ -825,6 +825,43 @@ def test_seed_llm_provider_error_writes_rejected_candidate_artifact(tmp_path, mo
     ]
 
 
+def test_seed_llm_provider_http_error_fails_hard(tmp_path, monkeypatch):
+    dump = tmp_path / "dump"
+    out = tmp_path / "candidates"
+    existing = tmp_path / "overlays"
+    dump.mkdir()
+    existing.mkdir()
+    _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
+
+    def fake_annotate(provider, model, api_key, request):
+        raise seed_llm.LLMProviderError(
+            "LLM provider returned HTTP 400: json_schema response format not supported"
+        )
+
+    monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            str(dump),
+            "--out",
+            str(out),
+            "--existing",
+            str(existing),
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "gpt-4",
+            "--llm-api-key",
+            "test-key",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "HTTP 400" in result.output
+    assert not (out / "rejected").exists()
+
+
 def test_seed_llm_provider_invalid_annotation_writes_rejected_candidate_artifact(
     tmp_path, monkeypatch
 ):

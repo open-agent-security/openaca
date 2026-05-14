@@ -181,6 +181,28 @@ def test_response_schema_uses_canonical_asve_enums():
     ]
 
 
+def test_post_json_raises_provider_error_on_http_failure():
+    import io
+    import unittest.mock
+    import urllib.error
+
+    http_error = urllib.error.HTTPError(
+        url="https://api.openai.com/v1/chat/completions",
+        code=400,
+        msg="Bad Request",
+        hdrs={},  # type: ignore[arg-type]
+        fp=io.BytesIO(b'{"error": {"message": "json_schema not supported"}}'),
+    )
+
+    with unittest.mock.patch("urllib.request.urlopen", side_effect=http_error):
+        with pytest.raises(llm.LLMProviderError, match="HTTP 400"):
+            llm._post_json("https://api.openai.com/v1/chat/completions", {}, {})
+
+
+def test_provider_error_is_subclass_of_annotation_error():
+    assert issubclass(llm.LLMProviderError, llm.LLMAnnotationError)
+
+
 def test_llm_provider_rejects_unsupported_provider():
     with pytest.raises(llm.LLMAnnotationError, match="unsupported LLM provider"):
         llm.annotate_with_provider("local", "model", "key", _request())

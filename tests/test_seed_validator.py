@@ -75,9 +75,9 @@ def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
 
     errors = validate_candidate(candidate)
 
-    assert any(
-        "threat_kind" in e and "MAL-" in e for e in errors
-    ), f"expected actionable threat_kind error, got: {errors}"
+    assert any("threat_kind" in e and "MAL-" in e for e in errors), (
+        f"expected actionable threat_kind error, got: {errors}"
+    )
 
 
 def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
@@ -102,9 +102,9 @@ def test_validate_candidate_rejects_empty_taxonomy_array():
 
     errors = validate_candidate(candidate)
 
-    assert any(
-        "empty taxonomy bucket" in e and "owasp_mcp_top10" in e for e in errors
-    ), f"expected empty-bucket error naming owasp_mcp_top10, got: {errors}"
+    assert any("empty taxonomy bucket" in e and "owasp_mcp_top10" in e for e in errors), (
+        f"expected empty-bucket error naming owasp_mcp_top10, got: {errors}"
+    )
 
 
 def test_validate_candidate_rejects_empty_supplemental_taxonomies():
@@ -113,9 +113,9 @@ def test_validate_candidate_rejects_empty_supplemental_taxonomies():
 
     errors = validate_candidate(candidate)
 
-    assert any(
-        "empty taxonomy bucket" in e and "supplemental_taxonomies" in e for e in errors
-    ), f"expected empty-bucket error naming supplemental_taxonomies, got: {errors}"
+    assert any("empty taxonomy bucket" in e and "supplemental_taxonomies" in e for e in errors), (
+        f"expected empty-bucket error naming supplemental_taxonomies, got: {errors}"
+    )
 
 
 def test_fixture_flowise_nano_bad_is_rejected_with_actionable_errors():
@@ -123,9 +123,7 @@ def test_fixture_flowise_nano_bad_is_rejected_with_actionable_errors():
     rejected, and each violation must surface in errors with wording
     specific enough for a reviewer or agent to self-correct.
     """
-    candidate = yaml.safe_load(
-        (FIXTURES / "flowise-nano-bad.yaml").read_text(encoding="utf-8")
-    )
+    candidate = yaml.safe_load((FIXTURES / "flowise-nano-bad.yaml").read_text(encoding="utf-8"))
 
     errors = validate_candidate(candidate)
 

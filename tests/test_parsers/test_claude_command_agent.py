@@ -43,7 +43,7 @@ def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
     refs = enumerate_dir(
         tmp_path / "agents",
         kind="agent",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert len(refs) == 1
@@ -51,7 +51,7 @@ def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
     assert refs[0].component_identity == "claude-agent/reviewer"
     assert refs[0].source_manifest == str(path)
     assert refs[0].attributed_to is None
-    assert refs[0].extra["scope_owner"] == "repo"
+    assert refs[0].extra["scope_owner"] is None
 
 
 def test_enumerate_frontmatter_name_overrides_filename(tmp_path):
@@ -63,7 +63,7 @@ def test_enumerate_frontmatter_name_overrides_filename(tmp_path):
     refs = enumerate_dir(
         tmp_path / "commands",
         kind="command",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert len(refs) == 1
@@ -80,7 +80,7 @@ def test_enumerate_invalid_frontmatter_falls_back_to_filename(tmp_path):
     refs = enumerate_dir(
         tmp_path / "agents",
         kind="agent",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert len(refs) == 1
@@ -93,7 +93,7 @@ def test_enumerate_skips_non_markdown_files(tmp_path):
     refs = enumerate_dir(
         tmp_path / "commands",
         kind="command",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert len(refs) == 1
@@ -105,7 +105,7 @@ def test_enumerate_returns_empty_for_missing_dir(tmp_path):
     refs = enumerate_dir(
         tmp_path / "no-such-dir",
         kind="command",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert refs == []
@@ -116,7 +116,7 @@ def test_enumerate_returns_empty_for_empty_dir(tmp_path):
     refs = enumerate_dir(
         tmp_path / "empty",
         kind="agent",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert refs == []
@@ -129,10 +129,23 @@ def test_enumerate_skips_subdirectories_with_md_suffix(tmp_path):
     refs = enumerate_dir(
         tmp_path / "commands",
         kind="command",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert refs == []
+
+
+def test_enumerate_plugin_named_repo_includes_owner_in_identity(tmp_path):
+    """A plugin literally named 'repo' must not collide with repo-declared identity."""
+    _write(tmp_path / "commands" / "deploy.md", "body\n")
+    refs = enumerate_dir(
+        tmp_path / "commands",
+        kind="command",
+        scope_owner="repo",
+        attributed_to="claude-plugin/repo@1.0.0",
+    )
+    assert len(refs) == 1
+    assert refs[0].component_identity == "claude-command/repo/deploy"
 
 
 def test_enumerate_propagates_scope_owner_for_plugin_bundled_agents(tmp_path):
@@ -157,7 +170,7 @@ def test_enumerate_frontmatter_without_name_field_falls_back_to_filename(tmp_pat
     refs = enumerate_dir(
         tmp_path / "commands",
         kind="command",
-        scope_owner="repo",
+        scope_owner=None,
         attributed_to=None,
     )
     assert len(refs) == 1

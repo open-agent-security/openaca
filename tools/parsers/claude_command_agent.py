@@ -13,8 +13,8 @@ Identity:
 
 For plugin-bundled components the plugin name is part of logical identity
 because the same command name can appear in multiple plugins (ADR-0013).
-For repo-declared components the "repo" prefix is observation metadata, not
-a logical owner, so it is carried in `extra` but not in the identity path.
+For repo-declared components there is no logical owner; `scope_owner=None`
+signals this. Observation metadata (the repo context) is carried in `extra`.
 
 V0 has no version field for commands or agents; matcher fires on
 identity-only (name-only) matching. Sufficient for inventory; T3
@@ -36,7 +36,7 @@ Kind = Literal["command", "agent"]
 def parse_file(
     md_path: Path,
     kind: Kind,
-    scope_owner: str = "repo",
+    scope_owner: Optional[str] = None,
     attributed_to: Optional[str] = None,
 ) -> list[ComponentRef]:
     """Emit one ref for a single `*.md` file. Used by the repo-mode
@@ -47,7 +47,7 @@ def parse_file(
     ecosystem = f"claude-{kind}"
     identity = (
         f"{ecosystem}/{scope_owner}/{name}"
-        if scope_owner and scope_owner != "repo"
+        if scope_owner is not None
         else f"{ecosystem}/{name}"
     )
     return [
@@ -66,15 +66,15 @@ def parse_file(
 def enumerate_dir(
     dir_path: Path,
     kind: Kind,
-    scope_owner: str,
+    scope_owner: Optional[str],
     attributed_to: Optional[str],
 ) -> list[ComponentRef]:
     """Walk `dir_path/*.md`, emit one ComponentRef per file.
 
-    `scope_owner` is the plugin name for bundled components, or the
-    literal "repo" for repo-declared ones. It is retained in `extra` as
-    observation metadata. `attributed_to` is the parent plugin's identity
-    for bundled components, or None for repo-declared.
+    `scope_owner` is the plugin name for bundled components, or None for
+    repo-declared ones. It is retained in `extra` as observation metadata.
+    `attributed_to` is the parent plugin's identity for bundled components,
+    or None for repo-declared.
     """
     if not dir_path.is_dir():
         return []
@@ -88,7 +88,7 @@ def enumerate_dir(
         name = _resolve_name(child)
         identity = (
             f"{ecosystem}/{scope_owner}/{name}"
-            if scope_owner and scope_owner != "repo"
+            if scope_owner is not None
             else f"{ecosystem}/{name}"
         )
         refs.append(

@@ -179,6 +179,21 @@ def test_response_schema_omits_deterministic_threat_kind_but_uses_canonical_enum
     assert "threat_kind" not in asve_schema["required"]
 
 
+def test_response_schema_supplemental_taxonomies_allows_arbitrary_string_array_values():
+    response_schema = llm.build_response_schema()
+
+    taxonomies = response_schema["properties"]["database_specific"]["properties"]["asve"][
+        "properties"
+    ]["taxonomies"]
+    supp = taxonomies["properties"]["supplemental_taxonomies"]
+    assert supp["type"] == "object"
+    assert isinstance(supp.get("additionalProperties"), dict), (
+        "supplemental_taxonomies must allow arbitrary keys"
+        " (additionalProperties must be a schema, not false)"
+    )
+    assert supp["additionalProperties"]["type"] == "array"
+
+
 def test_build_request_removes_threat_kind_from_llm_annotation_schema():
     request = llm.build_request(
         {"id": "MAL-2026-1234", "summary": "Malicious code in mcp-demo"},

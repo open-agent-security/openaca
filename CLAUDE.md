@@ -1,16 +1,18 @@
 # OpenACA — Project Conventions for Claude
 
-OpenACA (Agent Stack Vulnerabilities and Exposures) is an open-source, OSV-compatible
-advisory database for AI agent infrastructure: plugins, MCP servers, skills, agent
-frameworks, model proxies, and runtime components.
+OpenACA (Agent Composition Analysis) is an open-source, OSV-compatible
+agent-context overlay layer for AI agent infrastructure: plugins, MCP servers,
+skills, agent frameworks, model proxies, and runtime components. OpenACA does
+not mint vulnerability IDs; overlays sit on top of upstream OSV records
+(GHSA / CVE / OSV / PYSEC / MAL).
 
 ## Project scope: OSS only
 
-This repository contains the open-source advisory database, schema, parsers, and
+This repository contains the open-source overlay corpus, schema, parsers, and
 reference scanner. **All project artifacts in this repo are OSS-focused.**
 
 When writing or editing any file in this repo (specs, plans, READMEs, ADRs,
-advisories, code, comments, commit messages, PR descriptions), do **not** include:
+overlays, code, comments, commit messages, PR descriptions), do **not** include:
 
 - Commercial product plans, monetization strategies, pricing, paid-tier features.
 - Vendor comparisons or competitive positioning (e.g., "better than X," "unlike Y").
@@ -22,12 +24,12 @@ If a draft contains content in these categories, rewrite to remove. When uncerta
 whether something falls in scope, prefer to omit and flag for human review.
 
 OpenACA's authority depends on positioning as a neutral, vendor-agnostic public
-advisory layer. Commercial or competitive framing in OSS artifacts erodes that.
+overlay layer. Commercial or competitive framing in OSS artifacts erodes that.
 
 ### What is in scope
 
 - Operational decisions that reference external tools by name where attribution
-  is required (e.g., "advisory detected during OpenACA triage using
+  is required (e.g., "match detected during OpenACA triage using
   `cisco-ai-defense/mcp-scanner` v0.X").
 - Technical interoperability (aliasing CVE/GHSA records, adopting OWASP Agentic
   Top 10 categories, using the OSV schema).
@@ -41,11 +43,11 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
 - `docs/specs/openaca-v0-design.md` — canonical V0 design.
 - `docs/plans/NNN-<topic>.md` — one implementation plan per V0 deliverable.
 - `docs/adrs/NNNN-<topic>.md` — durable architecture decisions.
-- `schema/openaca.schema.json` — canonical advisory schema.
+- `schema/openaca.schema.json` — canonical overlay schema.
 - `overlays/<ID>.yaml` — bundled OpenACA overlays (upstream IDs; OpenACA agent-context metadata).
 - `tools/` — linter, scanner, static export, render, and overlay helpers.
 - `action.yml` — reference GitHub Action at repo root.
-- `CONTRIBUTING.md` — contributor flow, advisory authoring guide.
+- `CONTRIBUTING.md` — contributor flow, overlay authoring guide.
 
 ## Conventions
 
@@ -54,49 +56,57 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
 - Default to writing no comments. Add one only when the *why* is non-obvious.
 - Match existing file style; surgical edits only. Don't refactor adjacent code
   unless the task requires it.
-- Every advisory ships with reproducible evidence where possible (vulnerable
+- Every overlay ships with reproducible evidence where possible (vulnerable
   config snippet, malicious tool description, affected command). Treat fixtures
-  as advisory metadata, not a separate corpus.
+  as overlay metadata, not a separate corpus.
 
 ### Schema and IDs
 
-- V0 overlays use upstream IDs (`GHSA-*`, `CVE-*`). OpenACA does not mint its own
-  advisory IDs in V0. See ADR-0009.
+- V0 overlays use upstream IDs (`GHSA-*`, `CVE-*`, `OSV-*`, `PYSEC-*`, `MAL-*`).
+  OpenACA does not mint its own IDs. See ADR-0009.
 - Overlay files live under `overlays/` named `<upstream-id>.yaml`.
-- Type-tagged records: `type: vulnerability` (V0); `type: exposure` and
-  `type: config` are reserved in schema but **rejected in V0 PRs** pending
-  methodology docs.
-- Severity: CVSS v4 base+environmental.
-- Category: `owasp_agentic_top10[]` array referencing ASI01–ASI10.
-- Agent context: `database_specific.openaca.{component_type, surfaces[], agent_impact{}}`.
+- Canonical record shape (V0): `id`, `schema_version`, `modified`, and the
+  `database_specific.openaca` block. `database_specific.openaca` carries
+  `taxonomies{}`, `evidence_level`, and (for MAL-* records) `threat_kind`.
+  `type: exposure` and `type: config` are reserved in schema but **rejected in
+  V0 PRs** pending methodology docs.
+- Severity, affected ranges, fix versions, references, and CVSS vectors are
+  owned by the upstream OSV record. The scanner queries OSV.dev at scan time
+  and merges the overlay into the returned record.
+- Category: `owasp_agentic_top10[]` array referencing ASI01–ASI10, plus the
+  other taxonomy families enumerated in the schema.
 - No custom severity enum (no `agent_blast_radius` or similar parallel taxonomy).
 
 ### Linter discipline (CI)
 
 - **Hard fail**: schema validation, ID format/uniqueness, required fields,
-  CVSS parses, ASI category validity, internal cross-references resolve.
+  CVSS parses, ASI category validity.
 - **Warning / scheduled job (don't block PRs)**: link liveness, OSV/GHSA
   enrichment, remote alias resolution. External APIs are flaky; PRs shouldn't
   fail because of them.
 
-### Aliasing policy
+### Overlay policy
 
-- Records aliasing existing CVE/GHSA/OSV: OpenACA creates the alias and overlays
-  agent-context metadata. No upstream filing required.
-- OpenACA-original component vulnerabilities: attempt upstream disclosure to
-  CVE/GHSA where the affected ecosystem accepts it. Where upstream pipelines
-  don't accept the ecosystem cleanly, OpenACA carries the authoritative record.
+- Overlays are keyed by an upstream record ID. OpenACA adds agent-context
+  metadata; upstream sources own identity, affected ranges, severity, fixes.
+- Where an agent-stack ecosystem isn't yet served by an upstream pipeline
+  (some marketplace flows, some MCP server identities), OpenACA's contributors
+  pursue upstream disclosure first; the overlay lands once an upstream record
+  exists.
 
 ## V0 scope (read `docs/specs/openaca-v0-design.md` for detail)
 
 V0 ships:
 
-1. Schema with `type` field branching per-type required fields.
+1. Overlay-only schema (`database_specific.openaca`: taxonomies, evidence level,
+   threat_kind on MAL records); `type: exposure` and `type: config` reserved
+   but rejected.
 2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
    `.claude/settings.json`. Cursor/Windsurf manifests are V1.
-3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream CVE/GHSA IDs,
-   enriching OSV records with agent-context metadata (component type, surfaces,
-   agent impact). Scans query OSV.dev and apply overlays implicitly.
+3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream OSV record
+   IDs (GHSA / CVE / OSV / PYSEC / MAL), adding agent-context taxonomies and
+   evidence level. Scans query OSV.dev and merge overlays into the returned
+   records.
 4. Linter + CI per discipline above.
 5. Static export pipeline: `overlays/*.yaml → JSON → all.zip → modified_id.csv`.
 6. Reference GitHub Action: `open-agent-security/openaca@v1` with `action.yml` at
@@ -105,15 +115,15 @@ V0 ships:
    **V0 documents the policy; does not operate it at scale.**
 
 V0 does **not** ship: HTTP API, benchmark harness, public detection-rule format,
-custom CLI binary, active disclosure pipeline, `type: exposure` or `type: config`
-records.
+OpenACA-namespace vulnerability IDs, active disclosure pipeline, `type: exposure`
+or `type: config` records.
 
 
 ## End-to-end tests live in `tests/test_e2e.py`
 
 Unit tests live next to the code under test. **Cross-layer tests
 that exercise multiple modules together against the real corpus
-(`advisories/` + `schema/` + the parser/exporter modules) belong in
+(`overlays/` + `schema/` + the parser/exporter modules) belong in
 `tests/test_e2e.py`.**
 
 Why a single growing file: cross-layer tests are about the *product
@@ -127,9 +137,9 @@ correctly with what's already there?* Add it to `test_e2e.py`. Examples:
 
 - Plan 005 (reference action) → action-invocation test: invoke the
   Action's CLI surface against a fixture repo, verify it finds the
-  same advisory match the parser-only test 110 finds.
+  same overlay match the parser-only test finds.
 - Plan 006 (disclosure policy) → doc-only, no addition.
-- A future "advisory diff" feature → diff-output test exercising
+- A future "overlay diff" feature → diff-output test exercising
   the linter + the diff renderer + the corpus together.
 
 Don't move existing unit tests here. Don't put e2e tests in module

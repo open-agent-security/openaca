@@ -14,8 +14,8 @@ updating an overlay.
 - Read [`CLAUDE.md`](CLAUDE.md) for project-wide conventions, including
   the OSS-only scope rules.
 - For security reports of active vulnerabilities, follow
-  [`SECURITY.md`](SECURITY.md). Do not file new advisories as public
-  PRs before coordinated disclosure has run.
+  [`SECURITY.md`](SECURITY.md). Do not file overlays for undisclosed
+  vulnerabilities as public PRs before coordinated disclosure has run.
 
 ## Project setup
 
@@ -149,10 +149,9 @@ full corpus, so transient remote-API failures don't block authors.
 
 - List equivalent upstream IDs in `aliases[]` so the scanner can merge
   overlays with OSV records by alias graph.
-- V0 does not carry OpenACA-original vulnerability records. If a
-  vulnerability has no upstream ID, use upstream disclosure channels
-  first; an OpenACA-native advisory lane requires a later governance
-  decision.
+- V0 does not mint OpenACA vulnerability IDs. If a vulnerability has no
+  upstream ID, use upstream disclosure channels first; an
+  OpenACA-native record lane requires a later governance decision.
 
 ## Code contributions (parsers, linter, scanner)
 

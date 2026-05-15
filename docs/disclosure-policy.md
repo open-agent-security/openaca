@@ -8,9 +8,10 @@ and how disputes are handled.
 ## V0 status
 
 OpenACA V0 documents this policy. **V0 does not operate an active
-disclosure program or mint OpenACA vulnerability IDs.** Submissions
-described here will not be processed at scale until a future
-OpenACA-native advisory lane is designed.
+disclosure program or mint OpenACA vulnerability IDs.** Overlays land
+once an upstream record exists (GHSA / CVE / OSV / PYSEC / MAL).
+Submissions described here will not be processed at scale until a
+later V1 phase introduces an active disclosure lane.
 
 When V0 receives a report that meets the bar for inclusion, the
 maintainers will run a single end-to-end coordinated-disclosure case as
@@ -69,22 +70,22 @@ embargo on a case-by-case basis.
 
 ## Dispute lifecycle
 
-Each OpenACA record has a status:
+Each OpenACA overlay has a status (mirrored in `evidence_level`):
 
 ```
 published → disputed → modified | upheld | withdrawn
 ```
 
-- **published**: the record is live in the corpus.
+- **published**: the overlay is live in the corpus.
 - **disputed**: an affected maintainer or downstream contests the
-  record. OpenACA marks the record `disputed` and pauses propagation.
-- **modified**: OpenACA accepts the dispute and revises the record.
-- **upheld**: OpenACA rejects the dispute. The record stays published with
+  overlay. OpenACA flips `evidence_level: disputed` and pauses propagation.
+- **modified**: OpenACA accepts the dispute and revises the overlay.
+- **upheld**: OpenACA rejects the dispute. The overlay stays published with
   the dispute history attached.
-- **withdrawn**: OpenACA retracts the record (false-positive, duplicate,
-  or out-of-scope).
+- **withdrawn**: OpenACA retracts the overlay (false-positive, duplicate,
+  or out-of-scope). `evidence_level: withdrawn`.
 
-A disputed record always carries a public dispute history so consumers
+A disputed overlay always carries a public dispute history so consumers
 can see what changed and why.
 
 ## Attribution and credit
@@ -97,14 +98,15 @@ can see what changed and why.
   Attribution is descriptive — it does not imply endorsement,
   partnership, or third-party confirmation.
 
-## Aliases and upstream submission
+## Upstream submission
 
-- Records aliasing existing CVE/GHSA/OSV require no upstream filing —
-  the upstream record already exists.
-- OpenACA-original component vulnerabilities: OpenACA will attempt upstream
-  disclosure to CVE/GHSA where the affected ecosystem is accepted by
-  upstream pipelines. Where upstream pipelines don't accept the
-  ecosystem cleanly, OpenACA may carry the authoritative record.
+OpenACA overlays sit on top of upstream records. When a contributor
+discovers a vulnerability in an agent-stack component that does not yet
+have an upstream record, the workflow is: file upstream first
+(CVE / GHSA / OSV / PYSEC) and land the overlay once the upstream ID is
+issued. Where an ecosystem isn't yet served by an upstream pipeline,
+OpenACA contributors pursue ecosystem onboarding rather than minting a
+parallel ID.
 
 ## Out of scope (escalation, indemnity, payment)
 

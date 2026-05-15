@@ -74,6 +74,25 @@ def test_servers_envelope_also_walked(tmp_path):
     assert "https://example.com/mcp" in findings[0].component
 
 
+def test_flat_root_no_auth_flagged(tmp_path):
+    """Flat `.mcp.json` maps (no mcpServers/servers wrapper) are checked."""
+    manifest = {"playwright": {"url": "https://example.com/mcp"}}
+    findings = check_missing_auth([(tmp_path / ".mcp.json", manifest)])
+    assert len(findings) == 1
+    assert "https://example.com/mcp" in findings[0].component
+
+
+def test_flat_root_with_auth_not_flagged(tmp_path):
+    manifest = {
+        "playwright": {
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+        }
+    }
+    findings = check_missing_auth([(tmp_path / ".mcp.json", manifest)])
+    assert findings == []
+
+
 def test_standards_block(tmp_path):
     manifest = {"mcpServers": {"x": {"url": "https://example.com/mcp"}}}
     findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])

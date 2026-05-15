@@ -37,6 +37,19 @@ def is_mutable_reference(ref: str) -> bool:
         if ref.startswith(prefix):
             return _is_mutable_pkg_spec(ref[len(prefix) :].strip())
 
+    # `uv tool run <spec>` — equivalent to uvx; skip any leading uv global
+    # options (those start with `-`) to reach `tool run`.
+    if ref.startswith("uv "):
+        tokens = ref.split()
+        i = 1
+        while i < len(tokens) and tokens[i].startswith("-"):
+            i += 1
+        if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
+            for j in range(i + 2, len(tokens)):
+                if not tokens[j].startswith("-"):
+                    return _is_mutable_pkg_spec(tokens[j])
+        return True  # unrecognized uv subcommand or no package argument
+
     # Git refs
     if ref.startswith(("git+", "git://")):
         return _is_mutable_git_ref(ref)

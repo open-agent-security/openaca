@@ -461,7 +461,7 @@ def repo(
 
     posture_findings: list[PostureFinding] = []
     if include_posture:
-        manifests = collect_mcp_manifests([target])
+        manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
         posture_findings = run_posture_rules(refs, manifests)
 
     advisory_index = {a["id"]: a for a in corpus}

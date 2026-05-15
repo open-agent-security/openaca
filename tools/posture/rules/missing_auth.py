@@ -29,35 +29,48 @@ _STANDARDS = Standards(
 )
 
 
+def _get_server_map(manifest: dict) -> dict | None:
+    """Return the server dict from mcpServers, servers, or flat root."""
+    for key in ("mcpServers", "servers"):
+        val = manifest.get(key)
+        if isinstance(val, dict):
+            return val
+    # Flat root: no envelope wrapper; all values are server-shaped dicts.
+    if manifest and all(
+        isinstance(v, dict) and ("command" in v or "url" in v) for v in manifest.values()
+    ):
+        return manifest
+    return None
+
+
 def check_missing_auth(
     manifests: list[tuple[Path, dict]],
 ) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for path, manifest in manifests:
-        for envelope_key in ("mcpServers", "servers"):
-            envelope = manifest.get(envelope_key)
-            if not isinstance(envelope, dict):
+        servers = _get_server_map(manifest)
+        if servers is None:
+            continue
+        for name, entry in servers.items():
+            if not isinstance(entry, dict):
                 continue
-            for name, entry in envelope.items():
-                if not isinstance(entry, dict):
-                    continue
-                url = entry.get("url")
-                if not isinstance(url, str) or not url:
-                    continue
-                if _has_auth_material(entry):
-                    continue
-                findings.append(
-                    PostureFinding(
-                        rule_id=RULE_ID,
-                        title=TITLE,
-                        severity=SEVERITY,
-                        confidence=CONFIDENCE,
-                        component=f"mcp-server/{name} @ {url}",
-                        location=str(path),
-                        standards=_STANDARDS,
-                        remediation=REMEDIATION,
-                    )
+            url = entry.get("url")
+            if not isinstance(url, str) or not url:
+                continue
+            if _has_auth_material(entry):
+                continue
+            findings.append(
+                PostureFinding(
+                    rule_id=RULE_ID,
+                    title=TITLE,
+                    severity=SEVERITY,
+                    confidence=CONFIDENCE,
+                    component=f"mcp-server/{name} @ {url}",
+                    location=str(path),
+                    standards=_STANDARDS,
+                    remediation=REMEDIATION,
                 )
+            )
     return findings
 
 

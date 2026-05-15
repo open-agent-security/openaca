@@ -58,6 +58,10 @@ from tools.posture.immutability import is_mutable_reference
         ("uv --directory /tmp tool run mcp-bar==1.0.0", False),
         ("uv --directory /tmp tool run mcp-bar", True),  # value-taking flag, no pin
         ("uv --python 3.11 --offline tool run mcp-bar==2.0.0", False),  # mixed flags
+        # uv tool run subcommand-level value-taking flags
+        ("uv tool run --python 3.12 weather-mcp==0.5.0", False),  # --python before spec
+        ("uv tool run --python 3.12 weather-mcp", True),  # --python before unpinned spec
+        ("uv tool run --from mcp-bar==1.0.0 mcp-bar", False),  # --from with pin
         ("uv serve something", True),  # unrecognized subcommand
         # Local paths — never flag (not a remote install ref)
         ("./local/plugin", False),

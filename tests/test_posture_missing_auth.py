@@ -93,6 +93,19 @@ def test_flat_root_with_auth_not_flagged(tmp_path):
     assert findings == []
 
 
+def test_disabled_server_not_flagged(tmp_path):
+    """Servers with disabled: true are intentionally inactive and must not be flagged."""
+    manifest = {
+        "mcpServers": {
+            "active": {"url": "https://active.example/mcp"},
+            "inactive": {"url": "https://inactive.example/mcp", "disabled": True},
+        }
+    }
+    findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])
+    assert len(findings) == 1
+    assert "active.example" in findings[0].component
+
+
 def test_standards_block(tmp_path):
     manifest = {"mcpServers": {"x": {"url": "https://example.com/mcp"}}}
     findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])

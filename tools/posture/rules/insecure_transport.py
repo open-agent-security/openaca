@@ -52,6 +52,8 @@ def check_insecure_transport(
         for name, entry in servers.items():
             if not isinstance(entry, dict):
                 continue
+            if entry.get("disabled") is True:
+                continue
             url = entry.get("url")
             if not isinstance(url, str) or not url.startswith("http://"):
                 continue

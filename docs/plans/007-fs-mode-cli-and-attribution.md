@@ -49,7 +49,7 @@ Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `opena
 | `tests/test_parsers/test_claude_install.py` | Create | Minimal install resolver fixture |
 | `tests/test_e2e.py` | Modify | fs-mode scan against fixture install + claude-plugin advisory |
 | `tests/fixtures/installs/minimal/` | Create | One enabled plugin + one installed_plugins.json entry |
-| `docs/adrs/0006-openaca scan-subcommands-and-attribution.md` | Create | Capture design decisions |
+| `docs/adrs/0006-openaca-scan-subcommands-and-attribution.md` | Create | Capture design decisions |
 | `docs/adrs/INDEX.md` | Modify | Link new ADR |
 | `README.md` | Modify | Subcommand examples; new "fs mode" section |
 | `CONTRIBUTING.md` | Modify | Add `claude-plugin` to recognized ecosystems |
@@ -969,14 +969,14 @@ git commit -m "feat(scan): openaca scan repo and fs subcommands"
 ## Task 9: ADR-0006 + docs updates
 
 **Files:**
-- Create: `docs/adrs/0006-openaca scan-subcommands-and-attribution.md`
+- Create: `docs/adrs/0006-openaca-scan-subcommands-and-attribution.md`
 - Modify: `docs/adrs/INDEX.md`
 - Modify: `README.md`
 - Modify: `CONTRIBUTING.md`
 
 - [ ] **Step 1: ADR-0006**
 
-`docs/adrs/0006-openaca scan-subcommands-and-attribution.md`:
+`docs/adrs/0006-openaca-scan-subcommands-and-attribution.md`:
 
 ```markdown
 ---
@@ -1055,7 +1055,7 @@ the future without breaking ComponentRef immutability assumptions.
 Add entry under `## Active`:
 
 ```markdown
-- [ADR-0006 — openaca scan subcommands, claude-plugin ecosystem, attribution](0006-openaca scan-subcommands-and-attribution.md): the `repo`/`fs` subcommand split, the `claude-plugin` ecosystem convention for plugin advisories, and the `attributed_to` field shared between ComponentRef and Finding for "via plugin X" findings in plans 008 and 009.
+- [ADR-0006 — openaca scan subcommands, claude-plugin ecosystem, attribution](0006-openaca-scan-subcommands-and-attribution.md): the `repo`/`fs` subcommand split, the `claude-plugin` ecosystem convention for plugin advisories, and the `attributed_to` field shared between ComponentRef and Finding for "via plugin X" findings in plans 008 and 009.
 ```
 
 - [ ] **Step 3: README.md updates**
@@ -1069,7 +1069,7 @@ In the "Filing an advisory" section, recognized ecosystems list: add `claude-plu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/adrs/0006-openaca scan-subcommands-and-attribution.md docs/adrs/INDEX.md README.md CONTRIBUTING.md
+git add docs/adrs/0006-openaca-scan-subcommands-and-attribution.md docs/adrs/INDEX.md README.md CONTRIBUTING.md
 git commit -m "docs: ADR-0006 for openaca scan subcommands, attribution, claude-plugin ecosystem"
 ```
 

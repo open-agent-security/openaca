@@ -10,8 +10,6 @@
 
 **Depends on:** 007 (CLI shape, attribution data model), 008 (component inventory, claude_install walks, ADR-0007 ecosystem framing).
 
-**Spec:** `docs/specs/009-plugin-internal-deps-design.md`.
-
 ---
 
 ## Context

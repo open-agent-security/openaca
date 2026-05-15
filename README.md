@@ -170,6 +170,19 @@ Advanced Security, upload the SARIF to the Security tab via
 findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
 
+### Posture findings (`--include-posture`)
+
+A corpus-driven scan returns "no findings" on most clean repos and
+endpoints. Pass `--include-posture` to also emit configuration-hygiene
+checks: unpinned MCP/plugin installs, `http://` MCP endpoints, MCP
+endpoints with no visible auth declaration. Posture findings carry
+their own `standards{}` block (CWE / OpenSSF Scorecard / SLSA / OWASP
+App / OWASP Agentic / OWASP MCP), render in their own section in text
+output, and emit as separate SARIF rules. They never affect
+`--fail-on` exit codes — they're signal, not gate. See
+[`docs/posture/`](docs/posture/README.md) for the V0 rule list and
+per-rule remediation pages.
+
 Pass `-v` / `--verbose` for the per-manifest breakdown (repo mode) or
 the resolved active-plugin tree (endpoint mode):
 

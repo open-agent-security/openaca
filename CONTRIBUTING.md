@@ -196,6 +196,38 @@ full corpus, so transient remote-API failures don't block authors.
 - Run `uv run pytest` and `uv run ruff check tools/ tests/` before
   opening a PR.
 
+### Adding a posture rule
+
+Posture rules are scanner-emitted hygiene checks ([`docs/posture/`](docs/posture/README.md)).
+A new rule needs:
+
+1. **Rule module:** `tools/posture/rules/<short_name>.py` exporting a
+   single `check_<short_name>(...)` function that returns
+   `list[PostureFinding]`. Module-level constants: `RULE_ID`, `TITLE`,
+   `SEVERITY` (`"low"` | `"medium"` | `"high"`), `CONFIDENCE`,
+   `REMEDIATION`, plus a `_STANDARDS = Standards(...)` block populated
+   with whatever taxonomy families apply.
+2. **Rule ID:** prefix with `openaca-posture-` and use kebab-case
+   (e.g., `openaca-posture-mutable-install-reference`).
+3. **Standards mapping:** carry every family that legitimately applies.
+   Don't force a CWE if the fit is poor — leave it empty. Agentic and
+   MCP-specific codes (`asiNN`, `mcpNN:2025`) are the agent-context
+   layer on top of the primary CWE/Scorecard/SLSA mapping.
+4. **Registration:** import the rule module from
+   `tools/posture/__init__.py` and call its check function from
+   `run_posture_rules(...)`.
+5. **Tests:** `tests/test_posture_<short_name>.py` covers (a) the
+   trigger case, (b) the obvious non-trigger case, (c) the
+   false-positive case that should NOT be flagged, and (d) the
+   standards block. Reuse existing fixtures where possible.
+6. **Docs:** `docs/posture/<rule_id>.md` follows the existing template
+   — what triggers it, why it matters (with the standards table), how
+   to fix (with concrete examples), when to suppress.
+
+The rule is disabled until a user passes `--include-posture`. Default
+to conservative severity for new rules; tune up only after the
+false-positive shape is well understood in real-world dogfooding.
+
 ## What does not belong in this repo
 
 Per [`CLAUDE.md`](CLAUDE.md), all artifacts here are OSS-focused. Do

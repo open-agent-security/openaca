@@ -243,6 +243,11 @@ def parse_mcp_servers(
             raw_args,
         )
         locator = f"{locator_prefix}.{server_name}"
+        # Posture rules (plan 014) need the raw install reference to decide
+        # whether it's mutable. Reconstruct from raw_command + raw_args so
+        # we capture exactly what the user wrote (before _command_dispatch
+        # rewrites `uv run python` etc.).
+        install_source = _format_install_source(raw_command, raw_args)
         cmd_class = _classify_command(command) if command else ""
         if cmd_class == "npx":
             name, version = _parse_npx_args(args)
@@ -254,6 +259,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
+                        extra={"install_source": install_source},
                     )
                 )
             elif name:
@@ -262,6 +268,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/npx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
+                        extra={"install_source": install_source},
                     )
                 )
         elif cmd_class == "uvx":
@@ -274,6 +281,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
+                        extra={"install_source": install_source},
                     )
                 )
             elif name:
@@ -282,6 +290,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/uvx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
+                        extra={"install_source": install_source},
                     )
                 )
         elif command:
@@ -290,9 +299,26 @@ def parse_mcp_servers(
                     component_identity=f"mcp-stdio/binary:{command}",
                     source_manifest=source_manifest,
                     source_locator=locator,
+                    extra={"install_source": install_source},
                 )
             )
     return refs
+
+
+def _format_install_source(
+    raw_command: object, raw_args: list[str]
+) -> str:
+    """Reconstruct the user-facing install reference for posture-rule input.
+
+    For `command: "uvx", args: ["mcp-bar"]` returns `"uvx mcp-bar"`.
+    For non-string commands or empty args, falls back to whatever string
+    we can produce. Never raises.
+    """
+    if not isinstance(raw_command, str):
+        return ""
+    if not raw_args:
+        return raw_command
+    return " ".join([raw_command, *raw_args])
 
 
 def parse(path: Path) -> list[ComponentRef]:

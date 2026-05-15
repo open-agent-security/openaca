@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from tools.parsers.mcp_json import _UV_VALUE_FLAGS
+from tools.parsers.mcp_json import _UV_VALUE_FLAGS, _parse_npx_args, _parse_uvx_args
 
 _SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _DOCKER_DIGEST_RE = re.compile(r"@sha256:[a-f0-9]{64}$")
@@ -34,10 +34,21 @@ def is_mutable_reference(ref: str) -> bool:
     if ref.startswith(("http://", "https://")):
         return False
 
-    # npx / uvx package specs
-    for prefix in ("npx ", "uvx "):
-        if ref.startswith(prefix):
-            return _is_mutable_pkg_spec(ref[len(prefix) :].strip())
+    # npx package specs — parse --package/-p flags before falling back to positional
+    if ref.startswith("npx "):
+        args = ref[len("npx ") :].split()
+        name, version = _parse_npx_args(args)
+        if name is None or version is None:
+            return True
+        return _is_mutable_pkg_spec(f"{name}@{version}")
+
+    # uvx package specs — parse --from flag before falling back to positional
+    if ref.startswith("uvx "):
+        args = ref[len("uvx ") :].split()
+        name, version, pinned = _parse_uvx_args(args)
+        if not pinned or version is None:
+            return True
+        return _is_mutable_pkg_spec(f"{name}=={version}")
 
     # `uv tool run <spec>` — equivalent to uvx; skip any leading uv global
     # options (those start with `-`) to reach `tool run`.

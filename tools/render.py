@@ -407,9 +407,13 @@ def _esc_data(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
-def render_github(findings: list[Finding]) -> str:
+def render_github(
+    findings: list[Finding],
+    posture_findings: list[PostureFinding] | None = None,
+) -> str:
     """Emit one workflow-annotation line per finding. Matcher `confidence`
-    maps to `::error` (high) or `::warning` (low/unknown). Returns the joined
+    maps to `::error` (high) or `::warning` (low/unknown). Posture findings
+    map to `::error`/`::warning`/`::notice` by severity. Returns the joined
     string; caller prints to stdout."""
     level_for = {"high": "error", "low": "warning", "unknown": "warning"}
     lines: list[str] = []
@@ -421,6 +425,15 @@ def render_github(findings: list[Finding]) -> str:
         if f.attributed_to:
             message = f"{message} (via {f.attributed_to})"
         lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
+    if posture_findings:
+        posture_level = {"high": "error", "medium": "warning", "low": "notice"}
+        for p in posture_findings:
+            kind = posture_level.get(p.severity, "warning")
+            file_param = _esc_param(p.location or "")
+            title_param = _esc_param(p.rule_id)
+            lines.append(
+                f"::{kind} file={file_param},title={title_param}::{_esc_data(p.remediation)}"
+            )
     return "\n".join(lines)
 
 

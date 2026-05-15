@@ -111,8 +111,9 @@ V0 ships:
 5. Static export pipeline: `overlays/*.yaml → JSON → all.zip → modified_id.csv`.
 6. Reference GitHub Action: `open-agent-security/openaca@v1` with `action.yml` at
    repo root.
-7. Disclosure policy doc (OpenSSF baseline + OpenACA-specific defaults).
-   **V0 documents the policy; does not operate it at scale.**
+7. Disclosure policy (`SECURITY.md`): coordinated-disclosure guidance (OpenSSF
+   baseline + OpenACA-specific defaults). **V0 documents the policy; does not
+   operate it at scale.**
 
 V0 does **not** ship: HTTP API, benchmark harness, public detection-rule format,
 OpenACA-namespace vulnerability IDs, active disclosure pipeline, `type: exposure`

@@ -26,7 +26,7 @@
 | `advisories/2026/CVE-2026-0004.yaml` | `aws-mcp-server` alias |
 | `advisories/2026/CVE-2026-0005.yaml` | `serverless-mcp-server` alias |
 
-CVE-2026-0003 is the **enriched** record per the V0 spec (§8 of `docs/specs/openaca-v0-design.md`): same upstream CVE/GHSA, but the OpenACA record adds `detection_hints` that the reference Action will use to flag installations declared in `mcp.json` rather than `package.json`.
+CVE-2026-0003 is the **enriched** record per the V0 spec (§8 of `docs/specs/openaca-thesis.md`): same upstream CVE/GHSA, but the OpenACA record adds `detection_hints` that the reference Action will use to flag installations declared in `mcp.json` rather than `package.json`.
 
 ---
 

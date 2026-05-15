@@ -28,9 +28,10 @@ OpenACA is the open, OSV-compatible overlay layer for Agent Composition
 Analysis: it resolves agent-installation manifests to component identities,
 matches them against upstream records (GHSA / CVE / OSV / PYSEC / MAL), and
 adds agent-context metadata for triage. OpenACA does not mint vulnerability
-IDs; upstream sources own identity, affected ranges, severity, and fixes.
-OpenACA owns the overlay (`database_specific.openaca`) and the manifest
-parsers that traditional SCA tooling doesn't cover.
+IDs; vulnerability identity, affected ranges, severity, and fixes come from
+upstream sources. OpenACA contributes the overlay
+(`database_specific.openaca`) and the manifest parsers that traditional SCA
+tooling doesn't cover.
 
 ## What's already covered
 
@@ -122,14 +123,14 @@ upstream IDs (GHSA-*, CVE-*, OSV-*, PYSEC-*, MAL-*) and live at
 
 Three things OpenACA overlays contain that a generic OSV/GHSA record does not:
 
-1. **`taxonomies{}`** — mapping of OpenACA-owned agent-context taxonomy
+1. **`taxonomies{}`** — mapping of OpenACA-defined agent-context taxonomy
    families, including `owasp_agentic_top10[]` entries referencing
    ASI01–ASI10 categories. Lets users triage findings by the framework
    category instead of just CVE list.
 2. **`evidence_level`** — enum `confirmed | likely | research | disputed |
    withdrawn`. Lets users filter noise. Auto-fix on confirmed,
    ticket-only on research-grade.
-3. **`threat_kind`** — a narrow OpenACA-owned classification for records
+3. **`threat_kind`** — a narrow OpenACA-defined classification for records
    where upstream OSV shape is too generic. V0 only allows
    `malicious_package`, and only on MAL-* records.
 

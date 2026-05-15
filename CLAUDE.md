@@ -70,9 +70,9 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
   `taxonomies{}`, `evidence_level`, and (for MAL-* records) `threat_kind`.
   `type: exposure` and `type: config` are reserved in schema but **rejected in
   V0 PRs** pending methodology docs.
-- Severity, affected ranges, fix versions, references, and CVSS vectors are
-  owned by the upstream OSV record. The scanner queries OSV.dev at scan time
-  and merges the overlay into the returned record.
+- Severity, affected ranges, fix versions, references, and CVSS vectors
+  come from the upstream OSV record. The scanner queries OSV.dev at scan
+  time and merges the overlay into the returned record.
 - Category: `owasp_agentic_top10[]` array referencing ASI01–ASI10, plus the
   other taxonomy families enumerated in the schema.
 - No custom severity enum (no `agent_blast_radius` or similar parallel taxonomy).

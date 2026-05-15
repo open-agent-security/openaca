@@ -9,8 +9,10 @@ updating an overlay.
 
 ## Before you start
 
-- Read [`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md)
-  for the V0 scope and architecture.
+- Read [`docs/specs/openaca-thesis.md`](docs/specs/openaca-thesis.md)
+  for what OpenACA is and the V0 → V1 roadmap, and
+  [`docs/adrs/0009-overlay-only-v0.md`](docs/adrs/0009-overlay-only-v0.md)
+  for the overlay-only V0 architecture.
 - Read [`CLAUDE.md`](CLAUDE.md) for project-wide conventions, including
   the OSS-only scope rules.
 - For security reports of active vulnerabilities, follow

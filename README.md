@@ -348,9 +348,10 @@ available for CI and batch runs.
 
 ## Status
 
-V0, in development. See
-[`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md) for
-the canonical V0 design and [`docs/plans/`](docs/plans/) for
+V0, in development. See [`docs/specs/openaca-thesis.md`](docs/specs/openaca-thesis.md)
+for what OpenACA is and the V0 → V1 roadmap,
+[`docs/adrs/0009-overlay-only-v0.md`](docs/adrs/0009-overlay-only-v0.md)
+for the overlay-only architecture, and [`docs/plans/`](docs/plans/) for
 implementation plans.
 
 ## License

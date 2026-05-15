@@ -40,7 +40,7 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
 
 ## Repository layout
 
-- `docs/specs/openaca-v0-design.md` — canonical V0 design.
+- `docs/specs/openaca-thesis.md` — what OpenACA is, the V0 → V1 roadmap.
 - `docs/plans/NNN-<topic>.md` — one implementation plan per V0 deliverable.
 - `docs/adrs/NNNN-<topic>.md` — durable architecture decisions.
 - `schema/openaca.schema.json` — canonical overlay schema.
@@ -94,7 +94,7 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
   pursue upstream disclosure first; the overlay lands once an upstream record
   exists.
 
-## V0 scope (read `docs/specs/openaca-v0-design.md` for detail)
+## V0 scope (read `docs/specs/openaca-thesis.md` and `docs/adrs/0009-overlay-only-v0.md` for detail)
 
 V0 ships:
 

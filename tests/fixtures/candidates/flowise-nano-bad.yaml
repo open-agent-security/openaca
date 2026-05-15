@@ -14,7 +14,7 @@ _evidence:
   - field: summary
     quote: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
 database_specific:
-  asve:
+  openaca:
     evidence_level: likely
     taxonomies:
       mitre_atlas:

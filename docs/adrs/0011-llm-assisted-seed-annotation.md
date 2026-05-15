@@ -22,20 +22,20 @@ harvesting, or host escape.
 
 ## Decision
 
-ASVE keeps deterministic discovery and alias deduplication, but supports
+OpenACA keeps deterministic discovery and alias deduplication, but supports
 opt-in LLM annotation through explicit provider settings:
-`asve-seed --llm-provider <openai|anthropic> --llm-model <name>`.
-The API key comes from `--llm-api-key` or `ASVE_LLM_API_KEY`. The seeder
+`openaca seed --llm-provider <openai|anthropic> --llm-model <name>`.
+The API key comes from `--llm-api-key` or `OPENACA_LLM_API_KEY`. The seeder
 loads `docs/frameworks/*.md`, passes those
 framework summaries, the OSV record, and a neutral annotation schema to
-the provider, and expects a JSON ASVE annotation in the response. In LLM
-mode, the LLM owns the ASVE annotation; deterministic classification is
+the provider, and expects a JSON OpenACA annotation in the response. In LLM
+mode, the LLM owns the OpenACA annotation; deterministic classification is
 not used as a fallback or merge source. Invalid LLM output fails
 candidate generation instead of writing a suspect candidate.
 
 Canonical publication remains unchanged: generated files are candidates
 only, and a human still promotes reviewed candidates through
-`asve-promote`. LLM annotation is a drafting aid, not publishing
+`openaca promote`. LLM annotation is a drafting aid, not publishing
 authority.
 
 ## Alternatives considered
@@ -56,7 +56,7 @@ authority.
   only needs the two providers maintainers expect to use immediately;
   additional providers can be added when there is a concrete need.
 - **Auto-promote high-confidence LLM output**: rejected for V0. The
-  framework docs improve drafting quality, but ASVE credibility still
+  framework docs improve drafting quality, but OpenACA credibility still
   depends on human-reviewed canonical overlays.
 
 ## Consequences
@@ -72,7 +72,7 @@ treat LLM evidence as a drafting aid rather than proof.
 
 ## When to revisit
 
-Revisit when ASVE standardizes on a replayable LLM-recording harness, or
+Revisit when OpenACA standardizes on a replayable LLM-recording harness, or
 when candidate volume justifies stricter automation such as verifier-based
 bucketing. Revisit the provider list when maintainers need a third hosted
 provider or a local model adapter.

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce a working JSON Schema for ASVE advisories, a linter that enforces schema + ID format + CVSS v4 + OWASP ASI + path consistency + internal cross-references, an ID reservation helper, and CI that runs all of the above on every PR.
+**Goal:** Produce a working JSON Schema for OpenACA advisories, a linter that enforces schema + ID format + CVSS v4 + OWASP ASI + path consistency + internal cross-references, an ID reservation helper, and CI that runs all of the above on every PR.
 
-**Architecture:** OSV-compatible JSON Schema with a `type` field branching required-field rules (`vulnerability` only in V0; `exposure` and `config` reserved). Linter is a Python package using `jsonschema` for raw schema checks plus targeted Python checks for the things JSON Schema can't express well (CVSS vector parsing, ASI category whitelisting, path-vs-ID consistency, cross-reference resolution within the corpus). ID reservation scans `advisories/` and emits the next free `ASVE-YYYY-NNNN`. Pre-commit-friendly: hard-fail checks are local and fast; remote enrichment runs as a separate scheduled job (out of scope for this plan).
+**Architecture:** OSV-compatible JSON Schema with a `type` field branching required-field rules (`vulnerability` only in V0; `exposure` and `config` reserved). Linter is a Python package using `jsonschema` for raw schema checks plus targeted Python checks for the things JSON Schema can't express well (CVSS vector parsing, ASI category whitelisting, path-vs-ID consistency, cross-reference resolution within the corpus). ID reservation scans `advisories/` and emits the next free `OpenACA-YYYY-NNNN`. Pre-commit-friendly: hard-fail checks are local and fast; remote enrichment runs as a separate scheduled job (out of scope for this plan).
 
 **Tech Stack:** Python 3.11+ managed with [`uv`](https://docs.astral.sh/uv/), Pydantic v2 (typed advisory model), Click (CLI), jsonschema (raw schema), PyYAML (advisory files are YAML on disk, JSON on export), pytest, GitHub Actions. Build backend: hatchling. No Makefile — `uv run <cmd>` is the canonical entry.
 
@@ -17,24 +17,24 @@
 | `pyproject.toml` | Project metadata, deps, pytest config, console scripts (hatchling backend) |
 | `.python-version` | Pins Python to 3.11 for `uv`-managed venv |
 | `uv.lock` | Locked dependency graph (committed for reproducibility) |
-| `schema/asve.schema.json` | Canonical JSON Schema for advisories |
+| `schema/openaca.schema.json` | Canonical JSON Schema for advisories |
 | `tools/__init__.py` | Package marker |
 | `tools/lint.py` | Linter CLI: schema + ID + CVSS + ASI + paths + cross-refs |
 | `tools/cvss.py` | CVSS v4 vector validator (no external CVSS lib in V0) |
-| `tools/reserve_id.py` | Helper that prints the next free `ASVE-YYYY-NNNN` |
+| `tools/reserve_id.py` | Helper that prints the next free `OpenACA-YYYY-NNNN` |
 | `tests/__init__.py` | Package marker |
 | `tests/conftest.py` | Shared pytest fixtures (paths, sample advisory) |
 | `tests/test_schema.py` | JSON Schema tests against fixture advisories |
 | `tests/test_lint.py` | Linter tests (CLI behavior + each check in isolation) |
 | `tests/test_cvss.py` | CVSS v4 vector parsing tests |
 | `tests/test_reserve_id.py` | ID reservation logic tests |
-| `tests/fixtures/valid/asve-2026-0001.yaml` | Reference valid advisory |
+| `tests/fixtures/valid/cve-2026-0001.yaml` | Reference valid advisory |
 | `tests/fixtures/invalid/*.yaml` | One file per invalidation case |
 | `.github/workflows/ci.yml` | Lint + tests on every PR |
 | `docs/adrs/INDEX.md` | ADR index |
 | `docs/adrs/TEMPLATE.md` | ADR template |
 | `docs/adrs/0001-licenses.md` | Apache-2.0 (code) + CC-BY-4.0 (data) |
-| `docs/adrs/0002-schema-extension-key.md` | `database_specific.asve` from day 1 |
+| `docs/adrs/0002-schema-extension-key.md` | `database_specific.openaca` from day 1 |
 | `docs/adrs/0003-single-namespace-architecture.md` | One ID space, type-tagged |
 
 ---
@@ -52,9 +52,9 @@
 
 ```toml
 [project]
-name = "asve-tools"
+name = "openaca-tools"
 version = "0.0.1"
-description = "Linter and tooling for the ASVE advisory database"
+description = "Linter and tooling for the OpenACA advisory database"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
@@ -64,8 +64,8 @@ dependencies = [
 ]
 
 [project.scripts]
-asve-lint = "tools.lint:main"
-asve-reserve-id = "tools.reserve_id:main"
+openaca lint = "tools.lint:main"
+openaca-reserve-id = "tools.reserve_id:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -130,7 +130,7 @@ git commit -m "chore: bootstrap Python tooling project with uv"
 - [x] **Step 1: Create `tools/__init__.py`**
 
 ```python
-"""ASVE advisory database tooling."""
+"""OpenACA advisory database tooling."""
 ```
 
 - [x] **Step 2: Create empty `tests/__init__.py`**
@@ -145,7 +145,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -181,14 +181,14 @@ git commit -m "chore: package skeletons for tools and tests"
 ## Task 3: Reference valid advisory fixture
 
 **Files:**
-- Create: `tests/fixtures/valid/asve-2026-0001.yaml`
+- Create: `tests/fixtures/valid/cve-2026-0001.yaml`
 
 - [x] **Step 1: Write a complete valid advisory fixture**
 
 ```yaml
-# tests/fixtures/valid/asve-2026-0001.yaml
+# tests/fixtures/valid/cve-2026-0001.yaml
 schema_version: "1.7.5"
-id: ASVE-2026-0001
+id: CVE-2026-0001
 type: vulnerability
 aliases:
   - CVE-2025-53107
@@ -216,7 +216,7 @@ references:
   - type: ADVISORY
     url: "https://github.com/advisories/GHSA-3q26-f695-pp76"
 database_specific:
-  asve:
+  openaca:
     component_type: mcp_server
     surfaces:
       - tool_invocation
@@ -238,13 +238,13 @@ database_specific:
 
 - [x] **Step 2: Sanity-check YAML parses**
 
-Run: `uv run python -c "import yaml; yaml.safe_load(open('tests/fixtures/valid/asve-2026-0001.yaml'))"`
+Run: `uv run python -c "import yaml; yaml.safe_load(open('tests/fixtures/valid/cve-2026-0001.yaml'))"`
 Expected: exits 0, no output.
 
 - [x] **Step 3: Commit**
 
 ```bash
-git add tests/fixtures/valid/asve-2026-0001.yaml
+git add tests/fixtures/valid/cve-2026-0001.yaml
 git commit -m "test: reference valid advisory fixture"
 ```
 
@@ -253,7 +253,7 @@ git commit -m "test: reference valid advisory fixture"
 ## Task 4: JSON Schema — common fields and type discriminator
 
 **Files:**
-- Create: `schema/asve.schema.json`
+- Create: `schema/openaca.schema.json`
 - Create: `tests/test_schema.py`
 
 - [x] **Step 1: Write the failing test**
@@ -274,7 +274,7 @@ def schema(schema_path):
 
 @pytest.fixture
 def sample_valid(fixtures_dir):
-    return yaml.safe_load((fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text())
+    return yaml.safe_load((fixtures_dir / "valid" / "cve-2026-0001.yaml").read_text())
 
 
 def test_schema_is_valid_jsonschema(schema):
@@ -295,13 +295,13 @@ Expected: both tests fail (schema file does not exist).
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://asve.dev/schema/asve.schema.json",
-  "title": "ASVE Advisory",
+  "$id": "https://openaca.dev/schema/openaca.schema.json",
+  "title": "OpenACA Advisory",
   "type": "object",
   "required": ["schema_version", "id", "type", "summary", "details", "published", "modified", "references"],
   "properties": {
     "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "id": {"type": "string", "pattern": "^ASVE-[0-9]{4}-[0-9]{4}$"},
+    "id": {"type": "string", "pattern": "^OpenACA-[0-9]{4}-[0-9]{4}$"},
     "type": {"type": "string", "enum": ["vulnerability", "exposure", "config"]},
     "aliases": {"type": "array", "items": {"type": "string"}},
     "summary": {"type": "string", "minLength": 1, "maxLength": 200},
@@ -365,10 +365,10 @@ Expected: both tests fail (schema file does not exist).
     "database_specific": {
       "type": "object",
       "properties": {
-        "asve": {"$ref": "#/$defs/asve_extension"}
+        "openaca": {"$ref": "#/$defs/openaca_extension"}
       }
     },
-    "asve_extension": {
+    "openaca_extension": {
       "type": "object",
       "required": ["component_type"],
       "properties": {
@@ -405,8 +405,8 @@ Expected: both tests pass.
 - [x] **Step 5: Commit**
 
 ```bash
-git add schema/asve.schema.json tests/test_schema.py
-git commit -m "feat: add ASVE JSON Schema with type-branching"
+git add schema/openaca.schema.json tests/test_schema.py
+git commit -m "feat: add OpenACA JSON Schema with type-branching"
 ```
 
 ---
@@ -422,7 +422,7 @@ git commit -m "feat: add ASVE JSON Schema with type-branching"
 
 ```yaml
 schema_version: "1.7.5"
-id: ASVE-2026-9001
+id: CVE-2026-9001
 type: exposure
 summary: "fuzzy middle category"
 details: "should be rejected in V0"
@@ -435,7 +435,7 @@ references:
 
 - [x] **Step 2: Write `tests/fixtures/invalid/config-not-allowed.yaml`**
 
-Identical structure with `type: config` and `id: ASVE-2026-9002`.
+Identical structure with `type: config` and `id: CVE-2026-9002`.
 
 - [x] **Step 3: Append the parametrized test to `tests/test_schema.py`**
 
@@ -500,7 +500,7 @@ Expected: both fail (`tools.lint` module does not exist).
 - [x] **Step 3: Implement `tools/lint.py` with schema-only check**
 
 ```python
-"""ASVE advisory linter."""
+"""OpenACA advisory linter."""
 from __future__ import annotations
 
 import json
@@ -512,7 +512,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
 def load_schema() -> dict:
@@ -533,7 +533,7 @@ def check_schema(advisory: dict, validator: Draft202012Validator) -> list[str]:
 @click.command()
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 def main(target: Path) -> None:
-    """Lint ASVE advisories under TARGET (file or directory)."""
+    """Lint OpenACA advisories under TARGET (file or directory)."""
     schema = load_schema()
     validator = Draft202012Validator(schema)
     advisories = find_advisories(target)
@@ -700,7 +700,7 @@ In `main`, replace the `errors = check_schema(advisory, validator)` line with:
 
 ```yaml
 schema_version: "1.7.5"
-id: ASVE-2026-9003
+id: CVE-2026-9003
 type: vulnerability
 aliases: []
 summary: "test cvss rejection"
@@ -718,7 +718,7 @@ references:
   - type: WEB
     url: "https://example.com"
 database_specific:
-  asve:
+  openaca:
     component_type: mcp_server
 ```
 
@@ -754,7 +754,7 @@ git commit -m "feat: linter validates CVSS v4 vectors"
 
 ## Task 8: Linter — file path / namespace consistency
 
-The advisory at path `advisories/2026/ASVE-2026-0001.yaml` must have `id: ASVE-2026-0001` and the year segment of the path must match the year segment of the ID.
+The advisory at path `advisories/2026/CVE-2026-0001.yaml` must have `id: CVE-2026-0001` and the year segment of the path must match the year segment of the ID.
 
 **Files:**
 - Modify: `tools/lint.py`
@@ -766,8 +766,8 @@ Add to `tests/test_lint.py`:
 
 ```python
 def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
-    misplaced = tmp_path / "advisories" / "2025" / "ASVE-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
+    misplaced = tmp_path / "advisories" / "2025" / "CVE-2026-0001.yaml"
     misplaced.parent.mkdir(parents=True)
     misplaced.write_text(src.read_text())
     runner = CliRunner()
@@ -788,7 +788,7 @@ Add to `tools/lint.py`:
 ```python
 import re
 
-ID_RE = re.compile(r"^ASVE-(\d{4})-\d{4}$")
+ID_RE = re.compile(r"^OpenACA-(\d{4})-\d{4}$")
 
 
 def check_path_consistency(advisory: dict, path: Path) -> list[str]:
@@ -833,7 +833,7 @@ git commit -m "feat: linter enforces path/ID year consistency"
 
 ## Task 9: Linter — internal cross-reference resolution
 
-If an advisory's `aliases` array contains an `ASVE-YYYY-NNNN` ID, that record must exist within the linted target.
+If an advisory's `aliases` array contains an `OpenACA-YYYY-NNNN` ID, that record must exist within the linted target.
 
 **Files:**
 - Modify: `tools/lint.py`
@@ -845,16 +845,16 @@ Add to `tests/test_lint.py` (and ensure `import yaml` is at the top):
 
 ```python
 def test_lint_fails_on_missing_internal_alias(fixtures_dir, tmp_path):
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     target_dir = tmp_path / "advisories" / "2026"
     target_dir.mkdir(parents=True)
     advisory = yaml.safe_load(src.read_text())
-    advisory["aliases"].append("ASVE-2026-9999")  # does not exist
+    advisory["aliases"].append("CVE-2026-9999")  # does not exist
     (target_dir / src.name).write_text(yaml.safe_dump(advisory))
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code != 0
-    assert "ASVE-2026-9999" in result.output
+    assert "CVE-2026-9999" in result.output
 ```
 
 - [x] **Step 2: Run to confirm failure**
@@ -870,7 +870,7 @@ Replace the body of `main` in `tools/lint.py`:
 @click.command()
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 def main(target: Path) -> None:
-    """Lint ASVE advisories under TARGET (file or directory)."""
+    """Lint OpenACA advisories under TARGET (file or directory)."""
     schema = load_schema()
     validator = Draft202012Validator(schema)
     advisories = find_advisories(target)
@@ -925,7 +925,7 @@ def check_internal_aliases(advisory: dict, known_ids: set[str]) -> list[str]:
     for alias in advisory.get("aliases") or []:
         if isinstance(alias, str) and ID_RE.match(alias):
             if alias != advisory.get("id") and alias not in known_ids:
-                errors.append(f"alias: ASVE alias {alias!r} not found in corpus")
+                errors.append(f"alias: OpenACA alias {alias!r} not found in corpus")
     return errors
 ```
 
@@ -938,7 +938,7 @@ Expected: all pass.
 
 ```bash
 git add tools/lint.py tests/test_lint.py
-git commit -m "feat: linter resolves internal ASVE alias cross-references"
+git commit -m "feat: linter resolves internal OpenACA alias cross-references"
 ```
 
 ---
@@ -971,24 +971,24 @@ def test_reserve_id_starts_at_0001(tmp_path):
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path), "--year", "2026"])
     assert result.exit_code == 0
-    assert result.output.strip() == "ASVE-2026-0001"
+    assert result.output.strip() == "CVE-2026-0001"
 
 
 def test_reserve_id_increments_existing(tmp_path):
-    write_advisory(tmp_path, "ASVE-2026-0001")
-    write_advisory(tmp_path, "ASVE-2026-0003")  # gaps allowed
+    write_advisory(tmp_path, "CVE-2026-0001")
+    write_advisory(tmp_path, "CVE-2026-0003")  # gaps allowed
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path), "--year", "2026"])
     assert result.exit_code == 0
-    assert result.output.strip() == "ASVE-2026-0004"
+    assert result.output.strip() == "CVE-2026-0004"
 
 
 def test_reserve_id_year_isolated(tmp_path):
-    write_advisory(tmp_path, "ASVE-2025-0042")
+    write_advisory(tmp_path, "CVE-2025-0042")
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path), "--year", "2026"])
     assert result.exit_code == 0
-    assert result.output.strip() == "ASVE-2026-0001"
+    assert result.output.strip() == "CVE-2026-0001"
 ```
 
 - [x] **Step 2: Run to confirm failure**
@@ -999,7 +999,7 @@ Expected: fails (`tools.reserve_id` does not exist).
 - [x] **Step 3: Implement `tools/reserve_id.py`**
 
 ```python
-"""Reserve the next free ASVE-YYYY-NNNN identifier."""
+"""Reserve the next free OpenACA-YYYY-NNNN identifier."""
 from __future__ import annotations
 
 import re
@@ -1008,7 +1008,7 @@ from pathlib import Path
 
 import click
 
-ID_RE = re.compile(r"^ASVE-(\d{4})-(\d{4})\.yaml$")
+ID_RE = re.compile(r"^OpenACA-(\d{4})-(\d{4})\.yaml$")
 
 
 def next_id_for_year(advisories_dir: Path, year: int) -> str:
@@ -1022,14 +1022,14 @@ def next_id_for_year(advisories_dir: Path, year: int) -> str:
     candidate = 1
     while candidate in used:
         candidate += 1
-    return f"ASVE-{year}-{candidate:04d}"
+    return f"OpenACA-{year}-{candidate:04d}"
 
 
 @click.command()
 @click.argument("advisories_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--year", type=int, default=None, help="Year segment; defaults to current year.")
 def main(advisories_dir: Path, year: int | None) -> None:
-    """Print the next free ASVE-YYYY-NNNN under ADVISORIES_DIR for YEAR."""
+    """Print the next free OpenACA-YYYY-NNNN under ADVISORIES_DIR for YEAR."""
     if year is None:
         year = date.today().year
     click.echo(next_id_for_year(advisories_dir, year))
@@ -1101,7 +1101,7 @@ What this commits us to. What downstream work it enables or forecloses.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-licenses.md) | Code Apache-2.0; data CC-BY-4.0 | accepted |
-| [0002](0002-schema-extension-key.md) | Schema extension key `database_specific.asve` | accepted |
+| [0002](0002-schema-extension-key.md) | Schema extension key `database_specific.openaca` | accepted |
 | [0003](0003-single-namespace-architecture.md) | Single namespace, type-tagged advisories | accepted |
 
 ADRs are immutable once accepted. Supersede rather than edit; mark the old
@@ -1122,7 +1122,7 @@ date: 2026-05-06
 
 ## Context
 
-ASVE ships two licensed artifacts: source code (parsers, linter, Action) and
+OpenACA ships two licensed artifacts: source code (parsers, linter, Action) and
 the advisory corpus (YAML/JSON records). They have different reuse profiles
 and need different licenses.
 
@@ -1135,13 +1135,13 @@ and need different licenses.
 ## Alternatives considered
 
 - CC-BY-SA-4.0 for data: viral on derivative works; would block downstream
-  consumers from incorporating ASVE records into mixed-license outputs.
+  consumers from incorporating OpenACA records into mixed-license outputs.
 - MIT for code: shorter but Apache-2.0's patent grant is preferred for a
   schema-and-tooling project that may be incorporated into larger systems.
 
 ## Consequences
 
-- Downstream projects can mirror, ingest, and re-publish ASVE advisory data
+- Downstream projects can mirror, ingest, and re-publish OpenACA advisory data
   with attribution.
 - Code contributions are subject to Apache-2.0's contributor terms.
 - The dual licensing must be reflected in `LICENSE` (code) and `LICENSE-DATA`
@@ -1153,35 +1153,35 @@ and need different licenses.
 ```markdown
 ---
 adr: 0002
-title: Schema extension key `database_specific.asve`
+title: Schema extension key `database_specific.openaca`
 status: accepted
 date: 2026-05-06
 ---
 
-# ADR-0002: Schema extension key `database_specific.asve`
+# ADR-0002: Schema extension key `database_specific.openaca`
 
 ## Context
 
-OSV's schema reserves `database_specific` for per-database extension. ASVE's
+OSV's schema reserves `database_specific` for per-database extension. OpenACA's
 agent-context overlay (`component_type`, `surfaces`, `agent_impact`, OWASP
 ASI mapping, evidence level) needs a stable key.
 
 ## Decision
 
-ASVE-specific fields live under `database_specific.asve`.
+OpenACA-specific fields live under `database_specific.openaca`.
 
 ## Alternatives considered
 
 - `database_specific.agentvulndb`: rejected once project name finalized as
-  ASVE.
-- Top-level keys (e.g., `asve_metadata`): would break OSV consumers that
+  OpenACA.
+- Top-level keys (e.g., `openaca_metadata`): would break OSV consumers that
   validate against the canonical OSV schema.
 
 ## Consequences
 
-- All ASVE schema additions go under the single `asve` extension key.
+- All OpenACA schema additions go under the single `openaca` extension key.
 - The key is stable from V0; no renames once published advisories use it.
-- OSV-compliant consumers ignore the extension; ASVE-aware tooling reads it.
+- OSV-compliant consumers ignore the extension; OpenACA-aware tooling reads it.
 ```
 
 - [x] **Step 5: Write `docs/adrs/0003-single-namespace-architecture.md`**
@@ -1198,21 +1198,21 @@ date: 2026-05-06
 
 ## Context
 
-ASVE advisories cover multiple shapes: versioned-component vulnerabilities,
+OpenACA advisories cover multiple shapes: versioned-component vulnerabilities,
 configuration exposures, and class-level pattern advisories. We considered
-splitting these into separate ID namespaces (e.g., `ASVE-YYYY-NNNN` and
-`ASVE-CFG-YYYY-NNNN`) versus a single namespace with a type discriminator.
+splitting these into separate ID namespaces (e.g., `OpenACA-YYYY-NNNN` and
+`OpenACA-CFG-YYYY-NNNN`) versus a single namespace with a type discriminator.
 
 ## Decision
 
-One ID space — `ASVE-YYYY-NNNN`. Each record carries a `type` field with
+One ID space — `OpenACA-YYYY-NNNN`. Each record carries a `type` field with
 values `vulnerability`, `exposure`, or `config`. V0 ships only
 `type: vulnerability` records; the other two values are reserved in the
 schema and rejected by the linter in V0 PRs.
 
 ## Alternatives considered
 
-- Two-corpus model (`ASVE-` for components, `ASVE-CFG-` for patterns):
+- Two-corpus model (`OpenACA-` for components, `OpenACA-CFG-` for patterns):
   complicates consumer mental model and ID-space migration if a record's
   type changes.
 - Three separate namespaces: same problem, worse.
@@ -1278,7 +1278,7 @@ jobs:
       - name: Lint advisory corpus
         run: |
           if [ -d advisories ] && [ "$(find advisories -name '*.yaml' -print -quit)" ]; then
-            uv run asve-lint advisories/
+            uv run openaca lint advisories/
           else
             echo "no advisories present yet; skipping"
           fi
@@ -1302,12 +1302,12 @@ End-to-end check that the V0 toolchain works:
 ```bash
 uv sync                                      # install deps, create .venv
 uv run pytest                                # all pytest tests pass
-uv run asve-lint tests/fixtures/valid/       # exits 0
-uv run asve-lint tests/fixtures/invalid/     # exits non-zero, prints reasons
-uv run asve-reserve-id advisories/ --year 2026   # prints ASVE-2026-0001 (no advisories yet)
+uv run openaca lint tests/fixtures/valid/       # exits 0
+uv run openaca lint tests/fixtures/invalid/     # exits non-zero, prints reasons
+uv run openaca-reserve-id advisories/ --year 2026   # prints CVE-2026-0001 (no advisories yet)
 ```
 
-Once Plan 002 lands real advisories under `advisories/`, `asve-reserve-id` will increment correctly.
+Once Plan 002 lands real advisories under `advisories/`, `openaca-reserve-id` will increment correctly.
 
 ---
 

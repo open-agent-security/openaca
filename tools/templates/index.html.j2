@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ASVE — Agent Stack Vulnerabilities and Exposures</title>
-  <link rel="canonical" href="https://asve.dev/">
+  <title>OpenACA — Agent Stack Vulnerabilities and Exposures</title>
+  <link rel="canonical" href="https://openaca.dev/">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>ASVE</h1>
+    <h1>OpenACA</h1>
     <p class="tagline">Agent-context overlays for upstream security advisories.</p>
   </header>
 
@@ -23,10 +23,10 @@
         <thead><tr><th>ID</th><th>Evidence</th><th>Modified</th></tr></thead>
         <tbody>
           {% for advisory in group %}
-          {% set asve = (advisory.database_specific or {}).get('asve') or {} %}
-          <tr data-search="{{ advisory.id }} {{ asve.evidence_level }} {{ (advisory.aliases or [])|join(' ') }}">
+          {% set openaca = (advisory.database_specific or {}).get('openaca') or {} %}
+          <tr data-search="{{ advisory.id }} {{ openaca.evidence_level }} {{ (advisory.aliases or [])|join(' ') }}">
             <td class="id"><a href="overlays/{{ advisory.id }}.html">{{ advisory.id }}</a></td>
-            <td>{{ asve.evidence_level }}</td>
+            <td>{{ openaca.evidence_level }}</td>
             <td>{{ advisory.modified.split('T')[0] }}</td>
           </tr>
           {% endfor %}
@@ -40,7 +40,7 @@
     <a href="all.zip">all.zip</a>
     <a href="modified_id.csv">modified_id.csv</a>
     <a href="index.json">index.json</a>
-    <a href="schema/asve.schema.json">schema</a>
+    <a href="schema/openaca.schema.json">schema</a>
   </footer>
 
   <script>

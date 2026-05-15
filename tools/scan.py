@@ -1,8 +1,8 @@
-"""End-to-end ASVE scan: parse → OSV match → overlay → report.
+"""End-to-end OpenACA scan: parse → OSV match → overlay → report.
 
 Two modes via subcommands (per ADR-0006); a subcommand is required:
 
-    asve-scan repo --target <repo> [...]
+    openaca-scan repo --target <repo> [...]
         Walks supported agent-stack manifests committed in the target
         repository. Covers (a) project-host config under `.claude/*`
         (which describes what Claude Code loads when run in this repo,
@@ -14,7 +14,7 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
         findings as *declared* composition, not deployed-app
         composition.
 
-    asve-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
+    openaca-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
         Install-state-aware endpoint scan: reads settings.json +
         installed_plugins.json to enumerate the active agent stack. Defaults
         to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers project/local
@@ -23,8 +23,8 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
 Common options (--sarif, --fail-on, -v) can be placed before or after the
 subcommand name; the group forwards them either way:
 
-    asve-scan -v repo --target X
-    asve-scan repo --target X -v   # equivalent
+    openaca-scan -v repo --target X
+    openaca-scan repo --target X -v   # equivalent
 
 Findings carry an optional `attributed_to` field (e.g.,
 "claude-plugin/<name>@<version>") set by parsers when a component was
@@ -62,7 +62,7 @@ _FORMAT_CHOICES = ("text", "github", "json")
 
 # Internal ref classifications that are surfaced to users in V0. Everything
 # else (software-dependency) is suppressed from matching, federation, and
-# rendering — ASVE V0 is agent-composition analysis.
+# rendering — OpenACA V0 is agent-composition analysis.
 _AGENT_SCOPES: frozenset[str] = frozenset({"agent-component", "agent-dependency"})
 
 
@@ -102,7 +102,7 @@ def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
 
     Two parts: the queried PURL list (what was actually sent) and a count
     of skipped refs bucketed by ecosystem (so users can see what wasn't
-    queried and why — ASVE-native ecosystems and identity-only refs have
+    queried and why — OpenACA-native ecosystems and identity-only refs have
     no PURL; OSV.dev wouldn't have records for them).
     """
     queried = collect_target_purls(refs)
@@ -127,7 +127,7 @@ def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
 
 
 def _stamp_source(corpus: list[dict], source: str) -> None:
-    """Set `database_specific.asve.source = <source>` on every advisory
+    """Set `database_specific.openaca.source = <source>` on every advisory
     that doesn't already declare a source. Mutates corpus in place."""
     for a in corpus:
         if not isinstance(a, dict):
@@ -135,9 +135,9 @@ def _stamp_source(corpus: list[dict], source: str) -> None:
         ds = a.setdefault("database_specific", {})
         if not isinstance(ds, dict):
             continue
-        asve_block = ds.setdefault("asve", {})
-        if isinstance(asve_block, dict) and "source" not in asve_block:
-            asve_block["source"] = source
+        openaca_block = ds.setdefault("openaca", {})
+        if isinstance(openaca_block, dict) and "source" not in openaca_block:
+            openaca_block["source"] = source
 
 
 def _exit_for_findings(fail_on: str, findings: list[Finding]) -> None:
@@ -229,7 +229,7 @@ def main(
     output_format: str,
     no_color: bool,
 ) -> None:
-    """ASVE scanner. Use `repo` or `endpoint` subcommands."""
+    """OpenACA scanner. Use `repo` or `endpoint` subcommands."""
     ctx.ensure_object(dict)
     ctx.obj["sarif"] = sarif
     ctx.obj["fail_on"] = fail_on
@@ -253,7 +253,7 @@ def _apply_group_opts(
 ) -> tuple[Path | None, str, bool, str, bool]:
     """Forward shared options placed before the subcommand name.
 
-    When a user runs `asve-scan --fail-on none repo ...`, Click parses
+    When a user runs `openaca-scan --fail-on none repo ...`, Click parses
     --fail-on at the group level and the subcommand sees its own default.
     Read the group's ctx.obj and apply any option the subcommand didn't
     explicitly receive from the command line.
@@ -324,7 +324,7 @@ def _emit(
 
 
 def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
-    """Pull `database_specific.asve.source` from every advisory in the corpus."""
+    """Pull `database_specific.openaca.source` from every advisory in the corpus."""
     sources: set[str] = set()
     for a in corpus:
         if not isinstance(a, dict):
@@ -332,10 +332,10 @@ def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
         ds = a.get("database_specific")
         if not isinstance(ds, dict):
             continue
-        asve = ds.get("asve")
-        if not isinstance(asve, dict):
+        openaca = ds.get("openaca")
+        if not isinstance(openaca, dict):
             continue
-        src = asve.get("source")
+        src = openaca.get("source")
         if isinstance(src, str) and src:
             sources.add(src)
     return sources
@@ -344,7 +344,7 @@ def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
 def _load_osv_with_overlays(
     refs: list[ComponentRef],
 ) -> tuple[list[dict], list[str], int, dict[str, str]]:
-    """Query OSV for refs and merge ASVE overlays into returned records."""
+    """Query OSV for refs and merge OpenACA overlays into returned records."""
     overlays = load_overlays(default_overlays_dir())
     corpus, warnings = augment_corpus(refs, [])
     alias_map = build_alias_to_overlay_id_map(overlays)
@@ -418,9 +418,9 @@ def repo(
     # still shows raw `grouped` so users see what each manifest declared.
     all_refs = flatten_grouped(grouped)
     # V0: drop software-dependency refs (deps from non-plugin manifests).
-    # ASVE is agent-composition analysis; deps belonging to general
+    # OpenACA is agent-composition analysis; deps belonging to general
     # software in the repo are out of scope and would mislead users into
-    # thinking ASVE is a general SCA tool. See README for framing.
+    # thinking OpenACA is a general SCA tool. See README for framing.
     refs = _filter_agent_scope_refs(all_refs)
     n_failed = n_found - len(grouped)
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
@@ -433,7 +433,7 @@ def repo(
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
 
     if verbose:
-        click.echo(f"loaded {overlay_count} ASVE overlay(s)", err=True)
+        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
         click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         if grouped:
             click.echo(
@@ -543,7 +543,7 @@ def endpoint(
     plugin_count = sum(1 for r in refs if r.ecosystem == "claude-plugin")
 
     if verbose:
-        click.echo(f"loaded {overlay_count} ASVE overlay(s)", err=True)
+        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
         click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         roots_note = f"config_dir={config_dir}"
         if project is not None:

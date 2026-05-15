@@ -1,13 +1,13 @@
 # Framework References
 
-These files are curated policy inputs for ASVE overlay review and future
+These files are curated policy inputs for OpenACA overlay review and future
 LLM-assisted candidate annotation. They intentionally summarize the
 frameworks instead of mirroring full upstream documents.
 
 Use them as stable prompt context when drafting:
 
-- `database_specific.asve.taxonomies`
-- `database_specific.asve.threat_kind`
+- `database_specific.openaca.taxonomies`
+- `database_specific.openaca.threat_kind`
 
 Rules for updates:
 
@@ -15,8 +15,8 @@ Rules for updates:
 - Prefer concise mapping guidance over long copied text.
 - Treat changes as review-worthy because they can change corpus
   classification behavior.
-- Do not duplicate upstream-owned CWE mappings into ASVE overlays by
-  default; use `supplemental_taxonomies` only for reviewed ASVE-owned
+- Do not duplicate upstream-owned CWE mappings into OpenACA overlays by
+  default; use `supplemental_taxonomies` only for reviewed OpenACA-owned
   additions.
 
 Overlay taxonomy IDs use lowercase prefixes where the schema expects

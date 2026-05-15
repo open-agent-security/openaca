@@ -1,18 +1,18 @@
 ---
-name: asve-candidate-review
-description: Annotate or re-review ASVE seed candidates in `candidates/` according to the canonical rules. Use when the user asks to annotate, review, fix, or re-classify candidate YAML files produced by the deterministic seeder.
+name: openaca-candidate-review
+description: Annotate or re-review OpenACA seed candidates in `candidates/` according to the canonical rules. Use when the user asks to annotate, review, fix, or re-classify candidate YAML files produced by the deterministic seeder.
 ---
 
-# ASVE candidate review
+# OpenACA candidate review
 
 Annotate or re-review reviewable seed candidates produced by
-`asve-seed`. Uses your Claude Code session's auth (subscription
+`openaca seed`. Uses your Claude Code session's auth (subscription
 quota), not the API LLM provider path.
 
 ## Invocation modes
 
-- `/asve-candidate-review candidates/GHSA-mq53-pc65-wjc4.yaml` — single file
-- `/asve-candidate-review candidates/` — every candidate whose
+- `/openaca-candidate-review candidates/GHSA-mq53-pc65-wjc4.yaml` — single file
+- `/openaca-candidate-review candidates/` — every candidate whose
   `_candidate.review_status` is `needs_review`
 
 For directory mode, if there are more than 20 candidates to review,
@@ -21,7 +21,7 @@ degrades past ~20 records per session due to context budget.
 
 ## What to do
 
-1. **Locate the ASVE repo.** It is the working directory if the
+1. **Locate the OpenACA repo.** It is the working directory if the
    user invoked from inside it; otherwise ask once.
 2. **Read the rules.** Read `docs/seed-review-rules.md` in full.
    This is the canonical contract. If the file is missing, stop and
@@ -33,12 +33,12 @@ degrades past ~20 records per session due to context budget.
 4. **For each candidate file:**
    - Read the file.
    - Determine review mode: `annotate` (no
-     `database_specific.asve`) or `re-review` (block exists).
+     `database_specific.openaca`) or `re-review` (block exists).
    - Read the OSV record fields in the file (`summary`, `details`,
      `affected`, `references`).
    - Apply the rules from `docs/seed-review-rules.md`:
-     - Edit ONLY `database_specific.asve.taxonomies.*` and
-       `database_specific.asve.evidence_level`.
+     - Edit ONLY `database_specific.openaca.taxonomies.*` and
+       `database_specific.openaca.evidence_level`.
      - NEVER touch `threat_kind`, `_candidate`, `_evidence`,
        `summary`, `details`, `affected`, `severity`, `references`,
        `aliases`, `id`, `modified`.
@@ -55,7 +55,7 @@ degrades past ~20 records per session due to context budget.
      tool.
 5. **Validate.** After all edits, run:
    ```
-   uv run asve-lint candidates/
+   uv run openaca lint candidates/
    ```
    If validation fails, read the error message, correct the
    relevant candidate, and re-run validation. Do not move on with
@@ -68,7 +68,7 @@ degrades past ~20 records per session due to context budget.
 ## Out of scope
 
 - Do not edit overlays under `overlays/` from this skill. Use
-  `asve-promote` for promotion after candidate review is complete.
+  `openaca promote` for promotion after candidate review is complete.
 - Do not change OSV-owned fields. If the OSV record itself looks
   wrong, surface it to the user rather than editing the candidate.
 - Do not invent taxonomies that are not in

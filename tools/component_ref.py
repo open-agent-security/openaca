@@ -26,7 +26,7 @@ class ComponentRef:
     """A single component installation discovered in a repository.
 
     Either (ecosystem + name + version) is set with a derivable standard PURL,
-    or component_identity is set with an ASVE-native identifier.
+    or component_identity is set with an OpenACA-native identifier.
     """
 
     ecosystem: Optional[str] = None

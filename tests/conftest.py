@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

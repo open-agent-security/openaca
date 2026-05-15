@@ -1,16 +1,16 @@
-# ASVE Coordinated Disclosure Policy
+# OpenACA Coordinated Disclosure Policy
 
-ASVE follows the [OpenSSF coordinated disclosure
+OpenACA follows the [OpenSSF coordinated disclosure
 guidance](https://openssf.org/) with the project-specific defaults
 captured below. The policy defines what we commit to, on what timeline,
 and how disputes are handled.
 
 ## V0 status
 
-ASVE V0 documents this policy. **V0 does not operate an active
-disclosure program or mint ASVE vulnerability IDs.** Submissions
+OpenACA V0 documents this policy. **V0 does not operate an active
+disclosure program or mint OpenACA vulnerability IDs.** Submissions
 described here will not be processed at scale until a future
-ASVE-native advisory lane is designed.
+OpenACA-native advisory lane is designed.
 
 When V0 receives a report that meets the bar for inclusion, the
 maintainers will run a single end-to-end coordinated-disclosure case as
@@ -19,7 +19,7 @@ active disclosure scales.
 
 ## Scope
 
-ASVE accepts reports for vulnerabilities affecting **agent-stack
+OpenACA accepts reports for vulnerabilities affecting **agent-stack
 components** that are publicly distributed and identifiable by version
 or stable hash:
 
@@ -38,7 +38,7 @@ Out of scope:
 
 ## How to report
 
-Email `security@asve.dev` with:
+Email `security@openaca.dev` with:
 
 - Affected component (name + version or commit SHA).
 - Reproduction steps or proof-of-concept.
@@ -49,9 +49,9 @@ Email `security@asve.dev` with:
 Encrypted submissions: include a PGP key in your initial message; we
 will respond with our key and switch to encrypted exchange.
 
-> **Note:** the `security@asve.dev` mailbox goes live alongside the
+> **Note:** the `security@openaca.dev` mailbox goes live alongside the
 > public V0 launch. Until then, file reports as security advisories
-> through the GitHub Security tab on `open-agent-security/asve`.
+> through the GitHub Security tab on `open-agent-security/openaca`.
 
 ## Process and timeline
 
@@ -60,16 +60,16 @@ will respond with our key and switch to encrypted exchange.
 | Acknowledgement | within 5 business days of receipt |
 | Maintainer-response checkpoint | 21 days from initial notice to upstream maintainer |
 | Embargo | 90 days from acknowledgement (default) |
-| Nonresponsive review | 35 days; if maintainer is unresponsive at 35 days, ASVE re-evaluates publication path |
+| Nonresponsive review | 35 days; if maintainer is unresponsive at 35 days, OpenACA re-evaluates publication path |
 | Publication | within 7 days of fix availability or embargo expiry |
 
 **Active exploitation** accelerates the timeline. If credible evidence
-indicates active exploitation, ASVE may publish ahead of the default
+indicates active exploitation, OpenACA may publish ahead of the default
 embargo on a case-by-case basis.
 
 ## Dispute lifecycle
 
-Each ASVE record has a status:
+Each OpenACA record has a status:
 
 ```
 published → disputed → modified | upheld | withdrawn
@@ -77,11 +77,11 @@ published → disputed → modified | upheld | withdrawn
 
 - **published**: the record is live in the corpus.
 - **disputed**: an affected maintainer or downstream contests the
-  record. ASVE marks the record `disputed` and pauses propagation.
-- **modified**: ASVE accepts the dispute and revises the record.
-- **upheld**: ASVE rejects the dispute. The record stays published with
+  record. OpenACA marks the record `disputed` and pauses propagation.
+- **modified**: OpenACA accepts the dispute and revises the record.
+- **upheld**: OpenACA rejects the dispute. The record stays published with
   the dispute history attached.
-- **withdrawn**: ASVE retracts the record (false-positive, duplicate,
+- **withdrawn**: OpenACA retracts the record (false-positive, duplicate,
   or out-of-scope).
 
 A disputed record always carries a public dispute history so consumers
@@ -89,11 +89,11 @@ can see what changed and why.
 
 ## Attribution and credit
 
-- Reporter credit: ASVE includes reporter attribution in the published
+- Reporter credit: OpenACA includes reporter attribution in the published
   record unless the reporter requests anonymity.
 - Tooling attribution: where a finding originated from a third-party
-  open-source scanner, ASVE attributes the tool by name and version
-  (e.g., "detected during ASVE triage using `<tool>` v0.X").
+  open-source scanner, OpenACA attributes the tool by name and version
+  (e.g., "detected during OpenACA triage using `<tool>` v0.X").
   Attribution is descriptive — it does not imply endorsement,
   partnership, or third-party confirmation.
 
@@ -101,22 +101,22 @@ can see what changed and why.
 
 - Records aliasing existing CVE/GHSA/OSV require no upstream filing —
   the upstream record already exists.
-- ASVE-original component vulnerabilities: ASVE will attempt upstream
+- OpenACA-original component vulnerabilities: OpenACA will attempt upstream
   disclosure to CVE/GHSA where the affected ecosystem is accepted by
   upstream pipelines. Where upstream pipelines don't accept the
-  ecosystem cleanly, ASVE may carry the authoritative record.
+  ecosystem cleanly, OpenACA may carry the authoritative record.
 
 ## Out of scope (escalation, indemnity, payment)
 
-ASVE V0 is an OSS overlay corpus and scanner. We do not:
+OpenACA V0 is an OSS overlay corpus and scanner. We do not:
 
 - Pay bug bounties. Reporters seeking payouts should consider
   bounty-focused programs such as [huntr](https://huntr.com/).
 - Provide legal indemnity.
 - Act as an intermediary for legal threats; if a maintainer asserts a
-  legal claim against a reporter, ASVE will not relay or escalate it.
+  legal claim against a reporter, OpenACA will not relay or escalate it.
 
 ## Contact
 
-`security@asve.dev` for vulnerability reports. For non-security
+`security@openaca.dev` for vulnerability reports. For non-security
 questions, file a GitHub issue against the repo.

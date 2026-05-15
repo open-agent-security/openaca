@@ -1,6 +1,6 @@
-# ASVE — Project Conventions for Claude
+# OpenACA — Project Conventions for Claude
 
-ASVE (Agent Stack Vulnerabilities and Exposures) is an open-source, OSV-compatible
+OpenACA (Agent Stack Vulnerabilities and Exposures) is an open-source, OSV-compatible
 advisory database for AI agent infrastructure: plugins, MCP servers, skills, agent
 frameworks, model proxies, and runtime components.
 
@@ -21,28 +21,28 @@ advisories, code, comments, commit messages, PR descriptions), do **not** includ
 If a draft contains content in these categories, rewrite to remove. When uncertain
 whether something falls in scope, prefer to omit and flag for human review.
 
-ASVE's authority depends on positioning as a neutral, vendor-agnostic public
+OpenACA's authority depends on positioning as a neutral, vendor-agnostic public
 advisory layer. Commercial or competitive framing in OSS artifacts erodes that.
 
 ### What is in scope
 
 - Operational decisions that reference external tools by name where attribution
-  is required (e.g., "advisory detected during ASVE triage using
+  is required (e.g., "advisory detected during OpenACA triage using
   `cisco-ai-defense/mcp-scanner` v0.X").
 - Technical interoperability (aliasing CVE/GHSA records, adopting OWASP Agentic
   Top 10 categories, using the OSV schema).
 - Cross-project collaboration notes (engaging OSV.dev, MCP TSC, OpenSSF, etc.).
 
-The test: is this content describing *what ASVE does or how it interoperates*, or
-is it positioning ASVE *against* something? The first is fine; the second is out.
+The test: is this content describing *what OpenACA does or how it interoperates*, or
+is it positioning OpenACA *against* something? The first is fine; the second is out.
 
 ## Repository layout
 
-- `docs/specs/asve-v0-design.md` — canonical V0 design.
+- `docs/specs/openaca-v0-design.md` — canonical V0 design.
 - `docs/plans/NNN-<topic>.md` — one implementation plan per V0 deliverable.
 - `docs/adrs/NNNN-<topic>.md` — durable architecture decisions.
-- `schema/asve.schema.json` — canonical advisory schema.
-- `overlays/<ID>.yaml` — bundled ASVE overlays (upstream IDs; ASVE agent-context metadata).
+- `schema/openaca.schema.json` — canonical advisory schema.
+- `overlays/<ID>.yaml` — bundled OpenACA overlays (upstream IDs; OpenACA agent-context metadata).
 - `tools/` — linter, scanner, static export, render, and overlay helpers.
 - `action.yml` — reference GitHub Action at repo root.
 - `CONTRIBUTING.md` — contributor flow, advisory authoring guide.
@@ -60,7 +60,7 @@ is it positioning ASVE *against* something? The first is fine; the second is out
 
 ### Schema and IDs
 
-- V0 overlays use upstream IDs (`GHSA-*`, `CVE-*`). ASVE does not mint its own
+- V0 overlays use upstream IDs (`GHSA-*`, `CVE-*`). OpenACA does not mint its own
   advisory IDs in V0. See ADR-0009.
 - Overlay files live under `overlays/` named `<upstream-id>.yaml`.
 - Type-tagged records: `type: vulnerability` (V0); `type: exposure` and
@@ -68,7 +68,7 @@ is it positioning ASVE *against* something? The first is fine; the second is out
   methodology docs.
 - Severity: CVSS v4 base+environmental.
 - Category: `owasp_agentic_top10[]` array referencing ASI01–ASI10.
-- Agent context: `database_specific.asve.{component_type, surfaces[], agent_impact{}}`.
+- Agent context: `database_specific.openaca.{component_type, surfaces[], agent_impact{}}`.
 - No custom severity enum (no `agent_blast_radius` or similar parallel taxonomy).
 
 ### Linter discipline (CI)
@@ -81,27 +81,27 @@ is it positioning ASVE *against* something? The first is fine; the second is out
 
 ### Aliasing policy
 
-- Records aliasing existing CVE/GHSA/OSV: ASVE creates the alias and overlays
+- Records aliasing existing CVE/GHSA/OSV: OpenACA creates the alias and overlays
   agent-context metadata. No upstream filing required.
-- ASVE-original component vulnerabilities: attempt upstream disclosure to
+- OpenACA-original component vulnerabilities: attempt upstream disclosure to
   CVE/GHSA where the affected ecosystem accepts it. Where upstream pipelines
-  don't accept the ecosystem cleanly, ASVE carries the authoritative record.
+  don't accept the ecosystem cleanly, OpenACA carries the authoritative record.
 
-## V0 scope (read `docs/specs/asve-v0-design.md` for detail)
+## V0 scope (read `docs/specs/openaca-v0-design.md` for detail)
 
 V0 ships:
 
 1. Schema with `type` field branching per-type required fields.
 2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
    `.claude/settings.json`. Cursor/Windsurf manifests are V1.
-3. 5+ bundled ASVE overlays (`overlays/*.yaml`) keyed on upstream CVE/GHSA IDs,
+3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream CVE/GHSA IDs,
    enriching OSV records with agent-context metadata (component type, surfaces,
    agent impact). Scans query OSV.dev and apply overlays implicitly.
 4. Linter + CI per discipline above.
 5. Static export pipeline: `overlays/*.yaml → JSON → all.zip → modified_id.csv`.
-6. Reference GitHub Action: `open-agent-security/asve@v1` with `action.yml` at
+6. Reference GitHub Action: `open-agent-security/openaca@v1` with `action.yml` at
    repo root.
-7. Disclosure policy doc (OpenSSF baseline + ASVE-specific defaults).
+7. Disclosure policy doc (OpenSSF baseline + OpenACA-specific defaults).
    **V0 documents the policy; does not operate it at scale.**
 
 V0 does **not** ship: HTTP API, benchmark harness, public detection-rule format,
@@ -117,7 +117,7 @@ that exercise multiple modules together against the real corpus
 `tests/test_e2e.py`.**
 
 Why a single growing file: cross-layer tests are about the *product
-promise* (does ASVE actually detect a vulnerable agent component?),
+promise* (does OpenACA actually detect a vulnerable agent component?),
 not about any one module. A single file makes the suite trivial to
 read, hard to lose, and naturally evolves as plans land.
 

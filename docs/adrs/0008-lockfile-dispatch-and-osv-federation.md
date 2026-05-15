@@ -48,7 +48,7 @@ making it opt-in would surprise users coming from traditional SCA.
 ### 4. `--federate-osv` is opt-IN (default OFF)
 
 OSV.dev federation adds a network dependency to scans. Default-off
-keeps the default scan offline and focused on the ASVE corpus. Users
+keeps the default scan offline and focused on the OpenACA corpus. Users
 who want full Tier-2 coverage (generic CVEs in plugin transitive deps)
 explicitly opt in. Considered alternatives:
 
@@ -57,11 +57,11 @@ explicitly opt in. Considered alternatives:
 - **Offline OSV.dev mirror**: ~30k records, refresh discipline,
   significant storage. Deferred to V1.
 
-### 5. ASVE's value-add is filtering + attribution, not corpus coverage
+### 5. OpenACA's value-add is filtering + attribution, not corpus coverage
 
 The empirical comparison against `trivy`/`osv-scanner` showed they
 report against orphaned cache versions and test fixtures inside plugins
-with no attribution. ASVE walks per `installed_plugins.json` (active
+with no attribution. OpenACA walks per `installed_plugins.json` (active
 plugins only) and per `plugin.json` defaults (no `rglob` inside the
 install path), tagging every Tier-2 ref with `attributed_to`. This is
 the load-bearing differentiator — federation enhances it; it doesn't
@@ -79,11 +79,11 @@ does. V0 emits all packages from `uv.lock`; over-reporting dev deps is
 acceptable. Refine in V1 if uv's lockfile schema stabilizes the
 distinction.
 
-### 8. `source` ecosystem-style naming: `asve.dev` and `osv.dev`
+### 8. `source` ecosystem-style naming: `openaca.dev` and `osv.dev`
 
-Per-finding SARIF property `properties.source` takes values `"asve.dev"`
+Per-finding SARIF property `properties.source` takes values `"openaca.dev"`
 or `"osv.dev"` (matching the OSV.dev convention). Future-aligned with
-the eventual asve.dev domain; consistent ecosystem-style provenance
+the eventual openaca.dev domain; consistent ecosystem-style provenance
 for downstream consumers.
 
 ## Alternatives considered
@@ -100,9 +100,9 @@ for downstream consumers.
 ## Consequences
 
 **Enables:**
-- ASVE becomes a better-UX Tier-2 scanner than `trivy`/`osv-scanner` for
+- OpenACA becomes a better-UX Tier-2 scanner than `trivy`/`osv-scanner` for
   the agent-stack case (filtered + attributed).
-- `--federate-osv` lets users compose ASVE's filtering with OSV.dev's
+- `--federate-osv` lets users compose OpenACA's filtering with OSV.dev's
   full corpus.
 - Lockfile-vs-manifest coverage is honestly surfaced in SARIF.
 

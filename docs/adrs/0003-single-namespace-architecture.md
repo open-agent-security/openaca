@@ -9,23 +9,23 @@ superseded-by: 0009
 
 ## Context
 
-ASVE advisories cover multiple shapes: versioned-component vulnerabilities,
+OpenACA advisories cover multiple shapes: versioned-component vulnerabilities,
 configuration exposures, and class-level pattern advisories. Earlier drafts
 of the project plan considered splitting these into separate ID namespaces
-(e.g., `ASVE-YYYY-NNNN` for components and `ASVE-CFG-YYYY-NNNN` for
+(e.g., `OpenACA-YYYY-NNNN` for components and `OpenACA-CFG-YYYY-NNNN` for
 patterns). The two-corpus approach was rejected during the brainstorm
 review rounds in favor of a single namespace with a `type` discriminator.
 
 ## Decision
 
-One ID space — `ASVE-YYYY-NNNN`. Each record carries a `type` field with
+One ID space — `OpenACA-YYYY-NNNN`. Each record carries a `type` field with
 values `vulnerability`, `exposure`, or `config`. V0 ships only
 `type: vulnerability` records; the other two values are reserved in the
 schema and rejected by the linter via `allOf` `not` blocks in V0 PRs.
 
 ## Alternatives considered
 
-- **Two-corpus model** (`ASVE-` for components, `ASVE-CFG-` for patterns) —
+- **Two-corpus model** (`OpenACA-` for components, `OpenACA-CFG-` for patterns) —
   doubles consumer mental model; if a record's classification changes
   (e.g., a config issue gets a CVE), the ID has to migrate across
   namespaces, which breaks any consumer that cached the original ID.
@@ -44,7 +44,7 @@ schema and rejected by the linter via `allOf` `not` blocks in V0 PRs.
   schema branch — no namespace migration.
 - Consumers that read only OSV-standard fields still receive value from
   `type: vulnerability` records aliased to upstream IDs.
-- The "E" in ASVE (Exposures) is intentionally future-compatible, not V0
+- The "E" in OpenACA (Exposures) is intentionally future-compatible, not V0
   scope; contributors proposing `type: exposure` advisories are rejected
   pending the methodology doc called out in the spec.
 

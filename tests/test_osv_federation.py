@@ -18,7 +18,7 @@ def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
     assert is_queryable(_ref("npm", "lodash", "4.17.20")) is True
     # No version → not queryable (PURL can't be formed)
     assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
-    # ASVE-native ecosystem → no PURL, not queryable
+    # OpenACA-native ecosystem → no PURL, not queryable
     assert is_queryable(_ref("claude-plugin", "supabase", "0.1.6")) is False
     assert is_queryable(_ref("claude-skill", "bootstrap", "1.0.0")) is False
     # Identity-only refs (no ecosystem) → not queryable
@@ -38,7 +38,7 @@ def test_collect_target_purls_dedupes_and_preserves_order():
 
 
 def test_augment_returns_base_corpus_when_no_refs():
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     augmented, warnings = augment_corpus(refs=[], base_corpus=base)
     assert augmented == base
     assert warnings == []
@@ -51,7 +51,7 @@ def test_augment_returns_base_corpus_when_no_versioned_refs():
         ComponentRef(component_identity="claude-hook/command:abcd1234"),
         ComponentRef(ecosystem="claude-skill", name="x"),  # no version
     ]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
     assert augmented == base
 
@@ -60,7 +60,7 @@ def test_augment_batches_purls_and_merges_results():
     """Versioned refs get batched into /v1/querybatch; full advisory records
     fetched via /v1/vulns/<id>; deduped against the base corpus by id."""
     refs = [_ref("npm", "lodash", "4.17.20"), _ref("PyPI", "requests", "2.31.0")]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     querybatch_response = {
         "results": [
             {"vulns": [{"id": "GHSA-1111"}]},
@@ -96,7 +96,7 @@ def test_augment_batches_purls_and_merges_results():
         augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
     assert warnings == []
     ids = {a["id"] for a in augmented}
-    assert ids == {"ASVE-2026-0001", "GHSA-1111", "GHSA-2222"}
+    assert ids == {"CVE-2026-0001", "GHSA-1111", "GHSA-2222"}
 
 
 def test_augment_dedupes_returned_records_by_alias_graph():
@@ -141,7 +141,7 @@ def test_augment_dedupes_returned_records_by_alias_graph():
 def test_augment_fails_soft_on_network_error():
     """If the batch query raises, return base corpus + a warning string."""
     refs = [_ref("npm", "lodash", "4.17.20")]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
 
     def fake_post(url, payload):
         raise OSError("connection refused")

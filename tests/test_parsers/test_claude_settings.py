@@ -37,7 +37,7 @@ def test_settings_plugin_matches_claude_plugin_advisory_by_name():
     manifest = REPOS / "sample-settings" / ".claude" / "settings.json"
     refs = parse(manifest)
     advisory = {
-        "id": "ASVE-TEST-PLUGIN-1",
+        "id": "OpenACA-TEST-PLUGIN-1",
         "affected": [
             {
                 "package": {"ecosystem": "claude-plugin", "name": "deployment-tools"},
@@ -48,7 +48,7 @@ def test_settings_plugin_matches_claude_plugin_advisory_by_name():
         ],
     }
     findings = match(refs, [advisory])
-    matching = [f for f in findings if f.advisory_id == "ASVE-TEST-PLUGIN-1"]
+    matching = [f for f in findings if f.advisory_id == "OpenACA-TEST-PLUGIN-1"]
     assert matching
     assert matching[0].confidence == "low"
 

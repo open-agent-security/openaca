@@ -1,4 +1,4 @@
-"""Render ASVE findings as SARIF v2.1.0.
+"""Render OpenACA findings as SARIF v2.1.0.
 
 SARIF (Static Analysis Results Interchange Format) is the format
 GitHub's code-scanning UI ingests. The Action emits a SARIF document
@@ -30,7 +30,7 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
 
     - attributed_to: from finding (plan 007).
     - coverage / transitive: from finding.component.extra (plan 009).
-    - source: from advisory.database_specific.asve.source (plan 009).
+    - source: from advisory.database_specific.openaca.source (plan 009).
     Returns empty dict when no metadata is present.
     """
     props: dict = {}
@@ -44,12 +44,12 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
     if isinstance(advisory, dict):
         ds = advisory.get("database_specific")
         if isinstance(ds, dict):
-            asve_block = ds.get("asve")
-            if isinstance(asve_block, dict):
-                source = asve_block.get("source")
+            openaca_block = ds.get("openaca")
+            if isinstance(openaca_block, dict):
+                source = openaca_block.get("source")
                 if isinstance(source, str):
                     props["source"] = source
-                overlay_source = asve_block.get("overlay_source")
+                overlay_source = openaca_block.get("overlay_source")
                 if isinstance(overlay_source, str):
                     props["overlay_source"] = overlay_source
     return props
@@ -70,11 +70,11 @@ def to_sarif(
         # the OSV URL so the helpUri is never a dead link.
         if overlay_id_map is not None:
             if advisory_id in overlay_id_map:
-                help_uri = f"https://asve.dev/overlays/{overlay_id_map[advisory_id]}.html"
+                help_uri = f"https://openaca.dev/overlays/{overlay_id_map[advisory_id]}.html"
             else:
                 help_uri = f"https://osv.dev/vulnerability/{advisory_id}"
         else:
-            help_uri = f"https://asve.dev/overlays/{advisory_id}.html"
+            help_uri = f"https://openaca.dev/overlays/{advisory_id}.html"
         rules.append(
             {
                 "id": advisory_id,
@@ -115,8 +115,8 @@ def to_sarif(
             {
                 "tool": {
                     "driver": {
-                        "name": "asve",
-                        "informationUri": "https://asve.dev",
+                        "name": "openaca",
+                        "informationUri": "https://openaca.dev",
                         "rules": rules,
                     }
                 },

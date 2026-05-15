@@ -17,7 +17,7 @@ Sources:
 Accessed: 2026-05-13
 
 Use this when the record affects an LLM application or GenAI supply
-chain beyond agent-specific behavior. In ASVE overlays, OWASP Agentic,
+chain beyond agent-specific behavior. In OpenACA overlays, OWASP Agentic,
 MCP, and Agentic Skills mappings are often more specific; LLM mappings
 are useful for cross-framework interoperability when the LLM application
 dimension is present.

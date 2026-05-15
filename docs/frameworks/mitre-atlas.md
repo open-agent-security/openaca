@@ -15,11 +15,11 @@ an ATLAS mapping onto ordinary software malware, package vulnerabilities,
 or generic web-app bugs unless the OSV record shows that the AI system is
 part of the attack path.
 
-ATLAS describes attacker techniques. An ASVE overlay should map an ATLAS
+ATLAS describes attacker techniques. An OpenACA overlay should map an ATLAS
 technique only when the advisory evidence shows the attacker behavior,
 not merely because the vulnerable package is used by an agent.
 
-## Selected IDs For ASVE Review
+## Selected IDs For OpenACA Review
 
 | Overlay ID | Name | Use When |
 | --- | --- | --- |

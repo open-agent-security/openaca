@@ -4,7 +4,7 @@
 
 **Goal:** Convert YAML advisories under `advisories/YYYY/` into the canonical published artifacts: per-advisory JSON files, an `all.zip` bundle, a `modified_id.csv` index, and a static GitHub Pages site that hosts both human-readable advisory pages and the raw artifacts.
 
-**Architecture:** A single `tools/export.py` builds everything into a `dist/` directory (gitignored). A GitHub Actions workflow runs the same export on every push to `main` and publishes `dist/` to GitHub Pages. The output layout follows OSV.dev's conventions so consumers familiar with OSV can mirror ASVE the same way.
+**Architecture:** A single `tools/export.py` builds everything into a `dist/` directory (gitignored). A GitHub Actions workflow runs the same export on every push to `main` and publishes `dist/` to GitHub Pages. The output layout follows OSV.dev's conventions so consumers familiar with OSV can mirror OpenACA the same way.
 
 **Tech Stack:** Python 3.11+, stdlib `zipfile` + `csv` + `json`, `jinja2` for HTML templating (new dev dependency), pyyaml. GitHub Actions for publishing.
 
@@ -32,12 +32,12 @@ dist/
   modified_id.csv
   advisories/
     2026/
-      ASVE-2026-0001.json
-      ASVE-2026-0001.html
+      CVE-2026-0001.json
+      CVE-2026-0001.html
       ...
   index.html
   schema/
-    asve.schema.json   # copy of the canonical schema
+    openaca.schema.json   # copy of the canonical schema
 ```
 
 ---
@@ -105,33 +105,33 @@ REPO_ROOT = Path(__file__).parent.parent
 def sample_corpus(tmp_path, fixtures_dir):
     advisories_dir = tmp_path / "advisories" / "2026"
     advisories_dir.mkdir(parents=True)
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     (advisories_dir / src.name.upper().replace(".YAML", ".yaml")).write_text(src.read_text())
     # Also write under the canonical capitalized filename
-    (advisories_dir / "ASVE-2026-0001.yaml").write_text(src.read_text())
+    (advisories_dir / "CVE-2026-0001.yaml").write_text(src.read_text())
     return tmp_path
 
 
 def test_load_corpus_returns_one_advisory(sample_corpus):
     corpus = load_corpus(sample_corpus / "advisories")
     assert len(corpus) == 1
-    assert corpus[0]["id"] == "ASVE-2026-0001"
+    assert corpus[0]["id"] == "CVE-2026-0001"
 
 
 def test_build_emits_json_per_advisory(sample_corpus, tmp_path):
     dist = tmp_path / "dist"
     build(sample_corpus / "advisories",
-          schema_path=REPO_ROOT / "schema" / "asve.schema.json",
+          schema_path=REPO_ROOT / "schema" / "openaca.schema.json",
           dist=dist)
-    json_path = dist / "advisories" / "2026" / "ASVE-2026-0001.json"
+    json_path = dist / "advisories" / "2026" / "CVE-2026-0001.json"
     assert json_path.is_file()
     record = json.loads(json_path.read_text())
     # YAML → JSON preserves structure
-    src = yaml.safe_load((sample_corpus / "advisories" / "2026" / "ASVE-2026-0001.yaml").read_text())
+    src = yaml.safe_load((sample_corpus / "advisories" / "2026" / "CVE-2026-0001.yaml").read_text())
     assert record == src
 ```
 
-> Note: the fixture deliberately writes the advisory under the canonical `ASVE-` prefix; the duplicate write with the lowercase prefix is irrelevant to the test (cleaning that up is fine if you prefer; both produce the same content).
+> Note: the fixture deliberately writes the advisory under the canonical `OpenACA-` prefix; the duplicate write with the lowercase prefix is irrelevant to the test (cleaning that up is fine if you prefer; both produce the same content).
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -148,7 +148,7 @@ Expected: fails — `tools.export` module does not exist.
 - [ ] **Step 1: Implement initial `tools/export.py`**
 
 ```python
-"""Build the static ASVE export."""
+"""Build the static OpenACA export."""
 from __future__ import annotations
 
 import json
@@ -180,7 +180,7 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(advisory, indent=2, sort_keys=False) + "\n")
     # Schema copy
-    schema_target = dist / "schema" / "asve.schema.json"
+    schema_target = dist / "schema" / "openaca.schema.json"
     schema_target.parent.mkdir(parents=True, exist_ok=True)
     schema_target.write_text(schema_path.read_text())
 ```
@@ -216,14 +216,14 @@ import zipfile
 def test_all_zip_contains_each_advisory(sample_corpus, tmp_path):
     dist = tmp_path / "dist"
     build(sample_corpus / "advisories",
-          schema_path=REPO_ROOT / "schema" / "asve.schema.json",
+          schema_path=REPO_ROOT / "schema" / "openaca.schema.json",
           dist=dist)
     zip_path = dist / "all.zip"
     assert zip_path.is_file()
     with zipfile.ZipFile(zip_path) as zf:
         names = set(zf.namelist())
-    assert "advisories/2026/ASVE-2026-0001.json" in names
-    assert "schema/asve.schema.json" in names
+    assert "advisories/2026/CVE-2026-0001.json" in names
+    assert "schema/openaca.schema.json" in names
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -282,13 +282,13 @@ import csv as csvlib
 def test_modified_id_csv_lists_advisories(sample_corpus, tmp_path):
     dist = tmp_path / "dist"
     build(sample_corpus / "advisories",
-          schema_path=REPO_ROOT / "schema" / "asve.schema.json",
+          schema_path=REPO_ROOT / "schema" / "openaca.schema.json",
           dist=dist)
     csv_path = dist / "modified_id.csv"
     assert csv_path.is_file()
     rows = list(csvlib.DictReader(csv_path.open()))
-    assert any(r["id"] == "ASVE-2026-0001" for r in rows)
-    row = next(r for r in rows if r["id"] == "ASVE-2026-0001")
+    assert any(r["id"] == "CVE-2026-0001" for r in rows)
+    row = next(r for r in rows if r["id"] == "CVE-2026-0001")
     assert row["modified"]  # ISO timestamp
 ```
 
@@ -348,12 +348,12 @@ git commit -m "feat: export emits modified_id.csv index"
 def test_export_emits_html_pages(sample_corpus, tmp_path):
     dist = tmp_path / "dist"
     build(sample_corpus / "advisories",
-          schema_path=REPO_ROOT / "schema" / "asve.schema.json",
+          schema_path=REPO_ROOT / "schema" / "openaca.schema.json",
           dist=dist)
-    advisory_html = (dist / "advisories" / "2026" / "ASVE-2026-0001.html").read_text()
-    assert "ASVE-2026-0001" in advisory_html
+    advisory_html = (dist / "advisories" / "2026" / "CVE-2026-0001.html").read_text()
+    assert "CVE-2026-0001" in advisory_html
     index_html = (dist / "index.html").read_text()
-    assert "ASVE-2026-0001" in index_html
+    assert "CVE-2026-0001" in index_html
 ```
 
 - [ ] **Step 2: Write `tools/templates/advisory.html.j2`**
@@ -363,8 +363,8 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ advisory.id }} — ASVE</title>
-  <link rel="canonical" href="https://asve.dev/advisories/{{ advisory.id.split('-')[1] }}/{{ advisory.id }}.html">
+  <title>{{ advisory.id }} — OpenACA</title>
+  <link rel="canonical" href="https://openaca.dev/advisories/{{ advisory.id.split('-')[1] }}/{{ advisory.id }}.html">
 </head>
 <body>
   <header>
@@ -415,11 +415,11 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>ASVE — Agent Stack Vulnerabilities and Exposures</title>
+  <title>OpenACA — Agent Stack Vulnerabilities and Exposures</title>
 </head>
 <body>
   <header>
-    <h1>ASVE</h1>
+    <h1>OpenACA</h1>
     <p>Open advisories for agent stack security.</p>
   </header>
   <section>
@@ -438,7 +438,7 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
     </table>
   </section>
   <footer>
-    <p><a href="all.zip">all.zip</a> · <a href="modified_id.csv">modified_id.csv</a> · <a href="schema/asve.schema.json">schema</a></p>
+    <p><a href="all.zip">all.zip</a> · <a href="modified_id.csv">modified_id.csv</a> · <a href="schema/openaca.schema.json">schema</a></p>
   </footer>
 </body>
 </html>
@@ -508,21 +508,21 @@ git commit -m "feat: HTML pages for advisories and index"
 
 ---
 
-## Task 7: Register `asve-export` console script
+## Task 7: Register `openaca export` console script
 
 **Files:**
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Register `asve-export` console script**
+- [ ] **Step 1: Register `openaca export` console script**
 
 In `pyproject.toml`:
 
 ```toml
 [project.scripts]
-asve-lint = "tools.lint:main"
-asve-reserve-id = "tools.reserve_id:main"
-asve-import-osv = "tools.import_from_osv:main"
-asve-export = "tools.export:main"
+openaca lint = "tools.lint:main"
+openaca-reserve-id = "tools.reserve_id:main"
+openaca-import-osv = "tools.import_from_osv:main"
+openaca export = "tools.export:main"
 ```
 
 Sync deps: `uv sync`
@@ -536,11 +536,11 @@ import click
 @click.command()
 @click.option("--advisories", default="advisories", show_default=True,
               type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--schema", default="schema/asve.schema.json", show_default=True,
+@click.option("--schema", default="schema/openaca.schema.json", show_default=True,
               type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--dist", default="dist", show_default=True, type=click.Path(path_type=Path))
 def main(advisories: Path, schema: Path, dist: Path) -> None:
-    """Build the ASVE static export under DIST."""
+    """Build the OpenACA static export under DIST."""
     build(advisories, schema_path=schema, dist=dist)
     click.echo(f"wrote export to {dist}")
 
@@ -551,14 +551,14 @@ if __name__ == "__main__":
 
 - [ ] **Step 3: Smoke test from the repo root**
 
-Run: `uv run asve-export`
-Expected: `dist/` is created with `all.zip`, `modified_id.csv`, `advisories/2026/...`, `schema/asve.schema.json`, `index.html`.
+Run: `uv run openaca export`
+Expected: `dist/` is created with `all.zip`, `modified_id.csv`, `advisories/2026/...`, `schema/openaca.schema.json`, `index.html`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add tools/export.py pyproject.toml
-git commit -m "feat: asve-export console script"
+git commit -m "feat: openaca export console script"
 ```
 
 ---
@@ -601,7 +601,7 @@ jobs:
       - name: Sync deps
         run: uv sync --frozen
       - name: Build export
-        run: uv run asve-export
+        run: uv run openaca export
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -624,7 +624,7 @@ git commit -m "ci: publish static export to GitHub Pages on push to main"
 ## Verification
 
 ```bash
-uv run asve-export
+uv run openaca export
 ls dist/                                            # all.zip, modified_id.csv, index.html, advisories/, schema/
 unzip -l dist/all.zip | head -10                    # advisory and schema files
 head dist/modified_id.csv                           # id,modified header + rows
@@ -640,7 +640,7 @@ uv run pytest tests/test_export.py -v               # all pass
 - [ ] **`all.zip`** contains the same files served at top-level URLs.
 - [ ] **`modified_id.csv`** has `id` and `modified` columns and rows are sorted.
 - [ ] **HTML pages** auto-escape advisory content (`autoescape=True` on the Jinja env).
-- [ ] **Schema** is mirrored under `dist/schema/asve.schema.json` (the canonical `$id` URL still works once the domain is wired).
+- [ ] **Schema** is mirrored under `dist/schema/openaca.schema.json` (the canonical `$id` URL still works once the domain is wired).
 - [ ] **No HTTP API** in this plan — that's deferred past V0.
 - [ ] **Templates** ship with the package (`MANIFEST.in` + `package-data`).
 - [ ] **No commercial / competitor framing** in templates or output.

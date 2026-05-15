@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://asve.dev/schema/asve.schema.json",
-  "title": "ASVE Overlay",
+  "$id": "https://openaca.dev/schema/openaca.schema.json",
+  "title": "OpenACA Overlay",
   "type": "object",
   "required": ["schema_version", "id", "modified", "database_specific"],
   "properties": {
@@ -86,15 +86,15 @@
     "database_specific": {
       "type": "object",
       "properties": {
-        "asve": {"$ref": "#/$defs/asve_extension"}
+        "openaca": {"$ref": "#/$defs/openaca_extension"}
       }
     },
-    "asve_extension": {
+    "openaca_extension": {
       "type": "object",
       "required": ["taxonomies", "evidence_level"],
       "properties": {
         "threat_kind": {"type": "string", "enum": ["malicious_package"]},
-        "taxonomies": {"$ref": "#/$defs/asve_taxonomies"},
+        "taxonomies": {"$ref": "#/$defs/openaca_taxonomies"},
         "evidence_level": {
           "type": "string",
           "enum": ["confirmed", "likely", "research", "disputed", "withdrawn"]
@@ -102,7 +102,7 @@
       },
       "additionalProperties": false
     },
-    "asve_taxonomies": {
+    "openaca_taxonomies": {
       "type": "object",
       "properties": {
         "owasp_agentic_top10": {

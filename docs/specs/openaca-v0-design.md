@@ -1,25 +1,25 @@
-# ASVE V0 — Design Specification
+# OpenACA V0 — Design Specification
 
 *Status*: Superseded in part by [ADR-0009](../adrs/0009-overlay-only-v0.md).
 *Last updated*: 2026-05-12.
 
-> Note: this original V0 design described ASVE as an advisory database with
-> ASVE-issued IDs. ADR-0009 changes V0 to an overlay-only model: upstream
+> Note: this original V0 design described OpenACA as an advisory database with
+> OpenACA-issued IDs. ADR-0009 changes V0 to an overlay-only model: upstream
 > OSV/GHSA/CVE records own vulnerability identity, affected ranges, severity,
-> and fixes; ASVE owns `database_specific.asve` agent-context overlays and the
+> and fixes; OpenACA owns `database_specific.openaca` agent-context overlays and the
 > reference scanner. Historical sections below remain for parser and identity
 > context until this spec is fully rewritten.
 
 ## 1. Overview
 
-ASVE (Agent Stack Vulnerabilities and Exposures) is an open, OSV-compatible
+OpenACA (Agent Stack Vulnerabilities and Exposures) is an open, OSV-compatible
 advisory database for AI agent infrastructure: plugins, MCP servers, skills,
 agent frameworks, model proxies, and runtime components.
 
-ASVE extends the Software Composition Analysis (SCA) model to a class of
+OpenACA extends the Software Composition Analysis (SCA) model to a class of
 manifests that traditional SCA tooling does not yet parse — `mcp.json`,
 `.claude-plugin/plugin.json`, marketplace.json, `.claude/settings.json`, and
-similar agent-installation manifests. ASVE catalogs versioned components
+similar agent-installation manifests. OpenACA catalogs versioned components
 referenced by these manifests and adds agent-context metadata to existing
 upstream advisory records.
 
@@ -31,7 +31,7 @@ V0 is a passive lookup layer. V1 introduces an active disclosure pipeline.
 
 ### Positioning
 
-ASVE is an open, OSV-compatible advisory database for vulnerabilities and
+OpenACA is an open, OSV-compatible advisory database for vulnerabilities and
 exposures in AI agent infrastructure: plugins, MCP servers, skills, agent
 frameworks, model proxies, and runtime components.
 
@@ -39,17 +39,17 @@ frameworks, model proxies, and runtime components.
 
 | Asset | Value |
 |---|---|
-| Project / corpus name | ASVE |
+| Project / corpus name | OpenACA |
 | Expansion | Agent Stack Vulnerabilities and Exposures |
-| Repo | `open-agent-security/asve` |
-| CLI / Action | `asve` |
-| Domain | `asve.dev` |
-| Advisory IDs | `ASVE-YYYY-NNNN` (single namespace) |
-| Schema extension key | `database_specific.asve` |
+| Repo | `open-agent-security/openaca` |
+| CLI / Action | `openaca` |
+| Domain | `openaca.dev` |
+| Advisory IDs | `OpenACA-YYYY-NNNN` (single namespace) |
+| Schema extension key | `database_specific.openaca` |
 
 ## 3. Architecture: single-namespace, type-tagged advisories
 
-All ASVE records share one ID space (`ASVE-YYYY-NNNN`). Each record carries a
+All OpenACA records share one ID space (`OpenACA-YYYY-NNNN`). Each record carries a
 `type` field. The schema reserves three values; V0 ships only the first.
 
 | `type` | Use for | V0 |
@@ -60,7 +60,7 @@ All ASVE records share one ID space (`ASVE-YYYY-NNNN`). Each record carries a
 
 This shape mirrors CVE's "Vulnerabilities and Exposures" framing: one namespace
 covering both first-class. CVE itself doesn't split into separate ID spaces;
-ASVE follows the same pattern.
+OpenACA follows the same pattern.
 
 ### Why single-namespace beats two-corpus alternatives
 
@@ -72,7 +72,7 @@ ASVE follows the same pattern.
 
 ## 4. Component identity model
 
-ASVE advisories identify affected components in two ways. **Standard PURLs are
+OpenACA advisories identify affected components in two ways. **Standard PURLs are
 preferred wherever applicable**:
 
 - `pkg:npm/<package>@<version>`
@@ -82,7 +82,7 @@ preferred wherever applicable**:
 
 For agent-stack registries that don't map to existing PURL ecosystems (Claude
 Code plugins, Cursor extensions, MCP-stdio launches, etc.), the scanner emits
-an ASVE-native `ComponentRef.component_identity` with a registry-prefixed
+an OpenACA-native `ComponentRef.component_identity` with a registry-prefixed
 scheme:
 
 - `claude-plugin/<author>/<plugin>@<version>`
@@ -108,20 +108,20 @@ V0 ships T1 + T2.
 
 ## 5. Schema
 
-A V0 advisory is OSV-compatible JSON with an ASVE extension. Required-field
+A V0 advisory is OSV-compatible JSON with an OpenACA extension. Required-field
 enforcement branches on the `type` field.
 
 ### Common (all types)
 
-- `schema_version`: pinned to the OSV schema version ASVE tracks.
-- `id`: matches `ASVE-YYYY-NNNN`.
+- `schema_version`: pinned to the OSV schema version OpenACA tracks.
+- `id`: matches `OpenACA-YYYY-NNNN`.
 - `type`: one of `vulnerability`, `exposure`, `config`. Only `vulnerability` is
   permitted in V0 PRs.
 - `aliases`: array of upstream IDs (`CVE-...`, `GHSA-...`, `OSV-...`, etc.).
 - `summary`, `details`, `published`, `modified`.
 - `severity`: CVSS v4 base + environmental vector strings.
 - `references`: array of typed URLs.
-- `database_specific.asve`: see below.
+- `database_specific.openaca`: see below.
 
 ### `type: vulnerability`
 
@@ -129,12 +129,12 @@ Adds OSV's `affected[]` array describing affected packages and version ranges.
 Use standard `package.ecosystem` + `package.name` + `package.purl` where
 possible.
 
-### `database_specific.asve` extension fields
+### `database_specific.openaca` extension fields
 
 ```jsonc
 {
   "database_specific": {
-    "asve": {
+    "openaca": {
       "taxonomies": {
         "owasp_agentic_top10": ["asi03", "asi05"],
         "owasp_agentic_skills_top10": []     // optional, for skill advisories
@@ -160,13 +160,13 @@ Seven items. Anything else waits.
 
 | # | Deliverable | Notes |
 |---|---|---|
-| 1 | **Schema** | `schema/asve.schema.json` — OSV-compatible JSON Schema with `type`-branching required fields. |
-| 2 | **Manifest parsers** (Python) | V0 covers `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`. Emits standard PURLs where applicable, ASVE-native identity otherwise. Cursor + Windsurf manifests deferred to V1 (need real fixture data first). |
+| 1 | **Schema** | `schema/openaca.schema.json` — OSV-compatible JSON Schema with `type`-branching required fields. |
+| 2 | **Manifest parsers** (Python) | V0 covers `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`. Emits standard PURLs where applicable, OpenACA-native identity otherwise. Cursor + Windsurf manifests deferred to V1 (need real fixture data first). |
 | 3 | **3-5 hand-curated advisories** | Mostly aliases of existing CVE/GHSA agent-component vulns, plus ≥1 enriched record demonstrating manifest detection beyond lockfile parsing. All `type: vulnerability` in V0. |
 | 4 | **Linter + CI** | Hard-fail and warning discipline per §7. |
 | 5 | **Static export pipeline** | `advisories/*.yaml → JSON → all.zip → modified_id.csv → GitHub Pages docs site`. No HTTP API. |
-| 6 | **Reference Action** | Lives at the repo root: `action.yml`. Invocation: `open-agent-security/asve@v1`. Thin, local-first; consumes the static export and runs manifest parsers. |
-| 7 | **Disclosure policy doc** | `docs/disclosure-policy.md`. OpenSSF baseline + ASVE-specific defaults. **Documented in V0; not operated as an active program.** See §10. |
+| 6 | **Reference Action** | Lives at the repo root: `action.yml`. Invocation: `open-agent-security/openaca@v1`. Thin, local-first; consumes the static export and runs manifest parsers. |
+| 7 | **Disclosure policy doc** | `docs/disclosure-policy.md`. OpenSSF baseline + OpenACA-specific defaults. **Documented in V0; not operated as an active program.** See §10. |
 
 ### Out of V0
 
@@ -184,12 +184,12 @@ Don't let flaky external dependencies break contributor PRs.
 
 ### Hard fail (block PR merge)
 
-- Schema validation against `schema/asve.schema.json` per `type`.
-- ID format and uniqueness within `ASVE-YYYY-NNNN` namespace.
+- Schema validation against `schema/openaca.schema.json` per `type`.
+- ID format and uniqueness within `OpenACA-YYYY-NNNN` namespace.
 - Required fields present per `type`.
 - CVSS string parses to a valid v4 vector (where present).
 - OWASP ASI categories (`asi01`–`asi10`) are valid identifiers.
-- File path / namespace consistency (`advisories/YYYY/ASVE-YYYY-NNNN.yaml`).
+- File path / namespace consistency (`advisories/YYYY/OpenACA-YYYY-NNNN.yaml`).
 - Internal cross-references resolve.
 
 ### Warning or scheduled job (don't block PRs)
@@ -219,16 +219,16 @@ separate corpus or pillar.
 
 Two distinct cases:
 
-- **Records aliasing existing CVE/GHSA/OSV**: ASVE creates the alias and
+- **Records aliasing existing CVE/GHSA/OSV**: OpenACA creates the alias and
   overlays agent-context metadata. No new upstream filing required — the
   upstream record already exists.
-- **ASVE-original component vulnerabilities**: ASVE attempts upstream
+- **OpenACA-original component vulnerabilities**: OpenACA attempts upstream
   disclosure to CVE/GHSA where appropriate, then aliases the resulting
   upstream ID. Where the affected ecosystem isn't cleanly accepted by upstream
-  pipelines (some plugin marketplaces), ASVE may carry the authoritative
+  pipelines (some plugin marketplaces), OpenACA may carry the authoritative
   record itself. Treat this as a known gap, not a hard requirement.
 
-ASVE-native authority concentrates on:
+OpenACA-native authority concentrates on:
 
 - Plugin/marketplace identifiers that upstream pipelines don't currently
   cover.
@@ -238,7 +238,7 @@ ASVE-native authority concentrates on:
 ### Enriched aliasing pattern
 
 At least one V0 advisory should be an *enriched* record demonstrating that
-ASVE catches what lockfile-only SCA misses. Same upstream CVE/GHSA ID, but ASVE:
+OpenACA catches what lockfile-only SCA misses. Same upstream CVE/GHSA ID, but OpenACA:
 
 - Adds reviewed taxonomy mappings and evidence level to the upstream record.
 - The reference Action detects it from `mcp.json` /
@@ -252,7 +252,7 @@ advisories are alias-first.
 
 V0 documents the policy. V0 does not operate it at scale.
 
-ASVE adopts the OpenSSF coordinated disclosure guidance with project-specific
+OpenACA adopts the OpenSSF coordinated disclosure guidance with project-specific
 defaults:
 
 - **Default embargo**: 90 days.
@@ -280,7 +280,7 @@ ALL of:
    - Static export and reference Action working from a clean install.
 
 2. **Disclosure framework documented**:
-   - OpenSSF baseline + ASVE-specific defaults captured in
+   - OpenSSF baseline + OpenACA-specific defaults captured in
      `docs/disclosure-policy.md` with concrete process steps.
 
 3. **Tabletop rehearsal completed**:
@@ -308,10 +308,10 @@ V1 entry conditions plus:
 
 | Question | Decision |
 |---|---|
-| Project name | **ASVE** (Agent Stack Vulnerabilities and Exposures) |
+| Project name | **OpenACA** (Agent Stack Vulnerabilities and Exposures) |
 | Code license | **Apache-2.0** |
 | Data license | **CC-BY-4.0** (matches OSV.dev) |
-| Schema extension key | `database_specific.asve` from day 1 |
+| Schema extension key | `database_specific.openaca` from day 1 |
 | Canonical overlay fields | Minimal: taxonomies, evidence level, optional threat kind |
 | Severity | CVSS v4 base + environmental |
 | Category taxonomy | OWASP Agentic Top 10 (`asi01`–`asi10`) |
@@ -320,8 +320,8 @@ V1 entry conditions plus:
 | API in V0 | No — static export only |
 | VEX/SBOM in V0 | No |
 | Initial corpus | 3-5 V0 advisories: mostly CVE/GHSA aliases with agent-context overlay; ≥1 enriched record demonstrating manifest detection; 0 pre-coordinated original disclosures as launch blockers; all `type: vulnerability` |
-| Upstream submission | ASVE aliases existing CVE/GHSA/OSV records. For ASVE-original vulnerabilities, attempt upstream disclosure where the ecosystem accepts it. OSV propagation is best-effort. |
-| GitHub Action layout | `action.yml` at the repo root; invocation `open-agent-security/asve@v1` |
+| Upstream submission | OpenACA aliases existing CVE/GHSA/OSV records. For OpenACA-original vulnerabilities, attempt upstream disclosure where the ecosystem accepts it. OSV propagation is best-effort. |
+| GitHub Action layout | `action.yml` at the repo root; invocation `open-agent-security/openaca@v1` |
 | `type: exposure` / `type: config` in V0 | Reserved in schema; PRs rejected pending methodology docs |
 | Active disclosure in V0 | Documented only; not operated at scale |
 
@@ -332,17 +332,17 @@ Gates, not weeks. Ship when each gate passes.
 | Phase | Gate | Deliverable |
 |---|---|---|
 | 0 | Repo + decision docs in place | This spec, `CLAUDE.md`, ADRs for license, extension key, naming, single-namespace architecture |
-| 1 | Schema validates 5 hand-written advisories | `schema/asve.schema.json` + `tools/lint.py`; 3-5 `type: vulnerability` advisories (mostly aliases, ≥1 enriched manifest-detection record) |
+| 1 | Schema validates 5 hand-written advisories | `schema/openaca.schema.json` + `tools/lint.py`; 3-5 `type: vulnerability` advisories (mostly aliases, ≥1 enriched manifest-detection record) |
 | 2 | First batch of advisories merged | Aggregator script `tools/import-from-osv.py` for the alias workflow; advisories alias real CVEs; ≥1 record demonstrates `mcp.json` / `.claude-plugin/plugin.json` detection beyond lockfile |
-| 3 | Static export builds and round-trips | `uv run asve-export` produces `all.zip`, `modified_id.csv`, advisory pages on GitHub Pages |
+| 3 | Static export builds and round-trips | `uv run openaca export` produces `all.zip`, `modified_id.csv`, advisory pages on GitHub Pages |
 | 4 | Reference Action detects ≥3 patterns end-to-end | `action.yml` at repo root consumes `all.zip`; manifest parsers cover `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json` (Cursor + Windsurf in V1); SARIF output; GitHub annotations |
-| 5 | Disclosure policy doc published | `docs/disclosure-policy.md` complete; OpenSSF baseline + ASVE defaults |
+| 5 | Disclosure policy doc published | `docs/disclosure-policy.md` complete; OpenSSF baseline + OpenACA defaults |
 | 6 | Contributor guide, public launch | `README.md`, `CONTRIBUTING.md`, schema docs, "how to file an advisory" with worked examples; launch post |
 
 ## 13. Glossary
 
-- **Advisory**: a single record in the ASVE database, identified by an
-  `ASVE-YYYY-NNNN` ID, describing a vulnerability, exposure, or config issue
+- **Advisory**: a single record in the OpenACA database, identified by an
+  `OpenACA-YYYY-NNNN` ID, describing a vulnerability, exposure, or config issue
   in an agent-stack component.
 - **Component**: a piece of agent infrastructure that can be installed,
   configured, or referenced — e.g., an MCP server, a Claude Code plugin, an
@@ -354,7 +354,7 @@ Gates, not weeks. Ship when each gate passes.
   non-package component where standard PURLs do not apply. It lives on
   `ComponentRef`, not canonical overlays.
 - **Enriched record**: an advisory that aliases an existing upstream ID and
-  adds ASVE-specific metadata that makes it detectable through agent-stack
+  adds OpenACA-specific metadata that makes it detectable through agent-stack
   manifests (not just lockfiles).
 - **Type**: the `type` field on an advisory — `vulnerability`, `exposure`, or
   `config`. Only `vulnerability` is permitted in V0 PRs.

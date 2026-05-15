@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make ASVE see the full Tier-1 declarative agent-stack — not just plugin self-identity. In both `repo` mode (what this app will ship with) and `fs` mode (what's installed and running here), enumerate MCPs, skills, hooks, commands, and agents — with attribution that distinguishes plugin-bundled from bare/settings-scoped components.
+**Goal:** Make OpenACA see the full Tier-1 declarative agent-stack — not just plugin self-identity. In both `repo` mode (what this app will ship with) and `fs` mode (what's installed and running here), enumerate MCPs, skills, hooks, commands, and agents — with attribution that distinguishes plugin-bundled from bare/settings-scoped components.
 
 **Architecture:** Three new parsers (`claude_skill`, `hooks_json`, `claude_command_agent`) wired into both modes via a shared component-walk helper. `fs` mode extends plan 007's `claude_install.py` to walk each active plugin's `installPath` and to enumerate bare components from `settings_layers.by_scope()` and `~/.claude/skills/`. `repo` mode adds the same parsers to the manifest registry, so a repo declaring `.claude/skills/<name>/SKILL.md` or `.claude/commands/*.md` emits those as inventory components too.
 
@@ -282,7 +282,7 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 
 For commands/agents in repo mode, identity uses the `claude-command/repo/<name>` and `claude-agent/repo/<name>` scopes — distinguishing repo-declared from plugin-bundled. (Plugin-bundled use `<plugin>` scope, set when walked from inside an active install path in fs mode.)
 
-- [ ] Tests cover: a fixture repo with `.claude/skills/<name>/SKILL.md`, `.claude/commands/foo.md`, `.claude/agents/reviewer.md`, and `.claude/settings.json` with `hooks` → all five appear in `asve-scan repo` output.
+- [ ] Tests cover: a fixture repo with `.claude/skills/<name>/SKILL.md`, `.claude/commands/foo.md`, `.claude/agents/reviewer.md`, and `.claude/settings.json` with `hooks` → all five appear in `openaca scan repo` output.
 
 ---
 
@@ -326,7 +326,7 @@ bare skills (5):
   claude-skill/bootstrap-project
   ...
 matched 1 finding(s):
-  pkg:npm/@supabase/mcp-server@1.0.4 → ASVE-2026-XXXX (high) via claude-plugin/supabase@0.1.6
+  pkg:npm/@supabase/mcp-server@1.0.4 → OpenACA-2026-XXXX (high) via claude-plugin/supabase@0.1.6
 ```
 
 `repo` mode `-v` gets the new components listed alongside existing manifest counts:
@@ -376,7 +376,7 @@ uv run pytest -q
 uv run ruff format --check tools/ tests/
 uv run ruff check tools/ tests/
 uv run pyright tools/ tests/
-uv run asve-lint advisories/
+uv run openaca lint advisories/
 ```
 
 All green required.
@@ -388,18 +388,18 @@ All green required.
 After PR-B merges, dogfood manually:
 
 ```bash
-# Fresh ASVE checkout
-cd /Users/vinodkone/workspace/asve
+# Fresh OpenACA checkout
+cd /Users/vinodkone/workspace/openaca
 git pull
 
 # fs mode against your actual ~/.claude install
-uv run asve-scan fs --target ~/.claude --advisories advisories -v
+uv run openaca scan fs --target ~/.claude --advisories advisories -v
 # Expected: active plugins with bundled-component counts; bare MCPs / hooks / skills;
 # no findings unless corpus has matching plugin/component advisories (it doesn't yet in V0).
 
-# repo mode against an ASVE-aware project (e.g., this repo itself, which has
+# repo mode against an OpenACA-aware project (e.g., this repo itself, which has
 # `.claude/settings.json` and similar)
-uv run asve-scan repo --target . --advisories advisories -v
+uv run openaca scan repo --target . --advisories advisories -v
 ```
 
 ---

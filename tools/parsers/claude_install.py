@@ -66,7 +66,7 @@ def parse_install(
     """Read declared+lockfile state and emit one ComponentRef per active plugin.
 
     Returns `(refs, warnings)`. Warnings are surfaced in `-v` output by the
-    `asve-scan endpoint` command so users see resolver caveats (multi-scope
+    `openaca-scan endpoint` command so users see resolver caveats (multi-scope
     ambiguity, missing lockfile entries) without aborting the scan.
     """
     refs: list[ComponentRef] = []

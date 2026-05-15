@@ -1,4 +1,4 @@
-"""Seed reviewable ASVE overlay candidates from OSV bulk dumps."""
+"""Seed reviewable OpenACA overlay candidates from OSV bulk dumps."""
 
 from __future__ import annotations
 
@@ -276,10 +276,10 @@ def _has_malicious_package_id(record: dict[str, Any]) -> bool:
     return any(isinstance(value, str) and value.startswith("MAL-") for value in ids)
 
 
-def _apply_deterministic_asve_fields(
-    record: dict[str, Any], asve: dict[str, Any]
+def _apply_deterministic_openaca_fields(
+    record: dict[str, Any], openaca: dict[str, Any]
 ) -> dict[str, Any]:
-    annotation = copy.deepcopy(asve)
+    annotation = copy.deepcopy(openaca)
     annotation.pop("threat_kind", None)
     if _has_malicious_package_id(record):
         annotation["threat_kind"] = "malicious_package"
@@ -300,17 +300,17 @@ def _classify(record: dict[str, Any]) -> dict[str, Any]:
     if not taxonomy_lists:
         taxonomy_lists = {"owasp_agentic_top10": ["asi05"]}
 
-    asve: dict[str, Any] = {
+    openaca: dict[str, Any] = {
         "taxonomies": taxonomy_lists,
         "evidence_level": "likely",
     }
-    return _apply_deterministic_asve_fields(record, asve)
+    return _apply_deterministic_openaca_fields(record, openaca)
 
 
 def build_candidate(
     record: dict[str, Any],
     matched_by: list[str],
-    asve_annotation: dict[str, Any] | None = None,
+    openaca_annotation: dict[str, Any] | None = None,
     evidence: list[dict[str, str]] | None = None,
     annotation_source: str = "deterministic",
     framework_documents: list[str] | None = None,
@@ -334,7 +334,7 @@ def build_candidate(
         candidate_metadata["llm_provider"] = llm_provider
     if llm_model:
         candidate_metadata["llm_model"] = llm_model
-    asve = asve_annotation if asve_annotation is not None else _classify(record)
+    openaca = openaca_annotation if openaca_annotation is not None else _classify(record)
     candidate: dict[str, Any] = {
         "schema_version": record.get("schema_version") or "1.7.5",
         "id": rec_id,
@@ -343,7 +343,7 @@ def build_candidate(
         "_evidence": evidence
         if evidence is not None
         else [{"field": "summary", "quote": record.get("summary") or ""}],
-        "database_specific": {"asve": _apply_deterministic_asve_fields(record, asve)},
+        "database_specific": {"openaca": _apply_deterministic_openaca_fields(record, openaca)},
     }
     if aliases:
         candidate["aliases"] = aliases
@@ -426,9 +426,9 @@ def _resolve_llm_config(
         normalized = llm.normalize_provider(provider)
     except llm.LLMAnnotationError as exc:
         raise click.UsageError(str(exc)) from exc
-    resolved_key = api_key or os.environ.get("ASVE_LLM_API_KEY")
+    resolved_key = api_key or os.environ.get("OPENACA_LLM_API_KEY")
     if not resolved_key:
-        raise click.UsageError("LLM API key is required via --llm-api-key or ASVE_LLM_API_KEY")
+        raise click.UsageError("LLM API key is required via --llm-api-key or OPENACA_LLM_API_KEY")
     return normalized, model, resolved_key
 
 
@@ -469,23 +469,23 @@ def _resolve_llm_config(
 @click.option(
     "--llm-provider",
     type=click.Choice(["openai", "anthropic"], case_sensitive=False),
-    envvar="ASVE_LLM_PROVIDER",
+    envvar="OPENACA_LLM_PROVIDER",
     help="LLM provider for framework-grounded annotations.",
 )
 @click.option(
     "--llm-model",
-    envvar="ASVE_LLM_MODEL",
+    envvar="OPENACA_LLM_MODEL",
     help="LLM model name for framework-grounded annotations.",
 )
 @click.option(
     "--llm-api-key",
-    envvar="ASVE_LLM_API_KEY",
-    help="LLM API key. Prefer ASVE_LLM_API_KEY.",
+    envvar="OPENACA_LLM_API_KEY",
+    help="LLM API key. Prefer OPENACA_LLM_API_KEY.",
 )
 @click.option(
     "--limit",
     type=click.IntRange(min=1),
-    envvar="ASVE_SEED_LIMIT",
+    envvar="OPENACA_SEED_LIMIT",
     help="Stop after writing this many candidates. Does not advance --state.",
 )
 def main(
@@ -628,12 +628,12 @@ def main(
                     click.echo(f"limit {limit} reached; state not advanced")
                     break
                 continue
-            if annotation.asve is None:
-                raise click.ClickException("LLM annotation must include database_specific.asve")
+            if annotation.openaca is None:
+                raise click.ClickException("LLM annotation must include database_specific.openaca")
             candidate = build_candidate(
                 record,
                 matched_by,
-                asve_annotation=annotation.asve,
+                openaca_annotation=annotation.openaca,
                 evidence=annotation.evidence,
                 annotation_source="llm",
                 framework_documents=sorted(framework_documents),

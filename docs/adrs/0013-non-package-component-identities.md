@@ -9,7 +9,7 @@ superseded-by: null
 
 ## Context
 
-ASVE scanners emit `ComponentRef` objects for both package-backed
+OpenACA scanners emit `ComponentRef` objects for both package-backed
 components and agent-native components that do not have package URLs. Early
 V0 work used `component_identity` for two different purposes: the logical
 identity of a component and the inventory slot where the scanner observed

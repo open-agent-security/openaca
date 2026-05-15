@@ -4,7 +4,7 @@ aliases:
 - CVE-2025-5277
 modified: '2025-08-30T12:00:00Z'
 database_specific:
-  asve:
+  openaca:
     taxonomies:
       owasp_agentic_top10:
       - asi02

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Constrain the LLM/agent-editable surface of ASVE candidates to `taxonomies` + `evidence_level` (everything else seeder-owned or upstream-owned), enforce that boundary in CI via the validator and overlay linter, and ship a thin Claude Code skill template so local subscription-based annotation has a documented UX.
+**Goal:** Constrain the LLM/agent-editable surface of OpenACA candidates to `taxonomies` + `evidence_level` (everything else seeder-owned or upstream-owned), enforce that boundary in CI via the validator and overlay linter, and ship a thin Claude Code skill template so local subscription-based annotation has a documented UX.
 
-**Architecture:** Two-phase ASVE annotation. The deterministic seeder (`asve-seed`) owns discovery, state, dedup, and the small set of mechanical fields (incl. `threat_kind` for MAL-* records). Semantic judgment (taxonomy mappings, evidence level) moves out of the API LLM path into a Claude Code skill that runs in the user's authenticated session — subscription quota, not API keys. Both the candidate validator and the overlay linter enforce the editable-surface contract structurally; semantic rules live in `docs/seed-review-rules.md` for human/agent reference.
+**Architecture:** Two-phase OpenACA annotation. The deterministic seeder (`openaca seed`) owns discovery, state, dedup, and the small set of mechanical fields (incl. `threat_kind` for MAL-* records). Semantic judgment (taxonomy mappings, evidence level) moves out of the API LLM path into a Claude Code skill that runs in the user's authenticated session — subscription quota, not API keys. Both the candidate validator and the overlay linter enforce the editable-surface contract structurally; semantic rules live in `docs/seed-review-rules.md` for human/agent reference.
 
 **Tech Stack:** Python 3.11, jsonschema (Draft202012Validator), click CLI, YAML candidate/overlay files, Markdown skill template.
 
@@ -22,7 +22,7 @@
 Create `docs/seed-review-rules.md` with the structural-vs-semantic split:
 
 ````markdown
-# ASVE candidate annotation rules
+# OpenACA candidate annotation rules
 
 Canonical rules for annotating reviewable seed candidates under
 `candidates/` and the canonical overlays under `overlays/`. Both the
@@ -32,19 +32,19 @@ candidate-review skill (when used) MUST conform.
 This document is the single source of truth for review behavior. It is
 read by `tools/seed/validator.py` and `tools/lint.py` (which enforce
 the structural subset in CI), by reviewers, and by the Claude Code
-skill at `examples/skills/claude/asve-candidate-review/SKILL.md`.
+skill at `examples/skills/claude/openaca-candidate-review/SKILL.md`.
 
 ## Editable fields
 
 When annotating or re-reviewing a candidate, ONLY edit:
 
-- `database_specific.asve.taxonomies.*` (framework mapping arrays)
-- `database_specific.asve.evidence_level` (one of:
+- `database_specific.openaca.taxonomies.*` (framework mapping arrays)
+- `database_specific.openaca.evidence_level` (one of:
   `confirmed`, `likely`, `research`, `disputed`, `withdrawn`)
 
 ## Forbidden fields (do not set, edit, or remove via review)
 
-- `database_specific.asve.threat_kind` — seeder-owned (see below)
+- `database_specific.openaca.threat_kind` — seeder-owned (see below)
 - `_candidate.*`, `_evidence.*` — review metadata, set by the seeder
 - `id`, `aliases`, `modified`, `summary`, `details`, `references`,
   `affected`, `severity` — upstream-owned, sourced from the OSV record
@@ -72,7 +72,7 @@ The validator (`tools/seed/validator.py`) and overlay linter
 2. Empty taxonomy arrays (e.g., `owasp_mcp_top10: []`). Omit the key
    instead.
 3. Empty `supplemental_taxonomies: {}`. Omit the key instead.
-4. Unknown keys under `database_specific.asve` — schema enforces
+4. Unknown keys under `database_specific.openaca` — schema enforces
    `additionalProperties: false` and rejects via JSON-schema
    validation.
 
@@ -102,10 +102,10 @@ record. The skill and human reviewers MUST apply them:
 
 The Claude Code skill supports two modes:
 
-- **Annotate**: candidate has no `database_specific.asve` block.
+- **Annotate**: candidate has no `database_specific.openaca` block.
   Skill adds it from scratch, applying both structural and semantic
   rules.
-- **Re-review**: candidate has an existing `database_specific.asve`
+- **Re-review**: candidate has an existing `database_specific.openaca`
   block (typically from an earlier API-mode annotation). Skill
   audits it against the rules above, edits to comply, and re-runs
   validation.
@@ -121,7 +121,7 @@ prompts and model outputs to other workspaces.
 
 ```yaml
 database_specific:
-  asve:
+  openaca:
     taxonomies:
       owasp_agentic_top10: [asi03]    # identity / privilege abuse
       owasp_llm_top10: [llm02:2025]   # sensitive info disclosure
@@ -132,7 +132,7 @@ database_specific:
 
 ```yaml
 database_specific:
-  asve:
+  openaca:
     threat_kind: malicious_package    # ← Flowise is not malicious
     taxonomies:
       owasp_agentic_top10: [asi04]    # ← not a supply-chain incident
@@ -148,7 +148,7 @@ database_specific:
 - [ ] **Step 2: Commit the rules document**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/candidate-annotation-surface
+cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
 git add docs/seed-review-rules.md
 git commit -m "Add canonical seed-review rules document"
 ```
@@ -169,7 +169,7 @@ Append to `tests/test_seed_validator.py`:
 def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
     """threat_kind is seeder-owned and only valid on MAL-* ids/aliases."""
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     errors = validate_candidate(candidate)
 
@@ -181,7 +181,7 @@ def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
 def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
     candidate = _candidate()
     candidate["id"] = "MAL-2026-0001"
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     assert validate_candidate(candidate) == []
 
@@ -189,7 +189,7 @@ def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
 def test_validate_candidate_accepts_threat_kind_on_mal_alias():
     candidate = _candidate()
     candidate["aliases"] = ["MAL-2026-0042"]
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     assert validate_candidate(candidate) == []
 ```
@@ -197,7 +197,7 @@ def test_validate_candidate_accepts_threat_kind_on_mal_alias():
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/candidate-annotation-surface
+cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
 uv run pytest tests/test_seed_validator.py::test_validate_candidate_rejects_threat_kind_on_non_mal_record tests/test_seed_validator.py::test_validate_candidate_accepts_threat_kind_on_mal_record_id tests/test_seed_validator.py::test_validate_candidate_accepts_threat_kind_on_mal_alias -v
 ```
 
@@ -210,8 +210,8 @@ Add a helper after `validate_candidate` in `tools/seed/validator.py`:
 ```python
 def _check_threat_kind_id_coupling(candidate: dict[str, Any]) -> list[str]:
     """threat_kind is only valid when id or an alias starts with MAL-."""
-    asve = (candidate.get("database_specific") or {}).get("asve") or {}
-    if "threat_kind" not in asve:
+    openaca = (candidate.get("database_specific") or {}).get("openaca") or {}
+    if "threat_kind" not in openaca:
         return []
     record_id = candidate.get("id") or ""
     aliases = candidate.get("aliases") or []
@@ -283,7 +283,7 @@ Append to `tests/test_seed_validator.py`:
 ```python
 def test_validate_candidate_rejects_empty_taxonomy_array():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["taxonomies"]["owasp_mcp_top10"] = []
+    candidate["database_specific"]["openaca"]["taxonomies"]["owasp_mcp_top10"] = []
 
     errors = validate_candidate(candidate)
 
@@ -294,7 +294,7 @@ def test_validate_candidate_rejects_empty_taxonomy_array():
 
 def test_validate_candidate_rejects_empty_supplemental_taxonomies():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["taxonomies"]["supplemental_taxonomies"] = {}
+    candidate["database_specific"]["openaca"]["taxonomies"]["supplemental_taxonomies"] = {}
 
     errors = validate_candidate(candidate)
 
@@ -323,8 +323,8 @@ Add a helper to `tools/seed/validator.py`:
 ```python
 def _check_no_empty_taxonomy_buckets(candidate: dict[str, Any]) -> list[str]:
     """Reject empty arrays/dicts under taxonomies; omit the key instead."""
-    asve = (candidate.get("database_specific") or {}).get("asve") or {}
-    taxonomies = asve.get("taxonomies")
+    openaca = (candidate.get("database_specific") or {}).get("openaca") or {}
+    taxonomies = openaca.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return []
     errors: list[str] = []
@@ -367,12 +367,12 @@ git commit -m "Reject empty taxonomy buckets in validator"
 - Modify: `tools/lint.py`
 - Test: `tests/test_lint.py`
 
-The candidate validator catches issues at `asve-seed` time; the overlay linter (`asve-lint`) catches them at promotion time. Same rules, applied to the canonical overlay shape.
+The candidate validator catches issues at `openaca seed` time; the overlay linter (`openaca lint`) catches them at promotion time. Same rules, applied to the canonical overlay shape.
 
 - [ ] **Step 1: Inspect the existing overlay lint structure**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/candidate-annotation-surface
+cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
 grep -n "^def check_" tools/lint.py
 grep -n "def test_" tests/test_lint.py | head -10
 ```
@@ -392,7 +392,7 @@ def test_lint_rejects_threat_kind_on_non_mal_overlay(tmp_path, capsys):
         "id: GHSA-test-1234-5678\n"
         "modified: '2026-05-14T00:00:00Z'\n"
         "database_specific:\n"
-        "  asve:\n"
+        "  openaca:\n"
         "    threat_kind: malicious_package\n"
         "    taxonomies:\n"
         "      owasp_agentic_top10: [asi05]\n"
@@ -415,7 +415,7 @@ def test_lint_rejects_empty_taxonomy_bucket_in_overlay(tmp_path):
         "id: GHSA-test-empty-bucket\n"
         "modified: '2026-05-14T00:00:00Z'\n"
         "database_specific:\n"
-        "  asve:\n"
+        "  openaca:\n"
         "    taxonomies:\n"
         "      owasp_agentic_top10: [asi05]\n"
         "      owasp_mcp_top10: []\n"
@@ -444,8 +444,8 @@ Add to `tools/lint.py` next to the other `check_*` functions:
 ```python
 def check_threat_kind_id_coupling(overlay: dict, path: Path) -> list[str]:
     """threat_kind valid only on MAL-* ids/aliases (mirrors validator.py)."""
-    asve = (overlay.get("database_specific") or {}).get("asve") or {}
-    if "threat_kind" not in asve:
+    openaca = (overlay.get("database_specific") or {}).get("openaca") or {}
+    if "threat_kind" not in openaca:
         return []
     record_id = overlay.get("id") or ""
     aliases = overlay.get("aliases") or []
@@ -461,8 +461,8 @@ def check_threat_kind_id_coupling(overlay: dict, path: Path) -> list[str]:
 
 def check_no_empty_taxonomy_buckets(overlay: dict, path: Path) -> list[str]:
     """Reject empty arrays/dicts under taxonomies (mirrors validator.py)."""
-    asve = (overlay.get("database_specific") or {}).get("asve") or {}
-    taxonomies = asve.get("taxonomies")
+    openaca = (overlay.get("database_specific") or {}).get("openaca") or {}
+    taxonomies = openaca.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return []
     errors: list[str] = []
@@ -508,7 +508,7 @@ git commit -m "Apply threat_kind and empty-bucket checks to overlay linter"
 
 - [ ] **Step 1: Create the fixture**
 
-`tests/fixtures/candidates/flowise-nano-bad.yaml` — the literal nano-style output for GHSA-mq53-pc65-wjc4, slimmed to the asve-relevant fields:
+`tests/fixtures/candidates/flowise-nano-bad.yaml` — the literal nano-style output for GHSA-mq53-pc65-wjc4, slimmed to the openaca-relevant fields:
 
 ```yaml
 schema_version: 1.7.5
@@ -527,7 +527,7 @@ _evidence:
   - field: summary
     quote: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
 database_specific:
-  asve:
+  openaca:
     evidence_level: likely
     taxonomies:
       mitre_atlas:
@@ -619,7 +619,7 @@ _evidence:
   - field: details
     quote: 'Evaluation runs (which may include captured prompts, model outputs, scoring data) can be moved cross-workspace via `workspaceId` overwrite.'
 database_specific:
-  asve:
+  openaca:
     taxonomies:
       owasp_agentic_top10:
         - asi03
@@ -667,26 +667,26 @@ git commit -m "Add corrected Flowise fixture as the canonical good-annotation re
 ## Task 7: Skill template for Claude Code
 
 **Files:**
-- Create: `examples/skills/claude/asve-candidate-review/SKILL.md`
+- Create: `examples/skills/claude/openaca-candidate-review/SKILL.md`
 
 - [ ] **Step 1: Create the skill template**
 
 ```markdown
 ---
-name: asve-candidate-review
-description: Annotate or re-review ASVE seed candidates in `candidates/` according to the canonical rules. Use when the user asks to annotate, review, fix, or re-classify candidate YAML files produced by the deterministic seeder.
+name: openaca-candidate-review
+description: Annotate or re-review OpenACA seed candidates in `candidates/` according to the canonical rules. Use when the user asks to annotate, review, fix, or re-classify candidate YAML files produced by the deterministic seeder.
 ---
 
-# ASVE candidate review
+# OpenACA candidate review
 
 Annotate or re-review reviewable seed candidates produced by
-`asve-seed`. Uses your Claude Code session's auth (subscription
+`openaca seed`. Uses your Claude Code session's auth (subscription
 quota), not the API LLM provider path.
 
 ## Invocation modes
 
-- `/asve-candidate-review candidates/GHSA-mq53-pc65-wjc4.yaml` — single file
-- `/asve-candidate-review candidates/` — every candidate whose
+- `/openaca-candidate-review candidates/GHSA-mq53-pc65-wjc4.yaml` — single file
+- `/openaca-candidate-review candidates/` — every candidate whose
   `_candidate.review_status` is `needs_review`
 
 For directory mode, if there are more than 20 candidates to review,
@@ -695,7 +695,7 @@ degrades past ~20 records per session due to context budget.
 
 ## What to do
 
-1. **Locate the ASVE repo.** It is the working directory if the
+1. **Locate the OpenACA repo.** It is the working directory if the
    user invoked from inside it; otherwise ask once.
 2. **Read the rules.** Read `docs/seed-review-rules.md` in full.
    This is the canonical contract. If the file is missing, stop and
@@ -707,12 +707,12 @@ degrades past ~20 records per session due to context budget.
 4. **For each candidate file:**
    - Read the file.
    - Determine review mode: `annotate` (no
-     `database_specific.asve`) or `re-review` (block exists).
+     `database_specific.openaca`) or `re-review` (block exists).
    - Read the OSV record fields in the file (`summary`, `details`,
      `affected`, `references`).
    - Apply the rules from `docs/seed-review-rules.md`:
-     - Edit ONLY `database_specific.asve.taxonomies.*` and
-       `database_specific.asve.evidence_level`.
+     - Edit ONLY `database_specific.openaca.taxonomies.*` and
+       `database_specific.openaca.evidence_level`.
      - NEVER touch `threat_kind`, `_candidate`, `_evidence`,
        `summary`, `details`, `affected`, `severity`, `references`,
        `aliases`, `id`, `modified`.
@@ -729,7 +729,7 @@ degrades past ~20 records per session due to context budget.
      tool.
 5. **Validate.** After all edits, run:
    ```
-   uv run asve-lint candidates/
+   uv run openaca lint candidates/
    ```
    If validation fails, read the error message, correct the
    relevant candidate, and re-run validation. Do not move on with
@@ -742,7 +742,7 @@ degrades past ~20 records per session due to context budget.
 ## Out of scope
 
 - Do not edit overlays under `overlays/` from this skill. Use
-  `asve-promote` for promotion after candidate review is complete.
+  `openaca promote` for promotion after candidate review is complete.
 - Do not change OSV-owned fields. If the OSV record itself looks
   wrong, surface it to the user rather than editing the candidate.
 - Do not invent taxonomies that are not in
@@ -759,7 +759,7 @@ Do not silently apply your own judgment over the documented rule.
 - [ ] **Step 2: Commit**
 
 ```bash
-git add examples/skills/claude/asve-candidate-review/SKILL.md
+git add examples/skills/claude/openaca-candidate-review/SKILL.md
 git commit -m "Add Claude Code skill template for candidate review"
 ```
 
@@ -773,15 +773,15 @@ git commit -m "Add Claude Code skill template for candidate review"
 - [ ] **Step 1: Locate the right section**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/candidate-annotation-surface
-grep -n "asve-seed\|seeding\|candidate" README.md | head -10
+cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
+grep -n "openaca seed\|seeding\|candidate" README.md | head -10
 ```
 
 Identify where the existing seed/candidate flow is documented. Likely under a "Seeding" or "Workflows" section.
 
 - [ ] **Step 2: Add the local-subscription flow snippet**
 
-Append a subsection (or insert near the existing `asve-seed` documentation, matching the file's existing structure and headline level):
+Append a subsection (or insert near the existing `openaca seed` documentation, matching the file's existing structure and headline level):
 
 ```markdown
 ### Local annotation via Claude Code (subscription quota)
@@ -790,19 +790,19 @@ For human-in-the-loop triage without burning API credits:
 
 1. Run the deterministic seeder to populate `candidates/`:
    ```
-   uv run asve-seed candidates/ --no-llm
+   uv run openaca seed candidates/ --no-llm
    ```
 2. Copy the skill template into your Claude Code skills directory:
    ```
-   cp -r examples/skills/claude/asve-candidate-review ~/.claude/skills/
+   cp -r examples/skills/claude/openaca-candidate-review ~/.claude/skills/
    ```
 3. From a Claude Code session in this repo, invoke the skill:
    ```
-   /asve-candidate-review candidates/
+   /openaca-candidate-review candidates/
    ```
    The agent reads `docs/seed-review-rules.md` and
    `docs/frameworks/*.md`, applies them to each candidate, and runs
-   `asve-lint` on the result. See `docs/seed-review-rules.md` for
+   `openaca lint` on the result. See `docs/seed-review-rules.md` for
    the exact editable surface.
 
 API-mode annotation (`--llm-provider openai|anthropic`) remains
@@ -823,17 +823,17 @@ git commit -m "Document local subscription-based annotation flow in README"
 - [ ] **Step 1: Run the full test suite and lint gates**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/candidate-annotation-surface
+cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
 uv run ruff format --check tools/ tests/
 uv run ruff check tools/ tests/
 uv run pyright
 uv run pytest -q
-uv run asve-lint overlays/
+uv run openaca lint overlays/
 ```
 
 Expected: all green. The overlay linter run validates that no existing canonical overlays trip the new rules — important since this PR adds enforcement that wasn't there before.
 
-- [ ] **Step 2: If `asve-lint overlays/` reports new failures**
+- [ ] **Step 2: If `openaca lint overlays/` reports new failures**
 
 These would be existing canonical overlays that violate the new rules. Two possibilities:
 
@@ -850,7 +850,7 @@ gh pr create --title "Constrain candidate annotation surface; add review skill t
   --body "$(cat <<'EOF'
 ## Summary
 
-- Lock the LLM/agent-editable surface of ASVE candidates to `database_specific.asve.taxonomies.*` and `database_specific.asve.evidence_level`. Everything else is either seeder-owned (`threat_kind` from MAL-* coupling) or upstream-owned (severity, affected, references, summary, details).
+- Lock the LLM/agent-editable surface of OpenACA candidates to `database_specific.openaca.taxonomies.*` and `database_specific.openaca.evidence_level`. Everything else is either seeder-owned (`threat_kind` from MAL-* coupling) or upstream-owned (severity, affected, references, summary, details).
 - Enforce the contract structurally: validator and overlay linter reject `threat_kind` on non-MAL records and reject empty taxonomy buckets. Actionable error messages name the field.
 - Add a Claude Code skill template for local subscription-based annotation. Repo owns the rules (`docs/seed-review-rules.md`); the skill is a thin instruction wrapper that points at them. Codex CLI parity is a follow-up if needed.
 - Regression fixtures: nano-style Flowise output (bad) and the corrected opus-style annotation (good).
@@ -861,7 +861,7 @@ gh pr create --title "Constrain candidate annotation surface; add review skill t
 - uv run ruff format --check tools/ tests/
 - uv run ruff check tools/ tests/
 - uv run pyright
-- uv run asve-lint overlays/
+- uv run openaca lint overlays/
 
 ## Out of scope (tracked separately)
 
@@ -886,10 +886,10 @@ Expected: green.
 - `tools/seed/validator.py` — candidate validator (existing, extended)
 - `tools/lint.py` — overlay linter (existing, extended)
 - `tools/promote.py:31` — `project_candidate_to_overlay` (read-only; validator uses it)
-- `schema/asve.schema.json:96` — `threat_kind` enum and `additionalProperties: false` on `asve_extension`
+- `schema/openaca.schema.json:96` — `threat_kind` enum and `additionalProperties: false` on `openaca_extension`
 - `docs/adrs/0012-minimal-overlay-schema.md` — defines `threat_kind` semantics
 - `docs/frameworks/*.md` — referenced by the skill at runtime
-- `examples/skills/claude/asve-candidate-review/SKILL.md` — new
+- `examples/skills/claude/openaca-candidate-review/SKILL.md` — new
 
 ## Reused utilities
 

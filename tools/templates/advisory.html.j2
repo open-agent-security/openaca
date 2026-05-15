@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{{ advisory.id }} — ASVE</title>
-  <link rel="canonical" href="https://asve.dev/overlays/{{ advisory.id }}.html">
+  <title>{{ advisory.id }} — OpenACA</title>
+  <link rel="canonical" href="https://openaca.dev/overlays/{{ advisory.id }}.html">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
   <header>
-    <p><a href="../">← ASVE</a></p>
+    <p><a href="../">← OpenACA</a></p>
     <h1>{{ advisory.id }}</h1>
-    <p class="tagline">ASVE agent-context overlay</p>
+    <p class="tagline">OpenACA agent-context overlay</p>
   </header>
 
   <dl class="advisory-meta">
@@ -71,12 +71,12 @@
   </section>
   {% endif %}
 
-  {% set asve = (advisory.database_specific or {}).get('asve') or {} %}
-  {% if asve %}
+  {% set openaca = (advisory.database_specific or {}).get('openaca') or {} %}
+  {% if openaca %}
   <section>
     <h2>Agent context</h2>
-    {% if asve.threat_kind %}<p>Threat kind: <code>{{ asve.threat_kind }}</code></p>{% endif %}
-    {% set taxonomies = asve.taxonomies or {} %}
+    {% if openaca.threat_kind %}<p>Threat kind: <code>{{ openaca.threat_kind }}</code></p>{% endif %}
+    {% set taxonomies = openaca.taxonomies or {} %}
     {% if taxonomies %}
       {% if taxonomies.owasp_agentic_top10 %}
       <p>OWASP Agentic Top 10: {% for c in taxonomies.owasp_agentic_top10 %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
@@ -94,7 +94,7 @@
       <p>MITRE ATLAS: {% for c in taxonomies.mitre_atlas %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
       {% endif %}
     {% endif %}
-    {% if asve.evidence_level %}<p>Evidence: <code>{{ asve.evidence_level }}</code></p>{% endif %}
+    {% if openaca.evidence_level %}<p>Evidence: <code>{{ openaca.evidence_level }}</code></p>{% endif %}
   </section>
   {% endif %}
 

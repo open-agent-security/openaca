@@ -1,1 +1,1 @@
-"""ASVE overlay and scanner tooling."""
+"""OpenACA overlay and scanner tooling."""

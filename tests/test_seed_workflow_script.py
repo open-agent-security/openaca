@@ -44,7 +44,7 @@ printf '%s\\n' "$*" >> "$UV_LOG"
 
     env = {
         **os.environ,
-        "ASVE_OSV_CACHE_DIR": str(cache),
+        "OPENACA_OSV_CACHE_DIR": str(cache),
         "FAKE_GCS_ROOT": str(fake_gcs),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(uv_log),
@@ -66,9 +66,9 @@ printf '%s\\n' "$*" >> "$UV_LOG"
     assert (cache / "PyPI" / "all.zip").exists()
     log = uv_log.read_text(encoding="utf-8")
     assert "--records-root " + str(cache / "npm") in log
-    assert "--state .asve-seed-state-npm.json" in log
+    assert "--state .openaca-seed-state-npm.json" in log
     assert "--records-root " + str(cache / "PyPI") in log
-    assert "--state .asve-seed-state-pypi.json" in log
+    assert "--state .openaca-seed-state-pypi.json" in log
 
 
 def test_seed_osv_workflow_passes_optional_llm_provider_and_model(tmp_path):
@@ -103,10 +103,10 @@ printf '%s\\n' "$*" >> "$UV_LOG"
 
     env = {
         **os.environ,
-        "ASVE_OSV_CACHE_DIR": str(cache),
-        "ASVE_LLM_PROVIDER": "openai",
-        "ASVE_LLM_MODEL": "test-model",
-        "ASVE_LLM_API_KEY": "test-key",
+        "OPENACA_OSV_CACHE_DIR": str(cache),
+        "OPENACA_LLM_PROVIDER": "openai",
+        "OPENACA_LLM_MODEL": "test-model",
+        "OPENACA_LLM_API_KEY": "test-key",
         "FAKE_GCS_ROOT": str(fake_gcs),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(uv_log),
@@ -160,8 +160,8 @@ printf '%s\\n' "$*" >> "$UV_LOG"
 
     env = {
         **os.environ,
-        "ASVE_OSV_CACHE_DIR": str(cache),
-        "ASVE_SEED_LIMIT": "3",
+        "OPENACA_OSV_CACHE_DIR": str(cache),
+        "OPENACA_SEED_LIMIT": "3",
         "FAKE_GCS_ROOT": str(fake_gcs),
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(uv_log),

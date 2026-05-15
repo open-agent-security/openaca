@@ -21,7 +21,7 @@ def test_lint_fails_on_bad_cvss(fixtures_dir, tmp_path):
     src = fixtures_dir / "invalid" / "bad-cvss.yaml"
     target_dir = tmp_path / "advisories" / "2026"
     target_dir.mkdir(parents=True)
-    (target_dir / "ASVE-2026-9003.yaml").write_text(src.read_text())
+    (target_dir / "CVE-2026-9003.yaml").write_text(src.read_text())
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code != 0
@@ -29,7 +29,7 @@ def test_lint_fails_on_bad_cvss(fixtures_dir, tmp_path):
 
 
 def test_lint_fails_on_overlay_filename_mismatch(fixtures_dir, tmp_path):
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     target = tmp_path / "overlays"
     target.mkdir()
     (target / "wrong-name.yaml").write_text(src.read_text())
@@ -43,7 +43,7 @@ def test_lint_fails_on_bad_datetime(fixtures_dir, tmp_path):
     src = fixtures_dir / "invalid" / "bad-datetime.yaml"
     target_dir = tmp_path / "advisories" / "2026"
     target_dir.mkdir(parents=True)
-    (target_dir / "ASVE-2026-9004.yaml").write_text(src.read_text())
+    (target_dir / "CVE-2026-9004.yaml").write_text(src.read_text())
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code != 0
@@ -51,8 +51,8 @@ def test_lint_fails_on_bad_datetime(fixtures_dir, tmp_path):
 
 
 def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
-    misplaced = tmp_path / "overlays" / "ASVE-2026-0002.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
+    misplaced = tmp_path / "overlays" / "CVE-2026-0002.yaml"
     misplaced.parent.mkdir(parents=True)
     misplaced.write_text(src.read_text())
     runner = CliRunner()
@@ -64,7 +64,7 @@ def test_lint_fails_on_path_mismatch(fixtures_dir, tmp_path):
 def test_lint_passes_for_v3_severity(fixtures_dir, tmp_path):
     """An advisory with a CVSS v3.1 severity block should pass the linter
     end-to-end. v3 is now an accepted upstream-preservation format."""
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     advisory = yaml.safe_load(src.read_text())
     advisory["severity"] = [
         {
@@ -74,7 +74,7 @@ def test_lint_passes_for_v3_severity(fixtures_dir, tmp_path):
     ]
     target_dir = tmp_path / "advisories" / "2026"
     target_dir.mkdir(parents=True)
-    (target_dir / "ASVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
+    (target_dir / "CVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code == 0, result.output
@@ -83,7 +83,7 @@ def test_lint_passes_for_v3_severity(fixtures_dir, tmp_path):
 def test_lint_fails_on_v3_type_with_v4_vector(fixtures_dir, tmp_path):
     """Declared type and vector body must agree — a v3 declaration with a
     v4-shaped score body is malformed and must be rejected."""
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     advisory = yaml.safe_load(src.read_text())
     advisory["severity"] = [
         {
@@ -93,35 +93,22 @@ def test_lint_fails_on_v3_type_with_v4_vector(fixtures_dir, tmp_path):
     ]
     target_dir = tmp_path / "advisories" / "2026"
     target_dir.mkdir(parents=True)
-    (target_dir / "ASVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
+    (target_dir / "CVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "advisories")])
     assert result.exit_code != 0
     assert "cvss" in result.output.lower()
 
 
-def test_lint_fails_on_missing_internal_alias(fixtures_dir, tmp_path):
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
-    target_dir = tmp_path / "advisories" / "2026"
-    target_dir.mkdir(parents=True)
-    advisory = yaml.safe_load(src.read_text())
-    advisory["aliases"].append("ASVE-2026-9999")  # does not exist
-    (target_dir / "ASVE-2026-0001.yaml").write_text(yaml.safe_dump(advisory))
-    runner = CliRunner()
-    result = runner.invoke(main, [str(tmp_path / "advisories")])
-    assert result.exit_code != 0
-    assert "ASVE-2026-9999" in result.output
-
-
 def test_lint_fails_on_duplicate_overlay_id_across_subdirs(fixtures_dir, tmp_path):
     """Two files in different subdirectories with the same overlay id both fail lint."""
-    src = fixtures_dir / "valid" / "asve-2026-0001.yaml"
+    src = fixtures_dir / "valid" / "cve-2026-0001.yaml"
     content = src.read_text()
     # Place the same overlay under two different subdirectory paths.
     for subdir in ("overlays/a", "overlays/b"):
         d = tmp_path / subdir
         d.mkdir(parents=True)
-        (d / "ASVE-2026-0001.yaml").write_text(content)
+        (d / "CVE-2026-0001.yaml").write_text(content)
     runner = CliRunner()
     result = runner.invoke(main, [str(tmp_path / "overlays")])
     assert result.exit_code != 0
@@ -136,7 +123,7 @@ def test_lint_rejects_malformed_overlay_id(tmp_path):
         "id": "NOTANID-broken",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "confirmed",
             }
@@ -158,7 +145,7 @@ def test_lint_accepts_valid_upstream_id_formats(tmp_path):
         "schema_version": "1.7.5",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "confirmed",
             }
@@ -188,7 +175,10 @@ def test_lint_rejects_exposure_type_in_v0(tmp_path):
         "type": "exposure",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+            "openaca": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            }
         },
     }
     target = tmp_path / "overlays"
@@ -209,7 +199,10 @@ def test_lint_rejects_config_type_in_v0(tmp_path):
         "type": "config",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+            "openaca": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            }
         },
     }
     target = tmp_path / "overlays"
@@ -228,7 +221,7 @@ def test_lint_rejects_threat_kind_on_non_mal_overlay(tmp_path):
         "id": "GHSA-test-tkind-aaaa",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "threat_kind": "malicious_package",
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
@@ -252,7 +245,7 @@ def test_lint_accepts_threat_kind_on_mal_overlay(tmp_path):
         "id": "MAL-2026-0001",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "threat_kind": "malicious_package",
                 "taxonomies": {"owasp_agentic_top10": ["asi04"]},
                 "evidence_level": "confirmed",
@@ -273,7 +266,7 @@ def test_lint_rejects_empty_taxonomy_bucket_in_overlay(tmp_path):
         "id": "GHSA-test-empty-bbbb",
         "modified": "2026-01-01T00:00:00Z",
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "taxonomies": {
                     "owasp_agentic_top10": ["asi05"],
                     "owasp_mcp_top10": [],

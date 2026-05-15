@@ -1,6 +1,6 @@
-# ASVE Thesis
+# OpenACA Thesis
 
-> Companion to [`asve-v0-design.md`](asve-v0-design.md). The design doc says
+> Companion to [`openaca-v0-design.md`](openaca-v0-design.md). The design doc says
 > **what** V0 ships. This doc says **why** the project exists, **what gap** it
 > fills, and **why the OSS authority position is durable** as adjacent
 > ecosystems evolve.
@@ -11,11 +11,11 @@
 
 ## One-paragraph thesis
 
-ASVE is the open, SCA-shaped advisory layer for AI agent infrastructure: it
+OpenACA is the open, SCA-shaped advisory layer for AI agent infrastructure: it
 resolves agent-installation manifests (`mcp.json`, `.claude-plugin/plugin.json`,
 `.claude/settings.json`, and similar) to component identities, matches them
 against OSV-compatible records, and adds agent-specific context for triage.
-ASVE does for agent-stack manifests what
+OpenACA does for agent-stack manifests what
 [OSV](https://github.com/ossf/osv-schema) /
 [GHSA](https://github.com/advisories) / Dependabot do for package lockfiles,
 with the extra context needed to reason about agent permissions, tools,
@@ -29,14 +29,14 @@ space:
 1. **Versioned-package advisories on npm/PyPI are already covered by GHSA.**
    When an MCP server is published as `@modelcontextprotocol/server-X` on npm
    or `mcp-server-Y` on PyPI, recent CVEs flow through GHSA → OSV → Dependabot.
-   ASVE does not replace this pipeline. It aliases it.
+   OpenACA does not replace this pipeline. It aliases it.
 2. **Agent-stack scanning is being addressed by artifact-analysis tools.**
    Several Apache-2.0 / open scanners exist that inspect MCP servers, plugin
    manifests, IDE config, and skill content for unsafe patterns. They operate
    primarily as artifact analysis tools (SAST-shaped). Their output is
    pattern-match findings, not advisories looked up against a database.
 3. **OWASP Agentic Top 10 has settled the taxonomy.** Categories ASI01–ASI10
-   are the standard reference. ASVE consumes this taxonomy; it does not
+   are the standard reference. OpenACA consumes this taxonomy; it does not
    redefine it.
 
 Three honest facts about what is *not* covered:
@@ -56,7 +56,7 @@ Three honest facts about what is *not* covered:
    can rely on without depending on any single scanner vendor's data
    pipeline.
 
-ASVE's wedge sits in those three gaps: **the open, OSV-compatible advisory
+OpenACA's wedge sits in those three gaps: **the open, OSV-compatible advisory
 database that extends SCA to plugin / MCP / marketplace manifests, with
 agent-context metadata overlay and OWASP ASI category mapping.**
 
@@ -68,7 +68,7 @@ traditional software security.
 | Layer | What it does | Knowledge source | Examples |
 |---|---|---|---|
 | **SAST** (artifact analysis) | Inspects an artifact for unsafe patterns | Rules + analysis logic | Pattern-checking scanners for MCP servers, plugin manifests, skill content, IDE configs |
-| **SCA** (database lookup) | Identifies third-party components by version, looks them up against a vuln DB | Database + parsers | OSV-Scanner, Trivy, Dependabot for traditional packages; **ASVE for agent-stack manifests** |
+| **SCA** (database lookup) | Identifies third-party components by version, looks them up against a vuln DB | Database + parsers | OSV-Scanner, Trivy, Dependabot for traditional packages; **OpenACA for agent-stack manifests** |
 
 These layers stack. They do not compete. Mature security tooling runs both
 because they catch different signal types.
@@ -85,10 +85,10 @@ What SCA gets you that pure artifact analysis cannot:
    × analysis-time). For an org with many agent installations, the difference
    matters.
 4. **Cross-component fleet view.** *"Across our org, what is our exposure to
-   ASVE-2026-NNNN?"* — answerable from a manifest survey + DB lookup.
+   OpenACA-2026-NNNN?"* — answerable from a manifest survey + DB lookup.
 5. **Pre-install gates.** CI workflow can ask *"is this manifest about to
    install a known-vulnerable component?"* before the install lands.
-6. **Audit trail.** *"Were we exposed to ASVE-X between March and May?"* — a
+6. **Audit trail.** *"Were we exposed to OpenACA-X between March and May?"* — a
    DB + lockfile history answers it.
 7. **Vendor-neutral baseline.** SCA decisions reduce to *"version X has vuln
    Y"* — same answer regardless of scanner. The DB is the shared substrate
@@ -100,13 +100,13 @@ actionable signal isn't *"this third-party thing has unsafe patterns"* — it's
 That is an SCA finding by definition. Agent-installation manifests
 (`mcp.json`, `.claude-plugin/plugin.json`) are lockfile-equivalent: they
 carry version semantics. The substrate SCA needs already exists in the
-format. ASVE is the database that closes the loop.
+format. OpenACA is the database that closes the loop.
 
-## What ASVE adds beyond OSV
+## What OpenACA adds beyond OSV
 
-Three things ASVE's records contain that a generic OSV/GHSA record does not:
+Three things OpenACA's records contain that a generic OSV/GHSA record does not:
 
-1. **`taxonomies{}`** — mapping of ASVE-owned agent-context taxonomy
+1. **`taxonomies{}`** — mapping of OpenACA-owned agent-context taxonomy
    families, including `owasp_agentic_top10[]` entries referencing
    ASI01–ASI10 categories.
    Lets consumers triage findings by the framework category instead of just
@@ -114,21 +114,21 @@ Three things ASVE's records contain that a generic OSV/GHSA record does not:
 2. **`evidence_level`** — enum `confirmed | likely | research | disputed |
    withdrawn`. Lets consumers filter noise. Auto-fix on confirmed,
    ticket-only on research-grade.
-3. **`threat_kind`** — a narrow ASVE-owned classification for records where
+3. **`threat_kind`** — a narrow OpenACA-owned classification for records where
    upstream OSV shape is too generic. V0 only allows `malicious_package`.
 
 Scanner output still carries observed component context such as package PURLs,
 MCP launch declarations, plugin attribution, and non-PURL `ComponentRef`
 identity. That context is deliberately not duplicated into canonical overlays.
 
-These fields all live under `database_specific.asve` in the OSV schema. OSV
-reserves that namespace exactly for per-database extensions. ASVE-aware
+These fields all live under `database_specific.openaca` in the OSV schema. OSV
+reserves that namespace exactly for per-database extensions. OpenACA-aware
 tooling reads the overlay; OSV-compliant generic tooling ignores it.
 **Backwards-compatible by design.**
 
 ## Single namespace, type-tagged advisories
 
-ASVE uses **one ID space** (`ASVE-YYYY-NNNN`), with each advisory carrying a
+OpenACA uses **one ID space** (`OpenACA-YYYY-NNNN`), with each advisory carrying a
 `type` field:
 
 | `type` | Use for | V0 status |
@@ -140,46 +140,46 @@ ASVE uses **one ID space** (`ASVE-YYYY-NNNN`), with each advisory carrying a
 Why a single namespace beats the two-corpus alternative:
 
 - One ID format to remember, one mental model.
-- CVE itself doesn't split into `CVE-CFG`; just `CVE`. ASVE follows the same
+- CVE itself doesn't split into `CVE-CFG`; just `CVE`. OpenACA follows the same
   shape.
 - Schema variation handled via `type` field; per-type required-field
   enforcement in the linter.
 - Future-proof for new types without ID-space migration.
 
-The "E" in ASVE (Exposures) is intentionally future-compatible, not V0
+The "E" in OpenACA (Exposures) is intentionally future-compatible, not V0
 scope. See [ADR-0003](../adrs/0003-single-namespace-architecture.md).
 
 ## Why these structural moats hold
 
 Adjacent ecosystems (notably GHSA / OSV.dev) could expand to absorb parts of
-ASVE's wedge. The plausible expansion path is **OSV-Scanner / Dependabot
+OpenACA's wedge. The plausible expansion path is **OSV-Scanner / Dependabot
 adding parsers for `mcp.json`, `.claude-plugin/plugin.json`, etc.** That
-would close the *manifest-parsing* gap from above. ASVE's authority does
+would close the *manifest-parsing* gap from above. OpenACA's authority does
 *not* depend on that gap staying open.
 
 Three layers survive an OSV expansion:
 
 1. **The agent-context overlay.** OSV/GHSA's data model is generic; they have
-   no obvious reason to add an agent-context extension. ASVE = the schema
+   no obvious reason to add an agent-context extension. OpenACA = the schema
    authority for reviewed agent-stack taxonomy mappings and evidence level.
-   Even if OSV ingests ASVE records, they do so under the
-   `database_specific.asve` namespace ASVE defines.
+   Even if OSV ingests OpenACA records, they do so under the
+   `database_specific.openaca` namespace OpenACA defines.
 2. **Class-level types.** OSV's data model is anchored on `affected[]` — a
    per-package vulnerability shape. There's no native way to represent
    *"any record matching pattern X is risky"* without a specific instance.
    `type: config` and `type: exposure` records (V1) live in a category OSV
    structurally doesn't enter. Industry parallels for class-level posture
    advisories live in vendor-specific rule sets (CIS Benchmarks, Sigma,
-   Semgrep, cloud-policy engines) — none of those are GHSA. ASVE = the open
+   Semgrep, cloud-policy engines) — none of those are GHSA. OpenACA = the open
    class-level corpus for agent infrastructure.
 3. **Non-PURL component identity.** PURL is a strong substrate for components
    distributed via npm, PyPI, GitHub releases, Docker. It does not (today)
    reach Claude Code plugins distributed via marketplace.json indirection,
    Cursor extensions distributed via Cursor's marketplace, Windsurf plugins,
-   or stdio-launched MCP servers identified by command + args. ASVE's
+   or stdio-launched MCP servers identified by command + args. OpenACA's
    `component_identity` field follows install-time identity, not source-tree
    identity. Promoting these to standard PURL types is a future standards
-   proposal; ASVE's native identity moves now.
+   proposal; OpenACA's native identity moves now.
 
 These are **operational** advantages, not structural impossibilities. The
 defenses are:
@@ -187,18 +187,18 @@ defenses are:
 - **Adoption** — first credible mover on the schema becomes the convention.
 - **Curation speed** — a focused project iterating on agent-stack records
   ships faster than a general-purpose security database.
-- **Domain specificity** — ASVE *is* agent-infrastructure; GHSA is general.
+- **Domain specificity** — OpenACA *is* agent-infrastructure; GHSA is general.
   A consumer asking *"what's my agent-tool-hijack exposure"* gets a clean
-  answer from ASVE; from GHSA, they have to reconstruct it from generic CVE
+  answer from OpenACA; from GHSA, they have to reconstruct it from generic CVE
   records.
-- **Schema authority via standards proposal** — ASVE's `database_specific.asve`
+- **Schema authority via standards proposal** — OpenACA's `database_specific.openaca`
   fields and component-identity conventions are candidate inputs to the
   OSV schema standardization process. Even if a successor convention is
-  eventually upstreamed into OSV proper, ASVE drove its definition.
+  eventually upstreamed into OSV proper, OpenACA drove its definition.
 
 ## Why OSS
 
-ASVE's value depends on being the neutral, vendor-independent advisory
+OpenACA's value depends on being the neutral, vendor-independent advisory
 substrate for agent infrastructure. OSS is not a generosity choice; it is
 how the substrate works.
 
@@ -209,12 +209,12 @@ how the substrate works.
    the data-license norm; anything more restrictive forecloses the very moat
    the thesis depends on.
 2. **Trust accrues to neutral sources.** Vuln databases work because
-   consumers trust them as neutral. A closed ASVE forfeits the
+   consumers trust them as neutral. A closed OpenACA forfeits the
    vendor-neutrality differentiator and looks indistinguishable from any
    single vendor's private feed.
 3. **Standards leverage.** The agent-context overlay is most valuable if it
    becomes the convention everyone adopts. Standards spread from open
-   canonical implementations. A closed ASVE would prompt larger players to
+   canonical implementations. A closed OpenACA would prompt larger players to
    fork an open competitor and the schema-authority play disappears.
 4. **Curation network effects.** Security researchers, individual
    maintainers, and vendor security teams contribute to open vuln databases
@@ -234,19 +234,19 @@ License decisions:
 
 | Phase | Scope |
 |---|---|
-| **V0** | `type: vulnerability` only. Mostly aliases to existing CVE/GHSA records, with at least one *enriched* record demonstrating manifest-detection beyond lockfile. Schema, linter, ID reservation, static export, reference scanner (CLI + Action). Disclosure policy doc; private-pilot operation only. See [`asve-v0-design.md`](asve-v0-design.md) for the canonical V0 deliverable list. |
+| **V0** | `type: vulnerability` only. Mostly aliases to existing CVE/GHSA records, with at least one *enriched* record demonstrating manifest-detection beyond lockfile. Schema, linter, ID reservation, static export, reference scanner (CLI + Action). Disclosure policy doc; private-pilot operation only. See [`openaca-v0-design.md`](openaca-v0-design.md) for the canonical V0 deliverable list. |
 | **V1 entry** | Active disclosure pipeline. Triggered when V0 ships ≥ 25 advisories across 3+ component types, the disclosure framework is documented + tabletop-rehearsed, and ≥ 5 external ecosystem signals materialize. |
 | **V1 scaling** | Programmatic disclosure sweeps; first real coordinated disclosure completed end-to-end. |
 | **V1 record types** | `type: exposure` (overpowered configurations, default-credential templates) and `type: config` (class-level patterns) become published-record categories with documented methodology. |
 | **V1 manifest coverage** | Cursor + Windsurf + ChatGPT-style plugin manifests join the V0 set (`package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`). |
 | **V1 hash-based identity** | `T3` advisories — content-hash-keyed records for skill manifests, exported flows, and copy-pasted IDE rule templates. |
 
-V0 is the credibility floor. V1 is when ASVE becomes the corpus consumers
+V0 is the credibility floor. V1 is when OpenACA becomes the corpus consumers
 expect to query, not just an archive of aliases.
 
 ## Out of scope (anywhere in this thesis)
 
-ASVE-the-OSS-project covers schema, advisory corpus, manifest parsers, ID
+OpenACA-the-OSS-project covers schema, advisory corpus, manifest parsers, ID
 reservation, linter, static export, and reference scanner. It does **not**
 cover (now, or in any phase of the OSS roadmap):
 
@@ -259,7 +259,7 @@ cover (now, or in any phase of the OSS roadmap):
 - Public benchmarking of scanners or scanner leaderboards.
 
 Out-of-scope items remain so even if they would clear additional value;
-scope discipline is itself part of the thesis. ASVE is *the open advisory
+scope discipline is itself part of the thesis. OpenACA is *the open advisory
 substrate*. Other layers in the agent-security stack are other people's
 work.
 
@@ -274,7 +274,7 @@ work.
   <https://code.claude.com/docs/en/plugins-reference>
 - MCP protocol & ecosystem (Linux Foundation hosted):
   <https://modelcontextprotocol.io/>
-- ASVE V0 design: [`asve-v0-design.md`](asve-v0-design.md)
+- OpenACA V0 design: [`openaca-v0-design.md`](openaca-v0-design.md)
 - ADR-0001 — Licenses: [`../adrs/0001-licenses.md`](../adrs/0001-licenses.md)
 - ADR-0002 — Schema extension key:
   [`../adrs/0002-schema-extension-key.md`](../adrs/0002-schema-extension-key.md)

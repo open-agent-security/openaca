@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-push hook for asve. Installed by scripts/install-hooks.sh
+# Pre-push hook for openaca. Installed by scripts/install-hooks.sh
 # which sets `core.hooksPath = scripts/git-hooks`.
 #
 # CI-parity: runs the same lint / type / test commands as CI before any push,
@@ -70,29 +70,29 @@ fi
 # ---------- CI-parity local gates ----------
 
 echo "  → ruff check"
-if ! uv run ruff check . > /tmp/asve-pre-push-ruff-check.log 2>&1; then
-  tail -40 /tmp/asve-pre-push-ruff-check.log
+if ! uv run ruff check . > /tmp/openaca-pre-push-ruff-check.log 2>&1; then
+  tail -40 /tmp/openaca-pre-push-ruff-check.log
   fail "ruff check failed.
     To fix: uv run ruff check --fix . (then re-stage and re-push)"
 fi
 
 echo "  → ruff format --check"
-if ! uv run ruff format --check . > /tmp/asve-pre-push-ruff-format.log 2>&1; then
-  tail -40 /tmp/asve-pre-push-ruff-format.log
+if ! uv run ruff format --check . > /tmp/openaca-pre-push-ruff-format.log 2>&1; then
+  tail -40 /tmp/openaca-pre-push-ruff-format.log
   fail "ruff format --check failed.
     To fix: uv run ruff format . (then re-stage and re-push)"
 fi
 
 echo "  → pyright"
-if ! uv run pyright > /tmp/asve-pre-push-pyright.log 2>&1; then
-  tail -40 /tmp/asve-pre-push-pyright.log
+if ! uv run pyright > /tmp/openaca-pre-push-pyright.log 2>&1; then
+  tail -40 /tmp/openaca-pre-push-pyright.log
   fail "pyright failed.
     To fix: uv run pyright (address each error)"
 fi
 
 echo "  → pytest"
-if ! uv run pytest -q > /tmp/asve-pre-push-pytest.log 2>&1; then
-  tail -40 /tmp/asve-pre-push-pytest.log
+if ! uv run pytest -q > /tmp/openaca-pre-push-pytest.log 2>&1; then
+  tail -40 /tmp/openaca-pre-push-pytest.log
   fail "pytest failed.
     To fix: uv run pytest -v (debug failures, then re-stage and re-push)"
 fi

@@ -1,6 +1,6 @@
-# Contributing to ASVE
+# Contributing to OpenACA
 
-ASVE is an open-source overlay corpus and reference scanner.
+OpenACA is an open-source overlay corpus and reference scanner.
 Contributions are welcome: new overlays, parser improvements, schema clarifications,
 documentation, and bug fixes.
 
@@ -9,7 +9,7 @@ updating an overlay.
 
 ## Before you start
 
-- Read [`docs/specs/asve-v0-design.md`](docs/specs/asve-v0-design.md)
+- Read [`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md)
   for the V0 scope and architecture.
 - Read [`CLAUDE.md`](CLAUDE.md) for project-wide conventions, including
   the OSS-only scope rules.
@@ -29,8 +29,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # or: brew install uv
 Then:
 
 ```bash
-git clone git@github.com:open-agent-security/asve.git
-cd asve
+git clone git@github.com:open-agent-security/openaca.git
+cd openaca
 uv sync
 ```
 
@@ -39,11 +39,11 @@ and installs all runtime + dev dependencies.
 
 You should now have these CLIs (invoked via `uv run`):
 
-- `uv run asve-lint <path>` — validate overlays.
-- `uv run asve-export` — build the static export under `dist/`.
-- `uv run asve-scan repo --target REPO --sarif OUT` — run the
+- `uv run openaca lint <path>` — validate overlays.
+- `uv run openaca export` — build the static export under `dist/`.
+- `uv run openaca scan repo --target REPO --sarif OUT` — run the
   reference scanner against a repository.
-- `uv run asve-scan endpoint --project REPO` — run the reference
+- `uv run openaca scan endpoint --project REPO` — run the reference
   scanner against a Claude Code endpoint context.
 
 Run the test suite:
@@ -57,11 +57,11 @@ uv run pytest
 1. **Start from an upstream vulnerability ID.** V0 overlays use the
    upstream OSV/GHSA/CVE identifier as the file name:
    `overlays/GHSA-XXXX-YYYY-ZZZZ.yaml` or `overlays/CVE-YYYY-NNNN.yaml`.
-   Do not mint an `ASVE-YYYY-NNNN` ID in V0.
+   Do not mint an `OpenACA-YYYY-NNNN` ID in V0.
 
-2. **Write only the ASVE overlay block.** OSV/GHSA/CVE owns
+2. **Write only the OpenACA overlay block.** OSV/GHSA/CVE owns
    vulnerability identity, affected ranges, severity, fixes, summary,
-   and details. ASVE overlays add reviewed agent-context metadata:
+   and details. OpenACA overlays add reviewed agent-context metadata:
    - `taxonomies`: standards-based taxonomy mappings such as
      `owasp_agentic_top10` (`asi01`–`asi10`) and `owasp_mcp_top10`
      (`mcp01:2025`–`mcp10:2025`).
@@ -77,7 +77,7 @@ uv run pytest
      - CVE-YYYY-NNNN
    modified: "2026-05-12T00:00:00Z"
    database_specific:
-     asve:
+     openaca:
        taxonomies:
          owasp_agentic_top10:
            - asi02
@@ -88,37 +88,37 @@ uv run pytest
    ```bash
    bash scripts/seed-osv-overlays.sh
 
-   uv run asve-seed /path/to/osv/all.zip
-   uv run asve-seed --modified-index /path/to/osv/modified_id.csv \
-     --records-root /path/to/osv --state .asve-seed-state.json
-   uv run asve-seed /path/to/osv/all.zip \
+   uv run openaca seed /path/to/osv/all.zip
+   uv run openaca seed --modified-index /path/to/osv/modified_id.csv \
+     --records-root /path/to/osv --state .openaca seed-state.json
+   uv run openaca seed /path/to/osv/all.zip \
      --llm-provider openai --llm-model "<model-name>"
-   uv run asve-promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
+   uv run openaca promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    The script downloads the npm and PyPI `modified_id.csv` + `all.zip`
-   dumps into `${ASVE_OSV_CACHE_DIR:-$TMPDIR/asve-osv}` and advances the
+   dumps into `${OPENACA_OSV_CACHE_DIR:-$TMPDIR/openaca-osv}` and advances the
    committed per-ecosystem seed cursors. Review and edit candidate YAML
-   before promotion. `asve-promote` writes a minimal canonical overlay
+   before promotion. `openaca promote` writes a minimal canonical overlay
    under `overlays/`.
 
    To use LLM-assisted annotation with the scripted workflow, set a
    supported provider, model, and API key:
 
    ```bash
-   ASVE_LLM_PROVIDER=openai \
-   ASVE_LLM_MODEL="<model-name>" \
-   ASVE_LLM_API_KEY="<api-key>" \
+   OpenACA_LLM_PROVIDER=openai \
+   OpenACA_LLM_MODEL="<model-name>" \
+   OpenACA_LLM_API_KEY="<api-key>" \
      bash scripts/seed-osv-overlays.sh
    ```
 
-   `ASVE_LLM_PROVIDER` accepts `openai` or `anthropic`. LLM mode
+   `OpenACA_LLM_PROVIDER` accepts `openai` or `anthropic`. LLM mode
    receives the OSV record plus `docs/frameworks/*.md` as classification
    context. It still writes candidates only; every canonical overlay
    must be reviewed and promoted explicitly.
 
 4. **Lint locally**:
    ```bash
-   uv run asve-lint overlays/GHSA-XXXX-YYYY-ZZZZ.yaml
+   uv run openaca lint overlays/GHSA-XXXX-YYYY-ZZZZ.yaml
    ```
    Fix any failures before opening a PR.
 
@@ -149,9 +149,9 @@ full corpus, so transient remote-API failures don't block authors.
 
 - List equivalent upstream IDs in `aliases[]` so the scanner can merge
   overlays with OSV records by alias graph.
-- V0 does not carry ASVE-original vulnerability records. If a
+- V0 does not carry OpenACA-original vulnerability records. If a
   vulnerability has no upstream ID, use upstream disclosure channels
-  first; an ASVE-native advisory lane requires a later governance
+  first; an OpenACA-native advisory lane requires a later governance
   decision.
 
 ## Code contributions (parsers, linter, scanner)
@@ -171,7 +171,7 @@ Per [`CLAUDE.md`](CLAUDE.md), all artifacts here are OSS-focused. Do
 not include in PRs:
 
 - Commercial product plans or monetization framings.
-- Comparisons against vendor products positioning ASVE as a
+- Comparisons against vendor products positioning OpenACA as a
   competitor.
 - Market analysis, sales narratives, go-to-market content.
 - Vendor names framed as competitors. (Naming a tool we *use* with

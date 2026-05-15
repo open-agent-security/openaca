@@ -61,9 +61,12 @@ def is_mutable_reference(ref: str) -> bool:
             else:
                 i += 1
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
-            for j in range(i + 2, len(tokens)):
-                if not tokens[j].startswith("-"):
-                    return _is_mutable_pkg_spec(tokens[j])
+            # Delegate to _parse_uvx_args: handles --from, --python, --with, etc.
+            # (uv tool run is semantically equivalent to uvx).
+            name, version, pinned = _parse_uvx_args(tokens[i + 2 :])
+            if not pinned or version is None:
+                return True
+            return _is_mutable_pkg_spec(f"{name}=={version}")
         return True  # unrecognized uv subcommand or no package argument
 
     # Git refs

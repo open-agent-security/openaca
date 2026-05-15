@@ -61,6 +61,19 @@ def test_flat_root_https_not_flagged(tmp_path):
     assert findings == []
 
 
+def test_disabled_server_not_flagged(tmp_path):
+    """Servers with disabled: true are intentionally inactive and must not be flagged."""
+    manifest = {
+        "mcpServers": {
+            "active": {"url": "http://active.example/mcp"},
+            "inactive": {"url": "http://inactive.example/mcp", "disabled": True},
+        }
+    }
+    findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
+    assert len(findings) == 1
+    assert "active.example" in findings[0].component
+
+
 def test_standards_block_uses_a02_2021(tmp_path):
     manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
     findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])

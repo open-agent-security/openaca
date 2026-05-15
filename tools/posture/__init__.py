@@ -28,6 +28,8 @@ __all__ = [
 _MCP_MANIFEST_NAMES: frozenset[str] = frozenset(
     {"mcp.json", ".mcp.json", "claude_desktop_config.json"}
 )
+_PLUGIN_MANIFEST_NAME = "plugin.json"
+_PLUGIN_MANIFEST_PARENT_DIR = ".claude-plugin"
 
 
 def run_posture_rules(
@@ -78,4 +80,19 @@ def collect_mcp_manifests(
                     continue
                 if isinstance(data, dict):
                     out.append((path, data))
+        for path in root.rglob(_PLUGIN_MANIFEST_NAME):
+            if path.parent.name != _PLUGIN_MANIFEST_PARENT_DIR:
+                continue
+            if is_ignored(path.relative_to(root), spec):
+                continue
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict):
+                out.append((path, data))
     return out

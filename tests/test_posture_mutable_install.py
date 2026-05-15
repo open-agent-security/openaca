@@ -44,7 +44,11 @@ def test_mcp_unpinned_npx_flagged(tmp_path):
 def test_mcp_pinned_npx_not_flagged(tmp_path):
     (tmp_path / "mcp.json").write_text(
         json.dumps(
-            {"mcpServers": {"x": {"command": "npx", "args": ["@modelcontextprotocol/server-foo@1.2.3"]}}}
+            {
+                "mcpServers": {
+                    "x": {"command": "npx", "args": ["@modelcontextprotocol/server-foo@1.2.3"]}
+                }
+            }
         )
     )
     refs = parse_mcp(tmp_path / "mcp.json")
@@ -63,9 +67,7 @@ def test_mcp_local_binary_not_flagged(tmp_path):
 
 def test_mcp_npx_at_latest_flagged(tmp_path):
     (tmp_path / "mcp.json").write_text(
-        json.dumps(
-            {"mcpServers": {"x": {"command": "npx", "args": ["mcp-server-foo@latest"]}}}
-        )
+        json.dumps({"mcpServers": {"x": {"command": "npx", "args": ["mcp-server-foo@latest"]}}})
     )
     refs = parse_mcp(tmp_path / "mcp.json")
     findings = check_mutable_install(refs)

@@ -305,9 +305,7 @@ def parse_mcp_servers(
     return refs
 
 
-def _format_install_source(
-    raw_command: object, raw_args: list[str]
-) -> str:
+def _format_install_source(raw_command: object, raw_args: list[str]) -> str:
     """Reconstruct the user-facing install reference for posture-rule input.
 
     For `command: "uvx", args: ["mcp-bar"]` returns `"uvx mcp-bar"`.

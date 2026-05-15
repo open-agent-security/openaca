@@ -17,11 +17,21 @@ from __future__ import annotations
 from typing import Any
 
 from tools.matcher import Finding
+from tools.posture.finding import PostureFinding
 
 LEVEL_BY_CONFIDENCE: dict[str, str] = {
     "high": "error",
     "low": "warning",
     "unknown": "note",
+}
+
+# Posture findings map by severity: low → note, medium → warning, high → error.
+# This is the same axis SARIF expects from any analyzer; we don't carry CVSS
+# scores here, just the rule severity declared in the rule module.
+LEVEL_BY_POSTURE_SEVERITY: dict[str, str] = {
+    "low": "note",
+    "medium": "warning",
+    "high": "error",
 }
 
 
@@ -59,6 +69,8 @@ def to_sarif(
     findings: list[Finding],
     advisory_index: dict[str, dict],
     overlay_id_map: dict[str, str] | None = None,
+    *,
+    posture_findings: list[PostureFinding] | None = None,
 ) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
@@ -107,6 +119,45 @@ def to_sarif(
         if props:
             result["properties"] = props
         results.append(result)
+
+    if posture_findings:
+        seen_rule_ids: set[str] = {r["id"] for r in rules}
+        for p in posture_findings:
+            if p.rule_id not in seen_rule_ids:
+                seen_rule_ids.add(p.rule_id)
+                rules.append(
+                    {
+                        "id": p.rule_id,
+                        "name": p.rule_id,
+                        "shortDescription": {"text": p.title},
+                        "fullDescription": {"text": p.remediation},
+                        "helpUri": f"https://openaca.dev/posture/{p.rule_id}.html",
+                        "properties": {"standards": p.standards.to_dict()},
+                    }
+                )
+            results.append(
+                {
+                    "ruleId": p.rule_id,
+                    "level": LEVEL_BY_POSTURE_SEVERITY.get(p.severity, "warning"),
+                    "message": {"text": p.title},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": p.location},
+                                "region": {
+                                    "startLine": 1,
+                                    "snippet": {"text": p.component},
+                                },
+                            }
+                        }
+                    ],
+                    "properties": {
+                        "finding_type": "posture",
+                        "confidence": p.confidence,
+                        "standards": p.standards.to_dict(),
+                    },
+                }
+            )
 
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",

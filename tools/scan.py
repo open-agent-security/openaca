@@ -48,6 +48,11 @@ from tools.osv_federation import augment_corpus, collect_target_purls, is_querya
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
+from tools.posture import (
+    PostureFinding,
+    collect_mcp_manifests,
+    run_posture_rules,
+)
 from tools.render import (
     ScanStats,
     render_github,
@@ -208,6 +213,17 @@ _no_color_option = click.option(
     default=False,
     help="Disable ANSI colors in text output. Colors are also off when stdout is not a TTY.",
 )
+_include_posture_option = click.option(
+    "--include-posture",
+    is_flag=True,
+    default=False,
+    help=(
+        "Also emit scanner-side posture findings (configuration hygiene rules: "
+        "mutable install refs, insecure transport, missing remote auth). "
+        "These are distinct from vulnerability findings and never affect "
+        "--fail-on exit codes."
+    ),
+)
 
 
 # Group-level shared options (sarif / fail-on / verbose) can be placed BEFORE
@@ -221,6 +237,7 @@ _no_color_option = click.option(
 @_verbose_option
 @_format_option
 @_no_color_option
+@_include_posture_option
 def main(
     ctx: click.Context,
     sarif: Path | None,
@@ -228,6 +245,7 @@ def main(
     verbose: bool,
     output_format: str,
     no_color: bool,
+    include_posture: bool,
 ) -> None:
     """OpenACA scanner. Use `repo` or `endpoint` subcommands."""
     ctx.ensure_object(dict)
@@ -241,6 +259,7 @@ def main(
         ctx.get_parameter_source("output_format") != ParameterSource.DEFAULT
     )
     ctx.obj["no_color"] = no_color
+    ctx.obj["include_posture"] = include_posture
 
 
 def _apply_group_opts(
@@ -250,7 +269,8 @@ def _apply_group_opts(
     verbose: bool,
     output_format: str,
     no_color: bool,
-) -> tuple[Path | None, str, bool, str, bool]:
+    include_posture: bool,
+) -> tuple[Path | None, str, bool, str, bool, bool]:
     """Forward shared options placed before the subcommand name.
 
     When a user runs `openaca scan --fail-on none repo ...`, Click parses
@@ -278,7 +298,9 @@ def _apply_group_opts(
 
     if ctx.get_parameter_source("no_color") == ParameterSource.DEFAULT:
         no_color = obj.get("no_color", no_color)
-    return sarif, fail_on, verbose, output_format, no_color
+    if ctx.get_parameter_source("include_posture") == ParameterSource.DEFAULT:
+        include_posture = obj.get("include_posture", include_posture)
+    return sarif, fail_on, verbose, output_format, no_color, include_posture
 
 
 def _use_color(no_color: bool, output_format: str) -> bool:
@@ -309,15 +331,21 @@ def _emit(
     output_format: str,
     use_color: bool,
     verbose: bool,
+    posture_findings: list[PostureFinding] | None = None,
 ) -> None:
     """Dispatch to the chosen renderer and write to stdout."""
     if output_format == "github":
         rendered = render_github(findings)
     elif output_format == "json":
-        rendered = render_json(findings, advisory_index, stats)
+        rendered = render_json(findings, advisory_index, stats, posture_findings=posture_findings)
     else:
         rendered = render_text(
-            findings, advisory_index, stats, use_color=use_color, verbose=verbose
+            findings,
+            advisory_index,
+            stats,
+            use_color=use_color,
+            verbose=verbose,
+            posture_findings=posture_findings,
         )
     if rendered:
         click.echo(rendered)
@@ -379,6 +407,7 @@ def _stderr_summary(
 @_verbose_option
 @_format_option
 @_no_color_option
+@_include_posture_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -397,6 +426,7 @@ def repo(
     verbose: bool,
     output_format: str,
     no_color: bool,
+    include_posture: bool,
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-stack manifests committed in a repository.
@@ -407,8 +437,8 @@ def repo(
     code-defined agent composition (e.g., `Agent(tools=[...])`,
     `query({ mcpServers: ... })`) are out of V0 scope and not surfaced.
     """
-    sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
-        ctx, sarif, fail_on, verbose, output_format, no_color
+    sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
+        ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )
 
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
@@ -428,6 +458,11 @@ def repo(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
+
+    posture_findings: list[PostureFinding] = []
+    if include_posture:
+        manifests = collect_mcp_manifests([target])
+        posture_findings = run_posture_rules(refs, manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
@@ -461,7 +496,12 @@ def repo(
                 click.echo(f"  {_finding_line(f)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
+        sarif_doc = to_sarif(
+            findings,
+            advisory_index,
+            overlay_id_map,
+            posture_findings=posture_findings or None,
+        )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
@@ -479,6 +519,7 @@ def repo(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
+        posture_findings=posture_findings if include_posture else None,
     )
 
     # For machine formats (github, json), keep the existing one-line stderr
@@ -511,6 +552,7 @@ def repo(
 @_verbose_option
 @_format_option
 @_no_color_option
+@_include_posture_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
@@ -520,10 +562,11 @@ def endpoint(
     verbose: bool,
     output_format: str,
     no_color: bool,
+    include_posture: bool,
 ) -> None:
     """Scan the active agent stack installed on this endpoint."""
-    sarif, fail_on, verbose, output_format, no_color = _apply_group_opts(
-        ctx, sarif, fail_on, verbose, output_format, no_color
+    sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
+        ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
@@ -538,6 +581,14 @@ def endpoint(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
+
+    posture_findings: list[PostureFinding] = []
+    if include_posture:
+        roots = [config_dir]
+        if project is not None:
+            roots.append(project)
+        manifests = collect_mcp_manifests(roots)
+        posture_findings = run_posture_rules(refs, manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if r.ecosystem == "claude-plugin")
@@ -567,7 +618,12 @@ def endpoint(
                 click.echo(f"  {_finding_line(f)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
+        sarif_doc = to_sarif(
+            findings,
+            advisory_index,
+            overlay_id_map,
+            posture_findings=posture_findings or None,
+        )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
@@ -584,6 +640,7 @@ def endpoint(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
+        posture_findings=posture_findings if include_posture else None,
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 

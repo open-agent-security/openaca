@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from tools.posture.rules.insecure_transport import check_insecure_transport
 
 

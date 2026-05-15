@@ -221,3 +221,57 @@ def test_sarif_omits_coverage_for_tier1_findings():
     properties = doc["runs"][0]["results"][0].get("properties", {})
     assert "coverage" not in properties
     assert "transitive" not in properties
+
+
+# ── Posture findings in SARIF ────────────────────────────────────────────────
+
+
+def _posture_for_sarif(
+    rule_id="openaca-posture-mutable-install-reference", severity: str = "low"
+):
+    from tools.posture import PostureFinding, Standards
+
+    return PostureFinding(
+        rule_id=rule_id,
+        title="Component installed from a mutable source reference",
+        severity=severity,  # type: ignore[arg-type]
+        confidence="high",
+        component="npm/foo (npx foo)",
+        location=".mcp.json",
+        standards=Standards(cwe=["CWE-1357"], owasp_agentic_top10=["asi04"]),
+        remediation="Pin to an exact version.",
+    )
+
+
+def test_sarif_emits_posture_rule_and_result():
+    doc = to_sarif([], {}, posture_findings=[_posture_for_sarif()])
+    rules = doc["runs"][0]["tool"]["driver"]["rules"]
+    rule_ids = {r["id"] for r in rules}
+    assert "openaca-posture-mutable-install-reference" in rule_ids
+    rule = next(r for r in rules if r["id"] == "openaca-posture-mutable-install-reference")
+    assert rule["helpUri"] == (
+        "https://openaca.dev/posture/openaca-posture-mutable-install-reference.html"
+    )
+    assert rule["properties"]["standards"]["cwe"] == ["CWE-1357"]
+
+    results = doc["runs"][0]["results"]
+    posture_results = [r for r in results if r["ruleId"].startswith("openaca-posture-")]
+    assert len(posture_results) == 1
+    r = posture_results[0]
+    # low severity → note SARIF level.
+    assert r["level"] == "note"
+    assert r["properties"]["finding_type"] == "posture"
+    assert r["properties"]["confidence"] == "high"
+    assert r["properties"]["standards"]["cwe"] == ["CWE-1357"]
+
+
+def test_sarif_posture_medium_maps_to_warning():
+    doc = to_sarif([], {}, posture_findings=[_posture_for_sarif(severity="medium")])
+    r = next(r for r in doc["runs"][0]["results"] if r["ruleId"].startswith("openaca-posture-"))
+    assert r["level"] == "warning"
+
+
+def test_sarif_no_posture_rules_when_kwarg_omitted():
+    doc = to_sarif([], {})
+    rules = doc["runs"][0]["tool"]["driver"]["rules"]
+    assert not any(r["id"].startswith("openaca-posture-") for r in rules)

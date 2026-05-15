@@ -834,3 +834,78 @@ def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
     assert "@example/mcp@2.0.0" in out
     assert "software deps suppressed/ (1)" in out
     assert "left-pad" not in out
+
+
+# ── Posture findings section ─────────────────────────────────────────────────
+
+
+def _posture(rule_id="openaca-posture-mutable-install-reference", severity: str = "low"):
+    from tools.posture import PostureFinding, Standards
+
+    return PostureFinding(
+        rule_id=rule_id,
+        title="Component installed from a mutable source reference",
+        severity=severity,  # type: ignore[arg-type]
+        confidence="high",
+        component="npm/foo (npx foo)",
+        location=".mcp.json",
+        standards=Standards(cwe=["CWE-1357"], owasp_agentic_top10=["asi04"]),
+        remediation="Pin to an exact version, commit SHA, or Docker digest.",
+    )
+
+
+def test_text_renders_posture_section_when_no_vuln_findings():
+    out = render_text(
+        [],
+        {},
+        _stats(unit_count=1, components=4),
+        posture_findings=[_posture()],
+    )
+    assert "Posture findings (configuration hygiene)" in out
+    assert "LOW" in out
+    assert "openaca-posture-mutable-install-reference" in out
+    assert "CWE-1357" in out
+    assert "asi04" in out
+
+
+def test_text_renders_posture_section_alongside_vuln_findings():
+    findings = [_finding("GHSA-A", "urllib3", "2.6.3")]
+    index = {"GHSA-A": _advisory("GHSA-A", "npm", "urllib3", fixed="2.6.4")}
+    out = render_text(
+        findings,
+        index,
+        _stats(),
+        posture_findings=[_posture()],
+    )
+    assert "Posture findings" in out
+    # Vuln content still rendered.
+    assert "urllib3" in out
+
+
+def test_text_posture_omitted_when_kwarg_not_passed():
+    out = render_text([], {}, _stats(unit_count=1, components=1))
+    assert "Posture findings" not in out
+
+
+def test_json_includes_posture_findings_array_when_passed():
+    out = render_json(
+        [],
+        {},
+        _stats(unit_count=0, components=0),
+        posture_findings=[_posture()],
+    )
+    doc = json.loads(out)
+    assert "posture_findings" in doc
+    assert len(doc["posture_findings"]) == 1
+    pf = doc["posture_findings"][0]
+    assert pf["finding_type"] == "posture"
+    assert pf["rule_id"] == "openaca-posture-mutable-install-reference"
+    assert pf["severity"] == "low"
+    assert pf["standards"]["cwe"] == ["CWE-1357"]
+    assert pf["standards"]["owasp_agentic_top10"] == ["asi04"]
+
+
+def test_json_omits_posture_findings_key_when_not_passed():
+    out = render_json([], {}, _stats(unit_count=0, components=0))
+    doc = json.loads(out)
+    assert "posture_findings" not in doc

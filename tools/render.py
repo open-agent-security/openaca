@@ -30,6 +30,7 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.posture.finding import PostureFinding
 from tools.severity import derive_severity_label, derive_severity_score
 
 
@@ -242,8 +243,10 @@ def render_text(
     *,
     use_color: bool = False,
     verbose: bool = False,
+    posture_findings: list[PostureFinding] | None = None,
 ) -> str:
     """Grouped human-readable output. See module docstring for shape."""
+    posture_findings = posture_findings or []
     unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
     component_phrase = _pluralize(stats.component_count, "component")
     if not findings:
@@ -253,10 +256,13 @@ def render_text(
         parts.append("— no findings.")
         # ACA framing footer: keep users from concluding "OpenACA found
         # nothing" when their general software deps weren't even in scope.
-        return " ".join(parts) + (
+        head = " ".join(parts) + (
             "\nOpenACA scans agent composition; for general software dependency "
             "scans, use a general-purpose SCA scanner."
         )
+        if posture_findings:
+            return head + "\n\n" + _render_posture_section(posture_findings, use_color)
+        return head
 
     groups = _group_findings(findings)
     ranked: list[tuple[int, str, GroupKey, list[Finding]]] = []
@@ -333,7 +339,45 @@ def render_text(
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
     parse_note = f" ({stats.parse_failed} failed to parse)" if stats.parse_failed else ""
     out.append(f"Scanned {unit_phrase}, {component_phrase}{parse_note}. Sources: {sources_str}.")
+    if posture_findings:
+        out.append("")
+        out.append(_render_posture_section(posture_findings, use_color))
     return "\n".join(out)
+
+
+# ── Posture findings section (configuration hygiene) ─────────────────────────
+
+
+_POSTURE_SEVERITY_LABEL = {"low": "LOW", "medium": "MEDIUM", "high": "HIGH"}
+
+
+def _render_posture_section(
+    posture_findings: list[PostureFinding],
+    use_color: bool,
+) -> str:
+    """Render the posture-findings block. Separate from vulnerability output
+    so first-time readers don't confuse configuration-hygiene flags with CVE
+    matches."""
+    rank = {"high": 3, "medium": 2, "low": 1}
+    sorted_pf = sorted(
+        posture_findings,
+        key=lambda p: (-rank.get(p.severity, 0), p.rule_id, p.component),
+    )
+    lines: list[str] = ["Posture findings (configuration hygiene):", ""]
+    for p in sorted_pf:
+        label = _POSTURE_SEVERITY_LABEL.get(p.severity, p.severity.upper())
+        label_disp = _color(label, use_color)
+        lines.append(f"  {label_disp}  {p.rule_id}  {p.component}")
+        if p.location:
+            lines.append(f"       location: {p.location}")
+        lines.append(f"       fix:      {p.remediation}")
+        standards_parts: list[str] = []
+        for values in p.standards.to_dict().values():
+            standards_parts.extend(values)
+        if standards_parts:
+            lines.append(f"       standards: {', '.join(standards_parts)}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def _pluralize(count: int, label: str) -> str:
@@ -383,7 +427,13 @@ def render_github(findings: list[Finding]) -> str:
 # ── JSON renderer ────────────────────────────────────────────────────────────
 
 
-def render_json(findings: list[Finding], advisory_index: dict[str, dict], stats: ScanStats) -> str:
+def render_json(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    posture_findings: list[PostureFinding] | None = None,
+) -> str:
     """Structured per-finding records + scan-level stats. The schema is
     documented in README; consumers should treat unknown keys as forward-
     compatible additions, not as a stability break."""
@@ -419,6 +469,21 @@ def render_json(findings: list[Finding], advisory_index: dict[str, dict], stats:
             "sources": sorted(stats.sources),
         },
     }
+    if posture_findings is not None:
+        document["posture_findings"] = [
+            {
+                "finding_type": p.finding_type,
+                "rule_id": p.rule_id,
+                "title": p.title,
+                "severity": p.severity,
+                "confidence": p.confidence,
+                "component": p.component,
+                "location": p.location,
+                "standards": p.standards.to_dict(),
+                "remediation": p.remediation,
+            }
+            for p in posture_findings
+        ]
     return json.dumps(document, indent=2, sort_keys=False)
 
 

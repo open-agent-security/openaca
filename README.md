@@ -268,7 +268,7 @@ Per-parser detail:
 
 ## Limitations
 
-Be honest about what OpenACA V0 doesn't see:
+What OpenACA V0 doesn't see:
 
 - **Programmatic SDK configuration is invisible to repo mode.** Code
   that constructs agents with `query({ mcpServers: [...] })` (Claude

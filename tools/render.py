@@ -1,4 +1,4 @@
-"""Renderers for `asve-scan` output: text (default), github, json.
+"""Renderers for `openaca-scan` output: text (default), github, json.
 
 The CLI dispatches to one of three renderers based on `--format`:
 
@@ -159,10 +159,10 @@ def _source_for_advisory(advisory: dict) -> Optional[str]:
     ds = advisory.get("database_specific") or {}
     if not isinstance(ds, dict):
         return None
-    asve = ds.get("asve") or {}
-    if not isinstance(asve, dict):
+    openaca = ds.get("openaca") or {}
+    if not isinstance(openaca, dict):
         return None
-    src = asve.get("source")
+    src = openaca.get("source")
     return src if isinstance(src, str) else None
 
 
@@ -251,10 +251,10 @@ def render_text(
         if stats.parse_failed:
             parts.append(f"({stats.parse_failed} failed to parse)")
         parts.append("— no findings.")
-        # ACA framing footer: keep users from concluding "ASVE found
+        # ACA framing footer: keep users from concluding "OpenACA found
         # nothing" when their general software deps weren't even in scope.
         return " ".join(parts) + (
-            "\nASVE scans agent composition; for general software dependency "
+            "\nOpenACA scans agent composition; for general software dependency "
             "scans, use a general-purpose SCA scanner."
         )
 
@@ -308,15 +308,15 @@ def render_text(
             label_disp = _color(label, use_color)
             fixed_in = _fixed_in_for_finding(f, adv) or "no fix"
             summary = _summary_for_advisory(adv)
-            source = _source_for_advisory(adv) or "asve.dev"
+            source = _source_for_advisory(adv) or "openaca.dev"
             out.append(
                 f"  {label_disp}  {f.advisory_id}  fixed in {fixed_in}  {summary}  [{source}]"
             )
             if verbose:
-                ds_asve = (adv.get("database_specific") or {}).get("asve") or {}
-                if not isinstance(ds_asve, dict):
-                    ds_asve = {}
-                taxonomies = ds_asve.get("taxonomies") or {}
+                ds_openaca = (adv.get("database_specific") or {}).get("openaca") or {}
+                if not isinstance(ds_openaca, dict):
+                    ds_openaca = {}
+                taxonomies = ds_openaca.get("taxonomies") or {}
                 if isinstance(taxonomies, dict):
                     taxonomy_parts = []
                     for family, values in sorted(taxonomies.items()):
@@ -324,7 +324,7 @@ def render_text(
                             taxonomy_parts.append(f"{family}={','.join(str(v) for v in values)}")
                     if taxonomy_parts:
                         out.append(f"        taxonomies: {'; '.join(taxonomy_parts)}")
-                evidence_level = ds_asve.get("evidence_level")
+                evidence_level = ds_openaca.get("evidence_level")
                 if isinstance(evidence_level, str):
                     out.append(f"        evidence_level: {evidence_level}")
                 out.append(f"        confidence: {f.confidence}")

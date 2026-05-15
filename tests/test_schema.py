@@ -12,7 +12,7 @@ def schema(schema_path):
 
 @pytest.fixture
 def sample_valid(fixtures_dir):
-    return yaml.safe_load((fixtures_dir / "valid" / "asve-2026-0001.yaml").read_text())
+    return yaml.safe_load((fixtures_dir / "valid" / "cve-2026-0001.yaml").read_text())
 
 
 def test_schema_is_valid_jsonschema(schema):
@@ -23,31 +23,31 @@ def test_sample_advisory_passes_schema(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
 
 
-def test_schema_accepts_minimal_asve_overlay(schema, sample_valid):
+def test_schema_accepts_minimal_openaca_overlay(schema, sample_valid):
     Draft202012Validator(schema).validate(sample_valid)
 
 
 def test_schema_accepts_taxonomies_block_and_malicious_package_threat_kind(schema, sample_valid):
     advisory = dict(sample_valid)
-    asve = dict(advisory["database_specific"]["asve"])
-    asve["threat_kind"] = "malicious_package"
-    asve["taxonomies"] = {
+    openaca = dict(advisory["database_specific"]["openaca"])
+    openaca["threat_kind"] = "malicious_package"
+    openaca["taxonomies"] = {
         "owasp_agentic_top10": ["asi02", "asi05"],
         "owasp_mcp_top10": ["mcp05:2025"],
         "owasp_agentic_skills_top10": ["ast03:2025"],
         "owasp_llm_top10": ["llm01:2025"],
         "mitre_atlas": ["AML.T0051"],
     }
-    advisory["database_specific"]["asve"] = asve
+    advisory["database_specific"]["openaca"] = openaca
 
     Draft202012Validator(schema).validate(advisory)
 
 
 def test_schema_rejects_unknown_threat_kind(schema, sample_valid):
     advisory = dict(sample_valid)
-    asve = dict(advisory["database_specific"]["asve"])
-    asve["threat_kind"] = "ssrf_via_mcp_tool"
-    advisory["database_specific"]["asve"] = asve
+    openaca = dict(advisory["database_specific"]["openaca"])
+    openaca["threat_kind"] = "ssrf_via_mcp_tool"
+    advisory["database_specific"]["openaca"] = openaca
 
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(advisory)
@@ -62,11 +62,11 @@ def test_schema_rejects_unknown_threat_kind(schema, sample_valid):
         ("agent_impact", {"code_execution": True}),
     ],
 )
-def test_schema_rejects_non_canonical_asve_fields(schema, sample_valid, field, value):
+def test_schema_rejects_non_canonical_openaca_fields(schema, sample_valid, field, value):
     advisory = dict(sample_valid)
-    asve = dict(advisory["database_specific"]["asve"])
-    asve[field] = value
-    advisory["database_specific"]["asve"] = asve
+    openaca = dict(advisory["database_specific"]["openaca"])
+    openaca[field] = value
+    advisory["database_specific"]["openaca"] = openaca
 
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(advisory)
@@ -74,9 +74,9 @@ def test_schema_rejects_non_canonical_asve_fields(schema, sample_valid, field, v
 
 def test_schema_rejects_malformed_taxonomy_codes(schema, sample_valid):
     advisory = dict(sample_valid)
-    asve = dict(advisory["database_specific"]["asve"])
-    asve["taxonomies"] = {"owasp_agentic_top10": ["ASI02"]}
-    advisory["database_specific"]["asve"] = asve
+    openaca = dict(advisory["database_specific"]["openaca"])
+    openaca["taxonomies"] = {"owasp_agentic_top10": ["ASI02"]}
+    advisory["database_specific"]["openaca"] = openaca
 
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(advisory)

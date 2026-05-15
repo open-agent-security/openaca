@@ -5,12 +5,12 @@ Sources:
 
 Accessed: 2026-05-13
 
-Use this as ASVE's broad agent-system taxonomy. Prefer it for risks that
+Use this as OpenACA's broad agent-system taxonomy. Prefer it for risks that
 depend on autonomy, tool use, delegated identity, memory, multi-step
 workflow, inter-agent communication, or human trust in agent output.
 
 The OWASP guide frames agentic risks across inputs, integration and
-processing, and outputs. ASVE overlays should map to ASI when the
+processing, and outputs. OpenACA overlays should map to ASI when the
 agentic behavior changes the security meaning of an underlying
 vulnerability or malicious component.
 

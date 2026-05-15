@@ -129,7 +129,7 @@ def test_score_v3_returns_none_for_invalid():
     [
         # All-high system impact, unauthenticated. Critical.
         ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", 9.3),
-        # Same shape ASVE-2026-0001 / 0003 use.
+        # Same shape CVE-2026-0001 / 0003 use.
         ("CVSS:4.0/AV:L/AC:H/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", 7.6),
     ],
 )

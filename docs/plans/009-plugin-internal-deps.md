@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Tier-2 SCA coverage for both `repo` and `fs` modes (lockfile-rooted transitive deps with manifest fallback), plus opt-in OSV.dev live federation. Preserve ASVE's install-state filtering and attribution as the differentiator over `trivy`/`osv-scanner`.
+**Goal:** Add Tier-2 SCA coverage for both `repo` and `fs` modes (lockfile-rooted transitive deps with manifest fallback), plus opt-in OSV.dev live federation. Preserve OpenACA's install-state filtering and attribution as the differentiator over `trivy`/`osv-scanner`.
 
 **Architecture:** Two new lockfile parsers (`package_lock_json`, `uv_lock`) wired into both modes — into `REGISTRY` for repo mode, into a new `_walk_plugin_implementation_deps` for fs mode. A new `osv_federation` module batch-queries OSV.dev and merges results into the matching corpus. Two CLI flags: `--exclude-transitive` (default off; skips lockfile/manifest walks) and `--federate-osv` (default off; adds OSV.dev results to the corpus). SARIF gains `properties.{coverage, transitive, source}` to surface the new metadata.
 
@@ -16,7 +16,7 @@
 
 ## Context
 
-Plan 008 dogfooding produced empirical evidence that motivates the design: `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache` both walked orphaned cache versions (`superpowers/5.0.7/` alongside the active `5.1.0/`), both reported plugin test fixtures as runtime paths, and both produced findings keyed only on file paths with no plugin attribution. ASVE's `fs` mode already filters orphaned versions (via `installed_plugins.json`) and skips `tests/` (no `rglob` in `_walk_plugin_install_root`) — but stops at Tier-1 inventory. This plan extends to Tier-2 implementation deps while preserving the filtering and attribution.
+Plan 008 dogfooding produced empirical evidence that motivates the design: `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache` both walked orphaned cache versions (`superpowers/5.0.7/` alongside the active `5.1.0/`), both reported plugin test fixtures as runtime paths, and both produced findings keyed only on file paths with no plugin attribution. OpenACA's `fs` mode already filters orphaned versions (via `installed_plugins.json`) and skips `tests/` (no `rglob` in `_walk_plugin_install_root`) — but stops at Tier-1 inventory. This plan extends to Tier-2 implementation deps while preserving the filtering and attribution.
 
 ## File structure
 
@@ -39,7 +39,7 @@ Plan 008 dogfooding produced empirical evidence that motivates the design: `triv
 | `tests/fixtures/installs/with-transitive-vuln/` | Create | Fixture install layout exercising lockfile-detected transitive findings. |
 | `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md` | Create | ADR for parse-all-lockfiles, lockfile-vs-manifest semantics, federation opt-in. |
 | `docs/adrs/INDEX.md` | Modify | Link ADR-0008. |
-| `docs/sarif-conventions.md` | Create | Document ASVE-specific SARIF properties. |
+| `docs/sarif-conventions.md` | Create | Document OpenACA-specific SARIF properties. |
 | `README.md` | Modify | Tier-2 status to "✅ V0"; add federation note. |
 | `docs/plans/README.md` | Modify | Mark 009 active. |
 
@@ -93,7 +93,7 @@ def test_emits_one_ref_per_transitive_package(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/feat-plugin-internal-deps
+cd /Users/vinodkone/workspace/openaca/.worktrees/feat-plugin-internal-deps
 uv run pytest tests/test_parsers/test_package_lock_json.py -q
 ```
 
@@ -1215,7 +1215,7 @@ def _ref(eco: str, name: str, version: str) -> ComponentRef:
 
 
 def test_augment_returns_base_corpus_when_no_refs():
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     augmented, warnings = augment_corpus(refs=[], base_corpus=base)
     assert augmented == base
     assert warnings == []
@@ -1228,7 +1228,7 @@ def test_augment_returns_base_corpus_when_no_versioned_refs():
         ComponentRef(component_identity="claude-hook/p/PreToolUse/0"),
         ComponentRef(ecosystem="claude-skill", name="x"),  # no version
     ]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
     assert augmented == base
 
@@ -1237,7 +1237,7 @@ def test_augment_batches_purls_and_merges_results():
     """Versioned refs get batched into /v1/querybatch; full advisory records
     fetched via /v1/vulns/<id>; deduped against the base corpus by id."""
     refs = [_ref("npm", "lodash", "4.17.20"), _ref("PyPI", "requests", "2.31.0")]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
     querybatch_response = {
         "results": [
             {"vulns": [{"id": "GHSA-1111"}]},
@@ -1266,13 +1266,13 @@ def test_augment_batches_purls_and_merges_results():
         augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
     assert warnings == []
     ids = {a["id"] for a in augmented}
-    assert ids == {"ASVE-2026-0001", "GHSA-1111", "GHSA-2222"}
+    assert ids == {"CVE-2026-0001", "GHSA-1111", "GHSA-2222"}
 
 
 def test_augment_fails_soft_on_network_error():
     """If the batch query raises, return base corpus + a warning string."""
     refs = [_ref("npm", "lodash", "4.17.20")]
-    base = [{"id": "ASVE-2026-0001"}]
+    base = [{"id": "CVE-2026-0001"}]
 
     def fake_post(url, payload):
         raise OSError("connection refused")
@@ -1349,7 +1349,7 @@ Expected: FAIL with `ImportError`.
 # tools/osv_federation.py
 """OSV.dev federation: batched live query against /v1/querybatch.
 
-ASVE's default scan uses only the local advisories/ corpus. This module
+OpenACA's default scan uses only the local advisories/ corpus. This module
 provides opt-in federation via --federate-osv: given a list of emitted
 ComponentRefs, fetch matching vulnerability records from OSV.dev and
 merge them into the corpus for the matcher to consume.
@@ -1357,7 +1357,7 @@ merge them into the corpus for the matcher to consume.
 Behavior:
 - Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
   name + version) are queried. Identity-only refs (claude-hook,
-  claude-command, claude-agent) and ASVE-native ecosystems
+  claude-command, claude-agent) and OpenACA-native ecosystems
   (claude-skill, claude-plugin) are skipped — OSV.dev wouldn't have
   records for them anyway.
 - PURLs are deduplicated within a scan (same PURL queried once).
@@ -1501,7 +1501,7 @@ augment_corpus(refs, base_corpus) -> (merged, warnings).
 
 Behavior:
 - Only PURL-derivable refs (npm/PyPI/GitHub/Docker) queried; identity-only
-  and ASVE-native ecosystems skipped.
+  and OpenACA-native ecosystems skipped.
 - PURLs deduped within a scan.
 - /v1/querybatch chunked at 1000 packages per request.
 - Returned vuln IDs dereferenced via /v1/vulns/<id>.
@@ -1731,14 +1731,14 @@ After loading corpus and augmenting, walk both and stamp:
         ds = a["database_specific"]
         if not isinstance(ds, dict):
             continue
-        ds_asve = ds.get("asve")
-        if not isinstance(ds_asve, dict):
-            ds_asve = {}
-            ds["asve"] = ds_asve
-        # Local advisories tagged asve.dev unless the record already specifies otherwise.
+        ds_openaca = ds.get("openaca")
+        if not isinstance(ds_openaca, dict):
+            ds_openaca = {}
+            ds["openaca"] = ds_openaca
+        # Local advisories tagged openaca.dev unless the record already specifies otherwise.
         # OSV.dev advisories (added by augment_corpus) get tagged osv.dev.
-        if "source" not in ds_asve:
-            ds_asve["source"] = "osv.dev" if a.get("id") and a["id"] not in {x.get("id") for x in load_corpus(advisories)} else "asve.dev"
+        if "source" not in ds_openaca:
+            ds_openaca["source"] = "osv.dev" if a.get("id") and a["id"] not in {x.get("id") for x in load_corpus(advisories)} else "openaca.dev"
 ```
 
 Simplify — track sources explicitly during augmentation. **Revise the wiring:**
@@ -1747,7 +1747,7 @@ In `tools/scan.py`, instead of post-tagging, mark each advisory at load/augment 
 
 ```python
     corpus = load_corpus(advisories)
-    _stamp_source(corpus, "asve.dev")
+    _stamp_source(corpus, "openaca.dev")
     if federate_osv:
         before_ids = {a.get("id") for a in corpus if isinstance(a, dict)}
         corpus, fed_warnings = augment_corpus(refs, corpus)
@@ -1763,16 +1763,16 @@ Helper at module level:
 
 ```python
 def _stamp_source(corpus: list[dict], source: str) -> None:
-    """Set `database_specific.asve.source = <source>` on every advisory."""
+    """Set `database_specific.openaca.source = <source>` on every advisory."""
     for a in corpus:
         if not isinstance(a, dict):
             continue
         ds = a.setdefault("database_specific", {})
         if not isinstance(ds, dict):
             continue
-        asve_block = ds.setdefault("asve", {})
-        if isinstance(asve_block, dict) and "source" not in asve_block:
-            asve_block["source"] = source
+        openaca_block = ds.setdefault("openaca", {})
+        if isinstance(openaca_block, dict) and "source" not in openaca_block:
+            openaca_block["source"] = source
 ```
 
 - [ ] **Step 6: Run tests**
@@ -1803,7 +1803,7 @@ git commit -m "feat(scan): --federate-osv flag; corpus augmentation + source sta
 Both fs and repo subcommands gain --federate-osv (default OFF). When set,
 augment_corpus queries OSV.dev for emitted PURLs and merges results into
 the matching corpus. Per-advisory source tag stamped into
-database_specific.asve.source so SARIF can surface (Task 8).
+database_specific.openaca.source so SARIF can surface (Task 8).
 
 Federation network failures print unconditional stderr warnings (not
 gated on -v) — the user explicitly opted in. Exit code stays findings-
@@ -1818,7 +1818,7 @@ driven. Plan 009, Task 7."
 - Modify: `tools/sarif.py`
 - Modify: `tests/test_sarif.py`
 
-Surface the new metadata on each SARIF result. `coverage` and `transitive` come from `finding.component.extra`; `source` from `advisory["database_specific"]["asve"]["source"]`. All three are absent when their underlying data is missing.
+Surface the new metadata on each SARIF result. `coverage` and `transitive` come from `finding.component.extra`; `source` from `advisory["database_specific"]["openaca"]["source"]`. All three are absent when their underlying data is missing.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1850,7 +1850,7 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         "id": "GHSA-1",
         "summary": "test",
         "details": "test",
-        "database_specific": {"asve": {"source": "osv.dev"}},
+        "database_specific": {"openaca": {"source": "osv.dev"}},
     }
     doc = to_sarif([finding], {"GHSA-1": advisory})
     result = doc["runs"][0]["results"][0]
@@ -1884,7 +1884,7 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         "id": "GHSA-1",
         "summary": "test",
         "details": "test",
-        "database_specific": {"asve": {"source": "asve.dev"}},
+        "database_specific": {"openaca": {"source": "openaca.dev"}},
     }
     doc = to_sarif([finding], {"GHSA-1": advisory})
     properties = doc["runs"][0]["results"][0]["properties"]
@@ -1905,13 +1905,13 @@ def test_sarif_omits_coverage_for_tier1_findings():
         version="0.9.0",
     )
     finding = Finding(
-        advisory_id="ASVE-2026-9001",
+        advisory_id="CVE-2026-9001",
         component=ref,
         confidence="high",
         reason="match",
     )
-    advisory = {"id": "ASVE-2026-9001", "summary": "test", "details": "test"}
-    doc = to_sarif([finding], {"ASVE-2026-9001": advisory})
+    advisory = {"id": "CVE-2026-9001", "summary": "test", "details": "test"}
+    doc = to_sarif([finding], {"CVE-2026-9001": advisory})
     properties = doc["runs"][0]["results"][0].get("properties", {})
     assert "coverage" not in properties
     assert "transitive" not in properties
@@ -1942,9 +1942,9 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
     if isinstance(advisory, dict):
         ds = advisory.get("database_specific")
         if isinstance(ds, dict):
-            asve_block = ds.get("asve")
-            if isinstance(asve_block, dict):
-                source = asve_block.get("source")
+            openaca_block = ds.get("openaca")
+            if isinstance(openaca_block, dict):
+                source = openaca_block.get("source")
                 if isinstance(source, str):
                     props["source"] = source
     return props
@@ -1980,7 +1980,7 @@ git commit -m "feat(sarif): emit properties.{coverage, transitive, source}
 Per-result properties now surface plan 009 metadata:
 - coverage = 'transitive' (lockfile) | 'direct-only' (manifest fallback)
 - transitive = bool mirror of coverage for easier downstream parsing
-- source = 'asve.dev' | 'osv.dev' from advisory.database_specific.asve.source
+- source = 'openaca.dev' | 'osv.dev' from advisory.database_specific.openaca.source
 
 Tier-1 findings (no extra['transitive']) omit coverage + transitive.
 Documented in docs/sarif-conventions.md (Task 10). Plan 009, Task 8."
@@ -2164,7 +2164,7 @@ After the per-plugin block in the verbose path:
                 for f in findings
                 if (advisory_index.get(f.advisory_id) or {})
                 .get("database_specific", {})
-                .get("asve", {})
+                .get("openaca", {})
                 .get("source")
                 == "osv.dev"
             )
@@ -2270,7 +2270,7 @@ making it opt-in would surprise users coming from traditional SCA.
 ### 4. `--federate-osv` is opt-IN (default OFF)
 
 OSV.dev federation adds a network dependency to scans. Default-off
-keeps the default scan offline and focused on the ASVE corpus. Users
+keeps the default scan offline and focused on the OpenACA corpus. Users
 who want full Tier-2 coverage (generic CVEs in plugin transitive deps)
 explicitly opt in. Considered alternatives:
 
@@ -2279,11 +2279,11 @@ explicitly opt in. Considered alternatives:
 - **Offline OSV.dev mirror**: ~30k records, refresh discipline,
   significant storage. Deferred to V1.
 
-### 5. ASVE's value-add is filtering + attribution, not corpus coverage
+### 5. OpenACA's value-add is filtering + attribution, not corpus coverage
 
 The empirical comparison against `trivy`/`osv-scanner` showed they
 report against orphaned cache versions and test fixtures inside plugins
-with no attribution. ASVE walks per `installed_plugins.json` (active
+with no attribution. OpenACA walks per `installed_plugins.json` (active
 plugins only) and per `plugin.json` defaults (no `rglob` inside the
 install path), tagging every Tier-2 ref with `attributed_to`. This is
 the load-bearing differentiator — federation enhances it; it doesn't
@@ -2301,11 +2301,11 @@ does. V0 emits all packages from `uv.lock`; over-reporting dev deps is
 acceptable. Refine in V1 if uv's lockfile schema stabilizes the
 distinction.
 
-### 8. `source` ecosystem-style naming: `asve.dev` and `osv.dev`
+### 8. `source` ecosystem-style naming: `openaca.dev` and `osv.dev`
 
-Per-finding SARIF property `properties.source` takes values `"asve.dev"`
+Per-finding SARIF property `properties.source` takes values `"openaca.dev"`
 or `"osv.dev"` (matching the OSV.dev convention). Future-aligned with
-the eventual asve.dev domain; consistent ecosystem-style provenance
+the eventual openaca.dev domain; consistent ecosystem-style provenance
 for downstream consumers.
 
 ## Alternatives considered
@@ -2322,9 +2322,9 @@ for downstream consumers.
 ## Consequences
 
 **Enables:**
-- ASVE becomes a better-UX Tier-2 scanner than `trivy`/`osv-scanner` for
+- OpenACA becomes a better-UX Tier-2 scanner than `trivy`/`osv-scanner` for
   the agent-stack case (filtered + attributed).
-- `--federate-osv` lets users compose ASVE's filtering with OSV.dev's
+- `--federate-osv` lets users compose OpenACA's filtering with OSV.dev's
   full corpus.
 - Lockfile-vs-manifest coverage is honestly surfaced in SARIF.
 
@@ -2352,9 +2352,9 @@ EOF
 
 ```bash
 cat > docs/sarif-conventions.md <<'EOF'
-# ASVE SARIF Conventions
+# OpenACA SARIF Conventions
 
-ASVE emits SARIF v2.1.0 with ASVE-specific extensions under
+OpenACA emits SARIF v2.1.0 with OpenACA-specific extensions under
 `runs[].results[].properties`. This document is the contract for
 downstream consumers.
 
@@ -2365,7 +2365,7 @@ downstream consumers.
 | `attributed_to` | string \| absent | `"claude-plugin/<name>@<version>"` | The component was discovered via an active plugin's installPath (ADR-0006). Absent when the component is direct (bare in settings, repo-declared, host repo lockfile). |
 | `coverage` | string \| absent | `"transitive"` \| `"direct-only"` | Tier-2 implementation-dep findings. `"transitive"` when the ref came from a lockfile; `"direct-only"` when it came from a manifest fallback (no lockfile for that ecosystem). Absent on Tier-1 inventory findings (ADR-0007, ADR-0008). |
 | `transitive` | bool \| absent | `true` \| `false` | Bool mirror of `coverage` for easier downstream parsing. Absent when `coverage` is absent. |
-| `source` | string \| absent | `"asve.dev"` \| `"osv.dev"` | The advisory record's provenance. `"asve.dev"` is the local ASVE corpus; `"osv.dev"` is OSV.dev (when `--federate-osv` was set during the scan). Absent when no source is declared on the advisory. |
+| `source` | string \| absent | `"openaca.dev"` \| `"osv.dev"` | The advisory record's provenance. `"openaca.dev"` is the local OpenACA corpus; `"osv.dev"` is OSV.dev (when `--federate-osv` was set during the scan). Absent when no source is declared on the advisory. |
 
 ## Stability promise
 
@@ -2401,7 +2401,7 @@ This result means: `lodash@4.17.20` was found in the transitive tree
 actionable. `coverage`/`transitive` distinguish "lockfile says this is in
 the tree" from "manifest says this is a declared direct dep, transitive
 unknown." `source` lets corpus-aware consumers (e.g., users running
-ASVE-only governance) filter out federation-sourced findings.
+OpenACA-only governance) filter out federation-sourced findings.
 EOF
 ```
 
@@ -2410,7 +2410,7 @@ EOF
 Edit `docs/adrs/INDEX.md`, append to the "Active" list:
 
 ```markdown
-- [ADR-0008 — Lockfile dispatch, manifest fallback, OSV.dev federation](0008-lockfile-dispatch-and-osv-federation.md): parse ALL supported lockfiles per active plugin (not first-match); manifest fallback ≠ lockfile coverage (extra.transitive distinguishes); `--exclude-transitive` is opt-OUT; `--federate-osv` is opt-IN; ASVE's value-add is install-state-aware filtering + attribution, not corpus coverage; SARIF `properties.source` uses ecosystem-style `asve.dev`/`osv.dev` naming.
+- [ADR-0008 — Lockfile dispatch, manifest fallback, OSV.dev federation](0008-lockfile-dispatch-and-osv-federation.md): parse ALL supported lockfiles per active plugin (not first-match); manifest fallback ≠ lockfile coverage (extra.transitive distinguishes); `--exclude-transitive` is opt-OUT; `--federate-osv` is opt-IN; OpenACA's value-add is install-state-aware filtering + attribution, not corpus coverage; SARIF `properties.source` uses ecosystem-style `openaca.dev`/`osv.dev` naming.
 ```
 
 - [ ] **Step 4: Commit**
@@ -2421,10 +2421,10 @@ git commit -m "docs: ADR-0008 + SARIF conventions for plan 009
 
 ADR-0008 captures the load-bearing decisions: parse-all-lockfiles,
 lockfile-vs-manifest coverage distinction, --exclude-transitive opt-out,
---federate-osv opt-in, ASVE's filtering+attribution value-add over
-trivy/osv-scanner, asve.dev/osv.dev source naming.
+--federate-osv opt-in, OpenACA's filtering+attribution value-add over
+trivy/osv-scanner, openaca.dev/osv.dev source naming.
 
-docs/sarif-conventions.md documents the ASVE-specific properties
+docs/sarif-conventions.md documents the OpenACA-specific properties
 (attributed_to, coverage, transitive, source) as the V0 contract for
 downstream consumers. Plan 009, Task 10."
 ```
@@ -2446,7 +2446,7 @@ Add a brief federation note immediately after the table:
 ```markdown
 **OSV.dev federation (opt-in).** Pass `--federate-osv` to either subcommand
 to query OSV.dev for additional vulnerability records covering emitted
-PURLs. Combines ASVE's install-state filtering and attribution with OSV.dev's
+PURLs. Combines OpenACA's install-state filtering and attribution with OSV.dev's
 full corpus — a more accurate Tier-2 scanner for agent stacks than generic
 recursive walkers. See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md`.
 ```
@@ -2505,7 +2505,7 @@ mkdir -p tests/fixtures/installs/with-transitive-vuln/cache/vuln-plugin/1.0.0
 }
 ```
 
-(Re-uses the same package as ASVE-2026-0001 in the existing corpus.)
+(Re-uses the same package as CVE-2026-0001 in the existing corpus.)
 
 - [ ] **Step 2: Write the E2E test**
 
@@ -2565,20 +2565,20 @@ def test_fs_lockfile_transitive_finding_with_attribution(tmp_path):
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-0001" in result.output
+    assert "CVE-2026-0001" in result.output
     assert "via claude-plugin/vuln-plugin@1.0.0" in result.output
 
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     results = sarif["runs"][0]["results"]
     matching = [
-        r for r in results if r.get("ruleId") == "ASVE-2026-0001"
+        r for r in results if r.get("ruleId") == "CVE-2026-0001"
     ]
     assert matching
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
     assert properties.get("transitive") is True
     assert properties.get("attributed_to") == "claude-plugin/vuln-plugin@1.0.0"
-    assert properties.get("source") == "asve.dev"
+    assert properties.get("source") == "openaca.dev"
 
 
 def test_fs_exclude_transitive_suppresses_lockfile_finding(tmp_path):
@@ -2628,7 +2628,7 @@ def test_fs_exclude_transitive_suppresses_lockfile_finding(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    assert "ASVE-2026-0001" not in result.output
+    assert "CVE-2026-0001" not in result.output
 
 
 def test_repo_lockfile_finds_corpus_advisory(tmp_path):
@@ -2665,7 +2665,7 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     )
     assert result.exit_code == 1, result.output
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
-    matching = [r for r in sarif["runs"][0]["results"] if r.get("ruleId") == "ASVE-2026-0001"]
+    matching = [r for r in sarif["runs"][0]["results"] if r.get("ruleId") == "CVE-2026-0001"]
     assert matching
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
@@ -2687,7 +2687,7 @@ uv run pytest -q
 uv run ruff format tools/ tests/
 uv run ruff check tools/ tests/
 uv run pyright tools/ tests/
-uv run asve-lint advisories/
+uv run openaca lint advisories/
 ```
 
 Expected: all green.
@@ -2695,7 +2695,7 @@ Expected: all green.
 - [ ] **Step 5: Dogfood on real `~/.claude` install**
 
 ```bash
-uv run asve-scan fs --target ~/.claude --advisories advisories -v
+uv run openaca scan fs --target ~/.claude --advisories advisories -v
 ```
 
 Expected: per-plugin Tier-2 coverage lines appear; no findings fire unless real-corpus matches exist; output stays sensible (no crashes, no warnings unless valid).
@@ -2703,7 +2703,7 @@ Expected: per-plugin Tier-2 coverage lines appear; no findings fire unless real-
 - [ ] **Step 6: Dogfood with federation (online)**
 
 ```bash
-uv run asve-scan fs --target ~/.claude --advisories advisories --federate-osv -v
+uv run openaca scan fs --target ~/.claude --advisories advisories --federate-osv -v
 ```
 
 Expected: federation summary line shows osv.dev results count; if OSV.dev is unreachable, unconditional stderr warning appears.
@@ -2716,8 +2716,8 @@ git commit -m "test(e2e): plan 009 end-to-end with attribution + coverage SARIF
 
 Three scenarios:
 1. fs mode + plugin lockfile contains @cyanheads/git-mcp-server@1.1.0
-   → ASVE-2026-0001 fires with via-attribution + coverage=transitive +
-   transitive=true + source=asve.dev in SARIF properties.
+   → CVE-2026-0001 fires with via-attribution + coverage=transitive +
+   transitive=true + source=openaca.dev in SARIF properties.
 2. Same fixture under --exclude-transitive → finding suppressed.
 3. Repo mode + package-lock.json at repo root → finding fires with
    attributed_to absent and coverage=transitive.
@@ -2741,11 +2741,11 @@ Implements plan 009: Tier-2 SCA coverage with `--federate-osv` opt-in for OSV.de
 - Manifest fallback when no lockfile for an ecosystem; tagged `transitive=False` + `fallback_reason`.
 - `--exclude-transitive` (default OFF): skips Tier-2 walks entirely.
 - `--federate-osv` (default OFF): batched `/v1/querybatch` query, full advisory fetch via `/v1/vulns/<id>`, merged into local corpus. Fail-soft on network errors with unconditional stderr warning.
-- SARIF `properties.coverage` (`transitive`|`direct-only`), `properties.transitive` (bool), `properties.source` (`asve.dev`|`osv.dev`) — Tier-1 omits these.
+- SARIF `properties.coverage` (`transitive`|`direct-only`), `properties.transitive` (bool), `properties.source` (`openaca.dev`|`osv.dev`) — Tier-1 omits these.
 - Per-plugin Tier-2 coverage line in `-v` output: `npm: package-lock.json (transitive, N packages)`.
 - ADR-0008 captures load-bearing decisions; `docs/sarif-conventions.md` formalizes the property contract.
 
-Empirically motivated: dogfood (2026-05-10) showed `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache` walk orphaned cache versions + test fixtures with no attribution. ASVE walks per `installed_plugins.json` + plugin.json defaults; this PR adds the Tier-2 layer on top.
+Empirically motivated: dogfood (2026-05-10) showed `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache` walk orphaned cache versions + test fixtures with no attribution. OpenACA walks per `installed_plugins.json` + plugin.json defaults; this PR adds the Tier-2 layer on top.
 
 ## Test plan
 
@@ -2753,10 +2753,10 @@ Empirically motivated: dogfood (2026-05-10) showed `trivy filesystem ~/.claude/p
 - [x] `uv run ruff format --check tools/ tests/`
 - [x] `uv run ruff check tools/ tests/`
 - [x] `uv run pyright tools/ tests/`
-- [x] `uv run asve-lint advisories/`
-- [x] Dogfooded `asve-scan fs --target ~/.claude -v` — per-plugin coverage lines render correctly
-- [x] Dogfooded `asve-scan fs --target ~/.claude --federate-osv -v` — federation summary appears; fail-soft when offline
-- [x] Dogfooded `asve-scan repo --target . -v` — repo-mode unchanged for the GitHub Action; new lockfile patterns fire on `package-lock.json`/`uv.lock` if present
+- [x] `uv run openaca lint advisories/`
+- [x] Dogfooded `openaca scan fs --target ~/.claude -v` — per-plugin coverage lines render correctly
+- [x] Dogfooded `openaca scan fs --target ~/.claude --federate-osv -v` — federation summary appears; fail-soft when offline
+- [x] Dogfooded `openaca scan repo --target . -v` — repo-mode unchanged for the GitHub Action; new lockfile patterns fire on `package-lock.json`/`uv.lock` if present
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 PR_EOF
@@ -2786,7 +2786,7 @@ PR_EOF
 | Spec §"Resolved details" #1 (Finding stays minimal) | Implemented via Task 8 (SARIF dereferences) |
 | Spec §"Resolved details" #2 (single-pass batched query, no cache) | Implemented in Task 6 (`_query_batch` is single-pass) |
 | Spec §"Resolved details" #3 (unconditional stderr warning) | Implemented in Task 7 |
-| Spec §"Active-state filtering as ASVE's edge" | Already in plan 008; plan 009's `_walk_plugin_implementation_deps` only walks plugin install roots discovered via `installed_plugins.json` — preserves the property |
+| Spec §"Active-state filtering as OpenACA's edge" | Already in plan 008; plan 009's `_walk_plugin_implementation_deps` only walks plugin install roots discovered via `installed_plugins.json` — preserves the property |
 
 No gaps.
 
@@ -2801,6 +2801,6 @@ Searched for `TBD`, `TODO`, `implement later`, `fill in details`, `Add appropria
 - `_walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> list[ComponentRef]` consistent in Task 4 definition and Task 4 call site.
 - `augment_corpus(refs: list[ComponentRef], base_corpus: list[dict]) -> tuple[list[dict], list[str]]` consistent across Task 6 implementation, Task 7 import, and Task 6 tests.
 - `extra["transitive"]` (bool), `extra["fallback_reason"]` (str), `properties.coverage` (`"transitive"`/`"direct-only"`) consistent across Tasks 1, 2, 4, 6, 8, 9.
-- `database_specific.asve.source` consistent across Tasks 7, 8, 10.
+- `database_specific.openaca.source` consistent across Tasks 7, 8, 10.
 
 No inconsistencies.

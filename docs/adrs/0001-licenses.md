@@ -9,7 +9,7 @@ superseded-by: null
 
 ## Context
 
-ASVE ships two licensed artifacts: source code (parsers, linter, Action) and
+OpenACA ships two licensed artifacts: source code (parsers, linter, Action) and
 the advisory corpus (YAML/JSON records). They have different reuse profiles
 and need different licenses. The license decision is foundational — switching
 later means asking every contributor to re-license their work.
@@ -24,7 +24,7 @@ later means asking every contributor to re-license their work.
 
 - **CC-BY-SA-4.0 for data** — rejected because the share-alike clause is
   viral on derivative works; would block downstream consumers from
-  incorporating ASVE records into mixed-license outputs (the Snyk
+  incorporating OpenACA records into mixed-license outputs (the Snyk
   Vulnerability DB / GHSA / OSV.dev consumption path matters).
 - **MIT for code** — shorter and equally permissive, but Apache-2.0's patent
   grant is preferred for a schema-and-tooling project that may be
@@ -34,7 +34,7 @@ later means asking every contributor to re-license their work.
 
 ## Consequences
 
-- Downstream projects can mirror, ingest, and re-publish ASVE advisory data
+- Downstream projects can mirror, ingest, and re-publish OpenACA advisory data
   with attribution.
 - Code contributions are subject to Apache-2.0's contributor terms.
 - The dual licensing must be reflected in `LICENSE` (code) and `LICENSE-DATA`
@@ -45,5 +45,5 @@ later means asking every contributor to re-license their work.
 
 If OSV.dev relicenses its data feed away from CC-BY-4.0, or if a major
 downstream consumer (Snyk, GitHub Security) requires a different data
-license to ingest ASVE records, revisit the data-license choice. The code
+license to ingest OpenACA records, revisit the data-license choice. The code
 license is permanent.

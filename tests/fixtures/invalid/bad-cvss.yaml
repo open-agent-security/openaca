@@ -1,5 +1,5 @@
 schema_version: "1.7.5"
-id: ASVE-2026-9003
+id: CVE-2026-9003
 type: vulnerability
 aliases: []
 summary: "test cvss rejection"
@@ -17,7 +17,7 @@ references:
   - type: WEB
     url: "https://example.com"
 database_specific:
-  asve:
+  openaca:
     taxonomies:
       owasp_agentic_top10:
         - asi05

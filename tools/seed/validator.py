@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from tools.promote import project_candidate_to_overlay
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
 def validate_candidate(candidate: dict[str, Any]) -> list[str]:
@@ -40,16 +40,16 @@ def validate_candidate(candidate: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _get_asve_dict(record: dict[str, Any]) -> dict[str, Any]:
+def _get_openaca_dict(record: dict[str, Any]) -> dict[str, Any]:
     db = record.get("database_specific")
-    asve = (db if isinstance(db, dict) else {}).get("asve")
-    return asve if isinstance(asve, dict) else {}
+    openaca = (db if isinstance(db, dict) else {}).get("openaca")
+    return openaca if isinstance(openaca, dict) else {}
 
 
 def _check_threat_kind_id_coupling(candidate: dict[str, Any]) -> list[str]:
     """threat_kind is only valid when id or an alias starts with MAL-."""
-    asve = _get_asve_dict(candidate)
-    if "threat_kind" not in asve:
+    openaca = _get_openaca_dict(candidate)
+    if "threat_kind" not in openaca:
         return []
     record_id = candidate.get("id") or ""
     aliases = candidate.get("aliases") or []
@@ -65,8 +65,8 @@ def _check_threat_kind_id_coupling(candidate: dict[str, Any]) -> list[str]:
 
 def _check_no_empty_taxonomy_buckets(candidate: dict[str, Any]) -> list[str]:
     """Reject empty arrays/dicts under taxonomies; omit the key instead."""
-    asve = _get_asve_dict(candidate)
-    taxonomies = asve.get("taxonomies")
+    openaca = _get_openaca_dict(candidate)
+    taxonomies = openaca.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return []
     errors: list[str] = []

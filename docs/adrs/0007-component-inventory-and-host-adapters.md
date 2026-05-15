@@ -29,7 +29,7 @@ re-litigated against new parser additions.
 
 ### 1. Tiered scanning model
 
-ASVE's surface scope is split into four tiers; V0 ships Tier 1 + 2.
+OpenACA's surface scope is split into four tiers; V0 ships Tier 1 + 2.
 
 | Tier | Surface | Ships |
 |---|---|---|
@@ -68,7 +68,7 @@ Recognized in `affected[*].package.ecosystem`:
 `claude-skill` follows the existing `_match_versioned` path (range-based
 matching, identical to npm/PyPI). The other three are identity-only:
 matcher fires on exact `component_identity` match against
-`database_specific.asve.component_identity` in the advisory. No range
+`database_specific.openaca.component_identity` in the advisory. No range
 algebra — these surfaces don't have semantic versioning conventions in
 V0.
 
@@ -109,7 +109,7 @@ absolute paths and `..`-traversal that escapes the root.
 
 ### 7. V1: host adapters
 
-ASVE's parsers are biased toward declarative agent stacks
+OpenACA's parsers are biased toward declarative agent stacks
 (Claude Code, Claude Desktop, Cursor's MCP config). Frameworks that
 configure programmatically (OpenAI Agents SDK, Codex CLI's TOML for
 non-MCP servers, runtime tool registration) are deferred to V1 host

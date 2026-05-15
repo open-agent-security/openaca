@@ -46,7 +46,7 @@ def _advisory(
     summary: str = "test summary",
     severity_label: str | None = None,
     severity_vector: str | None = None,
-    source: str = "asve.dev",
+    source: str = "openaca.dev",
 ) -> dict:
     events: list[dict] = [{"introduced": "0"}]
     if fixed is not None:
@@ -60,7 +60,7 @@ def _advisory(
                 "ranges": [{"type": "ECOSYSTEM", "events": events}],
             }
         ],
-        "database_specific": {"asve": {"source": source}},
+        "database_specific": {"openaca": {"source": source}},
     }
     if severity_label is not None:
         out["database_specific"]["severity"] = severity_label
@@ -225,7 +225,7 @@ def test_aggregate_fix_returns_none_on_unparseable_version():
 # ── render_text ──────────────────────────────────────────────────────────────
 
 
-def _stats(unit_count=1, components=1, label="manifest", sources=("asve.dev",)) -> ScanStats:
+def _stats(unit_count=1, components=1, label="manifest", sources=("openaca.dev",)) -> ScanStats:
     return ScanStats(
         unit_count=unit_count,
         unit_label=label,
@@ -290,7 +290,7 @@ def test_text_grouped_block_per_component():
     # Severity labels per row, both HIGH.
     assert out.count("HIGH") == 2
     # Source tag present.
-    assert "[asve.dev]" in out
+    assert "[openaca.dev]" in out
 
 
 def test_text_groups_sorted_by_max_severity_desc():
@@ -312,7 +312,7 @@ def test_text_groups_sorted_by_max_severity_desc():
 def test_text_attributed_finding_shows_via_and_remove_fix():
     findings = [
         _finding(
-            "ASVE-X",
+            "OpenACA-X",
             "@supabase/mcp-server",
             "1.0.4",
             attributed_to="claude-plugin/supabase@0.1.6",
@@ -320,8 +320,8 @@ def test_text_attributed_finding_shows_via_and_remove_fix():
         )
     ]
     index = {
-        "ASVE-X": _advisory(
-            "ASVE-X",
+        "OpenACA-X": _advisory(
+            "OpenACA-X",
             "npm",
             "@supabase/mcp-server",
             fixed="1.0.5",
@@ -354,10 +354,10 @@ def test_text_color_escapes_present_when_enabled():
 def test_text_verbose_adds_taxonomies_and_evidence_level():
     findings = [_finding("X", "pkg", "1.0.0")]
     advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
-    advisory["database_specific"]["asve"]["taxonomies"] = {
+    advisory["database_specific"]["openaca"]["taxonomies"] = {
         "owasp_agentic_top10": ["asi02", "asi05"]
     }
-    advisory["database_specific"]["asve"]["evidence_level"] = "confirmed"
+    advisory["database_specific"]["openaca"]["evidence_level"] = "confirmed"
     index = {"X": advisory}
     out_v = render_text(findings, index, _stats(), verbose=True)
     out_p = render_text(findings, index, _stats(), verbose=False)
@@ -370,8 +370,8 @@ def test_text_verbose_adds_taxonomies_and_evidence_level():
 def test_text_footer_lists_sources():
     findings = [_finding("X", "pkg", "1.0.0")]
     index = {"X": _advisory("X", "npm", "pkg", severity_label="HIGH", source="osv.dev")}
-    out = render_text(findings, index, _stats(sources=("asve.dev", "osv.dev")))
-    assert "Sources: asve.dev + osv.dev" in out
+    out = render_text(findings, index, _stats(sources=("openaca.dev", "osv.dev")))
+    assert "Sources: openaca.dev + osv.dev" in out
 
 
 # ── render_github ────────────────────────────────────────────────────────────
@@ -410,7 +410,7 @@ def test_json_empty_returns_findings_array_and_stats():
     assert parsed["findings"] == []
     assert parsed["stats"]["units"] == 0
     assert parsed["stats"]["components"] == 0
-    assert parsed["stats"]["sources"] == ["asve.dev"]
+    assert parsed["stats"]["sources"] == ["openaca.dev"]
 
 
 def test_json_finding_contains_full_record():
@@ -628,14 +628,14 @@ def test_tree_tier2_aggregate_carries_finding_marker():
     )
     refs = [_plugin_ref("demo", "1.0.0"), tier2_ref]
     finding = Finding(
-        advisory_id="ASVE-2026-0001",
+        advisory_id="CVE-2026-0001",
         component=tier2_ref,
         confidence="high",
-        reason="lodash@4.17.20 matches ASVE-2026-0001",
+        reason="lodash@4.17.20 matches CVE-2026-0001",
         attributed_to="claude-plugin/demo@1.0.0",
     )
     out = render_inventory_tree(refs, [finding], use_unicode=True, use_color=False)
-    assert "[! ASVE-2026-0001]" in out
+    assert "[! CVE-2026-0001]" in out
     assert "npm/ deps" in out
 
 
@@ -689,7 +689,7 @@ def test_tree_marks_affected_leaves_with_finding_id():
 def test_tree_marks_plugin_header_when_plugin_advisory_matches():
     plugin = _plugin_ref("supabase", "0.1.0")
     finding = Finding(
-        advisory_id="ASVE-2026-XXXX",
+        advisory_id="OpenACA-2026-XXXX",
         component=plugin,
         confidence="high",
         reason="match",
@@ -698,7 +698,7 @@ def test_tree_marks_plugin_header_when_plugin_advisory_matches():
     # Header line carries the marker; the empty-plugin "(no bundled)" line
     # is separate.
     plugin_line = [line for line in out.splitlines() if "claude-plugin/supabase@0.1.0" in line][0]
-    assert "[! ASVE-2026-XXXX]" in plugin_line
+    assert "[! OpenACA-2026-XXXX]" in plugin_line
 
 
 def test_tree_ascii_fallback_uses_ascii_chars():

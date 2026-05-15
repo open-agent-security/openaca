@@ -33,7 +33,7 @@ def _check_uri(value: object) -> bool:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 CANONICAL_KEYS = ("schema_version", "id", "aliases", "modified", "database_specific")
 
@@ -41,9 +41,9 @@ CANONICAL_KEYS = ("schema_version", "id", "aliases", "modified", "database_speci
 def project_candidate_to_overlay(candidate: dict[str, Any]) -> dict[str, Any]:
     """Return the canonical overlay projection for a reviewed candidate."""
     db = candidate.get("database_specific")
-    asve = (db if isinstance(db, dict) else {}).get("asve")
-    if not isinstance(asve, dict):
-        raise ValueError("candidate must include database_specific.asve")
+    openaca = (db if isinstance(db, dict) else {}).get("openaca")
+    if not isinstance(openaca, dict):
+        raise ValueError("candidate must include database_specific.openaca")
 
     overlay: dict[str, Any] = {}
     for key in CANONICAL_KEYS:

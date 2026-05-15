@@ -1,13 +1,13 @@
 """OSV.dev matching: batched live query against /v1/querybatch.
 
 Given a list of emitted ComponentRefs, fetch matching vulnerability
-records from OSV.dev for the matcher to consume. ASVE overlays are
+records from OSV.dev for the matcher to consume. OpenACA overlays are
 applied by `tools.overlays` after these records are fetched.
 
 Behavior:
 - Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
   name + version) are queried. Identity-only refs (claude-hook,
-  claude-command, claude-agent) and ASVE-native ecosystems
+  claude-command, claude-agent) and OpenACA-native ecosystems
   (claude-skill, claude-plugin) are skipped — OSV.dev wouldn't have
   records for them anyway.
 - PURLs are deduplicated within a scan (same PURL queried once).
@@ -43,7 +43,7 @@ def is_queryable(ref: ComponentRef) -> bool:
     """A ref is sent to OSV.dev iff it has a version AND a PURL we can derive.
 
     Identity-only refs (claude-hook, claude-command, claude-agent) and
-    ASVE-native ecosystems (claude-skill, claude-plugin) have `purl=None`
+    OpenACA-native ecosystems (claude-skill, claude-plugin) have `purl=None`
     so they're skipped here — OSV.dev wouldn't have records for them.
     Same rule for any ecosystem-tagged ref missing a version.
     """

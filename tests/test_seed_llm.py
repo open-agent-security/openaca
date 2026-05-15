@@ -20,7 +20,7 @@ def _response_text() -> str:
         {
             "decision": "annotate",
             "database_specific": {
-                "asve": {
+                "openaca": {
                     "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                     "evidence_level": "likely",
                 },
@@ -53,14 +53,14 @@ def test_openai_provider_posts_chat_completion_and_extracts_json():
     assert payload["messages"][1]["role"] == "user"
     response_format = payload["response_format"]
     assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["name"] == "asve_seed_annotation"
+    assert response_format["json_schema"]["name"] == "openaca_seed_annotation"
     response_schema = response_format["json_schema"]["schema"]
     assert response_schema["properties"]["decision"]["enum"] == ["annotate", "reject"]
     reject_reason = response_schema["properties"]["reject_reason"]
     assert "not_agent_stack" in reject_reason["enum"]
     assert "unsupported_record" in reject_reason["enum"]
     assert result.decision == "annotate"
-    assert result.asve == {
+    assert result.openaca == {
         "taxonomies": {"owasp_agentic_top10": ["asi05"]},
         "evidence_level": "likely",
     }
@@ -76,7 +76,7 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "asve_seed_annotation",
+                    "name": "openaca_seed_annotation",
                     "input": json.loads(_response_text()),
                 }
             ]
@@ -97,7 +97,7 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
     assert payload["model"] == "anthropic-test"
     assert payload["system"] == llm.INSTRUCTIONS
     assert payload["messages"][0]["role"] == "user"
-    assert payload["tools"][0]["name"] == "asve_seed_annotation"
+    assert payload["tools"][0]["name"] == "openaca_seed_annotation"
     assert payload["tools"][0]["input_schema"]["properties"]["decision"]["enum"] == [
         "annotate",
         "reject",
@@ -105,9 +105,9 @@ def test_anthropic_provider_posts_messages_request_and_extracts_json():
     reject_reason = payload["tools"][0]["input_schema"]["properties"]["reject_reason"]
     assert "not_agent_stack" in reject_reason["enum"]
     assert "unsupported_record" in reject_reason["enum"]
-    assert payload["tool_choice"] == {"type": "tool", "name": "asve_seed_annotation"}
+    assert payload["tool_choice"] == {"type": "tool", "name": "openaca_seed_annotation"}
     assert result.decision == "annotate"
-    assert result.asve == {
+    assert result.openaca == {
         "taxonomies": {"owasp_agentic_top10": ["asi05"]},
         "evidence_level": "likely",
     }
@@ -136,7 +136,7 @@ def test_llm_provider_can_return_rejection_decision():
 
     assert result.decision == "reject"
     assert result.reject_reason == "not_agent_stack"
-    assert result.asve is None
+    assert result.openaca is None
     assert result.evidence == [{"field": "summary", "quote": "generic package"}]
 
 
@@ -162,7 +162,7 @@ def test_llm_provider_coerces_unknown_reject_reason_to_unsupported_record():
 
     assert result.decision == "reject"
     assert result.reject_reason == "unsupported_record"
-    assert result.asve is None
+    assert result.openaca is None
 
 
 def test_response_schema_omits_deterministic_threat_kind_but_uses_canonical_enums():
@@ -170,19 +170,19 @@ def test_response_schema_omits_deterministic_threat_kind_but_uses_canonical_enum
 
     response_schema = llm.build_response_schema(annotation_schema)
 
-    asve_schema = response_schema["properties"]["database_specific"]["properties"]["asve"]
+    openaca_schema = response_schema["properties"]["database_specific"]["properties"]["openaca"]
     assert (
-        asve_schema["properties"]["evidence_level"]["enum"]
+        openaca_schema["properties"]["evidence_level"]["enum"]
         == annotation_schema["properties"]["evidence_level"]["enum"]
     )
-    assert "threat_kind" not in asve_schema["properties"]
-    assert "threat_kind" not in asve_schema["required"]
+    assert "threat_kind" not in openaca_schema["properties"]
+    assert "threat_kind" not in openaca_schema["required"]
 
 
 def test_response_schema_supplemental_taxonomies_allows_arbitrary_string_array_values():
     response_schema = llm.build_response_schema()
 
-    taxonomies = response_schema["properties"]["database_specific"]["properties"]["asve"][
+    taxonomies = response_schema["properties"]["database_specific"]["properties"]["openaca"][
         "properties"
     ]["taxonomies"]
     supp = taxonomies["properties"]["supplemental_taxonomies"]
@@ -197,11 +197,11 @@ def test_response_schema_supplemental_taxonomies_allows_arbitrary_string_array_v
 def test_response_schema_taxonomy_families_are_not_required():
     response_schema = llm.build_response_schema()
 
-    taxonomies = response_schema["properties"]["database_specific"]["properties"]["asve"][
+    taxonomies = response_schema["properties"]["database_specific"]["properties"]["openaca"][
         "properties"
     ]["taxonomies"]
     assert "required" not in taxonomies, (
-        "taxonomy families must be optional to match the canonical asve_taxonomies schema"
+        "taxonomy families must be optional to match the canonical openaca_taxonomies schema"
     )
 
 
@@ -256,7 +256,7 @@ def test_call_anthropic_raises_provider_error_when_tool_input_is_not_dict():
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "asve_seed_annotation",
+                    "name": "openaca_seed_annotation",
                     "input": "not-json",
                 }
             ]
@@ -293,10 +293,10 @@ def test_llm_provider_does_not_alias_claude_to_anthropic():
         llm.annotate_with_provider("claude", "model", "key", _request())
 
 
-def test_load_annotation_schema_extracts_asve_extension_from_schema_file(tmp_path):
+def test_load_annotation_schema_extracts_openaca_extension_from_schema_file(tmp_path):
     schema = json.loads(llm.SCHEMA_PATH.read_text(encoding="utf-8"))
-    schema["$defs"]["asve_extension"]["properties"]["review_note"] = {"type": "string"}
-    schema_path = tmp_path / "asve.schema.json"
+    schema["$defs"]["openaca_extension"]["properties"]["review_note"] = {"type": "string"}
+    schema_path = tmp_path / "openaca.schema.json"
     schema_path.write_text(json.dumps(schema), encoding="utf-8")
 
     annotation_schema = llm.load_annotation_schema(schema_path)

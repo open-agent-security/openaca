@@ -9,7 +9,7 @@ superseded-by: null
 
 ## Context
 
-ASVE has pivoted from a standalone advisory database to an overlay layer on
+OpenACA has pivoted from a standalone advisory database to an overlay layer on
 top of upstream OSV/GHSA/CVE records. In that model, upstream records own
 vulnerability facts such as package identity, affected ranges, severity,
 summary, details, references, aliases, and CWE. The scanner owns local
@@ -21,32 +21,32 @@ The seed pipeline exposed a schema problem: LLM-assisted candidates produced
 free-form values for `component_type`, `surfaces`, `agent_impact`, and
 `threat_kind`. The validator accepted those values because the schema allowed
 plain strings and arbitrary boolean impact keys. Tightening those fields into
-ASVE-owned enums would still leave ASVE maintaining a custom taxonomy that
+OpenACA-owned enums would still leave OpenACA maintaining a custom taxonomy that
 duplicates either scanner observation context or upstream vulnerability
 description. The MVP bar is stricter: every canonical overlay field needs a
 clear reason to exist, and standards-based fields are preferred.
 
 ## Decision
 
-Canonical overlays keep only ASVE's reviewed agent-security taxonomy mapping
-and review confidence under `database_specific.asve`. The required canonical
-ASVE fields are `taxonomies` and `evidence_level`. `taxonomies` contains the
+Canonical overlays keep only OpenACA's reviewed agent-security taxonomy mapping
+and review confidence under `database_specific.openaca`. The required canonical
+OpenACA fields are `taxonomies` and `evidence_level`. `taxonomies` contains the
 supported standards-based framework mappings: OWASP Agentic Top 10, OWASP MCP
 Top 10, OWASP Agentic Skills Top 10, OWASP LLM Top 10, MITRE ATLAS, and
-reviewed supplemental mappings when needed. `evidence_level` records ASVE's
+reviewed supplemental mappings when needed. `evidence_level` records OpenACA's
 confidence in the overlay mapping, not upstream vulnerability confidence.
 
 Canonical overlays do not carry `component_type`, `surfaces`, or
 `agent_impact`. The scanner reports observed component context at scan time;
 the overlay does not constrain or restate that observation. `threat_kind`
-remains optional and enum-constrained for ASVE-specific overlay subtypes that
+remains optional and enum-constrained for OpenACA-specific overlay subtypes that
 upstream OSV does not model cleanly; the only V0 value is
 `malicious_package`. Ordinary vulnerability overlays omit `threat_kind`.
 
 Canonical overlays do not carry `component_identity`. In the pure overlay
 MVP, matching is driven by upstream package/version data and aliases. Local
 or identity-only agent components remain scanner inventory concepts unless
-ASVE later reintroduces ASVE-native records through a separate decision.
+OpenACA later reintroduces OpenACA-native records through a separate decision.
 
 Candidate files may keep review-only metadata such as matched heuristics,
 LLM decisions, rejection reasons, evidence quotes, and scanner-observed
@@ -69,18 +69,18 @@ overlay projection.
   path, or the attacker interaction surface. The first belongs to scanner
   output; the others are already described by upstream details and framework
   mappings.
-- **Keep `agent_impact` booleans**: rejected because the keys are ASVE-owned
+- **Keep `agent_impact` booleans**: rejected because the keys are OpenACA-owned
   and not mapped directly from a supported standard. They risk becoming a
   second custom taxonomy beside OWASP and MITRE without a proven MVP
   reporting need.
 - **Use `threat_kind: vulnerability | exposure`**: rejected because those are
-  top-level record-type concepts. ASVE V0 overlays upstream vulnerability
+  top-level record-type concepts. OpenACA V0 overlays upstream vulnerability
   records, and `exposure` / `config` records remain out of V0 scope.
 - **Keep `component_identity` as an overlay matching key**: rejected for MVP
   because OSV-backed overlays should match through upstream
   `affected[*].package` data and aliases. Local hooks, commands, and agents
   are scanner inventory items, not upstream advisory identities. Reintroducing
-  ASVE-native identity-based records would require a separate ADR.
+  OpenACA-native identity-based records would require a separate ADR.
 - **Let LLM rejected candidates disappear**: rejected because the LLM should
   not silently control corpus coverage. Rejections belong in reviewable
   candidate or run artifacts.
@@ -94,7 +94,7 @@ canonical schema only accepts framework mappings, evidence level,
 
 Scanner output becomes the place where discovered component context is shown.
 Reports combine local scan observations with upstream advisory data and
-ASVE-reviewed taxonomy mappings instead of relying on canonical overlays to
+OpenACA-reviewed taxonomy mappings instead of relying on canonical overlays to
 describe all three.
 
 Existing overlays and tests must be migrated. Renderers and static export
@@ -103,8 +103,8 @@ overlay metadata. Seed candidates and LLM annotation tests must be updated so
 generated canonical annotations are minimal, and rejected LLM decisions are
 kept auditable.
 
-The downside is that ASVE loses a custom impact summary in MVP output. If
-users later need ASVE-owned impact facets for filtering or policy decisions,
+The downside is that OpenACA loses a custom impact summary in MVP output. If
+users later need OpenACA-owned impact facets for filtering or policy decisions,
 those facets should be added by a new ADR with a concrete consumer and a
 closed vocabulary.
 
@@ -112,5 +112,5 @@ closed vocabulary.
 
 Revisit if scanner/report consumers need a stable filter that cannot be
 derived from scan observations, upstream OSV fields, or supported framework
-taxonomies. Revisit identity-based matching only if ASVE explicitly adds
-ASVE-native records for local agent components.
+taxonomies. Revisit identity-based matching only if OpenACA explicitly adds
+OpenACA-native records for local agent components.

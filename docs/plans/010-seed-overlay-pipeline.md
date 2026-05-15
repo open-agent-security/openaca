@@ -1,10 +1,10 @@
 # Plan 010 — Seed Overlay Pipeline
 
-**Goal:** Add a V0-safe workflow for seeding reviewed ASVE overlays from OSV bulk dumps and OSV `modified_id.csv` indexes.
+**Goal:** Add a V0-safe workflow for seeding reviewed OpenACA overlays from OSV bulk dumps and OSV `modified_id.csv` indexes.
 
-**Architecture:** Canonical `overlays/` stays scanner-visible and minimal. The seeder writes reviewable candidates to `candidates/`, outside the scanner/export path. Discovery remains deterministic; annotation can be deterministic or opt-in LLM-assisted with `docs/frameworks/*.md` as context. A human reviews and edits each candidate, then `asve-promote` projects it into the canonical overlay shape and validates it before writing `overlays/<id>.yaml`.
+**Architecture:** Canonical `overlays/` stays scanner-visible and minimal. The seeder writes reviewable candidates to `candidates/`, outside the scanner/export path. Discovery remains deterministic; annotation can be deterministic or opt-in LLM-assisted with `docs/frameworks/*.md` as context. A human reviews and edits each candidate, then `openaca promote` projects it into the canonical overlay shape and validates it before writing `overlays/<id>.yaml`.
 
-**Tech Stack:** Python 3.11, Click CLIs, PyYAML, JSON Schema, pytest, existing ASVE schema/linter/export tooling.
+**Tech Stack:** Python 3.11, Click CLIs, PyYAML, JSON Schema, pytest, existing OpenACA schema/linter/export tooling.
 
 ---
 
@@ -13,18 +13,18 @@
 **Files:**
 - Create: `docs/adrs/0010-overlay-taxonomies-and-seeding.md`
 - Modify: `docs/adrs/INDEX.md`
-- Modify: `schema/asve.schema.json`
+- Modify: `schema/openaca.schema.json`
 - Modify: `overlays/*.yaml`
 - Modify: `tools/templates/advisory.html.j2`
 - Test: `tests/test_schema.py`
 
-- [ ] Write tests that require `database_specific.asve.taxonomies` and allow `threat_kind`.
+- [ ] Write tests that require `database_specific.openaca.taxonomies` and allow `threat_kind`.
 - [ ] Run focused schema tests and confirm they fail before schema changes.
 - [ ] Update schema to add `taxonomies` and `threat_kind`.
 - [ ] Migrate existing overlays from flat `owasp_agentic_top10` to `taxonomies.owasp_agentic_top10`.
 - [ ] Update export HTML template to render taxonomy groups.
 - [ ] Add ADR-0010 documenting taxonomy shape, candidate-vs-overlay boundary, no LLM in V0, and no CWE duplication by default.
-- [ ] Run `uv run asve-lint overlays/` and focused schema/export tests.
+- [ ] Run `uv run openaca lint overlays/` and focused schema/export tests.
 
 ### Task 2: Promotion Boundary
 
@@ -33,11 +33,11 @@
 - Modify: `pyproject.toml`
 - Test: `tests/test_promote.py`
 
-- [ ] Write tests showing `asve-promote candidates/GHSA-x.yaml` strips `_candidate`, evidence, upstream summaries/details, and other candidate-only fields.
+- [ ] Write tests showing `openaca promote candidates/GHSA-x.yaml` strips `_candidate`, evidence, upstream summaries/details, and other candidate-only fields.
 - [ ] Run focused promotion tests and confirm they fail.
 - [ ] Implement `project_candidate_to_overlay()` and Click CLI.
 - [ ] Validate promoted overlays with the canonical JSON schema.
-- [ ] Register `asve-promote` in `pyproject.toml`.
+- [ ] Register `openaca promote` in `pyproject.toml`.
 - [ ] Run focused promotion tests.
 
 ### Task 3: Candidate Validator
@@ -62,7 +62,7 @@
 - [ ] Write CLI tests for deterministic discovery, candidate output, curated overlay dedup, MAL record handling, `modified_id.csv` incremental seeding, and dry-run output.
 - [ ] Run focused seeder tests and confirm they fail.
 - [ ] Implement OSV dump iteration, `modified_id.csv` incremental iteration, MCP/agent discovery heuristics, rule-based draft annotations, candidate validation, and `candidates/` output.
-- [ ] Register `asve-seed` in `pyproject.toml`.
+- [ ] Register `openaca seed` in `pyproject.toml`.
 - [ ] Run focused seeder tests.
 
 ### Task 5: Full Verification And PR
@@ -74,7 +74,7 @@
 - [ ] Run `uv run ruff check .`.
 - [ ] Run `uv run ruff format --check .`.
 - [ ] Run `uv run pyright`.
-- [ ] Run `uv run asve-lint overlays/`.
+- [ ] Run `uv run openaca lint overlays/`.
 - [ ] Run `git diff --check`.
 - [ ] Review diff for accidental main-worktree spike carryover or canonical overlay noise.
 - [ ] Commit, push, and open a ready PR.
@@ -83,8 +83,8 @@
 
 **Files:**
 - Create: `scripts/seed-osv-overlays.sh`
-- Create: `.asve-seed-state-npm.json`
-- Create: `.asve-seed-state-pypi.json`
+- Create: `.openaca seed-state-npm.json`
+- Create: `.openaca seed-state-pypi.json`
 - Modify: `tools/seed/__main__.py`
 - Modify: `CONTRIBUTING.md`
 - Test: `tests/test_seed_cli.py`
@@ -93,7 +93,7 @@
 - [x] Write tests for `modified_id.csv` rows resolving from ecosystem `all.zip` files.
 - [x] Write a script smoke test with fake `gcloud` and `uv`.
 - [x] Teach incremental seeding to resolve records from extracted JSON, ecosystem `all.zip`, and root `all.zip`.
-- [x] Add a repeatable script that downloads npm and PyPI OSV dumps and runs `asve-seed` with committed cursor files.
+- [x] Add a repeatable script that downloads npm and PyPI OSV dumps and runs `openaca seed` with committed cursor files.
 - [x] Document the scripted workflow.
 - [x] Run focused seeder and script tests.
 - [x] Run full verification before PR.
@@ -129,7 +129,7 @@
 - [x] Write tests proving LLM mode does not backfill missing annotation fields from deterministic heuristics.
 - [x] Implement OpenAI and Anthropic provider adapters for LLM annotation.
 - [x] Keep deterministic discovery and deterministic annotation as the no-LLM fallback path.
-- [x] Add `ASVE_LLM_PROVIDER` and `ASVE_LLM_MODEL` support to the npm/PyPI workflow script.
+- [x] Add `OPENACA_LLM_PROVIDER` and `OPENACA_LLM_MODEL` support to the npm/PyPI workflow script.
 - [x] Document usage in `CONTRIBUTING.md`.
 - [x] Run focused seeder and workflow tests.
 - [x] Run full verification before PR.

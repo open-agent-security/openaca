@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the documentation V0 needs to be a credible OSS project: a coordinated-disclosure policy (adopted from OpenSSF baseline, with ASVE-specific defaults), a `SECURITY.md` pointing to it, and a `CONTRIBUTING.md` covering advisory authoring, linter discipline, ID reservation, and the PR workflow.
+**Goal:** Ship the documentation V0 needs to be a credible OSS project: a coordinated-disclosure policy (adopted from OpenSSF baseline, with OpenACA-specific defaults), a `SECURITY.md` pointing to it, and a `CONTRIBUTING.md` covering advisory authoring, linter discipline, ID reservation, and the PR workflow.
 
-**Architecture:** Documentation-only plan. No code, no tests beyond markdown linting. The disclosure policy *documents* the V0 process; per the V0 spec, ASVE V0 does **not** operate the disclosure pipeline at scale — that's gated to V1.
+**Architecture:** Documentation-only plan. No code, no tests beyond markdown linting. The disclosure policy *documents* the V0 process; per the V0 spec, OpenACA V0 does **not** operate the disclosure pipeline at scale — that's gated to V1.
 
 **Tech Stack:** Markdown. No build step.
 
@@ -30,19 +30,19 @@
 - [ ] **Step 1: Write the policy**
 
 ```markdown
-# ASVE Coordinated Disclosure Policy
+# OpenACA Coordinated Disclosure Policy
 
-ASVE follows the [OpenSSF coordinated disclosure
+OpenACA follows the [OpenSSF coordinated disclosure
 guidance](https://openssf.org/) with the project-specific defaults captured
 below. The policy defines what we commit to, on what timeline, and how
 disputes are handled.
 
 ## V0 status
 
-ASVE V0 documents this policy. **V0 does not operate an active disclosure
+OpenACA V0 documents this policy. **V0 does not operate an active disclosure
 program.** Submissions described here will not be processed at scale until
 V1, which is gated on the readiness criteria in
-[`docs/specs/asve-v0-design.md`](specs/asve-v0-design.md) §10.
+[`docs/specs/openaca-v0-design.md`](specs/openaca-v0-design.md) §10.
 
 When V0 receives a report that meets the bar for inclusion, the maintainers
 will run a single end-to-end coordinated-disclosure case as part of the
@@ -51,7 +51,7 @@ scales.
 
 ## Scope
 
-ASVE accepts reports for vulnerabilities affecting **agent-stack
+OpenACA accepts reports for vulnerabilities affecting **agent-stack
 components** that are publicly distributed and identifiable by version or
 stable hash:
 
@@ -67,11 +67,11 @@ Out of scope:
 - Configuration patterns that don't tie to a specific component instance
   (V1 — `type: config`).
 - AI model behavioral failures unrelated to a specific component
-  (out of scope entirely; not what ASVE catalogs).
+  (out of scope entirely; not what OpenACA catalogs).
 
 ## How to report
 
-Email `security@asve.dev` with:
+Email `security@openaca.dev` with:
 
 - Affected component (name + version or commit SHA).
 - Reproduction steps or proof-of-concept.
@@ -91,16 +91,16 @@ respond with our key and switch to encrypted exchange.
 | Acknowledgement | within 5 business days of receipt |
 | Maintainer-response checkpoint | 21 days from initial notice to upstream maintainer |
 | Embargo | 90 days from acknowledgement (default) |
-| Nonresponsive review | 35 days; if maintainer is unresponsive at 35 days, ASVE re-evaluates publication path |
+| Nonresponsive review | 35 days; if maintainer is unresponsive at 35 days, OpenACA re-evaluates publication path |
 | Publication | within 7 days of fix availability or embargo expiry |
 
 **Active exploitation** accelerates the timeline. If credible evidence
-indicates active exploitation, ASVE may publish ahead of the default
+indicates active exploitation, OpenACA may publish ahead of the default
 embargo on a case-by-case basis.
 
 ## Dispute lifecycle
 
-Each ASVE record has a status:
+Each OpenACA record has a status:
 
 ```
 published → disputed → modified | upheld | withdrawn
@@ -108,11 +108,11 @@ published → disputed → modified | upheld | withdrawn
 
 - **published**: the record is live in the corpus.
 - **disputed**: an affected maintainer or downstream contests the record.
-  ASVE marks the record `disputed` and pauses propagation.
-- **modified**: ASVE accepts the dispute and revises the record.
-- **upheld**: ASVE rejects the dispute. The record stays published with
+  OpenACA marks the record `disputed` and pauses propagation.
+- **modified**: OpenACA accepts the dispute and revises the record.
+- **upheld**: OpenACA rejects the dispute. The record stays published with
   the dispute history attached.
-- **withdrawn**: ASVE retracts the record (false-positive, duplicate, or
+- **withdrawn**: OpenACA retracts the record (false-positive, duplicate, or
   out-of-scope).
 
 A disputed record always carries a public dispute history so consumers
@@ -120,11 +120,11 @@ can see what changed and why.
 
 ## Attribution and credit
 
-- Reporter credit: ASVE includes reporter attribution in the published
+- Reporter credit: OpenACA includes reporter attribution in the published
   record unless the reporter requests anonymity.
 - Tooling attribution: where a finding originated from a third-party
-  open-source scanner, ASVE attributes the tool by name and version
-  (e.g., "detected during ASVE triage using <tool> v0.X"). Attribution
+  open-source scanner, OpenACA attributes the tool by name and version
+  (e.g., "detected during OpenACA triage using <tool> v0.X"). Attribution
   is descriptive — it does not imply endorsement, partnership, or
   third-party confirmation.
 
@@ -132,23 +132,23 @@ can see what changed and why.
 
 - Records aliasing existing CVE/GHSA/OSV require no upstream filing —
   the upstream record already exists.
-- ASVE-original component vulnerabilities: ASVE will attempt upstream
+- OpenACA-original component vulnerabilities: OpenACA will attempt upstream
   disclosure to CVE/GHSA where the affected ecosystem is accepted by
   upstream pipelines. Where upstream pipelines don't accept the
-  ecosystem cleanly, ASVE may carry the authoritative record.
+  ecosystem cleanly, OpenACA may carry the authoritative record.
 
 ## Out of scope (escalation, indemnity, payment)
 
-ASVE V0 is an OSS advisory database. We do not:
+OpenACA V0 is an OSS advisory database. We do not:
 
 - Pay bug bounties (consider huntr or other dedicated bounty platforms).
 - Provide legal indemnity.
 - Act as an intermediary for legal threats; if a maintainer asserts a
-  legal claim against a reporter, ASVE will not relay or escalate it.
+  legal claim against a reporter, OpenACA will not relay or escalate it.
 
 ## Contact
 
-`security@asve.dev` for vulnerability reports. For non-security questions,
+`security@openaca.dev` for vulnerability reports. For non-security questions,
 file a GitHub issue against the repo.
 ```
 
@@ -171,20 +171,20 @@ git commit -m "docs: coordinated disclosure policy"
 ```markdown
 # Security Policy
 
-ASVE follows a coordinated-disclosure process. Read the full policy at
+OpenACA follows a coordinated-disclosure process. Read the full policy at
 [`docs/disclosure-policy.md`](docs/disclosure-policy.md).
 
 ## Reporting a vulnerability
 
 **Do not** open public GitHub issues for unembargoed vulnerabilities. Email
-`security@asve.dev` instead. We acknowledge reports within 5 business
+`security@openaca.dev` instead. We acknowledge reports within 5 business
 days.
 
 ## V0 status
 
-ASVE V0 documents the disclosure process. The active disclosure pipeline
+OpenACA V0 documents the disclosure process. The active disclosure pipeline
 starts at V1, gated on readiness criteria in
-[`docs/specs/asve-v0-design.md`](docs/specs/asve-v0-design.md) §10.
+[`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md) §10.
 Reports submitted during V0 will be acknowledged and triaged but may not
 be processed end-to-end until V1.
 
@@ -210,9 +210,9 @@ git commit -m "docs: SECURITY.md pointer to disclosure policy"
 - [ ] **Step 1: Write the file**
 
 ```markdown
-# Contributing to ASVE
+# Contributing to OpenACA
 
-ASVE is an open-source advisory database. Contributions are welcome:
+OpenACA is an open-source advisory database. Contributions are welcome:
 new advisories, parser improvements, schema clarifications, documentation,
 and bug fixes.
 
@@ -221,7 +221,7 @@ an advisory.
 
 ## Before you start
 
-- Read [`docs/specs/asve-v0-design.md`](docs/specs/asve-v0-design.md) for
+- Read [`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md) for
   the V0 scope and architecture.
 - Read [`CLAUDE.md`](CLAUDE.md) for project-wide conventions, including
   the OSS-only scope rules.
@@ -241,8 +241,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # or: brew install uv
 Then:
 
 ```bash
-git clone git@github.com:open-agent-security/asve.git
-cd asve
+git clone git@github.com:open-agent-security/openaca.git
+cd openaca
 uv sync
 ```
 
@@ -251,13 +251,13 @@ installs all runtime + dev dependencies.
 
 You should now have these CLIs (invoked via `uv run`):
 
-- `uv run asve-lint <path>` — validate advisories.
-- `uv run asve-reserve-id <advisories-dir> --year YYYY` — print the next
+- `uv run openaca lint <path>` — validate advisories.
+- `uv run openaca-reserve-id <advisories-dir> --year YYYY` — print the next
   free ID.
-- `uv run asve-import-osv --osv-file FILE --asve-id ID --out PATH` —
+- `uv run openaca-import-osv --osv-file FILE --openaca-id ID --out PATH` —
   generate an advisory skeleton from an OSV record.
-- `uv run asve-export` — build the static export under `dist/`.
-- `uv run asve-scan --target REPO --advisories DIR --sarif OUT` — run the
+- `uv run openaca export` — build the static export under `dist/`.
+- `uv run openaca scan --target REPO --advisories DIR --sarif OUT` — run the
   reference scanner.
 
 Run the test suite:
@@ -270,23 +270,23 @@ uv run pytest
 
 1. **Reserve an ID** for the current year:
    ```bash
-   uv run asve-reserve-id advisories/ --year 2026
-   # ASVE-2026-NNNN
+   uv run openaca-reserve-id advisories/ --year 2026
+   # OpenACA-2026-NNNN
    ```
 
 2. **Generate a skeleton** if the vulnerability already has an OSV/GHSA
    record:
    ```bash
-   uv run asve-import-osv --osv-id GHSA-XXXX-YYYY-ZZZZ \
-                          --asve-id ASVE-2026-NNNN \
-                          --out advisories/2026/ASVE-2026-NNNN.yaml
+   uv run openaca-import-osv --osv-id GHSA-XXXX-YYYY-ZZZZ \
+                          --openaca-id OpenACA-2026-NNNN \
+                          --out advisories/2026/OpenACA-2026-NNNN.yaml
    ```
    Or hand-write the YAML using
-   [`tests/fixtures/valid/asve-2026-0001.yaml`](tests/fixtures/valid/asve-2026-0001.yaml)
+   [`tests/fixtures/valid/cve-2026-0001.yaml`](tests/fixtures/valid/cve-2026-0001.yaml)
    as a model.
 
-3. **Fill in the `database_specific.asve` block** — this is what
-   distinguishes an ASVE record from a passthrough alias:
+3. **Fill in the `database_specific.openaca` block** — this is what
+   distinguishes an OpenACA record from a passthrough alias:
    - `component_type` (e.g., `mcp_server`, `claude_plugin`, `model_proxy`,
      `agent_framework`, `skill_bundle`).
    - `surfaces`: which agent surfaces the component touches.
@@ -304,7 +304,7 @@ uv run pytest
 
 5. **Lint locally**:
    ```bash
-   uv run asve-lint advisories/2026/ASVE-2026-NNNN.yaml
+   uv run openaca lint advisories/2026/OpenACA-2026-NNNN.yaml
    ```
    Fix any failures before opening a PR.
 
@@ -324,7 +324,7 @@ The CI linter has two tiers:
 
 **Hard fail** (your PR will not merge):
 - Schema validation.
-- ID format and uniqueness within `ASVE-YYYY-NNNN`.
+- ID format and uniqueness within `OpenACA-YYYY-NNNN`.
 - Required fields per `type`.
 - CVSS v4 vector parses.
 - OWASP ASI categories are valid (`asi01`–`asi10`).
@@ -342,10 +342,10 @@ full corpus, so transient remote-API failures don't block authors.
 ## Aliasing policy
 
 - If your advisory aliases an existing CVE/GHSA/OSV, list the upstream IDs
-  in `aliases[]`. ASVE creates the alias and overlays agent-context
+  in `aliases[]`. OpenACA creates the alias and overlays agent-context
   metadata. **No new upstream filing required.**
-- If your advisory is ASVE-original, attempt upstream disclosure to
-  CVE/GHSA where the affected ecosystem is accepted upstream. ASVE will
+- If your advisory is OpenACA-original, attempt upstream disclosure to
+  CVE/GHSA where the affected ecosystem is accepted upstream. OpenACA will
   carry the authoritative record only when upstream pipelines don't fit.
 
 ## Code contributions (parsers, linter, scanner)
@@ -363,7 +363,7 @@ Per [`CLAUDE.md`](CLAUDE.md), all artifacts here are OSS-focused. Do not
 include in PRs:
 
 - Commercial product plans or monetization framings.
-- Comparisons against vendor products positioning ASVE as a competitor.
+- Comparisons against vendor products positioning OpenACA as a competitor.
 - Market analysis, sales narratives, go-to-market content.
 - Vendor names framed as competitors. (Naming a tool we *use* with
   attribution is fine; naming a product as a competitor is not.)

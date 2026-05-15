@@ -4,7 +4,7 @@
 
 **Goal:** Build the four V0 manifest parsers that read a target repository's agent-installation manifests and emit a normalized stream of `ComponentRef` records. Each parser owns one file format. The reference Action (Plan 005) consumes the combined output.
 
-**Architecture:** A single `ComponentRef` dataclass captures the result. Each parser is a small module exposing `parse(path: Path) -> list[ComponentRef]`. A registry maps file-name patterns to parsers. Standard PURL is emitted whenever the manifest declares a known ecosystem (`pkg:npm`, `pkg:pypi`, `pkg:github`, `pkg:docker`); when it doesn't (Claude Code plugin marketplaces, MCP-stdio launches), the ref carries an ASVE-native identity string under `component_identity` and leaves `purl` empty.
+**Architecture:** A single `ComponentRef` dataclass captures the result. Each parser is a small module exposing `parse(path: Path) -> list[ComponentRef]`. A registry maps file-name patterns to parsers. Standard PURL is emitted whenever the manifest declares a known ecosystem (`pkg:npm`, `pkg:pypi`, `pkg:github`, `pkg:docker`); when it doesn't (Claude Code plugin marketplaces, MCP-stdio launches), the ref carries an OpenACA-native identity string under `component_identity` and leaves `purl` empty.
 
 **Tech Stack:** Python 3.11+, stdlib JSON, `pyyaml`, `tomllib` (stdlib in 3.11+) for `pyproject.toml` if added later. No new runtime deps.
 
@@ -125,7 +125,7 @@ class ComponentRef:
     """A single component installation discovered in a repository.
 
     Either (ecosystem + name + version) is set with a derivable standard PURL,
-    or component_identity is set with an ASVE-native identifier.
+    or component_identity is set with an OpenACA-native identifier.
     """
     ecosystem: Optional[str] = None
     name: Optional[str] = None
@@ -319,7 +319,7 @@ git commit -m "feat: parser for package.json with PURL emission"
 
 `mcp.json` declares MCP servers by `command` + `args`. The parser must extract:
 - The package referenced by `npx`/`uvx` invocations (with version pin if present).
-- A fallback `mcp-stdio/...` ASVE-native identity when the command is a binary path.
+- A fallback `mcp-stdio/...` OpenACA-native identity when the command is a binary path.
 
 **Files:**
 - Modify: `tools/parsers/mcp_json.py`
@@ -822,7 +822,7 @@ uv run python -c "from tools.parsers import parse_repo; from pathlib import Path
 ## Self-review checklist
 
 - [ ] **Four parsers** registered: `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`. Cursor + Windsurf are explicitly out of V0.
-- [ ] **PURL emission** is correct for known ecosystems; ASVE-native identity for unknown.
+- [ ] **PURL emission** is correct for known ecosystems; OpenACA-native identity for unknown.
 - [ ] **Source metadata** (`source_manifest`, `source_locator`) is on every ref so the Action can produce useful annotations.
 - [ ] **mcp.json edge cases**: pinned vs unpinned (`uvx X==1.0` vs `uvx X`); binary path; npx scoped vs unscoped.
 - [ ] **Plugin manifest dependencies** (string vs object form) both produce identities.

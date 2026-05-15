@@ -8,8 +8,8 @@ from tools.seed import llm as seed_llm
 from tools.seed.__main__ import discovery_reasons, main
 
 
-def _llm_annotate_result(asve: dict, evidence=None):
-    return seed_llm.LLMAnnotationResult(decision="annotate", asve=asve, evidence=evidence)
+def _llm_annotate_result(openaca: dict, evidence=None):
+    return seed_llm.LLMAnnotationResult(decision="annotate", openaca=openaca, evidence=evidence)
 
 
 def _write_json(path, data):
@@ -111,7 +111,9 @@ def test_seed_writes_reviewable_candidate_for_mcp_record(tmp_path):
     assert candidate["aliases"] == ["CVE-2026-12345"]
     assert candidate["_candidate"]["review_status"] == "needs_review"
     assert "package_name_mcp" in candidate["_candidate"]["matched_by"]
-    assert candidate["database_specific"]["asve"]["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
+    assert candidate["database_specific"]["openaca"]["taxonomies"]["owasp_agentic_top10"] == [
+        "asi05"
+    ]
     assert candidate["summary"] == "mcp-demo allows command injection"
 
 
@@ -127,9 +129,9 @@ def test_seed_marks_mal_records_as_malicious_package(tmp_path):
 
     assert result.exit_code == 0, result.output
     candidate = yaml.safe_load((out / "MAL-2026-1234.yaml").read_text(encoding="utf-8"))
-    asve = candidate["database_specific"]["asve"]
-    assert asve["threat_kind"] == "malicious_package"
-    assert asve["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
+    openaca = candidate["database_specific"]["openaca"]
+    assert openaca["threat_kind"] == "malicious_package"
+    assert openaca["taxonomies"]["owasp_agentic_top10"] == ["asi05"]
 
 
 def test_seed_marks_ghsa_records_with_mal_alias_as_malicious_package(tmp_path):
@@ -146,8 +148,8 @@ def test_seed_marks_ghsa_records_with_mal_alias_as_malicious_package(tmp_path):
 
     assert result.exit_code == 0, result.output
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
-    asve = candidate["database_specific"]["asve"]
-    assert asve["threat_kind"] == "malicious_package"
+    openaca = candidate["database_specific"]["openaca"]
+    assert openaca["threat_kind"] == "malicious_package"
 
 
 def test_seed_does_not_crash_when_aliases_is_non_list_scalar(tmp_path):
@@ -165,7 +167,7 @@ def test_seed_does_not_crash_when_aliases_is_non_list_scalar(tmp_path):
     assert result.exit_code == 0, result.output
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
     # non-list aliases are skipped; no MAL- prefix on the record ID itself
-    assert "threat_kind" not in candidate["database_specific"]["asve"]
+    assert "threat_kind" not in candidate["database_specific"]["openaca"]
 
 
 def test_seed_does_not_crash_when_aliases_contains_non_string_entry(tmp_path):
@@ -182,7 +184,7 @@ def test_seed_does_not_crash_when_aliases_contains_non_string_entry(tmp_path):
 
     assert result.exit_code == 0, result.output
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
-    assert candidate["database_specific"]["asve"]["threat_kind"] == "malicious_package"
+    assert candidate["database_specific"]["openaca"]["threat_kind"] == "malicious_package"
 
 
 def test_seed_llm_provider_ignores_threat_kind_for_non_mal_records(tmp_path, monkeypatch):
@@ -223,7 +225,7 @@ def test_seed_llm_provider_ignores_threat_kind_for_non_mal_records(tmp_path, mon
 
     assert result.exit_code == 0, result.output
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
-    assert "threat_kind" not in candidate["database_specific"]["asve"]
+    assert "threat_kind" not in candidate["database_specific"]["openaca"]
 
 
 def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
@@ -241,7 +243,7 @@ def test_seed_skips_records_already_covered_by_existing_overlay_alias(tmp_path):
                 "aliases": ["GHSA-abcd-ef12-3456"],
                 "modified": "2026-05-13T00:00:00Z",
                 "database_specific": {
-                    "asve": {
+                    "openaca": {
                         "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                         "evidence_level": "likely",
                     }
@@ -711,12 +713,12 @@ def test_seed_llm_provider_receives_framework_docs_and_overrides_annotation(tmp_
     assert "owasp-mcp-top-10-2025.md" in request["framework_documents"]
     candidate = yaml.safe_load((out / "GHSA-abcd-ef12-3456.yaml").read_text(encoding="utf-8"))
     metadata = candidate["_candidate"]
-    asve = candidate["database_specific"]["asve"]
+    openaca = candidate["database_specific"]["openaca"]
     assert metadata["annotation_source"] == "llm"
     assert metadata["llm_provider"] == "openai"
     assert metadata["llm_model"] == "test-model"
     assert "mitre-atlas.md" in metadata["framework_documents"]
-    assert asve["taxonomies"] == {
+    assert openaca["taxonomies"] == {
         "owasp_agentic_top10": ["asi01"],
         "owasp_mcp_top10": ["mcp03:2025"],
         "owasp_llm_top10": ["llm01:2025"],
@@ -772,7 +774,7 @@ def test_seed_llm_provider_can_read_api_key_env(tmp_path, monkeypatch):
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    monkeypatch.setenv("ASVE_LLM_API_KEY", "env-key")
+    monkeypatch.setenv("OPENACA_LLM_API_KEY", "env-key")
     calls = []
 
     def fake_annotate(provider, model, api_key, request):
@@ -996,18 +998,20 @@ def test_seed_llm_provider_invalid_annotation_writes_rejected_candidate_artifact
     rejected = yaml.safe_load((out / "rejected" / "GHSA-abcd-ef12-3456.yaml").read_text())
     assert rejected["_candidate"]["review_status"] == "rejected"
     assert rejected["_candidate"]["reject_reason"] == "unsupported_record"
-    assert rejected["_candidate"]["llm_error"] == "LLM response must include database_specific.asve"
+    assert (
+        rejected["_candidate"]["llm_error"] == "LLM response must include database_specific.openaca"
+    )
 
 
 def test_seed_api_key_env_alone_does_not_enable_llm_mode(tmp_path, monkeypatch):
-    """ASVE_SEED_LLM_API_KEY in env must not trigger LLM mode; plain asve-seed must still work."""
+    """OPENACA_SEED_LLM_API_KEY in env must not trigger LLM mode; plain `openaca seed` must still work."""  # noqa: E501
     dump = tmp_path / "dump"
     out = tmp_path / "candidates"
     existing = tmp_path / "overlays"
     dump.mkdir()
     existing.mkdir()
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
-    monkeypatch.setenv("ASVE_SEED_LLM_API_KEY", "secret-key")
+    monkeypatch.setenv("OPENACA_SEED_LLM_API_KEY", "secret-key")
 
     result = CliRunner().invoke(main, [str(dump), "--out", str(out), "--existing", str(existing)])
 
@@ -1120,7 +1124,7 @@ def test_seed_llm_provider_does_not_backfill_missing_annotation_from_heuristics(
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
 
     def fake_annotate(provider, model, api_key, request):
-        return seed_llm.LLMAnnotationResult(decision="annotate", asve={}, evidence=None)
+        return seed_llm.LLMAnnotationResult(decision="annotate", openaca={}, evidence=None)
 
     monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
@@ -1155,7 +1159,7 @@ def test_seed_llm_provider_rejects_missing_annotation_block(tmp_path, monkeypatc
     _write_json(dump / "GHSA-abcd-ef12-3456.json", _ghsa_record())
 
     def fake_annotate(provider, model, api_key, request):
-        return seed_llm.LLMAnnotationResult(decision="annotate", asve=None, evidence=None)
+        return seed_llm.LLMAnnotationResult(decision="annotate", openaca=None, evidence=None)
 
     monkeypatch.setattr(seed_llm, "annotate_with_provider", fake_annotate)
 
@@ -1177,5 +1181,5 @@ def test_seed_llm_provider_rejects_missing_annotation_block(tmp_path, monkeypatc
     )
 
     assert result.exit_code != 0
-    assert "database_specific.asve" in result.output
+    assert "database_specific.openaca" in result.output
     assert not (out / "GHSA-abcd-ef12-3456.yaml").exists()

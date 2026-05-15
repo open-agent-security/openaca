@@ -1,4 +1,4 @@
-# ASVE candidate annotation rules
+# OpenACA candidate annotation rules
 
 Canonical rules for annotating reviewable seed candidates under
 `candidates/` and the canonical overlays under `overlays/`. Both the
@@ -8,19 +8,19 @@ candidate-review skill (when used) MUST conform.
 This document is the single source of truth for review behavior. It is
 read by `tools/seed/validator.py` and `tools/lint.py` (which enforce
 the structural subset in CI), by reviewers, and by the Claude Code
-skill at `examples/skills/claude/asve-candidate-review/SKILL.md`.
+skill at `examples/skills/claude/openaca-candidate-review/SKILL.md`.
 
 ## Editable fields
 
 When annotating or re-reviewing a candidate, ONLY edit:
 
-- `database_specific.asve.taxonomies.*` (framework mapping arrays)
-- `database_specific.asve.evidence_level` (one of:
+- `database_specific.openaca.taxonomies.*` (framework mapping arrays)
+- `database_specific.openaca.evidence_level` (one of:
   `confirmed`, `likely`, `research`, `disputed`, `withdrawn`)
 
 ## Forbidden fields (do not set, edit, or remove via review)
 
-- `database_specific.asve.threat_kind` — seeder-owned (see below)
+- `database_specific.openaca.threat_kind` — seeder-owned (see below)
 - `_candidate.*`, `_evidence.*` — review metadata, set by the seeder
 - `id`, `aliases`, `modified`, `summary`, `details`, `references`,
   `affected`, `severity` — upstream-owned, sourced from the OSV record
@@ -48,7 +48,7 @@ The validator (`tools/seed/validator.py`) and overlay linter
 2. Empty taxonomy arrays (e.g., `owasp_mcp_top10: []`). Omit the key
    instead.
 3. Empty `supplemental_taxonomies: {}`. Omit the key instead.
-4. Unknown keys under `database_specific.asve` — schema enforces
+4. Unknown keys under `database_specific.openaca` — schema enforces
    `additionalProperties: false` and rejects via JSON-schema
    validation.
 
@@ -78,10 +78,10 @@ record. The skill and human reviewers MUST apply them:
 
 The Claude Code skill supports two modes:
 
-- **Annotate**: candidate has no `database_specific.asve` block.
+- **Annotate**: candidate has no `database_specific.openaca` block.
   Skill adds it from scratch, applying both structural and semantic
   rules.
-- **Re-review**: candidate has an existing `database_specific.asve`
+- **Re-review**: candidate has an existing `database_specific.openaca`
   block (typically from an earlier API-mode annotation). Skill
   audits it against the rules above, edits to comply, and re-runs
   validation.
@@ -97,7 +97,7 @@ prompts and model outputs to other workspaces.
 
 ```yaml
 database_specific:
-  asve:
+  openaca:
     taxonomies:
       owasp_agentic_top10: [asi03]    # identity / privilege abuse
       owasp_llm_top10: [llm02:2025]   # sensitive info disclosure
@@ -108,7 +108,7 @@ database_specific:
 
 ```yaml
 database_specific:
-  asve:
+  openaca:
     threat_kind: malicious_package    # Flowise is not malicious
     taxonomies:
       owasp_agentic_top10: [asi04]    # not a supply-chain incident

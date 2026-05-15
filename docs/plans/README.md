@@ -1,4 +1,4 @@
-# ASVE V0 — Implementation Plan Index
+# OpenACA V0 — Implementation Plan Index
 
 V0 implementation: plans 001-006 are the original V0 deliverables. Plans
 007+ are pre-V0-launch refinements that fill in gaps surfaced from
@@ -27,11 +27,11 @@ state inside individual plans.
 
 ## Pre-V0 setup (already done)
 
-- Repo at `open-agent-security/asve`.
+- Repo at `open-agent-security/openaca`.
 - `LICENSE` (Apache-2.0).
 - `README.md` (OSS positioning).
 - `CLAUDE.md` (project conventions, OSS-only enforcement).
-- `docs/specs/asve-v0-design.md` (canonical spec).
+- `docs/specs/openaca-v0-design.md` (canonical spec).
 - Empty `docs/`, `schema/`, `advisories/`, `tools/` directories.
 
 ## Out of V0 (do not start until V0 ships)

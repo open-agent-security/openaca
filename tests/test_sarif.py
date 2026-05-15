@@ -16,14 +16,14 @@ def _ref() -> ComponentRef:
 def test_sarif_envelope_shape():
     findings = [
         Finding(
-            advisory_id="ASVE-2026-0001",
+            advisory_id="CVE-2026-0001",
             component=_ref(),
             confidence="high",
             reason="matched range",
         )
     ]
     advisory_index = {
-        "ASVE-2026-0001": {
+        "CVE-2026-0001": {
             "summary": "Command injection in @cyanheads/git-mcp-server",
             "details": "Detail body",
         }
@@ -32,15 +32,15 @@ def test_sarif_envelope_shape():
     assert sarif["version"] == "2.1.0"
     assert sarif["$schema"].startswith("https://json.schemastore.org/sarif")
     runs = sarif["runs"]
-    assert runs[0]["tool"]["driver"]["name"] == "asve"
+    assert runs[0]["tool"]["driver"]["name"] == "openaca"
     rule_ids = {r["id"] for r in runs[0]["tool"]["driver"]["rules"]}
-    assert "ASVE-2026-0001" in rule_ids
+    assert "CVE-2026-0001" in rule_ids
 
 
 def test_sarif_result_locations_match_finding():
     findings = [
         Finding(
-            advisory_id="ASVE-2026-0001",
+            advisory_id="CVE-2026-0001",
             component=_ref(),
             confidence="high",
             reason="matched range",
@@ -48,7 +48,7 @@ def test_sarif_result_locations_match_finding():
     ]
     sarif = to_sarif(findings, {})
     result = sarif["runs"][0]["results"][0]
-    assert result["ruleId"] == "ASVE-2026-0001"
+    assert result["ruleId"] == "CVE-2026-0001"
     assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "package.json"
     assert result["level"] == "error"
 
@@ -65,11 +65,11 @@ def test_sarif_levels_by_confidence():
     assert levels == {"A-H": "error", "A-L": "warning", "A-U": "note"}
 
 
-def test_sarif_help_uri_points_at_asve_dev():
-    findings = [Finding(advisory_id="ASVE-2026-0003", component=_ref(), confidence="high")]
+def test_sarif_help_uri_points_at_openaca_dev():
+    findings = [Finding(advisory_id="CVE-2026-0003", component=_ref(), confidence="high")]
     sarif = to_sarif(findings, {})
     rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
-    assert rule["helpUri"] == "https://asve.dev/overlays/ASVE-2026-0003.html"
+    assert rule["helpUri"] == "https://openaca.dev/overlays/CVE-2026-0003.html"
 
 
 def test_sarif_help_uri_resolves_alias_to_overlay_canonical_id():
@@ -83,12 +83,12 @@ def test_sarif_help_uri_resolves_alias_to_overlay_canonical_id():
     }
     sarif = to_sarif(findings, {}, overlay_id_map)
     rule = sarif["runs"][0]["tool"]["driver"]["rules"][0]
-    assert rule["helpUri"] == "https://asve.dev/overlays/GHSA-3q26-f695-pp76.html"
+    assert rule["helpUri"] == "https://openaca.dev/overlays/GHSA-3q26-f695-pp76.html"
 
 
 def test_sarif_help_uri_falls_back_to_osv_when_no_overlay():
-    """When the scanner matches an OSV advisory that has no ASVE overlay, the
-    helpUri must fall back to the OSV URL rather than a dead asve.dev link."""
+    """When the scanner matches an OSV advisory that has no OpenACA overlay, the
+    helpUri must fall back to the OSV URL rather than a dead openaca.dev link."""
     findings = [Finding(advisory_id="GHSA-no-overlay", component=_ref(), confidence="high")]
     # Map is present but does not contain GHSA-no-overlay.
     overlay_id_map = {"GHSA-other": "GHSA-other"}
@@ -99,8 +99,8 @@ def test_sarif_help_uri_falls_back_to_osv_when_no_overlay():
 
 def test_sarif_no_duplicate_rules_when_multiple_findings_share_advisory():
     findings = [
-        Finding(advisory_id="ASVE-2026-0001", component=_ref(), confidence="high"),
-        Finding(advisory_id="ASVE-2026-0001", component=_ref(), confidence="high"),
+        Finding(advisory_id="CVE-2026-0001", component=_ref(), confidence="high"),
+        Finding(advisory_id="CVE-2026-0001", component=_ref(), confidence="high"),
     ]
     sarif = to_sarif(findings, {})
     rules = sarif["runs"][0]["tool"]["driver"]["rules"]
@@ -120,7 +120,7 @@ def test_sarif_result_carries_attributed_to_when_set():
     surfaces it as `properties.attributed_to`. Plans 008/009 will rely on
     this field for downstream tooling."""
     finding = Finding(
-        advisory_id="ASVE-2026-0001",
+        advisory_id="CVE-2026-0001",
         component=_ref(),
         confidence="high",
         attributed_to="claude-plugin/supabase@0.1.6",
@@ -134,7 +134,7 @@ def test_sarif_omits_attributed_to_when_none():
     """Direct findings (attributed_to is None) should not get a `properties`
     block at all, keeping output tight."""
     finding = Finding(
-        advisory_id="ASVE-2026-0001",
+        advisory_id="CVE-2026-0001",
         component=_ref(),
         confidence="high",
     )
@@ -164,7 +164,7 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         "id": "GHSA-1",
         "summary": "test",
         "details": "test",
-        "database_specific": {"asve": {"source": "osv.dev"}},
+        "database_specific": {"openaca": {"source": "osv.dev"}},
     }
     doc = to_sarif([finding], {"GHSA-1": advisory})
     result = doc["runs"][0]["results"][0]
@@ -194,7 +194,7 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         "id": "GHSA-1",
         "summary": "test",
         "details": "test",
-        "database_specific": {"asve": {"source": "asve.dev"}},
+        "database_specific": {"openaca": {"source": "openaca.dev"}},
     }
     doc = to_sarif([finding], {"GHSA-1": advisory})
     properties = doc["runs"][0]["results"][0]["properties"]
@@ -211,13 +211,13 @@ def test_sarif_omits_coverage_for_tier1_findings():
         version="0.9.0",
     )
     finding = Finding(
-        advisory_id="ASVE-2026-9001",
+        advisory_id="CVE-2026-9001",
         component=ref,
         confidence="high",
         reason="match",
     )
-    advisory = {"id": "ASVE-2026-9001", "summary": "test", "details": "test"}
-    doc = to_sarif([finding], {"ASVE-2026-9001": advisory})
+    advisory = {"id": "CVE-2026-9001", "summary": "test", "details": "test"}
+    doc = to_sarif([finding], {"CVE-2026-9001": advisory})
     properties = doc["runs"][0]["results"][0].get("properties", {})
     assert "coverage" not in properties
     assert "transitive" not in properties

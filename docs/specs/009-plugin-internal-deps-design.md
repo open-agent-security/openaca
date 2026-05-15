@@ -6,19 +6,19 @@
 
 ## Goal
 
-Extend ASVE scanning to Tier-2 — implementation dependencies inside active plugins (endpoint mode) and the host repo itself (repo mode) — while preserving the unique value-add empirically validated against `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache`: install-state filtering and per-plugin attribution.
+Extend OpenACA scanning to Tier-2 — implementation dependencies inside active plugins (endpoint mode) and the host repo itself (repo mode) — while preserving the unique value-add empirically validated against `trivy filesystem ~/.claude/plugins/cache` and `osv-scanner --recursive ~/.claude/plugins/cache`: install-state filtering and per-plugin attribution.
 
-Optional opt-in federation with OSV.dev's API gives users the option to combine ASVE's filtering with OSV.dev's full generic-CVE corpus, delivering a better-UX alternative to existing recursive scanners for agent stacks specifically.
+Optional opt-in federation with OSV.dev's API gives users the option to combine OpenACA's filtering with OSV.dev's full generic-CVE corpus, delivering a better-UX alternative to existing recursive scanners for agent stacks specifically.
 
 ## Differentiators (validated 2026-05-10)
 
-Trivy and osv-scanner walk filesystems blindly. Against `~/.claude/plugins/cache`, both produce noise that ASVE removes by construction:
+Trivy and osv-scanner walk filesystems blindly. Against `~/.claude/plugins/cache`, both produce noise that OpenACA removes by construction:
 
 1. **Orphaned cache versions counted as live findings.** Both tools scanned `superpowers/5.0.7/...` and `superpowers/5.1.0/...`. Only the latter is active per `installed_plugins.json`. Anything in 5.0.7 is unreachable code — but trivy/osv would flag it as a current vulnerability.
 2. **Test fixtures counted as runtime.** Both reported `superpowers/<version>/tests/brainstorm-server/package-lock.json`. That's a plugin-development test fixture, not a runtime path. Findings against it are false positives.
 3. **No attribution.** Output is keyed on file path. The user can't tell which active plugin owns the vulnerable dep — making remediation guesswork.
 
-ASVE's `endpoint` mode walks per `installed_plugins.json` only, traverses plugin-declared/default paths (no `rglob` inside the install root, so `tests/` is skipped), and tags every emitted ref with `attributed_to = "claude-plugin/<name>@<version>"`. These properties propagate from `ComponentRef` to `Finding` to SARIF.
+OpenACA's `endpoint` mode walks per `installed_plugins.json` only, traverses plugin-declared/default paths (no `rglob` inside the install root, so `tests/` is skipped), and tags every emitted ref with `attributed_to = "claude-plugin/<name>@<version>"`. These properties propagate from `ComponentRef` to `Finding` to SARIF.
 
 ## Architecture
 
@@ -76,14 +76,14 @@ package-lock.json
        properties.attributed_to = ref.attributed_to
        properties.coverage = "transitive" (from ref.extra)
        properties.transitive = True
-       properties.source = "osv.dev" or "asve.dev"
+       properties.source = "osv.dev" or "openaca.dev"
 ```
 
 ## Flags and defaults
 
 | Flag | Default | Effect |
 |---|---|---|
-| (none — default scan) | — | Tier-1 + Tier-2 (lockfile/manifest); ASVE corpus only. |
+| (none — default scan) | — | Tier-1 + Tier-2 (lockfile/manifest); OpenACA corpus only. |
 | `--exclude-transitive` | OFF (transitive included) | Skip `_walk_plugin_implementation_deps` entirely. Tier-1 still emitted. |
 | `--federate-osv` | OFF (corpus-only) | Augment matching corpus with OSV.dev results for every emitted PURL. Findings tagged `source=osv.dev`. |
 
@@ -98,9 +98,9 @@ New `properties` keys on each result (documented in `docs/sarif-conventions.md`)
 | `attributed_to` | string \| null | `"claude-plugin/<name>@<version>"` | Existing from plan 007. Set when ref has attribution. |
 | `coverage` | string | `"transitive"` \| `"direct-only"` | Tier-2 findings only. Omitted for Tier-1 inventory findings. |
 | `transitive` | bool | `true` \| `false` | Mirror of `coverage` for easier downstream parsing. Omitted when `coverage` is omitted. |
-| `source` | string | `"asve.dev"` \| `"osv.dev"` | When `--federate-osv` is on. Default scans tag everything `"asve.dev"`. |
+| `source` | string | `"openaca.dev"` \| `"osv.dev"` | When `--federate-osv` is on. Default scans tag everything `"openaca.dev"`. |
 
-`asve.dev` parallels `osv.dev`'s naming (the eventual ASVE domain) so consumers see consistent ecosystem-style provenance.
+`openaca.dev` parallels `osv.dev`'s naming (the eventual OpenACA domain) so consumers see consistent ecosystem-style provenance.
 
 ## Verbose output
 
@@ -161,13 +161,13 @@ Offline mirror: bigger scope (storage, refresh cadence, OSV-format compatibility
 
 **Decision:** Opt-in via `--federate-osv`.
 
-Default-off keeps the default ASVE experience focused on the agent-stack corpus and avoids hidden network calls. Users wanting full Tier-2 coverage explicitly opt in. Documents the value-add but doesn't force it.
+Default-off keeps the default OpenACA experience focused on the agent-stack corpus and avoids hidden network calls. Users wanting full Tier-2 coverage explicitly opt in. Documents the value-add but doesn't force it.
 
-### Active-state filtering as ASVE's edge
+### Active-state filtering as OpenACA's edge
 
-**Decision:** ASVE's `endpoint` mode walks per `installed_plugins.json` and per plugin.json defaults — not via filesystem `rglob`.
+**Decision:** OpenACA's `endpoint` mode walks per `installed_plugins.json` and per plugin.json defaults — not via filesystem `rglob`.
 
-This is what makes ASVE more accurate than trivy/osv-scanner for the agent stack. Without it, federation would still be useful (the corpus is bigger) but without filtering, ASVE wouldn't offer a UX advantage over `osv-scanner --recursive`. Active-state filtering is the load-bearing differentiator.
+This is what makes OpenACA more accurate than trivy/osv-scanner for the agent stack. Without it, federation would still be useful (the corpus is bigger) but without filtering, OpenACA wouldn't offer a UX advantage over `osv-scanner --recursive`. Active-state filtering is the load-bearing differentiator.
 
 ## Resolved details
 
@@ -181,11 +181,11 @@ This is what makes ASVE more accurate than trivy/osv-scanner for the agent stack
 
 ## Acceptance criteria
 
-- `asve-scan endpoint --config-dir ~/.claude --advisories advisories -v` shows per-plugin Tier-2 coverage lines.
+- `openaca scan endpoint --config-dir ~/.claude --advisories advisories -v` shows per-plugin Tier-2 coverage lines.
 - `--exclude-transitive` suppresses lockfile/manifest walks; Tier-1 unchanged.
 - `--federate-osv` queries OSV.dev for emitted PURLs; merged corpus produces additional findings with `source=osv.dev`; fail-soft on network errors.
 - Repo mode lockfile scanning works on a host repo's `package-lock.json` and `uv.lock` at root.
 - SARIF carries `properties.coverage`, `properties.transitive`, `properties.source` on Tier-2 findings.
 - Active-state filtering remains: orphaned cache versions never produce findings; `tests/` subdirs inside plugins are never walked.
-- 280+ tests pass; ruff format/check clean; pyright clean; `asve-lint advisories/` clean.
+- 280+ tests pass; ruff format/check clean; pyright clean; `openaca lint advisories/` clean.
 - Dogfood: real `~/.claude` scan produces sensible output (active plugins with coverage lines, optional federation findings).

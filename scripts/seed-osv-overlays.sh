@@ -9,11 +9,11 @@ command -v gcloud >/dev/null 2>&1 || {
   exit 1
 }
 command -v uv >/dev/null 2>&1 || {
-  echo "uv is required to run asve-seed" >&2
+  echo "uv is required to run openaca seed" >&2
   exit 1
 }
 
-CACHE_DIR="${ASVE_OSV_CACHE_DIR:-${TMPDIR:-/tmp}/asve-osv}"
+CACHE_DIR="${OPENACA_OSV_CACHE_DIR:-${TMPDIR:-/tmp}/openaca-osv}"
 seed_ecosystem() {
   local ecosystem="$1"
   local state="$2"
@@ -28,18 +28,18 @@ seed_ecosystem() {
     --records-root "$dir"
     --state "$state"
   )
-  if [[ -n "${ASVE_LLM_PROVIDER:-}" || -n "${ASVE_LLM_MODEL:-}" ]]; then
-    seed_args+=(--llm-provider "${ASVE_LLM_PROVIDER:-}")
-    seed_args+=(--llm-model "${ASVE_LLM_MODEL:-}")
+  if [[ -n "${OPENACA_LLM_PROVIDER:-}" || -n "${OPENACA_LLM_MODEL:-}" ]]; then
+    seed_args+=(--llm-provider "${OPENACA_LLM_PROVIDER:-}")
+    seed_args+=(--llm-model "${OPENACA_LLM_MODEL:-}")
   fi
-  if [[ "${ASVE_SEED_DRY_RUN:-}" == "1" ]]; then
+  if [[ "${OPENACA_SEED_DRY_RUN:-}" == "1" ]]; then
     seed_args+=(--dry-run)
   fi
-  if [[ -n "${ASVE_SEED_LIMIT:-}" ]]; then
-    seed_args+=(--limit "$ASVE_SEED_LIMIT")
+  if [[ -n "${OPENACA_SEED_LIMIT:-}" ]]; then
+    seed_args+=(--limit "$OPENACA_SEED_LIMIT")
   fi
-  uv run asve-seed "${seed_args[@]}"
+  uv run openaca seed "${seed_args[@]}"
 }
 
-seed_ecosystem "npm" ".asve-seed-state-npm.json"
-seed_ecosystem "PyPI" ".asve-seed-state-pypi.json"
+seed_ecosystem "npm" ".openaca-seed-state-npm.json"
+seed_ecosystem "PyPI" ".openaca-seed-state-pypi.json"

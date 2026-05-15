@@ -27,7 +27,7 @@ from tools.parsers.mcp_json import parse as parse_mcp
 
 REPO_ROOT = Path(__file__).parent.parent
 OVERLAYS_DIR = REPO_ROOT / "overlays"
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
 def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0") -> None:
@@ -58,7 +58,6 @@ def test_real_corpus_lints_clean():
 
     schema = lint.load_schema()
     validator = Draft202012Validator(schema, format_checker=lint._FORMAT_CHECKER)
-    known_ids = {a["id"] for _, a in corpus if isinstance(a.get("id"), str)}
 
     failures: list[str] = []
     for path, advisory in corpus:
@@ -66,7 +65,6 @@ def test_real_corpus_lints_clean():
             lint.check_schema(advisory, validator)
             + lint.check_cvss(advisory)
             + lint.check_path_consistency(advisory, path)
-            + lint.check_internal_aliases(advisory, known_ids)
         )
         if errors:
             failures.append(f"{path}: {'; '.join(errors)}")
@@ -74,7 +72,7 @@ def test_real_corpus_lints_clean():
 
 
 def test_real_corpus_exports_cleanly(tmp_path):
-    """`asve-export` against the real corpus produces every artifact for every YAML."""
+    """`openaca-export` against the real corpus produces every artifact for every YAML."""
     corpus = _load_corpus()
     expected_ids = {a["id"] for _, a in corpus}
 
@@ -165,7 +163,7 @@ def test_parser_detection_intersects_corpus_advisory():
     )
 
 
-def test_asve_export_cli_against_real_corpus(tmp_path):
+def test_openaca_export_cli_against_real_corpus(tmp_path):
     """Smoke-test the registered console script — the path users invoke."""
     from tools.export import main as export_main
 
@@ -183,10 +181,10 @@ def test_asve_export_cli_against_real_corpus(tmp_path):
     assert (tmp_path / "dist" / "index.html").is_file()
 
 
-def test_asve_scan_cli_finds_real_advisory():
+def test_openaca_scan_cli_finds_real_advisory():
     """Plan 005 cross-layer wiring: parse_repo → matcher → SARIF, end-to-end.
 
-    Invokes the registered `asve-scan` console script (the same path the
+    Invokes the registered `openaca-scan` console script (the same path the
     Action's composite step runs) against the exposed-mcp fixture using the
     real `advisories/` corpus, and verifies it surfaces GHSA-3q26-f695-pp76 with
     a high-confidence finding. This is the V0 product promise across every
@@ -197,7 +195,7 @@ def test_asve_scan_cli_finds_real_advisory():
     from tools.scan import main as scan_main
 
     runner = CliRunner()
-    sarif_path = Path(REPO_ROOT) / ".pytest-asve-scan.sarif"
+    sarif_path = Path(REPO_ROOT) / ".pytest-openaca-scan.sarif"
     try:
         result = runner.invoke(
             scan_main,
@@ -223,7 +221,7 @@ def test_asve_scan_cli_finds_real_advisory():
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
     vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)
-    finding through asve-scan. Exercises the pyproject parser, the
+    finding through openaca-scan. Exercises the pyproject parser, the
     matcher, and SARIF emission together."""
     import json
 
@@ -282,7 +280,7 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
     advisories_dir.mkdir()
     advisory = {
         "schema_version": "1.7.1",
-        "id": "ASVE-2026-9001",
+        "id": "CVE-2026-9001",
         "modified": "2026-05-10T00:00:00Z",
         "type": "vulnerability",
         "published": "2026-05-10T00:00:00Z",
@@ -303,16 +301,19 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
             }
         ],
         "database_specific": {
-            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+            "openaca": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            }
         },
     }
-    (advisories_dir / "ASVE-2026-9001.yaml").write_text(yaml.dump(advisory))
+    (advisories_dir / "CVE-2026-9001.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
     with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["repo", "--target", str(target), "-v"])
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-9001" in result.output
+    assert "CVE-2026-9001" in result.output
 
 
 def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
@@ -361,7 +362,7 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     advisories_dir.mkdir()
     advisory = {
         "schema_version": "1.7.1",
-        "id": "ASVE-2026-9002",
+        "id": "CVE-2026-9002",
         "modified": "2026-05-10T00:00:00Z",
         "type": "vulnerability",
         "published": "2026-05-10T00:00:00Z",
@@ -382,10 +383,13 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
             }
         ],
         "database_specific": {
-            "asve": {"taxonomies": {"owasp_agentic_top10": ["asi05"]}, "evidence_level": "likely"}
+            "openaca": {
+                "taxonomies": {"owasp_agentic_top10": ["asi05"]},
+                "evidence_level": "likely",
+            }
         },
     }
-    (advisories_dir / "ASVE-2026-9002.yaml").write_text(yaml.dump(advisory))
+    (advisories_dir / "CVE-2026-9002.yaml").write_text(yaml.dump(advisory))
 
     sarif_path = tmp_path / "out.sarif"
     runner = CliRunner()
@@ -413,7 +417,7 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
 
 def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     """Identity-only matching for claude-hook (ADR-0007): an advisory
-    targeting a specific hook slot via `database_specific.asve.component_identity`
+    targeting a specific hook slot via `database_specific.openaca.component_identity`
     fires when a bundled hook at that slot is enumerated."""
     from tools.parsers.hooks_json import _hook_identity
     from tools.scan import main as scan_main
@@ -453,7 +457,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     advisories_dir.mkdir()
     advisory = {
         "schema_version": "1.7.1",
-        "id": "ASVE-2026-9003",
+        "id": "CVE-2026-9003",
         "modified": "2026-05-10T00:00:00Z",
         "type": "vulnerability",
         "published": "2026-05-10T00:00:00Z",
@@ -467,7 +471,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
             }
         ],
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "confirmed",
                 "component_identity": _hook_identity(
@@ -476,13 +480,13 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
             }
         },
     }
-    (advisories_dir / "ASVE-2026-9003.yaml").write_text(yaml.dump(advisory))
+    (advisories_dir / "CVE-2026-9003.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
     with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-9003" in result.output
+    assert "CVE-2026-9003" in result.output
     # Attribution propagates to the finding.
     assert "via claude-plugin/hook-plugin@1.0.0" in result.output
 
@@ -548,7 +552,7 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
     assert properties.get("transitive") is True
     assert properties.get("attributed_to") == "claude-plugin/vuln-plugin@1.0.0"
     assert properties.get("source") == "osv.dev"
-    assert properties.get("overlay_source") == "asve.dev"
+    assert properties.get("overlay_source") == "openaca.dev"
 
 
 def test_repo_lockfile_finds_corpus_advisory(tmp_path):

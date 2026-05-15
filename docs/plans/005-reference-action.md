@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A thin, local-first GitHub Action that consumers invoke via `open-agent-security/asve@v1`. The Action parses agent-installation manifests in the consumer's repo (using the parsers from Plan 003), looks up matching advisories from the ASVE static export, and reports findings as both SARIF and GitHub annotations.
+**Goal:** A thin, local-first GitHub Action that consumers invoke via `open-agent-security/openaca@v1`. The Action parses agent-installation manifests in the consumer's repo (using the parsers from Plan 003), looks up matching advisories from the OpenACA static export, and reports findings as both SARIF and GitHub annotations.
 
 **Architecture:** A single Python entrypoint (`tools/scan.py`) wraps three steps: (1) parse the target repo using `tools.parsers.parse_repo`, (2) match the resulting `ComponentRef` stream against the loaded advisory corpus using a small ranges/identity matcher, (3) emit SARIF (for code-scanning UIs) and GitHub annotations (for inline PR review). The `action.yml` at the repo root invokes the same script.
 
@@ -23,7 +23,7 @@
 | `tests/test_matcher.py` | Range and identity matching tests |
 | `tests/test_sarif.py` | SARIF schema-shape tests |
 | `tests/test_scan.py` | End-to-end scan against fixture repos |
-| `tests/fixtures/repos/exposed-mcp/...` | Fixture repo that should match ASVE-2026-0001 |
+| `tests/fixtures/repos/exposed-mcp/...` | Fixture repo that should match CVE-2026-0001 |
 
 ---
 
@@ -70,9 +70,9 @@ from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 
 
-def make_advisory(asve_id: str, ecosystem: str, name: str, fixed: str) -> dict:
+def make_advisory(openaca_id: str, ecosystem: str, name: str, fixed: str) -> dict:
     return {
-        "id": asve_id,
+        "id": openaca_id,
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -89,17 +89,17 @@ def make_advisory(asve_id: str, ecosystem: str, name: str, fixed: str) -> dict:
 
 
 def test_match_npm_in_range():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(ecosystem="npm", name="@cyanheads/git-mcp-server", version="1.1.0",
                        source_manifest="package.json", source_locator="dependencies")
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-0001"
+    assert findings[0].advisory_id == "CVE-2026-0001"
     assert findings[0].component is ref
 
 
 def test_match_npm_at_fixed_version_excluded():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(ecosystem="npm", name="@cyanheads/git-mcp-server", version="1.2.3",
                        source_manifest="package.json", source_locator="dependencies")
     findings = match(refs=[ref], advisories=advisories)
@@ -107,7 +107,7 @@ def test_match_npm_at_fixed_version_excluded():
 
 
 def test_match_unknown_version_returns_finding_with_warning():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(ecosystem="npm", name="@cyanheads/git-mcp-server", version="^1.0.0",
                        source_manifest="package.json", source_locator="dependencies")
     findings = match(refs=[ref], advisories=advisories)
@@ -123,7 +123,7 @@ Expected: fails — module does not exist.
 - [ ] **Step 3: Implement `tools/matcher.py`**
 
 ```python
-"""Match ComponentRefs against ASVE advisories."""
+"""Match ComponentRefs against OpenACA advisories."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -138,7 +138,7 @@ from tools.component_ref import ComponentRef
 class Finding:
     advisory_id: str
     component: ComponentRef
-    confidence: str  # "high" if version is concrete; "low" if range-vs-range; "identity" for ASVE-native
+    confidence: str  # "high" if version is concrete; "low" if range-vs-range; "identity" for OpenACA-native
     reason: str = ""
 
 
@@ -210,7 +210,7 @@ def _match_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     if not ref.component_identity:
         return findings
     for advisory in advisories:
-        hints = (advisory.get("database_specific") or {}).get("asve", {}).get("detection_hints") or {}
+        hints = (advisory.get("database_specific") or {}).get("openaca", {}).get("detection_hints") or {}
         for manifest_hint in hints.get("manifests") or []:
             for arg_match in manifest_hint.get("match_args") or []:
                 # Crude substring check; the parsers normalize commands and args
@@ -239,7 +239,7 @@ Expected: all pass.
 
 ```bash
 git add tools/matcher.py tests/test_matcher.py
-git commit -m "feat: matcher pairs ComponentRefs with ASVE advisories"
+git commit -m "feat: matcher pairs ComponentRefs with OpenACA advisories"
 ```
 
 ---
@@ -262,21 +262,21 @@ from tools.sarif import to_sarif
 def test_sarif_envelope():
     ref = ComponentRef(ecosystem="npm", name="@cyanheads/git-mcp-server", version="1.1.0",
                        source_manifest="package.json", source_locator="dependencies")
-    findings = [Finding(advisory_id="ASVE-2026-0001", component=ref, confidence="high",
+    findings = [Finding(advisory_id="CVE-2026-0001", component=ref, confidence="high",
                         reason="matched range")]
     advisory_index = {
-        "ASVE-2026-0001": {"summary": "Command injection in @cyanheads/git-mcp-server",
+        "CVE-2026-0001": {"summary": "Command injection in @cyanheads/git-mcp-server",
                             "details": "see advisory"},
     }
     sarif = to_sarif(findings, advisory_index)
     assert sarif["version"] == "2.1.0"
     assert sarif["$schema"].startswith("https://json.schemastore.org/sarif")
     runs = sarif["runs"]
-    assert runs[0]["tool"]["driver"]["name"] == "asve"
+    assert runs[0]["tool"]["driver"]["name"] == "openaca"
     rule_ids = {r["id"] for r in runs[0]["tool"]["driver"]["rules"]}
-    assert "ASVE-2026-0001" in rule_ids
+    assert "CVE-2026-0001" in rule_ids
     result = runs[0]["results"][0]
-    assert result["ruleId"] == "ASVE-2026-0001"
+    assert result["ruleId"] == "CVE-2026-0001"
     assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "package.json"
 ```
 
@@ -288,7 +288,7 @@ Expected: fails.
 - [ ] **Step 3: Implement `tools/sarif.py`**
 
 ```python
-"""Render ASVE findings as SARIF v2.1.0."""
+"""Render OpenACA findings as SARIF v2.1.0."""
 from __future__ import annotations
 
 from tools.matcher import Finding
@@ -306,7 +306,7 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict:
             "name": advisory_id,
             "shortDescription": {"text": meta.get("summary", advisory_id)},
             "fullDescription": {"text": meta.get("details", meta.get("summary", advisory_id))},
-            "helpUri": f"https://asve.dev/advisories/{advisory_id.split('-')[1]}/{advisory_id}.html",
+            "helpUri": f"https://openaca.dev/advisories/{advisory_id.split('-')[1]}/{advisory_id}.html",
         })
     results = []
     for f in findings:
@@ -325,7 +325,7 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict:
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
-            "tool": {"driver": {"name": "asve", "informationUri": "https://asve.dev",
+            "tool": {"driver": {"name": "openaca", "informationUri": "https://openaca.dev",
                                  "rules": rules}},
             "results": results,
         }],
@@ -341,7 +341,7 @@ Expected: all pass.
 
 ```bash
 git add tools/sarif.py tests/test_sarif.py
-git commit -m "feat: SARIF v2.1.0 emission for ASVE findings"
+git commit -m "feat: SARIF v2.1.0 emission for OpenACA findings"
 ```
 
 ---
@@ -404,7 +404,7 @@ def test_scan_finds_exposed_mcp(tmp_path):
     assert result.exit_code == 1, result.output    # findings → exit 1
     sarif = json.loads(sarif_out.read_text())
     rule_ids = {r["id"] for r in sarif["runs"][0]["tool"]["driver"]["rules"]}
-    assert "ASVE-2026-0001" in rule_ids
+    assert "CVE-2026-0001" in rule_ids
 
 
 def test_scan_clean_repo_exits_zero(tmp_path):
@@ -429,7 +429,7 @@ Expected: fails — `tools.scan` does not exist.
 - [ ] **Step 4: Implement `tools/scan.py`**
 
 ```python
-"""End-to-end ASVE scan: parse → match → report (SARIF + annotations)."""
+"""End-to-end OpenACA scan: parse → match → report (SARIF + annotations)."""
 from __future__ import annotations
 
 import json
@@ -462,13 +462,13 @@ def emit_github_annotations(findings: list[Finding]) -> None:
 @click.option("--target", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path),
               help="Repo to scan.")
 @click.option("--advisories", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path),
-              help="ASVE advisories directory (YAML records).")
+              help="OpenACA advisories directory (YAML records).")
 @click.option("--sarif", type=click.Path(dir_okay=False, path_type=Path), default=None,
               help="Write SARIF v2.1.0 to this path.")
 @click.option("--fail-on", type=click.Choice(["high", "any", "none"]), default="any",
               show_default=True, help="Exit non-zero when findings of this severity are present.")
 def main(target: Path, advisories: Path, sarif: Path | None, fail_on: str) -> None:
-    """Scan TARGET for components matching ASVE advisories."""
+    """Scan TARGET for components matching OpenACA advisories."""
     refs = parse_repo(target)
     corpus = load_corpus(advisories)
     findings = match(refs, corpus)
@@ -505,7 +505,7 @@ if __name__ == "__main__":
 Add to `pyproject.toml`:
 
 ```toml
-asve-scan = "tools.scan:main"
+openaca scan = "tools.scan:main"
 ```
 
 Sync deps: `uv sync`
@@ -519,7 +519,7 @@ Expected: both pass.
 
 ```bash
 git add tools/scan.py tests/test_scan.py tests/fixtures/repos/exposed-mcp/ pyproject.toml
-git commit -m "feat: end-to-end asve-scan CLI"
+git commit -m "feat: end-to-end openaca scan CLI"
 ```
 
 ---
@@ -532,9 +532,9 @@ git commit -m "feat: end-to-end asve-scan CLI"
 - [ ] **Step 1: Write the action**
 
 ```yaml
-name: ASVE Scan
-description: Scan agent-installation manifests for ASVE advisories.
-author: ASVE
+name: OpenACA Scan
+description: Scan agent-installation manifests for OpenACA advisories.
+author: OpenACA
 branding:
   icon: shield
   color: gray-dark
@@ -553,7 +553,7 @@ inputs:
   sarif:
     description: SARIF output path.
     required: false
-    default: asve-results.sarif
+    default: openaca-results.sarif
   fail-on:
     description: Severity threshold for non-zero exit (high | any | none).
     required: false
@@ -577,7 +577,7 @@ runs:
       shell: bash
       run: |
         cd "${{ github.action_path }}"
-        uv run asve-scan \
+        uv run openaca scan \
           --target "${{ inputs.target }}" \
           --advisories "${{ inputs.advisories }}" \
           --sarif "${{ inputs.sarif }}" \
@@ -587,8 +587,8 @@ runs:
 
 - [ ] **Step 2: Smoke-test locally**
 
-Run: `uv run asve-scan --target tests/fixtures/repos/exposed-mcp --advisories advisories --sarif /tmp/asve-out.sarif`
-Expected: exits non-zero; `/tmp/asve-out.sarif` written; ASVE-2026-0001 listed.
+Run: `uv run openaca scan --target tests/fixtures/repos/exposed-mcp --advisories advisories --sarif /tmp/openaca-out.sarif`
+Expected: exits non-zero; `/tmp/openaca-out.sarif` written; CVE-2026-0001 listed.
 
 - [ ] **Step 3: Commit**
 
@@ -601,7 +601,7 @@ git commit -m "feat: composite GitHub Action at repo root"
 
 ## Task 6: Self-scan workflow
 
-A workflow that runs `asve-scan` on this repo's own manifests. Useful as both dogfooding and CI smoke-test.
+A workflow that runs `openaca scan` on this repo's own manifests. Useful as both dogfooding and CI smoke-test.
 
 **Files:**
 - Create: `.github/workflows/self-scan.yml`
@@ -617,7 +617,7 @@ on:
     branches: [main]
 
 jobs:
-  asve-scan:
+  openaca scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -631,7 +631,7 @@ jobs:
           fail-on: none      # this repo is the database; findings would be self-references
       - uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: asve-results.sarif
+          sarif_file: openaca-results.sarif
         if: always()
 ```
 
@@ -647,8 +647,8 @@ git commit -m "ci: self-scan workflow exercises action.yml on every PR"
 ## Verification
 
 ```bash
-uv run asve-scan --target tests/fixtures/repos/exposed-mcp --advisories advisories --sarif /tmp/o.sarif
-# Expected: exit 1; SARIF lists ASVE-2026-0001
+uv run openaca scan --target tests/fixtures/repos/exposed-mcp --advisories advisories --sarif /tmp/o.sarif
+# Expected: exit 1; SARIF lists CVE-2026-0001
 uv run pytest tests/test_matcher.py tests/test_sarif.py tests/test_scan.py -v
 # Expected: all pass
 ```

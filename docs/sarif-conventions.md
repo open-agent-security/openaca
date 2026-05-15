@@ -1,6 +1,6 @@
-# ASVE SARIF Conventions
+# OpenACA SARIF Conventions
 
-ASVE emits SARIF v2.1.0 with ASVE-specific extensions under
+OpenACA emits SARIF v2.1.0 with OpenACA-specific extensions under
 `runs[].results[].properties`. This document is the contract for
 downstream consumers.
 
@@ -12,7 +12,7 @@ downstream consumers.
 | `coverage` | string \| absent | `"transitive"` \| `"direct-only"` | Tier-2 implementation-dep findings. `"transitive"` when the ref came from a lockfile; `"direct-only"` when it came from a manifest fallback (no lockfile for that ecosystem). Absent on Tier-1 inventory findings (ADR-0007, ADR-0008). |
 | `transitive` | bool \| absent | `true` \| `false` | Bool mirror of `coverage` for easier downstream parsing. Absent when `coverage` is absent. |
 | `source` | string \| absent | `"osv.dev"` | The matched vulnerability record's provenance. V0 package vulnerability records come from OSV.dev. |
-| `overlay_source` | string \| absent | `"asve.dev"` | The finding's upstream record matched a bundled ASVE overlay. Absent when no ASVE overlay applied. |
+| `overlay_source` | string \| absent | `"openaca.dev"` | The finding's upstream record matched a bundled OpenACA overlay. Absent when no OpenACA overlay applied. |
 
 ## Stability promise
 
@@ -33,7 +33,7 @@ or changing semantics requires a superseding ADR.
     "coverage": "transitive",
     "transitive": true,
     "source": "osv.dev",
-    "overlay_source": "asve.dev"
+    "overlay_source": "openaca.dev"
   }
 }
 ```
@@ -41,8 +41,8 @@ or changing semantics requires a superseding ADR.
 This result means: `lodash@4.17.20` was found in the transitive tree
 (`coverage=transitive`) of the active plugin `superpowers@5.1.0`
 (`attributed_to`); the vulnerability record came from OSV.dev
-(`source=osv.dev`) and ASVE contributed an agent-context overlay
-(`overlay_source=asve.dev`).
+(`source=osv.dev`) and OpenACA contributed an agent-context overlay
+(`overlay_source=openaca.dev`).
 
 ## Why these keys
 
@@ -50,4 +50,4 @@ This result means: `lodash@4.17.20` was found in the transitive tree
 actionable. `coverage`/`transitive` distinguish "lockfile says this is in
 the tree" from "manifest says this is a declared direct dep, transitive
 unknown." `source` and `overlay_source` distinguish upstream
-vulnerability data from ASVE-owned agent context.
+vulnerability data from OpenACA-owned agent context.

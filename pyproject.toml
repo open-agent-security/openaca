@@ -1,7 +1,7 @@
 [project]
-name = "asve"
+name = "openaca"
 version = "0.0.1"
-description = "Agent-context overlays and scanner for agent stack security."
+description = "OpenACA: agent composition analysis — overlays and scanner for agent stack security."
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
@@ -16,11 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-asve-lint = "tools.lint:main"
-asve-export = "tools.export:main"
-asve-scan = "tools.scan:main"
-asve-promote = "tools.promote:main"
-asve-seed = "tools.seed.__main__:main"
+openaca = "tools.cli:main"
 
 [build-system]
 requires = ["hatchling"]

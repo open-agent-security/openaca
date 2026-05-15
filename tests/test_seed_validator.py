@@ -20,7 +20,7 @@ def _candidate() -> dict:
         },
         "_evidence": [{"field": "summary", "quote": "command injection"}],
         "database_specific": {
-            "asve": {
+            "openaca": {
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
             }
@@ -43,16 +43,16 @@ def test_validate_candidate_requires_candidate_metadata():
 
 def test_validate_candidate_rejects_bad_taxonomy_code():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["taxonomies"]["owasp_agentic_top10"] = ["ASI05"]
+    candidate["database_specific"]["openaca"]["taxonomies"]["owasp_agentic_top10"] = ["ASI05"]
 
     errors = validate_candidate(candidate)
 
     assert any("schema" in e and "taxonomies" in e for e in errors)
 
 
-def test_validate_candidate_rejects_non_canonical_asve_fields():
+def test_validate_candidate_rejects_non_canonical_openaca_fields():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["agent_impact"] = {"code_execution": True}
+    candidate["database_specific"]["openaca"]["agent_impact"] = {"code_execution": True}
 
     errors = validate_candidate(candidate)
 
@@ -71,7 +71,7 @@ def test_validate_candidate_allows_upstream_owned_fields_because_promotion_strip
 def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
     """threat_kind is seeder-owned and only valid on MAL-* ids/aliases."""
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     errors = validate_candidate(candidate)
 
@@ -83,7 +83,7 @@ def test_validate_candidate_rejects_threat_kind_on_non_mal_record():
 def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
     candidate = _candidate()
     candidate["id"] = "MAL-2026-0001"
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     assert validate_candidate(candidate) == []
 
@@ -91,14 +91,14 @@ def test_validate_candidate_accepts_threat_kind_on_mal_record_id():
 def test_validate_candidate_accepts_threat_kind_on_mal_alias():
     candidate = _candidate()
     candidate["aliases"] = ["MAL-2026-0042"]
-    candidate["database_specific"]["asve"]["threat_kind"] = "malicious_package"
+    candidate["database_specific"]["openaca"]["threat_kind"] = "malicious_package"
 
     assert validate_candidate(candidate) == []
 
 
 def test_validate_candidate_rejects_empty_taxonomy_array():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["taxonomies"]["owasp_mcp_top10"] = []
+    candidate["database_specific"]["openaca"]["taxonomies"]["owasp_mcp_top10"] = []
 
     errors = validate_candidate(candidate)
 
@@ -109,7 +109,7 @@ def test_validate_candidate_rejects_empty_taxonomy_array():
 
 def test_validate_candidate_rejects_empty_supplemental_taxonomies():
     candidate = _candidate()
-    candidate["database_specific"]["asve"]["taxonomies"]["supplemental_taxonomies"] = {}
+    candidate["database_specific"]["openaca"]["taxonomies"]["supplemental_taxonomies"] = {}
 
     errors = validate_candidate(candidate)
 
@@ -163,10 +163,10 @@ def test_validate_candidate_tolerates_non_dict_database_specific():
     assert len(errors) > 0, "schema violation must be reported"
 
 
-def test_validate_candidate_tolerates_non_dict_asve_value():
-    """A truthy non-dict asve value must return schema errors, not crash."""
+def test_validate_candidate_tolerates_non_dict_openaca_value():
+    """A truthy non-dict openaca value must return schema errors, not crash."""
     candidate = _candidate()
-    candidate["database_specific"] = {"asve": "not-a-dict"}
+    candidate["database_specific"] = {"openaca": "not-a-dict"}
 
     errors = validate_candidate(candidate)
 

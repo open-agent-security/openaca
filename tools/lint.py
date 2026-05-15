@@ -1,4 +1,4 @@
-"""ASVE overlay linter."""
+"""OpenACA overlay linter."""
 
 from __future__ import annotations
 
@@ -33,8 +33,7 @@ def _check_uri(value: object) -> bool:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "asve.schema.json"
-ID_RE = re.compile(r"^ASVE-(\d{4})-\d{4}$")
+SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 # Recognized upstream ID families per ADR-0009 (overlays/<upstream-id>.yaml).
 UPSTREAM_ID_RE = re.compile(
     r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+|OSV-\d{4}-\d+|PYSEC-\d{4}-\d+|MAL-\d{4}-\d+)$"
@@ -103,25 +102,16 @@ def check_cvss(overlay: dict) -> list[str]:
     return errors
 
 
-def check_internal_aliases(overlay: dict, known_ids: set[str]) -> list[str]:
-    errors: list[str] = []
-    for alias in overlay.get("aliases") or []:
-        if isinstance(alias, str) and ID_RE.match(alias):
-            if alias != overlay.get("id") and alias not in known_ids:
-                errors.append(f"alias: ASVE alias {alias!r} not found in corpus")
-    return errors
-
-
-def _get_asve_dict(record: dict) -> dict:
+def _get_openaca_dict(record: dict) -> dict:
     db = record.get("database_specific")
-    asve = (db if isinstance(db, dict) else {}).get("asve")
-    return asve if isinstance(asve, dict) else {}
+    openaca = (db if isinstance(db, dict) else {}).get("openaca")
+    return openaca if isinstance(openaca, dict) else {}
 
 
 def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
     """threat_kind valid only on MAL-* ids/aliases (mirrors validator.py)."""
-    asve = _get_asve_dict(overlay)
-    if "threat_kind" not in asve:
+    openaca = _get_openaca_dict(overlay)
+    if "threat_kind" not in openaca:
         return []
     record_id = overlay.get("id") or ""
     aliases = overlay.get("aliases") or []
@@ -137,8 +127,8 @@ def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
 
 def check_no_empty_taxonomy_buckets(overlay: dict) -> list[str]:
     """Reject empty arrays/dicts under taxonomies (mirrors validator.py)."""
-    asve = _get_asve_dict(overlay)
-    taxonomies = asve.get("taxonomies")
+    openaca = _get_openaca_dict(overlay)
+    taxonomies = openaca.get("taxonomies")
     if not isinstance(taxonomies, dict):
         return []
     errors: list[str] = []
@@ -166,7 +156,7 @@ def check_schema(overlay: dict, validator: Draft202012Validator) -> list[str]:
 @click.command()
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 def main(target: Path) -> None:
-    """Lint ASVE overlays under TARGET (file or directory)."""
+    """Lint OpenACA overlays under TARGET (file or directory)."""
     schema = load_schema()
     validator = Draft202012Validator(schema, format_checker=_FORMAT_CHECKER)
     overlays = find_overlays(target)
@@ -175,9 +165,8 @@ def main(target: Path) -> None:
         click.echo(f"no overlay YAML files found under {target}", err=True)
         sys.exit(0)
 
-    # Pass 1: load all overlays; collect known IDs; detect cross-path duplicates.
+    # Pass 1: load all overlays; detect cross-path duplicates.
     loaded: list[tuple[Path, dict | None, str | None]] = []
-    known_ids: set[str] = set()
     id_to_first_path: dict[str, Path] = {}
     duplicate_ids: set[str] = set()
     for path in overlays:
@@ -189,7 +178,6 @@ def main(target: Path) -> None:
         loaded.append((path, overlay, None))
         if isinstance(overlay, dict) and isinstance(overlay.get("id"), str):
             oid = overlay["id"]
-            known_ids.add(oid)
             if oid in id_to_first_path:
                 duplicate_ids.add(oid)
             else:
@@ -208,7 +196,6 @@ def main(target: Path) -> None:
             + check_id_format(overlay, path)
             + check_path_consistency(overlay, path)
             + check_duplicate_id(overlay, path, duplicate_ids, id_to_first_path)
-            + check_internal_aliases(overlay, known_ids)
             + check_threat_kind_id_coupling(overlay)
             + check_no_empty_taxonomy_buckets(overlay)
         )

@@ -1,10 +1,10 @@
 # Plan 011 — Minimal Overlay Schema
 
-**Goal:** Make canonical ASVE overlays a minimal, standards-based enrichment layer over upstream OSV records.
+**Goal:** Make canonical OpenACA overlays a minimal, standards-based enrichment layer over upstream OSV records.
 
-**Architecture:** Canonical overlays keep only `database_specific.asve.taxonomies`, `evidence_level`, and optional `threat_kind`. Scanner-observed component context remains in scan output, while candidates keep review-only LLM evidence and rejection metadata outside the canonical projection.
+**Architecture:** Canonical overlays keep only `database_specific.openaca.taxonomies`, `evidence_level`, and optional `threat_kind`. Scanner-observed component context remains in scan output, while candidates keep review-only LLM evidence and rejection metadata outside the canonical projection.
 
-**Tech Stack:** Python 3.11, JSON Schema, PyYAML, Click, pytest, existing ASVE scanner/seed/promote/render tooling.
+**Tech Stack:** Python 3.11, JSON Schema, PyYAML, Click, pytest, existing OpenACA scanner/seed/promote/render tooling.
 
 ---
 
@@ -15,30 +15,30 @@
 - Modify: `tests/test_seed_validator.py`
 - Modify: `tests/test_seed_llm.py`
 
-- [x] Add a schema test that accepts a canonical overlay with only `taxonomies` and `evidence_level` under `database_specific.asve`.
-- [x] Add schema tests that reject canonical `component_identity`, `component_type`, `surfaces`, and `agent_impact` under `database_specific.asve`.
+- [x] Add a schema test that accepts a canonical overlay with only `taxonomies` and `evidence_level` under `database_specific.openaca`.
+- [x] Add schema tests that reject canonical `component_identity`, `component_type`, `surfaces`, and `agent_impact` under `database_specific.openaca`.
 - [x] Add a schema test that accepts `threat_kind: malicious_package` and rejects any other `threat_kind`.
 - [x] Update seed-validator tests so valid candidates project to the minimal canonical overlay shape.
-- [x] Update LLM-schema tests so `load_annotation_schema()` exposes the minimal ASVE schema and no longer advertises component classification fields.
+- [x] Update LLM-schema tests so `load_annotation_schema()` exposes the minimal OpenACA schema and no longer advertises component classification fields.
 - [x] Run `uv run pytest tests/test_schema.py tests/test_seed_validator.py tests/test_seed_llm.py -q` and confirm the new tests fail for the current schema.
 
 ### Task 2: Canonical Schema And Overlay Migration
 
 **Files:**
-- Modify: `schema/asve.schema.json`
+- Modify: `schema/openaca.schema.json`
 - Modify: `overlays/*.yaml`
-- Modify: `tests/fixtures/valid/asve-2026-0001.yaml`
+- Modify: `tests/fixtures/valid/cve-2026-0001.yaml`
 - Modify: `tests/fixtures/invalid/bad-cvss.yaml`
 - Modify: `tests/fixtures/invalid/bad-datetime.yaml`
 
-- [x] Change `$defs.asve_extension.required` from `["component_type"]` to `["taxonomies", "evidence_level"]`.
-- [x] Remove `component_identity`, `component_type`, `surfaces`, and `agent_impact` from canonical `$defs.asve_extension.properties`.
+- [x] Change `$defs.openaca_extension.required` from `["component_type"]` to `["taxonomies", "evidence_level"]`.
+- [x] Remove `component_identity`, `component_type`, `surfaces`, and `agent_impact` from canonical `$defs.openaca_extension.properties`.
 - [x] Change `threat_kind` from free-form string to enum `["malicious_package"]`.
-- [x] Set `additionalProperties: false` on `$defs.asve_extension`.
+- [x] Set `additionalProperties: false` on `$defs.openaca_extension`.
 - [x] Remove `component_type`, `surfaces`, `agent_impact`, and V0-unused `detection_hints` from bundled overlays.
-- [x] Update schema fixtures to the minimal ASVE block.
+- [x] Update schema fixtures to the minimal OpenACA block.
 - [x] Run `uv run pytest tests/test_schema.py tests/test_overlays.py tests/test_lint.py -q`.
-- [x] Run `uv run asve-lint overlays/`.
+- [x] Run `uv run openaca lint overlays/`.
 
 ### Task 3: Seeder, LLM, And Rejection Artifacts
 
@@ -50,7 +50,7 @@
 - Modify: `tests/test_seed_llm.py`
 
 - [x] Update deterministic candidate annotation to emit only `taxonomies`, `evidence_level`, and `threat_kind: malicious_package` for MAL records.
-- [x] Update the LLM request/response path so an annotation response can be either `decision: annotate` with a minimal ASVE annotation, or `decision: reject` with `reject_reason` and evidence.
+- [x] Update the LLM request/response path so an annotation response can be either `decision: annotate` with a minimal OpenACA annotation, or `decision: reject` with `reject_reason` and evidence.
 - [x] Define reject reasons as a closed set: `not_agent_stack`, `insufficient_evidence`, `duplicate_scope`, and `unsupported_record`.
 - [x] Write rejected LLM decisions to `candidates/rejected/<id>.yaml` instead of silently skipping them.
 - [x] Ensure state advances only after either an annotation candidate or a rejected candidate artifact is written.
@@ -69,8 +69,8 @@
 - Modify: `tests/test_export.py`
 - Modify: `tests/test_scan.py`
 
-- [x] Update promotion tests so promoted overlays strip candidate-only fields and retain only the minimal ASVE block.
-- [x] Ensure promoted overlays reject `component_identity`, `component_type`, `surfaces`, and `agent_impact` in the candidate ASVE block.
+- [x] Update promotion tests so promoted overlays strip candidate-only fields and retain only the minimal OpenACA block.
+- [x] Ensure promoted overlays reject `component_identity`, `component_type`, `surfaces`, and `agent_impact` in the candidate OpenACA block.
 - [x] Remove verbose text rendering for overlay `surfaces` and `agent_impact`.
 - [x] Update static advisory and index templates to render taxonomy and evidence-level information without a component-type column/search dependency.
 - [x] Update scan/render/export tests that asserted component type, surfaces, or agent impact output.
@@ -108,7 +108,7 @@
 - [x] Run `uv run ruff check .`.
 - [x] Run `uv run ruff format --check .`.
 - [x] Run `uv run pyright`.
-- [x] Run `uv run asve-lint overlays/`.
+- [x] Run `uv run openaca lint overlays/`.
 - [x] Run `git diff --check`.
 - [x] Review the diff for accidental changes to generated `candidates/` or main-worktree artifacts.
 - [x] Commit, push, and open a PR after user approval.

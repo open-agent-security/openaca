@@ -1,21 +1,24 @@
-# ASVE
+# OpenACA
 
-**Agent Stack Vulnerabilities and Exposures** — OSV-compatible
-agent-context overlays and a reference scanner for AI agent
-infrastructure: plugins, MCP servers, skills, agent frameworks, model
-proxies, and runtime components.
+**Agent Composition Analysis** — OSV-compatible agent-context overlays
+and a reference scanner for AI agent infrastructure: plugins, MCP
+servers, skills, agent frameworks, model proxies, and runtime
+components.
 
 > Agent-context overlays for upstream security advisories.
 
-## Why ASVE
+> _Previously called ASVE; renamed May 2026 to reflect the Agent
+> Composition Analysis (ACA) category framing._
 
-ASVE is **Agent Composition Analysis (ACA)**, not general Software
+## Why OpenACA
+
+OpenACA is **Agent Composition Analysis (ACA)**, not general Software
 Composition Analysis (SCA). It is targeted at the agent stack: which
 plugins, MCP servers, skills, hooks, and commands compose an agent —
 and which of those have known security advisories. For general
 software dependency scans (your app's transitive npm/PyPI tree, your
 container image, etc.), use a general-purpose SCA scanner alongside
-ASVE; the layers stack.
+OpenACA; the layers stack.
 
 Traditional Software Composition Analysis (SCA) reads `package.json`
 and lockfiles. Agents install components a different way: an MCP
@@ -24,7 +27,7 @@ Code plugin declared in `.claude-plugin/plugin.json`, a skill bundle
 referenced by stable identifier. Most general-purpose SCA scanners do
 not parse those manifests today.
 
-ASVE fills two gaps:
+OpenACA fills two gaps:
 
 1. **Manifest coverage** for agent-installation files SCA tools
    don't parse — `mcp.json`, `.mcp.json`,
@@ -36,20 +39,20 @@ ASVE fills two gaps:
    `tool_hijack`), and agent-context taxonomy mappings such as OWASP
    Agentic Top 10.
 
-ASVE does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
-vulnerability identity, affected ranges, severity, and fixes. ASVE owns
+OpenACA does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
+vulnerability identity, affected ranges, severity, and fixes. OpenACA owns
 the agent-stack overlay and the manifest parsers.
 
 ## Two scan modes
 
-ASVE scans two distinct surfaces, named via explicit subcommands.
+OpenACA scans two distinct surfaces, named via explicit subcommands.
 The same advisory matches in both, but the surface tells you *what
 question you're asking*:
 
 | Mode | Question | Audience | Where it runs |
 |---|---|---|---|
-| `asve-scan repo` | *"What agent-stack manifests are committed in this repository?"* | AppSec / platform security | CI gate, PR check |
-| `asve-scan endpoint` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
+| `openaca scan repo` | *"What agent-stack manifests are committed in this repository?"* | AppSec / platform security | CI gate, PR check |
+| `openaca scan endpoint` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
 
 What `repo` actually covers: (a) **committed project-host config** —
 `.claude/settings.json`, `.claude/skills`, `.claude/commands`,
@@ -75,21 +78,21 @@ the same set of findings.
 
 ### GitHub Action
 
-Add to `.github/workflows/asve.yml`:
+Add to `.github/workflows/openaca.yml`:
 
 ```yaml
-name: ASVE
+name: OpenACA
 on: [push, pull_request]
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: open-agent-security/asve@v1
+      - uses: open-agent-security/openaca@v1
         with:
           fail-on: high           # high | any | none (default: any)
           # target: .             # path to scan (default: workspace)
-          # sarif: results.sarif  # output path (default: asve-results.sarif)
+          # sarif: results.sarif  # output path (default: openaca-results.sarif)
 ```
 
 Findings appear as GitHub annotations on the PR. With GitHub
@@ -102,37 +105,37 @@ The scanner is a normal Python package; run it against any local
 checkout without GitHub Actions. Two modes via subcommands:
 
 ```bash
-git clone https://github.com/open-agent-security/asve.git
-cd asve
+git clone https://github.com/open-agent-security/openaca.git
+cd openaca
 uv sync
 
 # Repo mode: walks declared manifests in a code repo (today's behavior;
 # what the GitHub Action uses).
-uv run asve-scan repo \
+uv run openaca scan repo \
     --target /path/to/your/repo \
     --sarif results.sarif \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
 # agent stack. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
-uv run asve-scan endpoint \
+uv run openaca scan endpoint \
     --fail-on any
 
 # Or scan a specific endpoint config directory and layer in project/local
 # settings from a repo.
-uv run asve-scan endpoint \
+uv run openaca scan endpoint \
     --config-dir ~/.claude \
     --project /path/to/your/repo
 ```
 
 A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
 `--format`, `--no-color`) can sit before or after the subcommand name —
-`asve-scan -v repo --target X ...` is equivalent to
-`asve-scan repo --target X ... -v`.
+`openaca scan -v repo --target X ...` is equivalent to
+`openaca scan repo --target X ... -v`.
 
 ### Output formats
 
-`asve-scan` emits three formats; pick with `--format`:
+`openaca scan` emits three formats; pick with `--format`:
 
 - **`text`** *(default)* — grouped human-readable output. One block per
   affected package, severity per finding, ANSI-colored when stdout is a
@@ -152,12 +155,12 @@ Or via `uvx`, which clones, builds, and runs in one shot (no manual
 checkout):
 
 ```bash
-uvx --from git+https://github.com/open-agent-security/asve asve-scan repo \
+uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo \
     --target /path/to/your/repo \
     --sarif results.sarif
 ```
 
-`asve-scan --help` lists all options. Exit codes: `0` clean (or
+`openaca scan --help` lists all options. Exit codes: `0` clean (or
 findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
 
@@ -166,7 +169,7 @@ the resolved active-plugin tree (endpoint mode):
 
 ```text
 # repo mode -v
-loaded 6 ASVE overlay(s)
+loaded 6 OpenACA overlay(s)
 loaded 1 OSV advisory record(s)
 scanned 87 manifest(s), 70 component(s):
   external_plugins/discord/package.json — 2 component(s)
@@ -174,7 +177,7 @@ scanned 87 manifest(s), 70 component(s):
   ...
 
 # endpoint mode -v
-loaded 6 ASVE overlay(s)
+loaded 6 OpenACA overlay(s)
 loaded 1 OSV advisory record(s)
 detected config_dir=/Users/.../.claude (mode=endpoint)
 resolved 14 active plugin(s):
@@ -190,7 +193,7 @@ plugin-level components).
 ## How it works
 
 ```
-   Your repo                    OSV.dev + ASVE overlays
+   Your repo                    OSV.dev + OpenACA overlays
        |                             |
        v                             v
   Manifest parsers  --->  Three-tier matcher  --->  SARIF + GitHub annotations
@@ -200,11 +203,11 @@ plugin-level components).
 
 1. **Parse** every supported manifest under `--target`. Each parser
    emits component identifiers — standard PURLs (`pkg:npm/...`,
-   `pkg:pypi/...`) where possible, ASVE-native identifiers
+   `pkg:pypi/...`) where possible, OpenACA-native identifiers
    (`mcp-stdio/uvx-unpinned:<package>`) where standard PURLs don't
    apply.
 2. **Match** queryable PURLs against OSV.dev records, then merge
-   ASVE overlays from the bundled `overlays/` directory by alias-set
+   OpenACA overlays from the bundled `overlays/` directory by alias-set
    intersection. Confidence tiers:
    - **high** — concrete pinned version inside an OSV ECOSYSTEM
      range (`introduced` / `fixed` / `last_affected` / `limit`).
@@ -216,7 +219,7 @@ plugin-level components).
 
 ## What gets scanned
 
-ASVE follows a tiered model loosely analogous to traditional SCA's
+OpenACA follows a tiered model loosely analogous to traditional SCA's
 "lockfile > manifest > source code" hierarchy:
 
 | Tier | What it reads | V0 status |
@@ -224,10 +227,10 @@ ASVE follows a tiered model loosely analogous to traditional SCA's
 | **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` (endpoint mode), `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | ✅ V0 |
 | **2. Dependency manifests** (universal) | `package.json`, `pyproject.toml`, lockfiles inside active plugins (plan 009) | ✅ V0 |
 | **3. SDK-aware code extraction** (host-specific SAST-like) | parse `query({mcpServers: [...]})`, `Agent(tools=[...])`, etc. | ⏸ V1 |
-| **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of ASVE scope; that's a deployment-side product layer |
+| **4. Runtime attestation** | ask the deployed app what it loaded | ⏸ out of OpenACA scope; that's a deployment-side product layer |
 
 OSV.dev is queried by default for versioned package refs. Network
-failures are fail-soft: ASVE still reports inventory and parse coverage,
+failures are fail-soft: OpenACA still reports inventory and parse coverage,
 but overlay-backed vulnerability matching needs upstream OSV records.
 
 **Agent-composition scope.** Repo-mode dependency manifests
@@ -259,7 +262,7 @@ Per-parser detail:
 
 ## Limitations
 
-Be honest about what ASVE V0 doesn't see:
+Be honest about what OpenACA V0 doesn't see:
 
 - **Programmatic SDK configuration is invisible to repo mode.** Code
   that constructs agents with `query({ mcpServers: [...] })` (Claude
@@ -295,18 +298,18 @@ Be honest about what ASVE V0 doesn't see:
 - **Aliases**: overlays list known equivalent IDs so they can merge
   with any OSV record whose alias set intersects.
 - **Severity and fixes**: owned by upstream OSV/GHSA/CVE records, not
-  duplicated in ASVE overlays.
-- **Taxonomies**: `database_specific.asve.taxonomies` carries ASVE-owned
+  duplicated in OpenACA overlays.
+- **Taxonomies**: `database_specific.openaca.taxonomies` carries OpenACA-owned
   mappings such as OWASP Agentic Top 10 (`asi01`–`asi10`) and OWASP MCP
   Top 10 (`mcp01:2025`–`mcp10:2025`). CWE is not duplicated by default
   when upstream already provides it.
-- **Agent context**: `database_specific.asve` carries
+- **Agent context**: `database_specific.openaca` carries
   `component_type`, `surfaces`, `agent_impact`, and evidence metadata.
 
 Sample overlay:
 [`overlays/GHSA-3q26-f695-pp76.yaml`](overlays/GHSA-3q26-f695-pp76.yaml).
 Schema source of truth:
-[`schema/asve.schema.json`](schema/asve.schema.json).
+[`schema/openaca.schema.json`](schema/openaca.schema.json).
 
 ### Local annotation via Claude Code (subscription quota)
 
@@ -314,19 +317,19 @@ For human-in-the-loop triage without burning API credits:
 
 1. Run the deterministic seeder to populate `candidates/`:
    ```
-   uv run asve-seed candidates/ --no-llm
+   uv run openaca seed candidates/ --no-llm
    ```
 2. Copy the skill template into your Claude Code skills directory:
    ```
-   cp -r examples/skills/claude/asve-candidate-review ~/.claude/skills/
+   cp -r examples/skills/claude/openaca-candidate-review ~/.claude/skills/
    ```
 3. From a Claude Code session in this repo, invoke the skill:
    ```
-   /asve-candidate-review candidates/
+   /openaca-candidate-review candidates/
    ```
    The agent reads `docs/seed-review-rules.md` and
    `docs/frameworks/*.md`, applies them to each candidate, and runs
-   `asve-lint` on the result. See
+   `openaca lint` on the result. See
    [`docs/seed-review-rules.md`](docs/seed-review-rules.md) for the
    exact editable surface (`taxonomies` + `evidence_level` only;
    everything else is seeder-owned or upstream-owned).
@@ -337,7 +340,7 @@ available for CI and batch runs.
 ## Status
 
 V0, in development. See
-[`docs/specs/asve-v0-design.md`](docs/specs/asve-v0-design.md) for
+[`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md) for
 the canonical V0 design and [`docs/plans/`](docs/plans/) for
 implementation plans.
 
@@ -352,7 +355,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance.
 
 ## Coordinated disclosure
 
-ASVE follows the [OpenSSF coordinated disclosure
+OpenACA follows the [OpenSSF coordinated disclosure
 guidance](https://openssf.org/) with project-specific defaults
 documented in [`docs/disclosure-policy.md`](docs/disclosure-policy.md).
 Report security issues per that policy; do not file public issues

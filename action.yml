@@ -1,5 +1,5 @@
-name: ASVE Scan
-description: Scan agent-installation manifests with ASVE overlays.
+name: OpenACA Scan
+description: Scan agent-installation manifests with OpenACA overlays.
 author: open-agent-security
 branding:
   icon: shield
@@ -17,7 +17,7 @@ inputs:
   sarif:
     description: SARIF output path (relative to the consumer's workspace).
     required: false
-    default: asve-results.sarif
+    default: openaca-results.sarif
   fail-on:
     description: Severity threshold for non-zero exit (high | any | none).
     required: false
@@ -43,7 +43,7 @@ runs:
       run: uv sync --frozen
 
     - id: scan
-      name: Run asve-scan
+      name: Run openaca-scan
       shell: bash
       working-directory: ${{ github.action_path }}
       # Workflow-injection safety: read user-controllable inputs via env:
@@ -67,7 +67,7 @@ runs:
         if [[ "$SARIF_ABS" != /* ]]; then
           SARIF_ABS="$GITHUB_WORKSPACE/$SARIF_ABS"
         fi
-        uv run asve-scan repo \
+        uv run openaca scan repo \
           --target "$TARGET_ABS" \
           --sarif "$SARIF_ABS" \
           --fail-on "$FAIL_ON" \

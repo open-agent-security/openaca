@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the data model and CLI shape for install-state-aware scanning of Claude Code installations. After this plan, `asve-scan repo` is today's behavior, `asve-scan fs` is a stub for plan 008, plugin advisories match through the existing range matcher, and `attributed_to` carries through ComponentRef → Finding → SARIF.
+**Goal:** Ship the data model and CLI shape for install-state-aware scanning of Claude Code installations. After this plan, `openaca scan repo` is today's behavior, `openaca scan fs` is a stub for plan 008, plugin advisories match through the existing range matcher, and `attributed_to` carries through ComponentRef → Finding → SARIF.
 
 **Architecture:** Three independent changes that share a single PR because they're foundational for plans 008 and 009: (1) Click subcommand split (subcommand required, no fallback); (2) `attributed_to` mirrored on ComponentRef and Finding; (3) `claude-plugin` ecosystem wired through the existing `_match_versioned` path by tagging the parser-emitted ref. Plus a real bug fix for `mcpServers: "./.mcp.json"` string-path handling, plus a minimal `claude_install.py` that emits one component per active plugin (no walking yet).
 
 **Tech Stack:** Python (Click, dataclasses), pytest. No new runtime deps.
 
-**Depends on:** 001 (schema/tooling), 003 (manifest parsers), 005 (reference Action — `asve-scan` CLI).
+**Depends on:** 001 (schema/tooling), 003 (manifest parsers), 005 (reference Action — `openaca scan` CLI).
 
 ---
 
@@ -17,7 +17,7 @@
 V0's manifest scanner produces noisy / misattributed output when pointed at `~/.claude/`: `rglob` walks every cached plugin's `package.json` and emits its transitive npm deps as if the user installed them directly. Three concrete gaps:
 
 1. **Matcher has no path for `claude-plugin` advisories.** Plugin manifests are detected, but `_match_one` only knows `mcp-stdio/...-unpinned:` identity prefixes. Plugin advisories fire zero findings.
-2. **No install-state resolver.** Claude Code has a clean four-layer install model — `settings.json` (declaration) → `installed_plugins.json` (lockfile) → `marketplaces/<m>/.claude-plugin/marketplace.json` (registry) → `cache/...` (materialized). ASVE doesn't follow this graph.
+2. **No install-state resolver.** Claude Code has a clean four-layer install model — `settings.json` (declaration) → `installed_plugins.json` (lockfile) → `marketplaces/<m>/.claude-plugin/marketplace.json` (registry) → `cache/...` (materialized). OpenACA doesn't follow this graph.
 3. **`mcpServers: "./.mcp.json"` parser bug.** Current code only handles inline-dict `mcpServers`; real plugins also use string paths. A parser fix.
 
 The fix splits into three plans:
@@ -26,7 +26,7 @@ The fix splits into three plans:
 - **Plan 008**: walk active plugin install roots for declared agent components (MCPs, skills, hooks, commands, agents). Bare components from settings + skills directory.
 - **Plan 009**: lockfile + manifest fallback for plugin-internal implementation deps; SCA-parity transitive coverage with attribution.
 
-Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `asve-scan repo` against a repo containing a `.claude-plugin/plugin.json` will fire on plugin advisories.
+Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `openaca scan repo` against a repo containing a `.claude-plugin/plugin.json` will fire on plugin advisories.
 
 ---
 
@@ -49,7 +49,7 @@ Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `asve-
 | `tests/test_parsers/test_claude_install.py` | Create | Minimal install resolver fixture |
 | `tests/test_e2e.py` | Modify | fs-mode scan against fixture install + claude-plugin advisory |
 | `tests/fixtures/installs/minimal/` | Create | One enabled plugin + one installed_plugins.json entry |
-| `docs/adrs/0006-asve-scan-subcommands-and-attribution.md` | Create | Capture design decisions |
+| `docs/adrs/0006-openaca scan-subcommands-and-attribution.md` | Create | Capture design decisions |
 | `docs/adrs/INDEX.md` | Modify | Link new ADR |
 | `README.md` | Modify | Subcommand examples; new "fs mode" section |
 | `CONTRIBUTING.md` | Modify | Add `claude-plugin` to recognized ecosystems |
@@ -127,7 +127,7 @@ class Finding:
 def test_finding_mirrors_component_attribution():
     ref = ComponentRef(ecosystem="npm", name="x", version="1.0",
                        attributed_to="claude-plugin/foo@1.0.0")
-    advisories = [_make_advisory("ASVE-2026-X", "npm", "x", "2.0")]
+    advisories = [_make_advisory("OpenACA-2026-X", "npm", "x", "2.0")]
     findings = match([ref], advisories)
     assert len(findings) == 1
     assert findings[0].attributed_to == "claude-plugin/foo@1.0.0"
@@ -221,7 +221,7 @@ def test_plugin_self_identity_carries_ecosystem():
 
 ```python
 def test_match_claude_plugin_in_range():
-    advisories = [_make_advisory("ASVE-2026-Y", "claude-plugin", "deployment-tools", "1.3.0")]
+    advisories = [_make_advisory("OpenACA-2026-Y", "claude-plugin", "deployment-tools", "1.3.0")]
     ref = ComponentRef(ecosystem="claude-plugin", name="deployment-tools", version="1.2.0",
                        source_manifest="plugin.json", source_locator="$")
     findings = match([ref], advisories)
@@ -820,7 +820,7 @@ def main(ctx, target, advisories, sarif, fail_on, verbose):
     if ctx.invoked_subcommand is None:
         # Back-compat: no subcommand → repo mode with the flags we received.
         if target is None or advisories is None:
-            click.echo("usage: asve-scan {repo|fs} --target ... --advisories ...", err=True)
+            click.echo("usage: openaca scan {repo|fs} --target ... --advisories ...", err=True)
             ctx.exit(2)
         ctx.invoke(repo, target=target, advisories=advisories, sarif=sarif,
                    fail_on=fail_on, verbose=verbose)
@@ -903,7 +903,7 @@ def test_repo_subcommand_explicit():
     result = runner.invoke(main, ["repo", "--target", str(FIXTURES / "repos" / "exposed-mcp"),
                                   "--advisories", str(REPO_ROOT / "advisories")])
     assert result.exit_code == 1
-    assert "ASVE-2026-0001" in result.output
+    assert "CVE-2026-0001" in result.output
 
 
 def test_no_subcommand_back_compat_invokes_repo():
@@ -911,7 +911,7 @@ def test_no_subcommand_back_compat_invokes_repo():
     result = runner.invoke(main, ["--target", str(FIXTURES / "repos" / "exposed-mcp"),
                                   "--advisories", str(REPO_ROOT / "advisories")])
     assert result.exit_code == 1
-    assert "ASVE-2026-0001" in result.output
+    assert "CVE-2026-0001" in result.output
 
 
 def test_fs_subcommand_minimal_install():
@@ -928,10 +928,10 @@ def test_fs_subcommand_matches_claude_plugin_advisory(tmp_path):
     install_root = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories = tmp_path / "advisories"
     advisories.mkdir()
-    advisory_yaml = advisories / "ASVE-2026-9999.yaml"
+    advisory_yaml = advisories / "CVE-2026-9999.yaml"
     advisory_yaml.write_text("""\
 schema_version: 1.7.5
-id: ASVE-2026-9999
+id: CVE-2026-9999
 type: vulnerability
 summary: test
 modified: '2026-05-09T00:00:00Z'
@@ -949,19 +949,19 @@ affected:
     result = runner.invoke(main, ["fs", "--target", str(install_root),
                                   "--advisories", str(advisories)])
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-9999" in result.output
+    assert "CVE-2026-9999" in result.output
 ```
 
 - [ ] **Step 3: Verify the GitHub Action still works**
 
-`action.yml` is updated to invoke `asve-scan repo` explicitly (no back-compat fallback exists).
+`action.yml` is updated to invoke `openaca scan repo` explicitly (no back-compat fallback exists).
 
 - [ ] **Step 4: Run all scan/install tests, commit**
 
 ```bash
 uv run pytest tests/test_scan.py tests/test_parsers/test_claude_install.py -q
 git add tools/scan.py tests/test_scan.py
-git commit -m "feat(scan): asve-scan repo and fs subcommands"
+git commit -m "feat(scan): openaca scan repo and fs subcommands"
 ```
 
 ---
@@ -969,28 +969,28 @@ git commit -m "feat(scan): asve-scan repo and fs subcommands"
 ## Task 9: ADR-0006 + docs updates
 
 **Files:**
-- Create: `docs/adrs/0006-asve-scan-subcommands-and-attribution.md`
+- Create: `docs/adrs/0006-openaca scan-subcommands-and-attribution.md`
 - Modify: `docs/adrs/INDEX.md`
 - Modify: `README.md`
 - Modify: `CONTRIBUTING.md`
 
 - [ ] **Step 1: ADR-0006**
 
-`docs/adrs/0006-asve-scan-subcommands-and-attribution.md`:
+`docs/adrs/0006-openaca scan-subcommands-and-attribution.md`:
 
 ```markdown
 ---
 id: 0006
-title: asve-scan subcommands; claude-plugin ecosystem; attributed_to fields
+title: openaca scan subcommands; claude-plugin ecosystem; attributed_to fields
 status: accepted
 date: 2026-05-10
 ---
 
-# ADR-0006 — asve-scan subcommands, claude-plugin ecosystem, attribution
+# ADR-0006 — openaca scan subcommands, claude-plugin ecosystem, attribution
 
 ## Context
 
-V0 ships `asve-scan` as a single-command repo-manifest scanner. Pointing it at
+V0 ships `openaca scan` as a single-command repo-manifest scanner. Pointing it at
 an installed Claude Code tree (`~/.claude/`) produces noisy, misattributed
 output because it walks the cache as if it were a code repo. Plugin advisories
 also fail to match: parsers detect `.claude-plugin/plugin.json`, but the matcher
@@ -1003,11 +1003,11 @@ build on the data model established here.
 
 ### 1. Two scan modes via Click subcommands
 
-`asve-scan repo <target>` keeps today's manifest-walk behavior. `asve-scan fs
+`openaca scan repo <target>` keeps today's manifest-walk behavior. `openaca scan fs
 <target>` is a new install-state-aware mode that follows `settings.json →
 installed_plugins.json → plugin install paths`.
 
-`asve-scan <flags>` (no subcommand) defaults to `repo` for back-compat with
+`openaca scan <flags>` (no subcommand) defaults to `repo` for back-compat with
 the GitHub Action and existing scripts. The default is documented, not silent
 magic.
 
@@ -1019,12 +1019,12 @@ with matching `ecosystem`/`name`/`version`, and the existing
 `_match_versioned` path handles range matching identically to npm/PyPI.
 
 **Alternative considered and rejected**: putting plugin identity in
-`database_specific.asve.component_identity` and adding a parallel matcher
+`database_specific.openaca.component_identity` and adding a parallel matcher
 path. Rejected because it duplicates range-matching logic for no semantic
 gain; OSV ecosystem strings are open vocabulary by design.
 
 OSV-Scanner consumers may not recognize a custom `claude-plugin` ecosystem;
-that's a known propagation gap, not a blocker for ASVE-native consumption.
+that's a known propagation gap, not a blocker for OpenACA-native consumption.
 
 ### 3. `attributed_to` mirrored on ComponentRef and Finding
 
@@ -1055,12 +1055,12 @@ the future without breaking ComponentRef immutability assumptions.
 Add entry under `## Active`:
 
 ```markdown
-- [ADR-0006 — asve-scan subcommands, claude-plugin ecosystem, attribution](0006-asve-scan-subcommands-and-attribution.md): the `repo`/`fs` subcommand split, the `claude-plugin` ecosystem convention for plugin advisories, and the `attributed_to` field shared between ComponentRef and Finding for "via plugin X" findings in plans 008 and 009.
+- [ADR-0006 — openaca scan subcommands, claude-plugin ecosystem, attribution](0006-openaca scan-subcommands-and-attribution.md): the `repo`/`fs` subcommand split, the `claude-plugin` ecosystem convention for plugin advisories, and the `attributed_to` field shared between ComponentRef and Finding for "via plugin X" findings in plans 008 and 009.
 ```
 
 - [ ] **Step 3: README.md updates**
 
-Add `asve-scan repo` / `asve-scan fs` examples to the CLI section. Add a brief "fs mode" subsection noting that PR-A only emits one component per active plugin; PRs B and C extend.
+Add `openaca scan repo` / `openaca scan fs` examples to the CLI section. Add a brief "fs mode" subsection noting that PR-A only emits one component per active plugin; PRs B and C extend.
 
 - [ ] **Step 4: CONTRIBUTING.md**
 
@@ -1069,8 +1069,8 @@ In the "Filing an advisory" section, recognized ecosystems list: add `claude-plu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/adrs/0006-asve-scan-subcommands-and-attribution.md docs/adrs/INDEX.md README.md CONTRIBUTING.md
-git commit -m "docs: ADR-0006 for asve-scan subcommands, attribution, claude-plugin ecosystem"
+git add docs/adrs/0006-openaca scan-subcommands-and-attribution.md docs/adrs/INDEX.md README.md CONTRIBUTING.md
+git commit -m "docs: ADR-0006 for openaca scan subcommands, attribution, claude-plugin ecosystem"
 ```
 
 ---
@@ -1082,21 +1082,21 @@ git commit -m "docs: ADR-0006 for asve-scan subcommands, attribution, claude-plu
 
 - [ ] **Step 1: E2E test for fs mode**
 
-Add a test that runs `asve-scan fs` against the `tests/fixtures/installs/minimal/` fixture with an in-memory `claude-plugin` advisory in a tmp_path advisories dir. Assert:
+Add a test that runs `openaca scan fs` against the `tests/fixtures/installs/minimal/` fixture with an in-memory `claude-plugin` advisory in a tmp_path advisories dir. Assert:
 - exit code 1
-- ASVE-2026-XXXX in output
+- OpenACA-2026-XXXX in output
 - `confidence == "high"` in the matched-component listing
 - (No `via ...` suffix because plugin-level findings are direct.)
 
 - [ ] **Step 2: Run full gate**
 
 ```bash
-cd /Users/vinodkone/workspace/asve/.worktrees/feat-scan-cli-and-attribution
+cd /Users/vinodkone/workspace/openaca/.worktrees/feat-scan-cli-and-attribution
 uv run pytest -q
 uv run ruff format --check tools/ tests/
 uv run ruff check tools/ tests/
 uv run pyright tools/ tests/
-uv run asve-lint advisories/
+uv run openaca lint advisories/
 ```
 
 All green required before commit/push.
@@ -1111,7 +1111,7 @@ Edit `docs/plans/README.md`: add row for plan 007 with status 🟡 Active. (Will
 git add tests/test_e2e.py docs/plans/007-fs-mode-cli-and-attribution.md docs/plans/README.md
 git commit -m "test(e2e): fs mode resolves active plugin and matches claude-plugin advisory"
 git push -u origin feat/scan-cli-and-attribution
-gh pr create --title "feat: asve-scan repo/fs subcommands, claude-plugin matcher, attribution foundation (plan 007)" --body "..."
+gh pr create --title "feat: openaca scan repo/fs subcommands, claude-plugin matcher, attribution foundation (plan 007)" --body "..."
 ```
 
 ---
@@ -1122,17 +1122,17 @@ After PR merges, dogfood manually:
 
 ```bash
 # Repo mode unchanged for the GitHub Action use case
-uv run asve-scan repo --target . --advisories advisories
+uv run openaca scan repo --target . --advisories advisories
 # A subcommand is required; no no-subcommand fallback.
 
 # fs mode against the minimal fixture install
-uv run asve-scan fs \
+uv run openaca scan fs \
     --target tests/fixtures/installs/minimal \
     --advisories advisories
 # Expected: "resolved 1 active plugin(s); no findings"
 
 # fs mode against the user's actual install (will be more useful after plan 008)
-uv run asve-scan fs --target ~/.claude --advisories advisories -v
+uv run openaca scan fs --target ~/.claude --advisories advisories -v
 # Expected: lists active plugins from installed_plugins.json with versions/SHAs.
 # No findings expected (corpus has no plugin advisories yet).
 ```
@@ -1141,7 +1141,7 @@ uv run asve-scan fs --target ~/.claude --advisories advisories -v
 
 ## Self-review checklist
 
-- [ ] **No back-compat fallback**: `asve-scan --target X --advisories Y` (no subcommand) exits 2. `action.yml` uses `asve-scan repo` explicitly.
+- [ ] **No back-compat fallback**: `openaca scan --target X --advisories Y` (no subcommand) exits 2. `action.yml` uses `openaca scan repo` explicitly.
 - [ ] **claude-plugin ecosystem** flows end-to-end: parser sets ecosystem, matcher fires, advisory matches via `_match_versioned`.
 - [ ] **`mcpServers` string-path** resolves from plugin root (`manifest.parent.parent`), not manifest dir. Test with the new fixture.
 - [ ] **Attribution mirror invariant** holds: `finding.attributed_to == finding.component.attributed_to` for every finding.

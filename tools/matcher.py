@@ -1,4 +1,4 @@
-"""Match ComponentRefs against ASVE advisories.
+"""Match ComponentRefs against OpenACA advisories.
 
 Three match strategies, dispatched per-ref:
 
@@ -18,7 +18,7 @@ Three match strategies, dispatched per-ref:
   match against advisory `affected[*].package`. Confidence is
   "unknown" because we can't see the runtime-resolved version.
 
-Out of V0 scope: the schema's `database_specific.asve.detection_hints`
+Out of V0 scope: the schema's `database_specific.openaca.detection_hints`
 field — substring matching against synthesized command lines is fragile
 and `affected[*].package` already carries the same information for any
 advisory that has a published PURL. Detection hints stay in the corpus
@@ -136,13 +136,13 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Findin
 
     Used by ecosystems without version semantics — V0: claude-hook,
     claude-command, claude-agent (ADR-0007). The advisory carries the
-    target identity at `database_specific.asve.component_identity`.
+    target identity at `database_specific.openaca.component_identity`.
     """
     findings: list[Finding] = []
     for advisory in advisories:
         ds = advisory.get("database_specific") or {}
-        asve_block = ds.get("asve") or {}
-        target = asve_block.get("component_identity")
+        openaca_block = ds.get("openaca") or {}
+        target = openaca_block.get("component_identity")
         if isinstance(target, str) and target == ref.component_identity:
             findings.append(
                 Finding(

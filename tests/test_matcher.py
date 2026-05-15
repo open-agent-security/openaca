@@ -2,9 +2,9 @@ from tools.component_ref import ComponentRef
 from tools.matcher import match
 
 
-def make_advisory(asve_id: str, ecosystem: str, name: str, fixed: str) -> dict:
+def make_advisory(openaca_id: str, ecosystem: str, name: str, fixed: str) -> dict:
     return {
-        "id": asve_id,
+        "id": openaca_id,
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -23,7 +23,7 @@ def make_advisory(asve_id: str, ecosystem: str, name: str, fixed: str) -> dict:
 
 
 def test_match_npm_in_range():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="npm",
         name="@cyanheads/git-mcp-server",
@@ -33,13 +33,13 @@ def test_match_npm_in_range():
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-0001"
+    assert findings[0].advisory_id == "CVE-2026-0001"
     assert findings[0].component is ref
     assert findings[0].confidence == "high"
 
 
 def test_match_npm_at_fixed_version_excluded():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="npm",
         name="@cyanheads/git-mcp-server",
@@ -51,7 +51,7 @@ def test_match_npm_at_fixed_version_excluded():
 
 
 def test_match_npm_above_fixed_version_excluded():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="npm",
         name="@cyanheads/git-mcp-server",
@@ -64,7 +64,7 @@ def test_match_npm_above_fixed_version_excluded():
 
 def test_unparseable_version_emits_low_confidence():
     """`^1.0.0`-style spec can't resolve to a single version — flag it but don't drop it."""
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="npm",
         name="@cyanheads/git-mcp-server",
@@ -78,7 +78,7 @@ def test_unparseable_version_emits_low_confidence():
 
 
 def test_match_pypi_pinned():
-    advisories = [make_advisory("ASVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
+    advisories = [make_advisory("CVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
     ref = ComponentRef(
         ecosystem="PyPI",
         name="aws-mcp-server",
@@ -92,7 +92,7 @@ def test_match_pypi_pinned():
 
 
 def test_no_match_when_package_name_differs():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="npm",
         name="some-other-package",
@@ -104,7 +104,7 @@ def test_no_match_when_package_name_differs():
 
 
 def test_no_match_when_ecosystem_differs():
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         ecosystem="PyPI",
         name="@cyanheads/git-mcp-server",
@@ -119,9 +119,7 @@ def test_unpinned_npx_matches_affected_package_with_unknown_confidence():
     """The headline cross-layer behavior: an unpinned mcp.json npx launch
     of a known-vulnerable package emits an 'unknown' finding so the consumer
     knows to pin the version."""
-    advisories = [
-        make_advisory("ASVE-2026-0003", "npm", "@akoskm/create-mcp-server-stdio", "1.0.4")
-    ]
+    advisories = [make_advisory("CVE-2026-0003", "npm", "@akoskm/create-mcp-server-stdio", "1.0.4")]
     ref = ComponentRef(
         component_identity="mcp-stdio/npx-unpinned:@akoskm/create-mcp-server-stdio",
         source_manifest="mcp.json",
@@ -129,12 +127,12 @@ def test_unpinned_npx_matches_affected_package_with_unknown_confidence():
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-0003"
+    assert findings[0].advisory_id == "CVE-2026-0003"
     assert findings[0].confidence == "unknown"
 
 
 def test_unpinned_uvx_matches_pypi_advisory():
-    advisories = [make_advisory("ASVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
+    advisories = [make_advisory("CVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
     ref = ComponentRef(
         component_identity="mcp-stdio/uvx-unpinned:aws-mcp-server",
         source_manifest="mcp.json",
@@ -142,13 +140,13 @@ def test_unpinned_uvx_matches_pypi_advisory():
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-0004"
+    assert findings[0].advisory_id == "CVE-2026-0004"
     assert findings[0].confidence == "unknown"
 
 
 def test_binary_component_identity_does_not_match():
     """An mcp-stdio/binary:<path> identity has no package info; must not falsely match."""
-    advisories = [make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(
         component_identity="mcp-stdio/binary:/opt/local/bin/custom",
         source_manifest="mcp.json",
@@ -162,7 +160,7 @@ def test_in_range_multiple_event_windows():
     introduced/fixed events. Versions in each window must be detected; versions
     between windows must not be."""
     advisory = {
-        "id": "ASVE-2026-TEST",
+        "id": "OpenACA-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -202,7 +200,7 @@ def test_in_range_open_ended_no_fixed():
     """An advisory with no fixed event is still-unpatched — all versions at or
     after introduced are vulnerable."""
     advisory = {
-        "id": "ASVE-2026-TEST",
+        "id": "OpenACA-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -237,7 +235,7 @@ def test_in_range_last_affected_inclusive_bound():
     """last_affected closes a window inclusively: versions at and below the bound
     are vulnerable; versions above it must not be flagged as false positives."""
     advisory = {
-        "id": "ASVE-2026-TEST",
+        "id": "OpenACA-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -272,7 +270,7 @@ def test_in_range_last_affected_inclusive_bound():
 def test_in_range_limit_exclusive_bound():
     """limit event closes the window with an exclusive upper bound (version < limit)."""
     advisory = {
-        "id": "ASVE-2026-9999",
+        "id": "CVE-2026-9999",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-09T00:00:00Z",
@@ -305,13 +303,13 @@ def test_in_range_limit_exclusive_bound():
     assert len(match([ref("0.9.9")], [advisory])) == 0  # below introduced — not vulnerable
 
 
-def make_identity_advisory(asve_id: str, component_identity: str) -> dict:
+def make_identity_advisory(openaca_id: str, component_identity: str) -> dict:
     return {
-        "id": asve_id,
+        "id": openaca_id,
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-11T00:00:00Z",
-        "database_specific": {"asve": {"component_identity": component_identity}},
+        "database_specific": {"openaca": {"component_identity": component_identity}},
     }
 
 
@@ -319,7 +317,7 @@ def test_claude_command_identity_match():
     """claude-command refs must route to _match_by_identity, not _match_versioned.
     The parser sets both ecosystem+name (for inventory) but there are no version
     semantics — the advisory carries the target identity, not a version range."""
-    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/deploy")
+    advisory = make_identity_advisory("CVE-2026-9001", "claude-command/deploy")
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
@@ -329,13 +327,13 @@ def test_claude_command_identity_match():
     )
     findings = match(refs=[ref], advisories=[advisory])
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-9001"
+    assert findings[0].advisory_id == "CVE-2026-9001"
     assert findings[0].confidence == "high"
 
 
 def test_claude_agent_identity_match():
     """claude-agent refs route to _match_by_identity."""
-    advisory = make_identity_advisory("ASVE-2026-9002", "claude-agent/reviewer")
+    advisory = make_identity_advisory("CVE-2026-9002", "claude-agent/reviewer")
     ref = ComponentRef(
         ecosystem="claude-agent",
         name="reviewer",
@@ -345,13 +343,13 @@ def test_claude_agent_identity_match():
     )
     findings = match(refs=[ref], advisories=[advisory])
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-9002"
+    assert findings[0].advisory_id == "CVE-2026-9002"
     assert findings[0].confidence == "high"
 
 
 def test_claude_command_identity_mismatch_no_finding():
     """Different identity string — must not match even if ecosystem+name agree."""
-    advisory = make_identity_advisory("ASVE-2026-9001", "claude-command/other-command")
+    advisory = make_identity_advisory("CVE-2026-9001", "claude-command/other-command")
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
@@ -366,7 +364,7 @@ def test_claude_command_does_not_false_match_via_versioned_path():
     """Regression: before the fix, a claude-command ref with ecosystem+name would
     short-circuit to _match_versioned and potentially match an advisory whose
     affected[*].package.name happens to equal the command name. Must not fire."""
-    advisory = make_advisory("ASVE-2026-9003", "claude-command", "deploy", "2.0.0")
+    advisory = make_advisory("CVE-2026-9003", "claude-command", "deploy", "2.0.0")
     ref = ComponentRef(
         ecosystem="claude-command",
         name="deploy",
@@ -384,7 +382,7 @@ def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     """An advisory may list multiple ranges per affected entry (e.g.,
     discrete events). Same component+advisory pair should produce one
     finding, not one per range."""
-    advisory = make_advisory("ASVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")
+    advisory = make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")
     advisory["affected"][0]["ranges"].append(
         {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}
     )
@@ -403,7 +401,7 @@ def test_match_claude_plugin_in_range():
     """Plan 007: claude-plugin ecosystem flows through the existing
     _match_versioned path. Plugin advisories must fire when the ref carries
     ecosystem='claude-plugin' alongside name+version."""
-    advisories = [make_advisory("ASVE-2026-9999", "claude-plugin", "deployment-tools", "1.3.0")]
+    advisories = [make_advisory("CVE-2026-9999", "claude-plugin", "deployment-tools", "1.3.0")]
     ref = ComponentRef(
         ecosystem="claude-plugin",
         name="deployment-tools",
@@ -414,7 +412,7 @@ def test_match_claude_plugin_in_range():
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
-    assert findings[0].advisory_id == "ASVE-2026-9999"
+    assert findings[0].advisory_id == "CVE-2026-9999"
     assert findings[0].confidence == "high"
     # Plugin itself is direct — no attribution.
     assert findings[0].attributed_to is None
@@ -424,7 +422,7 @@ def test_match_claude_plugin_in_range():
 def test_finding_mirrors_component_attribution():
     """Per ADR-0006: Finding.attributed_to mirrors ComponentRef.attributed_to.
     Test both attribution-set and attribution-None cases."""
-    advisory = make_advisory("ASVE-2026-9998", "npm", "lodash", "5.0.0")
+    advisory = make_advisory("CVE-2026-9998", "npm", "lodash", "5.0.0")
 
     via_plugin = ComponentRef(
         ecosystem="npm",

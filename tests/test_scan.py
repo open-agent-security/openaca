@@ -238,7 +238,7 @@ def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
         ],
     )
     assert result.exit_code == 1, result.output
-    assert "loaded" in result.output and "ASVE overlay(s)" in result.output
+    assert "loaded" in result.output and "OpenACA overlay(s)" in result.output
     assert "package.json" in result.output
     assert "matched" in result.output and "finding(s):" in result.output
     assert "GHSA-3q26-f695-pp76" in result.output
@@ -285,12 +285,12 @@ def test_esc_data_encodes_message_metacharacters():
     assert _esc_data("plain message") == "plain message"
 
 
-# Plan 007: subcommand split tests. ASVE is pre-launch, so a subcommand is
+# Plan 007: subcommand split tests. OpenACA is pre-launch, so a subcommand is
 # required rather than preserving a no-subcommand compatibility shim.
 
 
 def test_repo_subcommand_explicit():
-    """Explicit `asve-scan repo` scans repository manifests."""
+    """Explicit `openaca-scan repo` scans repository manifests."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -305,7 +305,7 @@ def test_repo_subcommand_explicit():
 
 
 def test_no_subcommand_fails_with_usage():
-    """Invoking `asve-scan` without a subcommand should exit non-zero with
+    """Invoking `openaca-scan` without a subcommand should exit non-zero with
     Click's standard usage error. There is no back-compat fallback."""
     runner = CliRunner()
     result = runner.invoke(
@@ -345,10 +345,10 @@ def test_endpoint_subcommand_matches_claude_plugin_advisory(tmp_path):
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories_dir = tmp_path / "advisories"
     advisories_dir.mkdir()
-    (advisories_dir / "ASVE-2026-9999.yaml").write_text(
+    (advisories_dir / "CVE-2026-9999.yaml").write_text(
         """\
 schema_version: 1.7.5
-id: ASVE-2026-9999
+id: CVE-2026-9999
 type: vulnerability
 summary: test plugin advisory for plan 007
 modified: '2026-05-09T00:00:00Z'
@@ -366,7 +366,7 @@ affected:
     runner = CliRunner()
     from unittest.mock import patch
 
-    advisory = yaml.safe_load((advisories_dir / "ASVE-2026-9999.yaml").read_text())
+    advisory = yaml.safe_load((advisories_dir / "CVE-2026-9999.yaml").read_text())
 
     with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(
@@ -378,7 +378,7 @@ affected:
             ],
         )
     assert result.exit_code == 1, result.output
-    assert "ASVE-2026-9999" in result.output
+    assert "CVE-2026-9999" in result.output
 
 
 def test_endpoint_subcommand_verbose_lists_resolved_plugins():
@@ -604,7 +604,7 @@ def test_group_verbose_forwards_to_repo_subcommand():
             str(FIXTURES / "repos" / "exposed-mcp"),
         ],
     )
-    assert "loaded" in result.output and "ASVE overlay(s)" in result.output
+    assert "loaded" in result.output and "OpenACA overlay(s)" in result.output
 
 
 def test_subcommand_fail_on_takes_precedence_over_group():
@@ -728,7 +728,7 @@ def test_endpoint_subcommand_queries_osv_by_default(tmp_path):
 
 def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
     """Overlay-only V0 has no local matchable advisory DB. Scans query OSV for
-    versioned agent refs by default, then apply bundled ASVE agent-context
+    versioned agent refs by default, then apply bundled OpenACA agent-context
     overlays by alias."""
     from unittest.mock import patch
 
@@ -1381,7 +1381,7 @@ def test_scan_no_color_strips_ansi_from_text(tmp_path):
 def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
     """A vulnerable npm dep declared in a non-plugin repo (no
     .claude-plugin/plugin.json sibling) is classified as software-dependency
-    and suppressed — ASVE V0 is agent-composition analysis. The ACA framing
+    and suppressed — OpenACA V0 is agent-composition analysis. The ACA framing
     footer explains the silence.
 
     (GITHUB_ACTIONS auto-promotion is suppressed by the autouse fixture in
@@ -1451,19 +1451,19 @@ def test_stamp_source_sets_source_on_unstamped_records():
     # Record without any source yet — should be stamped.
     unstamped: dict = {"id": "GHSA-1", "database_specific": {}}
     # Record with source already set — should be left untouched.
-    prestamped: dict = {"id": "GHSA-2", "database_specific": {"asve": {"source": "other"}}}
+    prestamped: dict = {"id": "GHSA-2", "database_specific": {"openaca": {"source": "other"}}}
     # Record with no database_specific block — should get one.
     bare: dict = {"id": "GHSA-3"}
 
     corpus = [unstamped, prestamped, bare]
     _stamp_source(corpus, "osv.dev")
 
-    assert unstamped["database_specific"]["asve"]["source"] == "osv.dev"
-    assert prestamped["database_specific"]["asve"]["source"] == "other"  # not overwritten
-    assert bare["database_specific"]["asve"]["source"] == "osv.dev"
+    assert unstamped["database_specific"]["openaca"]["source"] == "osv.dev"
+    assert prestamped["database_specific"]["openaca"]["source"] == "other"  # not overwritten
+    assert bare["database_specific"]["openaca"]["source"] == "osv.dev"
     # overlay_source is set only by apply_overlays, not by _stamp_source.
-    assert "overlay_source" not in unstamped["database_specific"]["asve"]
-    assert "overlay_source" not in bare["database_specific"]["asve"]
+    assert "overlay_source" not in unstamped["database_specific"]["openaca"]
+    assert "overlay_source" not in bare["database_specific"]["openaca"]
 
 
 def test_repo_rejects_removed_db_option(tmp_path):

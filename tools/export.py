@@ -1,8 +1,8 @@
-"""Build the static ASVE overlay export.
+"""Build the static OpenACA overlay export.
 
 Loads every overlay YAML under `overlays/`, emits JSON per overlay under
 `dist/overlays/<id>.json`, copies the canonical schema to
-`dist/schema/asve.schema.json`, and produces three top-level
+`dist/schema/openaca.schema.json`, and produces three top-level
 index artifacts for downstream consumers:
 
 - `all.zip` — every JSON file + the schema, for offline mirroring (the
@@ -129,7 +129,7 @@ def build(overlays_root: Path, schema_path: Path, dist: Path) -> None:
         target = dist / "overlays" / f"{overlay['id']}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(_dump_json(overlay))
-    schema_target = dist / "schema" / "asve.schema.json"
+    schema_target = dist / "schema" / "openaca.schema.json"
     schema_target.parent.mkdir(parents=True, exist_ok=True)
     schema_target.write_text(schema_path.read_text())
     _emit_modified_csv(corpus, dist)
@@ -141,7 +141,7 @@ def build(overlays_root: Path, schema_path: Path, dist: Path) -> None:
 @click.command()
 @click.option(
     "--schema",
-    default="schema/asve.schema.json",
+    default="schema/openaca.schema.json",
     show_default=True,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
@@ -152,7 +152,7 @@ def build(overlays_root: Path, schema_path: Path, dist: Path) -> None:
     type=click.Path(path_type=Path),
 )
 def main(schema: Path, dist: Path) -> None:
-    """Build the ASVE static export under DIST."""
+    """Build the OpenACA static export under DIST."""
     build(Path(__file__).resolve().parent.parent / "overlays", schema_path=schema, dist=dist)
     click.echo(f"wrote export to {dist}")
 

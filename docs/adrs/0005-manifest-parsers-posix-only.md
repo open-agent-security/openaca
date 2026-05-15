@@ -12,7 +12,7 @@ superseded-by: null
 The manifest parsers in `tools/parsers/` (notably `mcp_json.py`'s
 `_classify_command`) decide whether a manifest's `command` field
 points at a known package launcher (`npx`, `uvx`, `uv`) or at an
-arbitrary binary. The classification controls whether ASVE emits a
+arbitrary binary. The classification controls whether OpenACA emits a
 PURL (and thus aliases an upstream CVE/GHSA) or falls to the
 `mcp-stdio/binary:*` fallback.
 
@@ -77,7 +77,7 @@ binary from `/opt/npx` and must not silently classify as the launcher.
 
 - **Read an OS hint from a sibling field or out-of-band config.**
   No such field exists in any current MCP config convention; would
-  require either inventing one or adding an ASVE CLI flag. Out of
+  require either inventing one or adding an OpenACA CLI flag. Out of
   V0 scope; logical place for V1.
 
 ## Consequences
@@ -94,7 +94,7 @@ What this costs:
 - Real Windows MCP configs (backslash paths, uppercase tokens,
   `.cmd`/`.exe` extensions other than the `Path.stem`-strippable
   ones) will not detect package versions. They fall to binary
-  fallback and ASVE emits an `mcp-stdio/binary:*` identity instead
+  fallback and OpenACA emits an `mcp-stdio/binary:*` identity instead
   of an aliased CVE/GHSA. Detection accuracy drops on Windows-only
   repositories.
 - Mitigated by: (1) MCP/agent infrastructure ecosystem skews POSIX
@@ -115,7 +115,7 @@ What to watch for:
   config field, CLI flag, or per-manifest probe) and revisit the
   classifier with explicit knowledge of which OS the config
   targets.
-- Telemetry (once ASVE has any) shows real-world Windows MCP
+- Telemetry (once OpenACA has any) shows real-world Windows MCP
   configurations being silently missed by detection.
 - A downstream consumer (e.g., a scanner integration) reports
   cross-platform parity as a hard requirement.

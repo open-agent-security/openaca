@@ -9,11 +9,11 @@ superseded-by: 0011
 
 ## Context
 
-ADR-0009 changed ASVE V0 from a vulnerability database to an
+ADR-0009 changed OpenACA V0 from a vulnerability database to an
 agent-context overlay corpus. The next scaling problem is corpus growth:
 OSV bulk dumps contain existing GHSA, CVE, PYSEC, and MAL records for
 MCP and other agent-stack components, but those records do not carry
-ASVE-specific context such as agent surfaces, agent impact, and
+OpenACA-specific context such as agent surfaces, agent impact, and
 agent-specific taxonomies. We need tooling to find candidate overlays
 without letting unreviewed or upstream-owned data enter `overlays/`.
 
@@ -23,23 +23,23 @@ Agentic Skills Top 10, OWASP LLM Top 10, and MITRE ATLAS.
 
 ## Decision
 
-ASVE V0 uses a deterministic seeding workflow. Seeders read OSV bulk
+OpenACA V0 uses a deterministic seeding workflow. Seeders read OSV bulk
 dumps or OSV `modified_id.csv` indexes, apply rule-based
 discovery/classification heuristics, and write reviewable files under
 `candidates/`. Candidate files may include review-only metadata and
 upstream excerpts, but canonical `overlays/` files remain minimal and
 scanner-visible. Promotion is an explicit human step through
-`asve-promote`, which projects a candidate into the canonical overlay
+`openaca promote`, which projects a candidate into the canonical overlay
 shape and validates it before writing `overlays/<upstream-id>.yaml`.
 
-ASVE-specific taxonomy mappings live under
-`database_specific.asve.taxonomies`. `owasp_agentic_top10` moves into
+OpenACA-specific taxonomy mappings live under
+`database_specific.openaca.taxonomies`. `owasp_agentic_top10` moves into
 that block, and optional taxonomy families can be added alongside it.
 CWE is not duplicated by default because upstream CVE/GHSA/OSV records
-already commonly carry CWE mappings. If ASVE adds a reviewed supplemental
+already commonly carry CWE mappings. If OpenACA adds a reviewed supplemental
 mapping later, it belongs under `taxonomies.supplemental_taxonomies`, not
 as an implicit override of upstream data. Malicious-package overlays use
-`database_specific.asve.threat_kind: malicious_package`; they do not use
+`database_specific.openaca.threat_kind: malicious_package`; they do not use
 a top-level `type: malicious_package`.
 
 ## Alternatives considered
@@ -57,8 +57,8 @@ a top-level `type: malicious_package`.
   upstream summaries/details, and evidence excerpts. Promotion must
   project into the canonical shape instead of moving files.
 - **Add `type: malicious_package`**: rejected for V0 because top-level
-  record type is part of upstream vulnerability-record semantics. ASVE's
-  overlay-specific classification belongs inside `database_specific.asve`.
+  record type is part of upstream vulnerability-record semantics. OpenACA's
+  overlay-specific classification belongs inside `database_specific.openaca`.
 - **Duplicate CWE in every overlay taxonomy block**: rejected because CWE
   is upstream-owned for aliased records. Duplicating it creates drift
   without adding agent context.
@@ -80,7 +80,7 @@ change is acceptable.
 ## When to revisit
 
 Revisit live LLM annotation when candidate volume makes manual review the
-primary bottleneck, or when ASVE expands into enough additional
+primary bottleneck, or when OpenACA expands into enough additional
 agent-stack ecosystems that deterministic candidates regularly exceed
 human review capacity. Revisit CWE handling if upstream records lack CWE
-coverage for a class of ASVE-native overlays.
+coverage for a class of OpenACA-native overlays.

@@ -21,7 +21,7 @@ registry entry, skill manifest, reusable behavior bundle, or
 cross-platform skill port. Do not apply it to every package, plugin, or
 MCP server.
 
-OWASP's mental model is useful for ASVE review: MCP describes how models
+OWASP's mental model is useful for OpenACA review: MCP describes how models
 talk to tools; Agentic Skills describes what reusable behavior bundles
 actually do. Skills encode workflow, permissions, tool orchestration,
 state, and sometimes executable setup/install paths.

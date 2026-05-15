@@ -1,4 +1,4 @@
-"""ASVE overlay loading and merge helpers."""
+"""OpenACA overlay loading and merge helpers."""
 
 from __future__ import annotations
 
@@ -45,12 +45,12 @@ def id_set(record: dict) -> set[str]:
 
 
 def apply_overlays(records: list[dict], overlays: list[dict]) -> list[dict]:
-    """Return OSV records with matching ASVE overlay metadata merged in.
+    """Return OSV records with matching OpenACA overlay metadata merged in.
 
     Matching is by alias-set intersection, not exact `id`: OSV can expose
     both `GHSA-*` and `CVE-*` records for the same underlying issue. The
     upstream record keeps authority over package ranges, severity, summaries,
-    and references; ASVE contributes only `database_specific.asve` metadata.
+    and references; OpenACA contributes only `database_specific.openaca` metadata.
     """
     out: list[dict] = []
     for record in records:
@@ -65,19 +65,19 @@ def apply_overlays(records: list[dict], overlays: list[dict]) -> list[dict]:
 
 
 def _merge_overlay(record: dict, overlay: dict) -> None:
-    overlay_asve = (overlay.get("database_specific") or {}).get("asve") or {}
-    if not isinstance(overlay_asve, dict):
+    overlay_openaca = (overlay.get("database_specific") or {}).get("openaca") or {}
+    if not isinstance(overlay_openaca, dict):
         return
 
     ds = record.setdefault("database_specific", {})
     if not isinstance(ds, dict):
         record["database_specific"] = ds = {}
-    asve = ds.setdefault("asve", {})
-    if not isinstance(asve, dict):
-        ds["asve"] = asve = {}
+    openaca = ds.setdefault("openaca", {})
+    if not isinstance(openaca, dict):
+        ds["openaca"] = openaca = {}
 
-    for key, value in overlay_asve.items():
+    for key, value in overlay_openaca.items():
         if key == "source":
             continue
-        asve[key] = deepcopy(value)
-    asve.setdefault("overlay_source", "asve.dev")
+        openaca[key] = deepcopy(value)
+    openaca.setdefault("overlay_source", "openaca.dev")

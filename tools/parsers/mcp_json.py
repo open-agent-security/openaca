@@ -13,7 +13,7 @@ JSON shapes here:
   Detected when every value is a dict with `command` or `url`.
 
 V0 detection scope is package-pinned stdio servers (npx/uvx + binary
-fallback) so ASVE can alias upstream CVE/GHSA records via PURL. URL/HTTP
+fallback) so OpenACA can alias upstream CVE/GHSA records via PURL. URL/HTTP
 transports, secret-surface fields (`env`/`headers`/`oauth`), and TOML
 configs are out of V0 scope.
 """

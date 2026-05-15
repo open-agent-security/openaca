@@ -85,33 +85,10 @@ makes the distinction explicit.
 Two ways to run the scanner. Both produce SARIF v2.1.0 output and
 the same set of findings.
 
-### GitHub Action
-
-Add to `.github/workflows/openaca.yml`:
-
-```yaml
-name: OpenACA
-on: [push, pull_request]
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: open-agent-security/openaca@v1
-        with:
-          fail-on: high           # high | any | none (default: any)
-          # target: .             # path to scan (default: workspace)
-          # sarif: results.sarif  # output path (default: openaca-results.sarif)
-```
-
-Findings appear as GitHub annotations on the PR. With GitHub
-Advanced Security, upload the SARIF to the Security tab via
-`github/codeql-action/upload-sarif@v3`.
-
 ### Standalone CLI
 
 The scanner is a normal Python package; run it against any local
-checkout without GitHub Actions. Two modes via subcommands:
+checkout. Two modes via subcommands:
 
 ```bash
 git clone https://github.com/open-agent-security/openaca.git
@@ -142,6 +119,15 @@ A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
 `openaca scan -v repo --target X ...` is equivalent to
 `openaca scan repo --target X ... -v`.
 
+Or via `uvx`, which clones, builds, and runs in one shot (no manual
+checkout):
+
+```bash
+uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo \
+    --target /path/to/your/repo \
+    --sarif results.sarif
+```
+
 ### Output formats
 
 `openaca scan` emits three formats; pick with `--format`:
@@ -160,14 +146,28 @@ A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
 addition to the chosen stdout format. `--no-color` disables ANSI in text
 output (color is also off automatically when stdout isn't a TTY).
 
-Or via `uvx`, which clones, builds, and runs in one shot (no manual
-checkout):
+### GitHub Action
 
-```bash
-uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo \
-    --target /path/to/your/repo \
-    --sarif results.sarif
+Add to `.github/workflows/openaca.yml`:
+
+```yaml
+name: OpenACA
+on: [push, pull_request]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-agent-security/openaca@v1
+        with:
+          fail-on: high           # high | any | none (default: any)
+          # target: .             # path to scan (default: workspace)
+          # sarif: results.sarif  # output path (default: openaca-results.sarif)
 ```
+
+Findings appear as GitHub annotations on the PR. With GitHub
+Advanced Security, upload the SARIF to the Security tab via
+`github/codeql-action/upload-sarif@v3`.
 
 `openaca scan --help` lists all options. Exit codes: `0` clean (or
 findings below `--fail-on` threshold), `1` findings at or above the

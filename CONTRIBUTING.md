@@ -90,7 +90,7 @@ uv run pytest
 
    uv run openaca seed /path/to/osv/all.zip
    uv run openaca seed --modified-index /path/to/osv/modified_id.csv \
-     --records-root /path/to/osv --state .openaca seed-state.json
+     --records-root /path/to/osv --state .openaca-seed-state.json
    uv run openaca seed /path/to/osv/all.zip \
      --llm-provider openai --llm-model "<model-name>"
    uv run openaca promote candidates/GHSA-XXXX-YYYY-ZZZZ.yaml

@@ -62,6 +62,34 @@ def test_collect_mcp_manifests_skips_dot_git_unconditionally(tmp_path):
     assert not any(".git" in str(p) for p in paths)
 
 
+def test_collect_mcp_manifests_includes_claude_plugin_plugin_json(tmp_path):
+    """.claude-plugin/plugin.json with inline mcpServers should be collected."""
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    plugin_data = {
+        "name": "my-plugin",
+        "mcpServers": {"remote": {"url": "https://example.com/mcp"}},
+    }
+    (plugin_dir / "plugin.json").write_text(json.dumps(plugin_data))
+
+    results = collect_mcp_manifests([tmp_path])
+    paths = [p for p, _ in results]
+    assert any(p.name == "plugin.json" for p in paths)
+    datas = [d for _, d in results]
+    assert any(isinstance(d.get("mcpServers"), dict) for d in datas)
+
+
+def test_collect_mcp_manifests_excludes_non_claude_plugin_json(tmp_path):
+    """plugin.json NOT under .claude-plugin/ should not be collected."""
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    (other_dir / "plugin.json").write_text('{"mcpServers": {"x": {"url": "https://x.example"}}}')
+
+    results = collect_mcp_manifests([tmp_path])
+    paths = [p for p, _ in results]
+    assert not any(p.name == "plugin.json" for p in paths)
+
+
 def test_posture_json_output_includes_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

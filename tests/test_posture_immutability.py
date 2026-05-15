@@ -45,7 +45,11 @@ from tools.posture.immutability import is_mutable_reference
         ("uv tool run mcp-bar@1.2.3", False),
         ("uv tool run mcp-bar", True),  # no version
         ("uv tool run mcp-bar>=1.0", True),  # range, not exact
-        ("uv --offline tool run mcp-bar==1.0.0", False),  # leading flag
+        ("uv --offline tool run mcp-bar==1.0.0", False),  # leading flag (no value)
+        # value-taking uv flags — the value token must be skipped too
+        ("uv --directory /tmp tool run mcp-bar==1.0.0", False),
+        ("uv --directory /tmp tool run mcp-bar", True),  # value-taking flag, no pin
+        ("uv --python 3.11 --offline tool run mcp-bar==2.0.0", False),  # mixed flags
         ("uv serve something", True),  # unrecognized subcommand
         # Local paths — never flag (not a remote install ref)
         ("./local/plugin", False),

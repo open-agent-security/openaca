@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from tools.parsers.mcp_json import _UV_VALUE_FLAGS
+
 _SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _DOCKER_DIGEST_RE = re.compile(r"@sha256:[a-f0-9]{64}$")
 _EXACT_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$")
@@ -43,7 +45,10 @@ def is_mutable_reference(ref: str) -> bool:
         tokens = ref.split()
         i = 1
         while i < len(tokens) and tokens[i].startswith("-"):
-            i += 1
+            if "=" not in tokens[i] and tokens[i] in _UV_VALUE_FLAGS:
+                i += 2  # value-taking flag: skip flag and its separate value token
+            else:
+                i += 1
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
             for j in range(i + 2, len(tokens)):
                 if not tokens[j].startswith("-"):

@@ -40,6 +40,14 @@ from tools.posture.immutability import is_mutable_reference
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             False,
         ),
+        # npx — flag forms: --package, -p, --package=value
+        ("npx --package @scope/pkg@1.2.3 -- cmd", False),  # pinned via --package
+        ("npx -p @scope/pkg@1.2.3 -- cmd", False),  # pinned via -p
+        ("npx --package=@scope/pkg@1.2.3 -- cmd", False),  # pinned via --package=
+        ("npx --package @scope/pkg -- cmd", True),  # --package but no version
+        # uvx — --from flag forms
+        ("uvx --from mcp-bar==1.0.0 mcp-bar", False),  # pinned via --from
+        ("uvx --from mcp-bar mcp-bar", True),  # --from but no version
         # uv tool run — equivalent to uvx; pinned spec is immutable
         ("uv tool run mcp-bar==1.0.0", False),
         ("uv tool run mcp-bar@1.2.3", False),

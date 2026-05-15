@@ -335,7 +335,7 @@ def _emit(
 ) -> None:
     """Dispatch to the chosen renderer and write to stdout."""
     if output_format == "github":
-        rendered = render_github(findings)
+        rendered = render_github(findings, posture_findings=posture_findings)
     elif output_format == "json":
         rendered = render_json(findings, advisory_index, stats, posture_findings=posture_findings)
     else:

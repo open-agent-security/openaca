@@ -401,6 +401,40 @@ def test_github_attributed_finding_includes_via_in_message():
     assert "(via claude-plugin/x@1)" in out
 
 
+def test_github_emits_posture_findings_as_notice_for_low_severity():
+    out = render_github([], posture_findings=[_posture(severity="low")])
+    lines = out.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("::notice ")
+    assert "openaca-posture-mutable-install-reference" in lines[0]
+
+
+def test_github_posture_severity_mapping():
+    low = _posture(rule_id="rule-low", severity="low")
+    medium = _posture(rule_id="rule-medium", severity="medium")
+    high = _posture(rule_id="rule-high", severity="high")
+    out = render_github([], posture_findings=[low, medium, high])
+    lines = out.splitlines()
+    assert len(lines) == 3
+    assert lines[0].startswith("::notice ")
+    assert lines[1].startswith("::warning ")
+    assert lines[2].startswith("::error ")
+
+
+def test_github_posture_appended_after_vuln_findings():
+    findings = [_finding("A", "p", "1", confidence="high")]
+    out = render_github(findings, posture_findings=[_posture(severity="low")])
+    lines = out.splitlines()
+    assert len(lines) == 2
+    assert lines[0].startswith("::error ")  # vuln finding
+    assert lines[1].startswith("::notice ")  # posture finding
+
+
+def test_github_posture_omitted_when_not_passed():
+    out = render_github([])
+    assert "posture" not in out
+
+
 # ── render_json ──────────────────────────────────────────────────────────────
 
 

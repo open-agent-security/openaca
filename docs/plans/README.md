@@ -17,7 +17,9 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 008 | [Component inventory: declared (repo) and active (fs) agent stack](008-component-inventory.md) | ✅ Done | 007 |
 | 009 | [Plugin-internal implementation deps (lockfile transitive scanning) + OSV.dev federation](009-plugin-internal-deps.md) | ✅ Done | 008 |
 | 010 | [Seed overlay pipeline](010-seed-overlay-pipeline.md) | ✅ Done | 009 |
-| 011 | [Minimal overlay schema](011-minimal-overlay-schema.md) | 🟡 Active | 010 |
+| 011 | [Minimal overlay schema](011-minimal-overlay-schema.md) | ✅ Done | 010 |
+| 012 | [Candidate annotation surface lock](012-candidate-annotation-surface-lock.md) | ✅ Done | 011 |
+| 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | 🟡 Active | — |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

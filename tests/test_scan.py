@@ -290,7 +290,7 @@ def test_esc_data_encodes_message_metacharacters():
 
 
 def test_repo_subcommand_explicit():
-    """Explicit `openaca-scan repo` scans repository manifests."""
+    """Explicit `openaca scan repo` scans repository manifests."""
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -305,7 +305,7 @@ def test_repo_subcommand_explicit():
 
 
 def test_no_subcommand_fails_with_usage():
-    """Invoking `openaca-scan` without a subcommand should exit non-zero with
+    """Invoking `openaca scan` without a subcommand should exit non-zero with
     Click's standard usage error. There is no back-compat fallback."""
     runner = CliRunner()
     result = runner.invoke(

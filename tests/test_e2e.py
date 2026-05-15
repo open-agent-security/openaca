@@ -72,7 +72,7 @@ def test_real_corpus_lints_clean():
 
 
 def test_real_corpus_exports_cleanly(tmp_path):
-    """`openaca-export` against the real corpus produces every artifact for every YAML."""
+    """`openaca export` against the real corpus produces every artifact for every YAML."""
     corpus = _load_corpus()
     expected_ids = {a["id"] for _, a in corpus}
 
@@ -184,7 +184,7 @@ def test_openaca_export_cli_against_real_corpus(tmp_path):
 def test_openaca_scan_cli_finds_real_advisory():
     """Plan 005 cross-layer wiring: parse_repo → matcher → SARIF, end-to-end.
 
-    Invokes the registered `openaca-scan` console script (the same path the
+    Invokes the registered `openaca scan` console script (the same path the
     Action's composite step runs) against the exposed-mcp fixture using the
     real `advisories/` corpus, and verifies it surfaces GHSA-3q26-f695-pp76 with
     a high-confidence finding. This is the V0 product promise across every
@@ -221,7 +221,7 @@ def test_openaca_scan_cli_finds_real_advisory():
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
     vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)
-    finding through openaca-scan. Exercises the pyproject parser, the
+    finding through openaca scan. Exercises the pyproject parser, the
     matcher, and SARIF emission together."""
     import json
 

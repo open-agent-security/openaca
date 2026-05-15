@@ -127,7 +127,7 @@ class Finding:
 def test_finding_mirrors_component_attribution():
     ref = ComponentRef(ecosystem="npm", name="x", version="1.0",
                        attributed_to="claude-plugin/foo@1.0.0")
-    advisories = [_make_advisory("OpenACA-2026-X", "npm", "x", "2.0")]
+    advisories = [_make_advisory("CVE-2026-X", "npm", "x", "2.0")]
     findings = match([ref], advisories)
     assert len(findings) == 1
     assert findings[0].attributed_to == "claude-plugin/foo@1.0.0"
@@ -221,7 +221,7 @@ def test_plugin_self_identity_carries_ecosystem():
 
 ```python
 def test_match_claude_plugin_in_range():
-    advisories = [_make_advisory("OpenACA-2026-Y", "claude-plugin", "deployment-tools", "1.3.0")]
+    advisories = [_make_advisory("CVE-2026-Y", "claude-plugin", "deployment-tools", "1.3.0")]
     ref = ComponentRef(ecosystem="claude-plugin", name="deployment-tools", version="1.2.0",
                        source_manifest="plugin.json", source_locator="$")
     findings = match([ref], advisories)
@@ -1084,7 +1084,7 @@ git commit -m "docs: ADR-0006 for openaca scan subcommands, attribution, claude-
 
 Add a test that runs `openaca scan fs` against the `tests/fixtures/installs/minimal/` fixture with an in-memory `claude-plugin` advisory in a tmp_path advisories dir. Assert:
 - exit code 1
-- OpenACA-2026-XXXX in output
+- CVE-2026-XXXX in output
 - `confidence == "high"` in the matched-component listing
 - (No `via ...` suffix because plugin-level findings are direct.)
 

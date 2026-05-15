@@ -326,7 +326,7 @@ bare skills (5):
   claude-skill/bootstrap-project
   ...
 matched 1 finding(s):
-  pkg:npm/@supabase/mcp-server@1.0.4 → OpenACA-2026-XXXX (high) via claude-plugin/supabase@0.1.6
+  pkg:npm/@supabase/mcp-server@1.0.4 → CVE-2026-XXXX (high) via claude-plugin/supabase@0.1.6
 ```
 
 `repo` mode `-v` gets the new components listed alongside existing manifest counts:

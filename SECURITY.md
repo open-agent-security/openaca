@@ -12,13 +12,9 @@ that mishandles a malicious manifest, a linter that crashes on crafted
 input, or a scanner path that exfiltrates secrets — please report it
 privately rather than opening a public issue.
 
-**Email:** `security@openaca.dev`. We acknowledge reports within 5
-business days.
-
-> **Note:** the `security@openaca.dev` mailbox goes live alongside the
-> public V0 launch. Until then, file reports as private security
-> advisories through the GitHub Security tab on
-> `open-agent-security/openaca`.
+File a [private security advisory via the GitHub Security
+tab](https://github.com/open-agent-security/openaca/security/advisories/new).
+We acknowledge reports within 5 business days.
 
 ## Reporting an agent-stack vulnerability
 

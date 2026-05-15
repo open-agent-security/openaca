@@ -39,20 +39,15 @@ Out of scope:
 
 ## How to report
 
-Email `security@openaca.dev` with:
+File a [private security advisory via the GitHub Security
+tab](https://github.com/open-agent-security/openaca/security/advisories/new).
+Include:
 
 - Affected component (name + version or commit SHA).
 - Reproduction steps or proof-of-concept.
 - Impact analysis: what an attacker can reach through the agent stack.
 - OWASP Agentic Top 10 categories you believe apply (`asi01`–`asi10`).
 - Whether you have already contacted the affected maintainer.
-
-Encrypted submissions: include a PGP key in your initial message; we
-will respond with our key and switch to encrypted exchange.
-
-> **Note:** the `security@openaca.dev` mailbox goes live alongside the
-> public V0 launch. Until then, file reports as security advisories
-> through the GitHub Security tab on `open-agent-security/openaca`.
 
 ## Process and timeline
 
@@ -120,5 +115,6 @@ OpenACA V0 is an OSS overlay corpus and scanner. We do not:
 
 ## Contact
 
-`security@openaca.dev` for vulnerability reports. For non-security
-questions, file a GitHub issue against the repo.
+For vulnerability reports, file a [private security advisory via the
+GitHub Security tab](https://github.com/open-agent-security/openaca/security/advisories/new).
+For non-security questions, file a GitHub issue against the repo.

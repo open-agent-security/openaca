@@ -7,9 +7,6 @@ components.
 
 > Agent-context overlays for upstream security advisories.
 
-> _Previously called ASVE; renamed May 2026 to reflect the Agent
-> Composition Analysis (ACA) category framing._
-
 ## Why OpenACA
 
 OpenACA is the open category and reference implementation for **Agent

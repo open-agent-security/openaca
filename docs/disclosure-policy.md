@@ -85,7 +85,7 @@ published → disputed → modified | upheld | withdrawn
 - **withdrawn**: OpenACA retracts the overlay (false-positive, duplicate,
   or out-of-scope). `evidence_level: withdrawn`.
 
-A disputed overlay always carries a public dispute history so consumers
+A disputed overlay always carries a public dispute history so users
 can see what changed and why.
 
 ## Attribution and credit

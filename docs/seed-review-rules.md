@@ -36,7 +36,7 @@ GHSAs, authz bugs, code execution flaws in agent-stack packages),
 Rationale: per ADR-0012, `threat_kind` flags genuinely malicious or
 backdoored packages. Ordinary vulnerabilities in agent-stack packages
 are vulnerabilities, not malware; setting `threat_kind` for them
-misroutes downstream consumers.
+misroutes downstream users.
 
 ## Structural rules (CI-enforced)
 

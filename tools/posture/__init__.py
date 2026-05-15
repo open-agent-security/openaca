@@ -53,9 +53,10 @@ def collect_mcp_manifests(
     Parse failures are silently dropped — these rules are best-effort and
     should never abort a scan.
 
-    When `include_gitignored=False`, paths matched by `<root>/.gitignore`
-    (and `.git/` always) are skipped, keeping posture scope consistent with
-    the main repo scan's gitignore filtering.
+    `.git/` is always skipped regardless of `include_gitignored`, consistent
+    with the main repo scanner (`parse_repo_grouped`). When
+    `include_gitignored=False`, paths matched by `<root>/.gitignore` are also
+    skipped, keeping posture scope consistent with the main repo scan.
     """
     out: list[tuple[Path, dict]] = []
     seen: set[Path] = set()
@@ -65,7 +66,7 @@ def collect_mcp_manifests(
         spec = None if include_gitignored else load_gitignore_spec(root)
         for name in _MCP_MANIFEST_NAMES:
             for path in root.rglob(name):
-                if not include_gitignored and is_ignored(path.relative_to(root), spec):
+                if is_ignored(path.relative_to(root), spec):
                     continue
                 resolved = path.resolve()
                 if resolved in seen:

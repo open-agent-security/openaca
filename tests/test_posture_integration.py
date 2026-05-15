@@ -6,6 +6,7 @@ import json
 
 from click.testing import CliRunner
 
+from tools.posture import collect_mcp_manifests
 from tools.scan import main as scan_main
 
 
@@ -44,6 +45,21 @@ def test_posture_on_emits_mutable_install():
     assert "openaca-posture-mutable-install-reference" in result.output
     # The fixture has an `sketchy-mcp` unpinned uvx entry but pinned others.
     assert "sketchy-mcp" in result.output
+
+
+def test_collect_mcp_manifests_skips_dot_git_unconditionally(tmp_path):
+    """`.git/` must be excluded even when include_gitignored=True (default)."""
+    dot_git = tmp_path / ".git" / "refs"
+    dot_git.mkdir(parents=True)
+    (dot_git / "mcp.json").write_text('{"mcpServers": {"evil": {"url": "http://x"}}}')
+
+    real = tmp_path / "mcp.json"
+    real.write_text('{"mcpServers": {"ok": {"command": "npx", "args": ["-y", "pkg@1.0.0"]}}}')
+
+    results = collect_mcp_manifests([tmp_path], include_gitignored=True)
+    paths = [p for p, _ in results]
+    assert real in paths
+    assert not any(".git" in str(p) for p in paths)
 
 
 def test_posture_json_output_includes_array(tmp_path):

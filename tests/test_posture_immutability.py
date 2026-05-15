@@ -55,6 +55,15 @@ from tools.posture.immutability import is_mutable_reference
         # http/https URLs (non-git) — handled by other rules
         ("https://example.com/mcp", False),
         ("http://example.com/mcp", False),
+        # git+ssh with userinfo (git@host) + SHA in '#' fragment — immutable
+        (
+            "git+ssh://git@github.com/org/repo.git#a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            False,
+        ),
+        # git+ssh with userinfo + branch name in '#' fragment — mutable
+        ("git+ssh://git@github.com/org/repo.git#main", True),
+        # git+ssh with userinfo + no fragment — mutable
+        ("git+ssh://git@github.com/org/repo.git", True),
     ],
 )
 def test_is_mutable_reference(ref: str, expected: bool):

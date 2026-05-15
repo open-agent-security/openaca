@@ -80,9 +80,11 @@ def _is_mutable_pkg_spec(spec: str) -> bool:
 
 def _is_mutable_git_ref(ref: str) -> bool:
     # git+https://host/x/y.git@<ref> or #<ref>
-    for sep in ("@", "#"):
-        # Use the LAST occurrence of the separator so we don't grab the @ in
-        # git+https://user@host/... patterns.
+    # Check '#' before '@': '#' is unambiguous (never appears in userinfo),
+    # whereas '@' can appear in SSH URLs as git@host — checking '#' first
+    # avoids a false mutable verdict for git+ssh://git@host/repo.git#<sha>.
+    # For '@'-style refs, rfind finds the last '@', skipping any userinfo one.
+    for sep in ("#", "@"):
         idx = ref.rfind(sep)
         if idx == -1:
             continue

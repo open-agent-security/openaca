@@ -1,5 +1,6 @@
-OpenACA Advisory Data is licensed under the
-Creative Commons Attribution 4.0 International License (CC-BY-4.0).
+OpenACA Overlay Data (the YAML files under `overlays/` and the static
+exports derived from them) is licensed under the Creative Commons
+Attribution 4.0 International License (CC-BY-4.0).
 
 You are free to:
 - Share — copy and redistribute the material in any medium or format.
@@ -14,5 +15,5 @@ Under the following terms:
 
 Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
 
-Attribution should reference: "OpenACA — Agent Stack Vulnerabilities and
-Exposures, https://openaca.dev"
+Attribution should reference: "OpenACA — Open Agent Composition
+Analysis, https://openaca.dev"

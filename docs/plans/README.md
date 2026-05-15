@@ -19,7 +19,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 010 | [Seed overlay pipeline](010-seed-overlay-pipeline.md) | ✅ Done | 009 |
 | 011 | [Minimal overlay schema](011-minimal-overlay-schema.md) | ✅ Done | 010 |
 | 012 | [Candidate annotation surface lock](012-candidate-annotation-surface-lock.md) | ✅ Done | 011 |
-| 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | 🟡 Active | — |
+| 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | ✅ Done | — |
+| 014 | [Posture findings (scanner-side hygiene rules)](014-posture-findings.md) | 🟡 Active | 007, 008, 009 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

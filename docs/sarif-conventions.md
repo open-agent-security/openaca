@@ -2,7 +2,7 @@
 
 OpenACA emits SARIF v2.1.0 with OpenACA-specific extensions under
 `runs[].results[].properties`. This document is the contract for
-downstream consumers.
+downstream users.
 
 ## Property reference
 

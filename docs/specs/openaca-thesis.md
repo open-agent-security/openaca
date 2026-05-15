@@ -1,9 +1,8 @@
 # OpenACA Thesis
 
-> Companion to [`openaca-v0-design.md`](openaca-v0-design.md). The design doc says
-> **what** V0 ships. This doc says **why** the project exists, **what gap** it
-> fills, and **why the OSS authority position is durable** as adjacent
-> ecosystems evolve.
+> Companion to [`openaca-v0-design.md`](openaca-v0-design.md). The design doc
+> says **what** V0 ships. This doc says **why** the project exists and **what
+> it contributes** to the agent-stack security ecosystem.
 
 ## What OpenACA is
 
@@ -62,7 +61,7 @@ parsers that traditional SCA tooling doesn't cover.
    tooling misses them because the package never enters `package.json` /
    `requirements.txt`.
 3. **A vendor-neutral, mirrorable, openly licensed agent-context corpus**
-   that consumers can rely on without depending on any single scanner
+   that users can rely on without depending on any single scanner
    vendor's data pipeline.
 
 OpenACA addresses those three gaps: **the open, OSV-compatible
@@ -91,7 +90,7 @@ cannot:
    manifest survey across N projects flags every install. Pure analysis would
    have to re-find the issue on each scan.
 2. **Fix-version tracking.** Upstream records carry `affected[]` ranges and
-   fix versions; consumers can auto-PR the bump. Analysis flags the pattern
+   fix versions; users can auto-PR the bump. Analysis flags the pattern
    but rarely tells you the path to fixed.
 3. **Speed at fleet scale.** Lookup is O(N) hash-against-DB. Analysis is O(N
    × analysis-time). For an org with many agent installations, the difference
@@ -125,10 +124,10 @@ Three things OpenACA overlays contain that a generic OSV/GHSA record does not:
 
 1. **`taxonomies{}`** — mapping of OpenACA-owned agent-context taxonomy
    families, including `owasp_agentic_top10[]` entries referencing
-   ASI01–ASI10 categories. Lets consumers triage findings by the framework
+   ASI01–ASI10 categories. Lets users triage findings by the framework
    category instead of just CVE list.
 2. **`evidence_level`** — enum `confirmed | likely | research | disputed |
-   withdrawn`. Lets consumers filter noise. Auto-fix on confirmed,
+   withdrawn`. Lets users filter noise. Auto-fix on confirmed,
    ticket-only on research-grade.
 3. **`threat_kind`** — a narrow OpenACA-owned classification for records
    where upstream OSV shape is too generic. V0 only allows
@@ -144,72 +143,70 @@ OSV reserves that namespace exactly for per-database extensions.
 OpenACA-aware tooling reads the overlay; OSV-compliant generic tooling
 ignores it. **Backwards-compatible by design.**
 
-## Why this role holds up over time
+## What OpenACA contributes
 
-Adjacent ecosystems (notably GHSA / OSV.dev) could expand to cover parts of
-what OpenACA does today. The plausible expansion path is **OSV-Scanner /
-Dependabot adding parsers for `mcp.json`, `.claude-plugin/plugin.json`,
-etc.** That would close the *manifest-parsing* gap. OpenACA's role does
-*not* depend on that gap staying open.
+Two concrete contributions OpenACA brings to the agent-stack security stack
+that don't exist elsewhere today:
 
-Two layers survive an OSV expansion:
+1. **The agent-context overlay schema.** A namespace
+   (`database_specific.openaca`) for agent-stack taxonomy mappings, evidence
+   level, and a narrow malicious-package threat kind, layered on top of
+   upstream OSV records. The schema is the durable contribution: even when
+   adjacent ecosystems incorporate similar metadata, they will use OpenACA's
+   namespace and definitions.
+2. **Manifest parsers and install-time component identity.** PURL is a
+   strong substrate for components distributed via npm, PyPI, GitHub
+   releases, Docker. It doesn't (today) reach Claude Code plugins
+   distributed via marketplace.json indirection, Cursor extensions, Windsurf
+   plugins, or stdio-launched MCP servers identified by command + args.
+   OpenACA's parsers and `ComponentRef` identity model follow install-time
+   identity, not source-tree identity. The longer-term direction is to
+   contribute these patterns back to standards bodies (PURL types, OSV
+   schema), with OpenACA as the working reference.
 
-1. **The agent-context overlay.** OSV/GHSA's data model is generic; they have
-   no obvious reason to add an agent-context extension. OpenACA = the schema
-   authority for reviewed agent-stack taxonomy mappings and evidence level.
-   Even if OSV ingests OpenACA overlays, they do so under the
-   `database_specific.openaca` namespace OpenACA defines.
-2. **Non-PURL component identity.** PURL is a strong substrate for components
-   distributed via npm, PyPI, GitHub releases, Docker. It does not (today)
-   reach Claude Code plugins distributed via marketplace.json indirection,
-   Cursor extensions distributed via Cursor's marketplace, Windsurf plugins,
-   or stdio-launched MCP servers identified by command + args. OpenACA's
-   manifest parsers and `ComponentRef` identity model follow install-time
-   identity, not source-tree identity. Promoting these to standard PURL
-   types is a future standards proposal; OpenACA's native identity moves now.
+Both are explicitly *additive* to OSV / GHSA / Dependabot. The substrate
+those projects steward — vulnerability identity, affected ranges, severity,
+fixes — is upstream of OpenACA. OpenACA reads from them and contributes back
+the agent-stack layer.
 
-These are **operational** advantages, not structural impossibilities. The
-defenses are:
+## What makes OpenACA useful
 
-- **Adoption** — first credible mover on the overlay schema becomes the
-  convention.
-- **Curation speed** — a focused project iterating on agent-stack overlays
-  ships faster than a general-purpose security database adding bespoke
-  extensions.
-- **Domain specificity** — OpenACA *is* agent-infrastructure; GHSA is
-  general. A consumer asking *"what's my agent-tool-hijack exposure"* gets a
-  clean answer from OpenACA; from GHSA, they have to reconstruct it from
-  generic CVE records.
-- **Schema authority via standards proposal** — OpenACA's
-  `database_specific.openaca` extension and component-identity conventions
-  are candidate inputs to the OSV schema standardization process. Even if a
-  successor convention is eventually upstreamed into OSV proper, OpenACA
-  drove its definition.
+A few practical reasons users reach for OpenACA today, even though the
+underlying upstream records are public:
+
+- **Domain focus.** OpenACA is agent-infrastructure-specific. A user
+  asking *"what's my agent-tool-hijack exposure?"* gets a clean answer from
+  OpenACA's taxonomy; from a generic CVE feed they have to reconstruct it.
+- **Manifest coverage.** OpenACA's parsers read agent-installation
+  manifests (`mcp.json`, `.claude-plugin/plugin.json`, etc.) that
+  general-purpose SCA tooling doesn't parse today.
+- **Iteration speed.** A focused project iterating on agent-stack overlays
+  ships faster than waiting on agent-context fields to land in a
+  general-purpose security database.
+- **Standards path.** The schema namespace and identity conventions are
+  candidate inputs to broader standardization (PURL, OSV). OpenACA is the
+  open implementation those proposals reference.
 
 ## Why OSS
 
-OpenACA's value depends on being the neutral, vendor-independent overlay
-substrate for agent infrastructure. OSS is not a generosity choice; it is
-how the substrate works.
+OpenACA is open source because that's how a shared security substrate
+actually works.
 
-1. **Adoption is what the role rests on.** The operational durability
-   factors (adoption, curation speed, domain specificity, schema authority)
-   all require ingestion to be friction-free for everyone — scanners,
-   aggregators, downstream tooling, individual researchers. CC-BY-4.0
-   (matching OSV.dev) is the data-license norm; anything more restrictive
-   forecloses the very adoption the project depends on.
-2. **Trust accrues to neutral sources.** Vuln overlays work because
-   consumers trust them as neutral. A closed OpenACA forfeits the
-   vendor-neutrality differentiator and looks indistinguishable from any
+1. **Friction-free ingestion.** Scanners, aggregators, downstream tooling,
+   and individual researchers should be able to pull the corpus without
+   asking anyone's permission. CC-BY-4.0 (matching OSV.dev) is the
+   data-license norm; anything more restrictive blocks the project from
+   doing its job.
+2. **Neutrality.** Vuln databases work because users trust them as
+   neutral. An open corpus stays neutral; a closed one looks like any
    single vendor's private feed.
-3. **Standards leverage.** The agent-context overlay is most valuable if it
-   becomes the convention everyone adopts. Standards spread from open
-   canonical implementations. A closed OpenACA would prompt larger players
-   to fork an open competitor and the schema-authority play disappears.
-4. **Curation network effects.** Security researchers, individual
-   maintainers, and vendor security teams contribute to open vuln databases
-   (GHSA, OSV) but rarely to closed ones. The cost-to-value ratio of
-   curation is much better with open contribution.
+3. **Shared schema.** The agent-context overlay is most useful when it's a
+   convention everyone reads and writes the same way. Shared schemas spread
+   from open reference implementations.
+4. **Contribution flow.** Security researchers, individual maintainers, and
+   vendor security teams contribute to open vuln databases (GHSA, OSV)
+   regularly; closed ones rarely see that kind of contribution. Open is
+   simply the format the community already operates in.
 
 License decisions:
 
@@ -217,7 +214,7 @@ License decisions:
   project that may be incorporated into larger systems. See
   [ADR-0001](../adrs/0001-licenses.md).
 - **Overlay data: CC-BY-4.0.** Matches OSV.dev; avoids share-alike viral
-  terms blocking mixed-license downstream consumers. See
+  terms blocking mixed-license downstream users. See
   [ADR-0001](../adrs/0001-licenses.md).
 
 ## V0 → V1 expansion path
@@ -231,28 +228,8 @@ License decisions:
 | **V1 hash-based identity** | Content-hash-keyed overlays for skill manifests, exported flows, and copy-pasted IDE rule templates. |
 
 V0 is the credibility floor. V1 is when OpenACA becomes the corpus
-consumers expect to query, not just an archive of overlays on existing
+users expect to query, not just an archive of overlays on existing
 records.
-
-## Out of scope (anywhere in this thesis)
-
-OpenACA-the-OSS-project covers schema, overlay corpus, manifest parsers,
-linter, static export, and reference scanner. It does **not** cover (now,
-or in any phase of the OSS roadmap):
-
-- Behavioral / runtime failure cataloging (different persona; covered by
-  AVID and similar projects).
-- Generative-AI failure evidence at large (model bias, hallucination
-  taxonomies, etc. — outside scope).
-- Agent-runtime monitoring or instrumented detection.
-- Closed detection-rule formats specific to one scanner.
-- Public benchmarking of scanners or scanner leaderboards.
-- Minting vulnerability IDs in a separate `OPENACA-` namespace.
-
-Out-of-scope items remain so even if they would clear additional value;
-scope discipline is itself part of the thesis. OpenACA is *the open
-agent-context overlay substrate*. Other layers in the agent-security stack
-are other people's work.
 
 ## References
 

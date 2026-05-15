@@ -317,32 +317,6 @@ Sample overlay:
 Schema source of truth:
 [`schema/openaca.schema.json`](schema/openaca.schema.json).
 
-### Local annotation via Claude Code (subscription quota)
-
-For human-in-the-loop triage without burning API credits:
-
-1. Run the deterministic seeder to populate `candidates/`:
-   ```
-   uv run openaca seed candidates/ --no-llm
-   ```
-2. Copy the skill template into your Claude Code skills directory:
-   ```
-   cp -r examples/skills/claude/openaca-candidate-review ~/.claude/skills/
-   ```
-3. From a Claude Code session in this repo, invoke the skill:
-   ```
-   /openaca-candidate-review candidates/
-   ```
-   The agent reads `docs/seed-review-rules.md` and
-   `docs/frameworks/*.md`, applies them to each candidate, and runs
-   `openaca lint` on the result. See
-   [`docs/seed-review-rules.md`](docs/seed-review-rules.md) for the
-   exact editable surface (`taxonomies` + `evidence_level` only;
-   everything else is filled by the seeder or comes from upstream).
-
-API-mode annotation (`--llm-provider openai|anthropic`) remains
-available for CI and batch runs.
-
 ## Status
 
 V0, in development. See [`docs/specs/openaca-thesis.md`](docs/specs/openaca-thesis.md)

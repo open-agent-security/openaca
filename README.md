@@ -47,9 +47,10 @@ OpenACA fills two gaps:
    Agentic Top 10, OWASP MCP Top 10, MITRE ATLAS), evidence level, and
    a narrow malicious-package threat kind.
 
-OpenACA does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
-vulnerability identity, affected ranges, severity, and fixes. OpenACA owns
-the agent-stack overlay and the manifest parsers.
+OpenACA does not mint vulnerability IDs in V0. Vulnerability identity,
+affected ranges, severity, and fixes come from upstream OSV/GHSA/CVE
+records. OpenACA contributes the agent-stack overlay schema and the
+manifest parsers on top.
 
 ## Two scan modes
 
@@ -305,12 +306,12 @@ Be honest about what OpenACA V0 doesn't see:
   (`GHSA-*`, `CVE-*`, `PYSEC-*`, etc.).
 - **Aliases**: overlays list known equivalent IDs so they can merge
   with any OSV record whose alias set intersects.
-- **Severity and fixes**: owned by upstream OSV/GHSA/CVE records, not
-  duplicated in OpenACA overlays.
-- **Taxonomies**: `database_specific.openaca.taxonomies` carries OpenACA-owned
-  mappings such as OWASP Agentic Top 10 (`asi01`–`asi10`) and OWASP MCP
-  Top 10 (`mcp01:2025`–`mcp10:2025`). CWE is not duplicated by default
-  when upstream already provides it.
+- **Severity and fixes**: come from upstream OSV/GHSA/CVE records and
+  are not duplicated in OpenACA overlays.
+- **Taxonomies**: `database_specific.openaca.taxonomies` carries
+  OpenACA-defined mappings such as OWASP Agentic Top 10 (`asi01`–`asi10`)
+  and OWASP MCP Top 10 (`mcp01:2025`–`mcp10:2025`). CWE is not duplicated
+  by default when upstream already provides it.
 - **Agent context**: `database_specific.openaca` carries
   `component_type`, `surfaces`, `agent_impact`, and evidence metadata.
 
@@ -340,7 +341,7 @@ For human-in-the-loop triage without burning API credits:
    `openaca lint` on the result. See
    [`docs/seed-review-rules.md`](docs/seed-review-rules.md) for the
    exact editable surface (`taxonomies` + `evidence_level` only;
-   everything else is seeder-owned or upstream-owned).
+   everything else is filled by the seeder or comes from upstream).
 
 API-mode annotation (`--llm-provider openai|anthropic`) remains
 available for CI and batch runs.

@@ -59,9 +59,10 @@ uv run pytest
    `overlays/GHSA-XXXX-YYYY-ZZZZ.yaml` or `overlays/CVE-YYYY-NNNN.yaml`.
    Do not mint an `OpenACA-YYYY-NNNN` ID in V0.
 
-2. **Write only the OpenACA overlay block.** OSV/GHSA/CVE owns
-   vulnerability identity, affected ranges, severity, fixes, summary,
-   and details. OpenACA overlays add reviewed agent-context metadata:
+2. **Write only the OpenACA overlay block.** Vulnerability identity,
+   affected ranges, severity, fixes, summary, and details come from the
+   upstream OSV/GHSA/CVE record. OpenACA overlays add reviewed
+   agent-context metadata:
    - `taxonomies`: standards-based taxonomy mappings such as
      `owasp_agentic_top10` (`asi01`–`asi10`) and `owasp_mcp_top10`
      (`mcp01:2025`–`mcp10:2025`).

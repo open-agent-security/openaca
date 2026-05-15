@@ -5,26 +5,35 @@
 > fills, and **why the OSS authority position is durable** as adjacent
 > ecosystems evolve.
 
+## What OpenACA is
+
+**OpenACA — Open Agent Composition Analysis.** The open category and reference
+implementation for *Agent Composition Analysis (ACA)*: identifying the
+versioned plugins, MCP servers, skills, and agent-framework components an
+AI agent stack is composed of, and matching them against known security
+records.
+
+ACA is the agent-stack analogue of Software Composition Analysis (SCA): SCA
+inventories your library tree from `package.json` / `requirements.txt`; ACA
+inventories your agent stack from `mcp.json`, `.claude-plugin/plugin.json`,
+`.claude/settings.json`, and similar agent-installation manifests. The two
+layers stack — they answer different questions about different artifacts.
+
 ## Tagline
 
 > **Open agent-context overlays for upstream security advisories.**
 
 ## One-paragraph thesis
 
-OpenACA is the open, agent-context overlay layer for AI agent infrastructure:
-it resolves agent-installation manifests (`mcp.json`,
-`.claude-plugin/plugin.json`, `.claude/settings.json`, and similar) to
-component identities, matches them against OSV-compatible upstream records
-(GHSA / CVE / OSV / PYSEC / MAL), and adds agent-context metadata for triage.
-OpenACA does not mint vulnerability IDs; upstream sources own identity,
-affected ranges, severity, and fixes. OpenACA owns the overlay
-(`database_specific.openaca`) and the manifest parsers that traditional SCA
-tooling doesn't cover.
+OpenACA is the open, OSV-compatible overlay layer for Agent Composition
+Analysis: it resolves agent-installation manifests to component identities,
+matches them against upstream records (GHSA / CVE / OSV / PYSEC / MAL), and
+adds agent-context metadata for triage. OpenACA does not mint vulnerability
+IDs; upstream sources own identity, affected ranges, severity, and fixes.
+OpenACA owns the overlay (`database_specific.openaca`) and the manifest
+parsers that traditional SCA tooling doesn't cover.
 
-## What's covered, what isn't
-
-Three honest facts about what's already covered in the agent-stack security
-space:
+## What's already covered
 
 1. **Versioned-package advisories on npm/PyPI are already covered by GHSA.**
    When an MCP server is published as `@modelcontextprotocol/server-X` on npm
@@ -39,7 +48,7 @@ space:
    are the standard reference. OpenACA consumes this taxonomy; it does not
    redefine it.
 
-Three honest facts about what is *not* covered:
+## What's not already covered
 
 1. **Plugin / marketplace component records with stable versioned
    identifiers.** Claude Code plugins (`.claude-plugin/plugin.json` carries an
@@ -61,20 +70,22 @@ agent-context overlay corpus that extends SCA to plugin / MCP / marketplace
 manifests, with OWASP ASI category mapping and evidence-grade triage
 metadata.**
 
-## SAST and SCA, layered
+## SAST, SCA, and ACA — layered
 
-The agent-stack security stack has two complementary layers, just like
-traditional software security.
+The agent-stack security stack has three complementary layers, mirroring the
+SAST/SCA split familiar from traditional software security.
 
-| Layer | What it does | Knowledge source | Examples |
+| Layer | What it does | Artifact | Examples |
 |---|---|---|---|
-| **SAST** (artifact analysis) | Inspects an artifact for unsafe patterns | Rules + analysis logic | Pattern-checking scanners for MCP servers, plugin manifests, skill content, IDE configs |
-| **SCA** (database lookup) | Identifies third-party components by version, looks them up against a vuln DB | Database + parsers | OSV-Scanner, Trivy, Dependabot for traditional packages; **OpenACA + upstream OSV for agent-stack manifests** |
+| **SAST** | Inspects an artifact for unsafe patterns | Source code, configs, manifests | Pattern-checking scanners for MCP servers, plugin manifests, skill content, IDE configs |
+| **SCA** (Software Composition Analysis) | Identifies third-party library components by version, looks them up against a vuln DB | `package.json`, `requirements.txt`, lockfiles | OSV-Scanner, Trivy, Dependabot |
+| **ACA** (Agent Composition Analysis) | Identifies third-party agent-stack components by version, looks them up against a vuln DB | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries | **OpenACA + upstream OSV** |
 
-These layers stack. They do not compete. Mature security tooling runs both
-because they catch different signal types.
+These layers stack. They do not compete. Mature security tooling runs all
+three because they catch different signal types.
 
-What SCA gets you that pure artifact analysis cannot:
+What composition-analysis (SCA / ACA) gets you that pure artifact analysis
+cannot:
 
 1. **Disclosure-time alerting.** A vuln is disclosed today; tomorrow your
    manifest survey across N projects flags every install. Pure analysis would
@@ -91,16 +102,16 @@ What SCA gets you that pure artifact analysis cannot:
    install a known-vulnerable component?"* before the install lands.
 6. **Audit trail.** *"Were we exposed to CVE-2026-20205 between March and
    May?"* — a DB + lockfile history answers it.
-7. **Vendor-neutral baseline.** SCA decisions reduce to *"version X has vuln
-   Y"* — same answer regardless of scanner. The DB is the shared substrate
-   everyone agrees on.
+7. **Vendor-neutral baseline.** Composition-analysis decisions reduce to
+   *"version X has vuln Y"* — same answer regardless of scanner. The DB is
+   the shared substrate everyone agrees on.
 
 Plugins, MCP servers, and skills are typically *not your code*. The most
 actionable signal isn't *"this third-party thing has unsafe patterns"* — it's
 *"this third-party thing has a publicly disclosed vuln with a fix version."*
-That is an SCA finding by definition. Agent-installation manifests
-(`mcp.json`, `.claude-plugin/plugin.json`) are lockfile-equivalent: they
-carry version semantics. The substrate SCA needs already exists in the
+That is a composition-analysis finding by definition. Agent-installation
+manifests (`mcp.json`, `.claude-plugin/plugin.json`) are lockfile-equivalent:
+they carry version semantics. The substrate ACA needs already exists in the
 format. OpenACA is the agent-context overlay that closes the loop.
 
 ## What OpenACA adds beyond upstream OSV

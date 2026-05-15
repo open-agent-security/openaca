@@ -1,8 +1,8 @@
-# OpenACA
+# OpenACA — Open Agent Composition Analysis
 
-**Agent Composition Analysis** — OSV-compatible agent-context overlays
-and a reference scanner for AI agent infrastructure: plugins, MCP
-servers, skills, agent frameworks, model proxies, and runtime
+**Agent Composition Analysis (ACA)** — OSV-compatible agent-context
+overlays and a reference scanner for AI agent infrastructure: plugins,
+MCP servers, skills, agent frameworks, model proxies, and runtime
 components.
 
 > Agent-context overlays for upstream security advisories.
@@ -12,20 +12,29 @@ components.
 
 ## Why OpenACA
 
-OpenACA is **Agent Composition Analysis (ACA)**, not general Software
-Composition Analysis (SCA). It is targeted at the agent stack: which
-plugins, MCP servers, skills, hooks, and commands compose an agent —
-and which of those have known security advisories. For general
-software dependency scans (your app's transitive npm/PyPI tree, your
-container image, etc.), use a general-purpose SCA scanner alongside
-OpenACA; the layers stack.
+OpenACA is the open category and reference implementation for **Agent
+Composition Analysis (ACA)**: identifying the versioned plugins, MCP
+servers, skills, and framework components an agent stack is composed of,
+and matching them against known security records.
 
-Traditional Software Composition Analysis (SCA) reads `package.json`
-and lockfiles. Agents install components a different way: an MCP
-server invoked from `mcp.json` via `uvx package==1.4.0`, a Claude
-Code plugin declared in `.claude-plugin/plugin.json`, a skill bundle
-referenced by stable identifier. Most general-purpose SCA scanners do
-not parse those manifests today.
+ACA is the agent-stack analogue of Software Composition Analysis (SCA):
+
+| Layer | Inventories | From these manifests |
+|---|---|---|
+| **SCA** | Your library tree | `package.json`, `requirements.txt`, lockfiles |
+| **ACA** | Your agent stack | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries |
+
+The two stack — they answer different questions about different
+artifacts. For general software dependency scans (your app's transitive
+npm/PyPI tree, your container image, etc.), use a general-purpose SCA
+scanner alongside OpenACA.
+
+Traditional SCA tooling reads `package.json` and lockfiles. Agents
+install components a different way: an MCP server invoked from
+`mcp.json` via `uvx package==1.4.0`, a Claude Code plugin declared in
+`.claude-plugin/plugin.json`, a skill bundle referenced by stable
+identifier. Most general-purpose SCA scanners do not parse those
+manifests today.
 
 OpenACA fills two gaps:
 
@@ -34,10 +43,9 @@ OpenACA fills two gaps:
    `claude_desktop_config.json`, `.claude-plugin/plugin.json`,
    `.claude/settings.json`, `pyproject.toml`, `package.json`.
 2. **Agent-context metadata** layered on top of existing
-   CVE/GHSA/OSV records: `component_type`, `surfaces`,
-   `agent_impact` (e.g., `repo_write`, `credential_exfiltration`,
-   `tool_hijack`), and agent-context taxonomy mappings such as OWASP
-   Agentic Top 10.
+   CVE/GHSA/OSV records: agent-context taxonomy mappings (OWASP
+   Agentic Top 10, OWASP MCP Top 10, MITRE ATLAS), evidence level, and
+   a narrow malicious-package threat kind.
 
 OpenACA does not mint vulnerability IDs in V0. OSV/GHSA/CVE own
 vulnerability identity, affected ranges, severity, and fixes. OpenACA owns

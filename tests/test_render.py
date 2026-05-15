@@ -689,7 +689,7 @@ def test_tree_marks_affected_leaves_with_finding_id():
 def test_tree_marks_plugin_header_when_plugin_advisory_matches():
     plugin = _plugin_ref("supabase", "0.1.0")
     finding = Finding(
-        advisory_id="OpenACA-2026-XXXX",
+        advisory_id="CVE-2026-XXXX",
         component=plugin,
         confidence="high",
         reason="match",
@@ -698,7 +698,7 @@ def test_tree_marks_plugin_header_when_plugin_advisory_matches():
     # Header line carries the marker; the empty-plugin "(no bundled)" line
     # is separate.
     plugin_line = [line for line in out.splitlines() if "claude-plugin/supabase@0.1.0" in line][0]
-    assert "[! OpenACA-2026-XXXX]" in plugin_line
+    assert "[! CVE-2026-XXXX]" in plugin_line
 
 
 def test_tree_ascii_fallback_uses_ascii_chars():

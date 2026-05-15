@@ -160,7 +160,7 @@ def test_in_range_multiple_event_windows():
     introduced/fixed events. Versions in each window must be detected; versions
     between windows must not be."""
     advisory = {
-        "id": "OpenACA-2026-TEST",
+        "id": "CVE-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -200,7 +200,7 @@ def test_in_range_open_ended_no_fixed():
     """An advisory with no fixed event is still-unpatched — all versions at or
     after introduced are vulnerable."""
     advisory = {
-        "id": "OpenACA-2026-TEST",
+        "id": "CVE-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",
@@ -235,7 +235,7 @@ def test_in_range_last_affected_inclusive_bound():
     """last_affected closes a window inclusively: versions at and below the bound
     are vulnerable; versions above it must not be flagged as false positives."""
     advisory = {
-        "id": "OpenACA-2026-TEST",
+        "id": "CVE-2026-TEST",
         "type": "vulnerability",
         "summary": "test",
         "modified": "2026-05-06T00:00:00Z",

@@ -133,9 +133,11 @@ uv run pytest
 For human-in-the-loop triage of many candidates at once, without
 burning API credits:
 
-1. Run the deterministic seeder to populate `candidates/`:
+1. Run the deterministic seeder to populate `candidates/` (the wrapper
+   downloads the npm and PyPI OSV dumps and advances the per-ecosystem
+   cursors):
    ```
-   uv run openaca seed candidates/
+   bash scripts/seed-osv-overlays.sh
    ```
 2. Copy the skill template into your Claude Code skills directory:
    ```

@@ -253,7 +253,7 @@ def _apply_group_opts(
 ) -> tuple[Path | None, str, bool, str, bool]:
     """Forward shared options placed before the subcommand name.
 
-    When a user runs `openaca-scan --fail-on none repo ...`, Click parses
+    When a user runs `openaca scan --fail-on none repo ...`, Click parses
     --fail-on at the group level and the subcommand sees its own default.
     Read the group's ctx.obj and apply any option the subcommand didn't
     explicitly receive from the command line.

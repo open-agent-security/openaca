@@ -1,4 +1,4 @@
-"""Renderers for `openaca-scan` output: text (default), github, json.
+"""Renderers for `openaca scan` output: text (default), github, json.
 
 The CLI dispatches to one of three renderers based on `--format`:
 

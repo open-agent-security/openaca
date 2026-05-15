@@ -1,14 +1,18 @@
 # OpenACA V0 — Design Specification
 
-*Status*: Superseded in part by [ADR-0009](../adrs/0009-overlay-only-v0.md).
+*Status*: **Largely superseded** by
+[ADR-0009](../adrs/0009-overlay-only-v0.md) and the current
+[`openaca-thesis.md`](openaca-thesis.md).
 *Last updated*: 2026-05-12.
 
-> Note: this original V0 design described OpenACA as an advisory database with
-> OpenACA-issued IDs. ADR-0009 changes V0 to an overlay-only model: upstream
-> OSV/GHSA/CVE records own vulnerability identity, affected ranges, severity,
-> and fixes; OpenACA owns `database_specific.openaca` agent-context overlays and the
-> reference scanner. Historical sections below remain for parser and identity
-> context until this spec is fully rewritten.
+> **Read this only as historical context.** This original V0 design described
+> OpenACA as an advisory database that mints `OpenACA-YYYY-NNNN` IDs and ships
+> its own `type: vulnerability | exposure | config` records. ADR-0009 retired
+> that framing. V0 is now overlay-only: upstream OSV / GHSA / CVE / PYSEC / MAL
+> records own vulnerability identity, affected ranges, severity, and fixes;
+> OpenACA owns the `database_specific.openaca` overlay and the reference
+> scanner. The thesis doc and ADR-0009 are the current sources of truth.
+> Sections below remain for parser-design and identity-model context.
 
 ## 1. Overview
 

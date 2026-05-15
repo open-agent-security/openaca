@@ -47,6 +47,20 @@ def test_multiple_endpoints_each_emit_finding(tmp_path):
     assert any("c.example" in c for c in components)
 
 
+def test_flat_root_http_endpoint_flagged(tmp_path):
+    """Flat `.mcp.json` maps (no mcpServers/servers wrapper) are checked."""
+    manifest = {"playwright": {"url": "http://localhost:3000/mcp"}}
+    findings = check_insecure_transport([(tmp_path / ".mcp.json", manifest)])
+    assert len(findings) == 1
+    assert "http://localhost:3000/mcp" in findings[0].component
+
+
+def test_flat_root_https_not_flagged(tmp_path):
+    manifest = {"playwright": {"url": "https://secure.example/mcp"}}
+    findings = check_insecure_transport([(tmp_path / ".mcp.json", manifest)])
+    assert findings == []
+
+
 def test_standards_block_uses_a02_2021(tmp_path):
     manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
     findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])

@@ -40,6 +40,13 @@ from tools.posture.immutability import is_mutable_reference
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             False,
         ),
+        # uv tool run — equivalent to uvx; pinned spec is immutable
+        ("uv tool run mcp-bar==1.0.0", False),
+        ("uv tool run mcp-bar@1.2.3", False),
+        ("uv tool run mcp-bar", True),  # no version
+        ("uv tool run mcp-bar>=1.0", True),  # range, not exact
+        ("uv --offline tool run mcp-bar==1.0.0", False),  # leading flag
+        ("uv serve something", True),  # unrecognized subcommand
         # Local paths — never flag (not a remote install ref)
         ("./local/plugin", False),
         ("/Users/x/plugins/foo", False),

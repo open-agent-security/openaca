@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
+from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.rules import insecure_transport, missing_auth, mutable_install
 
@@ -41,21 +42,31 @@ def run_posture_rules(
     return findings
 
 
-def collect_mcp_manifests(roots: list[Path]) -> list[tuple[Path, dict]]:
+def collect_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+) -> list[tuple[Path, dict]]:
     """Walk one or more roots for MCP-shaped manifests and return parsed dicts.
 
     Used by the URL-shape rules (insecure_transport, missing_auth) that need
     the raw manifest to inspect `mcpServers[*].url` and adjacent fields.
     Parse failures are silently dropped — these rules are best-effort and
     should never abort a scan.
+
+    When `include_gitignored=False`, paths matched by `<root>/.gitignore`
+    (and `.git/` always) are skipped, keeping posture scope consistent with
+    the main repo scan's gitignore filtering.
     """
     out: list[tuple[Path, dict]] = []
     seen: set[Path] = set()
     for root in roots:
         if root is None or not root.exists():
             continue
+        spec = None if include_gitignored else load_gitignore_spec(root)
         for name in _MCP_MANIFEST_NAMES:
             for path in root.rglob(name):
+                if not include_gitignored and is_ignored(path.relative_to(root), spec):
+                    continue
                 resolved = path.resolve()
                 if resolved in seen:
                     continue

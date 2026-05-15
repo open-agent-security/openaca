@@ -135,7 +135,7 @@ burning API credits:
 
 1. Run the deterministic seeder to populate `candidates/`:
    ```
-   uv run openaca seed candidates/ --no-llm
+   uv run openaca seed candidates/
    ```
 2. Copy the skill template into your Claude Code skills directory:
    ```

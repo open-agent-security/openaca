@@ -31,7 +31,7 @@ state inside individual plans.
 - `LICENSE` (Apache-2.0).
 - `README.md` (OSS positioning).
 - `CLAUDE.md` (project conventions, OSS-only enforcement).
-- `docs/specs/openaca-v0-design.md` (canonical spec).
+- `docs/specs/openaca-thesis.md` (thesis).
 - Empty `docs/`, `schema/`, `advisories/`, `tools/` directories.
 
 ## Out of V0 (do not start until V0 ships)

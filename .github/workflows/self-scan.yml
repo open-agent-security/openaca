@@ -12,7 +12,7 @@ name: Self-scan
 #
 # Why artifact-upload instead of code-scanning SARIF upload: GitHub
 # code-scanning SARIF ingestion requires GitHub Advanced Security on
-# private repos. ASVE is private until V0 launch. When the repo goes
+# private repos. OpenACA is private until V0 launch. When the repo goes
 # public (or GHAS is enabled), swap the `actions/upload-artifact` step
 # below for `github/codeql-action/upload-sarif@v3` and add
 # `security-events: write` to permissions.
@@ -36,23 +36,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  asve-scan:
+  openaca-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run ASVE scan against this repo
+      - name: Run OpenACA scan against this repo
         uses: ./
         with:
           target: ${{ github.workspace }}
-          sarif: ${{ github.workspace }}/asve-results.sarif
+          sarif: ${{ github.workspace }}/openaca-results.sarif
           fail-on: none
 
       - name: Upload SARIF as workflow artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: asve-self-scan-sarif
-          path: ${{ github.workspace }}/asve-results.sarif
+          name: openaca-self-scan-sarif
+          path: ${{ github.workspace }}/openaca-results.sarif
           retention-days: 7
           if-no-files-found: warn

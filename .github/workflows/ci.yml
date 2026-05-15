@@ -60,11 +60,11 @@ jobs:
         if: steps.project_check.outputs.have_project == 'true'
         run: uv run pytest --cov=tools --cov-report=term-missing
 
-      - name: Asve-lint overlay corpus
+      - name: Lint overlay corpus
         if: steps.project_check.outputs.have_project == 'true'
         run: |
           if [ -d overlays ] && [ "$(find overlays -name '*.yaml' -print -quit)" ]; then
-            uv run asve-lint overlays/
+            uv run openaca lint overlays/
           else
-            echo "::notice::no overlays present yet; skipping asve-lint"
+            echo "::notice::no overlays present yet; skipping openaca lint"
           fi

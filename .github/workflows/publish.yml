@@ -1,22 +1,22 @@
 name: Publish
 
-# Builds the static ASVE export (`dist/`) on every push to `main` and
+# Builds the static OpenACA export (`dist/`) on every push to `main` and
 # deploys it to Cloudflare Pages. Cloudflare's role is purely host +
 # CDN + SSL — the build runs here in GitHub Actions so it's identical
 # to local dev (same uv.lock, same gates as ci.yml).
 #
 # Why Cloudflare Pages, not GitHub Pages: GitHub Pages requires a
-# public repo on the free tier, and we keep `asve` private until V0
+# public repo on the free tier, and we keep `openaca` private until V0
 # launch. Cloudflare Pages is free, supports private-source repos via
 # direct-upload mode (no Cloudflare GitHub-app permissions needed on
-# this repo), and the registrar already handles `asve.dev`. Migration
+# this repo), and the registrar already handles `openaca.dev`. Migration
 # to GitHub Pages later is ~30 minutes if we ever want to consolidate.
 #
 # Required secrets (set via `gh secret set` on this repo):
 #   - CLOUDFLARE_API_TOKEN: token with the
 #     "Edit Cloudflare Workers" template (covers Pages deploy).
 #   - CLOUDFLARE_ACCOUNT_ID: from the Cloudflare dashboard sidebar.
-#   - CLOUDFLARE_PAGES_PROJECT: the Pages project name (e.g. `asve`).
+#   - CLOUDFLARE_PAGES_PROJECT: the Pages project name (e.g. `openaca`).
 # If any are missing, the deploy step skips with a workflow warning;
 # the build still runs and the artifact is uploaded for inspection.
 #
@@ -55,7 +55,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Build export
-        run: uv run asve-export
+        run: uv run openaca export
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4

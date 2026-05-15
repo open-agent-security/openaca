@@ -328,7 +328,11 @@ implementation plans.
 ## License
 
 - **Code**: [Apache License 2.0](LICENSE).
-- **Overlay data**: [CC-BY-4.0](LICENSE-DATA) (matches OSV.dev).
+- **Overlay data** (YAML under `overlays/` and the static exports derived
+  from them): [Creative Commons Attribution 4.0
+  International](https://creativecommons.org/licenses/by/4.0/) (CC-BY-4.0)
+  — matches OSV.dev. Attribution: *OpenACA — Open Agent Composition
+  Analysis, <https://openaca.dev>*.
 
 ## Contributing
 

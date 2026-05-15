@@ -2,7 +2,7 @@
 
 Two modes via subcommands (per ADR-0006); a subcommand is required:
 
-    openaca-scan repo --target <repo> [...]
+    openaca scan repo --target <repo> [...]
         Walks supported agent-stack manifests committed in the target
         repository. Covers (a) project-host config under `.claude/*`
         (which describes what Claude Code loads when run in this repo,
@@ -14,7 +14,7 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
         findings as *declared* composition, not deployed-app
         composition.
 
-    openaca-scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
+    openaca scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
         Install-state-aware endpoint scan: reads settings.json +
         installed_plugins.json to enumerate the active agent stack. Defaults
         to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers project/local
@@ -23,8 +23,8 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
 Common options (--sarif, --fail-on, -v) can be placed before or after the
 subcommand name; the group forwards them either way:
 
-    openaca-scan -v repo --target X
-    openaca-scan repo --target X -v   # equivalent
+    openaca scan -v repo --target X
+    openaca scan repo --target X -v   # equivalent
 
 Findings carry an optional `attributed_to` field (e.g.,
 "claude-plugin/<name>@<version>") set by parsers when a component was

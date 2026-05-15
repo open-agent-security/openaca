@@ -17,8 +17,8 @@ business days.
 ## V0 status
 
 OpenACA V0 documents the disclosure process. The active disclosure
-pipeline starts at V1, gated on readiness criteria in
-[`docs/specs/openaca-v0-design.md`](docs/specs/openaca-v0-design.md) §10.
+pipeline starts at V1, gated on the readiness criteria in
+[`docs/specs/openaca-thesis.md`](docs/specs/openaca-thesis.md).
 Reports submitted during V0 will be acknowledged and triaged but may
 not be processed end-to-end until V1.
 

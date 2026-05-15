@@ -1,8 +1,9 @@
 # OpenACA Thesis
 
-> Companion to [`openaca-v0-design.md`](openaca-v0-design.md). The design doc
-> says **what** V0 ships. This doc says **why** the project exists and **what
-> it contributes** to the agent-stack security ecosystem.
+> This doc says **why** the project exists and **what it contributes** to the
+> agent-stack security ecosystem. For the architectural details of what V0
+> actually ships, see [ADR-0009](../adrs/0009-overlay-only-v0.md) and the
+> implementation plans under [`docs/plans/`](../plans/).
 
 ## What OpenACA is
 
@@ -222,7 +223,7 @@ License decisions:
 
 | Phase | Scope |
 |---|---|
-| **V0** | Overlay-only. Each canonical record sits at `overlays/<upstream-id>.yaml`, keyed by an upstream OSV record ID (GHSA / CVE / OSV / PYSEC / MAL), and contains only `database_specific.openaca` metadata: taxonomies, evidence level, and (for malicious packages) threat_kind. Schema, linter, static export, reference scanner (CLI + Action). Disclosure policy doc; private-pilot operation only. See [`openaca-v0-design.md`](openaca-v0-design.md) for the canonical V0 deliverable list. |
+| **V0** | Overlay-only. Each canonical record sits at `overlays/<upstream-id>.yaml`, keyed by an upstream OSV record ID (GHSA / CVE / OSV / PYSEC / MAL), and contains only `database_specific.openaca` metadata: taxonomies, evidence level, and (for malicious packages) threat_kind. Schema, linter, static export, reference scanner (CLI + Action). Disclosure policy doc; private-pilot operation only. See [ADR-0009](../adrs/0009-overlay-only-v0.md) and the implementation plans under [`docs/plans/`](../plans/) for the V0 deliverable list. |
 | **V1 entry** | Active disclosure pipeline. Triggered when V0 ships ≥ 25 overlays across 3+ component types, the disclosure framework is documented + tabletop-rehearsed, and ≥ 5 external ecosystem signals materialize. |
 | **V1 scaling** | Programmatic disclosure sweeps; first real coordinated disclosure completed end-to-end. |
 | **V1 manifest coverage** | Cursor + Windsurf + ChatGPT-style plugin manifests join the V0 set (`package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`). |
@@ -243,7 +244,6 @@ records.
   <https://code.claude.com/docs/en/plugins-reference>
 - MCP protocol & ecosystem (Linux Foundation hosted):
   <https://modelcontextprotocol.io/>
-- OpenACA V0 design: [`openaca-v0-design.md`](openaca-v0-design.md)
 - ADR-0001 — Licenses: [`../adrs/0001-licenses.md`](../adrs/0001-licenses.md)
 - ADR-0002 — Schema extension key:
   [`../adrs/0002-schema-extension-key.md`](../adrs/0002-schema-extension-key.md)

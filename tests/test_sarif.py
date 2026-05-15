@@ -226,9 +226,7 @@ def test_sarif_omits_coverage_for_tier1_findings():
 # ── Posture findings in SARIF ────────────────────────────────────────────────
 
 
-def _posture_for_sarif(
-    rule_id="openaca-posture-mutable-install-reference", severity: str = "low"
-):
+def _posture_for_sarif(rule_id="openaca-posture-mutable-install-reference", severity: str = "low"):
     from tools.posture import PostureFinding, Standards
 
     return PostureFinding(

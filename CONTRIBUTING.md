@@ -105,13 +105,13 @@ uv run pytest
    supported provider, model, and API key:
 
    ```bash
-   OpenACA_LLM_PROVIDER=openai \
-   OpenACA_LLM_MODEL="<model-name>" \
-   OpenACA_LLM_API_KEY="<api-key>" \
+   OPENACA_LLM_PROVIDER=openai \
+   OPENACA_LLM_MODEL="<model-name>" \
+   OPENACA_LLM_API_KEY="<api-key>" \
      bash scripts/seed-osv-overlays.sh
    ```
 
-   `OpenACA_LLM_PROVIDER` accepts `openai` or `anthropic`. LLM mode
+   `OPENACA_LLM_PROVIDER` accepts `openai` or `anthropic`. LLM mode
    receives the OSV record plus `docs/frameworks/*.md` as classification
    context. It still writes candidates only; every canonical overlay
    must be reviewed and promoted explicitly.

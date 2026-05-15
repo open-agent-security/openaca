@@ -1,10 +1,10 @@
 ---
 id: 0001
 title: Code Apache-2.0; advisory data CC-BY-4.0
-status: accepted
+status: superseded
 date: 2026-05-06
 supersedes: null
-superseded-by: null
+superseded-by: 0015
 ---
 
 ## Context

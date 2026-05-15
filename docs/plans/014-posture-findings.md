@@ -67,7 +67,7 @@ runtime deps.
 - Create: `tools/posture/finding.py`
 - Create: `tests/test_posture_finding.py`
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ```python
 # tests/test_posture_finding.py
@@ -100,14 +100,14 @@ def test_standards_serializes_only_populated_fields():
     assert out == {"cwe": ["CWE-1357"], "owasp_agentic_top10": ["asi04"]}
 ```
 
-- [ ] **Step 2: Run to verify it fails.**
+- [x] **Step 2: Run to verify it fails.**
 
 ```
 uv run pytest tests/test_posture_finding.py -v
 ```
 Expected: `ModuleNotFoundError: No module named 'tools.posture'`.
 
-- [ ] **Step 3: Implement the data model.**
+- [x] **Step 3: Implement the data model.**
 
 ```python
 # tools/posture/finding.py
@@ -153,14 +153,14 @@ from tools.posture.finding import PostureFinding, Standards
 __all__ = ["PostureFinding", "Standards"]
 ```
 
-- [ ] **Step 4: Run to verify it passes.**
+- [x] **Step 4: Run to verify it passes.**
 
 ```
 uv run pytest tests/test_posture_finding.py -v
 ```
 Expected: 2 passed.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```
 git add tools/posture/ tests/test_posture_finding.py
@@ -175,7 +175,7 @@ git commit -m "feat(posture): add PostureFinding + Standards data model"
 - Create: `tools/posture/immutability.py`
 - Create: `tests/test_posture_immutability.py`
 
-- [ ] **Step 1: Write the failing test (parametrized).**
+- [x] **Step 1: Write the failing test (parametrized).**
 
 ```python
 # tests/test_posture_immutability.py
@@ -219,14 +219,14 @@ def test_is_mutable_reference(ref: str, expected: bool):
     assert is_mutable_reference(ref) is expected, ref
 ```
 
-- [ ] **Step 2: Run to verify it fails.**
+- [x] **Step 2: Run to verify it fails.**
 
 ```
 uv run pytest tests/test_posture_immutability.py -v
 ```
 Expected: import error.
 
-- [ ] **Step 3: Implement the helper.**
+- [x] **Step 3: Implement the helper.**
 
 ```python
 # tools/posture/immutability.py
@@ -317,14 +317,14 @@ def _is_mutable_docker_ref(ref: str) -> bool:
     return True  # any tag (including no tag, :latest, :1.0.0) is mutable
 ```
 
-- [ ] **Step 4: Run to verify it passes.**
+- [x] **Step 4: Run to verify it passes.**
 
 ```
 uv run pytest tests/test_posture_immutability.py -v
 ```
 Expected: all parametrized cases pass.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```
 git add tools/posture/immutability.py tests/test_posture_immutability.py
@@ -341,7 +341,7 @@ git commit -m "feat(posture): add immutability test for install references"
 - Create: `tests/test_posture_mutable_install.py`
 - Create: `tests/fixtures/posture/mutable-install/` (with `mcp.json`, `marketplace.json` fixtures)
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ```python
 # tests/test_posture_mutable_install.py
@@ -384,7 +384,7 @@ def test_mcp_local_path_not_flagged(tmp_path):
     assert findings == []
 ```
 
-- [ ] **Step 2: Investigate — does `ComponentRef` already carry the raw install string?**
+- [x] **Step 2: Investigate — does `ComponentRef` already carry the raw install string?**
 
 Run:
 ```
@@ -394,7 +394,7 @@ rg -n "command|install_source" tools/component_ref.py tools/parsers/mcp_json.py 
 
 If the raw `command` isn't preserved, extend `ComponentRef.extra` to include an `install_source` key with the original string. Add a parser test to lock that in. Existing fixture: `tests/fixtures/repos/exposed-mcp/.mcp.json`.
 
-- [ ] **Step 3: Implement the rule.**
+- [x] **Step 3: Implement the rule.**
 
 ```python
 # tools/posture/rules/mutable_install.py
@@ -458,14 +458,14 @@ def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
     return findings
 ```
 
-- [ ] **Step 4: Run tests.**
+- [x] **Step 4: Run tests.**
 
 ```
 uv run pytest tests/test_posture_mutable_install.py -v
 ```
 Expected: 3 passed (after the parser exposes `install_source` per Step 2).
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```
 git add tools/posture/rules/ tests/test_posture_mutable_install.py tests/fixtures/posture/
@@ -480,7 +480,7 @@ git commit -m "feat(posture): add mutable-install-reference rule"
 - Create: `tools/posture/rules/insecure_transport.py`
 - Create: `tests/test_posture_insecure_transport.py`
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ```python
 # tests/test_posture_insecure_transport.py
@@ -509,7 +509,7 @@ def test_stdio_command_not_flagged(tmp_path):
     assert findings == []
 ```
 
-- [ ] **Step 2: Run to verify failure, then implement.**
+- [x] **Step 2: Run to verify failure, then implement.**
 
 ```python
 # tools/posture/rules/insecure_transport.py
@@ -563,7 +563,7 @@ def check_insecure_transport(
     return findings
 ```
 
-- [ ] **Step 3: Run, commit.**
+- [x] **Step 3: Run, commit.**
 
 ```
 uv run pytest tests/test_posture_insecure_transport.py -v
@@ -579,7 +579,7 @@ git commit -m "feat(posture): add insecure-transport rule"
 - Create: `tools/posture/rules/missing_auth.py`
 - Create: `tests/test_posture_missing_auth.py`
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
 
 ```python
 # tests/test_posture_missing_auth.py
@@ -625,7 +625,7 @@ def test_stdio_not_in_scope(tmp_path):
     assert findings == []
 ```
 
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
 
 ```python
 # tools/posture/rules/missing_auth.py
@@ -697,7 +697,7 @@ def _has_auth_material(entry: dict) -> bool:
     return False
 ```
 
-- [ ] **Step 3: Run, commit.**
+- [x] **Step 3: Run, commit.**
 
 ```
 uv run pytest tests/test_posture_missing_auth.py -v
@@ -714,7 +714,7 @@ git commit -m "feat(posture): add missing-remote-auth rule"
 - Modify: `tools/scan.py` (add `--include-posture` to scan group; call runner after matcher)
 - Create: `tests/test_posture_integration.py`
 
-- [ ] **Step 1: Write the integration test.**
+- [x] **Step 1: Write the integration test.**
 
 ```python
 # tests/test_posture_integration.py
@@ -750,7 +750,7 @@ def test_posture_on_emits_findings(tmp_path):
     assert "openaca-posture-mutable-install-reference" in result.output
 ```
 
-- [ ] **Step 2: Implement the registry.**
+- [x] **Step 2: Implement the registry.**
 
 ```python
 # tools/posture/__init__.py (additions)
@@ -775,7 +775,7 @@ def run_posture_rules(
 __all__ = ["PostureFinding", "Standards", "run_posture_rules"]
 ```
 
-- [ ] **Step 3: Wire into the scanner.**
+- [x] **Step 3: Wire into the scanner.**
 
 Add `--include-posture` (boolean flag, default False) to the `scan` Click
 group options. In `_apply_group_opts` propagate it to the subcommand
@@ -785,13 +785,13 @@ results to the scan output object that flows into the renderers. Manifest
 list comes from the existing parser dispatch — parsers already load+parse
 the JSON dicts.
 
-- [ ] **Step 4: Run integration tests.**
+- [x] **Step 4: Run integration tests.**
 
 ```
 uv run pytest tests/test_posture_integration.py -v
 ```
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```
 git add tools/posture/__init__.py tools/scan.py tests/test_posture_integration.py
@@ -806,7 +806,7 @@ git commit -m "feat(scan): --include-posture flag + posture runner integration"
 - Modify: `tools/render.py` (add a posture section to `render_text`)
 - Modify: `tests/test_render.py` (snapshot-style assertions)
 
-- [ ] **Step 1: Test.**
+- [x] **Step 1: Test.**
 
 ```python
 # tests/test_render.py (addition)
@@ -835,7 +835,7 @@ def test_render_text_includes_posture_section():
     assert "claude-plugin/foo" in out
 ```
 
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
 
 `render_text` gains a `posture_findings: list[PostureFinding] = []`
 parameter (kwarg, default empty for back-compat with callers that don't
@@ -851,7 +851,7 @@ Posture findings (configuration hygiene):
        standards: CWE-1357, asi04
 ```
 
-- [ ] **Step 3: Run, commit.**
+- [x] **Step 3: Run, commit.**
 
 ```
 uv run pytest tests/test_render.py -k posture -v
@@ -867,7 +867,7 @@ git commit -m "feat(render): add Posture findings section to text output"
 - Modify: `tools/render.py` (`render_json`)
 - Modify: `tests/test_render.py`
 
-- [ ] **Step 1: Test.**
+- [x] **Step 1: Test.**
 
 ```python
 def test_render_json_includes_posture_array():
@@ -886,14 +886,14 @@ def test_render_json_includes_posture_array():
     assert p["standards"]["cwe"] == ["CWE-1357"]
 ```
 
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
 
 Add a top-level `posture_findings: []` array in the JSON output structure
 alongside the existing `findings: []` and `stats: {}` keys. Each entry
 serializes a `PostureFinding` (and its `Standards` via `Standards.to_dict()`,
 which drops empty taxonomy lists).
 
-- [ ] **Step 3: Run, commit.**
+- [x] **Step 3: Run, commit.**
 
 ---
 
@@ -903,7 +903,7 @@ which drops empty taxonomy lists).
 - Modify: `tools/sarif.py`
 - Modify: `tests/test_sarif.py`
 
-- [ ] **Step 1: Test.**
+- [x] **Step 1: Test.**
 
 ```python
 def test_sarif_emits_posture_rules_and_results():
@@ -918,7 +918,7 @@ def test_sarif_emits_posture_rules_and_results():
     assert any(r["ruleId"] == "openaca-posture-mutable-install-reference" for r in results)
 ```
 
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
 
 `to_sarif` gains a `posture_findings` kwarg. Each unique posture rule
 becomes a SARIF `rule` entry with:
@@ -935,7 +935,7 @@ severity (low → note, medium → warning, high → error), `message.text` =
 title, `locations[0]` = the manifest path, and
 `properties.confidence` carried through.
 
-- [ ] **Step 3: Run, commit.**
+- [x] **Step 3: Run, commit.**
 
 ---
 
@@ -967,7 +967,7 @@ confidence, standards mapping), where to put the rule module, how to
 register it in `tools/posture/__init__.py`, what the test fixture
 expectations are.
 
-- [ ] Commit:
+- [x] Commit:
 ```
 git commit -m "docs(posture): per-rule docs + README/CONTRIBUTING blurbs"
 ```
@@ -976,15 +976,15 @@ git commit -m "docs(posture): per-rule docs + README/CONTRIBUTING blurbs"
 
 ### Task 11: Full gate, commit, PR
 
-- [ ] `cd /Users/vinodkone/workspace/openaca/.worktrees/feat-posture-findings`
-- [ ] `uv sync`
-- [ ] `uv run ruff format --check tools/ tests/`
-- [ ] `uv run ruff check tools/ tests/`
-- [ ] `uv run pyright tools/ tests/`
-- [ ] `uv run pytest -q` — full suite must pass (existing 574 + new ~20 posture tests).
-- [ ] `uv run openaca lint overlays/` — corpus must still pass (this plan changes no overlay code).
-- [ ] **Dogfood:** `uv run openaca scan endpoint --include-posture` on the developer's own `~/.claude` install. Confirm the rules surface real findings without flagging local-only plugins/skills.
-- [ ] Push and open PR titled `feat(scan): posture findings (mutable install, insecure transport, missing auth)`.
+- [x] `cd /Users/vinodkone/workspace/openaca/.worktrees/feat-posture-findings`
+- [x] `uv sync`
+- [x] `uv run ruff format --check tools/ tests/`
+- [x] `uv run ruff check tools/ tests/`
+- [x] `uv run pyright tools/ tests/`
+- [x] `uv run pytest -q` — full suite must pass (existing 574 + new ~20 posture tests).
+- [x] `uv run openaca lint overlays/` — corpus must still pass (this plan changes no overlay code).
+- [x] **Dogfood:** `uv run openaca scan endpoint --include-posture` on the developer's own `~/.claude` install. Confirm the rules surface real findings without flagging local-only plugins/skills.
+- [x] Push and open PR titled `feat(scan): posture findings (mutable install, insecure transport, missing auth)`.
 
 ---
 

@@ -336,8 +336,11 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance.
 
 ## Coordinated disclosure
 
-OpenACA follows the [OpenSSF coordinated disclosure
-guidance](https://openssf.org/) with project-specific defaults
-documented in [`docs/disclosure-policy.md`](docs/disclosure-policy.md).
-Report security issues per that policy; do not file public issues
-for unembargoed vulnerabilities.
+OpenACA does not mint vulnerability IDs. Vulnerabilities in agent-stack
+components are filed upstream (CVE / GHSA / OSV / PYSEC / MAL); once an
+upstream record is public, contribute an OpenACA overlay per
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+For security issues in **OpenACA's own code**, see
+[`SECURITY.md`](SECURITY.md). Do not file public issues for
+unembargoed vulnerabilities.

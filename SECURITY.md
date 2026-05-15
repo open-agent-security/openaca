@@ -27,6 +27,6 @@ bundle, an agent framework), the workflow is:
 3. Once the upstream record is public, contribute an OpenACA overlay
    per the flow in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-See [`docs/disclosure-policy.md`](docs/disclosure-policy.md) for the
-disclosure framework OpenACA uses when contributors coordinate
-upstream disclosures.
+OpenACA follows the [OpenSSF coordinated disclosure
+guidance](https://openssf.org/) when contributors coordinate upstream
+disclosures.

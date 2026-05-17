@@ -345,6 +345,25 @@ def test_parse_flat_shape_with_command_entries(tmp_path):
     assert any(r.name == "@playwright/mcp" for r in npm_refs)
 
 
+def test_parse_flat_shape_has_no_runtime_host(tmp_path):
+    import json
+
+    path = tmp_path / ".mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "playwright": {"command": "npx", "args": ["@playwright/mcp@1.2.3"]},
+            }
+        )
+    )
+
+    refs = parse(path)
+
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40playwright/mcp@1.2.3"
+    assert refs[0].extra["runtime_hosts"] == []
+
+
 def test_parse_flat_shape_multiple_servers(tmp_path):
     """Flat shape with multiple entries — all parsed."""
     import json

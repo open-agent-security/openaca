@@ -227,6 +227,8 @@ def parse_mcp_servers(
     """Convert an `mcpServers`/`servers` dict into ComponentRefs."""
     if not isinstance(servers, dict):
         return []
+    if runtime_hosts is None:
+        runtime_hosts = ["claude-code"]
     refs: list[ComponentRef] = []
     for server_name, entry in servers.items():
         if not isinstance(entry, dict):
@@ -322,11 +324,11 @@ def _mcp_ref_extra(
     source_manifest: str,
     install_source: str,
     server_name: str,
-    runtime_hosts: list[str] | None = None,
+    runtime_hosts: list[str],
 ) -> dict:
     return {
         "component_type": "mcp_server",
-        "runtime_hosts": runtime_hosts if runtime_hosts is not None else ["claude-code"],
+        "runtime_hosts": list(runtime_hosts),
         "declared_by": {"kind": "manifest", "path": source_manifest},
         "component_path": [{"type": "mcp_server", "name": server_name}],
         "install_source": install_source,
@@ -380,7 +382,7 @@ def parse(path: Path) -> list[ComponentRef]:
             data,
             source_manifest=str(path),
             locator_prefix="$",
-            runtime_hosts=["claude-code"],
+            runtime_hosts=[],
         )
     return []
 

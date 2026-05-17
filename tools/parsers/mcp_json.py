@@ -219,7 +219,10 @@ def _classify_command(command: str) -> str:
 
 
 def parse_mcp_servers(
-    servers: dict, source_manifest: str, locator_prefix: str = "$.mcpServers"
+    servers: dict,
+    source_manifest: str,
+    locator_prefix: str = "$.mcpServers",
+    runtime_hosts: list[str] | None = None,
 ) -> list[ComponentRef]:
     """Convert an `mcpServers`/`servers` dict into ComponentRefs."""
     if not isinstance(servers, dict):
@@ -259,7 +262,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
                     )
                 )
             elif name:
@@ -268,7 +271,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/npx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
                     )
                 )
         elif cmd_class == "uvx":
@@ -281,7 +284,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
                     )
                 )
             elif name:
@@ -290,7 +293,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/uvx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
                     )
                 )
         elif command:
@@ -299,16 +302,21 @@ def parse_mcp_servers(
                     component_identity=f"mcp-stdio/binary:{command}",
                     source_manifest=source_manifest,
                     source_locator=locator,
-                    extra=_mcp_ref_extra(source_manifest, install_source, server_name),
+                    extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
                 )
             )
     return refs
 
 
-def _mcp_ref_extra(source_manifest: str, install_source: str, server_name: str) -> dict:
+def _mcp_ref_extra(
+    source_manifest: str,
+    install_source: str,
+    server_name: str,
+    runtime_hosts: list[str] | None = None,
+) -> dict:
     return {
         "component_type": "mcp_server",
-        "runtime_hosts": ["claude-code"],
+        "runtime_hosts": runtime_hosts if runtime_hosts is not None else ["claude-code"],
         "declared_by": {"kind": "manifest", "path": source_manifest},
         "component_path": [{"type": "mcp_server", "name": server_name}],
         "install_source": install_source,
@@ -341,12 +349,15 @@ def parse(path: Path) -> list[ComponentRef]:
             data["mcpServers"],
             source_manifest=str(path),
             locator_prefix="$.mcpServers",
+            runtime_hosts=["claude-code"],
         )
     if isinstance(data.get("servers"), dict):
+        # `servers` is the VS Code convention; host cannot be inferred here.
         return parse_mcp_servers(
             data["servers"],
             source_manifest=str(path),
             locator_prefix="$.servers",
+            runtime_hosts=[],
         )
     # Flat shape (no wrapper). Some real Claude Code plugins ship `.mcp.json`
     # as a bare `{server_name: {command, args}}` map without the conventional
@@ -359,6 +370,7 @@ def parse(path: Path) -> list[ComponentRef]:
             data,
             source_manifest=str(path),
             locator_prefix="$",
+            runtime_hosts=["claude-code"],
         )
     return []
 

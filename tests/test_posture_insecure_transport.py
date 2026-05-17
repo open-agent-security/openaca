@@ -83,3 +83,23 @@ def test_standards_block_uses_a02_2021(tmp_path):
     assert s["owasp_mcp_top10"] == ["mcp04:2025"]
     # No CWE: don't force one.
     assert "cwe" not in s
+
+
+def test_mcpservers_key_sets_claude_code_active_in(tmp_path):
+    manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
+    findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
+    assert findings[0].active_in == ["claude-code"]
+
+
+def test_servers_key_leaves_active_in_empty(tmp_path):
+    """VS Code `servers` key: host cannot be inferred, so active_in is empty."""
+    manifest = {"servers": {"y": {"url": "http://y.example/mcp"}}}
+    findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
+    assert findings[0].active_in == []
+
+
+def test_flat_root_leaves_active_in_empty(tmp_path):
+    """Flat-root manifests have no host key, so active_in is empty."""
+    manifest = {"playwright": {"url": "http://localhost:3000/mcp"}}
+    findings = check_insecure_transport([(tmp_path / ".mcp.json", manifest)])
+    assert findings[0].active_in == []

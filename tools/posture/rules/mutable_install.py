@@ -35,10 +35,8 @@ _BASE_STANDARDS = Standards(
 def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for ref in refs:
-        install_source = (ref.extra or {}).get("install_source")
-        if not isinstance(install_source, str) or not install_source:
-            continue
-        if not is_mutable_reference(install_source):
+        install_source = _mutable_install_source_for(ref)
+        if install_source is None:
             continue
         findings.append(
             PostureFinding(
@@ -55,6 +53,27 @@ def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
             )
         )
     return findings
+
+
+def _mutable_install_source_for(ref: ComponentRef) -> str | None:
+    install_source = (ref.extra or {}).get("install_source")
+    if isinstance(install_source, str) and install_source and is_mutable_reference(install_source):
+        return install_source
+
+    if ref.ecosystem != "claude-plugin":
+        return None
+    if ref.version and ref.version != "unknown":
+        return None
+    git_sha = (ref.extra or {}).get("gitCommitSha")
+    if isinstance(git_sha, str) and git_sha.strip():
+        return None
+    if ref.component_identity:
+        if ref.component_identity.endswith("@unknown"):
+            return ref.component_identity
+        return f"{ref.component_identity}@unknown"
+    if ref.name:
+        return f"claude-plugin/{ref.name}@unknown"
+    return None
 
 
 def _component_for(ref: ComponentRef, install_source: str) -> dict[str, Any]:
@@ -106,6 +125,8 @@ def _component_type_for(ref: ComponentRef) -> str:
 
 
 def _format_component(ref: ComponentRef, install_source: str) -> str:
+    if ref.ecosystem == "claude-plugin" and install_source.startswith("claude-plugin/"):
+        return install_source
     if ref.ecosystem and ref.name:
         return f"{ref.ecosystem}/{ref.name} ({install_source})"
     if ref.component_identity:

@@ -1,6 +1,6 @@
 schema_version: 1.7.3
 id: MAL-2025-42116
-modified: '2025-10-30T06:50:52Z'
+modified: '2026-05-17T20:27:00Z'
 database_specific:
   openaca:
     taxonomies:
@@ -11,7 +11,6 @@ database_specific:
       owasp_mcp_top10:
       - mcp04:2025
       mitre_atlas:
-      - AML.T0010.005
-      - AML.T0104
+      - AML.T0010.001
     evidence_level: likely
     threat_kind: malicious_package

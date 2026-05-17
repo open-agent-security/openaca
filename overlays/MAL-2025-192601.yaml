@@ -1,0 +1,19 @@
+schema_version: 1.7.3
+id: MAL-2025-192601
+aliases:
+- GHSA-g3xg-r65r-rjp9
+modified: '2025-12-30T17:41:17.007099Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.005
+      - AML.T0104
+    evidence_level: likely
+    threat_kind: malicious_package

@@ -8,6 +8,7 @@ exempt (the immutability helper returns False for them).
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from tools.component_ref import ComponentRef
 from tools.posture.finding import PostureFinding, Standards
@@ -45,13 +46,63 @@ def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
                 title=TITLE,
                 severity=SEVERITY,
                 confidence=CONFIDENCE,
-                component=_format_component(ref, install_source),
-                location=ref.source_manifest or "",
+                component=_component_for(ref, install_source),
+                active_in=_active_in_for(ref),
+                declared_by=_declared_by_for(ref),
+                component_path=_component_path_for(ref, install_source),
                 standards=_standards_for(ref),
                 remediation=REMEDIATION,
             )
         )
     return findings
+
+
+def _component_for(ref: ComponentRef, install_source: str) -> dict[str, Any]:
+    component: dict[str, Any] = {
+        "type": _component_type_for(ref),
+        "name": _format_component(ref, install_source),
+    }
+    if ref.purl:
+        component["source"] = {"purl": ref.purl}
+    return component
+
+
+def _active_in_for(ref: ComponentRef) -> list[str]:
+    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
+    if isinstance(runtime_hosts, list):
+        return [h for h in runtime_hosts if isinstance(h, str)]
+    return []
+
+
+def _declared_by_for(ref: ComponentRef) -> dict | None:
+    declared_by = (ref.extra or {}).get("declared_by")
+    if isinstance(declared_by, dict):
+        return dict(declared_by)
+    if ref.source_manifest:
+        return {"kind": "manifest", "path": ref.source_manifest}
+    return None
+
+
+def _component_path_for(ref: ComponentRef, install_source: str) -> list[dict[str, str]]:
+    component_path = (ref.extra or {}).get("component_path")
+    if isinstance(component_path, list):
+        out = []
+        for item in component_path:
+            if isinstance(item, dict):
+                typ = item.get("type")
+                name = item.get("name")
+                if isinstance(typ, str) and isinstance(name, str):
+                    out.append({"type": typ, "name": name})
+        if out:
+            return out
+    return [{"type": _component_type_for(ref), "name": _format_component(ref, install_source)}]
+
+
+def _component_type_for(ref: ComponentRef) -> str:
+    extra_type = (ref.extra or {}).get("component_type")
+    if isinstance(extra_type, str) and extra_type:
+        return extra_type
+    return "component"
 
 
 def _format_component(ref: ComponentRef, install_source: str) -> str:

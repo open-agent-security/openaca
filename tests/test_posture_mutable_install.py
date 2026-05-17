@@ -14,7 +14,7 @@ def test_mcp_unpinned_uvx_flagged(tmp_path):
     assert findings[0].rule_id == "openaca-posture-mutable-install-reference"
     assert findings[0].severity == "low"
     assert findings[0].confidence == "high"
-    assert "uvx mcp-bar" in findings[0].component
+    assert "uvx mcp-bar" in findings[0].component_label
     assert findings[0].standards.cwe == ["CWE-1357"]
 
 
@@ -36,7 +36,7 @@ def test_mcp_unpinned_npx_flagged(tmp_path):
     refs = parse_mcp(tmp_path / "mcp.json")
     findings = check_mutable_install(refs)
     assert len(findings) == 1
-    assert "npx @modelcontextprotocol/server-foo" in findings[0].component
+    assert "npx @modelcontextprotocol/server-foo" in findings[0].component_label
     # Name contains "mcp"-adjacent token; ensure MCP taxonomy code is added.
     assert findings[0].standards.owasp_mcp_top10 == ["mcp04:2025"]
 
@@ -72,7 +72,7 @@ def test_mcp_npx_at_latest_flagged(tmp_path):
     refs = parse_mcp(tmp_path / "mcp.json")
     findings = check_mutable_install(refs)
     assert len(findings) == 1
-    assert "@latest" in findings[0].component
+    assert "@latest" in findings[0].component_label
 
 
 def test_mutable_install_emits_standards_block_with_cwe_scorecard_slsa(tmp_path):

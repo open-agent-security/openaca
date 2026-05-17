@@ -194,6 +194,10 @@ def _walk_active_plugins(
                 source_locator=f"$.plugins.{plugin_key}[{index}]",
                 attributed_to=None,  # plugin itself is direct
                 extra={
+                    "component_type": "plugin",
+                    "runtime_hosts": ["claude-code"],
+                    "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
+                    "component_path": [{"type": "plugin", "name": plugin_name}],
                     "gitCommitSha": entry.get("gitCommitSha"),
                     "installPath": entry.get("installPath"),
                     "marketplace": marketplace,
@@ -479,7 +483,14 @@ def _walk_plugin_install_root(
                 )
             )
 
-    return refs, warnings
+    return (
+        _with_plugin_context(
+            refs,
+            plugin_name=plugin_name,
+            plugin_manifest_path=plugin_json_path,
+        ),
+        warnings,
+    )
 
 
 # (ecosystem, lockfile_filename, parser_callable) — parsed in order; multiple
@@ -547,6 +558,54 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             extra["fallback_reason"] = f"no {ecosystem} lockfile present"
             refs.append(replace(r, attributed_to=attributed_to, extra=extra))
     return refs
+
+
+def _with_plugin_context(
+    refs: list[ComponentRef],
+    plugin_name: str,
+    plugin_manifest_path: Path,
+) -> list[ComponentRef]:
+    out: list[ComponentRef] = []
+    plugin_node = {"type": "plugin", "name": plugin_name}
+    for ref in refs:
+        child_type = _component_type_for_child(ref)
+        child_name = _component_name_for_child(ref)
+        extra = dict(ref.extra)
+        extra["component_type"] = child_type
+        extra["runtime_hosts"] = ["claude-code"]
+        extra["declared_by"] = {
+            "kind": "plugin",
+            "name": plugin_name,
+            "path": str(plugin_manifest_path),
+        }
+        extra["component_path"] = [plugin_node, {"type": child_type, "name": child_name}]
+        out.append(replace(ref, extra=extra))
+    return out
+
+
+def _component_type_for_child(ref: ComponentRef) -> str:
+    extra_type = ref.extra.get("component_type")
+    if isinstance(extra_type, str) and extra_type:
+        return extra_type
+    return {
+        "claude-skill": "skill",
+        "claude-hook": "hook",
+        "claude-command": "command",
+        "claude-agent": "agent",
+    }.get(ref.ecosystem or "", "component")
+
+
+def _component_name_for_child(ref: ComponentRef) -> str:
+    component_path = ref.extra.get("component_path")
+    if isinstance(component_path, list) and component_path:
+        last = component_path[-1]
+        if isinstance(last, dict) and isinstance(last.get("name"), str):
+            return last["name"]
+    if ref.name:
+        return ref.name
+    if ref.component_identity:
+        return ref.component_identity
+    return "<unidentified>"
 
 
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:

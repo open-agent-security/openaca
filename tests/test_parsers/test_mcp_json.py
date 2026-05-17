@@ -12,6 +12,21 @@ def test_npx_emits_npm_purl():
     assert by_name["@cyanheads/git-mcp-server"].purl == "pkg:npm/%40cyanheads/git-mcp-server@1.1.0"
 
 
+def test_direct_mcp_ref_carries_output_metadata():
+    servers = {
+        "filesystem": {
+            "command": "npx",
+            "args": ["@modelcontextprotocol/server-filesystem@1.0.2"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest=".mcp.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.extra["component_type"] == "mcp_server"
+    assert ref.extra["runtime_hosts"] == ["claude-code"]
+    assert ref.extra["declared_by"] == {"kind": "manifest", "path": ".mcp.json"}
+
+
 def test_uvx_emits_pypi_purl_when_pinned():
     refs = parse(REPOS / "sample-mcp" / "mcp.json")
     by_name = {r.name: r for r in refs if r.ecosystem == "PyPI"}

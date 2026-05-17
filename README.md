@@ -131,7 +131,7 @@ uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo 
 
 - **`text`** *(default)* — grouped human-readable output. One block per
   affected package, severity per finding, ANSI-colored when stdout is a
-  TTY. Add `-v` for per-finding `surfaces` / `agent_impact` metadata.
+  TTY. Add `-v` for per-finding component/source/container context.
 - **`github`** — GitHub workflow annotation lines (`::error file=...::`).
   Auto-selected when `GITHUB_ACTIONS=true` so the included Action keeps
   working without configuration. Use explicitly to emit annotations
@@ -142,6 +142,22 @@ uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo 
 `--sarif <path>` is orthogonal and writes a SARIF 2.1.0 artifact in
 addition to the chosen stdout format. `--no-color` disables ANSI in text
 output (color is also off automatically when stdout isn't a TTY).
+
+JSON output uses one top-level `findings[]` array. Vulnerability entries
+carry `finding_type: "vulnerability"` and posture entries carry
+`finding_type: "posture"`. Each finding includes:
+
+- `component` — the vulnerable or risky agent component being reported.
+- `component.source` — the package/Git/source identity used for matching
+  or explanation.
+- `active_in` — runtime host IDs observed by the scanner, when known.
+- `declared_by` — manifest, plugin, or lock entry that introduced the
+  component.
+- `component_path` — containment path such as `plugin -> mcp_server`.
+- `matched_advisory` — advisory identity for vulnerability findings.
+
+Overlay records remain advisory data. They do not store local scan
+context such as `active_in`, `declared_by`, or `component_path`.
 
 ### GitHub Action
 
@@ -178,7 +194,8 @@ checks: unpinned MCP/plugin installs, `http://` MCP endpoints, MCP
 endpoints with no visible auth declaration. Posture findings carry
 their own `standards{}` block (CWE / OpenSSF Scorecard / SLSA / OWASP
 App / OWASP Agentic / OWASP MCP), render in their own section in text
-output, and emit as separate SARIF rules. They never affect
+output, share the JSON `findings[]` array, and emit as separate SARIF rules.
+They never affect
 `--fail-on` exit codes — they're signal, not gate. See
 [`docs/posture/`](docs/posture/README.md) for the V0 rule list and
 per-rule remediation pages.

@@ -67,8 +67,14 @@ def check_missing_auth(
                     title=TITLE,
                     severity=SEVERITY,
                     confidence=CONFIDENCE,
-                    component=f"mcp-server/{name} @ {url}",
-                    location=str(path),
+                    component={
+                        "type": "mcp_server",
+                        "name": f"mcp-server/{name} @ {url}",
+                        "source": {"url": url},
+                    },
+                    active_in=["claude-code"],
+                    declared_by={"kind": "manifest", "path": str(path)},
+                    component_path=[{"type": "mcp_server", "name": f"mcp-server/{name} @ {url}"}],
                     standards=_STANDARDS,
                     remediation=REMEDIATION,
                 )

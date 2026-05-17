@@ -8,7 +8,7 @@ def test_http_sse_endpoint_flagged(tmp_path):
     assert findings[0].rule_id == "openaca-posture-insecure-transport"
     assert findings[0].severity == "medium"
     assert findings[0].confidence == "high"
-    assert "http://example.com/mcp" in findings[0].component
+    assert "http://example.com/mcp" in findings[0].component_label
 
 
 def test_https_sse_endpoint_not_flagged(tmp_path):
@@ -29,7 +29,7 @@ def test_servers_envelope_also_walked(tmp_path):
     manifest = {"servers": {"y": {"url": "http://insecure.example/mcp"}}}
     findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
     assert len(findings) == 1
-    assert "http://insecure.example/mcp" in findings[0].component
+    assert "http://insecure.example/mcp" in findings[0].component_label
 
 
 def test_multiple_endpoints_each_emit_finding(tmp_path):
@@ -42,7 +42,7 @@ def test_multiple_endpoints_each_emit_finding(tmp_path):
     }
     findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
     assert len(findings) == 2
-    components = {f.component for f in findings}
+    components = {f.component_label for f in findings}
     assert any("a.example" in c for c in components)
     assert any("c.example" in c for c in components)
 
@@ -52,7 +52,7 @@ def test_flat_root_http_endpoint_flagged(tmp_path):
     manifest = {"playwright": {"url": "http://localhost:3000/mcp"}}
     findings = check_insecure_transport([(tmp_path / ".mcp.json", manifest)])
     assert len(findings) == 1
-    assert "http://localhost:3000/mcp" in findings[0].component
+    assert "http://localhost:3000/mcp" in findings[0].component_label
 
 
 def test_flat_root_https_not_flagged(tmp_path):
@@ -71,7 +71,7 @@ def test_disabled_server_not_flagged(tmp_path):
     }
     findings = check_insecure_transport([(tmp_path / "mcp.json", manifest)])
     assert len(findings) == 1
-    assert "active.example" in findings[0].component
+    assert "active.example" in findings[0].component_label
 
 
 def test_standards_block_uses_a02_2021(tmp_path):

@@ -415,6 +415,90 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     assert "claude-plugin/vuln-plugin@1.0.0" in attributions
 
 
+def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
+    """Endpoint JSON output should identify the bundled MCP as the finding
+    component while preserving the plugin container in component_path."""
+    from tools.scan import main as scan_main
+
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "evil": {
+                        "command": "npx",
+                        "args": ["-y", "@evil/mcp@0.9.0"],
+                    }
+                }
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {
+                            "scope": "user",
+                            "version": "1.0.0",
+                            "installPath": str(cache_dir),
+                            "gitCommitSha": "deadbeef",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    advisory = {
+        "schema_version": "1.7.1",
+        "id": "CVE-2026-9004",
+        "modified": "2026-05-10T00:00:00Z",
+        "type": "vulnerability",
+        "published": "2026-05-10T00:00:00Z",
+        "summary": "test",
+        "details": "test",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "@evil/mcp"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
+                ],
+            }
+        ],
+        "database_specific": {"openaca": {"source": "test"}},
+    }
+
+    runner = CliRunner()
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+        result = runner.invoke(
+            scan_main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+    assert result.exit_code == 1, result.output
+    doc = json.loads(result.stdout)
+    finding = next(f for f in doc["findings"] if f.get("id") == "CVE-2026-9004")
+    assert finding["component"]["type"] == "mcp_server"
+    assert finding["component"]["name"] == "evil"
+    assert finding["declared_by"]["kind"] == "plugin"
+    assert finding["declared_by"]["name"] == "vuln-plugin"
+    assert finding["component_path"] == [
+        {"type": "plugin", "name": "vuln-plugin"},
+        {"type": "mcp_server", "name": "evil"},
+    ]
+    assert finding["matched_advisory"]["id"] == "CVE-2026-9004"
+
+
 def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     """Identity-only matching for claude-hook (ADR-0007): an advisory
     targeting a specific hook slot via `database_specific.openaca.component_identity`

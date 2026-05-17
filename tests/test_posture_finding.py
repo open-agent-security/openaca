@@ -7,8 +7,13 @@ def test_posture_finding_minimum_fields():
         title="Component uses mutable install reference",
         severity="low",
         confidence="high",
-        component="claude-plugin/foo",
-        location="~/.claude/plugins/foo/.claude-plugin/plugin.json",
+        component={"type": "plugin", "name": "claude-plugin/foo"},
+        active_in=["claude-code"],
+        declared_by={
+            "kind": "manifest",
+            "path": "~/.claude/plugins/foo/.claude-plugin/plugin.json",
+        },
+        component_path=[{"type": "plugin", "name": "claude-plugin/foo"}],
         standards=Standards(
             cwe=["CWE-1357"],
             openssf_scorecard=["Pinned-Dependencies"],

@@ -21,6 +21,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 012 | [Candidate annotation surface lock](012-candidate-annotation-surface-lock.md) | ✅ Done | 011 |
 | 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | ✅ Done | — |
 | 014 | [Posture findings (scanner-side hygiene rules)](014-posture-findings.md) | 🟡 Active | 007, 008, 009 |
+| 015 | [Agent component identity + scan output](015-agent-component-identity-and-scan-output.md) | ⏸ Pending | 013, 014 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

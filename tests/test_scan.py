@@ -429,6 +429,42 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
     assert "mcp-server/inactive @ https://inactive.example/mcp" not in result.output
 
 
+def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
+    cache_dir = tmp_path / "plugins" / "cache" / "official" / "feature-dev" / "unknown"
+    cache_dir.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"feature-dev@official": True}})
+    )
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "feature-dev@official": [{"scope": "user", "installPath": str(cache_dir)}]
+                },
+            }
+        )
+    )
+
+    runner = CliRunner()
+    from unittest.mock import patch
+
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})):
+        result = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(tmp_path),
+                "--include-posture",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-mutable-install-reference" in result.output
+    assert "claude-plugin/feature-dev@unknown" in result.output
+
+
 def test_endpoint_subcommand_verbose_lists_resolved_plugins():
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()

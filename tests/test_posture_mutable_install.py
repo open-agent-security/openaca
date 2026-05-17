@@ -1,5 +1,6 @@
 import json
 
+from tools.component_ref import ComponentRef
 from tools.parsers.mcp_json import parse as parse_mcp
 from tools.posture.rules.mutable_install import check_mutable_install
 
@@ -86,3 +87,49 @@ def test_mutable_install_emits_standards_block_with_cwe_scorecard_slsa(tmp_path)
     assert s["openssf_scorecard"] == ["Pinned-Dependencies"]
     assert s["slsa"] == ["immutable-references"]
     assert s["owasp_agentic_top10"] == ["asi04"]
+
+
+def test_unversioned_plugin_without_commit_sha_is_flagged():
+    ref = ComponentRef(
+        ecosystem="claude-plugin",
+        name="feature-dev",
+        version="unknown",
+        component_identity="claude-plugin/feature-dev@unknown",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.feature-dev@official[0]",
+        extra={
+            "component_type": "plugin",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {"kind": "skill_lock", "path": "installed_plugins.json"},
+            "component_path": [{"type": "plugin", "name": "feature-dev"}],
+            "gitCommitSha": None,
+        },
+    )
+
+    findings = check_mutable_install([ref])
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "openaca-posture-mutable-install-reference"
+    assert findings[0].component_label == "claude-plugin/feature-dev@unknown"
+    assert findings[0].active_in == ["claude-code"]
+
+
+def test_unversioned_plugin_with_commit_sha_is_not_flagged():
+    ref = ComponentRef(
+        ecosystem="claude-plugin",
+        name="reboot-chat-app",
+        version="unknown",
+        component_identity="claude-plugin/reboot-chat-app@unknown",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.reboot-chat-app@local[0]",
+        extra={
+            "component_type": "plugin",
+            "runtime_hosts": ["claude-code"],
+            "component_path": [{"type": "plugin", "name": "reboot-chat-app"}],
+            "gitCommitSha": "79a2f53263ba0123456789abcdef0123456789ab",
+        },
+    )
+
+    findings = check_mutable_install([ref])
+
+    assert findings == []

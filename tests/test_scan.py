@@ -381,6 +381,54 @@ affected:
     assert "CVE-2026-9999" in result.output
 
 
+def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
+    active_dir = tmp_path / "plugins" / "cache" / "official" / "active" / "1.0.0"
+    active_dir.mkdir(parents=True)
+    (active_dir / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"active": {"url": "https://active.example/mcp"}}})
+    )
+    inactive_dir = (
+        tmp_path / "plugins" / "marketplaces" / "official" / "external_plugins" / "inactive"
+    )
+    inactive_dir.mkdir(parents=True)
+    (inactive_dir / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"inactive": {"url": "https://inactive.example/mcp"}}})
+    )
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"active@official": True}})
+    )
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "active@official": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(active_dir)}
+                    ]
+                },
+            }
+        )
+    )
+
+    runner = CliRunner()
+    from unittest.mock import patch
+
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})):
+        result = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--config-dir",
+                str(tmp_path),
+                "--include-posture",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "mcp-server/active @ https://active.example/mcp" in result.output
+    assert "mcp-server/inactive @ https://inactive.example/mcp" not in result.output
+
+
 def test_endpoint_subcommand_verbose_lists_resolved_plugins():
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()

@@ -20,6 +20,7 @@ from tools.posture.rules import insecure_transport, missing_auth, mutable_instal
 __all__ = [
     "PostureFinding",
     "Standards",
+    "collect_endpoint_mcp_manifests",
     "collect_mcp_manifests",
     "run_posture_rules",
 ]
@@ -95,4 +96,52 @@ def collect_mcp_manifests(
                 continue
             if isinstance(data, dict):
                 out.append((path, data))
+    return out
+
+
+def collect_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Collect MCP manifests that belong to the resolved endpoint inventory.
+
+    Endpoint mode is install-state-aware. The Claude config directory also
+    contains marketplace catalogs and stale cache versions, so recursively
+    walking the whole directory would report posture findings for components
+    that are not active on the endpoint.
+    """
+    roots: list[Path] = []
+    for ref in refs:
+        if ref.ecosystem != "claude-plugin":
+            continue
+        install_path = ref.extra.get("installPath")
+        if isinstance(install_path, str) and install_path:
+            roots.append(Path(install_path))
+
+    out = collect_mcp_manifests(roots)
+    seen = {path.resolve() for path, _ in out}
+
+    direct_paths = [
+        config_dir / ".mcp.json",
+        config_dir / "mcp.json",
+        config_dir / "claude_desktop_config.json",
+    ]
+    if project_root is not None:
+        direct_paths.append(project_root / ".mcp.json")
+
+    for path in direct_paths:
+        if not path.is_file():
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            out.append((path, data))
+
     return out

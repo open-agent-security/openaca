@@ -50,6 +50,7 @@ from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
+    collect_endpoint_mcp_manifests,
     collect_mcp_manifests,
     run_posture_rules,
 )
@@ -584,10 +585,7 @@ def endpoint(
 
     posture_findings: list[PostureFinding] = []
     if include_posture:
-        roots = [config_dir]
-        if project is not None:
-            roots.append(project)
-        manifests = collect_mcp_manifests(roots)
+        manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
         posture_findings = run_posture_rules(refs, manifests)
 
     advisory_index = {a["id"]: a for a in corpus}

@@ -113,3 +113,23 @@ def test_standards_block(tmp_path):
     assert s["owasp_app_top_10"] == ["A01:2021", "A07:2021"]
     assert s["owasp_agentic_top10"] == ["asi03"]
     assert s["owasp_mcp_top10"] == ["mcp07:2025"]
+
+
+def test_mcpservers_key_sets_claude_code_active_in(tmp_path):
+    manifest = {"mcpServers": {"x": {"url": "https://example.com/mcp"}}}
+    findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])
+    assert findings[0].active_in == ["claude-code"]
+
+
+def test_servers_key_leaves_active_in_empty(tmp_path):
+    """VS Code `servers` key: host cannot be inferred, so active_in is empty."""
+    manifest = {"servers": {"y": {"url": "https://example.com/mcp"}}}
+    findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])
+    assert findings[0].active_in == []
+
+
+def test_flat_root_leaves_active_in_empty(tmp_path):
+    """Flat-root manifests have no host key, so active_in is empty."""
+    manifest = {"playwright": {"url": "https://example.com/mcp"}}
+    findings = check_missing_auth([(tmp_path / ".mcp.json", manifest)])
+    assert findings[0].active_in == []

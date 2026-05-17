@@ -171,6 +171,7 @@ def test_vscode_servers_root_key(tmp_path):
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
     assert refs[0].source_locator == "$.servers.git"
+    assert refs[0].extra["runtime_hosts"] == []
 
 
 def test_top_level_array_does_not_raise(tmp_path):

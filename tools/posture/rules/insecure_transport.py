@@ -27,6 +27,12 @@ _STANDARDS = Standards(
 )
 
 
+def _infer_hosts(manifest: dict) -> list[str]:
+    if isinstance(manifest.get("mcpServers"), dict):
+        return ["claude-code"]
+    return []
+
+
 def _get_server_map(manifest: dict) -> dict | None:
     """Return the server dict from mcpServers, servers, or flat root."""
     for key in ("mcpServers", "servers"):
@@ -68,7 +74,7 @@ def check_insecure_transport(
                         "name": f"mcp-server/{name} @ {url}",
                         "source": {"url": url},
                     },
-                    active_in=["claude-code"],
+                    active_in=_infer_hosts(manifest),
                     declared_by={"kind": "manifest", "path": str(path)},
                     component_path=[{"type": "mcp_server", "name": f"mcp-server/{name} @ {url}"}],
                     standards=_STANDARDS,

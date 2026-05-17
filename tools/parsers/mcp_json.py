@@ -262,7 +262,9 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
                     )
                 )
             elif name:
@@ -271,7 +273,9 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/npx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
                     )
                 )
         elif cmd_class == "uvx":
@@ -284,7 +288,9 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
                     )
                 )
             elif name:
@@ -293,7 +299,9 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/uvx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
                     )
                 )
         elif command:
@@ -302,7 +310,9 @@ def parse_mcp_servers(
                     component_identity=f"mcp-stdio/binary:{command}",
                     source_manifest=source_manifest,
                     source_locator=locator,
-                    extra=_mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts),
+                    extra=_mcp_ref_extra(
+                        source_manifest, install_source, server_name, runtime_hosts
+                    ),
                 )
             )
     return refs

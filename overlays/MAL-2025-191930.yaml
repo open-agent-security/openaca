@@ -1,0 +1,19 @@
+schema_version: 1.7.3
+id: MAL-2025-191930
+modified: '2025-12-31T02:55:38.951129Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm01:2025
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.005
+      - AML.T0051.001
+      - AML.T0104
+    evidence_level: research
+    threat_kind: malicious_package

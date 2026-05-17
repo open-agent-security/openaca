@@ -6,8 +6,8 @@ description: Annotate or re-review OpenACA seed candidates in `candidates/` acco
 # OpenACA candidate review
 
 Annotate or re-review reviewable seed candidates produced by
-`openaca seed`. Uses your Claude Code session's auth (subscription
-quota), not the API LLM provider path.
+`openaca seed`. Uses your Claude Code session's auth, not the API
+LLM provider path.
 
 ## Invocation modes
 

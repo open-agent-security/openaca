@@ -64,6 +64,11 @@ def _mutable_install_source_for(ref: ComponentRef) -> str | None:
         return None
     if ref.version and ref.version != "unknown":
         return None
+    # Only flag refs from endpoint install state (installed_plugins.json).
+    # Repo-scan refs from claude_plugin.parse() have an empty extra dict with
+    # no "gitCommitSha" key; endpoint refs always set the key (value may be None).
+    if "gitCommitSha" not in (ref.extra or {}):
+        return None
     git_sha = (ref.extra or {}).get("gitCommitSha")
     if isinstance(git_sha, str) and git_sha.strip():
         return None

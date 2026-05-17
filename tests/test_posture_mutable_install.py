@@ -1,6 +1,7 @@
 import json
 
 from tools.component_ref import ComponentRef
+from tools.parsers.claude_plugin import parse as parse_plugin
 from tools.parsers.mcp_json import parse as parse_mcp
 from tools.posture.rules.mutable_install import check_mutable_install
 
@@ -131,5 +132,21 @@ def test_unversioned_plugin_with_commit_sha_is_not_flagged():
     )
 
     findings = check_mutable_install([ref])
+
+    assert findings == []
+
+
+def test_repo_scan_plugin_without_version_not_flagged(tmp_path):
+    """Repo-mode refs from claude_plugin.parse() must not produce false positives.
+
+    parse() emits an empty extra dict (no "gitCommitSha" key), so a plugin
+    manifest that omits version must not be reported as a mutable install ref.
+    """
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "my-plugin"}))
+
+    refs = parse_plugin(plugin_dir / "plugin.json")
+    findings = check_mutable_install(refs)
 
     assert findings == []

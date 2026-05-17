@@ -10,7 +10,7 @@ ADR-0009 for the architectural rationale.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 Severity = Literal["low", "medium", "high"]
 Confidence = Literal["low", "medium", "high"]
@@ -42,8 +42,24 @@ class PostureFinding:
     title: str
     severity: Severity
     confidence: Confidence
-    component: str
-    location: str
+    component: dict[str, Any]
+    active_in: list[str]
+    declared_by: dict[str, Any] | None
+    component_path: list[dict[str, str]]
     standards: Standards
     remediation: str
     finding_type: str = "posture"
+
+    @property
+    def component_label(self) -> str:
+        name = self.component.get("name")
+        if isinstance(name, str) and name:
+            return name
+        return "<unidentified>"
+
+    @property
+    def location(self) -> str:
+        if self.declared_by is None:
+            return ""
+        path = self.declared_by.get("path")
+        return path if isinstance(path, str) else ""

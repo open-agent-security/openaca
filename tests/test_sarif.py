@@ -131,8 +131,7 @@ def test_sarif_result_carries_attributed_to_when_set():
 
 
 def test_sarif_omits_attributed_to_when_none():
-    """Direct findings (attributed_to is None) should not get a `properties`
-    block at all, keeping output tight."""
+    """Direct findings should omit attributed_to even when identity properties exist."""
     finding = Finding(
         advisory_id="CVE-2026-0001",
         component=_ref(),
@@ -140,7 +139,34 @@ def test_sarif_omits_attributed_to_when_none():
     )
     sarif = to_sarif([finding], {})
     result = sarif["runs"][0]["results"][0]
-    assert "properties" not in result
+    assert "attributed_to" not in result["properties"]
+
+
+def test_sarif_result_carries_component_identity_properties():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@modelcontextprotocol/server-filesystem",
+        version="1.0.2",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.filesystem",
+        extra={
+            "component_type": "mcp_server",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {"kind": "manifest", "path": ".mcp.json"},
+            "component_path": [{"type": "mcp_server", "name": "filesystem"}],
+        },
+    )
+    finding = Finding("GHSA-X", ref, "high")
+
+    sarif = to_sarif([finding], {})
+    props = sarif["runs"][0]["results"][0]["properties"]
+
+    assert props["component_type"] == "mcp_server"
+    assert props["component_name"] == "filesystem"
+    assert props["source_purl"] == "pkg:npm/%40modelcontextprotocol/server-filesystem@1.0.2"
+    assert props["declared_by"] == {"kind": "manifest", "path": ".mcp.json"}
+    assert props["component_path"] == [{"type": "mcp_server", "name": "filesystem"}]
+    assert props["active_in"] == ["claude-code"]
 
 
 def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
@@ -234,8 +260,10 @@ def _posture_for_sarif(rule_id="openaca-posture-mutable-install-reference", seve
         title="Component installed from a mutable source reference",
         severity=severity,  # type: ignore[arg-type]
         confidence="high",
-        component="npm/foo (npx foo)",
-        location=".mcp.json",
+        component={"type": "mcp_server", "name": "npm/foo (npx foo)"},
+        active_in=["claude-code"],
+        declared_by={"kind": "manifest", "path": ".mcp.json"},
+        component_path=[{"type": "mcp_server", "name": "npm/foo (npx foo)"}],
         standards=Standards(cwe=["CWE-1357"], owasp_agentic_top10=["asi04"]),
         remediation="Pin to an exact version.",
     )

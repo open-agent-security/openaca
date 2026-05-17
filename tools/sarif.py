@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.finding_output import finding_to_output, posture_to_output
 from tools.matcher import Finding
 from tools.posture.finding import PostureFinding
 
@@ -43,7 +44,7 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
     - source: from advisory.database_specific.openaca.source (plan 009).
     Returns empty dict when no metadata is present.
     """
-    props: dict = {}
+    props: dict = _identity_properties(finding_to_output(finding, advisory))
     if finding.attributed_to:
         props["attributed_to"] = finding.attributed_to
     extra = finding.component.extra or {}
@@ -62,6 +63,33 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
                 overlay_source = openaca_block.get("overlay_source")
                 if isinstance(overlay_source, str):
                     props["overlay_source"] = overlay_source
+    return props
+
+
+def _identity_properties(output: dict[str, Any]) -> dict[str, Any]:
+    props: dict[str, Any] = {}
+    component = output.get("component")
+    if isinstance(component, dict):
+        component_type = component.get("type")
+        component_name = component.get("name")
+        if isinstance(component_type, str):
+            props["component_type"] = component_type
+        if isinstance(component_name, str):
+            props["component_name"] = component_name
+        source = component.get("source")
+        if isinstance(source, dict):
+            purl = source.get("purl")
+            if isinstance(purl, str):
+                props["source_purl"] = purl
+    declared_by = output.get("declared_by")
+    if isinstance(declared_by, dict):
+        props["declared_by"] = declared_by
+    component_path = output.get("component_path")
+    if isinstance(component_path, list) and component_path:
+        props["component_path"] = component_path
+    active_in = output.get("active_in")
+    if isinstance(active_in, list) and active_in:
+        props["active_in"] = active_in
     return props
 
 
@@ -123,6 +151,7 @@ def to_sarif(
     if posture_findings:
         seen_rule_ids: set[str] = {r["id"] for r in rules}
         for p in posture_findings:
+            normalized = posture_to_output(p)
             if p.rule_id not in seen_rule_ids:
                 seen_rule_ids.add(p.rule_id)
                 rules.append(
@@ -146,12 +175,13 @@ def to_sarif(
                                 "artifactLocation": {"uri": p.location},
                                 "region": {
                                     "startLine": 1,
-                                    "snippet": {"text": p.component},
+                                    "snippet": {"text": p.component_label},
                                 },
                             }
                         }
                     ],
                     "properties": {
+                        **_identity_properties(normalized),
                         "finding_type": "posture",
                         "confidence": p.confidence,
                         "standards": p.standards.to_dict(),

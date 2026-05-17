@@ -29,6 +29,7 @@ from typing import Optional
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
+from tools.finding_output import finding_to_output, posture_to_output
 from tools.matcher import Finding
 from tools.posture.finding import PostureFinding
 from tools.severity import derive_severity_label, derive_severity_score
@@ -334,6 +335,7 @@ def render_text(
                 if isinstance(evidence_level, str):
                     out.append(f"        evidence_level: {evidence_level}")
                 out.append(f"        confidence: {f.confidence}")
+                out.extend(f"        {line}" for line in _identity_detail_lines(f))
         out.append("")
 
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
@@ -361,13 +363,13 @@ def _render_posture_section(
     rank = {"high": 3, "medium": 2, "low": 1}
     sorted_pf = sorted(
         posture_findings,
-        key=lambda p: (-rank.get(p.severity, 0), p.rule_id, p.component),
+        key=lambda p: (-rank.get(p.severity, 0), p.rule_id, p.component_label),
     )
     lines: list[str] = ["Posture findings (configuration hygiene):", ""]
     for p in sorted_pf:
         label = _POSTURE_SEVERITY_LABEL.get(p.severity, p.severity.upper())
         label_disp = _color(label, use_color)
-        lines.append(f"  {label_disp}  {p.rule_id}  {p.component}")
+        lines.append(f"  {label_disp}  {p.rule_id}  {p.component_label}")
         if p.location:
             lines.append(f"       location: {p.location}")
         lines.append(f"       fix:      {p.remediation}")
@@ -378,6 +380,62 @@ def _render_posture_section(
             lines.append(f"       standards: {', '.join(standards_parts)}")
         lines.append("")
     return "\n".join(lines).rstrip()
+
+
+def _identity_detail_lines(finding: Finding) -> list[str]:
+    out = finding_to_output(finding, None)
+    component = out["component"]
+    lines = [f"Component: {component['type']} {component['name']}"]
+    source = _source_label(component.get("source") or {})
+    if source:
+        lines.append(f"Source: {source}")
+    active_in = out.get("active_in") or []
+    if active_in:
+        lines.append(f"Active in: {', '.join(active_in)}")
+    declared_by = out.get("declared_by")
+    declared = _declared_by_label(declared_by) if isinstance(declared_by, dict) else None
+    if declared:
+        lines.append(f"Declared by: {declared}")
+    component_path = out.get("component_path") or []
+    if len(component_path) > 1:
+        lines.append(f"Path: {_component_path_label(component_path)}")
+    return lines
+
+
+def _source_label(source: dict) -> str:
+    purl = source.get("purl")
+    if isinstance(purl, str) and purl:
+        return purl
+    ecosystem = source.get("ecosystem")
+    name = source.get("name")
+    version = source.get("version")
+    if isinstance(ecosystem, str) and isinstance(name, str):
+        if isinstance(version, str) and version:
+            return f"{ecosystem}:{name}@{version}"
+        return f"{ecosystem}:{name}"
+    return ""
+
+
+def _declared_by_label(declared_by: dict) -> str:
+    kind = declared_by.get("kind")
+    if kind == "plugin":
+        name = declared_by.get("name")
+        if isinstance(name, str) and name:
+            return f'plugin "{name}"'
+    path = declared_by.get("path")
+    return path if isinstance(path, str) else ""
+
+
+def _component_path_label(component_path: list) -> str:
+    parts: list[str] = []
+    for node in component_path:
+        if not isinstance(node, dict):
+            continue
+        typ = node.get("type")
+        name = node.get("name")
+        if isinstance(typ, str) and isinstance(name, str):
+            parts.append(f"{typ} {name}")
+    return " -> ".join(parts)
 
 
 def _pluralize(count: int, label: str) -> str:
@@ -453,24 +511,15 @@ def render_json(
     out_findings = []
     for f in findings:
         adv = advisory_index.get(f.advisory_id) or {}
-        out_findings.append(
-            {
-                "id": f.advisory_id,
-                "severity": derive_severity_label(adv),
-                "score": derive_severity_score(adv),
-                "confidence": f.confidence,
-                "package": {
-                    "ecosystem": f.component.ecosystem,
-                    "name": f.component.name,
-                    "version": f.component.version,
-                },
-                "location": str(f.component.source_manifest),
-                "fixed_in": _fixed_in_for_finding(f, adv),
-                "summary": _summary_for_advisory(adv) or None,
-                "source": _source_for_advisory(adv),
-                "attributed_to": f.attributed_to,
-            }
-        )
+        entry = finding_to_output(f, adv)
+        entry["severity"] = derive_severity_label(adv)
+        entry["score"] = derive_severity_score(adv)
+        entry["fixed_in"] = _fixed_in_for_finding(f, adv)
+        entry["summary"] = _summary_for_advisory(adv) or None
+        entry["source"] = _source_for_advisory(adv)
+        out_findings.append(entry)
+    for p in posture_findings or []:
+        out_findings.append(posture_to_output(p))
     document = {
         "findings": out_findings,
         "stats": {
@@ -482,21 +531,6 @@ def render_json(
             "sources": sorted(stats.sources),
         },
     }
-    if posture_findings is not None:
-        document["posture_findings"] = [
-            {
-                "finding_type": p.finding_type,
-                "rule_id": p.rule_id,
-                "title": p.title,
-                "severity": p.severity,
-                "confidence": p.confidence,
-                "component": p.component,
-                "location": p.location,
-                "standards": p.standards.to_dict(),
-                "remediation": p.remediation,
-            }
-            for p in posture_findings
-        ]
     return json.dumps(document, indent=2, sort_keys=False)
 
 

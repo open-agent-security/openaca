@@ -30,6 +30,7 @@ against the rules in effect at the time.
 - [ADR-0013 — Separate component identity from observation location](0013-non-package-component-identities.md): `ComponentRef.component_identity` is logical identity for non-package components, while `source_manifest`, `source_locator`, `attributed_to`, and `extra` carry where/how the scanner observed it; hook identities stop encoding settings scope, event, and array index as component identity.
 - [ADR-0014 — Schema extension key `database_specific.openaca`](0014-rename-extension-key-to-openaca.md): supersedes ADR-0002; the wire-format namespace renames from `asve` to `openaca` to match the project rename. Pre-V0, no published consumers; the lock-from-V0 rule rolls forward to the new key.
 - [ADR-0015 — Overlay-data CC-BY-4.0 declared inline in README](0015-overlay-data-cc-by-inlined-in-readme.md): supersedes ADR-0001's repo-root `LICENSE-DATA` requirement; license choices (Apache-2.0 code / CC-BY-4.0 overlay data) unchanged, but the data-license declaration moves to README to match OSV.dev / GHSA / osv-scanner conventions and to avoid GitHub's "unknown license" sidebar for `LICENSE-DATA`.
+- [ADR-0016 — Separate agent component source identity from scan context in output](0016-agent-component-identity-and-scan-output.md): scan output has three layers — component identity, source identity, and scan context; matching uses source identity, while `declared_by`, `component_path`, and `active_in` explain direct vs plugin-bundled installation.
 
 ## Superseded
 

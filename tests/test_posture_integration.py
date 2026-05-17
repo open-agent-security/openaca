@@ -90,7 +90,7 @@ def test_collect_mcp_manifests_excludes_non_claude_plugin_json(tmp_path):
     assert not any(p.name == "plugin.json" for p in paths)
 
 
-def test_posture_json_output_includes_array(tmp_path):
+def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         scan_main,
@@ -107,7 +107,9 @@ def test_posture_json_output_includes_array(tmp_path):
     )
     assert result.exit_code == 0, result.output
     doc = json.loads(result.stdout)
-    assert "posture_findings" in doc
+    assert "posture_findings" not in doc
     assert any(
-        f["rule_id"] == "openaca-posture-mutable-install-reference" for f in doc["posture_findings"]
+        f["rule_id"] == "openaca-posture-mutable-install-reference"
+        for f in doc["findings"]
+        if f["finding_type"] == "posture"
     )

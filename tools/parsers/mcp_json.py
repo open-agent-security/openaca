@@ -259,7 +259,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra={"install_source": install_source},
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
             elif name:
@@ -268,7 +268,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/npx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra={"install_source": install_source},
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
         elif cmd_class == "uvx":
@@ -281,7 +281,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra={"install_source": install_source},
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
             elif name:
@@ -290,7 +290,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/uvx-unpinned:{name}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra={"install_source": install_source},
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
         elif command:
@@ -299,10 +299,20 @@ def parse_mcp_servers(
                     component_identity=f"mcp-stdio/binary:{command}",
                     source_manifest=source_manifest,
                     source_locator=locator,
-                    extra={"install_source": install_source},
+                    extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                 )
             )
     return refs
+
+
+def _mcp_ref_extra(source_manifest: str, install_source: str, server_name: str) -> dict:
+    return {
+        "component_type": "mcp_server",
+        "runtime_hosts": ["claude-code"],
+        "declared_by": {"kind": "manifest", "path": source_manifest},
+        "component_path": [{"type": "mcp_server", "name": server_name}],
+        "install_source": install_source,
+    }
 
 
 def _format_install_source(raw_command: object, raw_args: list[str]) -> str:

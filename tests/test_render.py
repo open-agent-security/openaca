@@ -35,6 +35,7 @@ def _ref(name: str, version: str, manifest: str = "pkg.json", **kw) -> Component
         version=version,
         source_manifest=manifest,
         attributed_to=kw.get("attributed_to"),
+        extra=kw.get("extra", {}),
     )
 
 
@@ -367,6 +368,60 @@ def test_text_verbose_adds_taxonomies_and_evidence_level():
     assert "taxonomies:" not in out_p
 
 
+def test_text_verbose_adds_direct_component_identity_details():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@modelcontextprotocol/server-filesystem",
+        version="1.0.2",
+        source_manifest=".mcp.json",
+        extra={
+            "component_type": "mcp_server",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {"kind": "manifest", "path": ".mcp.json"},
+            "component_path": [{"type": "mcp_server", "name": "filesystem"}],
+        },
+    )
+    finding = Finding("GHSA-X", ref, "high")
+    advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
+
+    out = render_text([finding], {"GHSA-X": advisory}, _stats(), verbose=True)
+
+    assert "Component: mcp_server filesystem" in out
+    assert "Source: pkg:npm/%40modelcontextprotocol/server-filesystem@1.0.2" in out
+    assert "Active in: claude-code" in out
+    assert "Declared by: .mcp.json" in out
+
+
+def test_text_verbose_adds_plugin_bundled_component_path():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@modelcontextprotocol/server-filesystem",
+        version="1.0.2",
+        source_manifest=".claude/cache/acme/.mcp.json",
+        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        extra={
+            "component_type": "mcp_server",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {
+                "kind": "plugin",
+                "name": "acme-devtools",
+                "path": ".claude/cache/acme/.claude-plugin/plugin.json",
+            },
+            "component_path": [
+                {"type": "plugin", "name": "acme-devtools"},
+                {"type": "mcp_server", "name": "filesystem"},
+            ],
+        },
+    )
+    finding = Finding("GHSA-X", ref, "high", attributed_to=ref.attributed_to)
+    advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
+
+    out = render_text([finding], {"GHSA-X": advisory}, _stats(), verbose=True)
+
+    assert 'Declared by: plugin "acme-devtools"' in out
+    assert "Path: plugin acme-devtools -> mcp_server filesystem" in out
+
+
 def test_text_footer_lists_sources():
     findings = [_finding("X", "pkg", "1.0.0")]
     index = {"X": _advisory("X", "npm", "pkg", severity_label="HIGH", source="osv.dev")}
@@ -448,7 +503,18 @@ def test_json_empty_returns_findings_array_and_stats():
 
 
 def test_json_finding_contains_full_record():
-    findings = [_finding("A", "urllib3", "2.6.3")]
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="urllib3",
+        version="2.6.3",
+        source_manifest="mcp.json",
+        extra={
+            "component_type": "mcp_server",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {"kind": "manifest", "path": "mcp.json"},
+        },
+    )
+    findings = [Finding("A", ref, "high")]
     index = {
         "A": _advisory(
             "A",
@@ -463,13 +529,60 @@ def test_json_finding_contains_full_record():
     out = render_json(findings, index, _stats(sources=("osv.dev",)))
     parsed = json.loads(out)
     (entry,) = parsed["findings"]
+    assert "posture_findings" not in parsed
+    assert entry["finding_type"] == "vulnerability"
     assert entry["id"] == "A"
     assert entry["severity"] == "HIGH"
-    assert entry["package"] == {"ecosystem": "npm", "name": "urllib3", "version": "2.6.3"}
+    assert entry["component"]["type"] == "mcp_server"
+    assert entry["component"]["source"] == {
+        "ecosystem": "npm",
+        "purl": "pkg:npm/urllib3@2.6.3",
+        "name": "urllib3",
+        "version": "2.6.3",
+    }
+    assert entry["active_in"] == ["claude-code"]
+    assert entry["declared_by"] == {"kind": "manifest", "path": "mcp.json"}
     assert entry["fixed_in"] == "2.7.0"
     assert entry["summary"] == "CSRF"
     assert entry["source"] == "osv.dev"
     assert entry["confidence"] == "high"
+    assert entry["matched_advisory"]["id"] == "A"
+
+
+def test_json_plugin_bundled_finding_contains_component_path():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@modelcontextprotocol/server-filesystem",
+        version="1.0.2",
+        source_manifest=".claude/cache/acme/.mcp.json",
+        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        extra={
+            "component_type": "mcp_server",
+            "runtime_hosts": ["claude-code"],
+            "declared_by": {
+                "kind": "plugin",
+                "name": "acme-devtools",
+                "path": ".claude/cache/acme/.claude-plugin/plugin.json",
+            },
+            "component_path": [
+                {"type": "plugin", "name": "acme-devtools"},
+                {"type": "mcp_server", "name": "filesystem"},
+            ],
+        },
+    )
+    finding = Finding("GHSA-X", ref, "high")
+    advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
+
+    doc = json.loads(render_json([finding], {"GHSA-X": advisory}, _stats()))
+    (entry,) = doc["findings"]
+
+    assert entry["finding_type"] == "vulnerability"
+    assert entry["component"]["type"] == "mcp_server"
+    assert entry["declared_by"]["kind"] == "plugin"
+    assert entry["component_path"] == [
+        {"type": "plugin", "name": "acme-devtools"},
+        {"type": "mcp_server", "name": "filesystem"},
+    ]
 
 
 def test_json_score_populated_when_vector_present():
@@ -881,8 +994,10 @@ def _posture(rule_id="openaca-posture-mutable-install-reference", severity: str 
         title="Component installed from a mutable source reference",
         severity=severity,  # type: ignore[arg-type]
         confidence="high",
-        component="npm/foo (npx foo)",
-        location=".mcp.json",
+        component={"type": "mcp_server", "name": "npm/foo (npx foo)"},
+        active_in=["claude-code"],
+        declared_by={"kind": "manifest", "path": ".mcp.json"},
+        component_path=[{"type": "mcp_server", "name": "npm/foo (npx foo)"}],
         standards=Standards(cwe=["CWE-1357"], owasp_agentic_top10=["asi04"]),
         remediation="Pin to an exact version, commit SHA, or Docker digest.",
     )
@@ -921,7 +1036,7 @@ def test_text_posture_omitted_when_kwarg_not_passed():
     assert "Posture findings" not in out
 
 
-def test_json_includes_posture_findings_array_when_passed():
+def test_json_includes_posture_findings_in_unified_findings_array():
     out = render_json(
         [],
         {},
@@ -929,12 +1044,14 @@ def test_json_includes_posture_findings_array_when_passed():
         posture_findings=[_posture()],
     )
     doc = json.loads(out)
-    assert "posture_findings" in doc
-    assert len(doc["posture_findings"]) == 1
-    pf = doc["posture_findings"][0]
+    assert "posture_findings" not in doc
+    assert len(doc["findings"]) == 1
+    pf = doc["findings"][0]
     assert pf["finding_type"] == "posture"
     assert pf["rule_id"] == "openaca-posture-mutable-install-reference"
     assert pf["severity"] == "low"
+    assert pf["component"]["type"] == "mcp_server"
+    assert pf["declared_by"] == {"kind": "manifest", "path": ".mcp.json"}
     assert pf["standards"]["cwe"] == ["CWE-1357"]
     assert pf["standards"]["owasp_agentic_top10"] == ["asi04"]
 

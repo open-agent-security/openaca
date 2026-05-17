@@ -1299,7 +1299,9 @@ def test_scan_format_json_produces_parseable_document(tmp_path):
     assert parsed is not None
     assert isinstance(parsed["findings"], list)
     assert parsed["findings"]
-    assert {"id", "severity", "package", "location"} <= parsed["findings"][0].keys()
+    assert {"finding_type", "id", "severity", "component", "matched_advisory"} <= parsed[
+        "findings"
+    ][0].keys()
     assert "stats" in parsed
 
 

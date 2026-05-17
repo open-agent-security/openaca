@@ -8,7 +8,7 @@ def test_remote_no_auth_flagged(tmp_path):
     assert findings[0].rule_id == "openaca-posture-missing-remote-auth"
     assert findings[0].severity == "low"
     assert findings[0].confidence == "medium"
-    assert "https://example.com/mcp" in findings[0].component
+    assert "https://example.com/mcp" in findings[0].component_label
 
 
 def test_remote_with_auth_header_not_flagged(tmp_path):
@@ -71,7 +71,7 @@ def test_servers_envelope_also_walked(tmp_path):
     manifest = {"servers": {"y": {"url": "https://example.com/mcp"}}}
     findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])
     assert len(findings) == 1
-    assert "https://example.com/mcp" in findings[0].component
+    assert "https://example.com/mcp" in findings[0].component_label
 
 
 def test_flat_root_no_auth_flagged(tmp_path):
@@ -79,7 +79,7 @@ def test_flat_root_no_auth_flagged(tmp_path):
     manifest = {"playwright": {"url": "https://example.com/mcp"}}
     findings = check_missing_auth([(tmp_path / ".mcp.json", manifest)])
     assert len(findings) == 1
-    assert "https://example.com/mcp" in findings[0].component
+    assert "https://example.com/mcp" in findings[0].component_label
 
 
 def test_flat_root_with_auth_not_flagged(tmp_path):
@@ -103,7 +103,7 @@ def test_disabled_server_not_flagged(tmp_path):
     }
     findings = check_missing_auth([(tmp_path / "mcp.json", manifest)])
     assert len(findings) == 1
-    assert "active.example" in findings[0].component
+    assert "active.example" in findings[0].component_label
 
 
 def test_standards_block(tmp_path):

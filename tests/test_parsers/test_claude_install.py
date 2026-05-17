@@ -403,6 +403,25 @@ def test_install_walks_bundled_skill(tmp_path):
     assert skill_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
 
 
+def test_install_bundled_skill_carries_container_metadata(tmp_path):
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    skill_dir = install_path / "skills" / "bootstrap"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: bootstrap\ndescription: scaffold a project\n---\nbody\n"
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    skill = next(r for r in refs if r.ecosystem == "claude-skill")
+    assert skill.extra["declared_by"]["kind"] == "plugin"
+    assert skill.extra["declared_by"]["name"] == "superpowers"
+    assert skill.extra["component_path"][0] == {"type": "plugin", "name": "superpowers"}
+    assert skill.extra["component_path"][-1] == {"type": "skill", "name": "bootstrap"}
+    assert skill.extra["runtime_hosts"] == ["claude-code"]
+
+
 def test_install_walks_bundled_hooks(tmp_path):
     install_path = _build_install_with_plugin(
         tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"

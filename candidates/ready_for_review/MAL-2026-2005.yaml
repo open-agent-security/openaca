@@ -1,0 +1,48 @@
+schema_version: 1.7.5
+id: MAL-2026-2005
+modified: '2026-03-20T22:01:56.792416Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+  - topic_agent_ai_feature
+  package_names:
+  - efghr-honeybee-sdk
+  annotation_source: deterministic
+_evidence:
+- field: summary
+  quote: Malicious code in efghr-honeybee-sdk (PyPI)
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm01:2025
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+      - AML.T0051.001
+    evidence_level: research
+    threat_kind: malicious_package
+summary: Malicious code in efghr-honeybee-sdk (PyPI)
+details: "\n---\n_-= Per source details. Do not edit below this line.=-_\n\n## Source:\
+  \ kam193 (e77e2d0088390e5dc421f70a65ade331bfbf554afcc9cc42362098d0ed130692)\nDuring\
+  \ installation, package attempts to modify LLM configuration files to provide a\
+  \ backdoor instruction for further control over an AI agent.\n\n\n---\n\nCategory:\
+  \ MALICIOUS - The campaign has clearly malicious intent, like infostealers.\n\n\n\
+  Campaign: 2026-03-flyio-token-client-efgh\n\n\nReasons (based on the campaign):\n\
+  \n\n - llm-threat\n\n\n - The package overrides the install command in setup.py\
+  \ to execute malicious code during installation.\n"
+references:
+- type: WEB
+  url: https://bad-packages.kam193.eu/pypi/package/efghr-honeybee-sdk
+affected:
+- package:
+    name: efghr-honeybee-sdk
+    ecosystem: PyPI
+    purl: pkg:pypi/efghr-honeybee-sdk
+  versions:
+  - 0.1.0
+  - 0.2.0
+  database_specific:
+    source: https://github.com/ossf/malicious-packages/blob/main/osv/malicious/pypi/efghr-honeybee-sdk/MAL-2026-2005.json

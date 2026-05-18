@@ -1,0 +1,68 @@
+schema_version: 1.7.3
+id: MAL-2026-405
+modified: '2026-01-23T02:11:18.092677Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+  - package_name_agent_stack
+  package_names:
+  - anthropic-sdk
+  annotation_source: deterministic
+_evidence:
+- field: summary
+  quote: Malicious code in anthropic-sdk (npm)
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+      - AML.T0074
+    evidence_level: likely
+    threat_kind: malicious_package
+aliases:
+- GHSA-j8wc-8p9m-6fm6
+summary: Malicious code in anthropic-sdk (npm)
+details: '
+
+  ---
+
+  _-= Per source details. Do not edit below this line.=-_
+
+
+  ## Source: amazon-inspector (49a0221a103a31cc2bf5e4f6c7d5fc7e0a8cbb2128d06aafe849e2c0df492fa8)
+
+  The package anthropic-sdk was found to contain malicious code.
+
+
+  ## Source: ghsa-malware (fb69378ea2c4bf83cabc021e0e00f2cc8f87b8d9ddfd536f6e0285d10dbf4daf)
+
+  Any computer that has this package installed or running should be considered fully
+  compromised. All secrets and keys stored on that computer should be rotated immediately
+  from a different computer. The package should be removed, but as full control of
+  the computer may have been given to an outside entity, there is no guarantee that
+  removing the package will remove all malicious software resulting from installing
+  it.
+
+  '
+references:
+- type: ADVISORY
+  url: https://github.com/advisories/GHSA-j8wc-8p9m-6fm6
+affected:
+- package:
+    name: anthropic-sdk
+    ecosystem: npm
+    purl: pkg:npm/anthropic-sdk
+  ranges:
+  - type: SEMVER
+    events:
+    - introduced: '0'
+  database_specific:
+    cwes:
+    - cweId: CWE-506
+      description: The product contains code that appears to be malicious in nature.
+      name: Embedded Malicious Code
+    source: https://github.com/ossf/malicious-packages/blob/main/osv/malicious/npm/anthropic-sdk/MAL-2026-405.json

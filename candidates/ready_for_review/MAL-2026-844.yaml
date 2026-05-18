@@ -1,0 +1,47 @@
+schema_version: 1.7.3
+id: MAL-2026-844
+modified: '2026-02-10T20:14:00.928658Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+  - package_name_agent_stack
+  package_names:
+  - vllm-plugins
+  annotation_source: deterministic
+_evidence:
+- field: summary
+  quote: Malicious code in vllm-plugins (PyPI)
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+      - AML.T0074
+    evidence_level: research
+    threat_kind: malicious_package
+summary: Malicious code in vllm-plugins (PyPI)
+details: "\n---\n_-= Per source details. Do not edit below this line.=-_\n\n## Source:\
+  \ kam193 (4fa0706d497278a502d158c89d51645a6f4e8187ca325aacaa59facccf542a03)\nGeneric\
+  \ campaign for all (likely) research / pentests, where the amount or art of collected\
+  \ data raises questions about the privacy, security and ethical side.\n\n\n---\n\
+  \nCategory: MALICIOUS - The campaign has clearly malicious intent, like infostealers.\n\
+  \n\nCampaign: GENERIC-questionable-pentest\n\n\nReasons (based on the campaign):\n\
+  \n\n - exfiltration-env-variables\n\n\n - exfiltration-generic\n\n\n - The package\
+  \ overrides the install command in setup.py to execute malicious code during installation.\n\
+  \n\n - typosquatting\n"
+references:
+- type: WEB
+  url: https://bad-packages.kam193.eu/pypi/package/vllm-plugins
+affected:
+- package:
+    name: vllm-plugins
+    ecosystem: PyPI
+    purl: pkg:pypi/vllm-plugins
+  versions:
+  - 99.99.99
+  database_specific:
+    source: https://github.com/ossf/malicious-packages/blob/main/osv/malicious/pypi/vllm-plugins/MAL-2026-844.json

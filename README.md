@@ -7,8 +7,8 @@ components.
 
 > Agent-context overlays for upstream security advisories.
 
-> **Beta status:** OpenACA is in closed friend-beta on PyPI as
-> `0.1.0b1`. If you're a beta tester, the
+> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b1`.
+> If you're a beta tester, the
 > [beta-tester guide](docs/beta-tester-guide.md) has the full path
 > (install, first scan, what feedback I'm looking for, how to report).
 
@@ -96,12 +96,22 @@ the same set of findings.
 
 ### Try it in 30 seconds
 
-After `pip install openaca==0.1.0b1`, run the scanner against the
-bundled sample fixture to see a real finding:
+After `pip install openaca==0.1.0b1`, drop a sample `mcp.json` in any
+empty directory and run the scanner:
 
 ```bash
-git clone https://github.com/open-agent-security/openaca.git
-openaca scan repo --target openaca/tests/fixtures/repos/sample-mcp
+mkdir openaca-demo && cd openaca-demo
+cat > mcp.json <<'EOF'
+{
+  "mcpServers": {
+    "git": {
+      "command": "npx",
+      "args": ["@cyanheads/git-mcp-server@1.1.0"]
+    }
+  }
+}
+EOF
+openaca scan repo --target .
 ```
 
 Expected output:
@@ -110,12 +120,12 @@ Expected output:
 Found 1 vulnerability in 1 package.
 
 @cyanheads/git-mcp-server 1.1.0
-  location: openaca/tests/fixtures/repos/sample-mcp/mcp.json
+  location: mcp.json
   fix:      upgrade to >=2.1.5
 
   HIGH  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
 
-Scanned 1 manifest, 4 components. Sources: osv.dev.
+Scanned 1 manifest, 1 component. Sources: osv.dev.
 ```
 
 ### Standalone CLI

@@ -7,6 +7,11 @@ components.
 
 > Agent-context overlays for upstream security advisories.
 
+> **Beta status:** OpenACA is in closed friend-beta on PyPI as
+> `0.1.0b1`. If you're a beta tester, the
+> [beta-tester guide](docs/beta-tester-guide.md) has the full path
+> (install, first scan, what feedback I'm looking for, how to report).
+
 ## Why OpenACA
 
 OpenACA is the open category and reference implementation for **Agent
@@ -82,31 +87,74 @@ makes the distinction explicit.
 Two ways to run the scanner. Both produce SARIF v2.1.0 output and
 the same set of findings.
 
+### Prerequisites
+
+- Python 3.11+
+- Either `pip` (recommended for beta testers) or
+  [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+  (recommended for contributors who want to hack on the code).
+
+### Try it in 30 seconds
+
+After `pip install openaca==0.1.0b1`, run the scanner against the
+bundled sample fixture to see a real finding:
+
+```bash
+git clone https://github.com/open-agent-security/openaca.git
+openaca scan repo --target openaca/tests/fixtures/repos/sample-mcp
+```
+
+Expected output:
+
+```
+Found 1 vulnerability in 1 package.
+
+@cyanheads/git-mcp-server 1.1.0
+  location: openaca/tests/fixtures/repos/sample-mcp/mcp.json
+  fix:      upgrade to >=2.1.5
+
+  HIGH  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
+
+Scanned 1 manifest, 4 components. Sources: osv.dev.
+```
+
 ### Standalone CLI
 
 The scanner is a normal Python package; run it against any local
-checkout. Two modes via subcommands:
+checkout. Two modes via subcommands.
+
+**Install from PyPI (recommended for beta testers):**
+
+```bash
+pip install openaca==0.1.0b1
+```
+
+**Install from source (for contributors):**
 
 ```bash
 git clone https://github.com/open-agent-security/openaca.git
 cd openaca
 uv sync
+```
 
+Run the scanner:
+
+```bash
 # Repo mode: walks declared manifests in a code repo (today's behavior;
 # what the GitHub Action uses).
-uv run openaca scan repo \
+openaca scan repo \
     --target /path/to/your/repo \
     --sarif results.sarif \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
 # agent stack. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
-uv run openaca scan endpoint \
+openaca scan endpoint \
     --fail-on any
 
 # Or scan a specific endpoint config directory and layer in project/local
 # settings from a repo.
-uv run openaca scan endpoint \
+openaca scan endpoint \
     --config-dir ~/.claude \
     --project /path/to/your/repo
 ```

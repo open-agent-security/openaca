@@ -190,8 +190,8 @@ threshold.
 
 A corpus-driven scan returns "no findings" on most clean repos and
 endpoints. Pass `--include-posture` to also emit configuration-hygiene
-checks: unpinned MCP/plugin installs, `http://` MCP endpoints, MCP
-endpoints with no visible auth declaration. Posture findings carry
+checks: unpinned MCP/plugin installs and `http://` MCP endpoints.
+Posture findings carry
 their own `standards{}` block (CWE / OpenSSF Scorecard / SLSA / OWASP
 App / OWASP Agentic / OWASP MCP), render in their own section in text
 output, share the JSON `findings[]` array, and emit as separate SARIF rules.

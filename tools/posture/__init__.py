@@ -15,7 +15,7 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.posture.finding import PostureFinding, Standards
-from tools.posture.rules import insecure_transport, missing_auth, mutable_install
+from tools.posture.rules import insecure_transport, mutable_install
 
 __all__ = [
     "PostureFinding",
@@ -41,7 +41,6 @@ def run_posture_rules(
     findings: list[PostureFinding] = []
     findings.extend(mutable_install.check_mutable_install(refs))
     findings.extend(insecure_transport.check_insecure_transport(manifests))
-    findings.extend(missing_auth.check_missing_auth(manifests))
     return findings
 
 
@@ -51,10 +50,9 @@ def collect_mcp_manifests(
 ) -> list[tuple[Path, dict]]:
     """Walk one or more roots for MCP-shaped manifests and return parsed dicts.
 
-    Used by the URL-shape rules (insecure_transport, missing_auth) that need
-    the raw manifest to inspect `mcpServers[*].url` and adjacent fields.
-    Parse failures are silently dropped — these rules are best-effort and
-    should never abort a scan.
+    Used by URL-shape rules that need the raw manifest to inspect
+    `mcpServers[*].url` and adjacent fields. Parse failures are silently
+    dropped — these rules are best-effort and should never abort a scan.
 
     `.git/` is always skipped regardless of `include_gitignored`, consistent
     with the main repo scanner (`parse_repo_grouped`). When

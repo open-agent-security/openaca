@@ -1,0 +1,17 @@
+schema_version: 1.7.3
+id: MAL-2025-635
+aliases:
+- GHSA-gr63-x6fg-h3wg
+- SNYK-JS-AUTH0LANGCHAINRAGJS-8685307
+modified: '2025-03-31T07:20:08.176732Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+    evidence_level: likely
+    threat_kind: malicious_package

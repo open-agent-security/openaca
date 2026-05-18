@@ -540,9 +540,9 @@ def test_install_walks_dependencies_from_plugin_json(tmp_path):
     assert dep_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
 
 
-def test_install_bare_mcp_from_user_settings(tmp_path):
+def test_install_direct_mcp_from_user_settings(tmp_path):
     """`settings.json.mcpServers` (user scope) → emit npm/PyPI refs with no
-    attribution (bare MCPs are declared directly by the user)."""
+    attribution (direct MCPs are declared directly by the user)."""
     (tmp_path / "settings.json").write_text(
         json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@a/b@1.0.0"]}}})
     )
@@ -553,7 +553,7 @@ def test_install_bare_mcp_from_user_settings(tmp_path):
     assert npm_refs[0].source_manifest == str(tmp_path / "settings.json")
 
 
-def test_install_bare_hooks_per_scope_emit_distinct_identities(tmp_path):
+def test_install_direct_hooks_per_scope_emit_distinct_identities(tmp_path):
     """User and local scopes both declaring a hook → two refs with different
     identity scopes. Hooks are NOT merged across scopes."""
     project = tmp_path / "project"
@@ -577,7 +577,7 @@ def test_install_bare_hooks_per_scope_emit_distinct_identities(tmp_path):
     assert all(r.attributed_to is None for r in hook_refs)
 
 
-def test_install_bare_hooks_repo_mode_excludes_local(tmp_path):
+def test_install_direct_hooks_repo_mode_excludes_local(tmp_path):
     """In repo mode, settings.local.json hooks are not emitted (machine-local)."""
     project = tmp_path / "project"
     claude_dir = project / ".claude"
@@ -590,7 +590,7 @@ def test_install_bare_hooks_repo_mode_excludes_local(tmp_path):
     assert all(r.ecosystem != "claude-hook" for r in refs)
 
 
-def test_install_bare_skills_from_install_root_skills_dir(tmp_path):
+def test_install_direct_skills_from_install_root_skills_dir(tmp_path):
     """`<install_root>/skills/<name>/SKILL.md` → emit claude-skill refs, no attribution."""
     skill_dir = tmp_path / "skills" / "linter"
     skill_dir.mkdir(parents=True)
@@ -602,7 +602,7 @@ def test_install_bare_skills_from_install_root_skills_dir(tmp_path):
     assert skill_refs[0].attributed_to is None
 
 
-def test_install_walks_bare_user_commands_and_agents(tmp_path):
+def test_install_walks_direct_user_commands_and_agents(tmp_path):
     (tmp_path / "commands" / "frontend").mkdir(parents=True)
     (tmp_path / "commands" / "frontend" / "deploy.md").write_text("deploy\n")
     (tmp_path / "agents" / "review").mkdir(parents=True)

@@ -42,16 +42,16 @@ Do not implement:
 - [x] Implement recursive enumeration with deterministic sorted output.
 - [x] Verify: `uv run pytest tests/test_parsers/test_claude_command_agent.py -q`.
 
-### Task 2: Endpoint Bare User And Project Components
+### Task 2: Endpoint Direct User And Project Components
 
 **Files:**
 
 - Modify: `tools/parsers/claude_install.py`
 - Test: `tests/test_parsers/test_claude_install.py`
 
-- [x] Add a failing test for personal bare commands and agents under `<install_root>/commands` and `<install_root>/agents`.
+- [x] Add a failing test for personal direct commands and agents under `<install_root>/commands` and `<install_root>/agents`.
 - [x] Add a failing test for project skills, commands, and agents under `<project_root>/.claude`.
-- [x] Implement the walks in `_walk_bare_components`.
+- [x] Implement the walks in `_walk_direct_components`.
 - [x] Verify: `uv run pytest tests/test_parsers/test_claude_install.py -q`.
 
 ### Task 3: Repo-Mode Recursive Project Components

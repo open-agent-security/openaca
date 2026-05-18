@@ -645,21 +645,21 @@ def _bundled(
     )
 
 
-def test_tree_header_counts_plugins_bare_total():
+def test_tree_header_counts_plugins_direct_total():
     refs = [
         _plugin_ref("a", "1.0.0"),
         _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0"),
         _bundled(
             "claude-skill",
-            "bare-skill",
+            "direct-skill",
             None,
-            attributed_to=None,  # bare
-            component_identity="claude-skill/bare-skill",
+            attributed_to=None,  # direct
+            component_identity="claude-skill/direct-skill",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
-    # Header: 1 plugin, 1 bare component, 2 total components (skill + bundled MCP).
-    assert "1 active plugin, 1 bare component, 2 total components" in out
+    # Header: 1 plugin, 1 direct component, 2 total components (skill + bundled MCP).
+    assert "1 active plugin, 1 direct component, 2 total components" in out
 
 
 def test_tree_groups_bundled_components_by_category():
@@ -786,7 +786,7 @@ def test_tree_tier2_aggregate_carries_finding_marker():
     assert "npm/ deps" in out
 
 
-def test_tree_bare_components_render_as_separate_root():
+def test_tree_direct_components_render_as_separate_root():
     refs = [
         _bundled(
             "claude-skill",
@@ -804,7 +804,7 @@ def test_tree_bare_components_render_as_separate_root():
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
-    assert "bare components/" in out
+    assert "direct components/" in out
     assert "skills/ (2)" in out
     # Alphabetical: bar before foo.
     assert out.index("bar") < out.index("foo")
@@ -951,7 +951,7 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     assert "@cyanheads/git-mcp-server@1.1.0" in out
 
 
-def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
+def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
     package_json = tmp_path / "package.json"
     mcp_json = tmp_path / ".mcp.json"
     software_dep = ComponentRef(
@@ -976,7 +976,7 @@ def test_repo_tree_shows_bare_components_and_suppressed_software(tmp_path):
         use_unicode=True,
     )
 
-    assert "bare components/" in out
+    assert "direct components/" in out
     assert "MCPs/ (1)" in out
     assert "@example/mcp@2.0.0" in out
     assert "software deps suppressed/ (1)" in out

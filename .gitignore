@@ -222,3 +222,15 @@ __marimo__/
 
 # Claude Code Action working directory
 .claude-pr/
+
+# OpenACA candidate review queue.
+# `openaca seed` writes generated candidates to candidates/ root — these
+# are volatile and re-emitted on every reseed (the seeder is
+# unconditional, so tracking them would let a reseed overwrite reviewed
+# annotations). Reviewed-and-approved candidates are moved to
+# candidates/ready_for_review/, which IS tracked: that's the shared
+# review queue with audit-trail value. See CONTRIBUTING.md for the
+# lifecycle.
+candidates/*
+!candidates/ready_for_review/
+!candidates/ready_for_review/*.yaml

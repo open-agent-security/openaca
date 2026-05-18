@@ -102,7 +102,19 @@ uv run pytest
    dumps into `${OPENACA_OSV_CACHE_DIR:-$TMPDIR/openaca-osv}` and advances the
    committed per-ecosystem seed cursors. Review and edit candidate YAML
    before promotion. `openaca promote` writes a minimal canonical overlay
-   under `overlays/`.
+   under `overlays/` and removes the source candidate from
+   `candidates/ready_for_review/`.
+
+   ### Candidate review queue lifecycle
+
+   - `candidates/` (root) is local-only; `openaca seed` writes here and
+     reseeds overwrite without warning, so it's git-ignored.
+   - `candidates/ready_for_review/` is tracked. Reviewed-and-approved
+     candidates move here; that's the shared queue where collaborative
+     review and audit history live.
+   - `openaca promote candidates/ready_for_review/<id>.yaml` writes
+     `overlays/<id>.yaml` and removes the source candidate from
+     `ready_for_review/` in the same operation.
 
    To use LLM-assisted annotation with the scripted workflow, set a
    supported provider, model, and API key:

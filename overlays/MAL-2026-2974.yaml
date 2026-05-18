@@ -1,0 +1,19 @@
+schema_version: 1.7.5
+id: MAL-2026-2974
+aliases:
+- GHSA-5v3x-g9r5-vvhg
+modified: '2026-04-23T21:15:22.994297Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.005
+      - AML.T0104
+    evidence_level: likely
+    threat_kind: malicious_package

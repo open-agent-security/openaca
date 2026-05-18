@@ -1,0 +1,16 @@
+schema_version: 1.7.3
+id: MAL-2026-227
+aliases:
+- GHSA-675f-h4p7-2vp4
+modified: '2026-01-15T22:23:10.053888Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+    evidence_level: likely
+    threat_kind: malicious_package

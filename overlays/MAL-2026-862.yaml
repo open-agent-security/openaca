@@ -1,0 +1,16 @@
+schema_version: 1.7.3
+id: MAL-2026-862
+modified: '2026-02-12T00:49:36.902099Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.001
+    evidence_level: research
+    threat_kind: malicious_package

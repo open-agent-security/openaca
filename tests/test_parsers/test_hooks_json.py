@@ -144,7 +144,7 @@ def test_parse_settings_hooks_keeps_scope_out_of_identity():
     assert all(identity.startswith("claude-hook/command:") for identity in identities)
     assert {r.extra["scope"] for r in refs} == {"user"}
     assert {r.extra["event"] for r in refs} == {"PreToolUse", "Stop"}
-    # Bare hooks are NOT attributed to any plugin.
+    # Direct hooks are NOT attributed to any plugin.
     assert all(r.attributed_to is None for r in refs)
     assert all(r.source_manifest == str(settings_path) for r in refs)
 

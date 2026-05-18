@@ -1214,9 +1214,9 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
     assert "2 transitive" in result.output
 
 
-def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
-    """The 'bare components: N skills' summary line should be followed by
-    one indented line per bare skill identity, so users can see exactly
+def test_endpoint_verbose_lists_direct_skills_individually(tmp_path):
+    """The 'direct components: N skills' summary line should be followed by
+    one indented line per direct skill identity, so users can see exactly
     what was inventoried — mirroring the per-plugin breakdown."""
     skills_root = tmp_path / "skills"
     for name in ("zebra-skill", "alpha-skill", "middle-skill"):
@@ -1239,8 +1239,8 @@ def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    # Tree renders a `bare components/` root with a `skills/ (3)` branch.
-    assert "bare components/" in result.output
+    # Tree renders a `direct components/` root with a `skills/ (3)` branch.
+    assert "direct components/" in result.output
     assert "skills/ (3)" in result.output
     # Each skill name appears as a leaf, sorted alphabetically. The tree
     # strips the `claude-skill/` ecosystem prefix from leaf labels (the
@@ -1252,8 +1252,8 @@ def test_endpoint_verbose_lists_bare_skills_individually(tmp_path):
     assert alpha_idx < middle_idx < zebra_idx
 
 
-def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
-    """No bare components → no summary line and no per-component list."""
+def test_endpoint_verbose_omits_direct_listing_when_no_direct_components(tmp_path):
+    """No direct components → no summary line and no per-component list."""
     (tmp_path / "settings.json").write_text("{}")
     (tmp_path / "plugins").mkdir()
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
@@ -1270,7 +1270,7 @@ def test_endpoint_verbose_omits_bare_listing_when_no_bare_components(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    assert "bare components:" not in result.output
+    assert "direct components:" not in result.output
 
 
 def test_repo_subcommand_skips_gitignored_by_default(tmp_path):

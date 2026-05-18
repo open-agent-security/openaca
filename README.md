@@ -273,7 +273,7 @@ but overlay-backed vulnerability matching needs upstream OSV records.
 (`package.json`, `pyproject.toml`, `package-lock.json`, `uv.lock`) are
 classified as **agent-dependency** only when co-located with a
 `.claude-plugin/plugin.json` sibling — i.e., they declare the deps
-*of a plugin's implementation*. Bare dep manifests in repos that
+*of a plugin's implementation*. Direct dep manifests in repos that
 aren't plugins are classified as **software-dependency** and
 suppressed from output (and from OSV.dev queries) — that's
 general-purpose SCA territory, not ACA. Scan those with a
@@ -289,10 +289,10 @@ Per-parser detail:
 | `pyproject.toml` | PEP 621 deps, optional-deps, PEP 735 dependency-groups | `pkg:pypi/<name>@<version>` |
 | `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL when pinned; `mcp-stdio/...` otherwise |
 | `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>@<version>` |
-| `.claude/settings.json` | Enabled-plugin enumeration; bare `mcpServers`; bare `hooks` per scope | mixed (see surface-specific rows) |
+| `.claude/settings.json` | Enabled-plugin enumeration; direct `mcpServers`; direct `hooks` per scope | mixed (see surface-specific rows) |
 | `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
 | `SKILL.md` (`.claude/skills/*/` or `<plugin>/skills/*/`) | Agent skills | `claude-skill/<name>[@<metadata.version>]` |
-| `hooks/hooks.json` (plugin) or `settings.json.hooks` (bare) | Hook entries by event + index | `claude-hook/<plugin>/<event>/<i>` (bundled) or `claude-hook/settings/<scope>/<event>/<i>` (bare) |
+| `hooks/hooks.json` (plugin) or `settings.json.hooks` (direct) | Hook entries by event + index | `claude-hook/<plugin>/<event>/<i>` (bundled) or `claude-hook/settings/<scope>/<event>/<i>` (direct) |
 | `.claude/commands/*.md` and `<plugin>/commands/*.md` | Slash commands | `claude-command/<owner>/<name>` (owner = plugin or `repo`) |
 | `.claude/agents/*.md` and `<plugin>/agents/*.md` | Subagents | `claude-agent/<owner>/<name>` |
 

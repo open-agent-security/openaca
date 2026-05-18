@@ -76,9 +76,9 @@ def parse_install(
     effective = layers.merged(mode)
 
     # Plugin resolution (active plugins + bundled-component walks) only fires
-    # when settings declare enabledPlugins AND the lockfile exists. Bare
+    # when settings declare enabledPlugins AND the lockfile exists. Direct
     # components are walked unconditionally afterwards — a target with no
-    # plugins but with bare-scoped MCPs/hooks/skills should still produce
+    # plugins but with direct MCPs/hooks/skills should still produce
     # inventory.
     plugins_map, lockfile_path, plugin_warnings = _load_plugins_map(install_root)
     warnings.extend(plugin_warnings)
@@ -96,7 +96,7 @@ def parse_install(
         refs.extend(plugin_refs)
         warnings.extend(plugin_walk_warnings)
 
-    refs.extend(_walk_bare_components(install_root, project_root, layers, mode))
+    refs.extend(_walk_direct_components(install_root, project_root, layers, mode))
     return refs, warnings
 
 
@@ -145,7 +145,7 @@ def _walk_active_plugins(
     """Process each enabled plugin: emit self-identity + bundled refs.
 
     Extracted from `parse_install` so the caller can always reach the
-    bare-component walk regardless of plugin-resolution outcomes.
+    direct-component walk regardless of plugin-resolution outcomes.
     """
     refs: list[ComponentRef] = []
     warnings: list[str] = []
@@ -224,7 +224,7 @@ def _walk_active_plugins(
     return refs, warnings
 
 
-def _walk_bare_components(
+def _walk_direct_components(
     install_root: Path,
     project_root: Optional[Path],
     layers: SettingsLayers,
@@ -234,15 +234,15 @@ def _walk_bare_components(
 
     Three surfaces in endpoint mode:
 
-    1. **Bare MCPs**:
+    1. **Direct MCPs**:
        - `settings.<scope>.mcpServers` (per scope via `by_scope()`).
        - Project-scoped `<project_root>/.mcp.json`.
        - User-scoped `<install_root>/.mcp.json`.
 
-    2. **Bare hooks**: each scope's `hooks` key, emitted with
+    2. **Direct hooks**: each scope's `hooks` key, emitted with
        `claude-hook/settings/<scope>/...` identity. No cross-scope merging.
 
-    3. **Bare skills/commands/agents**:
+    3. **Direct skills/commands/agents**:
        - Personal `<install_root>/skills/<name>/SKILL.md`.
        - Personal `<install_root>/commands/**/*.md`.
        - Personal `<install_root>/agents/**/*.md`.
@@ -257,7 +257,7 @@ def _walk_bare_components(
     by_scope = layers.by_scope()
     excluded_scopes: set[str] = {"local"} if mode == "repo" else set()
 
-    # Bare MCPs and hooks from settings, per scope.
+    # Direct MCPs and hooks from settings, per scope.
     scope_to_settings_path = {
         "user": install_root / "settings.json",
         "project": (project_root / ".claude" / "settings.json")
@@ -274,7 +274,7 @@ def _walk_bare_components(
         settings_path = scope_to_settings_path.get(scope)
         if settings_path is None:
             continue
-        # Bare MCPs from settings.mcpServers (inline dict).
+        # Direct MCPs from settings.mcpServers (inline dict).
         mcp_servers = scope_data.get("mcpServers")
         if isinstance(mcp_servers, dict):
             refs.extend(
@@ -284,7 +284,7 @@ def _walk_bare_components(
                     locator_prefix="$.mcpServers (inlined)",
                 )
             )
-        # Bare hooks per-scope.
+        # Direct hooks per-scope.
         hooks_block = scope_data.get("hooks")
         refs.extend(hooks_json.parse_settings_hooks(settings_path, hooks_block, scope=scope))
 
@@ -305,9 +305,9 @@ def _walk_bare_components(
         except Exception:
             pass
 
-    # Bare skills at <install_root>/skills/.
-    bare_skills_dir = install_root / "skills"
-    refs.extend(_walk_skill_dir(bare_skills_dir))
+    # Direct skills at <install_root>/skills/.
+    direct_skills_dir = install_root / "skills"
+    refs.extend(_walk_skill_dir(direct_skills_dir))
     refs.extend(
         claude_command_agent.enumerate_dir(
             install_root / "commands",

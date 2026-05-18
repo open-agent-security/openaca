@@ -12,9 +12,16 @@ from tools.seed.__main__ import main as seed_cmd
 
 
 @click.group()
+@click.version_option(package_name="openaca", prog_name="openaca")
 def main() -> None:
     """OpenACA: agent composition analysis tooling."""
 
+
+scan_cmd.short_help = "Scan a repository or endpoint for agent-stack findings."
+lint_cmd.short_help = "Validate overlay YAML against the schema."
+export_cmd.short_help = "Build the static overlay export."
+promote_cmd.short_help = "Promote a reviewed candidate into the corpus."
+seed_cmd.short_help = "Generate review candidates from an OSV dump."
 
 main.add_command(scan_cmd, name="scan")
 main.add_command(lint_cmd, name="lint")

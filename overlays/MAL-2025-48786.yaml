@@ -13,5 +13,5 @@ database_specific:
       mitre_atlas:
       - AML.T0010.001
       - AML.T0074
-    evidence_level: likely
+    evidence_level: confirmed
     threat_kind: malicious_package

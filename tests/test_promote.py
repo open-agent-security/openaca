@@ -79,6 +79,9 @@ def test_promote_cli_writes_overlay_by_id(tmp_path):
     assert promoted["id"] == "GHSA-abcd-ef12-3456"
     assert "_candidate" not in promoted
     assert "summary" not in promoted
+    # Source candidate is removed atomically with overlay write.
+    assert not source.exists()
+    assert f"removed {source}" in result.output
 
 
 def test_promote_rejects_unsafe_overlay_id(tmp_path):
@@ -94,6 +97,8 @@ def test_promote_rejects_unsafe_overlay_id(tmp_path):
 
     assert result.exit_code != 0
     assert not (tmp_path / "evil.yaml").exists()
+    # Failed promotion must NOT remove the source candidate.
+    assert source.exists()
 
 
 def test_promote_rejects_non_upstream_id(tmp_path):
@@ -110,6 +115,7 @@ def test_promote_rejects_non_upstream_id(tmp_path):
     assert result.exit_code != 0
     assert "not a recognized upstream ID family" in result.output
     assert not (overlays_dir / "GO-2026-1234.yaml").exists()
+    assert source.exists()
 
 
 def test_promote_rejects_malformed_modified_datetime(tmp_path):
@@ -125,6 +131,7 @@ def test_promote_rejects_malformed_modified_datetime(tmp_path):
 
     assert result.exit_code != 0
     assert not (overlays_dir / "GHSA-abcd-ef12-3456.yaml").exists()
+    assert source.exists()
 
 
 def test_promote_cli_refuses_to_overwrite_existing_overlay(tmp_path):
@@ -142,3 +149,4 @@ def test_promote_cli_refuses_to_overwrite_existing_overlay(tmp_path):
     assert result.exit_code != 0
     assert "already exists" in result.output
     assert target.read_text(encoding="utf-8") == "existing: true\n"
+    assert source.exists()

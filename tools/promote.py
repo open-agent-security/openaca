@@ -96,7 +96,9 @@ def main(candidate: Path, overlays_dir: Path, force: bool) -> None:
         sys.exit(1)
     overlays_dir.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump(overlay, sort_keys=False), encoding="utf-8")
+    candidate.unlink()
     click.echo(f"wrote {target}")
+    click.echo(f"removed {candidate}")
 
 
 if __name__ == "__main__":

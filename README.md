@@ -98,8 +98,9 @@ the same set of findings.
 
 ### Try it in 30 seconds
 
-After `pip install openaca==0.1.0b2`, drop a sample `mcp.json` in any
-empty directory and run the scanner:
+After `pip install --pre openaca` (the `--pre` flag is required during
+the beta pre-release cycle), drop a sample `mcp.json` in any empty
+directory and run the scanner:
 
 ```bash
 mkdir openaca-demo && cd openaca-demo
@@ -143,8 +144,12 @@ checkout. Two modes via subcommands.
 **Install from PyPI (recommended for beta testers):**
 
 ```bash
-pip install openaca==0.1.0b2
+pip install --pre openaca
 ```
+
+(`--pre` is required during the beta pre-release cycle. Pin a specific
+build with `openaca==0.1.0b2` if you need to reproduce a bug report
+against an exact version.)
 
 **Install from source (for contributors):**
 

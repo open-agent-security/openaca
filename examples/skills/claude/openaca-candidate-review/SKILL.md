@@ -88,7 +88,7 @@ degrades past ~20 records per session due to context budget.
    - **Audit 3 — `mcp03:2025` / `mcp10:2025` payload location.**
      For every batch record whose taxonomies include `mcp03:2025`
      (Tool Poisoning) or `mcp10:2025` (Context Injection and
-     Over-Sharing), read the OSV `details` body. `mcp03:2025`
+     Over-Sharing), read the OSV `summary` and `details`. `mcp03:2025`
      requires explicit mention of payload in tool descriptions /
      schemas / manifests / metadata. `mcp10:2025` requires explicit
      mention of payload in tool output / retrieved context /

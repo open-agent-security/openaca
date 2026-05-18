@@ -10,9 +10,9 @@ the kind of foot-gun we want to refuse silently rather than guess).
 
 Identity: `claude-skill/<name>` or `claude-skill/<name>@<metadata.version>`.
 
-Used for both bare skills (`~/.claude/skills/<name>/SKILL.md`, no parent
+Used for both direct skills (`~/.claude/skills/<name>/SKILL.md`, no parent
 plugin) and bundled skills (`<plugin>/skills/<name>/SKILL.md`, parented
-to a plugin). Bundled skills carry `attributed_to`; bare skills don't —
+to a plugin). Bundled skills carry `attributed_to`; direct skills don't —
 the caller decides which by passing or omitting the kwarg.
 """
 

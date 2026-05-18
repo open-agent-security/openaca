@@ -671,7 +671,7 @@ def _tier2_summary(
     return out
 
 
-def _bare_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]]:
+def _direct_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]]:
     """Group refs with `attributed_to is None` by category (no plugin parent)."""
     by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
     for r in refs:
@@ -741,15 +741,15 @@ def _build_plugin_node(
     return root
 
 
-def _build_bare_node(
+def _build_direct_node(
     refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
 ) -> _TreeNode | None:
-    cats = _bare_categories(refs)
+    cats = _direct_categories(refs)
     if not cats:
         return None
-    root = _TreeNode(label="bare components/")
+    root = _TreeNode(label="direct components/")
     for label, _ in _TREE_CATEGORIES:
         items = cats.get(label)
         if not items:
@@ -789,7 +789,7 @@ def render_inventory_tree(
     use_color: bool = False,
     use_unicode: bool = True,
 ) -> str:
-    """Render the active-plugin and bare-component inventory as a tree.
+    """Render the active-plugin and direct-component inventory as a tree.
 
     One root block per plugin; each shows its bundled components organized by
     category (MCPs/skills/hooks/commands/agents) plus a Tier-2 deps summary
@@ -797,7 +797,7 @@ def render_inventory_tree(
     `└── (no bundled components)` rather than an empty subtree, so the user
     can see the plugin was resolved even if it ships nothing of its own.
 
-    Bare components (no plugin attribution) render as a final root block.
+    Direct components (no plugin attribution) render as a final root block.
 
     Components that matched a finding carry a `[! <id1>, <id2>]` suffix in red
     (when `use_color=True`); plugin headers are similarly marked when a
@@ -813,16 +813,16 @@ def render_inventory_tree(
         (r for r in refs if r.ecosystem == "claude-plugin"),
         key=lambda r: (r.component_identity or "").lower(),
     )
-    bare_node = _build_bare_node(refs, findings_by_ref, use_color)
+    direct_node = _build_direct_node(refs, findings_by_ref, use_color)
     n_plugins = len(plugins)
-    n_bare = sum(len(v) for v in _bare_categories(refs).values())
+    n_direct = sum(len(v) for v in _direct_categories(refs).values())
     # Total components = everything minus the plugin self-identity refs.
     n_total = sum(1 for r in refs if r.ecosystem != "claude-plugin")
 
     out: list[str] = []
     out.append(
         f"{_pluralize(n_plugins, 'active plugin')}, "
-        f"{_pluralize(n_bare, 'bare component')}, "
+        f"{_pluralize(n_direct, 'direct component')}, "
         f"{_pluralize(n_total, 'total component')}"
     )
     out.append("")
@@ -830,8 +830,8 @@ def render_inventory_tree(
         node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color)
         out.extend(_format_tree_lines(node, chars))
         out.append("")
-    if bare_node is not None:
-        out.extend(_format_tree_lines(bare_node, chars))
+    if direct_node is not None:
+        out.extend(_format_tree_lines(direct_node, chars))
         out.append("")
     return "\n".join(out).rstrip()
 
@@ -849,8 +849,8 @@ def render_repo_inventory_tree(
     Repo mode has no endpoint install state, so the tree is derived from
     manifest co-location. A `<dir>/.claude-plugin/plugin.json` ref creates a
     plugin root; agent-dependency refs declared by manifests in `<dir>` render
-    below that plugin, while bare agent components render under a final
-    `bare components/` block.
+    below that plugin, while direct agent components render under a final
+    `direct components/` block.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
@@ -874,16 +874,16 @@ def render_repo_inventory_tree(
         assigned_keys.update(assigned)
         root_node.children.append(node)
 
-    bare_refs = [
+    direct_refs = [
         r
         for r in all_refs
         if r.ecosystem != "claude-plugin"
         and r.scope == "agent-component"
         and _ref_key(r) not in assigned_keys
     ]
-    bare_node = _build_bare_node(bare_refs, findings_by_ref, use_color)
-    if bare_node is not None:
-        root_node.children.append(bare_node)
+    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color)
+    if direct_node is not None:
+        root_node.children.append(direct_node)
 
     suppressed = sum(1 for r in all_refs if r.scope == "software-dependency")
     if suppressed:

@@ -113,23 +113,23 @@ names, paths, or component IDs you don't want public:
 
 ## How to report
 
-Two paths — pick whichever is lower-friction for you:
+DM me — email vinodkone@gmail.com, or whatever channel we already
+use. The repo is private during this beta, so a GitHub issue path
+isn't available to external testers yet.
 
-- **DM me directly** (email vinodkone@gmail.com, or whatever channel
-  we already use). One paragraph is plenty. Mention the command you
-  ran, the OpenACA version (`openaca --version`), and what you
-  expected vs got. I'll either turn it into a public issue myself or
-  keep it private — your call.
-- **File a GitHub issue** using the
-  [beta-feedback template](https://github.com/open-agent-security/openaca/issues/new?template=beta-feedback.md)
-  if you'd rather report in the open. The template has the same
-  fields plus an inventory-mismatch slot.
+One paragraph is plenty. The fields I find most useful:
+
+- **Feedback type** — ergonomics / coverage gap / workflow fit
+- **Command run** — full invocation, e.g. `openaca scan endpoint
+  --include-posture`
+- **Version** — output of `openaca --version`
+- **Expected vs actual** — one line each
+- **Output** — redacted as needed (see the privacy note above)
+- **Inventory mismatch** — if the scanner missed something it should
+  have inventoried, name what + where
 
 One filed observation is the bar. The friction signal compounds across
 the cohort.
-
-The privacy note above applies to both paths — redact what you don't
-want public, even in DM.
 
 ## Pinning a version
 

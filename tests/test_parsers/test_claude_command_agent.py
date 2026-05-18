@@ -38,6 +38,43 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
     assert all(r.extra["scope_owner"] == "superpowers" for r in refs)
 
 
+def test_enumerate_discovers_nested_command_files_without_namespacing_identity(tmp_path):
+    _write(tmp_path / "commands" / "frontend" / "deploy.md", "deploy frontend\n")
+    _write(
+        tmp_path / "commands" / "backend" / "release.md",
+        "---\nname: ship-it\n---\nrelease backend\n",
+    )
+
+    refs = enumerate_dir(
+        tmp_path / "commands",
+        kind="command",
+        scope_owner=None,
+        attributed_to=None,
+    )
+
+    assert [r.component_identity for r in refs] == [
+        "claude-command/ship-it",
+        "claude-command/deploy",
+    ]
+
+
+def test_enumerate_discovers_nested_agent_files(tmp_path):
+    _write(
+        tmp_path / "agents" / "review" / "code.md",
+        "---\nname: code-reviewer\n---\nreview code\n",
+    )
+
+    refs = enumerate_dir(
+        tmp_path / "agents",
+        kind="agent",
+        scope_owner=None,
+        attributed_to=None,
+    )
+
+    assert len(refs) == 1
+    assert refs[0].component_identity == "claude-agent/code-reviewer"
+
+
 def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
     path = _write(tmp_path / "agents" / "reviewer.md", "Plain markdown.\n")
     refs = enumerate_dir(
@@ -175,3 +212,57 @@ def test_enumerate_frontmatter_without_name_field_falls_back_to_filename(tmp_pat
     )
     assert len(refs) == 1
     assert refs[0].name == "fallback"
+
+
+def test_user_project_agent_frontmatter_inline_mcp_is_attributed_to_agent(tmp_path):
+    _write(
+        tmp_path / "agents" / "browser.md",
+        "---\n"
+        "name: browser-tester\n"
+        "mcpServers:\n"
+        "  - playwright:\n"
+        "      type: stdio\n"
+        "      command: npx\n"
+        "      args: ['@playwright/mcp@1.2.3']\n"
+        "---\n"
+        "body\n",
+    )
+
+    refs = enumerate_dir(
+        tmp_path / "agents",
+        kind="agent",
+        scope_owner=None,
+        attributed_to=None,
+    )
+
+    agent = next(r for r in refs if r.ecosystem == "claude-agent")
+    npm = next(r for r in refs if r.ecosystem == "npm")
+    assert agent.component_identity == "claude-agent/browser-tester"
+    assert npm.name == "@playwright/mcp"
+    assert npm.version == "1.2.3"
+    assert npm.attributed_to == "claude-agent/browser-tester"
+
+
+def test_user_project_agent_frontmatter_hooks_are_attributed_to_agent(tmp_path):
+    _write(
+        tmp_path / "agents" / "guard.md",
+        "---\n"
+        "name: guarded-agent\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n",
+    )
+
+    refs = enumerate_dir(
+        tmp_path / "agents",
+        kind="agent",
+        scope_owner=None,
+        attributed_to=None,
+    )
+
+    hook = next(r for r in refs if r.ecosystem == "claude-hook")
+    assert hook.attributed_to == "claude-agent/guarded-agent"
+    assert hook.extra["event"] == "PreToolUse"

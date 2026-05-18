@@ -43,6 +43,38 @@ def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
     assert agent_refs[0].attributed_to is None
 
 
+def test_repo_mode_emits_nested_declared_skill(tmp_path):
+    skill_dir = tmp_path / "packages" / "frontend" / ".claude" / "skills" / "ui-review"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: ui-review\nmetadata:\n  version: 1.0.0\n---\nreview ui\n"
+    )
+
+    refs = parse_repo(tmp_path)
+
+    assert any(r.component_identity == "claude-skill/ui-review@1.0.0" for r in refs)
+
+
+def test_repo_mode_emits_nested_declared_command(tmp_path):
+    command_dir = tmp_path / ".claude" / "commands" / "frontend"
+    command_dir.mkdir(parents=True)
+    (command_dir / "component.md").write_text("build component\n")
+
+    refs = parse_repo(tmp_path)
+
+    assert any(r.component_identity == "claude-command/component" for r in refs)
+
+
+def test_repo_mode_emits_nested_declared_agent(tmp_path):
+    agent_dir = tmp_path / ".claude" / "agents" / "review"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "code.md").write_text("---\nname: code-reviewer\n---\nreview\n")
+
+    refs = parse_repo(tmp_path)
+
+    assert any(r.component_identity == "claude-agent/code-reviewer" for r in refs)
+
+
 def test_repo_mode_dedupes_mcp_when_plugin_json_string_path_overlaps():
     """The sample-plugin-string-mcp fixture has BOTH a .mcp.json at root AND
     a plugin.json that points at the same file via `mcpServers: "./.mcp.json"`.

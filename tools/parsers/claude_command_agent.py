@@ -23,12 +23,14 @@ content-hash advisories would refine if needed in V1.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal, Optional
 
 import yaml
 
 from tools.component_ref import ComponentRef
+from tools.parsers import hooks_json, mcp_json
 
 Kind = Literal["command", "agent"]
 
@@ -43,22 +45,25 @@ def parse_file(
     registry where `rglob` discovers paths individually."""
     if not md_path.is_file() or md_path.suffix != ".md":
         return []
-    name = _resolve_name(md_path)
+    frontmatter = _read_frontmatter(md_path)
+    name = _resolve_name(md_path, frontmatter)
     ecosystem = f"claude-{kind}"
     identity = (
         f"{ecosystem}/{scope_owner}/{name}" if scope_owner is not None else f"{ecosystem}/{name}"
     )
-    return [
-        ComponentRef(
-            ecosystem=ecosystem,
-            name=name,
-            component_identity=identity,
-            source_manifest=str(md_path),
-            source_locator="$",
-            attributed_to=attributed_to,
-            extra={"scope_owner": scope_owner},
-        )
-    ]
+    parent = ComponentRef(
+        ecosystem=ecosystem,
+        name=name,
+        component_identity=identity,
+        source_manifest=str(md_path),
+        source_locator="$",
+        attributed_to=attributed_to,
+        extra={"scope_owner": scope_owner},
+    )
+    refs = [parent]
+    if kind == "agent" and scope_owner is None:
+        refs.extend(_agent_frontmatter_child_refs(md_path, identity, frontmatter))
+    return refs
 
 
 def enumerate_dir(
@@ -76,53 +81,88 @@ def enumerate_dir(
     """
     if not dir_path.is_dir():
         return []
-    ecosystem = f"claude-{kind}"
     refs: list[ComponentRef] = []
     # Sort for deterministic emission order — makes diffs in fixture
     # snapshots and verbose output stable across runs.
-    for child in sorted(dir_path.iterdir()):
+    for child in sorted(dir_path.rglob("*.md")):
         if not child.is_file() or child.suffix != ".md":
             continue
-        name = _resolve_name(child)
-        identity = (
-            f"{ecosystem}/{scope_owner}/{name}"
-            if scope_owner is not None
-            else f"{ecosystem}/{name}"
-        )
-        refs.append(
-            ComponentRef(
-                ecosystem=ecosystem,
-                name=name,
-                component_identity=identity,
-                source_manifest=str(child),
-                source_locator="$",
-                attributed_to=attributed_to,
-                extra={"scope_owner": scope_owner},
-            )
+        refs.extend(
+            parse_file(child, kind=kind, scope_owner=scope_owner, attributed_to=attributed_to)
         )
     return refs
 
 
-def _resolve_name(md_path: Path) -> str:
+def _resolve_name(md_path: Path, frontmatter: Optional[dict] = None) -> str:
     """Frontmatter `name:` wins; otherwise the filename without `.md`."""
     fallback = md_path.stem
+    if frontmatter is None:
+        frontmatter = _read_frontmatter(md_path)
+    declared = frontmatter.get("name") if isinstance(frontmatter, dict) else None
+    if isinstance(declared, str) and declared:
+        return declared
+    return fallback
+
+
+def _read_frontmatter(md_path: Path) -> dict:
     try:
         text = md_path.read_text()
     except (OSError, UnicodeDecodeError):
-        return fallback
+        return {}
     if not text.startswith("---"):
-        return fallback
+        return {}
     end = text.find("\n---", 3)
     if end == -1:
-        return fallback
+        return {}
     block = text[3:end].strip()
     try:
         data = yaml.safe_load(block)
     except yaml.YAMLError:
-        return fallback
+        return {}
     if not isinstance(data, dict):
-        return fallback
-    declared = data.get("name")
-    if isinstance(declared, str) and declared:
-        return declared
-    return fallback
+        return {}
+    return data
+
+
+def _agent_frontmatter_child_refs(
+    md_path: Path,
+    agent_identity: str,
+    frontmatter: dict,
+) -> list[ComponentRef]:
+    refs: list[ComponentRef] = []
+
+    mcp_servers = _inline_mcp_servers(frontmatter.get("mcpServers"))
+    for ref in mcp_json.parse_mcp_servers(
+        mcp_servers,
+        source_manifest=str(md_path),
+        locator_prefix="$.mcpServers",
+    ):
+        refs.append(replace(ref, attributed_to=agent_identity))
+
+    hooks_block = frontmatter.get("hooks")
+    if isinstance(hooks_block, dict):
+        refs.extend(
+            hooks_json.parse_plugin_hooks_inline(
+                hooks_block=hooks_block,
+                plugin_name="",
+                source_manifest=str(md_path),
+                attributed_to=agent_identity,
+            )
+        )
+
+    return refs
+
+
+def _inline_mcp_servers(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, list):
+        return {}
+    servers: dict = {}
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        for name, config in entry.items():
+            if isinstance(name, str) and isinstance(config, dict):
+                servers[name] = config
+    return servers

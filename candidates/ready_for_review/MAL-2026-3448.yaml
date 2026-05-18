@@ -1,0 +1,95 @@
+schema_version: 1.7.5
+id: MAL-2026-3448
+modified: '2026-05-12T07:54:31.717188Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+  - package_name_mcp
+  package_names:
+  - '@squawk/mcp'
+  annotation_source: deterministic
+_evidence:
+- field: summary
+  quote: Malicious code in @squawk/mcp (npm)
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.005
+      - AML.T0104
+    evidence_level: likely
+    threat_kind: malicious_package
+aliases:
+- GHSA-vcpv-j6jh-qcc2
+summary: Malicious code in @squawk/mcp (npm)
+details: '
+
+  ---
+
+  _-= Per source details. Do not edit below this line.=-_
+
+
+  ## Source: amazon-inspector (ed4b99ef5ac5fd4f25fdd4844c49a608343d6596def04cfb9df850c40e927dc9)
+
+  The package @squawk/mcp was found to contain malicious code.
+
+
+  ## Source: ghsa-malware (7d06b20db1195e1e5566e553087c2be971625c4a648e9cbfe5c1e0e836b93aa9)
+
+  Any computer that has this package installed or running should be considered fully
+  compromised. All secrets and keys stored on that computer should be rotated immediately
+  from a different computer. The package should be removed, but as full control of
+  the computer may have been given to an outside entity, there is no guarantee that
+  removing the package will remove all malicious software resulting from installing
+  it.
+
+
+  ## Source: google-open-source-security (5e1924464368f0c5816ee84e000cc47017f44045140feafbbc9e685d847ed5a5)
+
+  This package was compromised as part of the "Mini Shai-Hulud is back" worm by the
+  TeamPCP threat actor.
+
+
+  The package will steal credentials and then propogate it to every package it has
+  access to. The package also attempts to remain persistent.
+
+  '
+references:
+- type: ADVISORY
+  url: https://github.com/advisories/GHSA-vcpv-j6jh-qcc2
+- type: ARTICLE
+  url: https://www.aikido.dev/blog/mini-shai-hulud-is-back-tanstack-compromised
+- type: ARTICLE
+  url: https://www.stepsecurity.io/blog/mini-shai-hulud-is-back-a-self-spreading-supply-chain-attack-hits-the-npm-ecosystem
+- type: ARTICLE
+  url: https://socket.dev/blog/tanstack-npm-packages-compromised-mini-shai-hulud-supply-chain-attack
+- type: ARTICLE
+  url: https://tanstack.com/blog/npm-supply-chain-compromise-postmortem
+- type: ARTICLE
+  url: https://snyk.io/blog/tanstack-npm-packages-compromised/
+affected:
+- package:
+    name: '@squawk/mcp'
+    ecosystem: npm
+    purl: pkg:npm/%40squawk/mcp
+  versions:
+  - 0.9.3
+  - 0.9.4
+  - 0.9.5
+  - 0.9.2
+  - 0.9.1
+  database_specific:
+    cwes:
+    - cweId: CWE-506
+      description: The product contains code that appears to be malicious in nature.
+      name: Embedded Malicious Code
+    - cweId: CWE-506
+      description: The product contains code that appears to be malicious in nature.
+      name: Embedded Malicious Code
+    source: https://github.com/ossf/malicious-packages/blob/main/osv/malicious/npm/@squawk/mcp/MAL-2026-3448.json

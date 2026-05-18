@@ -1,0 +1,48 @@
+schema_version: 1.7.5
+id: MAL-2026-2669
+modified: '2026-04-14T22:04:20.571366Z'
+_candidate:
+  review_status: needs_review
+  matched_by:
+  - package_name_mcp
+  package_names:
+  - ant-mcp-proxy-for-test
+  annotation_source: deterministic
+_evidence:
+- field: summary
+  quote: Malicious code in ant-mcp-proxy-for-test (PyPI)
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      owasp_mcp_top10:
+      - mcp04:2025
+      mitre_atlas:
+      - AML.T0010.001
+    evidence_level: research
+    threat_kind: malicious_package
+summary: Malicious code in ant-mcp-proxy-for-test (PyPI)
+details: "\n---\n_-= Per source details. Do not edit below this line.=-_\n\n## Source:\
+  \ kam193 (51df3beb4457da4a841727c91a2517ba5727c841c08f9d43cf2b25be9e476564)\nDuring\
+  \ use of the package, it silently downloads and executes remote executables or scripts.\
+  \ During analysis, the remote resources were no longer available. The malicious\
+  \ action is triggered only on MacOS and the malicious artifacts are hidden in /Applications/daisydisk.app\n\
+  \n\n---\n\nCategory: MALICIOUS - The campaign has clearly malicious intent, like\
+  \ infostealers.\n\n\nCampaign: 2026-04-ant-mcp-proxy-for-test\n\n\nReasons (based\
+  \ on the campaign):\n\n\n - Downloads and executes a remote executable.\n\n\n -\
+  \ action-hidden-in-lib-usage\n"
+references:
+- type: WEB
+  url: https://bad-packages.kam193.eu/pypi/package/ant-mcp-proxy-for-test
+affected:
+- package:
+    name: ant-mcp-proxy-for-test
+    ecosystem: PyPI
+    purl: pkg:pypi/ant-mcp-proxy-for-test
+  versions:
+  - 0.10.0
+  database_specific:
+    source: https://github.com/ossf/malicious-packages/blob/main/osv/malicious/pypi/ant-mcp-proxy-for-test/MAL-2026-2669.json

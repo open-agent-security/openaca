@@ -12,8 +12,10 @@ LLM provider path.
 ## Invocation modes
 
 - `/openaca-candidate-review candidates/GHSA-mq53-pc65-wjc4.yaml` — single file
-- `/openaca-candidate-review candidates/` — every candidate whose
-  `_candidate.review_status` is `needs_review`
+- `/openaca-candidate-review candidates/` — every YAML file directly
+  in `candidates/` root (not in subdirectories such as
+  `candidates/ready_for_review/`) whose `_candidate.review_status`
+  is `needs_review`
 
 For directory mode, if there are more than 20 candidates to review,
 stop and ask the user to split into smaller batches; quality

@@ -29,6 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify tag is on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "::error::Tagged commit $(git rev-parse --short HEAD) is not reachable from origin/main. Release tags must be cut from main."
+            exit 1
+          fi
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

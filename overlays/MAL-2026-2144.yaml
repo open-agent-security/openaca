@@ -1,0 +1,18 @@
+schema_version: 1.7.5
+id: MAL-2026-2144
+aliases:
+- PYSEC-2026-2
+modified: '2026-03-26T10:03:39.944842Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm02:2025
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+      - AML.T0098
+    evidence_level: confirmed
+    threat_kind: malicious_package

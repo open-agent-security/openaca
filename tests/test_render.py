@@ -805,7 +805,8 @@ def test_tree_direct_components_render_as_separate_root():
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
     assert "direct components/" in out
-    assert "foo (from fake)" in out
+    assert "foo" in out
+    assert "from fake" not in out
     assert "skills/ (2)" in out
     # Alphabetical: bar before foo.
     assert out.index("bar") < out.index("foo")

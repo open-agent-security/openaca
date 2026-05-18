@@ -69,12 +69,18 @@ degrades past ~20 records per session due to context budget.
 
    - **Audit 1 — ATLAS `T0010.005` overreach.** For every batch
      record whose taxonomies include `AML.T0010.005` (AI Agent
-     Tool), verify the package name strongly indicates a server
-     or runtime agent tool. If the name suggests CLI / inspector
-     / client / SDK / lib / wrapper / proxy / extension / plugin
-     / scaffolder / `*-dev-*`, flag for downgrade to
+     Tool), check whether the OSV evidence describes the package
+     as an MCP server, tool plugin, or something an agent
+     installs or connects to (`docs/frameworks/mitre-atlas.md`
+     supply-chain rules). `T0010.005` is the correct default
+     for malicious MCP servers and malicious tool plugins — do
+     not flag these for downgrade. Flag for downgrade to
      `AML.T0010.001` (AI Software, general) and removal of
-     `AML.T0104` (Publish Poisoned AI Agent Tool).
+     `AML.T0104` (Publish Poisoned AI Agent Tool) only when the
+     OSV record describes a general AI library, LLM framework,
+     or developer tooling (CLI / inspector / SDK / lib /
+     scaffolder / `*-dev-*`) with no server or agent-tool
+     evidence.
    - **Audit 2 — `AML.T0074` (Masquerading) missing/over-applied.**
      For every batch record, check the package name for typosquat
      fingerprints: exact upstream leaf under a non-canonical scope

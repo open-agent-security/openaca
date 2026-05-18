@@ -24,17 +24,27 @@ how to report.
 
 Requires Python 3.11+.
 
+**Recommended — uv tool** ([install uv](https://docs.astral.sh/uv/getting-started/installation/)
+if you don't have it; uv also provisions Python for you so a 3.11+
+runtime isn't a prerequisite you need to satisfy separately):
+
 ```bash
-pip install --pre openaca
+uv tool install openaca
 openaca --version
 ```
 
-The `--pre` flag is required while OpenACA is in pre-release —
-without it pip refuses to install since there's no stable version
-yet. Current latest is `0.1.0b2`; check with `openaca --version`.
+**Alternative — pip** (if you already have a Python 3.11+ workflow):
 
-If you need to pin to a specific build for a bug report:
-`pip install openaca==0.1.0b2`.
+```bash
+pip install openaca
+```
+
+Both commands auto-pick the latest pre-release while OpenACA has no
+stable version yet. Current latest is `0.1.0b2`; check with `openaca
+--version`.
+
+Pin to a specific build if you need to reproduce a bug report:
+`uv tool install openaca==0.1.0b2` or `pip install openaca==0.1.0b2`.
 
 ## Try it in 30 seconds
 

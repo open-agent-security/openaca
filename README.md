@@ -91,16 +91,16 @@ the same set of findings.
 
 ### Prerequisites
 
-- Python 3.11+
-- Either `pip` (recommended for beta testers) or
-  [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-  (recommended for contributors who want to hack on the code).
+- Python 3.11+. If you don't have it, [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+  provisions Python for you alongside the install — easiest path.
+- For contributors hacking on source, `uv` is the dependency manager
+  used by the project.
 
 ### Try it in 30 seconds
 
-After `pip install --pre openaca` (the `--pre` flag is required during
-the beta pre-release cycle), drop a sample `mcp.json` in any empty
-directory and run the scanner:
+After installing OpenACA (`uv tool install openaca` recommended, or
+`pip install openaca` if you already have a Python 3.11+ workflow),
+drop a sample `mcp.json` in any empty directory and run the scanner:
 
 ```bash
 mkdir openaca-demo && cd openaca-demo
@@ -144,12 +144,14 @@ checkout. Two modes via subcommands.
 **Install from PyPI (recommended for beta testers):**
 
 ```bash
-pip install --pre openaca
+uv tool install openaca   # recommended
+# or
+pip install openaca       # if you prefer pip
 ```
 
-(`--pre` is required during the beta pre-release cycle. Pin a specific
-build with `openaca==0.1.0b2` if you need to reproduce a bug report
-against an exact version.)
+(Both auto-pick the latest pre-release while no stable exists. Pin a
+specific build with `openaca==0.1.0b2` if you need to reproduce a bug
+report against an exact version.)
 
 **Install from source (for contributors):**
 

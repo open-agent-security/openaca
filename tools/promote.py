@@ -91,6 +91,9 @@ def main(candidate: Path, overlays_dir: Path, force: bool) -> None:
     if not UPSTREAM_ID_RE.match(overlay_id):
         click.echo(f"{overlay_id!r}: not a recognized upstream ID family", err=True)
         sys.exit(1)
+    if candidate.resolve() == target.resolve():
+        click.echo(f"{candidate}: source and target are the same file", err=True)
+        sys.exit(1)
     if target.exists() and not force:
         click.echo(f"{target}: already exists; use --force to overwrite", err=True)
         sys.exit(1)

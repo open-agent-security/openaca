@@ -134,6 +134,22 @@ def test_promote_rejects_malformed_modified_datetime(tmp_path):
     assert source.exists()
 
 
+def test_promote_rejects_when_source_and_target_are_same_file(tmp_path):
+    overlays_dir = tmp_path / "overlays"
+    overlays_dir.mkdir()
+    source = overlays_dir / "GHSA-abcd-ef12-3456.yaml"
+    source.write_text(yaml.safe_dump(_candidate(), sort_keys=False), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, [str(source), "--overlays", str(overlays_dir), "--force"]
+    )
+
+    assert result.exit_code != 0
+    assert "same file" in result.output
+    # Must not delete the file it was given.
+    assert source.exists()
+
+
 def test_promote_cli_refuses_to_overwrite_existing_overlay(tmp_path):
     candidate_dir = tmp_path / "candidates"
     overlays_dir = tmp_path / "overlays"

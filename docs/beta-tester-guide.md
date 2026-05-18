@@ -1,8 +1,8 @@
 # OpenACA — Beta Tester Guide
 
-Thanks for trying OpenACA. This is a closed friend-beta on the
-`0.1.0b1` pre-release. Goal: surface the highest-friction gaps before
-a wider release.
+Thanks for trying OpenACA. This is a closed beta on the `0.1.0b1`
+pre-release. Goal: surface the highest-friction gaps before a wider
+release.
 
 ## Install
 
@@ -39,9 +39,10 @@ Both modes accept `--sarif results.sarif`, `--format json`, and
 worth turning on if you want first-scan signal even when the corpus
 finds no vulnerabilities).
 
-Want to verify the install before pointing it at a real target?
-There's a bundled sample fixture with a known finding — the README's
-"Try it in 30 seconds" section covers it.
+Want to verify the install before pointing it at a real target? The
+README's "Try it in 30 seconds" section has a copy-paste `mcp.json`
+snippet that exercises a known finding so you can confirm the scanner
+works end-to-end on your machine.
 
 ## What feedback I want
 

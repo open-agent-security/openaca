@@ -1,0 +1,18 @@
+schema_version: 1.7.3
+id: MAL-2025-49379
+aliases:
+- GHSA-w7jq-xv2w-v96w
+- SNYK-JS-CHATCLUBCLAUDECODE-13848818
+modified: '2025-12-23T15:56:56.003199Z'
+database_specific:
+  openaca:
+    taxonomies:
+      owasp_agentic_top10:
+      - asi04
+      owasp_llm_top10:
+      - llm03:2025
+      mitre_atlas:
+      - AML.T0010.001
+      - AML.T0074
+    evidence_level: likely
+    threat_kind: malicious_package

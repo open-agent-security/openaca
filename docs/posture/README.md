@@ -3,8 +3,8 @@
 Posture findings are scanner-emitted configuration-hygiene checks. They're
 distinct from vulnerability findings: no CVE lookup, no overlay record, no
 OpenACA ID minted. They flag risky agent-stack composition shapes
-(unpinned installs, `http://` MCP endpoints, missing auth declarations)
-that wouldn't surface in a corpus-driven scan.
+(unpinned installs and `http://` MCP endpoints) that wouldn't surface in a
+corpus-driven scan.
 
 Posture rules are gated behind `--include-posture`:
 
@@ -35,7 +35,6 @@ unpinned MCPs or `http://` endpoints.
 | --- | --- | --- | --- |
 | [`openaca-posture-mutable-install-reference`](openaca-posture-mutable-install-reference.md) | Component installed from a mutable source reference | low | high |
 | [`openaca-posture-insecure-transport`](openaca-posture-insecure-transport.md) | Remote MCP endpoint uses insecure transport | medium | high |
-| [`openaca-posture-missing-remote-auth`](openaca-posture-missing-remote-auth.md) | Remote MCP endpoint has no visible auth material | low | medium |
 
 ## Standards mapping
 

@@ -47,6 +47,33 @@ def test_posture_on_emits_mutable_install():
     assert "sketchy-mcp" in result.output
 
 
+def test_posture_https_remote_endpoint_without_visible_auth_is_clean(tmp_path):
+    manifest = {
+        "mcpServers": {
+            "remote": {
+                "url": "https://example.com/mcp",
+            }
+        }
+    }
+    (tmp_path / "mcp.json").write_text(json.dumps(manifest))
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--fail-on",
+            "none",
+            "--include-posture",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-missing-remote-auth" not in result.output
+    assert "Posture findings" not in result.output
+
+
 def test_collect_mcp_manifests_skips_dot_git_unconditionally(tmp_path):
     """`.git/` must be excluded even when include_gitignored=True (default)."""
     dot_git = tmp_path / ".git" / "refs"

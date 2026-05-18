@@ -385,14 +385,14 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
     active_dir = tmp_path / "plugins" / "cache" / "official" / "active" / "1.0.0"
     active_dir.mkdir(parents=True)
     (active_dir / ".mcp.json").write_text(
-        json.dumps({"mcpServers": {"active": {"url": "https://active.example/mcp"}}})
+        json.dumps({"mcpServers": {"active": {"url": "http://active.example/mcp"}}})
     )
     inactive_dir = (
         tmp_path / "plugins" / "marketplaces" / "official" / "external_plugins" / "inactive"
     )
     inactive_dir.mkdir(parents=True)
     (inactive_dir / ".mcp.json").write_text(
-        json.dumps({"mcpServers": {"inactive": {"url": "https://inactive.example/mcp"}}})
+        json.dumps({"mcpServers": {"inactive": {"url": "http://inactive.example/mcp"}}})
     )
     (tmp_path / "settings.json").write_text(
         json.dumps({"enabledPlugins": {"active@official": True}})
@@ -425,8 +425,8 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
         )
 
     assert result.exit_code == 0, result.output
-    assert "mcp-server/active @ https://active.example/mcp" in result.output
-    assert "mcp-server/inactive @ https://inactive.example/mcp" not in result.output
+    assert "mcp-server/active @ http://active.example/mcp" in result.output
+    assert "mcp-server/inactive @ http://inactive.example/mcp" not in result.output
 
 
 def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):

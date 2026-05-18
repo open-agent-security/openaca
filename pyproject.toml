@@ -1,7 +1,8 @@
 [project]
 name = "openaca"
-version = "0.0.1"
+version = "0.1.0b1"
 description = "OpenACA: agent composition analysis — overlays and scanner for agent stack security."
+readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
@@ -17,6 +18,12 @@ dependencies = [
 
 [project.scripts]
 openaca = "tools.cli:main"
+
+[project.urls]
+Homepage = "https://openaca.dev"
+Repository = "https://github.com/open-agent-security/openaca"
+Issues = "https://github.com/open-agent-security/openaca/issues"
+Documentation = "https://github.com/open-agent-security/openaca/blob/main/docs/beta-tester-guide.md"
 
 [build-system]
 requires = ["hatchling"]

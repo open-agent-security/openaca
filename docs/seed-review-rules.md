@@ -30,13 +30,13 @@ When annotating or re-reviewing a candidate, ONLY edit:
 `threat_kind` is allowed only when the record's `id` starts with `MAL-`
 OR `aliases` contains a `MAL-*` entry. In that case `threat_kind`
 MUST be `"malicious_package"`. For all other records (ordinary CVEs,
-GHSAs, authz bugs, code execution flaws in agent-stack packages),
+GHSAs, authz bugs, code execution flaws in agent-component packages),
 `threat_kind` MUST be omitted entirely.
 
 Rationale: per ADR-0012, `threat_kind` flags genuinely malicious or
-backdoored packages. Ordinary vulnerabilities in agent-stack packages
-are vulnerabilities, not malware; setting `threat_kind` for them
-misroutes downstream users.
+backdoored packages. Ordinary vulnerabilities in agent-component
+packages are vulnerabilities, not malware; setting `threat_kind` for
+them misroutes downstream users.
 
 ## Structural rules (CI-enforced)
 
@@ -61,8 +61,8 @@ record. The skill and human reviewers MUST apply them:
    set `owasp_agentic_top10: [asi04]`, `owasp_llm_top10: [llm03:2025]`,
    or `mitre_atlas: [AML.T0010.*]` unless the OSV record describes a
    malicious package, compromised dependency, typosquat, or
-   dependency-confusion attack. A code bug in an agent-stack package
-   is not a supply-chain incident.
+   dependency-confusion attack. A code bug in an agent-component
+   package is not a supply-chain incident.
 2. **Prefer omission over speculation.** If a framework family does
    not apply, omit the key entirely. Do not emit empty arrays or
    guess-quality mappings.
@@ -70,7 +70,7 @@ record. The skill and human reviewers MUST apply them:
    defensible against a quoted line from the OSV `summary`/`details`.
 4. **Evidence level discipline.** Use `confirmed` only when the OSV
    record itself states the agent context. Use `likely` when the
-   package or component is clearly agent-stack and the OSV record
+   package or component is clearly an agent component and the OSV record
    supports the classification. Use `research` when the mapping is
    plausible but needs reviewer confirmation.
 

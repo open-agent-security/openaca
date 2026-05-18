@@ -18,15 +18,15 @@ components.
 
 OpenACA is the open category and reference implementation for **Agent
 Composition Analysis (ACA)**: identifying the versioned plugins, MCP
-servers, skills, and framework components an agent stack is composed of,
+servers, skills, and framework components that make up an AI agent,
 and matching them against known security records.
 
-ACA is the agent-stack analogue of Software Composition Analysis (SCA):
+ACA is the AI-agent analogue of Software Composition Analysis (SCA):
 
 | Layer | Inventories | From these manifests |
 |---|---|---|
 | **SCA** | Your library tree | `package.json`, `requirements.txt`, lockfiles |
-| **ACA** | Your agent stack | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries |
+| **ACA** | Your agent's composition | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries |
 
 The two stack — they answer different questions about different
 artifacts. For general software dependency scans (your app's transitive
@@ -53,8 +53,8 @@ OpenACA fills two gaps:
 
 OpenACA does not mint vulnerability IDs in V0. Vulnerability identity,
 affected ranges, severity, and fixes come from upstream OSV/GHSA/CVE
-records. OpenACA contributes the agent-stack overlay schema and the
-manifest parsers on top.
+records. OpenACA contributes the agent-component overlay schema and
+the manifest parsers on top.
 
 ## Two scan modes
 
@@ -64,8 +64,8 @@ question you're asking*:
 
 | Mode | Question | Audience | Where it runs |
 |---|---|---|---|
-| `openaca scan repo` | *"What agent-stack manifests are committed in this repository?"* | AppSec / platform security | CI gate, PR check |
-| `openaca scan endpoint` | *"What agent tools are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
+| `openaca scan repo` | *"What agent components are declared in this repository?"* | AppSec / platform security | CI gate, PR check |
+| `openaca scan endpoint` | *"What agent components are installed on this machine right now?"* | Endpoint security / IT | Developer laptop, CI runner, MDM-managed device |
 
 What `repo` actually covers: (a) **committed project-host config** —
 `.claude/settings.json`, `.claude/skills`, `.claude/commands`,
@@ -172,7 +172,7 @@ openaca scan repo \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
-# agent stack. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
+# endpoint. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.
 openaca scan endpoint \
     --fail-on any
 
@@ -379,12 +379,12 @@ What OpenACA V0 doesn't see:
   `query({ mcpConfig: ".mcp.json" })` *are* covered because `.mcp.json`
   is a parsed manifest; the inline / code-defined forms need Tier-3
   SDK-aware extraction (V1).
-- **Repo mode is a survey of *declared* agent-stack manifests, not a
-  guarantee about what a deployed app loads.** A finding means "this
-  manifest declares a vulnerable component"; whether the deployed
-  application actually executes that component depends on runtime
-  configuration we can't see from static files. Endpoint mode is
-  closer to ground truth because it reads resolved install state.
+- **Repo mode is a survey of *declared* agent-component manifests,
+  not a guarantee about what a deployed app loads.** A finding means
+  "this manifest declares a vulnerable component"; whether the
+  deployed application actually executes that component depends on
+  runtime configuration we can't see from static files. Endpoint mode
+  is closer to ground truth because it reads resolved install state.
 - **`.claude/*` in repo mode describes project-host posture, not app
   runtime.** Files like `.claude/settings.json` and `.claude/commands`
   describe what Claude Code will load when a developer runs Claude Code
@@ -442,9 +442,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance.
 
 ## Coordinated disclosure
 
-OpenACA does not mint vulnerability IDs. Vulnerabilities in agent-stack
-components are filed upstream (CVE / GHSA / OSV / PYSEC / MAL); once an
-upstream record is public, contribute an OpenACA overlay per
+OpenACA does not mint vulnerability IDs. Vulnerabilities in agent
+components are filed upstream (CVE / GHSA / OSV / PYSEC / MAL); once
+an upstream record is public, contribute an OpenACA overlay per
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 For security issues in **OpenACA's own code**, see

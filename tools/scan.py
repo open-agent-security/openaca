@@ -3,7 +3,7 @@
 Two modes via subcommands (per ADR-0006); a subcommand is required:
 
     openaca scan repo --target <repo> [...]
-        Walks supported agent-stack manifests committed in the target
+        Walks supported agent-component manifests committed in the target
         repository. Covers (a) project-host config under `.claude/*`
         (which describes what Claude Code loads when run in this repo,
         i.e. developer-agent posture committed to source), and
@@ -16,9 +16,9 @@ Two modes via subcommands (per ADR-0006); a subcommand is required:
 
     openaca scan endpoint [--config-dir <claude-config-dir>] [--project <repo>]
         Install-state-aware endpoint scan: reads settings.json +
-        installed_plugins.json to enumerate the active agent stack. Defaults
-        to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers project/local
-        settings when scanning a repo's endpoint context.
+        installed_plugins.json to enumerate the active agent composition.
+        Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude. --project layers
+        project/local settings when scanning a repo's endpoint context.
 
 Common options (--sarif, --fail-on, -v) can be placed before or after the
 subcommand name; the group forwards them either way:
@@ -430,7 +430,7 @@ def repo(
     include_posture: bool,
     include_gitignored: bool,
 ) -> None:
-    """Scan supported agent-stack manifests committed in a repository.
+    """Scan supported agent-component manifests committed in a repository.
 
     Reports declared composition only: project-host config under
     `.claude/*` (what Claude Code would load if run in this repo) and
@@ -565,7 +565,7 @@ def endpoint(
     no_color: bool,
     include_posture: bool,
 ) -> None:
-    """Scan the active agent stack installed on this endpoint."""
+    """Scan the active agent composition installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )

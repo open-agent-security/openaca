@@ -2,7 +2,7 @@
 
 Posture findings are scanner-emitted configuration-hygiene checks. They're
 distinct from vulnerability findings: no CVE lookup, no overlay record, no
-OpenACA ID minted. They flag risky agent-stack composition shapes
+OpenACA ID minted. They flag risky agent-composition shapes
 (unpinned installs and `http://` MCP endpoints) that wouldn't surface in a
 corpus-driven scan.
 

@@ -17,7 +17,7 @@ def main() -> None:
     """OpenACA: agent composition analysis tooling."""
 
 
-scan_cmd.short_help = "Scan a repository or endpoint for agent-stack findings."
+scan_cmd.short_help = "Scan a repository or endpoint for agent-composition findings."
 lint_cmd.short_help = "Validate overlay YAML against the schema."
 export_cmd.short_help = "Build the static overlay export."
 promote_cmd.short_help = "Promote a reviewed candidate into the corpus."

@@ -5,9 +5,9 @@ overlays and a reference scanner for AI agent infrastructure: plugins,
 MCP servers, skills, agent frameworks, model proxies, and runtime
 components.
 
-OpenACA is the agent-stack analogue of Software Composition Analysis
+OpenACA is the AI-agent analogue of Software Composition Analysis
 (SCA): it identifies the versioned plugins, MCP servers, skills, and
-framework components an agent stack is composed of, and matches them
+framework components that make up an AI agent, and matches them
 against known security records (CVE/GHSA/OSV + agent-context overlays
 maintained in this corpus).
 
@@ -86,8 +86,8 @@ and try each of its fixtures.
 
 | Mode | Question | Where it runs |
 |---|---|---|
-| `openaca scan repo --target <path>` | What agent-stack manifests are committed in this repository? | CI gate, PR check |
-| `openaca scan endpoint` | What agent tools are installed on this machine right now? | Developer laptop, CI runner |
+| `openaca scan repo --target <path>` | What agent components are declared in this repository? | CI gate, PR check |
+| `openaca scan endpoint` | What agent components are installed on this machine right now? | Developer laptop, CI runner |
 
 Both modes emit text (default), JSON (`--format json`), or SARIF 2.1
 (`--sarif <path>`). Use `-v` for per-finding context.

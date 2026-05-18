@@ -60,8 +60,49 @@ degrades past ~20 records per session due to context budget.
    If validation fails, read the error message, correct the
    relevant candidate, and re-run validation. Do not move on with
    unresolved validation errors.
-6. **Summarize.** Report:
+6. **Internal audit pass (before user review).** Dispatch three
+   parallel subagents (single tool-call block, type
+   `general-purpose`, read-only) that each audit the batch for one
+   recurring systematic error. These three error classes were
+   caught repeatedly by external review across early batches; the
+   audit step is the cheaper, in-band catch.
+
+   - **Audit 1 — ATLAS `T0010.005` overreach.** For every batch
+     record whose taxonomies include `AML.T0010.005` (AI Agent
+     Tool), verify the package name strongly indicates a server
+     or runtime agent tool. If the name suggests CLI / inspector
+     / client / SDK / lib / wrapper / proxy / extension / plugin
+     / scaffolder / `*-dev-*`, flag for downgrade to
+     `AML.T0010.001` (AI Software, general) and removal of
+     `AML.T0104` (Publish Poisoned AI Agent Tool).
+   - **Audit 2 — `AML.T0074` (Masquerading) missing/over-applied.**
+     For every batch record, check the package name for typosquat
+     fingerprints: exact upstream leaf under a non-canonical scope
+     (e.g., `@x/claude-code` typosquats `@anthropic-ai/claude-code`,
+     `@upstashed/context7-mcp` typosquats `@upstash/context7-mcp`),
+     doubled tokens, misspelled brand prefixes, known brand names
+     under unknown scopes. Cross-reference OSV `_evidence` and
+     source attestations for explicit "typosquat" / "impersonation"
+     / "namesquat" / "brand" callouts. Flag missing-T0074 adds and
+     evidence-thin-T0074 removes.
+   - **Audit 3 — `mcp03:2025` / `mcp10:2025` payload location.**
+     For every batch record whose taxonomies include `mcp03:2025`
+     (Tool Poisoning) or `mcp10:2025` (Context Injection and
+     Over-Sharing), read the OSV `details` body. `mcp03:2025`
+     requires explicit mention of payload in tool descriptions /
+     schemas / manifests / metadata. `mcp10:2025` requires explicit
+     mention of payload in tool output / retrieved context /
+     over-shared resources. If neither location is named, flag the
+     code for removal.
+
+   Apply the audit findings as another bulk edit pass, then re-run
+   `uv run openaca lint candidates/` to confirm structural validity
+   after revisions.
+7. **Summarize.** Report:
    - Number of candidates reviewed / annotated / re-reviewed.
+   - Pattern groupings applied (e.g., "8 records mapped as MCP
+     server / supply-chain shape").
+   - Audit findings and revisions applied.
    - Any candidates left as-is (and why).
    - Any validation failures (and the corrective edit applied).
 

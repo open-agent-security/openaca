@@ -25,9 +25,16 @@ how to report.
 Requires Python 3.11+.
 
 ```bash
-pip install openaca==0.1.0b2
+pip install --pre openaca
 openaca --version
 ```
+
+The `--pre` flag is required while OpenACA is in pre-release —
+without it pip refuses to install since there's no stable version
+yet. Current latest is `0.1.0b2`; check with `openaca --version`.
+
+If you need to pin to a specific build for a bug report:
+`pip install openaca==0.1.0b2`.
 
 ## Try it in 30 seconds
 

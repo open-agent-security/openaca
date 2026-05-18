@@ -16,22 +16,24 @@ Requires Python 3.11+.
 
 ## First scan
 
-Point it at one repo or endpoint you already maintain — your own
-agent project, a Claude Code install, an MCP server you author. The
+Point it at one endpoint or repo you already maintain — your own
+Claude Code install, an agent project, an MCP server you author. The
 scanner doesn't phone home; everything runs locally.
 
-**Repo mode** — scans declared manifests (`.mcp.json`,
-`.claude-plugin/plugin.json`, `.claude/settings.json`, etc.):
-
-```bash
-openaca scan repo --target /path/to/your/repo
-```
-
-**Endpoint mode** — scans an installed Claude Code endpoint
-(`~/.claude` or `$CLAUDE_CONFIG_DIR`):
+**Endpoint mode** — scans your installed Claude Code endpoint
+(`~/.claude` or `$CLAUDE_CONFIG_DIR`). Usually the fastest "is this
+useful?" check, since most testers already have Claude Code running:
 
 ```bash
 openaca scan endpoint
+```
+
+**Repo mode** — scans declared manifests in a code repo (`.mcp.json`,
+`.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace
+registries, etc.):
+
+```bash
+openaca scan repo --target /path/to/your/repo
 ```
 
 Both modes accept `--sarif results.sarif`, `--format json`, and
@@ -46,9 +48,9 @@ snippet, and the
 repo has three sandbox fixtures (vulnerability, clean, posture) you
 can clone and run end-to-end.
 
-## What feedback I want
+## Feedback I'm looking for
 
-Three buckets — please tag your issue with the closest fit:
+Three buckets — please tag your report with the closest fit:
 
 1. **Scanner ergonomics** — does install → first-scan → output read
    right? Anywhere you bounced, anything you had to guess at, anything
@@ -66,28 +68,37 @@ than the polish.
 
 ## Privacy & redaction
 
-OpenACA runs locally and doesn't send scan data anywhere. But the
-issue template asks for output, and your output may contain internal
-package names, paths, or component IDs you don't want public:
+OpenACA runs locally and doesn't send scan data anywhere. But when
+you report back, your scan output may contain internal package
+names, paths, or component IDs you don't want public:
 
 - **Redact freely.** Replace internal names with `<redacted>` or
   generic placeholders. The shape of the output is more useful than
   the literal contents.
 - **SARIF is sometimes easier to redact than text** — it's structured
   JSON, you can drop or rename specific entries cleanly. Run with
-  `--sarif results.sarif --format json` and edit before pasting.
-- **If you'd rather email** sensitive output instead of filing
-  publicly: vinodkone@gmail.com is fine. Just include the same
-  fields the issue template asks for.
+  `--sarif results.sarif --format json` and edit before sending.
+- **For sensitive output, DM beats filing in public** (see the
+  "How to report" section below for the DM path).
 
 ## Known limitations in V0
 
-- **Declared manifests only.** V0 reads `mcp.json`,
-  `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace
-  registries, and similar. It does **not** extract MCP servers
-  defined SDK-inline (`query({ mcpServers: { ... } })`), tools
-  registered programmatically, or anything from source-code parsing.
-  Those are V1 scope.
+- **Agent-host coverage is narrow.**
+  - **Endpoint mode** scans Claude Code only — it expects the
+    `~/.claude` (or `$CLAUDE_CONFIG_DIR`) layout. Cursor, Aider,
+    Continue, Cody, Claude Desktop, etc. aren't endpoint-supported
+    yet.
+  - **Repo mode** is anchored on Claude Code's declared manifests
+    (`.claude-plugin/plugin.json`, `.claude/settings.json`, plus the
+    host-agnostic `.mcp.json` / `mcp.json` that most MCP-aware hosts
+    use). Other agent hosts are inventory-supported only via their
+    `mcp.json` if they emit one — host-specific config formats
+    aren't parsed.
+- **Declared manifests only.** V0 reads what's in those config
+  files. It does **not** extract MCP servers defined SDK-inline
+  (`query({ mcpServers: { ... } })`), tools registered
+  programmatically, or anything from source-code parsing. Those are
+  V1 scope.
 - **Corpus focused on agent-stack threats.** The overlay corpus
   prioritizes malicious-package records for MCP servers, agent
   framework packages, and AI infra. It's not a substitute for a
@@ -102,13 +113,23 @@ package names, paths, or component IDs you don't want public:
 
 ## How to report
 
-Use the
-[beta-feedback issue template](https://github.com/open-agent-security/openaca/issues/new?template=beta-feedback.md).
-The template covers command run, version, expected/actual,
-output (redacted), and any inventory mismatch.
+Two paths — pick whichever is lower-friction for you:
 
-Filing one observation is the bar. The friction signal compounds
-across the cohort.
+- **DM me directly** (email vinodkone@gmail.com, or whatever channel
+  we already use). One paragraph is plenty. Mention the command you
+  ran, the OpenACA version (`openaca --version`), and what you
+  expected vs got. I'll either turn it into a public issue myself or
+  keep it private — your call.
+- **File a GitHub issue** using the
+  [beta-feedback template](https://github.com/open-agent-security/openaca/issues/new?template=beta-feedback.md)
+  if you'd rather report in the open. The template has the same
+  fields plus an inventory-mismatch slot.
+
+One filed observation is the bar. The friction signal compounds across
+the cohort.
+
+The privacy note above applies to both paths — redact what you don't
+want public, even in DM.
 
 ## Pinning a version
 

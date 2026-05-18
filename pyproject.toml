@@ -23,7 +23,7 @@ openaca = "tools.cli:main"
 Homepage = "https://openaca.dev"
 Repository = "https://github.com/open-agent-security/openaca"
 Issues = "https://github.com/open-agent-security/openaca/issues"
-Documentation = "https://github.com/open-agent-security/openaca/blob/main/docs/beta-tester-guide.md"
+Documentation = "https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md"
 
 [build-system]
 requires = ["hatchling"]

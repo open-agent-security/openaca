@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/open-agent-security/openaca/security/advisories/new
     about: Private security advisories for OpenACA-the-scanner bugs. See SECURITY.md.
   - name: Beta tester guide
-    url: https://github.com/open-agent-security/openaca/blob/main/docs/beta-tester-guide.md
-    about: Read this first if you're a beta tester — install, first scan, what feedback I'm looking for.
+    url: https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md
+    about: Beta-tester guide (hosted in the public openaca-demo repo since openaca is private during the closed beta).

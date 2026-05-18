@@ -9,8 +9,10 @@ components.
 
 > **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b1`.
 > If you're a beta tester, the
-> [beta-tester guide](docs/beta-tester-guide.md) has the full path
-> (install, first scan, what feedback I'm looking for, how to report).
+> [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
+> in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
+> repo has the full path (install, first scan, what feedback I'm
+> looking for, how to report).
 
 ## Why OpenACA
 

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from tools.parsers import parse_repo_grouped
-from tools.parsers.gitignore import is_ignored, load_gitignore_spec
+from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
 
 def _write_package_json(path: Path, name: str = "x", version: str = "1.0.0") -> None:
@@ -106,6 +106,30 @@ def test_is_ignored_handles_none_spec(tmp_path):
     assert is_ignored(Path(".git/HEAD"), None) is True
     assert is_ignored(Path("package.json"), None) is False
     assert is_ignored(Path("node_modules/foo/package.json"), None) is False
+
+
+def test_iter_unignored_files_prunes_ignored_directories(tmp_path):
+    """Ignored directories should not be descended into at all.
+
+    Filtering after a recursive glob keeps output correct but still walks huge
+    trees like `.venv/` and `.worktrees/`; the shared walker must prune before
+    descent so repo scans and endpoint project-context scans stay fast.
+    """
+    _write_package_json(tmp_path / "package.json")
+    _write_package_json(tmp_path / ".worktrees" / "feature" / "package.json")
+    _write_package_json(tmp_path / ".venv" / "lib" / "package.json")
+    skill_md = tmp_path / "src" / ".claude" / "skills" / "bootstrap" / "SKILL.md"
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text("---\nname: bootstrap\n---\nbody\n")
+    (tmp_path / ".gitignore").write_text(".worktrees/\n.venv/\n")
+
+    spec = load_gitignore_spec(tmp_path)
+    paths = sorted(str(p.relative_to(tmp_path)) for p in iter_unignored_files(tmp_path, spec))
+
+    assert "package.json" in paths
+    assert "src/.claude/skills/bootstrap/SKILL.md" in paths
+    assert ".worktrees/feature/package.json" not in paths
+    assert ".venv/lib/package.json" not in paths
 
 
 def test_secondary_manifest_gitignored_via_plugin_string_mcp(tmp_path):

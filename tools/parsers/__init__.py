@@ -18,7 +18,7 @@ from tools.parsers import (
     pyproject_toml,
     uv_lock,
 )
-from tools.parsers.gitignore import is_ignored, load_gitignore_spec
+from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
 ParserFn = Callable[[Path], list[ComponentRef]]
 
@@ -68,6 +68,43 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     ("package-lock.json", package_lock_json.parse),
     ("uv.lock", uv_lock.parse),
 ]
+
+
+def _registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        rel = path
+
+    if "/" not in pattern and "*" not in pattern:
+        return rel.name == pattern
+
+    rel_parts = rel.parts
+    rel_posix = rel.as_posix()
+    if pattern in {".claude-plugin/plugin.json", ".claude/settings.json"}:
+        return rel_posix == pattern or rel_posix.endswith(f"/{pattern}")
+
+    if len(rel_parts) < 4 or rel_parts[-1] != "SKILL.md":
+        skill_match = False
+    else:
+        skill_match = any(
+            rel_parts[i] == ".claude"
+            and i + 3 < len(rel_parts)
+            and rel_parts[i + 1] == "skills"
+            and i + 3 == len(rel_parts) - 1
+            for i in range(len(rel_parts) - 3)
+        )
+    if pattern == "**/.claude/skills/*/SKILL.md":
+        return skill_match
+
+    if pattern in {"**/.claude/commands/**/*.md", "**/.claude/agents/**/*.md"}:
+        kind = "commands" if "commands" in pattern else "agents"
+        return rel.suffix == ".md" and any(
+            rel_parts[i] == ".claude" and i + 2 < len(rel_parts) and rel_parts[i + 1] == kind
+            for i in range(len(rel_parts) - 2)
+        )
+
+    return rel.match(pattern)
 
 
 def _classify_dep_manifest(manifest_path: Path) -> str:
@@ -158,20 +195,11 @@ def parse_repo_grouped(
     path.
     """
     spec = None if include_gitignored else load_gitignore_spec(root)
-    # `.git/` is always skipped, even when include_gitignored is True.
-    enforce_git_skip = include_gitignored
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
-    for pattern, parser in REGISTRY:
-        for path in root.rglob(pattern):
-            try:
-                rel = path.relative_to(root)
-            except ValueError:
-                rel = path
-            if enforce_git_skip:
-                if rel.parts and rel.parts[0] == ".git":
-                    continue
-            elif is_ignored(rel, spec):
+    for path in iter_unignored_files(root, spec):
+        for pattern, parser in REGISTRY:
+            if not _registry_pattern_matches(path, root, pattern):
                 continue
             n_found += 1
             try:

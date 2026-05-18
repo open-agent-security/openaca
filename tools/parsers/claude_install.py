@@ -46,7 +46,7 @@ from tools.parsers import (
     pyproject_toml,
     uv_lock,
 )
-from tools.parsers.gitignore import is_ignored, load_gitignore_spec
+from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
     SettingsLayers,
@@ -359,19 +359,29 @@ def _walk_skill_dir(skills_dir: Path) -> list[ComponentRef]:
     return refs
 
 
+def _is_project_skill_file(path: Path, project_root: Path) -> bool:
+    try:
+        rel = path.relative_to(project_root)
+    except ValueError:
+        rel = path
+    parts = rel.parts
+    if len(parts) < 4 or parts[-1] != "SKILL.md":
+        return False
+    return any(
+        parts[i] == ".claude"
+        and i + 3 < len(parts)
+        and parts[i + 1] == "skills"
+        and i + 3 == len(parts) - 1
+        for i in range(len(parts) - 3)
+    )
+
+
 def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     spec = load_gitignore_spec(project_root)
-    for skill_md in sorted(project_root.rglob(".claude/skills/*/SKILL.md")):
-        if not skill_md.is_file():
-            continue
-        try:
-            rel = skill_md.relative_to(project_root)
-        except ValueError:
-            rel = skill_md
-        if is_ignored(rel, spec):
-            continue
-        refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+    for skill_md in iter_unignored_files(project_root, spec):
+        if _is_project_skill_file(skill_md, project_root):
+            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
     return refs
 
 

@@ -140,9 +140,7 @@ def test_promote_rejects_when_source_and_target_are_same_file(tmp_path):
     source = overlays_dir / "GHSA-abcd-ef12-3456.yaml"
     source.write_text(yaml.safe_dump(_candidate(), sort_keys=False), encoding="utf-8")
 
-    result = CliRunner().invoke(
-        main, [str(source), "--overlays", str(overlays_dir), "--force"]
-    )
+    result = CliRunner().invoke(main, [str(source), "--overlays", str(overlays_dir), "--force"])
 
     assert result.exit_code != 0
     assert "same file" in result.output

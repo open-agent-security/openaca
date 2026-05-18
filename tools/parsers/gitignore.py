@@ -8,7 +8,7 @@ emits transitive deps as if the host repo declared them).
 
 V0 strategy: parse only `<root>/.gitignore`. Nested `.gitignore` files
 (`<root>/subdir/.gitignore`) are common in monorepos but uncommon in
-typical agent-stack repos; supporting them complicates anchoring rules
+typical agent-component repos; supporting them complicates anchoring rules
 without a strong V0 motivation. Add later if a real repo needs it.
 
 `.git/` is always skipped regardless of `.gitignore` content — git

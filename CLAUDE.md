@@ -89,7 +89,7 @@ is it positioning OpenACA *against* something? The first is fine; the second is 
 
 - Overlays are keyed by an upstream record ID. OpenACA adds agent-context
   metadata; upstream sources own identity, affected ranges, severity, fixes.
-- Where an agent-stack ecosystem isn't yet served by an upstream pipeline
+- Where an agent-component ecosystem isn't yet served by an upstream pipeline
   (some marketplace flows, some MCP server identities), OpenACA's contributors
   pursue upstream disclosure first; the overlay lands once an upstream record
   exists.

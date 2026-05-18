@@ -1,9 +1,9 @@
 # Security Policy
 
 This policy covers **bugs in OpenACA's own code** — the scanner, linter,
-parsers, schema, and reference Action. For vulnerabilities in agent-stack
+parsers, schema, and reference Action. For vulnerabilities in agent
 components (MCP servers, plugins, skills, etc.), see "Reporting an
-agent-stack vulnerability" below.
+agent-component vulnerability" below.
 
 ## Reporting a bug in OpenACA itself
 
@@ -16,10 +16,10 @@ File a [private security advisory via the GitHub Security
 tab](https://github.com/open-agent-security/openaca/security/advisories/new).
 We acknowledge reports within 5 business days.
 
-## Reporting an agent-stack vulnerability
+## Reporting an agent-component vulnerability
 
 OpenACA does not mint vulnerability IDs. If you've found a vulnerability
-in an agent-stack component (an MCP server, a published plugin, a skill
+in an agent component (an MCP server, a published plugin, a skill
 bundle, an agent framework), the workflow is:
 
 1. Disclose to the component's maintainer using their security policy.

@@ -1,7 +1,7 @@
 # OpenACA Thesis
 
 > This doc says **why** the project exists and **what it contributes** to the
-> agent-stack security ecosystem. For the architectural details of what V0
+> AI-agent security ecosystem. For the architectural details of what V0
 > actually ships, see [ADR-0009](../adrs/0009-overlay-only-v0.md) and the
 > implementation plans under [`docs/plans/`](../plans/).
 
@@ -10,14 +10,14 @@
 **OpenACA — Open Agent Composition Analysis.** The open category and reference
 implementation for *Agent Composition Analysis (ACA)*: identifying the
 versioned plugins, MCP servers, skills, and agent-framework components an
-AI agent stack is composed of, and matching them against known security
-records.
+AI agent is composed of, and matching them against known security records.
 
-ACA is the agent-stack analogue of Software Composition Analysis (SCA): SCA
+ACA is the AI-agent analogue of Software Composition Analysis (SCA): SCA
 inventories your library tree from `package.json` / `requirements.txt`; ACA
-inventories your agent stack from `mcp.json`, `.claude-plugin/plugin.json`,
-`.claude/settings.json`, and similar agent-installation manifests. The two
-layers stack — they answer different questions about different artifacts.
+inventories your agent's composition from `mcp.json`,
+`.claude-plugin/plugin.json`, `.claude/settings.json`, and similar
+agent-installation manifests. The two layers stack — they answer different
+questions about different artifacts.
 
 ## Tagline
 
@@ -73,14 +73,14 @@ metadata.**
 
 ## SAST, SCA, and ACA — layered
 
-The agent-stack security stack has three complementary layers, mirroring the
+The AI-agent security stack has three complementary layers, mirroring the
 SAST/SCA split familiar from traditional software security.
 
 | Layer | What it does | Artifact | Examples |
 |---|---|---|---|
 | **SAST** | Inspects an artifact for unsafe patterns | Source code, configs, manifests | Pattern-checking scanners for MCP servers, plugin manifests, skill content, IDE configs |
 | **SCA** (Software Composition Analysis) | Identifies third-party library components by version, looks them up against a vuln DB | `package.json`, `requirements.txt`, lockfiles | OSV-Scanner, Trivy, Dependabot |
-| **ACA** (Agent Composition Analysis) | Identifies third-party agent-stack components by version, looks them up against a vuln DB | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries | **OpenACA + upstream OSV** |
+| **ACA** (Agent Composition Analysis) | Identifies third-party agent components by version, looks them up against a vuln DB | `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`, marketplace registries | **OpenACA + upstream OSV** |
 
 These layers stack. They do not compete. Mature security tooling runs all
 three because they catch different signal types.
@@ -147,11 +147,11 @@ ignores it. **Backwards-compatible by design.**
 
 ## What OpenACA contributes
 
-Two concrete contributions OpenACA brings to the agent-stack security stack
+Two concrete contributions OpenACA brings to the AI-agent security stack
 that don't exist elsewhere today:
 
 1. **The agent-context overlay schema.** A namespace
-   (`database_specific.openaca`) for agent-stack taxonomy mappings, evidence
+   (`database_specific.openaca`) for agent-context taxonomy mappings, evidence
    level, and a narrow malicious-package threat kind, layered on top of
    upstream OSV records. The schema is the durable contribution: even when
    adjacent ecosystems incorporate similar metadata, they will use OpenACA's
@@ -169,7 +169,7 @@ that don't exist elsewhere today:
 Both are explicitly *additive* to OSV / GHSA / Dependabot. The substrate
 those projects steward — vulnerability identity, affected ranges, severity,
 fixes — is upstream of OpenACA. OpenACA reads from them and contributes back
-the agent-stack layer.
+the agent-composition layer.
 
 ## What makes OpenACA useful
 
@@ -182,9 +182,9 @@ underlying upstream records are public:
 - **Manifest coverage.** OpenACA's parsers read agent-installation
   manifests (`mcp.json`, `.claude-plugin/plugin.json`, etc.) that
   general-purpose SCA tooling doesn't parse today.
-- **Iteration speed.** A focused project iterating on agent-stack overlays
-  ships faster than waiting on agent-context fields to land in a
-  general-purpose security database.
+- **Iteration speed.** A focused project iterating on agent-component
+  overlays ships faster than waiting on agent-context fields to land in
+  a general-purpose security database.
 - **Standards path.** The schema namespace and identity conventions are
   candidate inputs to broader standardization (PURL, OSV). OpenACA is the
   open implementation those proposals reference.

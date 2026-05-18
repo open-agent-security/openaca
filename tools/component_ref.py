@@ -1,4 +1,4 @@
-"""Normalized representation of a detected agent-stack component."""
+"""Normalized representation of a detected agent component."""
 
 from __future__ import annotations
 
@@ -38,8 +38,9 @@ class ComponentRef:
     attributed_to: Optional[str] = None
     extra: dict = field(default_factory=dict)
     # Composition classification, set by the repo walker post-parse:
-    #   "agent-component"     — agent-stack surface (plugins, MCP servers,
-    #                           skills, commands, agents, hooks, settings)
+    #   "agent-component"     — first-class agent surface (plugins, MCP
+    #                           servers, skills, commands, agents, hooks,
+    #                           settings)
     #   "agent-dependency"    — software dep co-located with a plugin
     #                           manifest (.claude-plugin/plugin.json sibling)
     #   "software-dependency" — software dep with no plugin co-location;

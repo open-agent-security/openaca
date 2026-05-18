@@ -104,12 +104,38 @@ degrades past ~20 records per session due to context budget.
    Apply the audit findings as another bulk edit pass, then re-run
    `uv run openaca lint candidates/` to confirm structural validity
    after revisions.
-7. **Summarize.** Report:
+7. **Move approved candidates to `candidates/ready_for_review/`.**
+   After annotation + lint + audit are clean, `mv` each candidate
+   from `candidates/<id>.yaml` to `candidates/ready_for_review/<id>.yaml`.
+   This is the exit gate of the skill's internal pipeline: a
+   candidate that reaches `ready_for_review/` has passed all
+   in-skill checks and is staged for external (user/Codex) review.
+
+   Use `mv`, not `cp` — a candidate exists in exactly one place at
+   any time. `candidates/` root is volatile (the seeder writes there
+   unconditionally and may overwrite on reseed); `ready_for_review/`
+   is the tracked, stable review queue. Two copies would risk
+   divergence on the next reseed.
+
+   Operationally:
+   ```bash
+   mkdir -p candidates/ready_for_review
+   for f in <list of approved candidate filenames>; do
+     mv "candidates/${f}" "candidates/ready_for_review/${f}"
+   done
+   ```
+
+   If a candidate failed lint or audit and was reverted/rejected, it
+   stays in `candidates/` root and the user gets a note in the
+   summary.
+8. **Summarize.** Report:
    - Number of candidates reviewed / annotated / re-reviewed.
    - Pattern groupings applied (e.g., "8 records mapped as MCP
      server / supply-chain shape").
    - Audit findings and revisions applied.
-   - Any candidates left as-is (and why).
+   - Number of candidates moved to `ready_for_review/`.
+   - Any candidates left in `candidates/` root (and why — usually
+     unresolved validation/audit issues or out-of-scope routing).
    - Any validation failures (and the corrective edit applied).
 
 ## Out of scope

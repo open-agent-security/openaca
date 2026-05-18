@@ -62,7 +62,22 @@
       "type": "object",
       "required": ["type", "url"],
       "properties": {
-        "type": {"type": "string", "enum": ["ADVISORY", "ARTICLE", "FIX", "PACKAGE", "REPORT", "WEB"]},
+        "type": {
+          "type": "string",
+          "enum": [
+            "ADVISORY",
+            "ARTICLE",
+            "DETECTION",
+            "DISCUSSION",
+            "EVIDENCE",
+            "FIX",
+            "GIT",
+            "INTRODUCED",
+            "PACKAGE",
+            "REPORT",
+            "WEB"
+          ]
+        },
         "url": {"type": "string", "format": "uri"}
       }
     },

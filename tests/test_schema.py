@@ -72,6 +72,38 @@ def test_schema_rejects_non_canonical_openaca_fields(schema, sample_valid, field
         Draft202012Validator(schema).validate(advisory)
 
 
+@pytest.mark.parametrize(
+    "ref_type",
+    [
+        # Pre-existing types — keep validating to guard against accidental removal.
+        "ADVISORY",
+        "ARTICLE",
+        "FIX",
+        "PACKAGE",
+        "REPORT",
+        "WEB",
+        # OSV-spec types previously rejected — needed to ingest upstream records
+        # that cite HN discussions, evidence dumps, git commits, etc.
+        "DETECTION",
+        "DISCUSSION",
+        "EVIDENCE",
+        "GIT",
+        "INTRODUCED",
+    ],
+)
+def test_schema_accepts_osv_reference_types(schema, sample_valid, ref_type):
+    advisory = dict(sample_valid)
+    advisory["references"] = [{"type": ref_type, "url": "https://example.test/ref"}]
+    Draft202012Validator(schema).validate(advisory)
+
+
+def test_schema_rejects_unknown_reference_type(schema, sample_valid):
+    advisory = dict(sample_valid)
+    advisory["references"] = [{"type": "BLOGPOST", "url": "https://example.test/ref"}]
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(advisory)
+
+
 def test_schema_rejects_malformed_taxonomy_codes(schema, sample_valid):
     advisory = dict(sample_valid)
     openaca = dict(advisory["database_specific"]["openaca"])

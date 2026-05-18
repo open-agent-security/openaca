@@ -128,6 +128,11 @@ Found 1 vulnerability in 1 package.
 Scanned 1 manifest, 1 component. Sources: osv.dev.
 ```
 
+For more scenarios (clean scan, configuration-hygiene checks via
+`--include-posture`), clone the
+[openaca-demo](https://github.com/open-agent-security/openaca-demo)
+repo and try each of its fixtures.
+
 ### Standalone CLI
 
 The scanner is a normal Python package; run it against any local

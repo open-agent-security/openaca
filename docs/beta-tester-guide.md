@@ -41,8 +41,10 @@ finds no vulnerabilities).
 
 Want to verify the install before pointing it at a real target? The
 README's "Try it in 30 seconds" section has a copy-paste `mcp.json`
-snippet that exercises a known finding so you can confirm the scanner
-works end-to-end on your machine.
+snippet, and the
+[openaca-demo](https://github.com/open-agent-security/openaca-demo)
+repo has three sandbox fixtures (vulnerability, clean, posture) you
+can clone and run end-to-end.
 
 ## What feedback I want
 

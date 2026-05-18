@@ -7,7 +7,7 @@ components.
 
 > Agent-context overlays for upstream security advisories.
 
-> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b1`.
+> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b2`.
 > If you're a beta tester, the
 > [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
 > in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
@@ -98,7 +98,7 @@ the same set of findings.
 
 ### Try it in 30 seconds
 
-After `pip install openaca==0.1.0b1`, drop a sample `mcp.json` in any
+After `pip install openaca==0.1.0b2`, drop a sample `mcp.json` in any
 empty directory and run the scanner:
 
 ```bash
@@ -143,7 +143,7 @@ checkout. Two modes via subcommands.
 **Install from PyPI (recommended for beta testers):**
 
 ```bash
-pip install openaca==0.1.0b1
+pip install openaca==0.1.0b2
 ```
 
 **Install from source (for contributors):**

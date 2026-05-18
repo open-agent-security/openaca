@@ -1,8 +1,8 @@
 [project]
 name = "openaca"
-version = "0.1.0b1"
+version = "0.1.0b2"
 description = "OpenACA: agent composition analysis — overlays and scanner for agent stack security."
-readme = "README.md"
+readme = "PYPI-README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [

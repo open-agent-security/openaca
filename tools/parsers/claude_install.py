@@ -46,6 +46,7 @@ from tools.parsers import (
     pyproject_toml,
     uv_lock,
 )
+from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
     SettingsLayers,
@@ -360,9 +361,17 @@ def _walk_skill_dir(skills_dir: Path) -> list[ComponentRef]:
 
 def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
+    spec = load_gitignore_spec(project_root)
     for skill_md in sorted(project_root.rglob(".claude/skills/*/SKILL.md")):
-        if skill_md.is_file():
-            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+        if not skill_md.is_file():
+            continue
+        try:
+            rel = skill_md.relative_to(project_root)
+        except ValueError:
+            rel = skill_md
+        if is_ignored(rel, spec):
+            continue
+        refs.extend(claude_skill.parse(skill_md, attributed_to=None))
     return refs
 
 

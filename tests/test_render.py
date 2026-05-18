@@ -805,9 +805,38 @@ def test_tree_direct_components_render_as_separate_root():
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
     assert "direct components/" in out
+    assert "foo (from fake)" in out
     assert "skills/ (2)" in out
     # Alphabetical: bar before foo.
     assert out.index("bar") < out.index("foo")
+
+
+def test_tree_disambiguates_duplicate_direct_component_labels_with_source():
+    refs = [
+        _bundled(
+            "claude-skill",
+            "bootstrap",
+            "1.0.0",
+            attributed_to=None,
+            component_identity="claude-skill/bootstrap@1.0.0",
+            source_manifest="project/.claude/skills/bootstrap/SKILL.md",
+        ),
+        _bundled(
+            "claude-skill",
+            "bootstrap",
+            "1.0.0",
+            attributed_to=None,
+            component_identity="claude-skill/bootstrap@1.0.0",
+            source_manifest="project/.worktrees/feature/.claude/skills/bootstrap/SKILL.md",
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "bootstrap@1.0.0 (from project/.claude/skills/bootstrap/SKILL.md)" in out
+    assert (
+        "bootstrap@1.0.0 (from project/.worktrees/feature/.claude/skills/bootstrap/SKILL.md)" in out
+    )
 
 
 def test_tree_marks_affected_leaves_with_finding_id():

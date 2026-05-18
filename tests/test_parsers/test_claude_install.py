@@ -650,6 +650,34 @@ def test_install_walks_nested_project_skills(tmp_path):
     assert any(r.component_identity == "claude-skill/ui-review" for r in refs)
 
 
+def test_install_project_skills_skip_gitignored_worktrees(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".gitignore").write_text(".worktrees/\n")
+    real_skill = project / ".claude" / "skills" / "bootstrap"
+    real_skill.mkdir(parents=True)
+    (real_skill / "SKILL.md").write_text("---\nname: bootstrap\n---\nbody\n")
+    worktree_fixture = (
+        project
+        / ".worktrees"
+        / "feature"
+        / "tests"
+        / "fixtures"
+        / ".claude"
+        / "skills"
+        / "bootstrap"
+    )
+    worktree_fixture.mkdir(parents=True)
+    (worktree_fixture / "SKILL.md").write_text("---\nname: bootstrap\n---\nbody\n")
+
+    refs, warnings = parse_install(install_root=tmp_path, project_root=project)
+
+    assert warnings == []
+    bootstrap_refs = [r for r in refs if r.component_identity == "claude-skill/bootstrap"]
+    assert len(bootstrap_refs) == 1
+    assert bootstrap_refs[0].source_manifest == str(real_skill / "SKILL.md")
+
+
 def test_install_project_scoped_mcp_json(tmp_path):
     """`<project_root>/.mcp.json` is a project-shared MCP config — emit it."""
     project = tmp_path / "project"

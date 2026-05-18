@@ -755,9 +755,12 @@ def _build_direct_node(
         if not items:
             continue
         cat = _TreeNode(label=f"{label}/ ({len(items)})")
-        for r in sorted(items, key=lambda x: _leaf_label(x).lower()):
+        for r in sorted(items, key=lambda x: (_leaf_label(x).lower(), x.source_manifest)):
+            leaf_label = _leaf_label(r)
+            if r.source_manifest:
+                leaf_label = f"{leaf_label} (from {r.source_manifest})"
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
-            cat.children.append(_TreeNode(label=f"{_leaf_label(r)}{leaf_marker}"))
+            cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
         root.children.append(cat)
     return root
 

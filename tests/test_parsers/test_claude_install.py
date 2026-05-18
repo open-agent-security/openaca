@@ -602,6 +602,54 @@ def test_install_bare_skills_from_install_root_skills_dir(tmp_path):
     assert skill_refs[0].attributed_to is None
 
 
+def test_install_walks_bare_user_commands_and_agents(tmp_path):
+    (tmp_path / "commands" / "frontend").mkdir(parents=True)
+    (tmp_path / "commands" / "frontend" / "deploy.md").write_text("deploy\n")
+    (tmp_path / "agents" / "review").mkdir(parents=True)
+    (tmp_path / "agents" / "review" / "code.md").write_text(
+        "---\nname: code-reviewer\n---\nreview\n"
+    )
+
+    refs, warnings = parse_install(install_root=tmp_path)
+
+    assert warnings == []
+    assert any(r.component_identity == "claude-command/deploy" for r in refs)
+    assert any(r.component_identity == "claude-agent/code-reviewer" for r in refs)
+
+
+def test_install_walks_project_skills_commands_and_agents(tmp_path):
+    project = tmp_path / "project"
+    (project / ".claude" / "skills" / "project-skill").mkdir(parents=True)
+    (project / ".claude" / "skills" / "project-skill" / "SKILL.md").write_text(
+        "---\nname: project-skill\nmetadata:\n  version: 1.0.0\n---\nbody\n"
+    )
+    (project / ".claude" / "commands" / "ops").mkdir(parents=True)
+    (project / ".claude" / "commands" / "ops" / "deploy.md").write_text("deploy\n")
+    (project / ".claude" / "agents" / "review").mkdir(parents=True)
+    (project / ".claude" / "agents" / "review" / "code.md").write_text(
+        "---\nname: code-reviewer\n---\nreview\n"
+    )
+
+    refs, warnings = parse_install(install_root=tmp_path, project_root=project)
+
+    assert warnings == []
+    assert any(r.component_identity == "claude-skill/project-skill@1.0.0" for r in refs)
+    assert any(r.component_identity == "claude-command/deploy" for r in refs)
+    assert any(r.component_identity == "claude-agent/code-reviewer" for r in refs)
+
+
+def test_install_walks_nested_project_skills(tmp_path):
+    project = tmp_path / "project"
+    skill_dir = project / "packages" / "frontend" / ".claude" / "skills" / "ui-review"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: ui-review\n---\nbody\n")
+
+    refs, warnings = parse_install(install_root=tmp_path, project_root=project)
+
+    assert warnings == []
+    assert any(r.component_identity == "claude-skill/ui-review" for r in refs)
+
+
 def test_install_project_scoped_mcp_json(tmp_path):
     """`<project_root>/.mcp.json` is a project-shared MCP config — emit it."""
     project = tmp_path / "project"

@@ -242,7 +242,13 @@ def _walk_bare_components(
     2. **Bare hooks**: each scope's `hooks` key, emitted with
        `claude-hook/settings/<scope>/...` identity. No cross-scope merging.
 
-    3. **Bare skills**: `<install_root>/skills/<name>/SKILL.md`.
+    3. **Bare skills/commands/agents**:
+       - Personal `<install_root>/skills/<name>/SKILL.md`.
+       - Personal `<install_root>/commands/**/*.md`.
+       - Personal `<install_root>/agents/**/*.md`.
+       - Project `**/.claude/skills/<name>/SKILL.md`.
+       - Project `.claude/commands/**/*.md`.
+       - Project `.claude/agents/**/*.md`.
 
     Scopes obey mode: `repo` mode skips `local` (machine-local, not
     CI-relevant).
@@ -301,12 +307,62 @@ def _walk_bare_components(
 
     # Bare skills at <install_root>/skills/.
     bare_skills_dir = install_root / "skills"
-    if bare_skills_dir.is_dir():
-        for skill_subdir in sorted(bare_skills_dir.iterdir()):
-            skill_md = skill_subdir / "SKILL.md"
-            if skill_md.is_file():
-                refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+    refs.extend(_walk_skill_dir(bare_skills_dir))
+    refs.extend(
+        claude_command_agent.enumerate_dir(
+            install_root / "commands",
+            kind="command",
+            scope_owner=None,
+            attributed_to=None,
+        )
+    )
+    refs.extend(
+        claude_command_agent.enumerate_dir(
+            install_root / "agents",
+            kind="agent",
+            scope_owner=None,
+            attributed_to=None,
+        )
+    )
 
+    if project_root is not None:
+        refs.extend(_walk_project_skill_dirs(project_root))
+        refs.extend(
+            claude_command_agent.enumerate_dir(
+                project_root / ".claude" / "commands",
+                kind="command",
+                scope_owner=None,
+                attributed_to=None,
+            )
+        )
+        refs.extend(
+            claude_command_agent.enumerate_dir(
+                project_root / ".claude" / "agents",
+                kind="agent",
+                scope_owner=None,
+                attributed_to=None,
+            )
+        )
+
+    return refs
+
+
+def _walk_skill_dir(skills_dir: Path) -> list[ComponentRef]:
+    refs: list[ComponentRef] = []
+    if not skills_dir.is_dir():
+        return refs
+    for skill_subdir in sorted(skills_dir.iterdir()):
+        skill_md = skill_subdir / "SKILL.md"
+        if skill_md.is_file():
+            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+    return refs
+
+
+def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
+    refs: list[ComponentRef] = []
+    for skill_md in sorted(project_root.rglob(".claude/skills/*/SKILL.md")):
+        if skill_md.is_file():
+            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
     return refs
 
 

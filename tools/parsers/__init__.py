@@ -59,9 +59,9 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     # Plan 008: agent-stack component inventory in repo mode. These
     # surfaces emit the same ecosystems as endpoint mode but with `attributed_to=None`
     # (repo declarations are not "via a plugin"; the repo declares them).
-    (".claude/skills/*/SKILL.md", claude_skill.parse),
-    (".claude/commands/*.md", _parse_repo_command),
-    (".claude/agents/*.md", _parse_repo_agent),
+    ("**/.claude/skills/*/SKILL.md", claude_skill.parse),
+    ("**/.claude/commands/**/*.md", _parse_repo_command),
+    ("**/.claude/agents/**/*.md", _parse_repo_agent),
     # Plan 009: lockfile parsers for repo-mode transitive coverage.
     # Refs from these patterns have attributed_to=None (host repo is direct);
     # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.

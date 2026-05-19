@@ -16,8 +16,8 @@ arbitrary binary. The classification controls whether OpenACA emits a
 PURL (and thus aliases an upstream CVE/GHSA) or falls to the
 `mcp-stdio/binary:*` fallback.
 
-Codex review on PR #8 surfaced four rounds of Windows-related
-findings on consecutive commits:
+PR #8 review surfaced four rounds of Windows-related findings on
+consecutive commits:
 
 1. Backslash paths (`C:\Program Files\nodejs\npx.cmd`) classify as
    binaries on POSIX runners because `Path` is OS-aware and doesn't

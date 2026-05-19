@@ -175,20 +175,10 @@ _project_option = click.option(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
     help=(
-        "Project root whose .claude settings are layered into endpoint resolution. "
-        "Defaults to the current working directory; pass --no-project to opt out."
-    ),
-)
-_no_project_option = click.option(
-    "--no-project",
-    "no_project",
-    is_flag=True,
-    default=False,
-    help=(
-        "Skip project context entirely. By default, endpoint scan includes the "
-        "current working directory as project context (so a Claude Code project's "
-        "local skills/MCPs/plugin manifest get scanned). Use this flag to scan "
-        "only user-level endpoint config regardless of cwd."
+        "Project root whose .claude settings/skills/MCPs are layered into endpoint "
+        "resolution. Pass `--project .` to include the current directory's project "
+        "context. Endpoint scan does NOT include project context by default — when "
+        "this flag is omitted, scan output reminds you how to add it."
     ),
 )
 _sarif_option = click.option(
@@ -563,7 +553,6 @@ def repo(
 @click.pass_context
 @_config_dir_option
 @_project_option
-@_no_project_option
 @_sarif_option
 @_fail_on_option
 @_verbose_option
@@ -574,7 +563,6 @@ def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
     project: Path | None,
-    no_project: bool,
     sarif: Path | None,
     fail_on: str,
     verbose: bool,
@@ -587,12 +575,9 @@ def endpoint(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )
     config_dir = _resolve_endpoint_config_dir(config_dir)
-    project = _resolve_endpoint_project_root(project, no_project)
 
     # Always announce what was scanned (config dir + project context) so the
-    # scan scope is never hidden — transparency, not surprise. cwd-as-default
-    # for project context could otherwise produce surprising inventory counts
-    # when run from unexpected directories.
+    # scan scope is never hidden — transparency, not surprise.
     project_note = str(project) if project is not None else "(none)"
     click.echo(
         f"detected config_dir={config_dir}, project={project_note} (mode=endpoint)",
@@ -666,6 +651,19 @@ def endpoint(
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 
+    # When --project is not provided, remind the user that project-local
+    # skills/MCPs/plugin manifests are NOT included in this scan. The note
+    # is unconditional (no cwd detection); the goal is for testers to
+    # discover the flag the first time they run endpoint scan, not to be
+    # clever about when to surface it.
+    if project is None:
+        click.echo(
+            "\nNote: scanned user-level config only. To include project-local "
+            "skills, MCPs, and plugin manifests, pass --project /path/to/project "
+            "(or --project . for the current directory).",
+            err=True,
+        )
+
     _exit_for_findings(fail_on, findings)
 
 
@@ -681,31 +679,6 @@ def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
     if configured:
         return Path(configured).expanduser()
     return Path.home() / ".claude"
-
-
-def _resolve_endpoint_project_root(project: Path | None, no_project: bool) -> Path | None:
-    """Resolve endpoint project-context default.
-
-    The mental model matches Claude Code: running `openaca scan endpoint`
-    from a project directory should include that project's local skills,
-    MCPs, and plugin manifests. So project defaults to `cwd` unless the
-    user explicitly opts out with `--no-project` or overrides with
-    `--project <path>`.
-
-    `--project` and `--no-project` are mutually exclusive — both set means
-    the user's intent is ambiguous, and silently picking one would hide
-    the scan scope. Better to fail loudly.
-    """
-    if no_project and project is not None:
-        raise click.UsageError(
-            "--project and --no-project are mutually exclusive. "
-            "Pick one: either name a project, or skip project context entirely."
-        )
-    if no_project:
-        return None
-    if project is not None:
-        return project
-    return Path.cwd()
 
 
 if __name__ == "__main__":

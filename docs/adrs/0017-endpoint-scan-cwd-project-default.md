@@ -1,6 +1,6 @@
 ---
 id: 0017
-title: Endpoint scan defaults project context to cwd
+title: Endpoint scan keeps project context opt-in, with an unconditional reminder note
 status: accepted
 date: 2026-05-19
 supersedes: null
@@ -9,116 +9,131 @@ superseded-by: null
 
 ## Context
 
-Round 1 of closed-beta testing surfaced a high-severity ergonomics
-failure in endpoint mode. A tester running `openaca scan endpoint -v`
-from a Claude Code project directory (with 10+ skills under
+Round 1 of closed-beta testing surfaced an ergonomics failure in
+endpoint mode. A tester running `openaca scan endpoint -v` from a
+Claude Code project directory (with 10+ skills under
 `<repo>/.claude/skills/`) saw:
 
 ```
 0 active plugins, 0 direct components, 0 total components
 ```
 
-The scanner behaved per ADR-0006 — project settings were opt-in via
-`--project <repo>`, and no `--project` flag meant no project context.
-The output was technically correct but produced the worst possible
-first-scan experience: a real environment with real components,
-reported as empty, with no hint that project context was missing.
+The scanner behaved per ADR-0006 — project settings opt-in via
+`--project <repo>`, so no `--project` meant no project context. The
+output was technically correct but the tester had to read `--help`
+to discover the flag. He called it a "nitpick" but the friction was
+real, and other testers will hit the same wall.
 
-ADR-0006 documented the opt-in default. That default was inherited
-from the original "endpoint scan = installed Claude Code endpoint
-only" framing, before round-1 testers tried it from project dirs
-the way they use Claude Code itself.
+The natural fix considered first was "default `--project` to cwd."
+That direction is rejected after considering the home-directory
+case: cwd-as-default at `~` causes `_walk_project_skill_dirs` to
+recursively walk the entire home tree (seconds-to-tens-of-seconds
+of stat calls, plus double-counting user-scope config as
+project-scope). Workarounds (overlap guards, "only-when-cwd-has-
+markers" heuristics, cwd-based hint triggers) all reintroduce
+invisible behavior the user has to understand.
+
+The chosen design is the simplest one that solves the round-1 case
+without introducing any hidden logic.
 
 ## Decision
 
-`openaca scan endpoint` defaults the project context to the current
-working directory. The user's mental model from Claude Code is that
-running from a project dir includes that project's components — the
-scanner matches that.
-
-CLI surface:
-
-- `openaca scan endpoint` — user-level config + `cwd` as project
-  context (default).
-- `openaca scan endpoint --project /path/to/other` — override the
-  default; named project replaces cwd.
-- `openaca scan endpoint --no-project` — skip project context
-  entirely; scan only user-level endpoint config.
-- `--project` and `--no-project` are mutually exclusive; passing both
-  raises `click.UsageError` rather than silently picking one.
-
-The scan emits the resolved scope unconditionally (not just in
-verbose mode):
+`openaca scan endpoint` keeps `--project` opt-in (ADR-0006 stands on
+this point). When `--project` is omitted, the scan emits an
+**unconditional reminder note** at the end of output:
 
 ```
-detected config_dir=<config_dir>, project=<resolved>|(none) (mode=endpoint)
+detected config_dir=<config_dir>, project=(none) (mode=endpoint)
+Scanned N active plugins, M components ...
+
+Note: scanned user-level config only. To include project-local
+skills, MCPs, and plugin manifests, pass --project /path/to/project
+(or --project . for the current directory).
 ```
 
-This makes the scope transparent — the user always sees exactly what
-was scanned, so cwd-as-default never produces hidden behavior.
+When `--project` is provided, the note is suppressed (the user has
+made the choice; the educational message is no longer needed).
+
+The `detected config_dir=..., project=...` line is emitted
+**unconditionally** (not just in `-v` mode) — transparency, not
+surprise. `project=(none)` appears when no `--project` was passed.
+
+There is no `--no-project` flag, no cwd-as-default behavior, no
+overlap guard, and no cwd-marker detection. The whole design fits
+in one sentence: "endpoint scan is user-level only; pass `--project`
+to add project context; the CLI tells you about the flag every time
+you don't pass it."
 
 ## Alternatives considered
 
-- **Hint-first (Codex's initial proposal)**: keep the opt-in default,
-  but when 0 components were found AND cwd contains Claude artifacts
-  (`.claude/`, `.mcp.json`), emit a hint:
-  *"No project context was included. Try `openaca scan endpoint
-  --project .`"*
-  Rejected: imposes friction on every tester for one round of
-  evidence we already had from round 1. The hint just delays the
-  same surprise to the next user who doesn't read it carefully. Also
-  introduces a heuristic (what counts as "Claude artifacts"?) that
-  adds complexity without solving the underlying mental-model
-  mismatch.
+- **Default `--project` to cwd**: the natural read of the round-1
+  case. Rejected because it triggers a recursive walk of the home
+  tree when cwd is `~`, double-counts user-scope as project-scope,
+  and silently changes scan scope based on where the user happens
+  to be cd'd. PR review on #69 escalated this from "noisy counts"
+  (which ADR draft 1 accepted) to "expensive walk + incorrect
+  output" (which is unacceptable).
 
-- **Heuristic-based default**: default to cwd only when cwd contains
-  `.claude/` or `.mcp.json`; otherwise no project context.
-  Rejected: heuristic complexity (what triggers? what if my project
-  uses a different layout?) doesn't earn its keep. Always-default-to-
-  cwd needs one sentence of documentation; the heuristic needs a
-  flowchart.
+- **Default to cwd + overlap guard**: skip cwd-as-default when cwd
+  contains the config dir. Rejected: the guard is itself a
+  heuristic — behavior differs invisibly between adjacent cwds
+  (e.g., `~/workspace` includes project context; `~` doesn't), and
+  the user has no way to predict which case applies without reading
+  the `detected` line and inferring the rule.
 
-- **No default; keep opt-in via `--project`**: the ADR-0006 status
-  quo.
-  Rejected by round-1 evidence: produces the worst possible
-  first-scan experience for the dominant use case (running from a
-  project dir).
+- **Hint-first with cwd-has-markers detection**: no default, but
+  show the reminder note only when cwd has `.claude/` or `.mcp.json`.
+  Rejected: this hides the educational mechanism behind a detection
+  rule the user has to understand. If a tester runs from a nested
+  subdirectory without top-level markers, the hint won't fire —
+  surprise. The unconditional note avoids this entirely.
+
+- **Default to opt-in with no reminder (ADR-0006 status quo)**:
+  rejected by round-1 evidence. "Had to rely on command help
+  options" is the failure mode the note is designed to fix.
 
 - **Walk up to find the nearest `.claude/` ancestor**: more useful
-  than `cwd` literal when the user is in a nested subdirectory.
-  Rejected for V0: reintroduces a heuristic. If round-2 evidence
-  shows nested-dir invocation is common, can be added.
+  than cwd literal when invoked from a nested subdir. Rejected for
+  V0: same invisible-rule problem as overlap guard. If round-2
+  evidence shows nested invocation is common, can be reconsidered.
 
 ## Consequences
 
-- **Pro**: matches the Claude Code mental model; first-scan
-  experience produces signal instead of zeros.
-- **Pro**: removes a flag from the dominant invocation. `openaca
-  scan endpoint` is the natural form.
-- **Pro**: explicit output line makes the scope transparent — no
-  silent behavior change risk.
-- **Con**: if a user runs from `~` or another non-project dir, the
-  scanner walks that dir looking for project-local artifacts. Cost
-  is the walk; output reports `0 components` from that path. Not
-  catastrophic; documented via the `--no-project` escape hatch.
-- **Con**: if a user runs from `~` specifically, project-root
-  `~/.claude/...` overlaps with `install_root`'s `~/.claude/...`.
-  V0 does not dedupe — the user sees inflated counts. Mitigation:
-  `--no-project` is documented as the way to scan only user-level
-  config regardless of cwd. If testers hit this in round 2, add
-  install-root/project-root overlap detection.
-- **Con**: amends ADR-0006's "project settings are opt-in" framing.
-  The rest of ADR-0006 (subcommand structure, `claude-plugin`
-  ecosystem, `attributed_to` fields) still applies; only the
-  project-default is changed by this ADR.
+- **Pro**: simplest design that solves the round-1 case. One rule,
+  no edge cases.
+- **Pro**: home-dir footgun does not exist. No recursive walk
+  unless the user explicitly asks for project context.
+- **Pro**: no `--no-project` needed; CLI surface stays minimal.
+- **Pro**: the educational note is *visible* and *consistent*. A
+  tester who runs endpoint scan three times in a row sees the note
+  three times — annoying enough to learn the flag, not annoying
+  enough to be a blocker.
+- **Con**: testers running from a project dir pay a one-iteration
+  cost: first scan shows 0 components + the note, second scan with
+  `--project .` shows the real components. One framing of this is
+  "bad first scan"; the note converts it into a "good-enough first
+  scan with clear next step."
+- **Con**: the note appears every time `--project` is omitted, even
+  for users who already know about the flag and chose to omit it
+  intentionally. Mitigation: it's a single short paragraph on
+  stderr, easy to grep out. If round-2 testers complain, add a
+  `--quiet` or `OPENACA_QUIET=1` opt-out.
+- **Con**: amends ADR-0006's "project settings are opt-in" framing
+  by adding the reminder note. The opt-in itself is preserved; the
+  rest of ADR-0006 (subcommand structure, `claude-plugin` ecosystem,
+  `attributed_to` fields) still applies unchanged.
 
 ## When to revisit
 
-- If round-2 testers running from nested project subdirectories
-  report missing project context (the walk-up-to-find-`.claude`
-  alternative becomes worth implementing).
-- If the `~`-as-cwd overlap case turns out to be common in real
-  usage, add a dedup or guard against it.
-- If endpoint mode grows additional default-context sources (e.g.,
-  the active editor's workspace, a host-provided "current project"
-  hint), the `cwd` default may need to be relativized against those.
+- If round-2 testers consistently miss the note (read past it, dismiss
+  it, etc.), reconsider whether a stronger UX signal is needed
+  (e.g., red text, bold, exit-code policy).
+- If testers running from project dirs find the per-invocation note
+  noisy enough to file as feedback, add a quiet mode.
+- If endpoint mode grows host-provided "current project" hints
+  (e.g., IDE integration), reconsider whether the opt-in default
+  can be replaced by a hint-from-host model.
+- If the design space accumulates enough invisible-behavior
+  pressure that the unconditional-note discipline starts feeling
+  arbitrary, that's a signal to revisit the underlying default
+  choice.

@@ -13,7 +13,7 @@ maintained in this corpus).
 
 ## Beta status
 
-This is the `0.1.0b2` closed-beta pre-release. The scanner and
+This is the `0.1.0b3` closed-beta pre-release. The scanner and
 overlay corpus are usable; expect rough edges. If you're a beta
 tester, start with the
 [**beta-tester guide**](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md) —
@@ -40,11 +40,11 @@ pip install openaca
 ```
 
 Both commands auto-pick the latest pre-release while OpenACA has no
-stable version yet. Current latest is `0.1.0b2`; check with `openaca
+stable version yet. Current latest is `0.1.0b3`; check with `openaca
 --version`.
 
 Pin to a specific build if you need to reproduce a bug report:
-`uv tool install openaca==0.1.0b2` or `pip install openaca==0.1.0b2`.
+`uv tool install openaca==0.1.0b3` or `pip install openaca==0.1.0b3`.
 
 ## Try it in 30 seconds
 

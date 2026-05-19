@@ -7,7 +7,7 @@ components.
 
 > Agent-context overlays for upstream security advisories.
 
-> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b2`.
+> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b3`.
 > If you're a beta tester, the
 > [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
 > in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
@@ -150,7 +150,7 @@ pip install openaca       # if you prefer pip
 ```
 
 (Both auto-pick the latest pre-release while no stable exists. Pin a
-specific build with `openaca==0.1.0b2` if you need to reproduce a bug
+specific build with `openaca==0.1.0b3` if you need to reproduce a bug
 report against an exact version.)
 
 **Install from source (for contributors):**

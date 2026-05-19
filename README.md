@@ -172,17 +172,13 @@ openaca scan repo \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
-# endpoint. Defaults to $CLAUDE_CONFIG_DIR (else ~/.claude) for the user
-# config, and the current working directory for project context — so
-# running from a project dir picks up its .claude/skills, .mcp.json, etc.
+# endpoint. Defaults to $CLAUDE_CONFIG_DIR (else ~/.claude) for user
+# config. Project context is opt-in via --project.
 openaca scan endpoint \
     --fail-on any
 
-# Scan only user-level config, no project context (override the
-# cwd-as-project default):
-openaca scan endpoint --no-project
-
-# Or override both: specific endpoint config dir + named project.
+# Add project-local skills/MCPs/plugin manifests via --project.
+# Pass `--project .` for the current directory:
 openaca scan endpoint \
     --config-dir ~/.claude \
     --project /path/to/your/repo

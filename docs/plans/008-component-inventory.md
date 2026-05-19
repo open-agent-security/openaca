@@ -25,7 +25,7 @@ Plan 007 wired `claude-plugin` advisories through the matcher and emitted one Co
 - Bare skills under `~/.claude/skills/<name>/` (user-installed outside any plugin).
 - Project-scoped `.mcp.json` at the repo root.
 
-Codex's framing (see ADR-0006 + Plan 007 context) sharpens what each mode is doing:
+The framing established in ADR-0006 + Plan 007 context sharpens what each mode is doing:
 
 - **`repo` mode is application/deployed-agent SCA**: "What will this app ship with?" The parsers run against committed config files. Programmatic SDK configuration (`query({ mcpServers })`, `Agent(tools=[...])`) is invisible — that's Tier-3 SAST-like work deferred to V1.
 - **`fs` mode is endpoint agent-stack SCA**: "What's installed and active on this machine?" The walk is lockfile-rooted; active plugin install roots are the boundary; orphaned cache versions don't count.

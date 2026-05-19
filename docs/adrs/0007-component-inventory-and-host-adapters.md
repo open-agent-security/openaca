@@ -21,7 +21,7 @@ Doing this now matters because: (a) authors need stable ecosystem
 strings to file advisories against, and changing them later breaks every
 cached corpus consumer; (b) the same parsers run in both `repo` and
 `endpoint` modes, so the wrapping decisions ("who declared this?") have to be
-consistent across modes from day one; (c) Codex's framing of endpoint vs
+consistent across modes from day one; (c) the framing of endpoint vs
 application SCA needs to be captured durably so it doesn't keep getting
 re-litigated against new parser additions.
 

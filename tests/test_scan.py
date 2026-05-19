@@ -624,6 +624,142 @@ def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch
     assert "mode=endpoint" in result.output
 
 
+def test_endpoint_defaults_project_to_cwd(tmp_path, monkeypatch):
+    """Without --project or --no-project, the endpoint scan resolves the
+    project context to the current working directory.
+
+    Matches the Claude Code mental model: running `openaca scan endpoint`
+    from a project dir should include that project's components, not
+    silently scan only user-level config.
+    """
+    fake_home = tmp_path / "home"
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+
+    project = tmp_path / "myproj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text("{}")
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=project.parent):
+        # CliRunner.isolated_filesystem chdirs into a new temp dir; chdir
+        # explicitly into our project dir so cwd is the project root.
+        monkeypatch.chdir(project)
+        result = runner.invoke(main, ["endpoint"])
+
+    assert result.exit_code == 0, result.output
+    assert f"project={project}" in result.output
+    assert "mode=endpoint" in result.output
+
+
+def test_endpoint_no_project_disables_project_context(tmp_path, monkeypatch):
+    """`--no-project` opts out of the CWD-as-project default and scans
+    only user-level endpoint config."""
+    fake_home = tmp_path / "home"
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+
+    project = tmp_path / "myproj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text("{}")
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+    monkeypatch.chdir(project)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--no-project"])
+
+    assert result.exit_code == 0, result.output
+    assert "project=(none)" in result.output
+    assert "mode=endpoint" in result.output
+    # The project path must not appear in output — --no-project means no
+    # project context was used.
+    assert f"project={project}" not in result.output
+
+
+def test_endpoint_no_project_and_project_are_mutually_exclusive(tmp_path):
+    """Passing both --project and --no-project should fail loudly so the
+    user can't get a silently-wrong scan scope."""
+    project = tmp_path / "myproj"
+    project.mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["endpoint", "--project", str(project), "--no-project"],
+    )
+
+    assert result.exit_code != 0
+    assert (
+        "mutually exclusive" in result.output.lower() or "cannot be used" in result.output.lower()
+    )
+
+
+def test_endpoint_explicit_project_overrides_cwd_default(tmp_path, monkeypatch):
+    """An explicit `--project /path` wins over the CWD default."""
+    fake_home = tmp_path / "home"
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+
+    cwd_project = tmp_path / "cwd-project"
+    (cwd_project / ".claude").mkdir(parents=True)
+    (cwd_project / ".claude" / "settings.json").write_text("{}")
+
+    other_project = tmp_path / "other-project"
+    (other_project / ".claude").mkdir(parents=True)
+    (other_project / ".claude" / "settings.json").write_text("{}")
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+    monkeypatch.chdir(cwd_project)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["endpoint", "--project", str(other_project)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"project={other_project}" in result.output
+    assert f"project={cwd_project}" not in result.output
+
+
+def test_endpoint_detected_line_emitted_in_default_mode(tmp_path, monkeypatch):
+    """The `detected config_dir=..., project=...` line is emitted in
+    default (non-verbose) mode so testers can always see what was
+    scanned. This is the "transparency, not surprise" principle: the
+    scan scope should never be hidden from the user."""
+    fake_home = tmp_path / "home"
+    config_dir = fake_home / ".claude"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+
+    project = tmp_path / "myproj"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text("{}")
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+    monkeypatch.chdir(project)
+
+    runner = CliRunner()
+    # No -v flag — must still emit the detected line.
+    result = runner.invoke(main, ["endpoint"])
+
+    assert result.exit_code == 0, result.output
+    assert "detected" in result.output
+    assert f"config_dir={config_dir}" in result.output
+    assert f"project={project}" in result.output
+    assert "mode=endpoint" in result.output
+
+
 def test_fs_subcommand_is_not_kept_as_alias():
     runner = CliRunner()
     result = runner.invoke(

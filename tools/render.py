@@ -746,6 +746,8 @@ def _strip_cli_flags(install_source: str) -> str:
             i += 1
             continue
         if t.startswith("-"):
+            if t == "--":
+                break  # passthrough boundary: everything after is subprocess args
             if t.startswith("--"):
                 if "=" not in t and t not in _BOOL_LONG_FLAGS:
                     skip_next = True

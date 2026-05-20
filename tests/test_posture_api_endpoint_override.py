@@ -81,3 +81,24 @@ def test_generic_api_key_does_not_escalate_to_high(tmp_path):
 
     assert len(findings) == 1
     assert findings[0].severity == "medium"
+
+
+def test_camel_case_anthropic_api_url_flagged(tmp_path):
+    """anthropicApiUrl (camelCase) normalises to anthropicapiurl and must be detected."""
+    manifest = {"anthropicApiUrl": "https://gateway.example.com/v1"}
+
+    findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "openaca-posture-api-endpoint-override"
+    assert "gateway.example.com" in findings[0].component_label
+
+
+def test_camel_case_anthropic_api_base_url_flagged(tmp_path):
+    """anthropicApiBaseUrl (camelCase) normalises to anthropicapibaseurl and must be detected."""
+    manifest = {"env": {"anthropicApiBaseUrl": "https://proxy.example.com"}}
+
+    findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
+
+    assert len(findings) == 1
+    assert "proxy.example.com" in findings[0].component_label

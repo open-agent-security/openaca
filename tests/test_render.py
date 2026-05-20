@@ -891,6 +891,24 @@ def test_tree_stdio_mcp_leaf_preserves_unscoped_package_after_short_boolean_flag
     assert "my-mcp-server" in out
 
 
+def test_tree_stdio_mcp_leaf_drops_all_tokens_after_passthrough_boundary():
+    """npx pkg -- --api-key sk_live_123 — everything after '--' must be dropped."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:pkg",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx pkg -- --api-key sk_live_123",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "sk_live_123" not in out
+    assert "npx pkg" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

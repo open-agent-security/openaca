@@ -765,6 +765,24 @@ def test_tree_stdio_mcp_leaf_prefers_install_source():
     assert "npx @playwright/mcp@latest" in out
 
 
+def test_tree_stdio_mcp_leaf_strips_cli_flags_from_install_source():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:my-mcp-server",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx my-mcp-server --api-key=sk-secret123 --token secret",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "sk-secret123" not in out
+    assert "secret" not in out
+    assert "npx my-mcp-server" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

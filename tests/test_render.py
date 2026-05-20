@@ -706,6 +706,47 @@ def test_tree_groups_bundled_components_by_category():
     assert out.index("MCPs/") < out.index("skills/")
 
 
+def test_tree_remote_mcp_leaf_shows_url_and_transport():
+    refs = [
+        _plugin_ref("github", "unknown", marketplace="official"),
+        ComponentRef(
+            component_identity="mcp-remote/api.githubcopilot.com/mcp/",
+            attributed_to="claude-plugin/official/github@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://api.githubcopilot.com/mcp/",
+                "transport": "http",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "https://api.githubcopilot.com/mcp/ (HTTP)" in out
+    assert "mcp-remote/api.githubcopilot.com/mcp/" not in out
+
+
+def test_tree_stdio_mcp_leaf_prefers_install_source():
+    refs = [
+        _plugin_ref("playwright", "unknown", marketplace="official"),
+        ComponentRef(
+            ecosystem="npm",
+            name="@playwright/mcp",
+            version="latest",
+            attributed_to="claude-plugin/official/playwright@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx @playwright/mcp@latest",
+                "transport": "stdio",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "npx @playwright/mcp@latest" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

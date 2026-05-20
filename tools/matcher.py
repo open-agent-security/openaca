@@ -120,17 +120,35 @@ def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
 
 
 def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
-    """Match a ref by exact `component_identity` equality.
+    """Match a ref by `component_identity`.
 
     Used for source-less agent components. The advisory carries the target
     identity at `database_specific.openaca.component_identity`.
+
+    For marketplace-qualified plugin refs (`claude-plugin/<marketplace>/<name>`),
+    also accepts advisories targeting the unqualified form (`claude-plugin/<name>`).
+    This lets advisory authors write one identity that covers both repo-mode
+    scans (where marketplace is unavailable) and endpoint-mode scans (where
+    marketplace is known). A marketplace-specific advisory only matches refs
+    with the same marketplace.
     """
+    identity = ref.component_identity
+    if not identity:
+        return []
+    candidate_targets: set[str] = {identity}
+    marketplace = ref.extra.get("marketplace") if ref.extra else None
+    if marketplace and isinstance(marketplace, str):
+        prefix = f"claude-plugin/{marketplace}/"
+        if identity.startswith(prefix):
+            stripped = identity[len(prefix) :]
+            candidate_targets.add(f"claude-plugin/{stripped}")
+
     findings: list[Finding] = []
     for advisory in advisories:
         ds = advisory.get("database_specific") or {}
         openaca_block = ds.get("openaca") or {}
         target = openaca_block.get("component_identity")
-        if isinstance(target, str) and target == ref.component_identity:
+        if isinstance(target, str) and target in candidate_targets:
             findings.append(
                 Finding(
                     advisory_id=advisory["id"],

@@ -21,7 +21,7 @@ def test_minimal_install_emits_one_plugin_component():
     ref = plugin_refs[0]
     assert ref.name == "sample-plugin"
     assert ref.version == "1.2.0"
-    assert ref.component_identity == "claude-plugin/sample-plugin@1.2.0"
+    assert ref.component_identity == "claude-plugin/sample-plugin"
     assert ref.attributed_to is None  # plugin itself is direct
     assert ref.extra["gitCommitSha"] == "deadbeef1234"
     assert ref.extra["marketplace"] == "test-marketplace"
@@ -275,7 +275,7 @@ def test_install_scoped_plugin_key_parses_correctly(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "@acme/tool"
     assert refs[0].extra["marketplace"] == "test-market"
-    assert refs[0].component_identity == "claude-plugin/@acme/tool@1.0"
+    assert refs[0].component_identity == "claude-plugin/@acme/tool"
 
 
 def test_install_warns_on_non_object_plugins_map(tmp_path):

@@ -618,7 +618,7 @@ def _plugin_ref(name: str, version: str, scope: str = "user", sha: str = "") -> 
     return ComponentRef(
         name=name,
         version=version,
-        component_identity=f"claude-plugin/{name}@{version}",
+        component_identity=f"claude-plugin/{name}",
         source_manifest="installed_plugins.json",
         source_locator=f"$.plugins.{name}",
         extra={"component_type": "plugin", "scope": scope, "gitCommitSha": sha},
@@ -954,7 +954,7 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     plugin = ComponentRef(
         name="demo-plugin",
         version="1.0.0",
-        component_identity="claude-plugin/demo-plugin@1.0.0",
+        component_identity="claude-plugin/demo-plugin",
         source_manifest=str(plugin_json),
         extra={"component_type": "plugin"},
     )

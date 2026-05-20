@@ -354,7 +354,7 @@ summary: test plugin advisory for plan 007
 modified: '2026-05-09T00:00:00Z'
 database_specific:
   openaca:
-    component_identity: claude-plugin/sample-plugin@1.2.0
+    component_identity: claude-plugin/sample-plugin
 """
     )
     runner = CliRunner()
@@ -484,7 +484,7 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     fake_ref = ComponentRef(
         name="bad-sha-plugin",
         version="1.0.0",
-        component_identity="claude-plugin/bad-sha-plugin@1.0.0",
+        component_identity="claude-plugin/bad-sha-plugin",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.bad-sha-plugin@test[0]",
         attributed_to=None,

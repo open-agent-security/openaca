@@ -224,13 +224,57 @@ def collect_endpoint_settings_manifests(
             # point to different source files.
             for sub_key, sub_value in merged_value.items():
                 source_path = config_dir / "settings.json"  # fallback: user scope
-                for scope_data, path in scope_checks:
-                    if scope_data is None:
-                        continue
-                    scope_dict = scope_data.get(key)
-                    if isinstance(scope_dict, dict) and sub_key in scope_dict and path.is_file():
-                        source_path = path
-                        break
+                if (
+                    key == "mcpServers"
+                    and isinstance(sub_value, dict)
+                    and "autoApprove" in sub_value
+                ):
+                    # Attribute to the scope that owns autoApprove for this
+                    # server entry, since that is the field the
+                    # mcp_auto_approve rule evaluates as the risk signal.
+                    # Falls back to server-name-level attribution if no scope
+                    # directly sets autoApprove (e.g. it arrived via deep-merge
+                    # from a value that wasn't present in any raw scope).
+                    found = False
+                    for scope_data, path in scope_checks:
+                        if scope_data is None:
+                            continue
+                        scope_mcp = scope_data.get(key)
+                        if not isinstance(scope_mcp, dict):
+                            continue
+                        server_entry = scope_mcp.get(sub_key)
+                        if (
+                            isinstance(server_entry, dict)
+                            and "autoApprove" in server_entry
+                            and path.is_file()
+                        ):
+                            source_path = path
+                            found = True
+                            break
+                    if not found:
+                        for scope_data, path in scope_checks:
+                            if scope_data is None:
+                                continue
+                            scope_dict = scope_data.get(key)
+                            if (
+                                isinstance(scope_dict, dict)
+                                and sub_key in scope_dict
+                                and path.is_file()
+                            ):
+                                source_path = path
+                                break
+                else:
+                    for scope_data, path in scope_checks:
+                        if scope_data is None:
+                            continue
+                        scope_dict = scope_data.get(key)
+                        if (
+                            isinstance(scope_dict, dict)
+                            and sub_key in scope_dict
+                            and path.is_file()
+                        ):
+                            source_path = path
+                            break
                 path_to_keys.setdefault(source_path, {}).setdefault(key, {})[sub_key] = sub_value
         else:
             source_path = config_dir / "settings.json"  # fallback: user scope

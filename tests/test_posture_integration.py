@@ -336,6 +336,48 @@ def test_endpoint_posture_finding_declared_by_points_to_correct_scope(tmp_path):
     assert "settings.local.json" not in finding_path
 
 
+def test_nested_env_sub_key_attributed_to_source_scope(tmp_path):
+    """When env.ANTHROPIC_BASE_URL is only in user scope and env.DEBUG is only in
+    local scope, each sub-key must be attributed to its own source file — not the
+    entire env dict to whichever scope first defined the top-level 'env' key."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    (config_dir / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://proxy.example.com/api"}})
+    )
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"env": {"DEBUG": "1"}})
+    )
+
+    manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    by_path = {str(p): d for p, d in manifests}
+    user_settings = str(config_dir / "settings.json")
+    local_settings = str(project_root / ".claude" / "settings.local.json")
+
+    assert user_settings in by_path, "ANTHROPIC_BASE_URL must be attributed to user-scope file"
+    assert (
+        by_path[user_settings].get("env", {}).get("ANTHROPIC_BASE_URL")
+        == "https://proxy.example.com/api"
+    )
+    assert local_settings in by_path, "DEBUG must be attributed to local-scope file"
+    assert by_path[local_settings].get("env", {}).get("DEBUG") == "1"
+
+    # Verify finding declared_by points to the user-scope file, not local scope.
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+    endpoint_findings = [
+        f for f in findings if f.rule_id == "openaca-posture-api-endpoint-override"
+    ]
+    assert len(endpoint_findings) == 1
+    declared_by = endpoint_findings[0].declared_by
+    assert declared_by is not None
+    assert str(config_dir / "settings.json") in declared_by["path"]
+    assert "settings.local.json" not in declared_by["path"]
+
+
 def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

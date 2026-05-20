@@ -199,6 +199,11 @@ def _component_type(ref: ComponentRef) -> Optional[str]:
 
 def _match_legacy_component_type(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     component_type = _component_type(ref)
+    # Legacy refs from older parsers carry ecosystem="skill"/"claude-skill"/"claude-plugin"
+    # but no extra.component_type. Derive the type from the legacy ecosystem so these refs
+    # still match during the pre-release transition window (ADR-0019 §4).
+    if component_type is None and ref.ecosystem in _LEGACY_COMPONENT_ECOSYSTEMS:
+        component_type = _LEGACY_COMPONENT_ECOSYSTEMS[ref.ecosystem]
     if component_type is None or ref.name is None:
         return []
     findings: list[Finding] = []

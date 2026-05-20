@@ -472,6 +472,58 @@ def test_match_legacy_claude_plugin_advisory_by_component_type():
     assert findings[0].component.attributed_to is None
 
 
+def test_legacy_ecosystem_ref_without_extra_component_type_matches_skill_advisory():
+    """Legacy refs from old parsers carry ecosystem='skill' with no extra.component_type.
+    _match_legacy_component_type must derive the type from the ecosystem so these refs
+    still match during the pre-release transition (ADR-0019 §4)."""
+    advisories = [make_advisory("CVE-2026-LEGACY-SKILL", "skill", "vulnerable-skill", "1.0.0")]
+    ref = ComponentRef(
+        ecosystem="skill",
+        name="vulnerable-skill",
+        version="0.9.0",
+        source_manifest="SKILL.md",
+        source_locator="$.frontmatter",
+    )
+    findings = match(refs=[ref], advisories=advisories)
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-LEGACY-SKILL"
+    assert findings[0].confidence == "high"
+
+
+def test_legacy_claude_skill_ecosystem_ref_without_extra_component_type_matches():
+    """ecosystem='claude-skill' without extra.component_type normalises to skill type
+    and must match both 'skill' and 'claude-skill' advisories."""
+    advisories = [make_advisory("CVE-2026-LEGACY-CS", "claude-skill", "old-skill", "2.0.0")]
+    ref = ComponentRef(
+        ecosystem="claude-skill",
+        name="old-skill",
+        version="1.9.0",
+        source_manifest="SKILL.md",
+        source_locator="$.frontmatter",
+    )
+    findings = match(refs=[ref], advisories=advisories)
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-LEGACY-CS"
+    assert findings[0].confidence == "high"
+
+
+def test_legacy_claude_plugin_ecosystem_ref_without_extra_component_type_matches():
+    """ecosystem='claude-plugin' without extra.component_type must still match
+    advisory entries that carry the old 'claude-plugin' ecosystem."""
+    advisories = [make_advisory("CVE-2026-LEGACY-CP", "claude-plugin", "old-plugin", "1.3.0")]
+    ref = ComponentRef(
+        ecosystem="claude-plugin",
+        name="old-plugin",
+        version="1.2.0",
+        source_manifest="installed_plugins.json",
+        source_locator="$",
+    )
+    findings = match(refs=[ref], advisories=advisories)
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-LEGACY-CP"
+    assert findings[0].confidence == "high"
+
+
 def test_finding_mirrors_component_attribution():
     """Per ADR-0006: Finding.attributed_to mirrors ComponentRef.attributed_to.
     Test both attribution-set and attribution-None cases."""

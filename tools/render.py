@@ -699,14 +699,27 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
 
 
 def _strip_cli_flags(install_source: str) -> str:
-    """Truncate at the first flag token to avoid leaking CLI secrets in scan output."""
+    """Keep command and positional args; drop flags and their values to avoid leaking secrets.
+
+    Short flags (-x) are treated as boolean (skip flag only).
+    Long flags with = (--flag=value) are dropped whole.
+    Long flags without = (--flag value) skip the flag and the next token (conservative).
+    """
     tokens = install_source.split()
-    visible = []
-    for t in tokens:
+    if not tokens:
+        return install_source
+    visible = [tokens[0]]
+    skip_next = False
+    for t in tokens[1:]:
+        if skip_next:
+            skip_next = False
+            continue
         if t.startswith("-"):
-            break
+            if t.startswith("--") and "=" not in t:
+                skip_next = True
+            continue
         visible.append(t)
-    return " ".join(visible) if visible else install_source
+    return " ".join(visible)
 
 
 def _redact_url_credentials(url: str) -> str:

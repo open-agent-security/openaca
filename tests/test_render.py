@@ -803,6 +803,41 @@ def test_tree_stdio_mcp_leaf_strips_cli_flags_from_install_source():
     assert "npx my-mcp-server" in out
 
 
+def test_tree_stdio_mcp_leaf_preserves_package_name_after_short_flags():
+    """npx -y @org/foo@1.0.0 — short flag before package name must not truncate the label."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:@org/foo",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx -y @org/foo@1.0.0",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "@org/foo@1.0.0" in out
+
+
+def test_tree_stdio_mcp_leaf_preserves_package_name_after_long_flags_with_value():
+    """uvx --python 3.12 pkg — long flag with value must not consume the package name."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/uvx-unpinned:my-mcp",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "uvx --python 3.12 my-mcp",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "my-mcp" in out
+    assert "3.12" not in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

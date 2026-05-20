@@ -2,10 +2,9 @@
 
 `enabledPlugins` keys are `<plugin-name>@<marketplace>` (not `<plugin>@<version>`)
 — settings doesn't carry version information. Refs are emitted with
-`ecosystem="claude-plugin"` + `name=<plugin-name>` + `version=None` so the
-matcher's `_match_versioned` path can fire against `claude-plugin` advisories
-(ADR-0006). With no version, matches are emitted at "low" confidence with a
-"pin to verify" reason — accurate for unversioned-declaration matching.
+`component_type="plugin"` + `name=<plugin-name>` + `version=None`.
+Source ecosystem is unknown at settings scope; endpoint mode resolves versions
+through `installed_plugins.json`.
 
 Endpoint mode resolves versions through `installed_plugins.json` (see
 `claude_install.py`). Repo mode has no such lockfile, so settings declarations
@@ -37,12 +36,12 @@ def parse(path: Path) -> list[ComponentRef]:
         identity = f"claude-plugin/{plugin_name}"
         refs.append(
             ComponentRef(
-                ecosystem="claude-plugin",
                 name=plugin_name,
                 version=None,
                 component_identity=identity,
                 source_manifest=str(path),
                 source_locator=f"$.enabledPlugins[{plugin_spec!r}]",
+                extra={"component_type": "plugin"},
             )
         )
     return refs

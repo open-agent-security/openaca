@@ -71,15 +71,18 @@ def test_top_level_null_does_not_raise(tmp_path):
     assert parse(manifest) == []
 
 
-def test_plugin_self_identity_carries_ecosystem_for_matcher():
-    """Plan 007: self-identity ref tags ecosystem='claude-plugin' so the
-    matcher's _match_versioned path fires on plugin advisories."""
+def test_plugin_self_identity_carries_component_type_not_ecosystem():
+    """Plugin is an agent component type; source ecosystem is unknown unless
+    the manifest or lockfile provides a real source coordinate."""
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
-    plugin_self = next(r for r in refs if r.ecosystem == "claude-plugin")
+    plugin_self = next(
+        r for r in refs if r.component_identity == "claude-plugin/deployment-tools@1.2.0"
+    )
+    assert plugin_self.ecosystem is None
+    assert plugin_self.extra["component_type"] == "plugin"
     assert plugin_self.name == "deployment-tools"
     assert plugin_self.version == "1.2.0"
-    assert plugin_self.component_identity == "claude-plugin/deployment-tools@1.2.0"
 
 
 def test_mcp_servers_string_path_resolves_from_plugin_root():
@@ -114,7 +117,7 @@ def test_mcp_servers_absolute_path_is_skipped(tmp_path):
         json.dumps({"name": "abs-plugin", "version": "1.0.0", "mcpServers": str(external)})
     )
     refs = parse(manifest)
-    assert sum(1 for r in refs if r.ecosystem == "claude-plugin") == 1
+    assert sum(1 for r in refs if r.extra.get("component_type") == "plugin") == 1
     assert all(r.ecosystem != "npm" for r in refs)
 
 
@@ -134,7 +137,7 @@ def test_mcp_servers_traversal_path_is_skipped(tmp_path):
         )
     )
     refs = parse(manifest)
-    assert sum(1 for r in refs if r.ecosystem == "claude-plugin") == 1
+    assert sum(1 for r in refs if r.extra.get("component_type") == "plugin") == 1
     assert all(r.ecosystem != "npm" for r in refs)
 
 
@@ -145,7 +148,7 @@ def test_plugin_non_string_version_coerced_to_none(tmp_path):
     manifest = tmp_path / "plugin.json"
     manifest.write_text(json.dumps({"name": "my-plugin", "version": 1}))
     refs = parse(manifest)
-    plugin_self = [r for r in refs if r.ecosystem == "claude-plugin"]
+    plugin_self = [r for r in refs if r.extra.get("component_type") == "plugin"]
     assert len(plugin_self) == 1
     assert plugin_self[0].name == "my-plugin"
     assert plugin_self[0].version is None
@@ -163,7 +166,7 @@ def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
     )
     # No .mcp.json file at the plugin root → just emit the self-identity ref.
     refs = parse(manifest)
-    assert any(r.ecosystem == "claude-plugin" for r in refs)
+    assert any(r.extra.get("component_type") == "plugin" for r in refs)
     assert all(r.ecosystem != "npm" for r in refs)
 
 

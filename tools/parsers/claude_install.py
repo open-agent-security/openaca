@@ -187,7 +187,6 @@ def _walk_active_plugins(
 
         refs.append(
             ComponentRef(
-                ecosystem="claude-plugin",
                 name=plugin_name,
                 version=version,
                 component_identity=identity,

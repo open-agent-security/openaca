@@ -616,13 +616,12 @@ def test_json_score_none_when_only_upstream_label():
 
 def _plugin_ref(name: str, version: str, scope: str = "user", sha: str = "") -> ComponentRef:
     return ComponentRef(
-        ecosystem="claude-plugin",
         name=name,
         version=version,
         component_identity=f"claude-plugin/{name}@{version}",
         source_manifest="installed_plugins.json",
         source_locator=f"$.plugins.{name}",
-        extra={"scope": scope, "gitCommitSha": sha},
+        extra={"component_type": "plugin", "scope": scope, "gitCommitSha": sha},
     )
 
 
@@ -944,11 +943,11 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     package_json = tmp_path / "package.json"
     mcp_json = tmp_path / ".mcp.json"
     plugin = ComponentRef(
-        ecosystem="claude-plugin",
         name="demo-plugin",
         version="1.0.0",
         component_identity="claude-plugin/demo-plugin@1.0.0",
         source_manifest=str(plugin_json),
+        extra={"component_type": "plugin"},
     )
     dep = ComponentRef(
         ecosystem="npm",

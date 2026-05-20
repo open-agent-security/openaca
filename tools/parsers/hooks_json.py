@@ -117,9 +117,9 @@ def _walk_events(
             }
             if scope is not None:
                 extra["scope"] = scope
+            extra["component_type"] = "hook"
             refs.append(
                 ComponentRef(
-                    ecosystem="claude-hook",
                     component_identity=_hook_identity(entry),
                     source_manifest=source_manifest,
                     source_locator=f"$.hooks.{event}[{index}]",

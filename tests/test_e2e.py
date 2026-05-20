@@ -260,7 +260,7 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
 
 
 def test_repo_mode_finds_claude_skill_advisory(tmp_path):
-    """Cross-layer wiring for the new skill ecosystem.
+    """Cross-layer wiring for legacy skill affected-ecosystem compatibility.
 
     A repo declares `.claude/skills/<name>/SKILL.md` with a versioned
     metadata.version; an in-memory advisory targets that ecosystem/name in

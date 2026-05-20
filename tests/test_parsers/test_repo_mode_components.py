@@ -16,7 +16,7 @@ REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
 def test_repo_mode_emits_declared_skill():
     refs = parse_repo(REPOS / "declared-components")
-    skill_refs = [r for r in refs if r.ecosystem == "skill"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
     assert skill_refs[0].version == "1.0.0"
@@ -27,7 +27,7 @@ def test_repo_mode_emits_declared_skill():
 
 def test_repo_mode_emits_declared_command():
     refs = parse_repo(REPOS / "declared-components")
-    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert len(cmd_refs) == 1
     assert cmd_refs[0].component_identity == "claude-command/deploy"
     assert cmd_refs[0].attributed_to is None
@@ -37,7 +37,7 @@ def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
     """The fixture's agent file is named `reviewer.md` but the frontmatter
     declares `name: code-reviewer`. Identity should use the declared name."""
     refs = parse_repo(REPOS / "declared-components")
-    agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
+    agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert len(agent_refs) == 1
     assert agent_refs[0].component_identity == "claude-agent/code-reviewer"
     assert agent_refs[0].attributed_to is None

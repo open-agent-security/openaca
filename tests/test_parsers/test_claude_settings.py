@@ -6,14 +6,12 @@ REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
 
 def test_enabled_plugins_emitted():
-    """Each enabled plugin emits a ref with ecosystem='claude-plugin' and
-    name=<plugin-name>, so the matcher's _match_versioned path fires against
-    claude-plugin advisories (ADR-0006). Identity drops the @<marketplace>
-    suffix from the settings key — settings doesn't carry plugin versions,
-    only declaration intent."""
+    """Each enabled plugin emits a source-less plugin component ref. Identity
+    drops the @<marketplace> suffix from the settings key — settings doesn't
+    carry plugin versions, only declaration intent."""
     manifest = REPOS / "sample-settings" / ".claude" / "settings.json"
     refs = parse(manifest)
-    assert all(r.ecosystem == "claude-plugin" for r in refs)
+    assert all(r.extra.get("component_type") == "plugin" for r in refs)
     names = {r.name for r in refs}
     # Fixture uses `<name>@<marketplace>` form; rsplit keeps the part before
     # the last @.
@@ -28,8 +26,8 @@ def test_enabled_plugins_emitted():
 
 def test_settings_plugin_matches_claude_plugin_advisory_by_name():
     """A repo declaring `enabledPlugins: {"deployment-tools@market": true}`
-    should match an advisory targeting `(ecosystem=claude-plugin,
-    name=deployment-tools)` via the matcher's versioned path. Version is
+    should match a legacy advisory targeting `(ecosystem=claude-plugin,
+    name=deployment-tools)` via component-type compatibility. Version is
     unknown from settings alone, so confidence is 'low' (pin-to-verify),
     NOT zero findings."""
     from tools.matcher import match

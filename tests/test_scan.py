@@ -340,8 +340,8 @@ def test_endpoint_subcommand_minimal_install_no_findings():
 
 
 def test_endpoint_subcommand_matches_claude_plugin_advisory(tmp_path):
-    """endpoint mode + a claude-plugin-ecosystem advisory + the minimal install
-    fires a finding via the matcher's existing version-range path."""
+    """Pre-release compatibility: endpoint mode still matches a legacy
+    claude-plugin affected ecosystem advisory by plugin component type."""
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories_dir = tmp_path / "advisories"
     advisories_dir.mkdir()
@@ -488,14 +488,19 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     from tools.component_ref import ComponentRef
 
     fake_ref = ComponentRef(
-        ecosystem="claude-plugin",
         name="bad-sha-plugin",
         version="1.0.0",
         component_identity="claude-plugin/bad-sha-plugin@1.0.0",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.bad-sha-plugin@test[0]",
         attributed_to=None,
-        extra={"gitCommitSha": 123, "scope": "user", "installPath": None, "marketplace": "test"},
+        extra={
+            "component_type": "plugin",
+            "gitCommitSha": 123,
+            "scope": "user",
+            "installPath": None,
+            "marketplace": "test",
+        },
     )
     monkeypatch.setattr("tools.scan.parse_install", lambda **_kwargs: ([fake_ref], []))
 
@@ -1007,8 +1012,8 @@ def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
     # The lodash dep should appear as a queried PURL
     assert "federation: querying 1 PURL(s) on osv.dev" in result.output
     assert "pkg:npm/lodash@4.17.20" in result.output
-    # The plugin self-identity ref (claude-plugin) should be in the skip count
-    assert "claude-plugin=1" in result.output
+    # The source-less plugin self-identity ref should be in the skip count
+    assert "plugin=1" in result.output
 
 
 def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
@@ -1092,7 +1097,7 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
 
 
 def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
-    """When nothing has a queryable PURL (e.g., only claude-plugin refs),
+    """When nothing has a queryable PURL (e.g., only source-less plugin refs),
     verbose says so explicitly rather than emitting an empty list."""
     from unittest.mock import patch
 

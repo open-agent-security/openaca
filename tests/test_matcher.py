@@ -91,15 +91,15 @@ def test_match_pypi_pinned():
     assert findings[0].confidence == "high"
 
 
-def test_generic_skill_ref_matches_legacy_claude_skill_advisory():
+def test_source_less_skill_ref_matches_legacy_claude_skill_advisory():
     advisories = [make_advisory("CVE-2026-SKILL", "claude-skill", "vulnerable-skill", "1.0.0")]
     ref = ComponentRef(
-        ecosystem="skill",
         name="vulnerable-skill",
         version="0.9.0",
         component_identity="skill/vulnerable-skill@0.9.0",
         source_manifest="SKILL.md",
         source_locator="$.frontmatter",
+        extra={"component_type": "skill"},
     )
 
     findings = match(refs=[ref], advisories=advisories)
@@ -109,21 +109,39 @@ def test_generic_skill_ref_matches_legacy_claude_skill_advisory():
     assert findings[0].confidence == "high"
 
 
-def test_legacy_claude_skill_ref_matches_generic_skill_advisory():
+def test_source_less_skill_ref_matches_legacy_skill_advisory():
     advisories = [make_advisory("CVE-2026-SKILL", "skill", "vulnerable-skill", "1.0.0")]
     ref = ComponentRef(
-        ecosystem="claude-skill",
         name="vulnerable-skill",
         version="0.9.0",
-        component_identity="claude-skill/vulnerable-skill@0.9.0",
+        component_identity="skill/vulnerable-skill@0.9.0",
         source_manifest="SKILL.md",
         source_locator="$.frontmatter",
+        extra={"component_type": "skill"},
     )
 
     findings = match(refs=[ref], advisories=advisories)
 
     assert len(findings) == 1
     assert findings[0].advisory_id == "CVE-2026-SKILL"
+    assert findings[0].confidence == "high"
+
+
+def test_source_less_plugin_ref_matches_legacy_claude_plugin_advisory():
+    advisories = [make_advisory("CVE-2026-PLUGIN", "claude-plugin", "deployment-tools", "1.3.0")]
+    ref = ComponentRef(
+        name="deployment-tools",
+        version="1.2.0",
+        component_identity="claude-plugin/deployment-tools@1.2.0",
+        source_manifest="plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+
+    findings = match(refs=[ref], advisories=advisories)
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-PLUGIN"
     assert findings[0].confidence == "high"
 
 
@@ -433,18 +451,17 @@ def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     assert len(findings) == 1
 
 
-def test_match_claude_plugin_in_range():
-    """Plan 007: claude-plugin ecosystem flows through the existing
-    _match_versioned path. Plugin advisories must fire when the ref carries
-    ecosystem='claude-plugin' alongside name+version."""
+def test_match_legacy_claude_plugin_advisory_by_component_type():
+    """Pre-release compatibility: old claude-plugin affected ecosystems still
+    match plugin refs, but plugin is now component_type, not source ecosystem."""
     advisories = [make_advisory("CVE-2026-9999", "claude-plugin", "deployment-tools", "1.3.0")]
     ref = ComponentRef(
-        ecosystem="claude-plugin",
         name="deployment-tools",
         version="1.2.0",
         component_identity="claude-plugin/deployment-tools@1.2.0",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.deployment-tools@market[0]",
+        extra={"component_type": "plugin"},
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1

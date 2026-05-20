@@ -1,10 +1,10 @@
 ---
 id: 0018
 title: Use generic skill ecosystem and Agent BOM-compatible scanner metadata
-status: accepted
+status: superseded
 date: 2026-05-19
 supersedes: 0007
-superseded-by: null
+superseded-by: 0019
 ---
 
 ## Context

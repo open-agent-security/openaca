@@ -33,7 +33,8 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
         "claude-command/superpowers/bar",
         "claude-command/superpowers/foo",
     ]
-    assert all(r.ecosystem == "claude-command" for r in refs)
+    assert all(r.ecosystem is None for r in refs)
+    assert all(r.extra["component_type"] == "command" for r in refs)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
     assert all(r.extra["scope_owner"] == "superpowers" for r in refs)
 
@@ -235,7 +236,7 @@ def test_user_project_agent_frontmatter_inline_mcp_is_attributed_to_agent(tmp_pa
         attributed_to=None,
     )
 
-    agent = next(r for r in refs if r.ecosystem == "claude-agent")
+    agent = next(r for r in refs if r.extra.get("component_type") == "agent")
     npm = next(r for r in refs if r.ecosystem == "npm")
     assert agent.component_identity == "claude-agent/browser-tester"
     assert npm.name == "@playwright/mcp"
@@ -263,6 +264,6 @@ def test_user_project_agent_frontmatter_hooks_are_attributed_to_agent(tmp_path):
         attributed_to=None,
     )
 
-    hook = next(r for r in refs if r.ecosystem == "claude-hook")
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
     assert hook.attributed_to == "claude-agent/guarded-agent"
     assert hook.extra["event"] == "PreToolUse"

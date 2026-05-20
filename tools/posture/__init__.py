@@ -14,6 +14,7 @@ from pathlib import Path
 
 from tools.component_ref import ComponentRef
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
+from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.rules import (
     api_endpoint_override,
@@ -188,22 +189,26 @@ def collect_endpoint_settings_manifests(
     config_dir: Path,
     project_root: Path | None,
 ) -> list[tuple[Path, dict]]:
-    out: list[tuple[Path, dict]] = []
-    paths = [config_dir / "settings.json"]
+    """Return the precedence-merged effective endpoint settings as a single manifest.
+
+    Per-scope evaluation produces false positives when a higher-precedence scope
+    (local > project > user) overrides a lower-scope setting. The merged view
+    matches what Claude Code would actually see at runtime.
+    """
+    layers = _load_settings_layers(config_dir, project_root)
+    effective = layers.merged(mode="endpoint")
+    if not effective:
+        return []
+    # Attribute to the highest-precedence settings file that contributed to the
+    # merged view — local > project > user.
+    scope_checks: list[tuple[dict | None, Path]] = []
     if project_root is not None:
-        paths.extend(
-            [
-                project_root / ".claude" / "settings.json",
-                project_root / ".claude" / "settings.local.json",
-            ]
-        )
-    for path in paths:
-        if not path.is_file():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict):
-            out.append((path, data))
-    return out
+        scope_checks.append((layers.local, project_root / ".claude" / "settings.local.json"))
+        scope_checks.append((layers.project, project_root / ".claude" / "settings.json"))
+    scope_checks.append((layers.user, config_dir / "settings.json"))
+    provenance = config_dir / "settings.json"
+    for scope_data, path in scope_checks:
+        if scope_data and path.is_file():
+            provenance = path
+            break
+    return [(provenance, effective)]

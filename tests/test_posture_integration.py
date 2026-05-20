@@ -6,7 +6,12 @@ import json
 
 from click.testing import CliRunner
 
-from tools.posture import collect_mcp_manifests, collect_settings_manifests
+from tools.posture import (
+    collect_endpoint_settings_manifests,
+    collect_mcp_manifests,
+    collect_settings_manifests,
+    run_posture_rules,
+)
 from tools.scan import main as scan_main
 
 
@@ -231,6 +236,47 @@ def test_collect_mcp_manifests_skips_invalid_utf8(tmp_path):
     paths = [p for p, _ in results]
     assert bad_file not in paths
     assert good_file in paths
+
+
+def test_collect_endpoint_settings_manifests_returns_merged_view(tmp_path):
+    """collect_endpoint_settings_manifests must return a single precedence-resolved
+    manifest, not per-file tuples. Local scope wins over user scope."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    (config_dir / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://user.example.com/api"}})
+    )
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://local.example.com/api"}})
+    )
+
+    manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    assert len(manifests) == 1
+    _, merged = manifests[0]
+    assert merged["env"]["ANTHROPIC_BASE_URL"] == "https://local.example.com/api"
+
+
+def test_endpoint_posture_no_false_positive_when_server_disabled_in_higher_scope(tmp_path):
+    """A server with autoApprove in a lower-precedence scope but disabled in a
+    higher-precedence scope must NOT be flagged by the merged effective view."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    (config_dir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "foo", "autoApprove": True}}})
+    )
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"disabled": True}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+    assert not any(f.rule_id == "openaca-posture-mcp-auto-approve" for f in findings)
 
 
 def test_posture_json_output_uses_unified_findings_array(tmp_path):

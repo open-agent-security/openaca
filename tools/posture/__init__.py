@@ -86,7 +86,7 @@ def collect_mcp_manifests(
                 seen.add(resolved)
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                     continue
                 if isinstance(data, dict):
                     out.append((path, data))
@@ -101,7 +101,7 @@ def collect_mcp_manifests(
             seen.add(resolved)
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 continue
             if isinstance(data, dict):
                 out.append((path, data))
@@ -129,7 +129,7 @@ def collect_settings_manifests(
             seen.add(resolved)
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 continue
             if isinstance(data, dict):
                 out.append((path, data))
@@ -176,7 +176,7 @@ def collect_endpoint_mcp_manifests(
         seen.add(resolved)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         if isinstance(data, dict):
             out.append((path, data))
@@ -202,7 +202,7 @@ def collect_endpoint_settings_manifests(
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         if isinstance(data, dict):
             out.append((path, data))

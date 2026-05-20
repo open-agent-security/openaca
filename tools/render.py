@@ -25,6 +25,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
@@ -687,13 +688,30 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
     url = ref.extra.get("url")
     if isinstance(url, str) and url:
         transport = _mcp_transport_label(ref.extra.get("transport"))
+        display_url = _redact_url_credentials(url)
         if transport:
-            return f"{url} ({transport})"
-        return url
+            return f"{display_url} ({transport})"
+        return display_url
     install_source = ref.extra.get("install_source")
     if isinstance(install_source, str) and install_source:
         return install_source
     return None
+
+
+def _redact_url_credentials(url: str) -> str:
+    """Strip userinfo (user:password@) before rendering a URL in terminal/CI output."""
+    try:
+        parsed = urlparse(url)
+        if parsed.username or parsed.password:
+            netloc = parsed.hostname or ""
+            if parsed.port is not None:
+                netloc = f"{netloc}:{parsed.port}"
+            return urlunparse(
+                (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+            )
+    except Exception:
+        pass
+    return url
 
 
 def _mcp_transport_label(value: object) -> Optional[str]:

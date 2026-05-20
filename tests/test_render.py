@@ -726,6 +726,24 @@ def test_tree_remote_mcp_leaf_shows_url_and_transport():
     assert "mcp-remote/api.githubcopilot.com/mcp/" not in out
 
 
+def test_tree_remote_mcp_leaf_redacts_url_credentials():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-remote/api.example.com/mcp",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://user:secret@api.example.com/mcp",
+                "transport": "http",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "user:secret" not in out
+    assert "api.example.com/mcp (HTTP)" in out
+
+
 def test_tree_stdio_mcp_leaf_prefers_install_source():
     refs = [
         _plugin_ref("playwright", "unknown", marketplace="official"),

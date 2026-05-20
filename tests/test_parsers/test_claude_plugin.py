@@ -76,9 +76,7 @@ def test_plugin_self_identity_carries_component_type_not_ecosystem():
     the manifest or lockfile provides a real source coordinate."""
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
-    plugin_self = next(
-        r for r in refs if r.component_identity == "claude-plugin/deployment-tools"
-    )
+    plugin_self = next(r for r in refs if r.component_identity == "claude-plugin/deployment-tools")
     assert plugin_self.ecosystem is None
     assert plugin_self.extra["component_type"] == "plugin"
     assert plugin_self.name == "deployment-tools"

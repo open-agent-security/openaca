@@ -6,7 +6,7 @@ import json
 
 from click.testing import CliRunner
 
-from tools.posture import collect_mcp_manifests
+from tools.posture import collect_mcp_manifests, collect_settings_manifests
 from tools.scan import main as scan_main
 
 
@@ -198,6 +198,39 @@ def test_posture_on_emits_mcp_auto_approve_from_settings_file(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "openaca-posture-mcp-auto-approve" in result.output
+
+
+def test_collect_settings_manifests_skips_invalid_utf8(tmp_path):
+    """A settings file with non-UTF-8 bytes must be skipped, not abort the scan."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    bad_file = claude_dir / "settings.json"
+    bad_file.write_bytes(b'{"env": {"ANTHROPIC_BASE_URL": "https://x.example"}\xff\xfe}')
+
+    good_dir = tmp_path / "sub"
+    (good_dir / ".claude").mkdir(parents=True)
+    (good_dir / ".claude" / "settings.json").write_text(
+        '{"env": {"ANTHROPIC_BASE_URL": "https://y.example"}}'
+    )
+
+    results = collect_settings_manifests([tmp_path])
+    paths = [p for p, _ in results]
+    assert bad_file not in paths
+    assert any("sub" in str(p) for p in paths)
+
+
+def test_collect_mcp_manifests_skips_invalid_utf8(tmp_path):
+    """An mcp.json file with non-UTF-8 bytes must be skipped, not abort the scan."""
+    bad_file = tmp_path / "mcp.json"
+    bad_file.write_bytes(b'{"mcpServers": {"evil": {"command": "x"}}\xff}')
+
+    good_file = tmp_path / ".mcp.json"
+    good_file.write_text('{"mcpServers": {"ok": {"command": "npx", "args": ["-y", "pkg@1.0"]}}}')
+
+    results = collect_mcp_manifests([tmp_path])
+    paths = [p for p, _ in results]
+    assert bad_file not in paths
+    assert good_file in paths
 
 
 def test_posture_json_output_uses_unified_findings_array(tmp_path):

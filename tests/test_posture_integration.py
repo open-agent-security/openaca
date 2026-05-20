@@ -378,6 +378,63 @@ def test_nested_env_sub_key_attributed_to_source_scope(tmp_path):
     assert "settings.local.json" not in declared_by["path"]
 
 
+def test_mcp_autoapprove_provenance_traces_to_autoapprove_owning_scope(tmp_path):
+    """When local scope defines mcpServers.foo.command and user scope defines
+    mcpServers.foo.autoApprove, the mcp_auto_approve finding's declared_by.path
+    must point to the user-scope file, not settings.local.json."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    # User scope owns autoApprove.
+    (config_dir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"autoApprove": True}}})
+    )
+    # Local scope defines the server name for other fields only.
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "foo-cmd"}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    mcp_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-auto-approve"]
+    assert len(mcp_findings) == 1, "merged server with autoApprove must be flagged"
+    assert mcp_findings[0].declared_by is not None
+    declared_path = mcp_findings[0].declared_by["path"]
+    assert str(config_dir / "settings.json") in declared_path, (
+        "finding must point to user-scope file that owns autoApprove"
+    )
+    assert "settings.local.json" not in declared_path
+
+
+def test_mcp_autoapprove_provenance_higher_precedence_wins(tmp_path):
+    """When both local and user scopes define autoApprove for the same server,
+    local scope (higher precedence) wins for provenance attribution."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    (config_dir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"command": "foo-cmd", "autoApprove": True}}})
+    )
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"autoApprove": ["read_file"]}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    mcp_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-auto-approve"]
+    assert len(mcp_findings) == 1
+    assert mcp_findings[0].declared_by is not None
+    declared_path = mcp_findings[0].declared_by["path"]
+    # Local scope is higher precedence and defines autoApprove, so it wins.
+    assert "settings.local.json" in declared_path
+
+
 def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

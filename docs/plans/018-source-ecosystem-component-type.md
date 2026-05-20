@@ -14,14 +14,14 @@ overlay schema in this plan.
   not emit component-type names as `ecosystem`.
 - [x] Add failing output test: source-less agent components render
   `source.status: unknown`.
-- [x] Add failing compatibility matcher tests for legacy `skill`,
-  `claude-skill`, and `claude-plugin` affected ecosystems.
+- [x] Add failing matcher tests proving component-type ecosystems such as
+  `skill` and `claude-plugin` no longer match source-less components.
 - [x] Update parsers to set `extra.component_type` and leave `ecosystem` unset
   for source-less agent components.
 - [x] Update render/finding output to categorize by `component_type` and avoid
   source identity for source-less refs.
-- [x] Update matcher to use source ecosystems first and legacy component-type
-  matching only as a transition path.
+- [x] Update matcher to use source ecosystems for package advisories and
+  explicit `component_identity` for source-less agent components.
 - [x] Update tests and docs from component-type ecosystems to component types.
 - [x] Run focused parser/matcher/render tests.
 - [x] Run full verification: `ruff format --check`, `ruff check`, `pyright`,

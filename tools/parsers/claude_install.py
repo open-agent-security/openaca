@@ -661,13 +661,7 @@ def _component_type_for_child(ref: ComponentRef) -> str:
     extra_type = ref.extra.get("component_type")
     if isinstance(extra_type, str) and extra_type:
         return extra_type
-    return {
-        "skill": "skill",
-        "claude-skill": "skill",
-        "claude-hook": "hook",
-        "claude-command": "command",
-        "claude-agent": "agent",
-    }.get(ref.ecosystem or "", "component")
+    return "component"
 
 
 def _component_name_for_child(ref: ComponentRef) -> str:

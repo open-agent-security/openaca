@@ -59,10 +59,12 @@ Matching order:
    extraction for npm/PyPI advisories.
 3. If a ref has no source identity, match only records that explicitly target
    `database_specific.openaca.component_identity`.
-4. During the pre-release transition, keep compatibility matching for legacy
-   `affected[*].package.ecosystem` values `skill`, `claude-skill`, and
-   `claude-plugin`, but treat them as component-type aliases, not canonical
-   ecosystems.
+
+Because OpenACA is still pre-release and no committed overlays depend on the old
+component-type ecosystem model, V0 intentionally does not keep compatibility
+matching for `affected[*].package.ecosystem` values such as `skill`,
+`claude-skill`, `claude-plugin`, `claude-hook`, `claude-command`, or
+`claude-agent`.
 
 For future source-backed agent components, the source coordinate stays separate
 from the agent role:
@@ -95,9 +97,9 @@ matching model, not a schema expansion in this ADR.
 - **Invent OpenACA ecosystems for every component type**: rejected because it
   makes OpenACA the package ecosystem and weakens interoperability with OSV,
   PURL, SBOM, and external scanners.
-- **Remove all legacy component-type ecosystem matching immediately**: rejected
-  because the project is still pre-release and beta branches may contain local
-  test overlays using yesterday's names.
+- **Keep pre-release legacy component-type ecosystem matching**: rejected
+  because no committed overlays depend on it, and retaining it makes the new
+  source-ecosystem/component-type split harder to reason about during beta.
 
 ## Consequences
 

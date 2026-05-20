@@ -91,8 +91,8 @@ def test_match_pypi_pinned():
     assert findings[0].confidence == "high"
 
 
-def test_source_less_skill_ref_matches_legacy_claude_skill_advisory():
-    advisories = [make_advisory("CVE-2026-SKILL", "claude-skill", "vulnerable-skill", "1.0.0")]
+def test_source_less_skill_ref_matches_component_identity_advisory():
+    advisory = make_identity_advisory("CVE-2026-SKILL", "skill/vulnerable-skill@0.9.0")
     ref = ComponentRef(
         name="vulnerable-skill",
         version="0.9.0",
@@ -102,14 +102,14 @@ def test_source_less_skill_ref_matches_legacy_claude_skill_advisory():
         extra={"component_type": "skill"},
     )
 
-    findings = match(refs=[ref], advisories=advisories)
+    findings = match(refs=[ref], advisories=[advisory])
 
     assert len(findings) == 1
     assert findings[0].advisory_id == "CVE-2026-SKILL"
     assert findings[0].confidence == "high"
 
 
-def test_source_less_skill_ref_matches_legacy_skill_advisory():
+def test_source_less_skill_ref_does_not_match_component_type_ecosystem_advisory():
     advisories = [make_advisory("CVE-2026-SKILL", "skill", "vulnerable-skill", "1.0.0")]
     ref = ComponentRef(
         name="vulnerable-skill",
@@ -120,15 +120,11 @@ def test_source_less_skill_ref_matches_legacy_skill_advisory():
         extra={"component_type": "skill"},
     )
 
-    findings = match(refs=[ref], advisories=advisories)
-
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-SKILL"
-    assert findings[0].confidence == "high"
+    assert match(refs=[ref], advisories=advisories) == []
 
 
-def test_source_less_plugin_ref_matches_legacy_claude_plugin_advisory():
-    advisories = [make_advisory("CVE-2026-PLUGIN", "claude-plugin", "deployment-tools", "1.3.0")]
+def test_source_less_plugin_ref_matches_component_identity_advisory():
+    advisory = make_identity_advisory("CVE-2026-PLUGIN", "claude-plugin/deployment-tools@1.2.0")
     ref = ComponentRef(
         name="deployment-tools",
         version="1.2.0",
@@ -138,7 +134,7 @@ def test_source_less_plugin_ref_matches_legacy_claude_plugin_advisory():
         extra={"component_type": "plugin"},
     )
 
-    findings = match(refs=[ref], advisories=advisories)
+    findings = match(refs=[ref], advisories=[advisory])
 
     assert len(findings) == 1
     assert findings[0].advisory_id == "CVE-2026-PLUGIN"
@@ -368,16 +364,14 @@ def make_identity_advisory(openaca_id: str, component_identity: str) -> dict:
 
 
 def test_claude_command_identity_match():
-    """claude-command refs must route to _match_by_identity, not _match_versioned.
-    The parser sets both ecosystem+name (for inventory) but there are no version
-    semantics — the advisory carries the target identity, not a version range."""
+    """Source-less command refs match explicit component_identity advisories."""
     advisory = make_identity_advisory("CVE-2026-9001", "claude-command/deploy")
     ref = ComponentRef(
-        ecosystem="claude-command",
         name="deploy",
         component_identity="claude-command/deploy",
         source_manifest=".claude/commands/deploy.md",
         source_locator="$",
+        extra={"component_type": "command"},
     )
     findings = match(refs=[ref], advisories=[advisory])
     assert len(findings) == 1
@@ -386,14 +380,14 @@ def test_claude_command_identity_match():
 
 
 def test_claude_agent_identity_match():
-    """claude-agent refs route to _match_by_identity."""
+    """Source-less agent refs match explicit component_identity advisories."""
     advisory = make_identity_advisory("CVE-2026-9002", "claude-agent/reviewer")
     ref = ComponentRef(
-        ecosystem="claude-agent",
         name="reviewer",
         component_identity="claude-agent/reviewer",
         source_manifest=".claude/agents/reviewer.md",
         source_locator="$",
+        extra={"component_type": "agent"},
     )
     findings = match(refs=[ref], advisories=[advisory])
     assert len(findings) == 1
@@ -402,33 +396,15 @@ def test_claude_agent_identity_match():
 
 
 def test_claude_command_identity_mismatch_no_finding():
-    """Different identity string — must not match even if ecosystem+name agree."""
+    """Different identity string — must not match even if names agree."""
     advisory = make_identity_advisory("CVE-2026-9001", "claude-command/other-command")
     ref = ComponentRef(
-        ecosystem="claude-command",
         name="deploy",
         component_identity="claude-command/deploy",
         source_manifest=".claude/commands/deploy.md",
         source_locator="$",
+        extra={"component_type": "command"},
     )
-    assert match(refs=[ref], advisories=[advisory]) == []
-
-
-def test_claude_command_does_not_false_match_via_versioned_path():
-    """Regression: before the fix, a claude-command ref with ecosystem+name would
-    short-circuit to _match_versioned and potentially match an advisory whose
-    affected[*].package.name happens to equal the command name. Must not fire."""
-    advisory = make_advisory("CVE-2026-9003", "claude-command", "deploy", "2.0.0")
-    ref = ComponentRef(
-        ecosystem="claude-command",
-        name="deploy",
-        component_identity="claude-command/deploy",
-        source_manifest=".claude/commands/deploy.md",
-        source_locator="$",
-    )
-    # The versioned advisory uses range semantics; the identity-only ref carries
-    # no version.  Under the old (broken) routing this would emit a low-confidence
-    # finding.  Under the fixed routing it must produce nothing.
     assert match(refs=[ref], advisories=[advisory]) == []
 
 
@@ -451,9 +427,7 @@ def test_no_duplicate_findings_when_advisory_has_multiple_ranges():
     assert len(findings) == 1
 
 
-def test_match_legacy_claude_plugin_advisory_by_component_type():
-    """Pre-release compatibility: old claude-plugin affected ecosystems still
-    match plugin refs, but plugin is now component_type, not source ecosystem."""
+def test_source_less_plugin_ref_does_not_match_component_type_ecosystem_advisory():
     advisories = [make_advisory("CVE-2026-9999", "claude-plugin", "deployment-tools", "1.3.0")]
     ref = ComponentRef(
         name="deployment-tools",
@@ -463,65 +437,7 @@ def test_match_legacy_claude_plugin_advisory_by_component_type():
         source_locator="$.plugins.deployment-tools@market[0]",
         extra={"component_type": "plugin"},
     )
-    findings = match(refs=[ref], advisories=advisories)
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-9999"
-    assert findings[0].confidence == "high"
-    # Plugin itself is direct — no attribution.
-    assert findings[0].attributed_to is None
-    assert findings[0].component.attributed_to is None
-
-
-def test_legacy_ecosystem_ref_without_extra_component_type_matches_skill_advisory():
-    """Legacy refs from old parsers carry ecosystem='skill' with no extra.component_type.
-    _match_legacy_component_type must derive the type from the ecosystem so these refs
-    still match during the pre-release transition (ADR-0019 §4)."""
-    advisories = [make_advisory("CVE-2026-LEGACY-SKILL", "skill", "vulnerable-skill", "1.0.0")]
-    ref = ComponentRef(
-        ecosystem="skill",
-        name="vulnerable-skill",
-        version="0.9.0",
-        source_manifest="SKILL.md",
-        source_locator="$.frontmatter",
-    )
-    findings = match(refs=[ref], advisories=advisories)
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-LEGACY-SKILL"
-    assert findings[0].confidence == "high"
-
-
-def test_legacy_claude_skill_ecosystem_ref_without_extra_component_type_matches():
-    """ecosystem='claude-skill' without extra.component_type normalises to skill type
-    and must match both 'skill' and 'claude-skill' advisories."""
-    advisories = [make_advisory("CVE-2026-LEGACY-CS", "claude-skill", "old-skill", "2.0.0")]
-    ref = ComponentRef(
-        ecosystem="claude-skill",
-        name="old-skill",
-        version="1.9.0",
-        source_manifest="SKILL.md",
-        source_locator="$.frontmatter",
-    )
-    findings = match(refs=[ref], advisories=advisories)
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-LEGACY-CS"
-    assert findings[0].confidence == "high"
-
-
-def test_legacy_claude_plugin_ecosystem_ref_without_extra_component_type_matches():
-    """ecosystem='claude-plugin' without extra.component_type must still match
-    advisory entries that carry the old 'claude-plugin' ecosystem."""
-    advisories = [make_advisory("CVE-2026-LEGACY-CP", "claude-plugin", "old-plugin", "1.3.0")]
-    ref = ComponentRef(
-        ecosystem="claude-plugin",
-        name="old-plugin",
-        version="1.2.0",
-        source_manifest="installed_plugins.json",
-        source_locator="$",
-    )
-    findings = match(refs=[ref], advisories=advisories)
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-LEGACY-CP"
-    assert findings[0].confidence == "high"
+    assert match(refs=[ref], advisories=advisories) == []
 
 
 def test_finding_mirrors_component_attribution():

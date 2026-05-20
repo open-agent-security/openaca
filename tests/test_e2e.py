@@ -253,18 +253,17 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     assert "GHSA-m4qw-j7mx-qv6h" in rule_ids
 
 
-# Plan 008: cross-layer end-to-end against the new component ecosystems.
-# These use in-memory advisories rather than the real corpus because the
-# canonical advisory set hasn't yet adopted the skill / claude-hook
-# ecosystems — they're being introduced by plan 008 itself.
+# Cross-layer end-to-end tests for source-less agent component identities.
+# These use in-memory advisories rather than the real corpus so the scanner
+# path can be exercised with small, purpose-built fixtures.
 
 
-def test_repo_mode_finds_claude_skill_advisory(tmp_path):
-    """Cross-layer wiring for legacy skill affected-ecosystem compatibility.
+def test_repo_mode_finds_skill_component_identity_advisory(tmp_path):
+    """Cross-layer wiring for source-less skill component identity matching.
 
     A repo declares `.claude/skills/<name>/SKILL.md` with a versioned
-    metadata.version; an in-memory advisory targets that ecosystem/name in
-    a vulnerable range. Verify a high-confidence finding fires through the
+    metadata.version; an in-memory advisory targets the exact logical
+    component identity. Verify a high-confidence finding fires through the
     full repo-mode CLI."""
     from tools.scan import main as scan_main
 
@@ -286,14 +285,7 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
         "published": "2026-05-10T00:00:00Z",
         "summary": "test",
         "details": "test",
-        "affected": [
-            {
-                "package": {"ecosystem": "skill", "name": "vulnerable-skill"},
-                "ranges": [
-                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
-                ],
-            }
-        ],
+        "affected": [],
         "severity": [
             {
                 "type": "CVSS_V4",
@@ -304,6 +296,7 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
             "openaca": {
                 "taxonomies": {"owasp_agentic_top10": ["asi05"]},
                 "evidence_level": "likely",
+                "component_identity": "skill/vulnerable-skill@0.9.0",
             }
         },
     }
@@ -547,7 +540,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
         "published": "2026-05-10T00:00:00Z",
         "summary": "test",
         "details": "test",
-        "affected": [{"package": {"ecosystem": "claude-hook", "name": "irrelevant"}}],
+        "affected": [],
         "severity": [
             {
                 "type": "CVSS_V4",

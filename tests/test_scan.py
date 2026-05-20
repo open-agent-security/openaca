@@ -339,9 +339,9 @@ def test_endpoint_subcommand_minimal_install_no_findings():
     assert "no findings" in result.output
 
 
-def test_endpoint_subcommand_matches_claude_plugin_advisory(tmp_path):
-    """Pre-release compatibility: endpoint mode still matches a legacy
-    claude-plugin affected ecosystem advisory by plugin component type."""
+def test_endpoint_subcommand_matches_plugin_component_identity_advisory(tmp_path):
+    """Endpoint mode matches source-less plugin advisories by explicit
+    component identity, not by a component-type ecosystem."""
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories_dir = tmp_path / "advisories"
     advisories_dir.mkdir()
@@ -352,15 +352,9 @@ id: CVE-2026-9999
 type: vulnerability
 summary: test plugin advisory for plan 007
 modified: '2026-05-09T00:00:00Z'
-affected:
-- package:
-    ecosystem: claude-plugin
-    name: sample-plugin
-  ranges:
-  - type: ECOSYSTEM
-    events:
-    - introduced: '0'
-    - fixed: '2.0.0'
+database_specific:
+  openaca:
+    component_identity: claude-plugin/sample-plugin@1.2.0
 """
     )
     runner = CliRunner()

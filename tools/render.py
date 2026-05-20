@@ -551,15 +551,6 @@ _TREE_CATEGORIES: tuple[tuple[str, set[str]], ...] = (
     ("agents", {"agent"}),
 )
 
-_LEGACY_ECOSYSTEM_COMPONENT_TYPES = {
-    "skill": "skill",
-    "claude-skill": "skill",
-    "claude-hook": "hook",
-    "claude-command": "command",
-    "claude-agent": "agent",
-    "claude-plugin": "plugin",
-}
-
 
 def _component_type_for_tree(ref: ComponentRef) -> str:
     value = ref.extra.get("component_type")
@@ -567,7 +558,7 @@ def _component_type_for_tree(ref: ComponentRef) -> str:
         return value
     if ref.ecosystem in {"npm", "PyPI"}:
         return "mcp_server"
-    return _LEGACY_ECOSYSTEM_COMPONENT_TYPES.get(ref.ecosystem or "", "component")
+    return "component"
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:

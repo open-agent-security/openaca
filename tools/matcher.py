@@ -39,15 +39,6 @@ _UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
     "mcp-stdio/uvx-unpinned:": "PyPI",
 }
 
-_LEGACY_COMPONENT_ECOSYSTEMS: dict[str, str] = {
-    "skill": "skill",
-    "claude-skill": "skill",
-    "claude-plugin": "plugin",
-}
-_NON_SOURCE_ECOSYSTEMS: frozenset[str] = frozenset(
-    {"claude-hook", "claude-command", "claude-agent", *_LEGACY_COMPONENT_ECOSYSTEMS}
-)
-
 
 @dataclass(frozen=True)
 class Finding:
@@ -117,26 +108,22 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
 
 
 def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
-    if ref.ecosystem and ref.name and ref.ecosystem not in _NON_SOURCE_ECOSYSTEMS:
+    if ref.ecosystem and ref.name:
         return _match_versioned(ref, advisories)
 
-    findings: list[Finding] = []
     if ref.component_identity:
         pkg = _unpinned_identity_to_package(ref.component_identity)
         if pkg is not None:
-            findings.extend(_match_unpinned(ref, pkg, advisories))
-        else:
-            findings.extend(_match_by_identity(ref, advisories))
-    findings.extend(_match_legacy_component_type(ref, advisories))
-    return findings
+            return _match_unpinned(ref, pkg, advisories)
+        return _match_by_identity(ref, advisories)
+    return []
 
 
 def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     """Match a ref by exact `component_identity` equality.
 
-    Used by ecosystems without version semantics — V0: claude-hook,
-    claude-command, claude-agent (ADR-0007). The advisory carries the
-    target identity at `database_specific.openaca.component_identity`.
+    Used for source-less agent components. The advisory carries the target
+    identity at `database_specific.openaca.component_identity`.
     """
     findings: list[Finding] = []
     for advisory in advisories:
@@ -185,62 +172,6 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
                         component=ref,
                         confidence="high",
                         reason=f"{ref.name}@{ref.version} matches {advisory['id']}",
-                        attributed_to=ref.attributed_to,
-                    )
-                )
-                break
-    return findings
-
-
-def _component_type(ref: ComponentRef) -> Optional[str]:
-    value = (ref.extra or {}).get("component_type")
-    return value if isinstance(value, str) and value else None
-
-
-def _match_legacy_component_type(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
-    component_type = _component_type(ref)
-    # Legacy refs from older parsers carry ecosystem="skill"/"claude-skill"/"claude-plugin"
-    # but no extra.component_type. Derive the type from the legacy ecosystem so these refs
-    # still match during the pre-release transition window (ADR-0019 §4).
-    if component_type is None and ref.ecosystem in _LEGACY_COMPONENT_ECOSYSTEMS:
-        component_type = _LEGACY_COMPONENT_ECOSYSTEMS[ref.ecosystem]
-    if component_type is None or ref.name is None:
-        return []
-    findings: list[Finding] = []
-    parsed = _parse_version(ref.version)
-    for advisory in advisories:
-        for entry in advisory.get("affected") or []:
-            pkg = entry.get("package") or {}
-            ecosystem = pkg.get("ecosystem")
-            legacy_type = (
-                _LEGACY_COMPONENT_ECOSYSTEMS.get(ecosystem) if isinstance(ecosystem, str) else None
-            )
-            if legacy_type != component_type or pkg.get("name") != ref.name:
-                continue
-            if parsed is None:
-                findings.append(
-                    Finding(
-                        advisory_id=advisory["id"],
-                        component=ref,
-                        confidence="low",
-                        reason=(
-                            f"{component_type}:{ref.name}@{ref.version!r} has no "
-                            f"source ecosystem version to verify against {advisory['id']}"
-                        ),
-                        attributed_to=ref.attributed_to,
-                    )
-                )
-                break
-            if any(_in_range(parsed, r.get("events") or []) for r in entry.get("ranges") or []):
-                findings.append(
-                    Finding(
-                        advisory_id=advisory["id"],
-                        component=ref,
-                        confidence="high",
-                        reason=(
-                            f"legacy {pkg.get('ecosystem')} advisory matches "
-                            f"{component_type}:{ref.name}@{ref.version}"
-                        ),
                         attributed_to=ref.attributed_to,
                     )
                 )

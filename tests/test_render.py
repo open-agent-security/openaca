@@ -633,14 +633,23 @@ def _bundled(
     **kw,
 ) -> ComponentRef:
     ident = kw.get("component_identity")
+    component_type = {
+        "skill": "skill",
+        "claude-command": "command",
+        "claude-hook": "hook",
+        "claude-agent": "agent",
+    }.get(eco)
+    extra = dict(kw.get("extra", {}))
+    if component_type:
+        extra.setdefault("component_type", component_type)
     return ComponentRef(
-        ecosystem=eco,
+        ecosystem=None if component_type else eco,
         name=name,
         version=version,
         component_identity=ident,
         source_manifest=kw.get("source_manifest", "fake"),
         attributed_to=attributed_to,
-        extra=kw.get("extra", {}),
+        extra=extra,
     )
 
 

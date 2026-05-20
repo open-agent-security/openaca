@@ -24,31 +24,21 @@ def test_enabled_plugins_emitted():
     assert all(r.version is None for r in refs)
 
 
-def test_settings_plugin_matches_claude_plugin_advisory_by_name():
-    """A repo declaring `enabledPlugins: {"deployment-tools@market": true}`
-    should match a legacy advisory targeting `(ecosystem=claude-plugin,
-    name=deployment-tools)` via component-type compatibility. Version is
-    unknown from settings alone, so confidence is 'low' (pin-to-verify),
-    NOT zero findings."""
+def test_settings_plugin_matches_component_identity_advisory():
+    """Enabled plugins are source-less components, so advisories target their
+    logical component identity rather than a component-type ecosystem."""
     from tools.matcher import match
 
     manifest = REPOS / "sample-settings" / ".claude" / "settings.json"
     refs = parse(manifest)
     advisory = {
         "id": "OpenACA-TEST-PLUGIN-1",
-        "affected": [
-            {
-                "package": {"ecosystem": "claude-plugin", "name": "deployment-tools"},
-                "ranges": [
-                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "9.0.0"}]}
-                ],
-            }
-        ],
+        "database_specific": {"openaca": {"component_identity": "claude-plugin/deployment-tools"}},
     }
     findings = match(refs, [advisory])
     matching = [f for f in findings if f.advisory_id == "OpenACA-TEST-PLUGIN-1"]
     assert matching
-    assert matching[0].confidence == "low"
+    assert matching[0].confidence == "high"
 
 
 def test_settings_plugin_non_true_values_are_disabled(tmp_path):

@@ -747,6 +747,51 @@ def test_tree_empty_plugin_shows_no_bundled_components():
     assert "(no bundled components)" in out
 
 
+def test_tree_direct_skill_renders_known_source_provenance():
+    ref = ComponentRef(
+        name="aws-api",
+        component_identity="skill/aws-api",
+        source_manifest="/Users/test/.claude/skills/aws-api/SKILL.md",
+        extra={
+            "component_type": "skill",
+            "source_provenance": {
+                "status": "known",
+                "source_type": "github",
+                "source": "awslabs/agent-toolkit-for-aws",
+                "ref": "main",
+                "skill_path": "skills/aws-api/SKILL.md",
+                "hash": "1234567890abcdef",
+            },
+        },
+    )
+
+    out = render_inventory_tree([ref], [], use_unicode=True)
+
+    assert (
+        "aws-api (source: github:awslabs/agent-toolkit-for-aws#main, "
+        "path: skills/aws-api/SKILL.md, hash: 12345678)"
+    ) in out
+
+
+def test_tree_direct_skill_renders_symlink_target_source_provenance():
+    ref = ComponentRef(
+        name="loose-skill",
+        component_identity="skill/loose-skill",
+        source_manifest="/Users/test/.claude/skills/loose-skill/SKILL.md",
+        extra={
+            "component_type": "skill",
+            "source_provenance": {
+                "status": "symlink-target",
+                "resolved_path": "/Users/test/.agents/skills/loose-skill/SKILL.md",
+            },
+        },
+    )
+
+    out = render_inventory_tree([ref], [], use_unicode=True)
+
+    assert "loose-skill (source: symlink -> /Users/test/.agents/skills/loose-skill/SKILL.md)" in out
+
+
 def test_tree_renders_logical_identities_without_location_prefix():
     """Bundled commands render by logical command name; hooks render the
     observed command and trigger metadata instead of the identity hash."""

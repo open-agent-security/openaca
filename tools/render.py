@@ -692,12 +692,21 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
         if transport:
             return f"{display_url} ({transport})"
         return display_url
-    if ref.ecosystem in {"npm", "PyPI"} and ref.name:
-        return None
     command = _stdio_command_label(ref.extra.get("install_source"))
+    if ref.ecosystem in {"npm", "PyPI"} and ref.name:
+        if command:
+            transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
+            return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"
+        return None
     if command:
         return f"{command} (stdio, args hidden)"
     return None
+
+
+def _package_leaf_label(ref: ComponentRef) -> str:
+    if ref.name and ref.version:
+        return f"{ref.name}@{ref.version}"
+    return ref.name or "<unnamed>"
 
 
 def _stdio_command_label(install_source: object) -> Optional[str]:

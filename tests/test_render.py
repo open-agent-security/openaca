@@ -744,6 +744,26 @@ def test_tree_remote_mcp_leaf_redacts_url_credentials():
     assert "api.example.com/mcp (HTTP)" in out
 
 
+def test_tree_remote_mcp_leaf_redacts_url_query_secrets():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-remote/api.example.com/mcp",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://api.example.com/mcp?api_key=sk-secret123&token=abc",
+                "transport": "http",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "api_key" not in out
+    assert "sk-secret123" not in out
+    assert "token=abc" not in out
+    assert "api.example.com/mcp (HTTP)" in out
+
+
 def test_tree_stdio_mcp_leaf_prefers_install_source():
     refs = [
         _plugin_ref("playwright", "unknown", marketplace="official"),

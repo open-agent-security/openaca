@@ -701,7 +701,9 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
 def _strip_cli_flags(install_source: str) -> str:
     """Keep command and positional args; drop flags and their values to avoid leaking secrets.
 
-    Short flags (-x) are treated as boolean (skip flag only).
+    Short flags (-x): treated as boolean (skip flag only) when the next token looks
+    like a package specifier (starts with '@'); otherwise treated as value-taking
+    (skip flag AND next token) to avoid leaking secrets like '-k sk_live_...'.
     Long flags with = (--flag=value) are dropped whole.
     Long flags without = (--flag value) skip the flag and the next token (conservative).
     """
@@ -709,16 +711,28 @@ def _strip_cli_flags(install_source: str) -> str:
     if not tokens:
         return install_source
     visible = [tokens[0]]
+    i = 1
     skip_next = False
-    for t in tokens[1:]:
+    while i < len(tokens):
+        t = tokens[i]
         if skip_next:
             skip_next = False
+            i += 1
             continue
         if t.startswith("-"):
-            if t.startswith("--") and "=" not in t:
-                skip_next = True
+            if t.startswith("--"):
+                if "=" not in t:
+                    skip_next = True
+            else:
+                # Short flag: boolean only if the next token is a package-like specifier
+                # (starts with '@'); otherwise treat as value-taking and skip next.
+                next_token = tokens[i + 1] if i + 1 < len(tokens) else ""
+                if not next_token.startswith("@"):
+                    skip_next = True
+            i += 1
             continue
         visible.append(t)
+        i += 1
     return " ".join(visible)
 
 

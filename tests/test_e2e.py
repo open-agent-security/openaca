@@ -255,12 +255,12 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
 
 # Plan 008: cross-layer end-to-end against the new component ecosystems.
 # These use in-memory advisories rather than the real corpus because the
-# canonical advisory set hasn't yet adopted the claude-skill / claude-hook
+# canonical advisory set hasn't yet adopted the skill / claude-hook
 # ecosystems — they're being introduced by plan 008 itself.
 
 
 def test_repo_mode_finds_claude_skill_advisory(tmp_path):
-    """Cross-layer wiring for the new claude-skill ecosystem.
+    """Cross-layer wiring for the new skill ecosystem.
 
     A repo declares `.claude/skills/<name>/SKILL.md` with a versioned
     metadata.version; an in-memory advisory targets that ecosystem/name in
@@ -288,7 +288,7 @@ def test_repo_mode_finds_claude_skill_advisory(tmp_path):
         "details": "test",
         "affected": [
             {
-                "package": {"ecosystem": "claude-skill", "name": "vulnerable-skill"},
+                "package": {"ecosystem": "skill", "name": "vulnerable-skill"},
                 "ranges": [
                     {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
                 ],

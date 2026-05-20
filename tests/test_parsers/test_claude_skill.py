@@ -1,4 +1,4 @@
-"""Tests for the SKILL.md parser (claude-skill ecosystem).
+"""Tests for the SKILL.md parser (generic skill ecosystem).
 
 Per the canonical Agent Skills spec at agentskills.io/specification: six
 top-level frontmatter fields (`name`, `description`, `license`,
@@ -30,10 +30,10 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     refs = parse(path)
     assert len(refs) == 1
     ref = refs[0]
-    assert ref.ecosystem == "claude-skill"
+    assert ref.ecosystem == "skill"
     assert ref.name == "bootstrap-project"
     assert ref.version == "1.2.3"
-    assert ref.component_identity == "claude-skill/bootstrap-project@1.2.3"
+    assert ref.component_identity == "skill/bootstrap-project@1.2.3"
     assert ref.source_manifest == str(path)
     assert ref.source_locator == "$.frontmatter"
     assert ref.attributed_to is None
@@ -44,7 +44,7 @@ def test_parse_emits_ref_without_version_when_metadata_absent(tmp_path):
     refs = parse(path)
     assert len(refs) == 1
     assert refs[0].version is None
-    assert refs[0].component_identity == "claude-skill/linter"
+    assert refs[0].component_identity == "skill/linter"
 
 
 def test_parse_falls_back_to_directory_name_when_name_missing(tmp_path):
@@ -53,7 +53,7 @@ def test_parse_falls_back_to_directory_name_when_name_missing(tmp_path):
     refs = parse(path)
     assert len(refs) == 1
     assert refs[0].name == "fallback-skill"
-    assert refs[0].component_identity == "claude-skill/fallback-skill"
+    assert refs[0].component_identity == "skill/fallback-skill"
 
 
 def test_parse_skips_when_no_frontmatter(tmp_path):
@@ -129,7 +129,7 @@ def test_parse_skips_non_string_metadata_version(tmp_path):
     # 1.0 parses as float in YAML; we want to be conservative and ignore it.
     assert len(refs) == 1
     assert refs[0].version is None
-    assert refs[0].component_identity == "claude-skill/weird-version"
+    assert refs[0].component_identity == "skill/weird-version"
 
 
 def test_parse_skips_when_name_field_is_empty_string(tmp_path):

@@ -91,6 +91,42 @@ def test_match_pypi_pinned():
     assert findings[0].confidence == "high"
 
 
+def test_generic_skill_ref_matches_legacy_claude_skill_advisory():
+    advisories = [make_advisory("CVE-2026-SKILL", "claude-skill", "vulnerable-skill", "1.0.0")]
+    ref = ComponentRef(
+        ecosystem="skill",
+        name="vulnerable-skill",
+        version="0.9.0",
+        component_identity="skill/vulnerable-skill@0.9.0",
+        source_manifest="SKILL.md",
+        source_locator="$.frontmatter",
+    )
+
+    findings = match(refs=[ref], advisories=advisories)
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-SKILL"
+    assert findings[0].confidence == "high"
+
+
+def test_legacy_claude_skill_ref_matches_generic_skill_advisory():
+    advisories = [make_advisory("CVE-2026-SKILL", "skill", "vulnerable-skill", "1.0.0")]
+    ref = ComponentRef(
+        ecosystem="claude-skill",
+        name="vulnerable-skill",
+        version="0.9.0",
+        component_identity="claude-skill/vulnerable-skill@0.9.0",
+        source_manifest="SKILL.md",
+        source_locator="$.frontmatter",
+    )
+
+    findings = match(refs=[ref], advisories=advisories)
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-SKILL"
+    assert findings[0].confidence == "high"
+
+
 def test_no_match_when_package_name_differs():
     advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]
     ref = ComponentRef(

@@ -1,10 +1,10 @@
 ---
 id: 0007
 title: Component inventory ecosystems; tiered scanning; identity scopes
-status: accepted
+status: superseded
 date: 2026-05-10
 supersedes: null
-superseded-by: null
+superseded-by: 0018
 ---
 
 ## Context

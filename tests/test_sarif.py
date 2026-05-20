@@ -232,7 +232,7 @@ def test_sarif_omits_coverage_for_tier1_findings():
     """Tier-1 inventory findings (extra without `transitive`) have no
     coverage/transitive properties."""
     ref = ComponentRef(
-        ecosystem="claude-skill",
+        ecosystem="skill",
         name="vulnerable-skill",
         version="0.9.0",
     )

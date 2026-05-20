@@ -663,6 +663,7 @@ def _component_type_for_child(ref: ComponentRef) -> str:
     if isinstance(extra_type, str) and extra_type:
         return extra_type
     return {
+        "skill": "skill",
         "claude-skill": "skill",
         "claude-hook": "hook",
         "claude-command": "command",

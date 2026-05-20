@@ -16,11 +16,11 @@ REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
 def test_repo_mode_emits_declared_skill():
     refs = parse_repo(REPOS / "declared-components")
-    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    skill_refs = [r for r in refs if r.ecosystem == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
     assert skill_refs[0].version == "1.0.0"
-    assert skill_refs[0].component_identity == "claude-skill/bootstrap@1.0.0"
+    assert skill_refs[0].component_identity == "skill/bootstrap@1.0.0"
     # Repo declarations are not attributed to any plugin.
     assert skill_refs[0].attributed_to is None
 
@@ -52,7 +52,7 @@ def test_repo_mode_emits_nested_declared_skill(tmp_path):
 
     refs = parse_repo(tmp_path)
 
-    assert any(r.component_identity == "claude-skill/ui-review@1.0.0" for r in refs)
+    assert any(r.component_identity == "skill/ui-review@1.0.0" for r in refs)
 
 
 def test_repo_mode_emits_nested_declared_command(tmp_path):

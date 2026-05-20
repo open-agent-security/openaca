@@ -44,6 +44,11 @@ _IDENTITY_ONLY_ECOSYSTEMS: frozenset[str] = frozenset(
     {"claude-hook", "claude-command", "claude-agent"}
 )
 
+_ECOSYSTEM_ALIASES: dict[str, frozenset[str]] = {
+    "skill": frozenset({"skill", "claude-skill"}),
+    "claude-skill": frozenset({"skill", "claude-skill"}),
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -112,6 +117,14 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def _ecosystems_match(ref_ecosystem: Optional[str], advisory_ecosystem: object) -> bool:
+    if not isinstance(advisory_ecosystem, str):
+        return False
+    if ref_ecosystem == advisory_ecosystem:
+        return True
+    return advisory_ecosystem in _ECOSYSTEM_ALIASES.get(ref_ecosystem or "", frozenset())
+
+
 def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     # Identity-only ecosystems must be routed before the ecosystem+name check
     # because their parsers populate both fields (for inventory) but have no
@@ -162,7 +175,10 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
     for advisory in advisories:
         for entry in advisory.get("affected") or []:
             pkg = entry.get("package") or {}
-            if pkg.get("ecosystem") != ref.ecosystem or pkg.get("name") != ref.name:
+            if (
+                not _ecosystems_match(ref.ecosystem, pkg.get("ecosystem"))
+                or pkg.get("name") != ref.name
+            ):
                 continue
             if parsed is None:
                 findings.append(

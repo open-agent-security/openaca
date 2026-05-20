@@ -8,7 +8,7 @@ Behavior:
 - Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
   name + version) are queried. Identity-only refs (claude-hook,
   claude-command, claude-agent) and OpenACA-native ecosystems
-  (claude-skill, claude-plugin) are skipped — OSV.dev wouldn't have
+  (skill, claude-plugin) are skipped — OSV.dev wouldn't have
   records for them anyway.
 - PURLs are deduplicated within a scan (same PURL queried once).
 - /v1/querybatch caps at 1000 packages per request; chunked into
@@ -43,7 +43,7 @@ def is_queryable(ref: ComponentRef) -> bool:
     """A ref is sent to OSV.dev iff it has a version AND a PURL we can derive.
 
     Identity-only refs (claude-hook, claude-command, claude-agent) and
-    OpenACA-native ecosystems (claude-skill, claude-plugin) have `purl=None`
+    OpenACA-native ecosystems (skill, claude-plugin) have `purl=None`
     so they're skipped here — OSV.dev wouldn't have records for them.
     Same rule for any ecosystem-tagged ref missing a version.
     """

@@ -165,6 +165,41 @@ def test_posture_on_emits_mcp_auto_approve(tmp_path):
     assert "openaca-posture-mcp-auto-approve" in result.output
 
 
+def test_posture_on_emits_mcp_auto_approve_from_settings_file(tmp_path):
+    """autoApprove in .claude/settings.json mcpServers must trigger the rule."""
+    project_claude = tmp_path / ".claude"
+    project_claude.mkdir()
+    (project_claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inline-server": {
+                        "command": "npx",
+                        "args": ["-y", "some-mcp@1.0.0"],
+                        "autoApprove": ["read_file"],
+                    }
+                }
+            }
+        )
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--fail-on",
+            "none",
+            "--include-posture",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-mcp-auto-approve" in result.output
+
+
 def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

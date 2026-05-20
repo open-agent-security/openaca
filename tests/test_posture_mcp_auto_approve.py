@@ -55,3 +55,24 @@ def test_disabled_mcp_server_autoapprove_is_clean(tmp_path):
     findings = check_mcp_auto_approve([(tmp_path / ".mcp.json", manifest)])
 
     assert findings == []
+
+
+def test_settings_file_mcp_autoapprove_flagged(tmp_path):
+    """autoApprove in settings.json mcpServers must be caught by the rule."""
+    settings_manifest = {
+        "mcpServers": {
+            "inline-server": {
+                "command": "npx",
+                "args": ["-y", "some-mcp@1.0.0"],
+                "autoApprove": ["read_file", "list_dir"],
+            }
+        },
+        "env": {},
+    }
+    settings_path = tmp_path / "settings.json"
+
+    findings = check_mcp_auto_approve([(settings_path, settings_manifest)])
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "openaca-posture-mcp-auto-approve"
+    assert "inline-server" in findings[0].component_label

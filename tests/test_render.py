@@ -838,6 +838,25 @@ def test_tree_stdio_mcp_leaf_preserves_package_name_after_long_flags_with_value(
     assert "3.12" not in out
 
 
+def test_tree_stdio_mcp_leaf_drops_short_flag_value_secrets():
+    """my-mcp -k sk_live_... run — short flag value must not appear in output."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/my-mcp:my-mcp",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "my-mcp -k sk_live_secret run",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "sk_live_secret" not in out
+    assert "my-mcp" in out
+    assert "run" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

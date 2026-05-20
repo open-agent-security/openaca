@@ -189,26 +189,37 @@ def collect_endpoint_settings_manifests(
     config_dir: Path,
     project_root: Path | None,
 ) -> list[tuple[Path, dict]]:
-    """Return the precedence-merged effective endpoint settings as a single manifest.
+    """Return precedence-merged effective endpoint settings attributed to source scopes.
 
-    Per-scope evaluation produces false positives when a higher-precedence scope
-    (local > project > user) overrides a lower-scope setting. The merged view
-    matches what Claude Code would actually see at runtime.
+    Returns one tuple per scope file that owns at least one top-level key in the
+    merged effective view. For each key, the owning scope is the highest-precedence
+    (local > project > user) scope that defines it. The merged effective value is
+    used for each key (not the raw per-scope value) so that higher-precedence
+    overrides are honoured and false positives from stale lower-scope settings are
+    avoided. Provenance is attributed at top-level key granularity.
     """
     layers = _load_settings_layers(config_dir, project_root)
     effective = layers.merged(mode="endpoint")
     if not effective:
         return []
-    # Attribute to the highest-precedence settings file that contributed to the
-    # merged view — local > project > user.
+
+    # Scope order: highest precedence first.
     scope_checks: list[tuple[dict | None, Path]] = []
     if project_root is not None:
         scope_checks.append((layers.local, project_root / ".claude" / "settings.local.json"))
         scope_checks.append((layers.project, project_root / ".claude" / "settings.json"))
     scope_checks.append((layers.user, config_dir / "settings.json"))
-    provenance = config_dir / "settings.json"
-    for scope_data, path in scope_checks:
-        if scope_data and path.is_file():
-            provenance = path
-            break
-    return [(provenance, effective)]
+
+    # Attribute each effective top-level key to the highest-precedence scope
+    # that defines it. Group by source file so each returned tuple carries only
+    # keys that originated from that file.
+    path_to_keys: dict[Path, dict] = {}
+    for key, merged_value in effective.items():
+        source_path = config_dir / "settings.json"  # fallback: user scope
+        for scope_data, path in scope_checks:
+            if scope_data is not None and key in scope_data and path.is_file():
+                source_path = path
+                break
+        path_to_keys.setdefault(source_path, {})[key] = merged_value
+
+    return list(path_to_keys.items())

@@ -60,10 +60,142 @@ def test_source_locator_jsonpath():
     assert git.source_locator == "$.mcpServers.git"
 
 
-def test_url_transport_emits_no_ref():
-    """Entries without a `command` (URL/HTTP transport) must not emit binary:None."""
-    servers = {"remote": {"url": "https://example.com/mcp"}}
+def test_url_entry_emits_remote_mcp_ref():
+    """Per ADR-0020, an `mcpServers` entry with a `url` field emits a
+    source-less ComponentRef under the `mcp-remote/<host>/<path>`
+    identity namespace, with `component_type: mcp_server` and the
+    original URL preserved in extra."""
+    servers = {"asana": {"url": "https://mcp.asana.com/sse"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    # ADR-0019 source-less shape: no ecosystem, no name, no version.
+    assert ref.ecosystem is None
+    assert ref.name is None
+    assert ref.version is None
+    # ADR-0020 identity namespace.
+    assert ref.component_identity == "mcp-remote/mcp.asana.com/sse"
+    # ADR-0019 component_type lives in extra.
+    assert ref.extra["component_type"] == "mcp_server"
+    # Transport metadata + original URL preserved verbatim.
+    assert ref.extra["transport"] == "http"  # default when no `type` field
+    assert ref.extra["url"] == "https://mcp.asana.com/sse"
+    assert ref.source_locator == "$.mcpServers.asana"
+
+
+def test_remote_mcp_records_sse_transport_when_type_is_sse():
+    servers = {"asana": {"type": "sse", "url": "https://mcp.asana.com/sse"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].extra["transport"] == "sse"
+    assert refs[0].component_identity == "mcp-remote/mcp.asana.com/sse"
+
+
+def test_remote_mcp_records_streamable_http_transport():
+    servers = {"x": {"type": "streamableHttp", "url": "https://x.com/mcp"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].extra["transport"] == "streamableHttp"
+
+
+def test_remote_mcp_records_explicit_http_transport():
+    servers = {"x": {"type": "http", "url": "https://x.com/mcp"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].extra["transport"] == "http"
+
+
+def test_remote_mcp_identity_normalizes_scheme_and_query_and_fragment():
+    """Identity strips scheme, query, and fragment; original URL is kept
+    in extra.url for display."""
+    servers = {"x": {"url": "https://example.com/mcp?v=1&t=2#section"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-remote/example.com/mcp"
+    assert refs[0].extra["url"] == "https://example.com/mcp?v=1&t=2#section"
+
+
+def test_remote_mcp_identity_strips_default_ports():
+    """Default ports (443 for https, 80 for http) are conventional; strip
+    them to keep identities stable across configurations that differ
+    only in explicit-vs-implicit port."""
+    for url, expected in [
+        ("https://x.com:443/mcp", "mcp-remote/x.com/mcp"),
+        ("http://x.com:80/mcp", "mcp-remote/x.com/mcp"),
+    ]:
+        refs = parse_mcp_servers({"x": {"url": url}}, source_manifest="fake.json")
+        assert refs[0].component_identity == expected, url
+
+
+def test_remote_mcp_identity_keeps_non_default_ports():
+    servers = {"x": {"url": "http://localhost:8080/mcp"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs[0].component_identity == "mcp-remote/localhost:8080/mcp"
+
+
+def test_remote_mcp_identity_normalizes_empty_path_to_slash():
+    servers = {"x": {"url": "https://example.com"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs[0].component_identity == "mcp-remote/example.com/"
+
+
+def test_remote_mcp_identity_lowercases_host_preserves_path_case():
+    servers = {"x": {"url": "https://X.Example.COM/MyMcp/Path"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs[0].component_identity == "mcp-remote/x.example.com/MyMcp/Path"
+
+
+def test_remote_mcp_identity_strips_credentials():
+    """Credentials must never appear in the identity (they'd be a logged
+    secret and aren't part of the endpoint's logical name)."""
+    servers = {"x": {"url": "https://user:pass@example.com/mcp"}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs[0].component_identity == "mcp-remote/example.com/mcp"
+    # The original URL stays in extra.url verbatim — but that's a known
+    # secret-surface concern (covered by future posture/redaction work,
+    # out of scope for this ADR).
+
+
+def test_disabled_remote_server_is_skipped():
+    servers = {"x": {"url": "https://x.com/mcp", "disabled": True}}
     assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_remote_mcp_interpolated_url_is_skipped():
+    """URLs with `${...}` interpolation can't be normalized without env
+    resolution; conservatively skip, matching the stdio convention."""
+    servers = {"x": {"url": "https://${HOST}/mcp"}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_remote_mcp_malformed_url_is_skipped_without_raising():
+    """A URL with no parseable host should be skipped, not raise."""
+    servers = {"x": {"url": "not-a-real-url"}}
+    # urlparse accepts arbitrary strings; hostname will be None.
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_remote_mcp_empty_url_is_skipped():
+    servers = {"x": {"url": ""}}
+    assert parse_mcp_servers(servers, source_manifest="fake.json") == []
+
+
+def test_url_wins_over_command_when_both_present():
+    """When an entry declares both `url` and `command` (malformed per the
+    MCP spec), favor `url` and emit a remote ref. Matches Claude Code's
+    runtime behavior of preferring URL transport when set."""
+    servers = {
+        "x": {
+            "command": "npx",
+            "args": ["@scope/pkg@1.0.0"],
+            "url": "https://x.com/mcp",
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-remote/x.com/mcp"
+    # The npm package should NOT appear as a separate ref — url wins.
+    assert refs[0].ecosystem is None
 
 
 def test_empty_command_emits_no_ref():

@@ -25,6 +25,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 016 | [Claude Code parser coverage](016-claude-code-parser-coverage.md) | 🟡 Active | 008, 009 |
 | 017 | [Generic skill ecosystem](017-generic-skill-ecosystem.md) | ✅ Done | 008 |
 | 018 | [Source ecosystem and component type cleanup](018-source-ecosystem-component-type.md) | ✅ Done | 017 |
+| 019 | [Remote MCP server inventory](019-remote-mcp-inventory.md) | ✅ Done | 018 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

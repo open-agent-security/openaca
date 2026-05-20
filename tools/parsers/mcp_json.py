@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from tools.component_ref import ComponentRef
 
@@ -235,6 +236,24 @@ def parse_mcp_servers(
             continue
         if entry.get("disabled") is True:
             continue
+        locator = f"{locator_prefix}.{server_name}"
+        # ADR-0020: URL-bearing entries are remote MCPs and take precedence
+        # over any stdio fields in the same entry. The MCP spec treats
+        # transport as mutually exclusive; favoring URL matches Claude
+        # Code's runtime resolution.
+        raw_url = entry.get("url")
+        if isinstance(raw_url, str) and raw_url:
+            remote_ref = _make_remote_mcp_ref(
+                url=raw_url,
+                entry=entry,
+                server_name=server_name,
+                source_manifest=source_manifest,
+                locator=locator,
+                runtime_hosts=runtime_hosts,
+            )
+            if remote_ref is not None:
+                refs.append(remote_ref)
+            continue
         raw_command = entry.get("command")
         raw_args = entry.get("args") or []
         if not isinstance(raw_args, list):
@@ -247,7 +266,6 @@ def parse_mcp_servers(
             raw_command if isinstance(raw_command, str) else None,
             raw_args,
         )
-        locator = f"{locator_prefix}.{server_name}"
         # Posture rules (plan 014) need the raw install reference to decide
         # whether it's mutable. Reconstruct from raw_command + raw_args so
         # we capture exactly what the user wrote (before _command_dispatch
@@ -333,6 +351,86 @@ def _mcp_ref_extra(
         "component_path": [{"type": "mcp_server", "name": server_name}],
         "install_source": install_source,
     }
+
+
+def _make_remote_mcp_ref(
+    url: str,
+    entry: dict,
+    server_name: str,
+    source_manifest: str,
+    locator: str,
+    runtime_hosts: list[str],
+) -> ComponentRef | None:
+    """Build a ComponentRef for a URL-bearing (remote) MCP entry per ADR-0020.
+
+    Returns None if the URL is malformed, empty after parsing, or contains
+    interpolation we can't resolve at scan time.
+    """
+    identity = _normalize_remote_identity(url)
+    if identity is None:
+        return None
+    transport = _classify_remote_transport(entry)
+    extra = {
+        "component_type": "mcp_server",
+        "transport": transport,
+        "url": url,
+        "runtime_hosts": list(runtime_hosts),
+        "declared_by": {"kind": "manifest", "path": source_manifest},
+        "component_path": [{"type": "mcp_server", "name": server_name}],
+        # Posture rules (plan 014) consume install_source. For remote MCPs
+        # the install reference is the URL itself; the mutable-install rule
+        # is stdio-focused and the insecure-transport rule reads url
+        # directly from the manifest, but we keep the field populated for
+        # consistency with stdio refs.
+        "install_source": url,
+    }
+    return ComponentRef(
+        component_identity=identity,
+        source_manifest=source_manifest,
+        source_locator=locator,
+        extra=extra,
+    )
+
+
+def _normalize_remote_identity(url: str) -> str | None:
+    """Normalize a URL into the `mcp-remote/<host>/<path>` identity form.
+
+    See ADR-0020 for the normalization rules. Returns None when the URL
+    has no parseable host, contains `${...}` interpolation, or otherwise
+    can't be normalized into a stable identity.
+    """
+    if _has_interpolation(url):
+        return None
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    # urlparse keeps userinfo on .netloc but exposes .hostname stripped and
+    # lowercased — exactly what we want for the identity.
+    host = parsed.hostname
+    if not host:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        # Malformed port like "https://x.com:notaport/" raises on access.
+        return None
+    if port is not None and port not in (80, 443):
+        host = f"{host}:{port}"
+    path = parsed.path or "/"
+    return f"mcp-remote/{host}{path}"
+
+
+def _classify_remote_transport(entry: dict) -> str:
+    """Return the transport label for a URL-bearing entry.
+
+    Defaults to "http" when no explicit `type` is provided — matches the
+    common shorthand for plain-URL entries in Claude Code configs.
+    """
+    raw_type = entry.get("type")
+    if isinstance(raw_type, str) and raw_type:
+        return raw_type
+    return "http"
 
 
 def _format_install_source(raw_command: object, raw_args: list[str]) -> str:

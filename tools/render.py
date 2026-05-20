@@ -710,16 +710,14 @@ def _strip_cli_flags(install_source: str) -> str:
 
 
 def _redact_url_credentials(url: str) -> str:
-    """Strip userinfo (user:password@) before rendering a URL in terminal/CI output."""
+    """Sanitize a URL for display: strip userinfo and query/fragment (both may carry secrets)."""
     try:
         parsed = urlparse(url)
-        if parsed.username or parsed.password:
-            netloc = parsed.hostname or ""
-            if parsed.port is not None:
-                netloc = f"{netloc}:{parsed.port}"
-            return urlunparse(
-                (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
-            )
+        netloc = parsed.hostname or ""
+        if parsed.port is not None:
+            netloc = f"{netloc}:{parsed.port}"
+        if netloc or parsed.scheme:
+            return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
     except Exception:
         pass
     return url

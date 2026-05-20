@@ -21,6 +21,8 @@ _ENDPOINT_KEYS = {
     "anthropic_api_url",
     "anthropic_api_base_url",
     "anthropicbaseurl",  # camelCase anthropicBaseUrl after normalisation
+    "anthropicapiurl",  # camelCase anthropicApiUrl after normalisation
+    "anthropicapibaseurl",  # camelCase anthropicApiBaseUrl after normalisation
 }
 _TOKEN_KEYS = {
     "anthropic_auth_token",

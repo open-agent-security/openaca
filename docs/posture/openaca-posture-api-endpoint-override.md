@@ -9,7 +9,7 @@ Claude settings override the Anthropic API endpoint.
 
 The rule reads Claude `settings.json` files and checks top-level settings and
 the `env` block for endpoint keys such as `ANTHROPIC_BASE_URL`,
-`ANTHROPIC_API_URL`, `apiUrl`, or `base_url`.
+`ANTHROPIC_API_URL`, `anthropicBaseUrl`, or `anthropicApiUrl`.
 
 The finding is `medium` by default. It escalates to `high` when the same
 settings file also overrides a token or model/provider value, because that

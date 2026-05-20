@@ -688,91 +688,34 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
     url = ref.extra.get("url")
     if isinstance(url, str) and url:
         transport = _mcp_transport_label(ref.extra.get("transport"))
-        display_url = _redact_url_credentials(url)
+        display_url = _redact_url_credentials(url) or ref.component_identity or url
         if transport:
             return f"{display_url} ({transport})"
         return display_url
-    install_source = ref.extra.get("install_source")
-    if isinstance(install_source, str) and install_source:
-        return _strip_cli_flags(install_source)
+    if ref.ecosystem in {"npm", "PyPI"} and ref.name:
+        return None
+    command = _stdio_command_label(ref.extra.get("install_source"))
+    if command:
+        return f"{command} (stdio, args hidden)"
     return None
 
 
-# Boolean flags for common MCP launchers (npx, uvx, pip).  Flags in these sets
-# are skipped without consuming the next token.  Unknown flags default to
-# value-taking so accidental secret exposure is impossible.
-_BOOL_LONG_FLAGS: frozenset[str] = frozenset(
-    {
-        "--yes",
-        "--no",
-        "--frozen-lockfile",
-        "--no-save",
-        "--global",
-        "--legacy-peer-deps",
-        "--prefer-offline",
-        "--force",
-        "--no-fund",
-        "--no-audit",
-        "--no-install",
-        "--prefer-cached",
-        "--quiet",
-        "--silent",
-        "--verbose",
-        "--dry-run",
-    }
-)
-_BOOL_SHORT_FLAGS: frozenset[str] = frozenset(
-    {"-y", "-Y", "-q", "-Q", "-v", "-d", "-g", "-n", "-x", "-f"}
-)
+def _stdio_command_label(install_source: object) -> Optional[str]:
+    if not isinstance(install_source, str):
+        return None
+    command = install_source.split(maxsplit=1)[0] if install_source.strip() else ""
+    if not command:
+        return None
+    return Path(command).name
 
 
-def _strip_cli_flags(install_source: str) -> str:
-    """Keep command and positional args; drop flags and their values to avoid leaking secrets.
-
-    Flags in _BOOL_LONG_FLAGS / _BOOL_SHORT_FLAGS are skipped without consuming the
-    next token.  Unknown flags default to value-taking (flag + next token both dropped).
-    Long flags with = (--flag=value) are dropped as a single token.
-    """
-    tokens = install_source.split()
-    if not tokens:
-        return install_source
-    visible = [tokens[0]]
-    i = 1
-    skip_next = False
-    while i < len(tokens):
-        t = tokens[i]
-        if skip_next:
-            skip_next = False
-            i += 1
-            continue
-        if t.startswith("-"):
-            if t == "--":
-                break  # passthrough boundary: everything after is subprocess args
-            if t.startswith("--"):
-                if "=" not in t and t not in _BOOL_LONG_FLAGS:
-                    skip_next = True
-            else:
-                if t not in _BOOL_SHORT_FLAGS:
-                    skip_next = True
-            i += 1
-            continue
-        visible.append(t)
-        i += 1
-    return " ".join(visible)
-
-
-def _redact_url_credentials(url: str) -> str:
+def _redact_url_credentials(url: str) -> Optional[str]:
     """Sanitize a URL for display: strip userinfo and query/fragment (both may carry secrets)."""
-    try:
-        parsed = urlparse(url)
-        netloc = parsed.hostname or ""
-        if parsed.port is not None:
-            netloc = f"{netloc}:{parsed.port}"
-        if netloc or parsed.scheme:
-            return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
-    except Exception:
-        pass
-    return url
+    parsed = urlparse(url)
+    netloc = parsed.netloc.rsplit("@", 1)[-1]
+    if not parsed.scheme or not netloc:
+        return None
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
 def _mcp_transport_label(value: object) -> Optional[str]:

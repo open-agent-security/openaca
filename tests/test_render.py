@@ -857,6 +857,40 @@ def test_tree_stdio_mcp_leaf_drops_short_flag_value_secrets():
     assert "run" in out
 
 
+def test_tree_stdio_mcp_leaf_preserves_package_after_boolean_long_flag():
+    """npx --yes @playwright/mcp@latest — boolean long flag must not consume the package name."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:@playwright/mcp",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx --yes @playwright/mcp@latest",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "@playwright/mcp@latest" in out
+
+
+def test_tree_stdio_mcp_leaf_preserves_unscoped_package_after_short_boolean_flag():
+    """npx -y my-mcp-server — boolean short flag must not drop an unscoped package name."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:my-mcp-server",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx -y my-mcp-server",
+            },
+        )
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "my-mcp-server" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

@@ -698,14 +698,40 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
     return None
 
 
+# Boolean flags for common MCP launchers (npx, uvx, pip).  Flags in these sets
+# are skipped without consuming the next token.  Unknown flags default to
+# value-taking so accidental secret exposure is impossible.
+_BOOL_LONG_FLAGS: frozenset[str] = frozenset(
+    {
+        "--yes",
+        "--no",
+        "--frozen-lockfile",
+        "--no-save",
+        "--global",
+        "--legacy-peer-deps",
+        "--prefer-offline",
+        "--force",
+        "--no-fund",
+        "--no-audit",
+        "--no-install",
+        "--prefer-cached",
+        "--quiet",
+        "--silent",
+        "--verbose",
+        "--dry-run",
+    }
+)
+_BOOL_SHORT_FLAGS: frozenset[str] = frozenset(
+    {"-y", "-Y", "-q", "-Q", "-v", "-d", "-g", "-n", "-x", "-f"}
+)
+
+
 def _strip_cli_flags(install_source: str) -> str:
     """Keep command and positional args; drop flags and their values to avoid leaking secrets.
 
-    Short flags (-x): treated as boolean (skip flag only) when the next token looks
-    like a package specifier (starts with '@'); otherwise treated as value-taking
-    (skip flag AND next token) to avoid leaking secrets like '-k sk_live_...'.
-    Long flags with = (--flag=value) are dropped whole.
-    Long flags without = (--flag value) skip the flag and the next token (conservative).
+    Flags in _BOOL_LONG_FLAGS / _BOOL_SHORT_FLAGS are skipped without consuming the
+    next token.  Unknown flags default to value-taking (flag + next token both dropped).
+    Long flags with = (--flag=value) are dropped as a single token.
     """
     tokens = install_source.split()
     if not tokens:
@@ -721,13 +747,10 @@ def _strip_cli_flags(install_source: str) -> str:
             continue
         if t.startswith("-"):
             if t.startswith("--"):
-                if "=" not in t:
+                if "=" not in t and t not in _BOOL_LONG_FLAGS:
                     skip_next = True
             else:
-                # Short flag: boolean only if the next token is a package-like specifier
-                # (starts with '@'); otherwise treat as value-taking and skip next.
-                next_token = tokens[i + 1] if i + 1 < len(tokens) else ""
-                if not next_token.startswith("@"):
+                if t not in _BOOL_SHORT_FLAGS:
                     skip_next = True
             i += 1
             continue

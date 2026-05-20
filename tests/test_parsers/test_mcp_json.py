@@ -133,6 +133,33 @@ def test_remote_mcp_identity_keeps_non_default_ports():
     assert refs[0].component_identity == "mcp-remote/localhost:8080/mcp"
 
 
+def test_remote_mcp_identity_keeps_cross_scheme_ports():
+    """Ports that are non-default for their scheme must be retained.
+
+    https://host:443 strips :443 (default for https).
+    http://host:443 must keep :443 (non-default for http).
+    Same logic applies to port 80 on https."""
+    for url, expected in [
+        ("http://x.com:443/mcp", "mcp-remote/x.com:443/mcp"),
+        ("https://x.com:80/mcp", "mcp-remote/x.com:80/mcp"),
+    ]:
+        refs = parse_mcp_servers({"x": {"url": url}}, source_manifest="fake.json")
+        assert refs[0].component_identity == expected, url
+
+
+def test_remote_mcp_identity_preserves_ipv6_brackets():
+    """IPv6 host literals must be bracketed in the identity to avoid
+    collisions: '2001:db8::1:444/mcp' is ambiguous (is ':444' the port?),
+    but '[2001:db8::1]:444/mcp' is unambiguous."""
+    for url, expected in [
+        ("https://[2001:db8::1]:444/mcp", "mcp-remote/[2001:db8::1]:444/mcp"),
+        ("https://[2001:db8::1]/mcp", "mcp-remote/[2001:db8::1]/mcp"),
+        ("https://[2001:db8::1]:443/mcp", "mcp-remote/[2001:db8::1]/mcp"),
+    ]:
+        refs = parse_mcp_servers({"x": {"url": url}}, source_manifest="fake.json")
+        assert refs[0].component_identity == expected, url
+
+
 def test_remote_mcp_identity_normalizes_empty_path_to_slash():
     servers = {"x": {"url": "https://example.com"}}
     refs = parse_mcp_servers(servers, source_manifest="fake.json")

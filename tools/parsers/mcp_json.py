@@ -33,6 +33,8 @@ PYPI_AT_VERSION_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)@(?P<version>[^@\s]+
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 
+_SCHEME_DEFAULT_PORTS: dict[str, int] = {"http": 80, "https": 443}
+
 
 def _has_interpolation(spec: str) -> bool:
     return bool(INTERPOLATION_RE.search(spec))
@@ -415,7 +417,11 @@ def _normalize_remote_identity(url: str) -> str | None:
     except ValueError:
         # Malformed port like "https://x.com:notaport/" raises on access.
         return None
-    if port is not None and port not in (80, 443):
+    # Re-bracket IPv6 literals: urlparse's .hostname strips brackets, so
+    # "2001:db8::1" without them is ambiguous once a port is appended.
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None and port != _SCHEME_DEFAULT_PORTS.get(parsed.scheme):
         host = f"{host}:{port}"
     path = parsed.path or "/"
     return f"mcp-remote/{host}{path}"

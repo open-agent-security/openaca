@@ -639,6 +639,8 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
                 or prefix.startswith("claude-")
             ):
                 ident = ident[first_slash + 1 :]
+        if parent_plugin and ident.startswith(f"{parent_plugin}/"):
+            ident = ident[len(parent_plugin) + 1 :]
         return ident
     if ref.name:
         return ref.name
@@ -707,14 +709,23 @@ def _direct_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]
     return {k: v for k, v in by_cat.items() if v}
 
 
-def _plugin_name_from_identity(plugin_identity: str) -> str:
-    """Extract `<plugin>` from `claude-plugin/<plugin>[@version]`. Returns the
-    empty string when the identity doesn't match that shape."""
+def _plugin_name_from_identity(plugin_identity: str, marketplace: object = None) -> str:
+    """Extract plugin name from a Claude plugin identity.
+
+    Current identities include marketplace when known:
+    `claude-plugin/<marketplace>/<plugin>`. Older local refs may use
+    `claude-plugin/<plugin>`. Display-only attributed refs may append `@version`.
+    """
     if not plugin_identity.startswith("claude-plugin/"):
         return ""
     rest = plugin_identity[len("claude-plugin/") :]
     at = rest.rfind("@")
-    return rest if at < 0 else rest[:at]
+    last_slash = rest.rfind("/")
+    if at > last_slash:
+        rest = rest[:at]
+    if isinstance(marketplace, str) and marketplace and rest.startswith(f"{marketplace}/"):
+        return rest[len(marketplace) + 1 :]
+    return rest
 
 
 def _build_plugin_node(
@@ -724,7 +735,10 @@ def _build_plugin_node(
     use_color: bool,
 ) -> _TreeNode:
     sha = plugin_ref.extra.get("gitCommitSha")
-    sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
+    context: list[str] = []
+    if isinstance(sha, str) and sha:
+        context.append(f"sha: {sha[:8]}")
+    context_note = f" ({', '.join(context)})" if context else ""
     scope = plugin_ref.extra.get("scope")
     marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
     # Display identity includes version from ref.version (component_identity is
@@ -733,12 +747,13 @@ def _build_plugin_node(
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
-    header = f"{display_id}{sha_note} [scope={scope}]{marker}"
+    header = f"{display_id}{context_note} [scope={scope}]{marker}"
     root = _TreeNode(label=header)
 
-    # Derive `<plugin>` from `claude-plugin/<plugin>`; strip it from bundled
-    # command/agent/hook leaf labels so the leaf reads as `<name>` not `<plugin>/<name>`.
-    parent_plugin = _plugin_name_from_identity(plugin_identity)
+    # Derive `<plugin>` from `claude-plugin/<marketplace>/<plugin>`; strip it
+    # from bundled command/agent/hook leaf labels so the leaf reads as `<name>`
+    # not `<plugin>/<name>`.
+    parent_plugin = _plugin_name_from_identity(plugin_identity, plugin_ref.extra.get("marketplace"))
     # Bundled refs carry attributed_to = versioned identity; use display_id to match.
     categories = _bundled_categories(all_refs, display_id)
     tier2 = _tier2_summary(all_refs, display_id)

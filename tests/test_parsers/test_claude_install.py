@@ -21,7 +21,7 @@ def test_minimal_install_emits_one_plugin_component():
     ref = plugin_refs[0]
     assert ref.name == "sample-plugin"
     assert ref.version == "1.2.0"
-    assert ref.component_identity == "claude-plugin/sample-plugin"
+    assert ref.component_identity == "claude-plugin/test-marketplace/sample-plugin"
     assert ref.attributed_to is None  # plugin itself is direct
     assert ref.extra["gitCommitSha"] == "deadbeef1234"
     assert ref.extra["marketplace"] == "test-marketplace"
@@ -254,6 +254,7 @@ def test_install_handles_plugin_key_without_marketplace_suffix(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "orphan-plugin"
     assert refs[0].extra["marketplace"] is None
+    assert refs[0].component_identity == "claude-plugin/orphan-plugin"
 
 
 def test_install_scoped_plugin_key_parses_correctly(tmp_path):
@@ -275,7 +276,43 @@ def test_install_scoped_plugin_key_parses_correctly(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "@acme/tool"
     assert refs[0].extra["marketplace"] == "test-market"
-    assert refs[0].component_identity == "claude-plugin/@acme/tool"
+    assert refs[0].component_identity == "claude-plugin/test-market/@acme/tool"
+
+
+def test_install_same_plugin_name_different_marketplaces_have_distinct_identities(tmp_path):
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {
+                    "shared@market-one": True,
+                    "shared@market-two": True,
+                }
+            }
+        )
+    )
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "shared@market-one": [
+                        {"scope": "user", "version": "1.0.0", "installPath": "/x"}
+                    ],
+                    "shared@market-two": [
+                        {"scope": "user", "version": "1.0.0", "installPath": "/y"}
+                    ],
+                },
+            }
+        )
+    )
+    refs, warnings = parse_install(install_root=tmp_path)
+    assert warnings == []
+    identities = {r.component_identity for r in refs if r.extra.get("component_type") == "plugin"}
+    assert identities == {
+        "claude-plugin/market-one/shared",
+        "claude-plugin/market-two/shared",
+    }
 
 
 def test_install_warns_on_non_object_plugins_map(tmp_path):
@@ -400,7 +437,7 @@ def test_install_walks_bundled_skill(tmp_path):
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
-    assert skill_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert skill_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_bundled_skill_carries_container_metadata(tmp_path):
@@ -443,7 +480,7 @@ def test_install_walks_bundled_hooks(tmp_path):
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PreToolUse"
     assert hook_refs[0].extra["index"] == 0
-    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert hook_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_walks_bundled_commands_and_agents(tmp_path):
@@ -459,7 +496,7 @@ def test_install_walks_bundled_commands_and_agents(tmp_path):
     agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert len(cmd_refs) == 1
     assert cmd_refs[0].component_identity == "claude-command/superpowers/deploy"
-    assert cmd_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert cmd_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
     assert len(agent_refs) == 1
     assert agent_refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
 
@@ -476,7 +513,7 @@ def test_install_walks_bundled_default_mcp(tmp_path):
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "@x/y"
     assert npm_refs[0].version == "1.0.0"
-    assert npm_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert npm_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_walks_plugin_json_inline_mcp_servers(tmp_path):
@@ -498,7 +535,7 @@ def test_install_walks_plugin_json_inline_mcp_servers(tmp_path):
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "@a/b"
-    assert npm_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert npm_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_does_not_double_emit_when_plugin_json_points_at_default_mcp(tmp_path):
@@ -537,7 +574,7 @@ def test_install_walks_dependencies_from_plugin_json(tmp_path):
         if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
     ]
     assert len(dep_refs) == 1
-    assert dep_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert dep_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_direct_mcp_from_user_settings(tmp_path):
@@ -714,7 +751,7 @@ def test_install_walks_inline_plugin_json_hooks(tmp_path):
     assert len(hook_refs) == 1
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PostToolUse"
-    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert hook_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
     assert hook_refs[0].source_manifest.endswith("plugin.json")
 
 
@@ -813,7 +850,7 @@ def test_install_emits_npm_lockfile_refs_for_active_plugin(tmp_path):
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "lodash"
     assert npm_refs[0].version == "4.17.20"
-    assert npm_refs[0].attributed_to == "claude-plugin/webp@1.0.0"
+    assert npm_refs[0].attributed_to == "claude-plugin/m/webp@1.0.0"
     assert npm_refs[0].extra["transitive"] is True
 
 
@@ -832,7 +869,7 @@ def test_install_falls_back_to_package_json_when_no_lockfile(tmp_path):
     assert npm_refs[0].name == "lodash"
     assert npm_refs[0].extra.get("transitive") is False
     assert "no npm lockfile" in (npm_refs[0].extra.get("fallback_reason") or "")
-    assert npm_refs[0].attributed_to == "claude-plugin/webp@1.0.0"
+    assert npm_refs[0].attributed_to == "claude-plugin/m/webp@1.0.0"
 
 
 def test_install_parses_both_npm_and_pypi_lockfiles_per_plugin(tmp_path):
@@ -1033,7 +1070,7 @@ def test_install_walks_custom_commands_path_from_plugin_json(tmp_path):
     refs, _ = parse_install(install_root=tmp_path)
     cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert any(r.component_identity == "claude-command/superpowers/deploy" for r in cmd_refs)
-    assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in cmd_refs)
+    assert all(r.attributed_to == "claude-plugin/m/superpowers@5.1.0" for r in cmd_refs)
 
 
 def test_install_walks_default_and_custom_commands_paths_together(tmp_path):
@@ -1137,7 +1174,7 @@ def test_install_walks_string_path_hooks_from_plugin_json(tmp_path):
     assert len(hook_refs) == 1
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PreToolUse"
-    assert hook_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert hook_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
 def test_install_string_path_hooks_dedupes_against_default(tmp_path):

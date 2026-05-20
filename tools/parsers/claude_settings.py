@@ -2,7 +2,9 @@
 
 `enabledPlugins` keys are `<plugin-name>@<marketplace>` (not `<plugin>@<version>`)
 — settings doesn't carry version information. Refs are emitted with
-`component_type="plugin"` + `name=<plugin-name>` + `version=None`.
+`component_type="plugin"` + `name=<plugin-name>` + `version=None`, and the
+logical identity includes marketplace when present:
+`claude-plugin/<marketplace>/<plugin-name>`.
 Source ecosystem is unknown at settings scope; endpoint mode resolves versions
 through `installed_plugins.json`.
 
@@ -30,10 +32,10 @@ def parse(path: Path) -> list[ComponentRef]:
     for plugin_spec, is_enabled in enabled.items():
         if is_enabled is not True:
             continue
-        plugin_name = _split_plugin_name(plugin_spec)
+        plugin_name, marketplace = _split_plugin_spec(plugin_spec)
         if not plugin_name:
             continue
-        identity = f"claude-plugin/{plugin_name}"
+        identity = _plugin_identity(plugin_name, marketplace)
         refs.append(
             ComponentRef(
                 name=plugin_name,
@@ -41,21 +43,27 @@ def parse(path: Path) -> list[ComponentRef]:
                 component_identity=identity,
                 source_manifest=str(path),
                 source_locator=f"$.enabledPlugins[{plugin_spec!r}]",
-                extra={"component_type": "plugin"},
+                extra={"component_type": "plugin", "marketplace": marketplace},
             )
         )
     return refs
 
 
-def _split_plugin_name(spec: str) -> str:
-    """Strip the `@<marketplace>` suffix from a plugin spec; return name only.
+def _split_plugin_spec(spec: str) -> tuple[str, str | None]:
+    """Return `(name, marketplace)` from a settings plugin spec.
 
     Uses rsplit so scoped names like `@scope/plugin@market` parse correctly:
-    `@scope/plugin@market` → name=`@scope/plugin`.
+    `@scope/plugin@market` → name=`@scope/plugin`, marketplace=`market`.
     """
     if not isinstance(spec, str) or not spec:
-        return ""
+        return "", None
     if "@" in spec:
-        name, _ = spec.rsplit("@", 1)
-        return name
-    return spec
+        name, marketplace = spec.rsplit("@", 1)
+        return name, marketplace or None
+    return spec, None
+
+
+def _plugin_identity(plugin_name: str, marketplace: str | None) -> str:
+    if marketplace:
+        return f"claude-plugin/{marketplace}/{plugin_name}"
+    return f"claude-plugin/{plugin_name}"

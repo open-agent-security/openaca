@@ -1,7 +1,7 @@
 {
   "enabledPlugins": {
-    "deployment-tools@1.2.0": true,
-    "anthropics/dev-tools@2.0.1": true,
+    "deployment-tools@test-market": true,
+    "anthropics/dev-tools@test-market": true,
     "experimental@unstable": false
   }
 }

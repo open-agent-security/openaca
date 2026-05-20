@@ -290,8 +290,8 @@ loaded 6 OpenACA overlay(s)
 loaded 1 OSV advisory record(s)
 detected config_dir=/Users/.../.claude (mode=endpoint)
 resolved 14 active plugin(s):
-  claude-plugin/supabase@0.1.6 (sha: <short>) [scope=user]
-  claude-plugin/superpowers@5.1.0 (sha: <short>) [scope=user]
+  claude-plugin/claude-plugins-official/supabase@0.1.6 (sha: <short>) [scope=user]
+  claude-plugin/claude-plugins-official/superpowers@5.1.0 (sha: <short>) [scope=user]
   ...
 ```
 
@@ -364,9 +364,9 @@ ecosystem such as `npm`, `PyPI`, or `github`.
 | `package.json` | npm dependencies (deps + devDeps) | `pkg:npm/<name>@<version>` |
 | `pyproject.toml` | PEP 621 deps, optional-deps, PEP 735 dependency-groups | `pkg:pypi/<name>@<version>` |
 | `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL when pinned; `mcp-stdio/...` otherwise |
-| `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>@<version>` |
+| `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>` |
 | `.claude/settings.json` | Enabled-plugin enumeration; direct `mcpServers`; direct `hooks` per scope | mixed (see surface-specific rows) |
-| `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
+| `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<marketplace>/<name>` when marketplace is known |
 | `SKILL.md` (`.claude/skills/*/` or `<plugin>/skills/*/`) | Agent skills | `skill/<name>[@<metadata.version>]` |
 | `hooks/hooks.json` (plugin) or `settings.json.hooks` (direct) | Hook entries by event + index | `claude-hook/<plugin>/<event>/<i>` (bundled) or `claude-hook/settings/<scope>/<event>/<i>` (direct) |
 | `.claude/commands/*.md` and `<plugin>/commands/*.md` | Slash commands | `claude-command/<owner>/<name>` (owner = plugin or `repo`) |

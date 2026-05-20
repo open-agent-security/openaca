@@ -18,6 +18,7 @@ overlay schema in this plan.
   `skill` and `claude-plugin` no longer match source-less components.
 - [x] Update parsers to set `extra.component_type` and leave `ecosystem` unset
   for source-less agent components.
+- [x] Include Claude plugin marketplace in plugin component identity when known.
 - [x] Update render/finding output to categorize by `component_type` and avoid
   source identity for source-less refs.
 - [x] Update matcher to use source ecosystems for package advisories and

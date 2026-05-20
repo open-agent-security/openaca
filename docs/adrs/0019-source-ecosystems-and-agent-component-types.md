@@ -51,6 +51,15 @@ agent component types such as `skill`, `claude-plugin`, `claude-hook`,
 unknown, the parser should leave `ecosystem` unset, keep a logical
 `component_identity`, and set `extra.component_type`.
 
+Logical identities should include the namespace needed to distinguish runtime
+objects that the host can install or enable separately. For Claude plugins, the
+marketplace is part of that namespace because Claude keys installed plugins as
+`<plugin>@<marketplace>` and two marketplaces can provide the same plugin name.
+Use `claude-plugin/<marketplace>/<name>` when marketplace is known,
+and `claude-plugin/<name>` only when marketplace is unavailable. Plugin version
+remains in `ComponentRef.version`; versioned display strings and
+`attributed_to` values may append `@<version>` for observation-level reporting.
+
 Matching order:
 
 1. If a ref has source identity (`ecosystem`, `name`, and optionally `version`),

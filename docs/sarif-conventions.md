@@ -8,7 +8,7 @@ downstream users.
 
 | Key | Type | Values | Set when |
 |---|---|---|---|
-| `attributed_to` | string \| absent | `"claude-plugin/<name>@<version>"` | The component was discovered via an active plugin's installPath (ADR-0006). Absent for direct components declared in settings, repo manifests, or host repo lockfiles. |
+| `attributed_to` | string \| absent | `"claude-plugin/<marketplace>/<name>@<version>"` | The component was discovered via an active plugin's installPath (ADR-0006). Absent for direct components declared in settings, repo manifests, or host repo lockfiles. |
 | `coverage` | string \| absent | `"transitive"` \| `"direct-only"` | Tier-2 implementation-dep findings. `"transitive"` when the ref came from a lockfile; `"direct-only"` when it came from a manifest fallback (no lockfile for that ecosystem). Absent on Tier-1 inventory findings (ADR-0007, ADR-0008). |
 | `transitive` | bool \| absent | `true` \| `false` | Bool mirror of `coverage` for easier downstream parsing. Absent when `coverage` is absent. |
 | `source` | string \| absent | `"osv.dev"` | The matched vulnerability record's provenance. V0 package vulnerability records come from OSV.dev. |
@@ -29,7 +29,7 @@ or changing semantics requires a superseding ADR.
   "message": { "text": "lodash@4.17.20 matches GHSA-FAKE-LODASH" },
   "locations": [/* ... */],
   "properties": {
-    "attributed_to": "claude-plugin/superpowers@5.1.0",
+    "attributed_to": "claude-plugin/claude-plugins-official/superpowers@5.1.0",
     "coverage": "transitive",
     "transitive": true,
     "source": "osv.dev",

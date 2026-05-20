@@ -35,18 +35,21 @@ def component_name_for(ref: ComponentRef) -> str:
 
 def source_for(ref: ComponentRef) -> dict[str, Any]:
     source: dict[str, Any] = {}
+    extra_source = (ref.extra or {}).get("source")
+    if isinstance(extra_source, dict):
+        source.update({k: v for k, v in extra_source.items() if v is not None})
+
+    has_source_identity = bool(ref.ecosystem or ref.purl or source)
     if ref.ecosystem:
         source["ecosystem"] = ref.ecosystem
     if ref.purl:
         source["purl"] = ref.purl
-    if ref.name:
+    if has_source_identity and ref.name:
         source["name"] = ref.name
-    if ref.version:
+    if has_source_identity and ref.version:
         source["version"] = ref.version
-
-    extra_source = (ref.extra or {}).get("source")
-    if isinstance(extra_source, dict):
-        source.update({k: v for k, v in extra_source.items() if v is not None})
+    if not source:
+        source["status"] = "unknown"
     return source
 
 

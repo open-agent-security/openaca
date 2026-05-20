@@ -92,7 +92,6 @@ def test_mutable_install_emits_standards_block_with_cwe_scorecard_slsa(tmp_path)
 
 def test_unversioned_plugin_without_commit_sha_is_flagged():
     ref = ComponentRef(
-        ecosystem="claude-plugin",
         name="feature-dev",
         version="unknown",
         component_identity="claude-plugin/feature-dev@unknown",
@@ -117,7 +116,6 @@ def test_unversioned_plugin_without_commit_sha_is_flagged():
 
 def test_unversioned_plugin_with_commit_sha_is_not_flagged():
     ref = ComponentRef(
-        ecosystem="claude-plugin",
         name="reboot-chat-app",
         version="unknown",
         component_identity="claude-plugin/reboot-chat-app@unknown",

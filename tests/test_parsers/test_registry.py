@@ -58,5 +58,5 @@ def test_dep_manifest_co_located_with_plugin_classified_as_agent_dep(tmp_path):
     npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
     assert npm_scopes == {"agent-dependency"}
     # The plugin self-identity ref stays agent-component (unchanged path).
-    cp_scopes = {r.scope for r in refs if r.ecosystem == "claude-plugin"}
+    cp_scopes = {r.scope for r in refs if r.extra.get("component_type") == "plugin"}
     assert cp_scopes == {"agent-component"}

@@ -81,6 +81,17 @@ def default_overlays_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "overlays"
 
 
+def _component_type(ref: ComponentRef) -> str:
+    value = (ref.extra or {}).get("component_type")
+    return value if isinstance(value, str) and value else "component"
+
+
+def _is_plugin_ref(ref: ComponentRef) -> bool:
+    return _component_type(ref) == "plugin" and bool(
+        ref.component_identity and ref.component_identity.startswith("claude-plugin/")
+    )
+
+
 def _component_label(ref: ComponentRef) -> str:
     """Human-readable identifier for a component, preferring PURL form."""
     purl = ref.purl
@@ -107,9 +118,9 @@ def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
     """Render the verbose pre-query summary for OSV.dev matching.
 
     Two parts: the queried PURL list (what was actually sent) and a count
-    of skipped refs bucketed by ecosystem (so users can see what wasn't
-    queried and why — OpenACA-native ecosystems and identity-only refs have
-    no PURL; OSV.dev wouldn't have records for them).
+    of skipped refs bucketed by source ecosystem or component type, so users
+    can see what was not queried and why. Source-less agent components have
+    no PURL; OSV.dev would not have records for them.
     """
     queried = collect_target_purls(refs)
     lines: list[str] = []
@@ -123,7 +134,7 @@ def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
     for r in refs:
         if is_queryable(r):
             continue
-        eco = r.ecosystem or "<no-ecosystem>"
+        eco = r.ecosystem or _component_type(r)
         skipped_by_eco[eco] = skipped_by_eco.get(eco, 0) + 1
     if skipped_by_eco:
         parts = ", ".join(f"{k}={v}" for k, v in sorted(skipped_by_eco.items()))
@@ -602,7 +613,7 @@ def endpoint(
         posture_findings = run_posture_rules(refs, manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
-    plugin_count = sum(1 for r in refs if r.ecosystem == "claude-plugin")
+    plugin_count = sum(1 for r in refs if _is_plugin_ref(r))
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)

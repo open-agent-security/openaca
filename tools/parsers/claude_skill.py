@@ -50,13 +50,13 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
         identity = f"{identity}@{version}"
     return [
         ComponentRef(
-            ecosystem="skill",
             name=name,
             version=version,
             component_identity=identity,
             source_manifest=str(skill_md_path),
             source_locator="$.frontmatter",
             attributed_to=attributed_to,
+            extra={"component_type": "skill"},
         )
     ]
 

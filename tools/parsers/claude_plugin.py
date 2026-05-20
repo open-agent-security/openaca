@@ -40,17 +40,14 @@ def parse(path: Path) -> list[ComponentRef]:
         identity = f"claude-plugin/{name}"
         if version:
             identity = f"{identity}@{version}"
-        # Tag with ecosystem="claude-plugin" so the matcher's _match_versioned
-        # path fires on plugin advisories. component_identity stays for
-        # backwards-compatible identity reporting.
         refs.append(
             ComponentRef(
-                ecosystem="claude-plugin",
                 name=name,
                 version=version,
                 component_identity=identity,
                 source_manifest=str(path),
                 source_locator="$",
+                extra={"component_type": "plugin"},
             )
         )
 

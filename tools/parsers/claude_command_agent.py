@@ -52,13 +52,12 @@ def parse_file(
         f"{ecosystem}/{scope_owner}/{name}" if scope_owner is not None else f"{ecosystem}/{name}"
     )
     parent = ComponentRef(
-        ecosystem=ecosystem,
         name=name,
         component_identity=identity,
         source_manifest=str(md_path),
         source_locator="$",
         attributed_to=attributed_to,
-        extra={"scope_owner": scope_owner},
+        extra={"scope_owner": scope_owner, "component_type": kind},
     )
     refs = [parent]
     if kind == "agent" and scope_owner is None:

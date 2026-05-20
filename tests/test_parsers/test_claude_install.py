@@ -16,7 +16,7 @@ def test_minimal_install_emits_one_plugin_component():
     refs, warnings = parse_install(install_root=FIXTURES / "minimal")
     assert warnings == []
 
-    plugin_refs = [r for r in refs if r.ecosystem == "claude-plugin"]
+    plugin_refs = [r for r in refs if r.extra.get("component_type") == "plugin"]
     assert len(plugin_refs) == 1
     ref = plugin_refs[0]
     assert ref.name == "sample-plugin"
@@ -397,7 +397,7 @@ def test_install_walks_bundled_skill(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    skill_refs = [r for r in refs if r.ecosystem == "skill"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
     assert skill_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
@@ -414,7 +414,7 @@ def test_install_bundled_skill_carries_container_metadata(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    skill = next(r for r in refs if r.ecosystem == "skill")
+    skill = next(r for r in refs if r.extra.get("component_type") == "skill")
     assert skill.extra["declared_by"]["kind"] == "plugin"
     assert skill.extra["declared_by"]["name"] == "superpowers"
     assert skill.extra["component_path"][0] == {"type": "plugin", "name": "superpowers"}
@@ -438,7 +438,7 @@ def test_install_walks_bundled_hooks(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
     assert len(hook_refs) == 1
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PreToolUse"
@@ -455,8 +455,8 @@ def test_install_walks_bundled_commands_and_agents(tmp_path):
     (install_path / "agents").mkdir()
     (install_path / "agents" / "code-reviewer.md").write_text("reviewer body\n")
     refs, _ = parse_install(install_root=tmp_path)
-    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
-    agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
+    cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
+    agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert len(cmd_refs) == 1
     assert cmd_refs[0].component_identity == "claude-command/superpowers/deploy"
     assert cmd_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
@@ -567,7 +567,7 @@ def test_install_direct_hooks_per_scope_emit_distinct_identities(tmp_path):
     )
     refs, _ = parse_install(install_root=tmp_path, project_root=project)
     hook_refs = sorted(
-        (r for r in refs if r.ecosystem == "claude-hook"),
+        (r for r in refs if r.extra.get("component_type") == "hook"),
         key=lambda r: r.component_identity or "",
     )
     assert len(hook_refs) == 2
@@ -587,7 +587,7 @@ def test_install_direct_hooks_repo_mode_excludes_local(tmp_path):
         json.dumps({"hooks": {"PreToolUse": [{"type": "command", "command": "echo local"}]}})
     )
     refs, _ = parse_install(install_root=tmp_path, project_root=project, mode="repo")
-    assert all(r.ecosystem != "claude-hook" for r in refs)
+    assert all(r.extra.get("component_type") != "hook" for r in refs)
 
 
 def test_install_direct_skills_from_install_root_skills_dir(tmp_path):
@@ -596,7 +596,7 @@ def test_install_direct_skills_from_install_root_skills_dir(tmp_path):
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nname: linter\ndescription: lints code\n---\nbody\n")
     refs, _ = parse_install(install_root=tmp_path)
-    skill_refs = [r for r in refs if r.ecosystem == "skill"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "linter"
     assert skill_refs[0].attributed_to is None
@@ -710,7 +710,7 @@ def test_install_walks_inline_plugin_json_hooks(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
     assert len(hook_refs) == 1
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PostToolUse"
@@ -748,7 +748,7 @@ def test_install_emits_both_file_and_inline_plugin_hooks(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
     hook_refs = sorted(
-        (r for r in refs if r.ecosystem == "claude-hook"),
+        (r for r in refs if r.extra.get("component_type") == "hook"),
         key=lambda r: r.component_identity or "",
     )
     assert len(hook_refs) == 2
@@ -781,11 +781,11 @@ def test_install_silent_when_installpath_missing(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    plugin_refs = [r for r in refs if r.ecosystem == "claude-plugin"]
+    plugin_refs = [r for r in refs if r.extra.get("component_type") == "plugin"]
     assert len(plugin_refs) == 1
     # No bundled refs.
-    assert all(r.ecosystem != "skill" for r in refs)
-    assert all(r.ecosystem != "claude-hook" for r in refs)
+    assert all(r.extra.get("component_type") != "skill" for r in refs)
+    assert all(r.extra.get("component_type") != "hook" for r in refs)
 
 
 # Plan 009 Task 4: Tier-2 endpoint-mode dispatch (lockfile + manifest fallback).
@@ -908,7 +908,7 @@ def test_install_include_transitive_false_skips_lockfile_and_manifest(tmp_path):
     (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\nbody\n")
     refs, _ = parse_install(install_root=tmp_path, include_transitive=False)
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
-    skill_refs = [r for r in refs if r.ecosystem == "skill"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert npm_refs == []
     assert len(skill_refs) == 1  # Tier-1 still emitted
 
@@ -1031,7 +1031,7 @@ def test_install_walks_custom_commands_path_from_plugin_json(tmp_path):
     (custom_dir / "deploy.md").write_text("body\n")
     _write_plugin_json(install_path, {"commands": "./tools/cmds/"})
     refs, _ = parse_install(install_root=tmp_path)
-    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert any(r.component_identity == "claude-command/superpowers/deploy" for r in cmd_refs)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in cmd_refs)
 
@@ -1049,7 +1049,7 @@ def test_install_walks_default_and_custom_commands_paths_together(tmp_path):
     (custom_dir / "release.md").write_text("body\n")
     _write_plugin_json(install_path, {"commands": "./tools/cmds/"})
     refs, _ = parse_install(install_root=tmp_path)
-    cmd_names = sorted(r.name or "" for r in refs if r.ecosystem == "claude-command")
+    cmd_names = sorted(r.name or "" for r in refs if r.extra.get("component_type") == "command")
     assert cmd_names == ["deploy", "release"]
 
 
@@ -1062,7 +1062,7 @@ def test_install_dedupes_custom_commands_equal_to_default(tmp_path):
     (install_path / "commands" / "deploy.md").write_text("body\n")
     _write_plugin_json(install_path, {"commands": "./commands/"})
     refs, _ = parse_install(install_root=tmp_path)
-    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert len(cmd_refs) == 1
 
 
@@ -1075,7 +1075,7 @@ def test_install_walks_custom_agents_path_from_plugin_json(tmp_path):
     (custom_dir / "reviewer.md").write_text("body\n")
     _write_plugin_json(install_path, {"agents": "./tools/ag/"})
     refs, _ = parse_install(install_root=tmp_path)
-    agent_refs = [r for r in refs if r.ecosystem == "claude-agent"]
+    agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert any(r.component_identity == "claude-agent/superpowers/reviewer" for r in agent_refs)
 
 
@@ -1092,7 +1092,7 @@ def test_install_walks_custom_skills_path_from_plugin_json(tmp_path):
     )
     _write_plugin_json(install_path, {"skills": "./skills/"})
     refs, _ = parse_install(install_root=tmp_path)
-    skill_refs = [r for r in refs if r.ecosystem == "skill"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
 
@@ -1112,7 +1112,7 @@ def test_install_walks_custom_skills_path_distinct_from_default(tmp_path):
     (custom_root / "beta" / "SKILL.md").write_text("---\nname: beta\ndescription: y\n---\n")
     _write_plugin_json(install_path, {"skills": "./extras/skills/"})
     refs, _ = parse_install(install_root=tmp_path)
-    skill_names = sorted(r.name or "" for r in refs if r.ecosystem == "skill")
+    skill_names = sorted(r.name or "" for r in refs if r.extra.get("component_type") == "skill")
     assert skill_names == ["alpha", "beta"]
 
 
@@ -1133,7 +1133,7 @@ def test_install_walks_string_path_hooks_from_plugin_json(tmp_path):
     )
     _write_plugin_json(install_path, {"hooks": "./custom-hooks.json"})
     refs, _ = parse_install(install_root=tmp_path)
-    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
     assert len(hook_refs) == 1
     assert (hook_refs[0].component_identity or "").startswith("claude-hook/command:")
     assert hook_refs[0].extra["event"] == "PreToolUse"
@@ -1158,7 +1158,7 @@ def test_install_string_path_hooks_dedupes_against_default(tmp_path):
     )
     _write_plugin_json(install_path, {"hooks": "./hooks/hooks.json"})
     refs, _ = parse_install(install_root=tmp_path)
-    hook_refs = [r for r in refs if r.ecosystem == "claude-hook"]
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
     assert len(hook_refs) == 1
 
 
@@ -1174,5 +1174,5 @@ def test_install_rejects_custom_path_traversal(tmp_path):
     (sibling / "evil.md").write_text("body\n")
     _write_plugin_json(install_path, {"commands": "../outside/"})
     refs, _ = parse_install(install_root=tmp_path)
-    cmd_refs = [r for r in refs if r.ecosystem == "claude-command"]
+    cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert cmd_refs == []

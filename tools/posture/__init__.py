@@ -111,7 +111,7 @@ def collect_endpoint_mcp_manifests(
     """
     roots: list[Path] = []
     for ref in refs:
-        if ref.ecosystem != "claude-plugin":
+        if (ref.extra or {}).get("component_type") != "plugin":
             continue
         install_path = ref.extra.get("installPath")
         if isinstance(install_path, str) and install_path:

@@ -354,9 +354,12 @@ general-purpose SCA scanner instead. A non-empty repo with only
 software-dependency refs produces an explicit footer rather than a
 silent "no findings."
 
-Per-parser detail:
+Per-parser detail. Rows such as `claude-plugin/...`, `skill/...`, and
+`claude-hook/...` are logical component identities; source identity is separate
+and remains unknown unless the manifest or lock entry provides a source
+ecosystem such as `npm`, `PyPI`, or `github`.
 
-| Manifest | Detects | Identifier emitted |
+| Manifest | Detects | Component/source identifier emitted |
 |---|---|---|
 | `package.json` | npm dependencies (deps + devDeps) | `pkg:npm/<name>@<version>` |
 | `pyproject.toml` | PEP 621 deps, optional-deps, PEP 735 dependency-groups | `pkg:pypi/<name>@<version>` |

@@ -39,15 +39,14 @@ _UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
     "mcp-stdio/uvx-unpinned:": "PyPI",
 }
 
-# Ecosystems with no version semantics in V0 — matched on component_identity only (ADR-0007 §3).
-_IDENTITY_ONLY_ECOSYSTEMS: frozenset[str] = frozenset(
-    {"claude-hook", "claude-command", "claude-agent"}
-)
-
-_ECOSYSTEM_ALIASES: dict[str, frozenset[str]] = {
-    "skill": frozenset({"skill", "claude-skill"}),
-    "claude-skill": frozenset({"skill", "claude-skill"}),
+_LEGACY_COMPONENT_ECOSYSTEMS: dict[str, str] = {
+    "skill": "skill",
+    "claude-skill": "skill",
+    "claude-plugin": "plugin",
 }
+_NON_SOURCE_ECOSYSTEMS: frozenset[str] = frozenset(
+    {"claude-hook", "claude-command", "claude-agent", *_LEGACY_COMPONENT_ECOSYSTEMS}
+)
 
 
 @dataclass(frozen=True)
@@ -117,31 +116,19 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
     return None
 
 
-def _ecosystems_match(ref_ecosystem: Optional[str], advisory_ecosystem: object) -> bool:
-    if not isinstance(advisory_ecosystem, str):
-        return False
-    if ref_ecosystem == advisory_ecosystem:
-        return True
-    return advisory_ecosystem in _ECOSYSTEM_ALIASES.get(ref_ecosystem or "", frozenset())
-
-
 def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
-    # Identity-only ecosystems must be routed before the ecosystem+name check
-    # because their parsers populate both fields (for inventory) but have no
-    # version semantics — routing to _match_versioned would produce false
-    # matches by name alone, ignoring the identity's owner/scope (ADR-0007 §3).
-    if ref.ecosystem in _IDENTITY_ONLY_ECOSYSTEMS:
-        if ref.component_identity:
-            return _match_by_identity(ref, advisories)
-        return []
-    if ref.ecosystem and ref.name:
+    if ref.ecosystem and ref.name and ref.ecosystem not in _NON_SOURCE_ECOSYSTEMS:
         return _match_versioned(ref, advisories)
+
+    findings: list[Finding] = []
     if ref.component_identity:
         pkg = _unpinned_identity_to_package(ref.component_identity)
         if pkg is not None:
-            return _match_unpinned(ref, pkg, advisories)
-        return _match_by_identity(ref, advisories)
-    return []
+            findings.extend(_match_unpinned(ref, pkg, advisories))
+        else:
+            findings.extend(_match_by_identity(ref, advisories))
+    findings.extend(_match_legacy_component_type(ref, advisories))
+    return findings
 
 
 def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
@@ -175,10 +162,7 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
     for advisory in advisories:
         for entry in advisory.get("affected") or []:
             pkg = entry.get("package") or {}
-            if (
-                not _ecosystems_match(ref.ecosystem, pkg.get("ecosystem"))
-                or pkg.get("name") != ref.name
-            ):
+            if pkg.get("ecosystem") != ref.ecosystem or pkg.get("name") != ref.name:
                 continue
             if parsed is None:
                 findings.append(
@@ -201,6 +185,57 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
                         component=ref,
                         confidence="high",
                         reason=f"{ref.name}@{ref.version} matches {advisory['id']}",
+                        attributed_to=ref.attributed_to,
+                    )
+                )
+                break
+    return findings
+
+
+def _component_type(ref: ComponentRef) -> Optional[str]:
+    value = (ref.extra or {}).get("component_type")
+    return value if isinstance(value, str) and value else None
+
+
+def _match_legacy_component_type(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+    component_type = _component_type(ref)
+    if component_type is None or ref.name is None:
+        return []
+    findings: list[Finding] = []
+    parsed = _parse_version(ref.version)
+    for advisory in advisories:
+        for entry in advisory.get("affected") or []:
+            pkg = entry.get("package") or {}
+            ecosystem = pkg.get("ecosystem")
+            legacy_type = (
+                _LEGACY_COMPONENT_ECOSYSTEMS.get(ecosystem) if isinstance(ecosystem, str) else None
+            )
+            if legacy_type != component_type or pkg.get("name") != ref.name:
+                continue
+            if parsed is None:
+                findings.append(
+                    Finding(
+                        advisory_id=advisory["id"],
+                        component=ref,
+                        confidence="low",
+                        reason=(
+                            f"{component_type}:{ref.name}@{ref.version!r} has no "
+                            f"source ecosystem version to verify against {advisory['id']}"
+                        ),
+                        attributed_to=ref.attributed_to,
+                    )
+                )
+                break
+            if any(_in_range(parsed, r.get("events") or []) for r in entry.get("ranges") or []):
+                findings.append(
+                    Finding(
+                        advisory_id=advisory["id"],
+                        component=ref,
+                        confidence="high",
+                        reason=(
+                            f"legacy {pkg.get('ecosystem')} advisory matches "
+                            f"{component_type}:{ref.name}@{ref.version}"
+                        ),
                         attributed_to=ref.attributed_to,
                     )
                 )

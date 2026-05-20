@@ -1,4 +1,4 @@
-"""Tests for the SKILL.md parser (generic skill ecosystem).
+"""Tests for the SKILL.md parser (generic skill component type).
 
 Per the canonical Agent Skills spec at agentskills.io/specification: six
 top-level frontmatter fields (`name`, `description`, `license`,
@@ -30,7 +30,8 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     refs = parse(path)
     assert len(refs) == 1
     ref = refs[0]
-    assert ref.ecosystem == "skill"
+    assert ref.ecosystem is None
+    assert ref.extra["component_type"] == "skill"
     assert ref.name == "bootstrap-project"
     assert ref.version == "1.2.3"
     assert ref.component_identity == "skill/bootstrap-project@1.2.3"

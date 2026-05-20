@@ -58,7 +58,8 @@ def test_parse_plugin_hooks_emits_one_ref_per_event_index(tmp_path):
     assert pre1.extra["matcher"] == "Bash"
     # source_locator carries the JSON path.
     assert pre1.source_locator == "$.hooks.PreToolUse[1]"
-    assert pre1.ecosystem == "claude-hook"
+    assert pre1.ecosystem is None
+    assert pre1.extra["component_type"] == "hook"
 
 
 def test_parse_plugin_hooks_handles_missing_matcher(tmp_path):
@@ -200,7 +201,7 @@ def test_parse_plugin_hooks_inline_emits_refs_with_plugin_identity():
     assert all(identity.startswith("claude-hook/command:") for identity in identities)
     assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
     assert all(r.source_manifest == "/fake/plugin.json" for r in refs)
-    assert all(r.ecosystem == "claude-hook" for r in refs)
+    assert all(r.extra.get("component_type") == "hook" for r in refs)
 
 
 def test_same_hook_payload_has_same_identity_across_locations(tmp_path):

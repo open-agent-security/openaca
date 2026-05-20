@@ -232,9 +232,10 @@ def test_sarif_omits_coverage_for_tier1_findings():
     """Tier-1 inventory findings (extra without `transitive`) have no
     coverage/transitive properties."""
     ref = ComponentRef(
-        ecosystem="skill",
         name="vulnerable-skill",
         version="0.9.0",
+        component_identity="skill/vulnerable-skill@0.9.0",
+        extra={"component_type": "skill"},
     )
     finding = Finding(
         advisory_id="CVE-2026-9001",

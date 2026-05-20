@@ -540,16 +540,40 @@ def render_json(
 _TREE_UNICODE = {"branch": "├── ", "last": "└── ", "vert": "│   ", "space": "    "}
 _TREE_ASCII = {"branch": "|-- ", "last": "`-- ", "vert": "|   ", "space": "    "}
 
-# Bundled-component ecosystem → category label mapping. Order matters: the
-# tree renders categories in this declared order so all plugins read the same
-# way (MCPs first, agents last).
+# Bundled component type → category label mapping. Order matters: the tree
+# renders categories in this declared order so all plugins read the same way
+# (MCPs first, agents last).
 _TREE_CATEGORIES: tuple[tuple[str, set[str]], ...] = (
-    ("MCPs", {"npm", "PyPI"}),
-    ("skills", {"skill", "claude-skill"}),
-    ("hooks", {"claude-hook"}),
-    ("commands", {"claude-command"}),
-    ("agents", {"claude-agent"}),
+    ("MCPs", {"mcp_server"}),
+    ("skills", {"skill"}),
+    ("hooks", {"hook"}),
+    ("commands", {"command"}),
+    ("agents", {"agent"}),
 )
+
+_LEGACY_ECOSYSTEM_COMPONENT_TYPES = {
+    "skill": "skill",
+    "claude-skill": "skill",
+    "claude-hook": "hook",
+    "claude-command": "command",
+    "claude-agent": "agent",
+    "claude-plugin": "plugin",
+}
+
+
+def _component_type_for_tree(ref: ComponentRef) -> str:
+    value = ref.extra.get("component_type")
+    if isinstance(value, str) and value:
+        return value
+    if ref.ecosystem in {"npm", "PyPI"}:
+        return "mcp_server"
+    return _LEGACY_ECOSYSTEM_COMPONENT_TYPES.get(ref.ecosystem or "", "component")
+
+
+def _is_plugin_ref(ref: ComponentRef) -> bool:
+    return _component_type_for_tree(ref) == "plugin" and bool(
+        ref.component_identity and ref.component_identity.startswith("claude-plugin/")
+    )
 
 
 @dataclass
@@ -604,7 +628,7 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
         if ref.name and ref.version:
             return f"{ref.name}@{ref.version}"
         return ref.name or "<unnamed>"
-    if ref.ecosystem == "claude-hook":
+    if _component_type_for_tree(ref) == "hook":
         command = ref.extra.get("command")
         event = ref.extra.get("event")
         index = ref.extra.get("index")
@@ -618,7 +642,11 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
         first_slash = ident.find("/")
         if first_slash > 0:
             prefix = ident[:first_slash]
-            if prefix == ref.ecosystem or prefix.startswith("claude-"):
+            if (
+                prefix == ref.ecosystem
+                or prefix == _component_type_for_tree(ref)
+                or prefix.startswith("claude-")
+            ):
                 ident = ident[first_slash + 1 :]
         return ident
     if ref.name:
@@ -638,8 +666,8 @@ def _bundled_categories(
             continue
         if r.extra.get("transitive") is not None:
             continue
-        for label, ecos in _TREE_CATEGORIES:
-            if r.ecosystem in ecos:
+        for label, types in _TREE_CATEGORIES:
+            if _component_type_for_tree(r) in types:
                 by_cat[label].append(r)
                 break
     return {k: v for k, v in by_cat.items() if v}
@@ -679,10 +707,10 @@ def _direct_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]
     for r in refs:
         if r.attributed_to is not None:
             continue
-        if r.ecosystem == "claude-plugin":
+        if _is_plugin_ref(r):
             continue
-        for label, ecos in _TREE_CATEGORIES:
-            if r.ecosystem in ecos:
+        for label, types in _TREE_CATEGORIES:
+            if _component_type_for_tree(r) in types:
                 by_cat[label].append(r)
                 break
     return {k: v for k, v in by_cat.items() if v}
@@ -817,14 +845,14 @@ def render_inventory_tree(
     findings_by_ref = _findings_by_ref(findings)
 
     plugins = sorted(
-        (r for r in refs if r.ecosystem == "claude-plugin"),
+        (r for r in refs if _is_plugin_ref(r)),
         key=lambda r: (r.component_identity or "").lower(),
     )
     direct_node = _build_direct_node(refs, findings_by_ref, use_color)
     n_plugins = len(plugins)
     n_direct = sum(len(v) for v in _direct_categories(refs).values())
     # Total components = everything minus the plugin self-identity refs.
-    n_total = sum(1 for r in refs if r.ecosystem != "claude-plugin")
+    n_total = sum(1 for r in refs if not _is_plugin_ref(r))
 
     out: list[str] = []
     out.append(
@@ -863,7 +891,7 @@ def render_repo_inventory_tree(
     findings_by_ref = _findings_by_ref(findings)
     all_refs = [r for _, refs in grouped for r in refs]
     plugin_refs = sorted(
-        (r for r in all_refs if r.ecosystem == "claude-plugin"),
+        (r for r in all_refs if _is_plugin_ref(r)),
         key=lambda r: (r.component_identity or "").lower(),
     )
 
@@ -884,7 +912,7 @@ def render_repo_inventory_tree(
     direct_refs = [
         r
         for r in all_refs
-        if r.ecosystem != "claude-plugin"
+        if not _is_plugin_ref(r)
         and r.scope == "agent-component"
         and _ref_key(r) not in assigned_keys
     ]
@@ -928,7 +956,7 @@ def _build_repo_plugin_node(
     deps: list[ComponentRef] = []
     categories: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
     for ref in all_refs:
-        if ref is plugin_ref or ref.ecosystem == "claude-plugin":
+        if ref is plugin_ref or _is_plugin_ref(ref):
             continue
         if not _repo_ref_in_dir(ref, plugin_dir):
             continue
@@ -938,8 +966,8 @@ def _build_repo_plugin_node(
             continue
         if ref.scope != "agent-component":
             continue
-        for label, ecos in _TREE_CATEGORIES:
-            if ref.ecosystem in ecos:
+        for label, types in _TREE_CATEGORIES:
+            if _component_type_for_tree(ref) in types:
                 categories[label].append(ref)
                 assigned.add(_ref_key(ref))
                 break

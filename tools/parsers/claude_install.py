@@ -181,15 +181,18 @@ def _walk_active_plugins(
                 f"{plugin_key}: non-string version {version!r} in installed_plugins.json; skipping"
             )
             continue
-        identity = f"claude-plugin/{plugin_name}"
-        if version:
-            identity = f"{identity}@{version}"
+        # Canonical component_identity is version-less so advisory matching is
+        # consistent whether the plugin was discovered in repo mode (settings.json,
+        # no version) or endpoint mode (installed_plugins.json, version known).
+        # The versioned attributed_id is used only for bundled-component attribution.
+        component_identity = f"claude-plugin/{plugin_name}"
+        attributed_id = f"{component_identity}@{version}" if version else component_identity
 
         refs.append(
             ComponentRef(
                 name=plugin_name,
                 version=version,
-                component_identity=identity,
+                component_identity=component_identity,
                 source_manifest=str(lockfile_path),
                 source_locator=f"$.plugins.{plugin_key}[{index}]",
                 attributed_to=None,  # plugin itself is direct
@@ -209,7 +212,7 @@ def _walk_active_plugins(
         install_path = entry.get("installPath")
         if isinstance(install_path, str) and install_path:
             bundled_refs, bundled_warnings = _walk_plugin_install_root(
-                Path(install_path), plugin_name=plugin_name, attributed_to=identity
+                Path(install_path), plugin_name=plugin_name, attributed_to=attributed_id
             )
             refs.extend(bundled_refs)
             for w in bundled_warnings:
@@ -217,7 +220,7 @@ def _walk_active_plugins(
 
             if include_transitive:
                 tier2_refs = _walk_plugin_implementation_deps(
-                    Path(install_path), attributed_to=identity
+                    Path(install_path), attributed_to=attributed_id
                 )
                 refs.extend(tier2_refs)
 

@@ -37,14 +37,11 @@ def parse(path: Path) -> list[ComponentRef]:
     if not isinstance(version, (str, type(None))):
         version = None
     if name:
-        identity = f"claude-plugin/{name}"
-        if version:
-            identity = f"{identity}@{version}"
         refs.append(
             ComponentRef(
                 name=name,
                 version=version,
-                component_identity=identity,
+                component_identity=f"claude-plugin/{name}",
                 source_manifest=str(path),
                 source_locator="$",
                 extra={"component_type": "plugin"},

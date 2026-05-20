@@ -15,7 +15,7 @@ def test_plugin_self_identity():
         if r.component_identity and r.component_identity.startswith("claude-plugin/")
     ]
     assert len(plugin_self) == 1
-    assert plugin_self[0].component_identity == "claude-plugin/deployment-tools@1.2.0"
+    assert plugin_self[0].component_identity == "claude-plugin/deployment-tools"
 
 
 def test_plugin_dependencies():
@@ -77,7 +77,7 @@ def test_plugin_self_identity_carries_component_type_not_ecosystem():
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
     plugin_self = next(
-        r for r in refs if r.component_identity == "claude-plugin/deployment-tools@1.2.0"
+        r for r in refs if r.component_identity == "claude-plugin/deployment-tools"
     )
     assert plugin_self.ecosystem is None
     assert plugin_self.extra["component_type"] == "plugin"

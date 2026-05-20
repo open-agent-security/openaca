@@ -727,16 +727,19 @@ def _build_plugin_node(
     sha_note = f" (sha: {sha[:8]})" if isinstance(sha, str) and sha else ""
     scope = plugin_ref.extra.get("scope")
     marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
-    header = f"{plugin_ref.component_identity}{sha_note} [scope={scope}]{marker}"
+    # Display identity includes version from ref.version (component_identity is
+    # canonical and version-less; version is the observation-layer value).
+    plugin_identity = plugin_ref.component_identity or ""
+    display_id = f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    header = f"{display_id}{sha_note} [scope={scope}]{marker}"
     root = _TreeNode(label=header)
 
-    plugin_identity = plugin_ref.component_identity or ""
-    # Derive `<plugin>` from `claude-plugin/<plugin>[@version]`; we strip it
-    # from bundled command/agent/hook leaf labels under this plugin's block
-    # so the leaf reads as `<name>` rather than `<plugin>/<name>`.
+    # Derive `<plugin>` from `claude-plugin/<plugin>`; strip it from bundled
+    # command/agent/hook leaf labels so the leaf reads as `<name>` not `<plugin>/<name>`.
     parent_plugin = _plugin_name_from_identity(plugin_identity)
-    categories = _bundled_categories(all_refs, plugin_identity)
-    tier2 = _tier2_summary(all_refs, plugin_identity)
+    # Bundled refs carry attributed_to = versioned identity; use display_id to match.
+    categories = _bundled_categories(all_refs, display_id)
+    tier2 = _tier2_summary(all_refs, display_id)
 
     for label, _ in _TREE_CATEGORIES:
         items = categories.get(label)
@@ -941,7 +944,9 @@ def _build_repo_plugin_node(
     use_color: bool,
 ) -> tuple[_TreeNode, set[tuple]]:
     marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
-    root = _TreeNode(label=f"{plugin_ref.component_identity}{marker}")
+    plugin_identity = plugin_ref.component_identity or ""
+    display_id = f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    root = _TreeNode(label=f"{display_id}{marker}")
     assigned: set[tuple] = set()
 
     deps: list[ComponentRef] = []

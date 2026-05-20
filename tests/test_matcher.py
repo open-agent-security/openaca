@@ -124,11 +124,11 @@ def test_source_less_skill_ref_does_not_match_component_type_ecosystem_advisory(
 
 
 def test_source_less_plugin_ref_matches_component_identity_advisory():
-    advisory = make_identity_advisory("CVE-2026-PLUGIN", "claude-plugin/deployment-tools@1.2.0")
+    advisory = make_identity_advisory("CVE-2026-PLUGIN", "claude-plugin/deployment-tools")
     ref = ComponentRef(
         name="deployment-tools",
         version="1.2.0",
-        component_identity="claude-plugin/deployment-tools@1.2.0",
+        component_identity="claude-plugin/deployment-tools",
         source_manifest="plugin.json",
         source_locator="$",
         extra={"component_type": "plugin"},
@@ -432,7 +432,7 @@ def test_source_less_plugin_ref_does_not_match_component_type_ecosystem_advisory
     ref = ComponentRef(
         name="deployment-tools",
         version="1.2.0",
-        component_identity="claude-plugin/deployment-tools@1.2.0",
+        component_identity="claude-plugin/deployment-tools",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.deployment-tools@market[0]",
         extra={"component_type": "plugin"},

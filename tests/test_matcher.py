@@ -440,6 +440,70 @@ def test_source_less_plugin_ref_does_not_match_component_type_ecosystem_advisory
     assert match(refs=[ref], advisories=advisories) == []
 
 
+def test_marketplace_qualified_ref_matches_unqualified_advisory():
+    """An advisory written as `claude-plugin/<name>` (no marketplace) must match
+    marketplace-qualified endpoint refs, so authors can write a single identity
+    that covers both repo-mode and endpoint-mode scans."""
+    advisory = make_identity_advisory("CVE-2026-XMODE", "claude-plugin/my-plugin")
+    ref = ComponentRef(
+        name="my-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/anthropic/my-plugin",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.my-plugin@anthropic[0]",
+        extra={"component_type": "plugin", "marketplace": "anthropic"},
+    )
+    findings = match(refs=[ref], advisories=[advisory])
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-XMODE"
+    assert findings[0].confidence == "high"
+
+
+def test_marketplace_qualified_ref_matches_same_marketplace_advisory():
+    """Exact marketplace match still works when advisory and ref both carry marketplace."""
+    advisory = make_identity_advisory("CVE-2026-EXACT", "claude-plugin/anthropic/my-plugin")
+    ref = ComponentRef(
+        name="my-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/anthropic/my-plugin",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.my-plugin@anthropic[0]",
+        extra={"component_type": "plugin", "marketplace": "anthropic"},
+    )
+    findings = match(refs=[ref], advisories=[advisory])
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-EXACT"
+
+
+def test_marketplace_qualified_ref_does_not_match_different_marketplace_advisory():
+    """A marketplace-specific advisory must not match a ref from a different marketplace."""
+    advisory = make_identity_advisory("CVE-2026-MISMATCH", "claude-plugin/other-market/my-plugin")
+    ref = ComponentRef(
+        name="my-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/anthropic/my-plugin",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.my-plugin@anthropic[0]",
+        extra={"component_type": "plugin", "marketplace": "anthropic"},
+    )
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
+def test_repo_mode_ref_does_not_match_marketplace_specific_advisory():
+    """A repo-mode ref (`claude-plugin/<name>`, no marketplace) must not match
+    a marketplace-qualified advisory — the ref cannot confirm the marketplace."""
+    advisory = make_identity_advisory("CVE-2026-REPOMODE", "claude-plugin/anthropic/my-plugin")
+    ref = ComponentRef(
+        name="my-plugin",
+        version="1.0.0",
+        component_identity="claude-plugin/my-plugin",
+        source_manifest=".claude-plugin/plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
 def test_finding_mirrors_component_attribution():
     """Per ADR-0006: Finding.attributed_to mirrors ComponentRef.attributed_to.
     Test both attribution-set and attribution-None cases."""

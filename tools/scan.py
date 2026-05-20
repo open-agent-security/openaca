@@ -51,7 +51,9 @@ from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
     collect_endpoint_mcp_manifests,
+    collect_endpoint_settings_manifests,
     collect_mcp_manifests,
+    collect_settings_manifests,
     run_posture_rules,
 )
 from tools.render import (
@@ -236,7 +238,7 @@ _include_posture_option = click.option(
     default=False,
     help=(
         "Also emit scanner-side posture findings (configuration hygiene rules: "
-        "mutable install refs, insecure transport, missing remote auth). "
+        "mutable install refs, insecure transport, endpoint overrides, MCP auto-approval). "
         "These are distinct from vulnerability findings and never affect "
         "--fail-on exit codes."
     ),
@@ -479,7 +481,10 @@ def repo(
     posture_findings: list[PostureFinding] = []
     if include_posture:
         manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
-        posture_findings = run_posture_rules(refs, manifests)
+        settings_manifests = collect_settings_manifests(
+            [target], include_gitignored=include_gitignored
+        )
+        posture_findings = run_posture_rules(refs, manifests, settings_manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
@@ -610,7 +615,8 @@ def endpoint(
     posture_findings: list[PostureFinding] = []
     if include_posture:
         manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
-        posture_findings = run_posture_rules(refs, manifests)
+        settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
+        posture_findings = run_posture_rules(refs, manifests, settings_manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if _is_plugin_ref(r))

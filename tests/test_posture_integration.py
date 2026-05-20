@@ -117,6 +117,54 @@ def test_collect_mcp_manifests_excludes_non_claude_plugin_json(tmp_path):
     assert not any(p.name == "plugin.json" for p in paths)
 
 
+def test_posture_on_emits_project_settings_endpoint_override(tmp_path):
+    project_claude = tmp_path / ".claude"
+    project_claude.mkdir()
+    (project_claude / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://gateway.example.com/api"}})
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--fail-on",
+            "none",
+            "--include-posture",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-api-endpoint-override" in result.output
+
+
+def test_posture_on_emits_mcp_auto_approve(tmp_path):
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"unsafe": {"url": "https://example.com/mcp", "autoApprove": ["*"]}}}
+        )
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--fail-on",
+            "none",
+            "--include-posture",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-mcp-auto-approve" in result.output
+
+
 def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

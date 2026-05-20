@@ -3,8 +3,8 @@
 Posture findings are scanner-emitted configuration-hygiene checks. They're
 distinct from vulnerability findings: no CVE lookup, no overlay record, no
 OpenACA ID minted. They flag risky agent-composition shapes
-(unpinned installs and `http://` MCP endpoints) that wouldn't surface in a
-corpus-driven scan.
+(unpinned installs, `http://` MCP endpoints, endpoint overrides, and MCP
+auto-approval) that wouldn't surface in a corpus-driven scan.
 
 Posture rules are gated behind `--include-posture`:
 
@@ -15,8 +15,9 @@ openaca scan endpoint --include-posture
 
 Without the flag, scanner output is strictly vulnerability findings. With
 it, a separate "Posture findings (configuration hygiene)" section appears
-in text output, a `posture_findings[]` array appears in JSON output, and
-SARIF emits each rule as a separate SARIF rule + result.
+in text output, posture entries appear in the JSON `findings[]` array with
+`finding_type: "posture"`, and SARIF emits each rule as a separate SARIF
+rule + result.
 
 Posture findings never affect `--fail-on` exit codes. They are signal,
 not gate.
@@ -27,7 +28,7 @@ A repo or endpoint with no matched CVEs returns "no findings" today.
 That's accurate, but the typical reaction is "did the tool even do
 anything?" Posture rules give first-scan signal independent of the
 corpus: even a clean install gets *some* visible output if it has
-unpinned MCPs or `http://` endpoints.
+unpinned MCPs, `http://` endpoints, endpoint overrides, or MCP auto-approval.
 
 ## V0 rules
 
@@ -35,6 +36,8 @@ unpinned MCPs or `http://` endpoints.
 | --- | --- | --- | --- |
 | [`openaca-posture-mutable-install-reference`](openaca-posture-mutable-install-reference.md) | Component installed from a mutable source reference | low | high |
 | [`openaca-posture-insecure-transport`](openaca-posture-insecure-transport.md) | Remote MCP endpoint uses insecure transport | medium | high |
+| [`openaca-posture-api-endpoint-override`](openaca-posture-api-endpoint-override.md) | Claude API endpoint is overridden | medium/high | medium |
+| [`openaca-posture-mcp-auto-approve`](openaca-posture-mcp-auto-approve.md) | MCP server has auto-approval enabled | medium | medium |
 
 ## Standards mapping
 

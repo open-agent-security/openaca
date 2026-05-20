@@ -614,14 +614,24 @@ def test_json_score_none_when_only_upstream_label():
 # ── render_inventory_tree ────────────────────────────────────────────────────
 
 
-def _plugin_ref(name: str, version: str, scope: str = "user", sha: str = "") -> ComponentRef:
+def _plugin_ref(
+    name: str,
+    version: str,
+    scope: str = "user",
+    sha: str = "",
+    marketplace: str | None = None,
+) -> ComponentRef:
+    identity_name = f"{marketplace}/{name}" if marketplace else name
+    extra = {"component_type": "plugin", "scope": scope, "gitCommitSha": sha}
+    if marketplace:
+        extra["marketplace"] = marketplace
     return ComponentRef(
         name=name,
         version=version,
-        component_identity=f"claude-plugin/{name}",
+        component_identity=f"claude-plugin/{identity_name}",
         source_manifest="installed_plugins.json",
         source_locator=f"$.plugins.{name}",
-        extra={"component_type": "plugin", "scope": scope, "gitCommitSha": sha},
+        extra=extra,
     )
 
 
@@ -694,6 +704,40 @@ def test_tree_groups_bundled_components_by_category():
     assert "skills/ (1)" in out
     # MCPs render before skills (declared category order).
     assert out.index("MCPs/") < out.index("skills/")
+
+
+def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
+    refs = [
+        ComponentRef(
+            name="@acme/tool",
+            component_identity="claude-plugin/market/@acme/tool",
+            source_manifest="installed_plugins.json",
+            source_locator="$.plugins.@acme/tool@market",
+            extra={"component_type": "plugin", "scope": "user", "marketplace": "market"},
+        ),
+        _bundled(
+            "claude-command",
+            "deploy",
+            None,
+            attributed_to="claude-plugin/market/@acme/tool",
+            component_identity="claude-command/@acme/tool/deploy",
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "deploy" in out
+    assert "@acme/tool/deploy" not in out
+
+
+def test_tree_plugin_header_shows_marketplace_context():
+    refs = [_plugin_ref("superpowers", "5.1.0", sha="917e5f53abcdef", marketplace="official")]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "claude-plugin/official/superpowers@5.1.0" in out
+    assert "(sha: 917e5f53)" in out
+    assert "[scope=user]" in out
 
 
 def test_tree_empty_plugin_shows_no_bundled_components():

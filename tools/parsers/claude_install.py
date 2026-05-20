@@ -20,7 +20,7 @@ Plan 008 adds:
 - Bundled component walking: for each active plugin's installPath, emit
   refs for `.mcp.json`, `skills/<name>/SKILL.md`, `hooks/hooks.json`,
   `commands/*.md`, `agents/*.md`. All bundled refs carry
-  `attributed_to = "claude-plugin/<name>@<version>"`.
+  `attributed_to = "claude-plugin/<marketplace>/<name>@<version>"` when marketplace is known.
 
 Settings layering is mode-specific:
 - `endpoint` mode reads user + project + local.
@@ -185,7 +185,7 @@ def _walk_active_plugins(
         # consistent whether the plugin was discovered in repo mode (settings.json,
         # no version) or endpoint mode (installed_plugins.json, version known).
         # The versioned attributed_id is used only for bundled-component attribution.
-        component_identity = f"claude-plugin/{plugin_name}"
+        component_identity = _plugin_identity(plugin_name, marketplace)
         attributed_id = f"{component_identity}@{version}" if version else component_identity
 
         refs.append(
@@ -683,8 +683,14 @@ def _component_name_for_child(ref: ComponentRef) -> str:
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
     if "@" in plugin_key:
         name, marketplace = plugin_key.rsplit("@", 1)
-        return name, marketplace
+        return name, marketplace or None
     return plugin_key, None
+
+
+def _plugin_identity(plugin_name: str, marketplace: Optional[str]) -> str:
+    if marketplace:
+        return f"claude-plugin/{marketplace}/{plugin_name}"
+    return f"claude-plugin/{plugin_name}"
 
 
 def _enabling_scope(

@@ -94,7 +94,7 @@ def test_unversioned_plugin_without_commit_sha_is_flagged():
     ref = ComponentRef(
         name="feature-dev",
         version="unknown",
-        component_identity="claude-plugin/feature-dev",
+        component_identity="claude-plugin/official/feature-dev",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.feature-dev@official[0]",
         extra={
@@ -110,7 +110,7 @@ def test_unversioned_plugin_without_commit_sha_is_flagged():
 
     assert len(findings) == 1
     assert findings[0].rule_id == "openaca-posture-mutable-install-reference"
-    assert findings[0].component_label == "claude-plugin/feature-dev@unknown"
+    assert findings[0].component_label == "claude-plugin/official/feature-dev@unknown"
     assert findings[0].active_in == ["claude-code"]
 
 
@@ -118,7 +118,7 @@ def test_unversioned_plugin_with_commit_sha_is_not_flagged():
     ref = ComponentRef(
         name="reboot-chat-app",
         version="unknown",
-        component_identity="claude-plugin/reboot-chat-app",
+        component_identity="claude-plugin/reboot-skills/reboot-chat-app",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.reboot-chat-app@local[0]",
         extra={

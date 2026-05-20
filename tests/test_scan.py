@@ -354,7 +354,7 @@ summary: test plugin advisory for plan 007
 modified: '2026-05-09T00:00:00Z'
 database_specific:
   openaca:
-    component_identity: claude-plugin/sample-plugin
+    component_identity: claude-plugin/test-marketplace/sample-plugin
 """
     )
     runner = CliRunner()
@@ -456,7 +456,7 @@ def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "openaca-posture-mutable-install-reference" in result.output
-    assert "claude-plugin/feature-dev@unknown" in result.output
+    assert "claude-plugin/official/feature-dev@unknown" in result.output
 
 
 def test_endpoint_subcommand_verbose_lists_resolved_plugins():
@@ -472,7 +472,7 @@ def test_endpoint_subcommand_verbose_lists_resolved_plugins():
         ],
     )
     assert result.exit_code == 0
-    assert "claude-plugin/sample-plugin@1.2.0" in result.output
+    assert "claude-plugin/test-marketplace/sample-plugin@1.2.0" in result.output
     assert "deadbeef" in result.output  # gitCommitSha shortened
 
 

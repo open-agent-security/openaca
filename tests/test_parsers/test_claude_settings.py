@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from tools.parsers.claude_settings import parse
@@ -7,8 +8,8 @@ REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
 def test_enabled_plugins_emitted():
     """Each enabled plugin emits a source-less plugin component ref. Identity
-    drops the @<marketplace> suffix from the settings key — settings doesn't
-    carry plugin versions, only declaration intent."""
+    includes marketplace when present so same-name plugins from different
+    marketplaces do not collide."""
     manifest = REPOS / "sample-settings" / ".claude" / "settings.json"
     refs = parse(manifest)
     assert all(r.extra.get("component_type") == "plugin" for r in refs)
@@ -19,8 +20,8 @@ def test_enabled_plugins_emitted():
     assert "anthropics/dev-tools" in names
     assert "experimental" not in names  # is_enabled was False
     identities = {r.component_identity for r in refs}
-    assert "claude-plugin/deployment-tools" in identities
-    assert "claude-plugin/anthropics/dev-tools" in identities
+    assert "claude-plugin/test-market/deployment-tools" in identities
+    assert "claude-plugin/test-market/anthropics/dev-tools" in identities
     assert all(r.version is None for r in refs)
 
 
@@ -33,7 +34,9 @@ def test_settings_plugin_matches_component_identity_advisory():
     refs = parse(manifest)
     advisory = {
         "id": "OpenACA-TEST-PLUGIN-1",
-        "database_specific": {"openaca": {"component_identity": "claude-plugin/deployment-tools"}},
+        "database_specific": {
+            "openaca": {"component_identity": "claude-plugin/test-market/deployment-tools"}
+        },
     }
     findings = match(refs, [advisory])
     matching = [f for f in findings if f.advisory_id == "OpenACA-TEST-PLUGIN-1"]
@@ -59,6 +62,26 @@ def test_settings_plugin_unscoped_name(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "bare-name"
     assert refs[0].component_identity == "claude-plugin/bare-name"
+    assert refs[0].extra["marketplace"] is None
+
+
+def test_settings_same_plugin_name_different_marketplaces_have_distinct_identities(tmp_path):
+    manifest = tmp_path / "settings.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {
+                    "shared@market-one": True,
+                    "shared@market-two": True,
+                }
+            }
+        )
+    )
+    refs = parse(manifest)
+    assert {r.component_identity for r in refs} == {
+        "claude-plugin/market-one/shared",
+        "claude-plugin/market-two/shared",
+    }
 
 
 def test_source_locator():

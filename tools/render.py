@@ -730,7 +730,9 @@ def _build_plugin_node(
     # Display identity includes version from ref.version (component_identity is
     # canonical and version-less; version is the observation-layer value).
     plugin_identity = plugin_ref.component_identity or ""
-    display_id = f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    display_id = (
+        f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    )
     header = f"{display_id}{sha_note} [scope={scope}]{marker}"
     root = _TreeNode(label=header)
 
@@ -945,7 +947,9 @@ def _build_repo_plugin_node(
 ) -> tuple[_TreeNode, set[tuple]]:
     marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
     plugin_identity = plugin_ref.component_identity or ""
-    display_id = f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    display_id = (
+        f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
+    )
     root = _TreeNode(label=f"{display_id}{marker}")
     assigned: set[tuple] = set()
 

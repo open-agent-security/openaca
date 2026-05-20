@@ -764,7 +764,26 @@ def test_tree_remote_mcp_leaf_redacts_url_query_secrets():
     assert "api.example.com/mcp (HTTP)" in out
 
 
-def test_tree_stdio_mcp_leaf_prefers_install_source():
+def test_tree_remote_mcp_leaf_redacts_malformed_port_url():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-remote/host/mcp",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://user:secret@host:abc/mcp?token=sk-secret",
+                "transport": "http",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "user:secret" not in out
+    assert "token=sk-secret" not in out
+    assert "https://host:abc/mcp (HTTP)" in out
+
+
+def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
     refs = [
         _plugin_ref("playwright", "unknown", marketplace="official"),
         ComponentRef(
@@ -782,10 +801,11 @@ def test_tree_stdio_mcp_leaf_prefers_install_source():
 
     out = render_inventory_tree(refs, [], use_unicode=True)
 
-    assert "npx @playwright/mcp@latest" in out
+    assert "@playwright/mcp@latest" in out
+    assert "npx @playwright/mcp@latest" not in out
 
 
-def test_tree_stdio_mcp_leaf_strips_cli_flags_from_install_source():
+def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     refs = [
         ComponentRef(
             component_identity="mcp-stdio/npx-unpinned:my-mcp-server",
@@ -800,113 +820,8 @@ def test_tree_stdio_mcp_leaf_strips_cli_flags_from_install_source():
 
     assert "sk-secret123" not in out
     assert "secret" not in out
-    assert "npx my-mcp-server" in out
-
-
-def test_tree_stdio_mcp_leaf_preserves_package_name_after_short_flags():
-    """npx -y @org/foo@1.0.0 — short flag before package name must not truncate the label."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:@org/foo",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "npx -y @org/foo@1.0.0",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "@org/foo@1.0.0" in out
-
-
-def test_tree_stdio_mcp_leaf_preserves_package_name_after_long_flags_with_value():
-    """uvx --python 3.12 pkg — long flag with value must not consume the package name."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/uvx-unpinned:my-mcp",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "uvx --python 3.12 my-mcp",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "my-mcp" in out
-    assert "3.12" not in out
-
-
-def test_tree_stdio_mcp_leaf_drops_short_flag_value_secrets():
-    """my-mcp -k sk_live_... run — short flag value must not appear in output."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/my-mcp:my-mcp",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "my-mcp -k sk_live_secret run",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "sk_live_secret" not in out
-    assert "my-mcp" in out
-    assert "run" in out
-
-
-def test_tree_stdio_mcp_leaf_preserves_package_after_boolean_long_flag():
-    """npx --yes @playwright/mcp@latest — boolean long flag must not consume the package name."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:@playwright/mcp",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "npx --yes @playwright/mcp@latest",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "@playwright/mcp@latest" in out
-
-
-def test_tree_stdio_mcp_leaf_preserves_unscoped_package_after_short_boolean_flag():
-    """npx -y my-mcp-server — boolean short flag must not drop an unscoped package name."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:my-mcp-server",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "npx -y my-mcp-server",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "my-mcp-server" in out
-
-
-def test_tree_stdio_mcp_leaf_drops_all_tokens_after_passthrough_boundary():
-    """npx pkg -- --api-key sk_live_123 — everything after '--' must be dropped."""
-    refs = [
-        ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:pkg",
-            extra={
-                "component_type": "mcp_server",
-                "install_source": "npx pkg -- --api-key sk_live_123",
-            },
-        )
-    ]
-
-    out = render_inventory_tree(refs, [], use_unicode=True)
-
-    assert "sk_live_123" not in out
-    assert "npx pkg" in out
+    assert "my-mcp-server" not in out
+    assert "npx (stdio, args hidden)" in out
 
 
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():

@@ -191,12 +191,17 @@ def collect_endpoint_settings_manifests(
 ) -> list[tuple[Path, dict]]:
     """Return precedence-merged effective endpoint settings attributed to source scopes.
 
-    Returns one tuple per scope file that owns at least one top-level key in the
-    merged effective view. For each key, the owning scope is the highest-precedence
-    (local > project > user) scope that defines it. The merged effective value is
-    used for each key (not the raw per-scope value) so that higher-precedence
-    overrides are honoured and false positives from stale lower-scope settings are
-    avoided. Provenance is attributed at top-level key granularity.
+    Returns one tuple per scope file that owns at least one key in the merged
+    effective view. Scalar top-level keys are attributed to the highest-precedence
+    scope (local > project > user) that defines that key. Dict-valued top-level
+    keys (e.g. ``env``, ``mcpServers``) are split at sub-key granularity so that
+    ``env.ANTHROPIC_BASE_URL`` from user scope and ``env.DEBUG`` from local scope
+    are each attributed to the file that actually defines them, preventing
+    remediation from being misdirected to the wrong settings file.
+
+    The merged effective value is used for every entry (not the raw per-scope
+    value) so higher-precedence overrides are honoured and false positives from
+    stale lower-scope settings are avoided.
     """
     layers = _load_settings_layers(config_dir, project_root)
     effective = layers.merged(mode="endpoint")
@@ -210,16 +215,29 @@ def collect_endpoint_settings_manifests(
         scope_checks.append((layers.project, project_root / ".claude" / "settings.json"))
     scope_checks.append((layers.user, config_dir / "settings.json"))
 
-    # Attribute each effective top-level key to the highest-precedence scope
-    # that defines it. Group by source file so each returned tuple carries only
-    # keys that originated from that file.
     path_to_keys: dict[Path, dict] = {}
     for key, merged_value in effective.items():
-        source_path = config_dir / "settings.json"  # fallback: user scope
-        for scope_data, path in scope_checks:
-            if scope_data is not None and key in scope_data and path.is_file():
-                source_path = path
-                break
-        path_to_keys.setdefault(source_path, {})[key] = merged_value
+        if isinstance(merged_value, dict):
+            # For dict-valued keys, attribute each sub-key to the
+            # highest-precedence scope that defines it so that e.g.
+            # env.ANTHROPIC_BASE_URL (user scope) and env.DEBUG (local scope)
+            # point to different source files.
+            for sub_key, sub_value in merged_value.items():
+                source_path = config_dir / "settings.json"  # fallback: user scope
+                for scope_data, path in scope_checks:
+                    if scope_data is None:
+                        continue
+                    scope_dict = scope_data.get(key)
+                    if isinstance(scope_dict, dict) and sub_key in scope_dict and path.is_file():
+                        source_path = path
+                        break
+                path_to_keys.setdefault(source_path, {}).setdefault(key, {})[sub_key] = sub_value
+        else:
+            source_path = config_dir / "settings.json"  # fallback: user scope
+            for scope_data, path in scope_checks:
+                if scope_data is not None and key in scope_data and path.is_file():
+                    source_path = path
+                    break
+            path_to_keys.setdefault(source_path, {})[key] = merged_value
 
     return list(path_to_keys.items())

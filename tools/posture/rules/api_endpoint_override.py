@@ -20,21 +20,13 @@ _ENDPOINT_KEYS = {
     "anthropic_base_url",
     "anthropic_api_url",
     "anthropic_api_base_url",
-    "apiurl",
-    "api_url",
-    "baseurl",
-    "base_url",
-    "anthropicbaseurl",
+    "anthropicbaseurl",  # camelCase anthropicBaseUrl after normalisation
 }
 _TOKEN_KEYS = {
     "anthropic_auth_token",
     "anthropic_api_key",
-    "api_key",
-    "apikey",
-    "auth_token",
-    "authtoken",
 }
-_MODEL_KEYS = {"anthropic_model", "model", "model_name", "provider"}
+_MODEL_KEYS = {"anthropic_model"}
 
 _STANDARDS = Standards(
     owasp_app_top_10=["A05:2021"],

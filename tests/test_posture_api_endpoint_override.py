@@ -48,3 +48,36 @@ def test_settings_without_endpoint_override_is_clean(tmp_path):
     findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
 
     assert findings == []
+
+
+def test_generic_api_url_not_flagged(tmp_path):
+    """Generic API_URL must not trigger the rule — it could belong to any service."""
+    manifest = {"env": {"API_URL": "https://other-service.example.com/api"}}
+
+    findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
+
+    assert findings == []
+
+
+def test_generic_base_url_not_flagged(tmp_path):
+    """Generic BASE_URL must not trigger the rule."""
+    manifest = {"env": {"BASE_URL": "https://other-service.example.com"}}
+
+    findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
+
+    assert findings == []
+
+
+def test_generic_api_key_does_not_escalate_to_high(tmp_path):
+    """A generic API_KEY alongside an Anthropic endpoint override must not escalate severity."""
+    manifest = {
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://gateway.example.com/api",
+            "API_KEY": "some-other-service-key",
+        }
+    }
+
+    findings = check_api_endpoint_override([(tmp_path / ".claude" / "settings.json", manifest)])
+
+    assert len(findings) == 1
+    assert findings[0].severity == "medium"

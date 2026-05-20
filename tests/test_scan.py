@@ -1004,7 +1004,7 @@ def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
         )
     assert result.exit_code == 0, result.output
     # The lodash dep should appear as a queried PURL
-    assert "federation: querying 1 PURL(s) on osv.dev" in result.output
+    assert "federation: queried 1 PURL(s) on osv.dev; fetched 0 advisory record(s)" in result.output
     assert "pkg:npm/lodash@4.17.20" in result.output
     # The source-less plugin self-identity ref should be in the skip count
     assert "plugin=1" in result.output
@@ -1034,8 +1034,8 @@ def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
             ],
         )
     assert result.exit_code == 0, result.output
-    assert "federation: querying" in result.output
-    assert "loaded 0 OSV advisory record(s)" in result.output
+    assert "federation: queried 1 PURL(s) on osv.dev; fetched 0 advisory record(s)" in result.output
+    assert "loaded 0 OSV advisory record(s)" not in result.output
 
 
 def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):

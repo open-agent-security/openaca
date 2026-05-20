@@ -647,6 +647,10 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     observation metadata for display so users see the configured command
     instead of the logical identity hash.
     """
+    if _component_type_for_tree(ref) == "mcp_server":
+        mcp_label = _mcp_leaf_label(ref)
+        if mcp_label:
+            return mcp_label
     if ref.ecosystem in {"npm", "PyPI"}:
         if ref.name and ref.version:
             return f"{ref.name}@{ref.version}"
@@ -677,6 +681,30 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     if ref.name:
         return ref.name
     return "<unidentified>"
+
+
+def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
+    url = ref.extra.get("url")
+    if isinstance(url, str) and url:
+        transport = _mcp_transport_label(ref.extra.get("transport"))
+        if transport:
+            return f"{url} ({transport})"
+        return url
+    install_source = ref.extra.get("install_source")
+    if isinstance(install_source, str) and install_source:
+        return install_source
+    return None
+
+
+def _mcp_transport_label(value: object) -> Optional[str]:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.lower()
+    if normalized in {"http", "streamablehttp"}:
+        return "HTTP"
+    if normalized == "sse":
+        return "SSE"
+    return value
 
 
 def _bundled_categories(

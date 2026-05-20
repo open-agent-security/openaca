@@ -114,18 +114,21 @@ def _finding_line(f: Finding) -> str:
     return base
 
 
-def _federation_targets_lines(refs: list[ComponentRef]) -> list[str]:
-    """Render the verbose pre-query summary for OSV.dev matching.
+def _federation_targets_lines(refs: list[ComponentRef], fetched_count: int) -> list[str]:
+    """Render the verbose OSV.dev federation summary.
 
-    Two parts: the queried PURL list (what was actually sent) and a count
-    of skipped refs bucketed by source ecosystem or component type, so users
-    can see what was not queried and why. Source-less agent components have
-    no PURL; OSV.dev would not have records for them.
+    Three parts: fetched record count, queried PURL list (what was actually
+    sent), and skipped refs bucketed by source ecosystem or component type.
+    Source-less agent components have no PURL; OSV.dev would not have records
+    for them.
     """
     queried = collect_target_purls(refs)
     lines: list[str] = []
     if queried:
-        lines.append(f"federation: querying {len(queried)} PURL(s) on osv.dev")
+        lines.append(
+            f"federation: queried {len(queried)} PURL(s) on osv.dev; "
+            f"fetched {fetched_count} advisory record(s)"
+        )
         for p in queried:
             lines.append(f"  {p}")
     else:
@@ -486,7 +489,6 @@ def repo(
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
-        click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         if grouped:
             click.echo(
                 f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
@@ -505,7 +507,7 @@ def repo(
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
             click.echo(f"no manifests found under {target}", err=True)
-        for line in _federation_targets_lines(refs):
+        for line in _federation_targets_lines(refs, len(corpus)):
             click.echo(line, err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
@@ -617,7 +619,6 @@ def endpoint(
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
-        click.echo(f"loaded {len(corpus)} OSV advisory record(s)", err=True)
         for w in warnings:
             click.echo(f"  warning: {w}", err=True)
         tree = render_inventory_tree(
@@ -628,7 +629,7 @@ def endpoint(
         )
         if tree:
             click.echo(tree, err=True)
-        for line in _federation_targets_lines(refs):
+        for line in _federation_targets_lines(refs, len(corpus)):
             click.echo(line, err=True)
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)

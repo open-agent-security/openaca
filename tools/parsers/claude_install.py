@@ -44,6 +44,7 @@ from tools.parsers import (
     package_json,
     package_lock_json,
     pyproject_toml,
+    skill_lock,
     uv_lock,
 )
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -310,7 +311,7 @@ def _walk_direct_components(
 
     # Direct skills at <install_root>/skills/.
     direct_skills_dir = install_root / "skills"
-    refs.extend(_walk_skill_dir(direct_skills_dir))
+    refs.extend(_walk_skill_dir(direct_skills_dir, project_root=project_root))
     refs.extend(
         claude_command_agent.enumerate_dir(
             install_root / "commands",
@@ -350,15 +351,32 @@ def _walk_direct_components(
     return refs
 
 
-def _walk_skill_dir(skills_dir: Path) -> list[ComponentRef]:
+def _walk_skill_dir(skills_dir: Path, project_root: Optional[Path] = None) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     if not skills_dir.is_dir():
         return refs
     for skill_subdir in sorted(skills_dir.iterdir()):
         skill_md = skill_subdir / "SKILL.md"
         if skill_md.is_file():
-            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+            refs.extend(_parse_direct_skill(skill_md, project_root=project_root))
     return refs
+
+
+def _parse_direct_skill(skill_md: Path, project_root: Optional[Path]) -> list[ComponentRef]:
+    refs = claude_skill.parse(skill_md, attributed_to=None)
+    out: list[ComponentRef] = []
+    for ref in refs:
+        if not ref.name:
+            out.append(ref)
+            continue
+        provenance = skill_lock.provenance_for_skill(skill_md, ref.name, project_root=project_root)
+        if provenance is None:
+            out.append(ref)
+            continue
+        extra = dict(ref.extra)
+        extra["source_provenance"] = provenance
+        out.append(replace(ref, extra=extra))
+    return out
 
 
 def _is_project_skill_file(path: Path, project_root: Path) -> bool:
@@ -380,10 +398,19 @@ def _is_project_skill_file(path: Path, project_root: Path) -> bool:
 
 def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
+    refs.extend(_walk_skill_dir(project_root / ".claude" / "skills", project_root=project_root))
+    seen = {(r.source_manifest, r.component_identity) for r in refs}
+
     spec = load_gitignore_spec(project_root)
     for skill_md in iter_unignored_files(project_root, spec):
-        if _is_project_skill_file(skill_md, project_root):
-            refs.extend(claude_skill.parse(skill_md, attributed_to=None))
+        if not _is_project_skill_file(skill_md, project_root):
+            continue
+        for ref in _parse_direct_skill(skill_md, project_root=project_root):
+            key = (ref.source_manifest, ref.component_identity)
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(ref)
     return refs
 
 

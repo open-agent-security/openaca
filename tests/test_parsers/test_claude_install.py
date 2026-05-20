@@ -1213,3 +1213,119 @@ def test_install_rejects_custom_path_traversal(tmp_path):
     refs, _ = parse_install(install_root=tmp_path)
     cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert cmd_refs == []
+
+
+def _write_skill(skill_dir: Path, name: str) -> None:
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Test skill\n---\n\n# {name}\n"
+    )
+
+
+def test_direct_symlinked_skill_uses_global_skill_lock_source_provenance(tmp_path):
+    install_root = tmp_path / "claude"
+    canonical_skill = tmp_path / ".agents" / "skills" / "aws-api"
+    _write_skill(canonical_skill, "aws-api")
+    (tmp_path / ".agents" / ".skill-lock.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "skills": {
+                    "aws-api": {
+                        "source": "awslabs/agent-toolkit-for-aws",
+                        "sourceType": "github",
+                        "sourceUrl": "https://github.com/awslabs/agent-toolkit-for-aws.git",
+                        "ref": "main",
+                        "skillPath": "skills/aws-api/SKILL.md",
+                        "skillFolderHash": "1234567890abcdef",
+                    }
+                },
+            }
+        )
+    )
+    (install_root / "skills").mkdir(parents=True)
+    (install_root / "skills" / "aws-api").symlink_to(canonical_skill, target_is_directory=True)
+
+    refs, warnings = parse_install(install_root=install_root)
+
+    assert warnings == []
+    skill = next(r for r in refs if r.component_identity == "skill/aws-api")
+    assert skill.attributed_to is None
+    assert skill.source_manifest == str(install_root / "skills" / "aws-api" / "SKILL.md")
+    assert skill.extra["source_provenance"] == {
+        "status": "known",
+        "source": "awslabs/agent-toolkit-for-aws",
+        "source_type": "github",
+        "source_url": "https://github.com/awslabs/agent-toolkit-for-aws.git",
+        "ref": "main",
+        "skill_path": "skills/aws-api/SKILL.md",
+        "hash": "1234567890abcdef",
+        "hash_type": "skillFolderHash",
+        "lockfile_path": str(tmp_path / ".agents" / ".skill-lock.json"),
+        "resolved_path": str(canonical_skill / "SKILL.md"),
+    }
+
+
+def test_direct_symlinked_skill_without_lock_entry_records_target(tmp_path):
+    install_root = tmp_path / "claude"
+    canonical_skill = tmp_path / ".agents" / "skills" / "loose-skill"
+    _write_skill(canonical_skill, "loose-skill")
+    (install_root / "skills").mkdir(parents=True)
+    (install_root / "skills" / "loose-skill").symlink_to(canonical_skill, target_is_directory=True)
+
+    refs, warnings = parse_install(install_root=install_root)
+
+    assert warnings == []
+    skill = next(r for r in refs if r.component_identity == "skill/loose-skill")
+    assert skill.extra["source_provenance"] == {
+        "status": "symlink-target",
+        "resolved_path": str(canonical_skill / "SKILL.md"),
+    }
+
+
+def test_direct_copied_skill_without_lock_entry_keeps_source_unknown(tmp_path):
+    install_root = tmp_path / "claude"
+    _write_skill(install_root / "skills" / "copied-skill", "copied-skill")
+
+    refs, warnings = parse_install(install_root=install_root)
+
+    assert warnings == []
+    skill = next(r for r in refs if r.component_identity == "skill/copied-skill")
+    assert "source_provenance" not in skill.extra
+
+
+def test_project_symlinked_skill_uses_project_skills_lock(tmp_path):
+    install_root = tmp_path / "claude"
+    project_root = tmp_path / "repo"
+    canonical_skill = project_root / ".agents" / "skills" / "bootstrap"
+    _write_skill(canonical_skill, "bootstrap")
+    (project_root / "skills-lock.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "skills": {
+                    "bootstrap": {
+                        "source": "vercel-labs/agent-skills",
+                        "sourceType": "github",
+                        "ref": "main",
+                        "skillPath": "skills/bootstrap/SKILL.md",
+                        "computedHash": "abcdef1234567890",
+                    }
+                },
+            }
+        )
+    )
+    (project_root / ".claude" / "skills").mkdir(parents=True)
+    (project_root / ".claude" / "skills" / "bootstrap").symlink_to(
+        canonical_skill, target_is_directory=True
+    )
+
+    refs, warnings = parse_install(install_root=install_root, project_root=project_root)
+
+    assert warnings == []
+    skill = next(r for r in refs if r.component_identity == "skill/bootstrap")
+    assert skill.source_manifest == str(
+        project_root / ".claude" / "skills" / "bootstrap" / "SKILL.md"
+    )
+    assert skill.extra["source_provenance"]["source"] == "vercel-labs/agent-skills"
+    assert skill.extra["source_provenance"]["hash_type"] == "computedHash"

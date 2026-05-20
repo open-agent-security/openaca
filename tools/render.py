@@ -607,6 +607,38 @@ def _finding_marker(ids: list[str], use_color: bool) -> str:
     return f"\x1b[31m{text}\x1b[0m"
 
 
+def _source_provenance_note(ref: ComponentRef) -> str:
+    provenance = ref.extra.get("source_provenance")
+    if not isinstance(provenance, dict):
+        return ""
+    status = provenance.get("status")
+    if status == "known":
+        source = provenance.get("source")
+        source_type = provenance.get("source_type")
+        if not isinstance(source, str) or not source:
+            return ""
+        if isinstance(source_type, str) and source_type:
+            source_label = f"{source_type}:{source}"
+        else:
+            source_label = source
+        source_ref = provenance.get("ref")
+        if isinstance(source_ref, str) and source_ref:
+            source_label = f"{source_label}#{source_ref}"
+        parts = [f"source: {source_label}"]
+        skill_path = provenance.get("skill_path")
+        if isinstance(skill_path, str) and skill_path:
+            parts.append(f"path: {skill_path}")
+        hash_value = provenance.get("hash")
+        if isinstance(hash_value, str) and hash_value:
+            parts.append(f"hash: {hash_value[:8]}")
+        return f" ({', '.join(parts)})"
+    if status == "symlink-target":
+        resolved_path = provenance.get("resolved_path")
+        if isinstance(resolved_path, str) and resolved_path:
+            return f" (source: symlink -> {resolved_path})"
+    return ""
+
+
 def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     """Short identifier rendered on a tree leaf.
 
@@ -802,6 +834,7 @@ def _build_direct_node(
             leaf_label = _leaf_label(r)
             if leaf_label in duplicate_labels and r.source_manifest:
                 leaf_label = f"{leaf_label} (from {r.source_manifest})"
+            leaf_label = f"{leaf_label}{_source_provenance_note(r)}"
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
             cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
         root.children.append(cat)

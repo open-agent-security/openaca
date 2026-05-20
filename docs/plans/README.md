@@ -26,6 +26,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 017 | [Generic skill ecosystem](017-generic-skill-ecosystem.md) | ✅ Done | 008 |
 | 018 | [Source ecosystem and component type cleanup](018-source-ecosystem-component-type.md) | ✅ Done | 017 |
 | 019 | [Remote MCP server inventory](019-remote-mcp-inventory.md) | ✅ Done | 018 |
+| 020 | [Skill lock source provenance](020-skill-lock-source-provenance.md) | ✅ Done | 018 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

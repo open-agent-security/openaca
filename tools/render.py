@@ -694,8 +694,19 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
         return display_url
     install_source = ref.extra.get("install_source")
     if isinstance(install_source, str) and install_source:
-        return install_source
+        return _strip_cli_flags(install_source)
     return None
+
+
+def _strip_cli_flags(install_source: str) -> str:
+    """Truncate at the first flag token to avoid leaking CLI secrets in scan output."""
+    tokens = install_source.split()
+    visible = []
+    for t in tokens:
+        if t.startswith("-"):
+            break
+        visible.append(t)
+    return " ".join(visible) if visible else install_source
 
 
 def _redact_url_credentials(url: str) -> str:

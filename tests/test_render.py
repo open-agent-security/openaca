@@ -801,7 +801,7 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
 
     out = render_inventory_tree(refs, [], use_unicode=True)
 
-    assert "@playwright/mcp@latest" in out
+    assert "@playwright/mcp@latest (stdio via npx)" in out
     assert "npx @playwright/mcp@latest" not in out
 
 

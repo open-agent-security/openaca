@@ -650,11 +650,11 @@ def test_tree_header_counts_plugins_direct_total():
         _plugin_ref("a", "1.0.0"),
         _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0"),
         _bundled(
-            "claude-skill",
+            "skill",
             "direct-skill",
             None,
             attributed_to=None,  # direct
-            component_identity="claude-skill/direct-skill",
+            component_identity="skill/direct-skill",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
@@ -666,11 +666,11 @@ def test_tree_groups_bundled_components_by_category():
     refs = [
         _plugin_ref("supabase", "0.1.6"),
         _bundled(
-            "claude-skill",
+            "skill",
             "supa-skill",
             None,
             attributed_to="claude-plugin/supabase@0.1.6",
-            component_identity="claude-skill/supa-skill",
+            component_identity="skill/supa-skill",
         ),
         _bundled(
             "npm",
@@ -789,18 +789,18 @@ def test_tree_tier2_aggregate_carries_finding_marker():
 def test_tree_direct_components_render_as_separate_root():
     refs = [
         _bundled(
-            "claude-skill",
+            "skill",
             "foo",
             None,
             attributed_to=None,
-            component_identity="claude-skill/foo",
+            component_identity="skill/foo",
         ),
         _bundled(
-            "claude-skill",
+            "skill",
             "bar",
             None,
             attributed_to=None,
-            component_identity="claude-skill/bar",
+            component_identity="skill/bar",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
@@ -815,19 +815,19 @@ def test_tree_direct_components_render_as_separate_root():
 def test_tree_disambiguates_duplicate_direct_component_labels_with_source():
     refs = [
         _bundled(
-            "claude-skill",
+            "skill",
             "bootstrap",
             "1.0.0",
             attributed_to=None,
-            component_identity="claude-skill/bootstrap@1.0.0",
+            component_identity="skill/bootstrap@1.0.0",
             source_manifest="project/.claude/skills/bootstrap/SKILL.md",
         ),
         _bundled(
-            "claude-skill",
+            "skill",
             "bootstrap",
             "1.0.0",
             attributed_to=None,
-            component_identity="claude-skill/bootstrap@1.0.0",
+            component_identity="skill/bootstrap@1.0.0",
             source_manifest="project/.worktrees/feature/.claude/skills/bootstrap/SKILL.md",
         ),
     ]
@@ -882,11 +882,11 @@ def test_tree_ascii_fallback_uses_ascii_chars():
     refs = [
         _plugin_ref("a", "1.0.0"),
         _bundled(
-            "claude-skill",
+            "skill",
             "x",
             None,
             attributed_to="claude-plugin/a@1.0.0",
-            component_identity="claude-skill/x",
+            component_identity="skill/x",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=False)
@@ -900,11 +900,11 @@ def test_tree_unicode_default():
     refs = [
         _plugin_ref("a", "1.0.0"),
         _bundled(
-            "claude-skill",
+            "skill",
             "x",
             None,
             attributed_to="claude-plugin/a@1.0.0",
-            component_identity="claude-skill/x",
+            component_identity="skill/x",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)

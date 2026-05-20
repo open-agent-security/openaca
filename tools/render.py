@@ -545,7 +545,7 @@ _TREE_ASCII = {"branch": "|-- ", "last": "`-- ", "vert": "|   ", "space": "    "
 # way (MCPs first, agents last).
 _TREE_CATEGORIES: tuple[tuple[str, set[str]], ...] = (
     ("MCPs", {"npm", "PyPI"}),
-    ("skills", {"claude-skill"}),
+    ("skills", {"skill", "claude-skill"}),
     ("hooks", {"claude-hook"}),
     ("commands", {"claude-command"}),
     ("agents", {"claude-agent"}),
@@ -595,7 +595,7 @@ def _finding_marker(ids: list[str], use_color: bool) -> str:
 def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     """Short identifier rendered on a tree leaf.
 
-    Strips the ecosystem prefix (`claude-skill/`, `claude-command/`, etc.) —
+    Strips the component kind prefix (`skill/`, `claude-command/`, etc.) —
     the parent category label already states the kind. Hooks use their
     observation metadata for display so users see the configured command
     instead of the logical identity hash.
@@ -614,10 +614,12 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
         return label or "<hook>"
     if ref.component_identity:
         ident = ref.component_identity
-        # Strip ecosystem prefix (e.g., `claude-command/`).
+        # Strip component-kind prefix (e.g., `skill/`, `claude-command/`).
         first_slash = ident.find("/")
-        if first_slash > 0 and ident.startswith("claude-"):
-            ident = ident[first_slash + 1 :]
+        if first_slash > 0:
+            prefix = ident[:first_slash]
+            if prefix == ref.ecosystem or prefix.startswith("claude-"):
+                ident = ident[first_slash + 1 :]
         return ident
     if ref.name:
         return ref.name

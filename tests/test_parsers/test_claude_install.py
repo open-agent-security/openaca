@@ -397,7 +397,7 @@ def test_install_walks_bundled_skill(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    skill_refs = [r for r in refs if r.ecosystem == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
     assert skill_refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
@@ -414,7 +414,7 @@ def test_install_bundled_skill_carries_container_metadata(tmp_path):
     )
     refs, warnings = parse_install(install_root=tmp_path)
     assert warnings == []
-    skill = next(r for r in refs if r.ecosystem == "claude-skill")
+    skill = next(r for r in refs if r.ecosystem == "skill")
     assert skill.extra["declared_by"]["kind"] == "plugin"
     assert skill.extra["declared_by"]["name"] == "superpowers"
     assert skill.extra["component_path"][0] == {"type": "plugin", "name": "superpowers"}
@@ -591,12 +591,12 @@ def test_install_direct_hooks_repo_mode_excludes_local(tmp_path):
 
 
 def test_install_direct_skills_from_install_root_skills_dir(tmp_path):
-    """`<install_root>/skills/<name>/SKILL.md` → emit claude-skill refs, no attribution."""
+    """`<install_root>/skills/<name>/SKILL.md` → emit skill refs, no attribution."""
     skill_dir = tmp_path / "skills" / "linter"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nname: linter\ndescription: lints code\n---\nbody\n")
     refs, _ = parse_install(install_root=tmp_path)
-    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    skill_refs = [r for r in refs if r.ecosystem == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "linter"
     assert skill_refs[0].attributed_to is None
@@ -633,7 +633,7 @@ def test_install_walks_project_skills_commands_and_agents(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path, project_root=project)
 
     assert warnings == []
-    assert any(r.component_identity == "claude-skill/project-skill@1.0.0" for r in refs)
+    assert any(r.component_identity == "skill/project-skill@1.0.0" for r in refs)
     assert any(r.component_identity == "claude-command/deploy" for r in refs)
     assert any(r.component_identity == "claude-agent/code-reviewer" for r in refs)
 
@@ -647,7 +647,7 @@ def test_install_walks_nested_project_skills(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path, project_root=project)
 
     assert warnings == []
-    assert any(r.component_identity == "claude-skill/ui-review" for r in refs)
+    assert any(r.component_identity == "skill/ui-review" for r in refs)
 
 
 def test_install_project_skills_skip_gitignored_worktrees(tmp_path):
@@ -673,7 +673,7 @@ def test_install_project_skills_skip_gitignored_worktrees(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path, project_root=project)
 
     assert warnings == []
-    bootstrap_refs = [r for r in refs if r.component_identity == "claude-skill/bootstrap"]
+    bootstrap_refs = [r for r in refs if r.component_identity == "skill/bootstrap"]
     assert len(bootstrap_refs) == 1
     assert bootstrap_refs[0].source_manifest == str(real_skill / "SKILL.md")
 
@@ -784,7 +784,7 @@ def test_install_silent_when_installpath_missing(tmp_path):
     plugin_refs = [r for r in refs if r.ecosystem == "claude-plugin"]
     assert len(plugin_refs) == 1
     # No bundled refs.
-    assert all(r.ecosystem != "claude-skill" for r in refs)
+    assert all(r.ecosystem != "skill" for r in refs)
     assert all(r.ecosystem != "claude-hook" for r in refs)
 
 
@@ -908,7 +908,7 @@ def test_install_include_transitive_false_skips_lockfile_and_manifest(tmp_path):
     (skill_dir / "SKILL.md").write_text("---\nname: demo\ndescription: x\n---\nbody\n")
     refs, _ = parse_install(install_root=tmp_path, include_transitive=False)
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
-    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    skill_refs = [r for r in refs if r.ecosystem == "skill"]
     assert npm_refs == []
     assert len(skill_refs) == 1  # Tier-1 still emitted
 
@@ -1092,7 +1092,7 @@ def test_install_walks_custom_skills_path_from_plugin_json(tmp_path):
     )
     _write_plugin_json(install_path, {"skills": "./skills/"})
     refs, _ = parse_install(install_root=tmp_path)
-    skill_refs = [r for r in refs if r.ecosystem == "claude-skill"]
+    skill_refs = [r for r in refs if r.ecosystem == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].name == "bootstrap"
 
@@ -1112,7 +1112,7 @@ def test_install_walks_custom_skills_path_distinct_from_default(tmp_path):
     (custom_root / "beta" / "SKILL.md").write_text("---\nname: beta\ndescription: y\n---\n")
     _write_plugin_json(install_path, {"skills": "./extras/skills/"})
     refs, _ = parse_install(install_root=tmp_path)
-    skill_names = sorted(r.name or "" for r in refs if r.ecosystem == "claude-skill")
+    skill_names = sorted(r.name or "" for r in refs if r.ecosystem == "skill")
     assert skill_names == ["alpha", "beta"]
 
 

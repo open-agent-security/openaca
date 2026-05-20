@@ -20,7 +20,7 @@ def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
     assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
     # OpenACA-native ecosystem → no PURL, not queryable
     assert is_queryable(_ref("claude-plugin", "supabase", "0.1.6")) is False
-    assert is_queryable(_ref("claude-skill", "bootstrap", "1.0.0")) is False
+    assert is_queryable(_ref("skill", "bootstrap", "1.0.0")) is False
     # Identity-only refs (no ecosystem) → not queryable
     assert is_queryable(ComponentRef(component_identity="claude-hook/command:abcd1234")) is False
 
@@ -49,7 +49,7 @@ def test_augment_returns_base_corpus_when_no_versioned_refs():
     can't be queried via OSV.dev — they're skipped, base corpus returned."""
     refs = [
         ComponentRef(component_identity="claude-hook/command:abcd1234"),
-        ComponentRef(ecosystem="claude-skill", name="x"),  # no version
+        ComponentRef(ecosystem="skill", name="x"),  # no version
     ]
     base = [{"id": "CVE-2026-0001"}]
     augmented, warnings = augment_corpus(refs=refs, base_corpus=base)
@@ -208,11 +208,11 @@ def test_augment_skips_unversioned_refs():
 
 
 def test_augment_skips_purls_without_purl_form():
-    """Refs whose ecosystem isn't in the PURL map (e.g., claude-skill) aren't
+    """Refs whose ecosystem isn't in the PURL map (e.g., skill) aren't
     queryable via OSV.dev — skip them, query the rest."""
     refs = [
         _ref("npm", "lodash", "4.17.20"),
-        _ref("claude-skill", "demo", "1.0.0"),
+        _ref("skill", "demo", "1.0.0"),
     ]
     base = []
 

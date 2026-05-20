@@ -8,7 +8,7 @@ convention via `metadata.version` (rejected here unless it's a string,
 because YAML coerces `1.0` to a float and `1.0.0` to a string, which is
 the kind of foot-gun we want to refuse silently rather than guess).
 
-Identity: `claude-skill/<name>` or `claude-skill/<name>@<metadata.version>`.
+Identity: `skill/<name>` or `skill/<name>@<metadata.version>`.
 
 Used for both direct skills (`~/.claude/skills/<name>/SKILL.md`, no parent
 plugin) and bundled skills (`<plugin>/skills/<name>/SKILL.md`, parented
@@ -45,12 +45,12 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
     if not name:
         return []
     version = _extract_version(frontmatter)
-    identity = f"claude-skill/{name}"
+    identity = f"skill/{name}"
     if version:
         identity = f"{identity}@{version}"
     return [
         ComponentRef(
-            ecosystem="claude-skill",
+            ecosystem="skill",
             name=name,
             version=version,
             component_identity=identity,

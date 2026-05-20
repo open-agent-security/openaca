@@ -364,7 +364,7 @@ Per-parser detail:
 | `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>@<version>` |
 | `.claude/settings.json` | Enabled-plugin enumeration; direct `mcpServers`; direct `hooks` per scope | mixed (see surface-specific rows) |
 | `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<name>@<version>` |
-| `SKILL.md` (`.claude/skills/*/` or `<plugin>/skills/*/`) | Agent skills | `claude-skill/<name>[@<metadata.version>]` |
+| `SKILL.md` (`.claude/skills/*/` or `<plugin>/skills/*/`) | Agent skills | `skill/<name>[@<metadata.version>]` |
 | `hooks/hooks.json` (plugin) or `settings.json.hooks` (direct) | Hook entries by event + index | `claude-hook/<plugin>/<event>/<i>` (bundled) or `claude-hook/settings/<scope>/<event>/<i>` (direct) |
 | `.claude/commands/*.md` and `<plugin>/commands/*.md` | Slash commands | `claude-command/<owner>/<name>` (owner = plugin or `repo`) |
 | `.claude/agents/*.md` and `<plugin>/agents/*.md` | Subagents | `claude-agent/<owner>/<name>` |

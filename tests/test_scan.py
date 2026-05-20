@@ -1318,7 +1318,7 @@ def test_endpoint_verbose_lists_direct_skills_individually(tmp_path):
     assert "direct components/" in result.output
     assert "skills/ (3)" in result.output
     # Each skill name appears as a leaf, sorted alphabetically. The tree
-    # strips the `claude-skill/` ecosystem prefix from leaf labels (the
+    # strips the `skill/` ecosystem prefix from leaf labels (the
     # parent category line already states the kind).
     alpha_idx = result.output.find("alpha-skill")
     middle_idx = result.output.find("middle-skill")

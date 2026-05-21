@@ -175,6 +175,38 @@ def test_cyclonedx_round_trips_components_needed_for_matching():
     assert refs[1].extra["component_type"] == "hook"
 
 
+def test_parse_purl_strips_qualifiers_and_subpath():
+    """PURLs with qualifiers (?...) or subpath (#...) must yield a clean version."""
+    doc = {
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/foo@1.2.3?arch=x64",
+                "name": "foo",
+                "purl": "pkg:npm/foo@1.2.3?arch=x64",
+            },
+            {
+                "type": "library",
+                "bom-ref": "pkg:pypi/bar@2.0.0#subpath",
+                "name": "bar",
+                "purl": "pkg:pypi/bar@2.0.0#subpath",
+            },
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/baz@3.0.0?os=linux#lib/main",
+                "name": "baz",
+                "purl": "pkg:npm/baz@3.0.0?os=linux#lib/main",
+            },
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(doc)
+
+    assert refs[0].version == "1.2.3"
+    assert refs[1].version == "2.0.0"
+    assert refs[2].version == "3.0.0"
+
+
 def _metadata_property(doc: dict, name: str) -> str | None:
     for prop in doc["metadata"]["properties"]:
         if prop["name"] == name:

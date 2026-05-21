@@ -265,6 +265,10 @@ def _parse_purl(purl: str) -> dict[str, str]:
     if not name:
         name = remainder
         version = ""
+    # Strip PURL qualifiers (?...) and subpath (#...) per the PURL spec:
+    # pkg:type/namespace/name@version?qualifiers#subpath
+    if version:
+        version = version.split("?", 1)[0].split("#", 1)[0]
     parsed = {"ecosystem": ecosystem, "name": unquote(name)}
     if version:
         parsed["version"] = version

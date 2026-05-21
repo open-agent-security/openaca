@@ -42,6 +42,7 @@ from pathlib import Path
 import click
 from click.core import ParameterSource
 
+from tools.bom import build_agent_bom, component_refs_from_cyclonedx
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
@@ -245,6 +246,13 @@ _include_posture_option = click.option(
         "These are distinct from vulnerability findings and never affect "
         "--fail-on exit codes."
     ),
+)
+_bom_input_option = click.option(
+    "--input",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="CycloneDX Agent BOM JSON to scan.",
 )
 
 
@@ -473,7 +481,11 @@ def repo(
     # OpenACA is agent-composition analysis; deps belonging to general
     # software in the repo are out of scope and would mislead users into
     # thinking OpenACA is a general SCA tool. See README for framing.
-    refs = _filter_agent_scope_refs(all_refs)
+    refs = build_agent_bom(
+        _filter_agent_scope_refs(all_refs),
+        target_type="repo",
+        target=str(target),
+    ).component_refs()
     n_failed = n_found - len(grouped)
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -608,6 +620,11 @@ def endpoint(
         mode="endpoint",
         include_transitive=True,
     )
+    refs = build_agent_bom(
+        refs,
+        target_type="endpoint",
+        target=str(config_dir),
+    ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
@@ -682,6 +699,83 @@ def endpoint(
             err=True,
         )
 
+    _exit_for_findings(fail_on, findings)
+
+
+@main.command(name="bom")
+@click.pass_context
+@_bom_input_option
+@_sarif_option
+@_fail_on_option
+@_verbose_option
+@_format_option
+@_no_color_option
+def scan_bom(
+    ctx: click.Context,
+    input_path: Path,
+    sarif: Path | None,
+    fail_on: str,
+    verbose: bool,
+    output_format: str,
+    no_color: bool,
+) -> None:
+    """Scan a previously generated Agent BOM.
+
+    BOM scans perform advisory matching against composition captured in the
+    BOM. Posture findings are not replayed because those rules require the
+    original local configuration files, not just the composition snapshot.
+    """
+    sarif, fail_on, verbose, output_format, no_color, _ = _apply_group_opts(
+        ctx,
+        sarif,
+        fail_on,
+        verbose,
+        output_format,
+        no_color,
+        include_posture=False,
+    )
+    doc = json.loads(input_path.read_text(encoding="utf-8"))
+    refs = build_agent_bom(
+        _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
+        target_type="bom",
+        target=str(input_path),
+    ).component_refs()
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
+    _stamp_source(corpus, "osv.dev")
+    for fw in fed_warnings:
+        click.echo(f"warning: {fw}", err=True)
+    findings = match(refs, corpus)
+    advisory_index = {a["id"]: a for a in corpus}
+
+    if verbose:
+        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
+        for line in _federation_targets_lines(refs, len(corpus)):
+            click.echo(line, err=True)
+        if findings:
+            click.echo(f"matched {len(findings)} finding(s):", err=True)
+            for f in findings:
+                click.echo(f"  {_finding_line(f)}", err=True)
+
+    if sarif is not None:
+        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
+        sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
+        click.echo(f"sarif: wrote {sarif}", err=True)
+
+    stats = ScanStats(
+        unit_count=1,
+        unit_label="agent BOM",
+        component_count=len(refs),
+        sources=_collect_corpus_sources(corpus),
+    )
+    _emit(
+        findings,
+        advisory_index,
+        stats,
+        output_format=output_format,
+        use_color=_use_color(no_color, output_format),
+        verbose=verbose,
+    )
+    _stderr_summary(findings, f"scanned 1 agent BOM, {len(refs)} component(s)", output_format)
     _exit_for_findings(fail_on, findings)
 
 

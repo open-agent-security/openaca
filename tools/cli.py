@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import click
 
+from tools.bom_cli import main as bom_cmd
 from tools.export import main as export_cmd
 from tools.lint import main as lint_cmd
 from tools.promote import main as promote_cmd
@@ -18,12 +19,14 @@ def main() -> None:
 
 
 scan_cmd.short_help = "Scan a repository or endpoint for agent-composition findings."
+bom_cmd.short_help = "Generate an Agent BOM for a repository or endpoint."
 lint_cmd.short_help = "Validate overlay YAML against the schema."
 export_cmd.short_help = "Build the static overlay export."
 promote_cmd.short_help = "Promote a reviewed candidate into the corpus."
 seed_cmd.short_help = "Generate review candidates from an OSV dump."
 
 main.add_command(scan_cmd, name="scan")
+main.add_command(bom_cmd, name="bom")
 main.add_command(lint_cmd, name="lint")
 main.add_command(export_cmd, name="export")
 main.add_command(promote_cmd, name="promote")

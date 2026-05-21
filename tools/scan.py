@@ -735,6 +735,10 @@ def scan_bom(
         include_posture=False,
     )
     doc = json.loads(input_path.read_text(encoding="utf-8"))
+    if not isinstance(doc, dict):
+        raise click.ClickException(
+            f"{input_path}: BOM must be a JSON object, got {type(doc).__name__}"
+        )
     refs = build_agent_bom(
         _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
         target_type="bom",

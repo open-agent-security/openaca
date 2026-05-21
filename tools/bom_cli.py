@@ -34,7 +34,14 @@ def main() -> None:
 )
 def repo(target: Path, include_gitignored: bool) -> None:
     """Generate an Agent BOM from repository manifests."""
-    grouped, _ = parse_repo_grouped(target, include_gitignored=include_gitignored)
+    grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
+    n_parsed = len(grouped)
+    if n_found > n_parsed:
+        click.echo(
+            f"warning: {n_found - n_parsed} of {n_found} matched manifest(s) failed to parse"
+            " and were skipped",
+            err=True,
+        )
     refs = _filter_agent_scope_refs(flatten_grouped(grouped))
     bom = build_agent_bom(refs, target_type="repo", target=str(target))
     click.echo(json.dumps(bom.to_cyclonedx(), indent=2))

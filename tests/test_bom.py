@@ -35,6 +35,37 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
     assert "vulnerabilities" not in doc
 
 
+def test_cyclonedx_build_edges_resolves_versioned_attributed_to():
+    """Bundled components with attributed_to='<identity>@<version>' resolve correctly.
+
+    In real endpoint scans, a plugin is stored with versionless component_identity
+    (e.g., 'claude-plugin/mktplace/name') but bundled refs receive
+    attributed_to='claude-plugin/mktplace/name@1.2.3'. Without indexing the versioned
+    form, _build_edges silently emits no edge and the CycloneDX graph is incomplete.
+    """
+    plugin = ComponentRef(
+        component_identity="claude-plugin/claude-plugins-official/github",
+        version="2.0.0",
+        source_manifest="installed_plugins.json",
+        extra={"component_type": "plugin"},
+    )
+    bundled_mcp = ComponentRef(
+        component_identity="mcp-remote/api.githubcopilot.com/mcp/",
+        source_manifest="plugin.json",
+        attributed_to="claude-plugin/claude-plugins-official/github@2.0.0",
+        extra={"component_type": "mcp_server"},
+    )
+
+    doc = build_agent_bom(
+        [plugin, bundled_mcp], target_type="endpoint", target="~/.claude"
+    ).to_cyclonedx()
+
+    deps_by_ref = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
+    plugin_bom_ref = "claude-plugin/claude-plugins-official/github"
+    assert plugin_bom_ref in deps_by_ref
+    assert "mcp-remote/api.githubcopilot.com/mcp/" in deps_by_ref[plugin_bom_ref]
+
+
 def test_cyclonedx_dependencies_capture_plugin_attribution_edges():
     plugin = ComponentRef(
         component_identity="claude-plugin/claude-plugins-official/github@unknown",

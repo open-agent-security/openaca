@@ -736,6 +736,8 @@ def scan_bom(
     )
     try:
         doc = json.loads(input_path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(f"{input_path}: not valid UTF-8 — {exc}") from exc
     except json.JSONDecodeError as exc:
         raise click.ClickException(f"{input_path}: invalid JSON — {exc}") from exc
     if not isinstance(doc, dict):

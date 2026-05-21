@@ -107,3 +107,19 @@ def test_scan_bom_rejects_malformed_json(tmp_path):
     assert result.exit_code != 0
     assert "invalid JSON" in result.output
     assert isinstance(result.exception, SystemExit)
+
+
+def test_scan_bom_rejects_non_utf8_input(tmp_path):
+    """scan bom exits with a controlled CLI error when the BOM file is not valid UTF-8."""
+    bom_path = tmp_path / "latin1.bom.json"
+    # Write a byte sequence that is valid Latin-1 but not valid UTF-8.
+    bom_path.write_bytes(b'{"key": "\xff\xfe"}')
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "not valid UTF-8" in result.output
+    assert isinstance(result.exception, SystemExit)

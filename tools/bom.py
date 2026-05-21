@@ -163,11 +163,17 @@ def _short_hash(value: str) -> str:
 
 
 def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
-    identity_to_bom_ref = {
-        component.ref.component_identity: component.bom_ref
-        for component in components
-        if component.ref.component_identity
-    }
+    # Index by both versionless identity and versioned identity so that
+    # attributed_to values like "claude-plugin/mktplace/name@1.0.0" resolve
+    # even when the plugin's component_identity is stored without version.
+    identity_to_bom_ref: dict[str, str] = {}
+    for component in components:
+        ci = component.ref.component_identity
+        if not ci:
+            continue
+        identity_to_bom_ref[ci] = component.bom_ref
+        if component.ref.version:
+            identity_to_bom_ref[f"{ci}@{component.ref.version}"] = component.bom_ref
     edges: list[BOMEdge] = []
     for component in components:
         parent_identity = component.ref.attributed_to

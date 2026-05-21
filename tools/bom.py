@@ -51,9 +51,9 @@ class AgentBOM:
         if self.target is not None:
             metadata_properties.append({"name": "openaca:target", "value": self.target})
 
-        dependencies: dict[str, list[str]] = {}
+        dependencies: dict[str, list[str]] = {component.bom_ref: [] for component in self.components}
         for edge in self.edges:
-            dependencies.setdefault(edge.parent_bom_ref, []).append(edge.child_bom_ref)
+            dependencies[edge.parent_bom_ref].append(edge.child_bom_ref)
 
         return {
             "bomFormat": "CycloneDX",

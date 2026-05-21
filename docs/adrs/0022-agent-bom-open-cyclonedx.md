@@ -11,25 +11,24 @@ superseded-by: null
 
 OpenACA already discovers agent components as `ComponentRef` values, renders
 composition trees, matches package-backed components against OSV records, and
-runs scanner-side posture checks against raw manifests. The commercial product
-direction needs a durable artifact that can be stored per repo/commit and
-re-matched when the public corpus changes. The OSS project also needs a public
-artifact that cleanly expresses agent composition without making the BOM itself
-a proprietary product boundary.
+runs scanner-side posture checks against raw manifests. OpenACA needs a durable
+artifact that can be stored per repo/commit and re-matched when the public
+corpus changes. The agent composition data should be expressible as a
+first-class artifact without making the BOM itself a proprietary boundary.
 
 The established SBOM pattern is that BOM formats and single-target generation
-are open, while commercial products operate BOMs across organizations: storage,
-history, drift, policy, workflow, and integrations. Closing the Agent BOM
-format or local generator would weaken OpenACA's open-substrate claim and make
-foundation or standards conversations harder.
+are open, while cross-organization aggregation, drift tracking, and policy
+workflows build on top of them. Closing the Agent BOM format or local generator
+would weaken OpenACA's open-substrate claim and make foundation or standards
+conversations harder.
 
 ## Decision
 
 OpenACA treats Agent BOM as an open composition artifact. The open scanner emits
 Agent BOMs for repo and endpoint targets, and regular scans build an Agent BOM
-internally before advisory matching. The commercial product may store, diff,
-aggregate, and enforce policy on Agent BOMs across organizations, but it does
-not own the schema or single-target generation path.
+internally before advisory matching. Multi-target aggregation, policy
+enforcement, and cross-organization workflows are out of scope for V0; the open
+schema and single-target generation path are part of the OSS project.
 
 The external interchange format is CycloneDX JSON with OpenACA-owned properties
 under the `openaca:*` namespace. OpenACA keeps a focused internal `AgentBOM`
@@ -84,7 +83,7 @@ internally build an Agent BOM before matching. `openaca scan bom` can re-match
 a stored BOM against the current corpus without re-reading the original repo or
 endpoint config.
 
-Commercial workflows can persist BOMs per repo/commit and re-evaluate them when
+Downstream tooling can persist BOMs per repo/commit and re-evaluate them when
 new OpenACA overlays or OSV advisories arrive. That enables drift and
 "new advisory affects these repos" workflows without immediately re-checking
 out every repository.

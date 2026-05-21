@@ -78,6 +78,39 @@ def test_duplicate_preferred_bom_refs_get_stable_suffixes():
     assert all(ref.startswith("skill/bootstrap#") for ref in bom_refs)
 
 
+def test_cyclonedx_dependencies_includes_all_components_including_leaves():
+    refs = [
+        ComponentRef(
+            component_identity="claude-plugin/my-plugin",
+            source_manifest="installed_plugins.json",
+            extra={"component_type": "plugin"},
+        ),
+        ComponentRef(
+            component_identity="mcp-stdio/some-server",
+            source_manifest="plugin.json",
+            attributed_to="claude-plugin/my-plugin",
+            extra={"component_type": "mcp_server"},
+        ),
+        ComponentRef(
+            ecosystem="npm",
+            name="standalone-tool",
+            version="1.0.0",
+            source_manifest=".mcp.json",
+            extra={"component_type": "mcp_server"},
+        ),
+    ]
+
+    doc = build_agent_bom(refs, target_type="endpoint", target="~/.claude").to_cyclonedx()
+
+    deps_by_ref = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
+    assert "claude-plugin/my-plugin" in deps_by_ref
+    assert "mcp-stdio/some-server" in deps_by_ref
+    assert deps_by_ref["mcp-stdio/some-server"] == []
+    purl = "pkg:npm/standalone-tool@1.0.0"
+    assert purl in deps_by_ref
+    assert deps_by_ref[purl] == []
+
+
 def test_cyclonedx_round_trips_components_needed_for_matching():
     original = build_agent_bom(
         [

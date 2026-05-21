@@ -67,3 +67,30 @@ def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["stats"]["components"] == 1
     assert any(f["id"] == "GHSA-3q26-f695-pp76" for f in payload["findings"])
+
+
+def test_bom_repo_warns_on_parse_failures(tmp_path):
+    """bom repo emits a stderr warning when manifests fail to parse."""
+    (tmp_path / ".mcp.json").write_text("not valid json{{{", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        openaca_main, ["bom", "repo", "--target", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "warning:" in result.output
+    assert "failed to parse" in result.output
+
+
+def test_scan_bom_rejects_non_object_json(tmp_path):
+    """scan bom exits with a controlled error when the BOM file is a JSON array."""
+    bom_path = tmp_path / "bad.bom.json"
+    bom_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "BOM must be a JSON object" in result.output

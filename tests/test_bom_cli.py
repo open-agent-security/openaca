@@ -92,3 +92,18 @@ def test_scan_bom_rejects_non_object_json(tmp_path):
 
     assert result.exit_code != 0
     assert "BOM must be a JSON object" in result.output
+
+
+def test_scan_bom_rejects_malformed_json(tmp_path):
+    """scan bom exits with a controlled CLI error (not a traceback) for unparseable JSON."""
+    bom_path = tmp_path / "malformed.bom.json"
+    bom_path.write_text("{not valid json", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "invalid JSON" in result.output
+    assert isinstance(result.exception, SystemExit)

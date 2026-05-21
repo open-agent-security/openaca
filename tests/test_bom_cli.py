@@ -73,9 +73,7 @@ def test_bom_repo_warns_on_parse_failures(tmp_path):
     """bom repo emits a stderr warning when manifests fail to parse."""
     (tmp_path / ".mcp.json").write_text("not valid json{{{", encoding="utf-8")
 
-    result = CliRunner().invoke(
-        openaca_main, ["bom", "repo", "--target", str(tmp_path)]
-    )
+    result = CliRunner().invoke(openaca_main, ["bom", "repo", "--target", str(tmp_path)])
 
     assert result.exit_code == 0, result.output
     assert "warning:" in result.output

@@ -1228,6 +1228,75 @@ def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
     assert "left-pad" not in out
 
 
+def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
+    """Two plugins with the same name and version must not cross-contaminate.
+
+    Both emit attributed_to = "claude-plugin/foo@1.0", so matching solely on
+    attributed_to would assign skill-A under plugin-B and vice-versa.  The fix
+    scopes the attributed_to match to the ref's plugin root directory.
+    """
+    plugin_a_root = tmp_path / "plugin-a"
+    plugin_b_root = tmp_path / "plugin-b"
+    for root in (plugin_a_root, plugin_b_root):
+        (root / ".claude-plugin").mkdir(parents=True)
+
+    plugin_a_json = plugin_a_root / ".claude-plugin" / "plugin.json"
+    plugin_b_json = plugin_b_root / ".claude-plugin" / "plugin.json"
+
+    plugin_a = ComponentRef(
+        name="foo",
+        version="1.0",
+        component_identity="claude-plugin/foo",
+        source_manifest=str(plugin_a_json),
+        extra={"component_type": "plugin"},
+    )
+    plugin_b = ComponentRef(
+        name="foo",
+        version="1.0",
+        component_identity="claude-plugin/foo",
+        source_manifest=str(plugin_b_json),
+        extra={"component_type": "plugin"},
+    )
+
+    skill_a_md = plugin_a_root / "skills" / "skill-a" / "SKILL.md"
+    skill_b_md = plugin_b_root / "skills" / "skill-b" / "SKILL.md"
+    for md in (skill_a_md, skill_b_md):
+        md.parent.mkdir(parents=True)
+        md.write_text("---\nname: {}\ndescription: test\n---\nbody\n".format(md.parent.name))
+
+    # Both skill refs carry the same attributed_to string.
+    skill_a = ComponentRef(
+        component_identity="skill/skill-a",
+        source_manifest=str(skill_a_md),
+        scope="agent-component",
+        attributed_to="claude-plugin/foo@1.0",
+        extra={"component_type": "skill"},
+    )
+    skill_b = ComponentRef(
+        component_identity="skill/skill-b",
+        source_manifest=str(skill_b_md),
+        scope="agent-component",
+        attributed_to="claude-plugin/foo@1.0",
+        extra={"component_type": "skill"},
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [
+            (plugin_a_json, [plugin_a, skill_a]),
+            (plugin_b_json, [plugin_b, skill_b]),
+        ],
+        [],
+        use_unicode=True,
+    )
+
+    # skill-a must appear exactly once; skill-b must appear exactly once.
+    assert out.count("skill-a") == 1
+    assert out.count("skill-b") == 1
+    # Each plugin node must show exactly 1 skill, not 2.
+    assert out.count("skills/ (2)") == 0
+
+
 # ── Posture findings section ─────────────────────────────────────────────────
 
 

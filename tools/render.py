@@ -1065,7 +1065,7 @@ def _build_repo_plugin_node(
     for ref in all_refs:
         if ref is plugin_ref or _is_plugin_ref(ref):
             continue
-        if ref.attributed_to == display_id:
+        if ref.attributed_to == display_id and _ref_under_dir(ref, plugin_dir):
             if ref.scope == "agent-dependency":
                 deps.append(ref)
                 assigned.add(_ref_key(ref))
@@ -1119,6 +1119,16 @@ def _repo_ref_in_dir(ref: ComponentRef, directory: Path) -> bool:
         return False
     try:
         return Path(ref.source_manifest).resolve().parent == directory.resolve()
+    except OSError:
+        return False
+
+
+def _ref_under_dir(ref: ComponentRef, directory: Path) -> bool:
+    """True when ref.source_manifest lives anywhere under `directory` (including subdirectories)."""
+    if not ref.source_manifest:
+        return False
+    try:
+        return Path(ref.source_manifest).resolve().is_relative_to(directory.resolve())
     except OSError:
         return False
 

@@ -196,8 +196,8 @@ def _parse_bundled_skills(
     plugin_root: Path, data: dict, attributed_to: Optional[str]
 ) -> list[ComponentRef]:
     skill_dirs: list[Path] = []
-    default_skills = plugin_root / "skills"
-    if default_skills.is_dir():
+    default_skills = _resolve_within(plugin_root, "skills")
+    if default_skills is not None and default_skills.is_dir():
         skill_dirs.append(default_skills)
     custom_skills = data.get("skills")
     if isinstance(custom_skills, str):

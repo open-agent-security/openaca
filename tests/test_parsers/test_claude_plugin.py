@@ -128,6 +128,33 @@ def test_default_skills_dir_symlink_outside_plugin_root_is_rejected(tmp_path):
     assert skill_refs == [], "Symlinked skills dir outside plugin root must be rejected"
 
 
+def test_symlinked_skill_subdir_outside_plugin_root_is_rejected(tmp_path):
+    """A symlinked skill subdir inside skills/ that resolves outside the plugin root
+    must be skipped.  The top-level skills/ guard doesn't protect against symlinked
+    children; each child dir is now also checked via containment before parsing."""
+    import os
+
+    external_skills = tmp_path / "external_skills"
+    external_skill_dir = external_skills / "evil_skill"
+    external_skill_dir.mkdir(parents=True)
+    (external_skill_dir / "SKILL.md").write_text(
+        "---\nname: evil\ndescription: Evil skill.\n---\n\n# Evil\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "sym-plugin", "version": "1.0.0"}))
+    skills_dir = plugin_root / "skills"
+    skills_dir.mkdir()
+    # Symlink plugin_root/skills/evil_skill -> external directory outside plugin root.
+    os.symlink(external_skill_dir, skills_dir / "evil_skill")
+
+    refs = parse(manifest)
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert skill_refs == [], "Symlinked skill subdir outside plugin root must be rejected"
+
+
 def test_mcp_servers_string_path_resolves_from_plugin_root():
     """Plan 007 bug fix: mcpServers as a string path resolves from the plugin
     root (manifest.parent.parent), not the manifest's directory. Resolving

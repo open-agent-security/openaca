@@ -195,6 +195,7 @@ def _parse_mcp_servers_from_plugin_json(
 def _parse_bundled_skills(
     plugin_root: Path, data: dict, attributed_to: Optional[str]
 ) -> list[ComponentRef]:
+    plugin_root_resolved = plugin_root.resolve()
     skill_dirs: list[Path] = []
     default_skills = _resolve_within(plugin_root, "skills")
     if default_skills is not None and default_skills.is_dir():
@@ -213,6 +214,12 @@ def _parse_bundled_skills(
             continue
         seen_dirs.add(resolved)
         for skill_subdir in sorted(skills_dir.iterdir()):
+            try:
+                subdir_resolved = skill_subdir.resolve()
+            except OSError:
+                continue
+            if not subdir_resolved.is_relative_to(plugin_root_resolved):
+                continue
             skill_md = skill_subdir / "SKILL.md"
             if skill_md.is_file():
                 refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))

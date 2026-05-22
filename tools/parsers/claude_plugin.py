@@ -213,7 +213,11 @@ def _parse_bundled_skills(
         if resolved in seen_dirs:
             continue
         seen_dirs.add(resolved)
-        for skill_subdir in sorted(skills_dir.iterdir()):
+        try:
+            entries = sorted(skills_dir.iterdir())
+        except OSError:
+            continue
+        for skill_subdir in entries:
             try:
                 subdir_resolved = skill_subdir.resolve()
             except OSError:

@@ -349,3 +349,37 @@ def test_parse_at_install_root_skips_non_object_plugin_json(tmp_path):
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text("[]")
     assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+
+
+def test_unreadable_skills_dir_does_not_drop_plugin_parse(tmp_path):
+    """An unreadable skills/ directory must not abort parse() entirely.
+
+    iterdir() on a mode-000 directory raises PermissionError (OSError subclass).
+    Before the fix this propagated through _parse_bundled_skills() and silenced
+    the whole plugin manifest in parse_repo_grouped().  After the fix, iterdir
+    errors are caught per skills_dir so the plugin self-ref is still emitted.
+    """
+    import os
+    import stat
+
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "guarded-plugin", "version": "2.0.0"}))
+    skills_dir = plugin_root / "skills"
+    skills_dir.mkdir()
+    # Make the directory unreadable so iterdir() raises PermissionError.
+    os.chmod(skills_dir, 0o000)
+    try:
+        refs = parse(manifest)
+    finally:
+        os.chmod(skills_dir, stat.S_IRWXU)
+
+    plugin_refs = [r for r in refs if r.component_identity == "claude-plugin/guarded-plugin"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    # Running as root bypasses permission checks — skip the self-ref assertion
+    # in that environment (the important thing is no exception is raised).
+    if os.getuid() != 0:
+        assert len(plugin_refs) == 1, "plugin self-ref must survive unreadable skills dir"
+    assert skill_refs == [], "no skill refs expected from unreadable skills dir"

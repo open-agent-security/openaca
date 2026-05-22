@@ -13,6 +13,13 @@ OpenACA-owned metadata in `properties[]` entries whose names start with
 
 The initial OpenACA Agent BOM schema version is `0.1`.
 
+The machine-readable OpenACA profile lives at
+`schema/openaca-bom.schema.json`. Validate a BOM with:
+
+```bash
+openaca bom lint agent.bom.json
+```
+
 ```json
 {
   "bomFormat": "CycloneDX",

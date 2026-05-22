@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from tools.bom import build_agent_bom
+from tools.bom_lint import main as lint_cmd
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.scan import _filter_agent_scope_refs
@@ -17,6 +18,9 @@ from tools.scan import _filter_agent_scope_refs
 @click.group()
 def main() -> None:
     """Generate OpenACA Agent BOMs."""
+
+
+main.add_command(lint_cmd, name="lint")
 
 
 @main.command()

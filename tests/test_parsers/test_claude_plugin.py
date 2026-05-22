@@ -83,6 +83,26 @@ def test_plugin_self_identity_carries_component_type_not_ecosystem():
     assert plugin_self.version == "1.2.0"
 
 
+def test_repo_mode_walks_default_bundled_skills(tmp_path):
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "openaca", "version": "0.1.0"}))
+    skill_dir = plugin_root / "skills" / "scan"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: scan\ndescription: Run OpenACA scans from Claude Code.\n---\n\n# Scan\n"
+    )
+
+    refs = parse(manifest)
+
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert len(skill_refs) == 1
+    assert skill_refs[0].component_identity == "skill/scan"
+    assert skill_refs[0].attributed_to == "claude-plugin/openaca@0.1.0"
+
+
 def test_mcp_servers_string_path_resolves_from_plugin_root():
     """Plan 007 bug fix: mcpServers as a string path resolves from the plugin
     root (manifest.parent.parent), not the manifest's directory. Resolving

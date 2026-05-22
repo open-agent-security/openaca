@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openaca.dev/schema/openaca-bom.schema.json",
+  "title": "OpenACA Agent BOM",
+  "type": "object",
+  "required": ["bomFormat", "specVersion", "version", "metadata", "components", "dependencies"],
+  "properties": {
+    "bomFormat": {"const": "CycloneDX"},
+    "specVersion": {"enum": ["1.7"]},
+    "version": {"type": "integer", "minimum": 1},
+    "metadata": {
+      "type": "object",
+      "required": ["properties"],
+      "properties": {
+        "tools": {"type": "array"},
+        "properties": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/property"},
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "required": ["name", "value"],
+                "properties": {
+                  "name": {"const": "openaca:schema_version"},
+                  "value": {"const": "0.1"}
+                }
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "required": ["name", "value"],
+                "properties": {
+                  "name": {"const": "openaca:target_type"},
+                  "value": {"enum": ["repo", "endpoint", "bom"]}
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/component"}
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/dependency"}
+    }
+  },
+  "$defs": {
+    "property": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "value": {"type": "string"}
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": ["type", "bom-ref", "name"],
+      "properties": {
+        "type": {"const": "application"},
+        "bom-ref": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string"},
+        "purl": {"type": "string", "pattern": "^pkg:"},
+        "properties": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/property"}
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["ref", "dependsOn"],
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "dependsOn": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

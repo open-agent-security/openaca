@@ -1065,6 +1065,19 @@ def _build_repo_plugin_node(
     for ref in all_refs:
         if ref is plugin_ref or _is_plugin_ref(ref):
             continue
+        if ref.attributed_to == display_id:
+            if ref.scope == "agent-dependency":
+                deps.append(ref)
+                assigned.add(_ref_key(ref))
+                continue
+            if ref.scope != "agent-component":
+                continue
+            for label, types in _TREE_CATEGORIES:
+                if _component_type_for_tree(ref) in types:
+                    categories[label].append(ref)
+                    assigned.add(_ref_key(ref))
+                    break
+            continue
         if not _repo_ref_in_dir(ref, plugin_dir):
             continue
         if ref.scope == "agent-dependency":

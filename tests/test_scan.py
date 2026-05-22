@@ -1065,6 +1065,11 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
             }
         )
     )
+    skill_dir = tmp_path / "skills" / "audit"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: audit\ndescription: Audit agent configuration.\n---\n\n# Audit\n"
+    )
 
     def fake_augment(refs, base_corpus):
         return list(base_corpus), []
@@ -1086,6 +1091,8 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
     assert "claude-plugin/demo-plugin@1.0.0" in result.output
     assert "package deps/ (1)" in result.output
     assert "lodash@4.17.20" in result.output
+    assert "skills/ (1)" in result.output
+    assert "audit" in result.output
     assert "MCPs/ (1)" in result.output
     assert "@cyanheads/git-mcp-server@1.1.0" in result.output
 

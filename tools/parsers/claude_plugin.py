@@ -4,7 +4,8 @@ Two entry points:
 
 - `parse(path)` — repo-mode: a single `plugin.json` read in isolation, with
   relative paths in `mcpServers` resolved from the plugin root
-  (`path.parent.parent`). Emits plugin self-identity + dependencies + MCPs.
+  (`path.parent.parent`). Emits plugin self-identity, dependencies, MCPs,
+  and bundled skills.
 - `parse_at_install_root(install_root, attributed_to)` — endpoint mode:
   resolves the same plugin.json from `<install_root>/.claude-plugin/plugin.json`
   with relative paths anchored at `install_root` (CLAUDE_PLUGIN_ROOT
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from tools.component_ref import ComponentRef
-from tools.parsers import mcp_json
+from tools.parsers import claude_skill, mcp_json
 from tools.parsers.mcp_json import parse_mcp_servers
 
 
@@ -36,12 +37,15 @@ def parse(path: Path) -> list[ComponentRef]:
     version = data.get("version")
     if not isinstance(version, (str, type(None))):
         version = None
+    attributed_to = None
     if name:
+        component_identity = f"claude-plugin/{name}"
+        attributed_to = f"{component_identity}@{version}" if version else component_identity
         refs.append(
             ComponentRef(
                 name=name,
                 version=version,
-                component_identity=f"claude-plugin/{name}",
+                component_identity=component_identity,
                 source_manifest=str(path),
                 source_locator="$",
                 extra={"component_type": "plugin"},
@@ -82,9 +86,10 @@ def parse(path: Path) -> list[ComponentRef]:
             data,
             plugin_json_path=path,
             plugin_root=path.parent.parent,
-            attributed_to=None,
+            attributed_to=attributed_to,
         )
     )
+    refs.extend(_parse_bundled_skills(path.parent.parent, data, attributed_to))
     return refs
 
 
@@ -187,9 +192,49 @@ def _parse_mcp_servers_from_plugin_json(
     return refs
 
 
+def _parse_bundled_skills(
+    plugin_root: Path, data: dict, attributed_to: Optional[str]
+) -> list[ComponentRef]:
+    skill_dirs: list[Path] = []
+    default_skills = plugin_root / "skills"
+    if default_skills.is_dir():
+        skill_dirs.append(default_skills)
+    custom_skills = data.get("skills")
+    if isinstance(custom_skills, str):
+        custom_dir = _resolve_within(plugin_root, custom_skills)
+        if custom_dir is not None and custom_dir.is_dir():
+            skill_dirs.append(custom_dir)
+
+    refs: list[ComponentRef] = []
+    seen_dirs: set[Path] = set()
+    for skills_dir in skill_dirs:
+        resolved = skills_dir.resolve()
+        if resolved in seen_dirs:
+            continue
+        seen_dirs.add(resolved)
+        for skill_subdir in sorted(skills_dir.iterdir()):
+            skill_md = skill_subdir / "SKILL.md"
+            if skill_md.is_file():
+                refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))
+    return refs
+
+
+def _resolve_within(base: Path, rel: str) -> Optional[Path]:
+    if not isinstance(rel, str) or not rel:
+        return None
+    base_resolved = base.resolve()
+    try:
+        target = (base / rel).resolve()
+    except (OSError, ValueError):
+        return None
+    if not target.is_relative_to(base_resolved):
+        return None
+    return target
+
+
 def _with_attribution(refs: list[ComponentRef], attributed_to: Optional[str]) -> list[ComponentRef]:
     """Rebuild refs with `attributed_to` set. ComponentRef is frozen so we
-    use dataclasses.replace; no-op when attribution is None (repo mode)."""
+    use dataclasses.replace; no-op when attribution is None."""
     if attributed_to is None:
         return refs
     return [replace(r, attributed_to=attributed_to) for r in refs]

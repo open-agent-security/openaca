@@ -1297,6 +1297,73 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
     assert out.count("skills/ (2)") == 0
 
 
+def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_path):
+    """Plugin B nested inside plugin A's directory must not have its skills
+    claimed by plugin A's tree node, even when both share the same name/version.
+
+    _ref_owned_by_plugin must detect that inner plugin dir is a closer ancestor
+    of inner skill refs and exclude them from the outer plugin's node.
+    """
+    outer_root = tmp_path / "outer"
+    inner_root = outer_root / "nested" / "inner"
+    (outer_root / ".claude-plugin").mkdir(parents=True)
+    (inner_root / ".claude-plugin").mkdir(parents=True)
+
+    outer_json = outer_root / ".claude-plugin" / "plugin.json"
+    inner_json = inner_root / ".claude-plugin" / "plugin.json"
+
+    outer_plugin = ComponentRef(
+        name="foo",
+        version="1.0",
+        component_identity="claude-plugin/foo",
+        source_manifest=str(outer_json),
+        extra={"component_type": "plugin"},
+    )
+    inner_plugin = ComponentRef(
+        name="foo",
+        version="1.0",
+        component_identity="claude-plugin/foo",
+        source_manifest=str(inner_json),
+        extra={"component_type": "plugin"},
+    )
+
+    outer_skill_md = outer_root / "skills" / "outer-skill" / "SKILL.md"
+    inner_skill_md = inner_root / "skills" / "inner-skill" / "SKILL.md"
+    for md in (outer_skill_md, inner_skill_md):
+        md.parent.mkdir(parents=True)
+        md.write_text("---\nname: {}\ndescription: test\n---\nbody\n".format(md.parent.name))
+
+    outer_skill = ComponentRef(
+        component_identity="skill/outer-skill",
+        source_manifest=str(outer_skill_md),
+        scope="agent-component",
+        attributed_to="claude-plugin/foo@1.0",
+        extra={"component_type": "skill"},
+    )
+    inner_skill = ComponentRef(
+        component_identity="skill/inner-skill",
+        source_manifest=str(inner_skill_md),
+        scope="agent-component",
+        attributed_to="claude-plugin/foo@1.0",
+        extra={"component_type": "skill"},
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [
+            (outer_json, [outer_plugin, outer_skill]),
+            (inner_json, [inner_plugin, inner_skill]),
+        ],
+        [],
+        use_unicode=True,
+    )
+
+    # Each skill must appear exactly once; no cross-contamination.
+    assert out.count("outer-skill") == 1
+    assert out.count("inner-skill") == 1
+    assert out.count("skills/ (2)") == 0
+
+
 # ── Posture findings section ─────────────────────────────────────────────────
 
 

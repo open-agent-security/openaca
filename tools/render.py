@@ -1060,12 +1060,18 @@ def _build_repo_plugin_node(
     root = _TreeNode(label=f"{display_id}{marker}")
     assigned: set[tuple] = set()
 
+    other_plugin_dirs = {
+        _repo_plugin_dir(r).resolve() for r in all_refs if _is_plugin_ref(r) and r is not plugin_ref
+    }
+
     deps: list[ComponentRef] = []
     categories: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
     for ref in all_refs:
         if ref is plugin_ref or _is_plugin_ref(ref):
             continue
-        if ref.attributed_to == display_id and _ref_under_dir(ref, plugin_dir):
+        if ref.attributed_to == display_id and _ref_owned_by_plugin(
+            ref, plugin_dir, other_plugin_dirs
+        ):
             if ref.scope == "agent-dependency":
                 deps.append(ref)
                 assigned.add(_ref_key(ref))
@@ -1131,6 +1137,27 @@ def _ref_under_dir(ref: ComponentRef, directory: Path) -> bool:
         return Path(ref.source_manifest).resolve().is_relative_to(directory.resolve())
     except OSError:
         return False
+
+
+def _ref_owned_by_plugin(ref: ComponentRef, plugin_dir: Path, other_plugin_dirs: set[Path]) -> bool:
+    """True when ref is under plugin_dir and no nested plugin dir is a closer ancestor.
+
+    Prevents a parent plugin from claiming attributed refs that belong to a
+    child plugin when both share the same name/version (identical display_id).
+    """
+    if not ref.source_manifest:
+        return False
+    try:
+        ref_path = Path(ref.source_manifest).resolve()
+        dir_resolved = plugin_dir.resolve()
+    except OSError:
+        return False
+    if not ref_path.is_relative_to(dir_resolved):
+        return False
+    for other_resolved in other_plugin_dirs:
+        if other_resolved.is_relative_to(dir_resolved) and ref_path.is_relative_to(other_resolved):
+            return False
+    return True
 
 
 def _repo_rel(path: Path, root: Path) -> str:

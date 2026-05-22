@@ -103,6 +103,31 @@ def test_repo_mode_walks_default_bundled_skills(tmp_path):
     assert skill_refs[0].attributed_to == "claude-plugin/openaca@0.1.0"
 
 
+def test_default_skills_dir_symlink_outside_plugin_root_is_rejected(tmp_path):
+    """A symlinked `skills/` that resolves outside the plugin root must be silently
+    skipped. This mirrors the containment check already applied to mcpServers and
+    custom skills paths via _resolve_within."""
+    import os
+
+    external_skills = tmp_path / "external_skills"
+    skill_subdir = external_skills / "escape"
+    skill_subdir.mkdir(parents=True)
+    (skill_subdir / "SKILL.md").write_text(
+        "---\nname: escape\ndescription: Escaped skill.\n---\n\n# Escape\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "sym-plugin", "version": "1.0.0"}))
+    # Symlink plugin_root/skills -> external_skills (outside plugin root)
+    os.symlink(external_skills, plugin_root / "skills")
+
+    refs = parse(manifest)
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert skill_refs == [], "Symlinked skills dir outside plugin root must be rejected"
+
+
 def test_mcp_servers_string_path_resolves_from_plugin_root():
     """Plan 007 bug fix: mcpServers as a string path resolves from the plugin
     root (manifest.parent.parent), not the manifest's directory. Resolving

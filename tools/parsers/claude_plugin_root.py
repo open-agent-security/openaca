@@ -8,6 +8,7 @@ from typing import Optional
 
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_command_agent, claude_skill, hooks_json, mcp_json
+from tools.parsers.claude_command_agent import Kind
 from tools.parsers.mcp_json import parse_mcp_servers
 
 
@@ -47,10 +48,10 @@ def walk_plugin_root(
 def resolve_within(base: Path, rel: str) -> Optional[Path]:
     if not isinstance(rel, str) or not rel:
         return None
-    base_resolved = base.resolve()
     try:
+        base_resolved = base.resolve()
         target = (base / rel).resolve()
-    except (OSError, ValueError):
+    except (OSError, RuntimeError, ValueError):
         return None
     if not target.is_relative_to(base_resolved):
         return None
@@ -113,12 +114,12 @@ def _parse_manifest_refs(
 def _parse_default_mcp(
     plugin_root: Path, existing_refs: list[ComponentRef], attributed_to: Optional[str]
 ) -> list[ComponentRef]:
-    default_mcp = plugin_root / ".mcp.json"
-    if not default_mcp.exists():
+    default_mcp = resolve_within(plugin_root, ".mcp.json")
+    if default_mcp is None or not default_mcp.is_file():
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}
     try:
-        mcp_refs = mcp_json.parse(default_mcp.resolve())
+        mcp_refs = mcp_json.parse(default_mcp)
     except Exception:
         return []
     out: list[ComponentRef] = []
@@ -134,7 +135,7 @@ def _source_manifest_key(ref: ComponentRef) -> str:
         return ""
     try:
         return str(Path(ref.source_manifest).resolve())
-    except (OSError, ValueError):
+    except (OSError, RuntimeError, ValueError):
         return ref.source_manifest
 
 
@@ -230,10 +231,15 @@ def _parse_bundled_command_agents(
     plugin_root: Path, data: dict, plugin_name: str, attributed_to: Optional[str]
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
-    for kind, default_subdir, plugin_key in (
+    try:
+        plugin_root_resolved = plugin_root.resolve()
+    except (OSError, RuntimeError):
+        return refs
+    surfaces: tuple[tuple[Kind, str, str], ...] = (
         ("command", "commands", "commands"),
         ("agent", "agents", "agents"),
-    ):
+    )
+    for kind, default_subdir, plugin_key in surfaces:
         dirs: list[Path] = []
         default_dir = resolve_within(plugin_root, default_subdir)
         if default_dir is not None and default_dir.is_dir():
@@ -250,13 +256,45 @@ def _parse_bundled_command_agents(
                 continue
             seen_dirs.add(resolved)
             refs.extend(
-                claude_command_agent.enumerate_dir(
+                _enumerate_bundled_command_agent_dir(
                     directory,
-                    kind=kind,  # type: ignore[arg-type]
-                    scope_owner=plugin_name,
+                    kind=kind,
+                    plugin_name=plugin_name,
                     attributed_to=attributed_to,
+                    plugin_root_resolved=plugin_root_resolved,
                 )
             )
+    return refs
+
+
+def _enumerate_bundled_command_agent_dir(
+    directory: Path,
+    *,
+    kind: Kind,
+    plugin_name: str,
+    attributed_to: Optional[str],
+    plugin_root_resolved: Path,
+) -> list[ComponentRef]:
+    refs: list[ComponentRef] = []
+    try:
+        children = sorted(directory.rglob("*.md"))
+    except OSError:
+        return refs
+    for child in children:
+        try:
+            child_resolved = child.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not child_resolved.is_relative_to(plugin_root_resolved):
+            continue
+        refs.extend(
+            claude_command_agent.parse_file(
+                child,
+                kind=kind,
+                scope_owner=plugin_name,
+                attributed_to=attributed_to,
+            )
+        )
     return refs
 
 

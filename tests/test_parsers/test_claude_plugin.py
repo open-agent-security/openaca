@@ -485,3 +485,67 @@ def test_symlinked_default_agents_dir_outside_plugin_root_is_rejected(tmp_path):
     refs = parse(manifest)
     agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert agent_refs == [], "Symlinked agents dir outside plugin root must be rejected"
+
+
+def test_symlinked_default_mcp_file_outside_plugin_root_is_rejected(tmp_path):
+    import os
+
+    external_mcp = tmp_path / "external.mcp.json"
+    external_mcp.write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "@evil/pkg@1.0.0"]}}})
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "mcp-escape-plugin", "version": "1.0.0"}))
+    os.symlink(external_mcp, plugin_root / ".mcp.json")
+
+    refs = parse(manifest)
+
+    mcp_refs = [r for r in refs if r.extra.get("component_type") == "mcp_server"]
+    assert mcp_refs == []
+
+
+def test_symlinked_command_file_outside_plugin_root_is_rejected(tmp_path):
+    import os
+
+    external_command = tmp_path / "external-command.md"
+    external_command.write_text(
+        "---\nname: external-command\ndescription: Escaped command.\n---\n\n# External\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "command-file-escape", "version": "1.0.0"}))
+    commands_dir = plugin_root / "commands"
+    commands_dir.mkdir()
+    os.symlink(external_command, commands_dir / "external-command.md")
+
+    refs = parse(manifest)
+
+    command_refs = [r for r in refs if r.extra.get("component_type") == "command"]
+    assert command_refs == []
+
+
+def test_symlinked_agent_file_outside_plugin_root_is_rejected(tmp_path):
+    import os
+
+    external_agent = tmp_path / "external-agent.md"
+    external_agent.write_text(
+        "---\nname: external-agent\ndescription: Escaped agent.\n---\n\n# External\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "agent-file-escape", "version": "1.0.0"}))
+    agents_dir = plugin_root / "agents"
+    agents_dir.mkdir()
+    os.symlink(external_agent, agents_dir / "external-agent.md")
+
+    refs = parse(manifest)
+
+    agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
+    assert agent_refs == []

@@ -142,7 +142,10 @@ def _source_manifest_key(ref: ComponentRef) -> str:
 def _parse_bundled_skills(
     plugin_root: Path, data: dict, attributed_to: Optional[str]
 ) -> list[ComponentRef]:
-    plugin_root_resolved = plugin_root.resolve()
+    try:
+        plugin_root_resolved = plugin_root.resolve()
+    except (OSError, RuntimeError):
+        return []
     skill_dirs: list[Path] = []
     default_skills = resolve_within(plugin_root, "skills")
     if default_skills is not None and default_skills.is_dir():
@@ -156,7 +159,10 @@ def _parse_bundled_skills(
     refs: list[ComponentRef] = []
     seen_dirs: set[Path] = set()
     for skills_dir in skill_dirs:
-        resolved = skills_dir.resolve()
+        try:
+            resolved = skills_dir.resolve()
+        except (OSError, RuntimeError):
+            continue
         if resolved in seen_dirs:
             continue
         seen_dirs.add(resolved)
@@ -167,7 +173,7 @@ def _parse_bundled_skills(
         for skill_subdir in entries:
             try:
                 subdir_resolved = skill_subdir.resolve()
-            except OSError:
+            except (OSError, RuntimeError):
                 continue
             if not subdir_resolved.is_relative_to(plugin_root_resolved):
                 continue
@@ -176,7 +182,7 @@ def _parse_bundled_skills(
                 continue
             try:
                 skill_md_resolved = skill_md.resolve()
-            except OSError:
+            except (OSError, RuntimeError):
                 continue
             if not skill_md_resolved.is_relative_to(plugin_root_resolved):
                 continue

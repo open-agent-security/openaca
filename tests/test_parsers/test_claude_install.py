@@ -1153,6 +1153,27 @@ def test_install_walks_custom_skills_path_distinct_from_default(tmp_path):
     assert skill_names == ["alpha", "beta"]
 
 
+def test_install_rejects_default_skills_dir_symlink_outside_plugin_root(tmp_path):
+    import os
+
+    external_skills = tmp_path / "external-skills"
+    external_skill = external_skills / "escape"
+    external_skill.mkdir(parents=True)
+    (external_skill / "SKILL.md").write_text(
+        "---\nname: escape\ndescription: escaped skill\n---\nbody\n"
+    )
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    _write_plugin_json(install_path, {})
+    os.symlink(external_skills, install_path / "skills")
+
+    refs, _ = parse_install(install_root=tmp_path)
+
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert skill_refs == []
+
+
 def test_install_walks_string_path_hooks_from_plugin_json(tmp_path):
     """`plugin.json["hooks"]: "./custom-hooks.json"` (string form) is walked
     as a hooks.json file with the same plugin-scope identity."""

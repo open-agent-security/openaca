@@ -37,7 +37,6 @@ from typing import Literal, Optional
 from tools.component_ref import ComponentRef
 from tools.parsers import (
     claude_command_agent,
-    claude_plugin,
     claude_skill,
     hooks_json,
     mcp_json,
@@ -47,6 +46,7 @@ from tools.parsers import (
     skill_lock,
     uv_lock,
 )
+from tools.parsers.claude_plugin_root import walk_plugin_root
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
@@ -414,27 +414,6 @@ def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
     return refs
 
 
-def _resolve_within(base: Path, rel: str) -> Optional[Path]:
-    """Resolve `rel` against `base`, rejecting empty/non-string input and any
-    target that escapes `base` after `..` resolution.
-
-    Used for CLAUDE_PLUGIN_ROOT-relative custom paths in plugin.json. An
-    absolute path or one that climbs out of the install root returns None so
-    a malicious or malformed manifest can't redirect the walker outside the
-    plugin's own tree.
-    """
-    if not isinstance(rel, str) or not rel:
-        return None
-    base_resolved = base.resolve()
-    try:
-        target = (base / rel).resolve()
-    except (OSError, ValueError):
-        return None
-    if not target.is_relative_to(base_resolved):
-        return None
-    return target
-
-
 def _walk_plugin_install_root(
     install_path: Path, plugin_name: str, attributed_to: str
 ) -> tuple[list[ComponentRef], list[str]]:
@@ -447,8 +426,7 @@ def _walk_plugin_install_root(
     (e.g., `"skills": "./skills/"`) we walk it once.
 
     - `<install_path>/.claude-plugin/plugin.json` for inline `mcpServers`,
-      string-path mcpServers, and `dependencies` (via
-      `claude_plugin.parse_at_install_root`).
+      string-path mcpServers, and `dependencies`.
     - `<install_path>/.mcp.json` (default MCP path, when plugin.json
       doesn't already point at it).
     - `<install_path>/skills/<name>/SKILL.md` (default) plus
@@ -472,8 +450,6 @@ def _walk_plugin_install_root(
     if not install_path.is_dir():
         return refs, warnings
 
-    refs.extend(claude_plugin.parse_at_install_root(install_path, attributed_to=attributed_to))
-
     # Read plugin.json once to drive custom-path handling for every surface.
     plugin_data: dict = {}
     plugin_json_path = install_path / ".claude-plugin" / "plugin.json"
@@ -485,107 +461,15 @@ def _walk_plugin_install_root(
         if isinstance(loaded, dict):
             plugin_data = loaded
 
-    default_mcp = install_path / ".mcp.json"
-    if default_mcp.exists():
-        # Avoid double-walking if plugin.json already points at this same file
-        # through a string-path mcpServers; dedupe by source_manifest+identity.
-        already_seen = {(r.source_manifest, r.component_identity) for r in refs}
-        try:
-            mcp_refs = mcp_json.parse(default_mcp)
-        except Exception:
-            mcp_refs = []
-        for r in mcp_refs:
-            attributed = replace(r, attributed_to=attributed_to)
-            if (attributed.source_manifest, attributed.component_identity) not in already_seen:
-                refs.append(attributed)
-
-    # Skills: default <install>/skills + plugin.json["skills"] string path.
-    # Dedupe by resolved directory path so supabase-style
-    # `"skills": "./skills/"` doesn't double-emit.
-    skill_dirs: list[Path] = []
-    default_skills_dir = install_path / "skills"
-    if default_skills_dir.is_dir():
-        skill_dirs.append(default_skills_dir)
-    custom_skills = plugin_data.get("skills")
-    if isinstance(custom_skills, str):
-        custom_skills_dir = _resolve_within(install_path, custom_skills)
-        if custom_skills_dir is not None and custom_skills_dir.is_dir():
-            skill_dirs.append(custom_skills_dir)
-    seen_skill_dirs: set[Path] = set()
-    for skills_dir in skill_dirs:
-        resolved = skills_dir.resolve()
-        if resolved in seen_skill_dirs:
-            continue
-        seen_skill_dirs.add(resolved)
-        for skill_subdir in sorted(skills_dir.iterdir()):
-            skill_md = skill_subdir / "SKILL.md"
-            if skill_md.is_file():
-                refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))
-
-    # Hooks: default hooks/hooks.json plus plugin.json["hooks"] inline dict
-    # OR string-path. Dedupe file-walk by resolved path so a custom string
-    # that lands on the default file doesn't double-emit.
-    walked_hook_files: set[Path] = set()
-    default_hooks = install_path / "hooks" / "hooks.json"
-    if default_hooks.is_file():
-        walked_hook_files.add(default_hooks.resolve())
-        refs.extend(
-            hooks_json.parse_plugin_hooks(
-                default_hooks, plugin_name=plugin_name, attributed_to=attributed_to
-            )
+    refs.extend(
+        walk_plugin_root(
+            install_path,
+            plugin_name=plugin_name,
+            plugin_data=plugin_data,
+            plugin_json_path=plugin_json_path,
+            attributed_to=attributed_to,
         )
-    inline_hooks = plugin_data.get("hooks")
-    if isinstance(inline_hooks, dict):
-        refs.extend(
-            hooks_json.parse_plugin_hooks_inline(
-                hooks_block=inline_hooks,
-                plugin_name=plugin_name,
-                source_manifest=str(plugin_json_path),
-                attributed_to=attributed_to,
-            )
-        )
-    elif isinstance(inline_hooks, str):
-        custom_hooks_file = _resolve_within(install_path, inline_hooks)
-        if custom_hooks_file is not None and custom_hooks_file.is_file():
-            resolved = custom_hooks_file.resolve()
-            if resolved not in walked_hook_files:
-                walked_hook_files.add(resolved)
-                refs.extend(
-                    hooks_json.parse_plugin_hooks(
-                        custom_hooks_file,
-                        plugin_name=plugin_name,
-                        attributed_to=attributed_to,
-                    )
-                )
-
-    # Commands: default <install>/commands + plugin.json["commands"] string path.
-    for kind, default_subdir, plugin_key in (
-        ("command", "commands", "commands"),
-        ("agent", "agents", "agents"),
-    ):
-        dirs: list[Path] = []
-        default_dir = install_path / default_subdir
-        if default_dir.is_dir():
-            dirs.append(default_dir)
-        custom = plugin_data.get(plugin_key)
-        if isinstance(custom, str):
-            custom_dir = _resolve_within(install_path, custom)
-            if custom_dir is not None and custom_dir.is_dir():
-                dirs.append(custom_dir)
-        seen_dirs: set[Path] = set()
-        for d in dirs:
-            resolved = d.resolve()
-            if resolved in seen_dirs:
-                continue
-            seen_dirs.add(resolved)
-            refs.extend(
-                claude_command_agent.enumerate_dir(
-                    d,
-                    kind=kind,  # type: ignore[arg-type]
-                    scope_owner=plugin_name,
-                    attributed_to=attributed_to,
-                )
-            )
+    )
 
     return (
         _with_plugin_context(

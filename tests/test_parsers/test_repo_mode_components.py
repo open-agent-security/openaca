@@ -7,9 +7,10 @@ not "via a plugin"; they're declared by the repo itself, so attribution
 is None.
 """
 
+import json
 from pathlib import Path
 
-from tools.parsers import parse_repo
+from tools.parsers import flatten_grouped, parse_repo, parse_repo_grouped
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
@@ -99,3 +100,28 @@ def test_repo_mode_dedupes_mcp_with_relative_target(monkeypatch):
     refs = parse_repo(Path("sample-plugin-string-mcp"))
     npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/test-mcp"]
     assert len(npm_refs) == 1
+
+
+def test_flatten_grouped_prefers_attributed_ref_over_unattributed_dup(tmp_path):
+    """When the same MCP component is discovered twice — once directly (no
+    attributed_to) and once via a plugin.json string-path mcpServers (with
+    attributed_to) — flatten_grouped must keep the attributed ref so that
+    "via <plugin>" attribution is preserved in scan output."""
+    mcp_file = tmp_path / ".mcp.json"
+    mcp_file.write_text(
+        json.dumps({"mcpServers": {"svc": {"command": "npx", "args": ["-y", "@example/svc@2.0"]}}})
+    )
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "version": "1.0.0", "mcpServers": "./.mcp.json"})
+    )
+
+    grouped, _ = parse_repo_grouped(tmp_path)
+    refs = flatten_grouped(grouped)
+
+    npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/svc"]
+    assert len(npm_refs) == 1, "dedup must collapse both discovery paths to one ref"
+    assert npm_refs[0].attributed_to == "claude-plugin/my-plugin@1.0.0", (
+        "attributed ref must win over the unattributed direct-walk duplicate"
+    )

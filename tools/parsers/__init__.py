@@ -227,13 +227,17 @@ def flatten_grouped(
     findings and SARIF emits duplicate results.
 
     Dedup key intentionally excludes `extra` (a dict, so unhashable; also
-    discovery-path-dependent in some cases) and `attributed_to` (always None
-    in repo-mode; differs by route in theoretical edge cases). What identifies
+    discovery-path-dependent in some cases) and `attributed_to`. What identifies
     a logical component for matching is the (where, what) tuple:
     (source_manifest, source_locator, ecosystem, name, version, component_identity).
+
+    When the same key is seen twice and one route has `attributed_to` set (e.g.
+    bundled MCP discovered via plugin.json) and the other does not (e.g. the
+    same .mcp.json walked directly), the attributed ref is preferred so that
+    "via <plugin>" tags are preserved in scan output.
     """
     refs: list[ComponentRef] = []
-    seen: set[tuple] = set()
+    seen: dict[tuple, int] = {}  # key -> index in refs
     for _, group in grouped:
         for r in group:
             # Resolve source_manifest to an absolute path so that relative
@@ -252,8 +256,13 @@ def flatten_grouped(
                 r.component_identity,
             )
             if key in seen:
+                # Prefer an attributed ref over an unattributed duplicate so
+                # that plugin-bundled MCPs keep their "via <plugin>" tag even
+                # when the direct-file walker also discovers the same manifest.
+                if refs[seen[key]].attributed_to is None and r.attributed_to is not None:
+                    refs[seen[key]] = r
                 continue
-            seen.add(key)
+            seen[key] = len(refs)
             refs.append(r)
     return refs
 

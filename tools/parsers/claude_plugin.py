@@ -225,8 +225,15 @@ def _parse_bundled_skills(
             if not subdir_resolved.is_relative_to(plugin_root_resolved):
                 continue
             skill_md = skill_subdir / "SKILL.md"
-            if skill_md.is_file():
-                refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))
+            if not skill_md.is_file():
+                continue
+            try:
+                skill_md_resolved = skill_md.resolve()
+            except OSError:
+                continue
+            if not skill_md_resolved.is_relative_to(plugin_root_resolved):
+                continue
+            refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))
     return refs
 
 

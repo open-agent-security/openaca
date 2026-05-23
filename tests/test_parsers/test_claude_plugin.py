@@ -383,3 +383,28 @@ def test_unreadable_skills_dir_does_not_drop_plugin_parse(tmp_path):
     if os.getuid() != 0:
         assert len(plugin_refs) == 1, "plugin self-ref must survive unreadable skills dir"
     assert skill_refs == [], "no skill refs expected from unreadable skills dir"
+
+
+def test_symlinked_skill_md_outside_plugin_root_is_rejected(tmp_path):
+    """A SKILL.md that is itself a symlink pointing outside the plugin root must
+    be silently skipped.  The subdir containment check doesn't protect against a
+    symlinked file entry inside an otherwise-valid skill subdir."""
+    import os
+
+    external_content = tmp_path / "external_skill.md"
+    external_content.write_text(
+        "---\nname: escape\ndescription: Escaped via SKILL.md symlink.\n---\n\n# Escape\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "symlink-skill-md-plugin", "version": "1.0.0"}))
+    skill_subdir = plugin_root / "skills" / "escape"
+    skill_subdir.mkdir(parents=True)
+    # SKILL.md is a symlink to a file outside the plugin root.
+    os.symlink(external_content, skill_subdir / "SKILL.md")
+
+    refs = parse(manifest)
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert skill_refs == [], "SKILL.md symlink escaping plugin root must be rejected"

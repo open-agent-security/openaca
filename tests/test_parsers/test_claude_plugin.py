@@ -410,6 +410,26 @@ def test_symlinked_skill_md_outside_plugin_root_is_rejected(tmp_path):
     assert skill_refs == [], "SKILL.md symlink escaping plugin root must be rejected"
 
 
+def test_symlink_loop_skill_subdir_does_not_drop_plugin_parse(tmp_path):
+    import os
+
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "skill-loop-plugin", "version": "1.0.0"}))
+    skills_dir = plugin_root / "skills"
+    skills_dir.mkdir()
+    os.symlink(skills_dir / "loop", skills_dir / "loop")
+
+    refs = parse(manifest)
+
+    plugin_refs = [r for r in refs if r.component_identity == "claude-plugin/skill-loop-plugin"]
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert len(plugin_refs) == 1
+    assert skill_refs == []
+
+
 def test_symlinked_default_hooks_dir_outside_plugin_root_is_rejected(tmp_path):
     """A symlinked `hooks/` that resolves outside the plugin root must be silently
     skipped.  The default hooks path was accepted via bare is_file(); it now uses

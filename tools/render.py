@@ -992,7 +992,7 @@ def render_repo_inventory_tree(
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
-    all_refs = [r for _, refs in grouped for r in refs]
+    all_refs = _dedupe_repo_tree_refs([r for _, refs in grouped for r in refs])
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
         key=lambda r: (r.component_identity or "").lower(),
@@ -1036,6 +1036,38 @@ def render_repo_inventory_tree(
         else:
             root_node.children.append(_TreeNode(label="(no agent components)"))
     return "\n".join(_format_tree_lines(root_node, chars))
+
+
+def _dedupe_repo_tree_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
+    out: list[ComponentRef] = []
+    seen: dict[tuple, int] = {}
+    for ref in refs:
+        key = _repo_tree_ref_key(ref)
+        if key in seen:
+            existing = out[seen[key]]
+            if existing.attributed_to is None and ref.attributed_to is not None:
+                out[seen[key]] = ref
+            continue
+        seen[key] = len(out)
+        out.append(ref)
+    return out
+
+
+def _repo_tree_ref_key(ref: ComponentRef) -> tuple:
+    manifest = ""
+    if ref.source_manifest:
+        try:
+            manifest = str(Path(ref.source_manifest).resolve())
+        except OSError:
+            manifest = ref.source_manifest
+    return (
+        manifest,
+        ref.source_locator,
+        ref.ecosystem,
+        ref.name,
+        ref.version,
+        ref.component_identity,
+    )
 
 
 def _repo_plugin_dir(plugin_ref: ComponentRef) -> Path:

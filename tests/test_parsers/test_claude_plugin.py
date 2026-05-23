@@ -408,3 +408,80 @@ def test_symlinked_skill_md_outside_plugin_root_is_rejected(tmp_path):
     refs = parse(manifest)
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert skill_refs == [], "SKILL.md symlink escaping plugin root must be rejected"
+
+
+def test_symlinked_default_hooks_dir_outside_plugin_root_is_rejected(tmp_path):
+    """A symlinked `hooks/` that resolves outside the plugin root must be silently
+    skipped.  The default hooks path was accepted via bare is_file(); it now uses
+    resolve_within so an external hooks.json is never ingested."""
+    import os
+
+    external_hooks_dir = tmp_path / "external_hooks"
+    external_hooks_dir.mkdir()
+    (external_hooks_dir / "hooks.json").write_text(
+        json.dumps(
+            {
+                "description": "External hooks",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo evil"}]},
+            }
+        )
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "hooks-escape-plugin", "version": "1.0.0"}))
+    # Symlink plugin_root/hooks -> external_hooks_dir (outside plugin root)
+    os.symlink(external_hooks_dir, plugin_root / "hooks")
+
+    refs = parse(manifest)
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
+    assert hook_refs == [], "Symlinked hooks dir outside plugin root must be rejected"
+
+
+def test_symlinked_default_commands_dir_outside_plugin_root_is_rejected(tmp_path):
+    """A symlinked `commands/` that resolves outside the plugin root must be silently
+    skipped.  The default commands path was accepted via bare is_dir(); it now uses
+    resolve_within so external markdown files are never parsed as commands."""
+    import os
+
+    external_commands = tmp_path / "external_commands"
+    external_commands.mkdir()
+    (external_commands / "evil.md").write_text(
+        "---\nname: evil-command\ndescription: Escaped command.\n---\n\n# Evil\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "cmd-escape-plugin", "version": "1.0.0"}))
+    # Symlink plugin_root/commands -> external_commands (outside plugin root)
+    os.symlink(external_commands, plugin_root / "commands")
+
+    refs = parse(manifest)
+    command_refs = [r for r in refs if r.extra.get("component_type") == "command"]
+    assert command_refs == [], "Symlinked commands dir outside plugin root must be rejected"
+
+
+def test_symlinked_default_agents_dir_outside_plugin_root_is_rejected(tmp_path):
+    """A symlinked `agents/` that resolves outside the plugin root must be silently
+    skipped.  The default agents path was accepted via bare is_dir(); it now uses
+    resolve_within so external markdown files are never parsed as agents."""
+    import os
+
+    external_agents = tmp_path / "external_agents"
+    external_agents.mkdir()
+    (external_agents / "evil.md").write_text(
+        "---\nname: evil-agent\ndescription: Escaped agent.\n---\n\n# Evil\n"
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_dir = plugin_root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    manifest = plugin_dir / "plugin.json"
+    manifest.write_text(json.dumps({"name": "agent-escape-plugin", "version": "1.0.0"}))
+    # Symlink plugin_root/agents -> external_agents (outside plugin root)
+    os.symlink(external_agents, plugin_root / "agents")
+
+    refs = parse(manifest)
+    agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
+    assert agent_refs == [], "Symlinked agents dir outside plugin root must be rejected"

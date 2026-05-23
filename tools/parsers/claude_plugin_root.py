@@ -190,8 +190,8 @@ def _parse_bundled_hooks(
         return []
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
-    default_hooks = plugin_root / "hooks" / "hooks.json"
-    if default_hooks.is_file():
+    default_hooks = resolve_within(plugin_root, "hooks/hooks.json")
+    if default_hooks is not None and default_hooks.is_file():
         walked_hook_files.add(default_hooks.resolve())
         refs.extend(
             hooks_json.parse_plugin_hooks(
@@ -235,8 +235,8 @@ def _parse_bundled_command_agents(
         ("agent", "agents", "agents"),
     ):
         dirs: list[Path] = []
-        default_dir = plugin_root / default_subdir
-        if default_dir.is_dir():
+        default_dir = resolve_within(plugin_root, default_subdir)
+        if default_dir is not None and default_dir.is_dir():
             dirs.append(default_dir)
         custom = data.get(plugin_key)
         if isinstance(custom, str):

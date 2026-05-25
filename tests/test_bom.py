@@ -211,6 +211,39 @@ def test_cyclonedx_round_trips_output_context_metadata():
     assert refs[0].extra["transport"] == "stdio"
 
 
+def test_cyclonedx_round_trips_plugin_scope_and_git_commit_sha():
+    """extra["scope"] (enabling scope) and extra["gitCommitSha"] survive BOM encode/decode.
+
+    render.py uses both for plugin tree headers ([scope=...] and sha: ...).
+    Without serializing them, BOM-then-scan output showed [scope=None] for any
+    plugin that had been installed via the endpoint install state.
+    """
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                component_identity="claude-plugin/marketplace/demo",
+                version="1.2.3",
+                source_manifest="installed_plugins.json",
+                source_locator="$.plugins.marketplace/demo[0]",
+                extra={
+                    "component_type": "plugin",
+                    "runtime_hosts": ["claude-code"],
+                    "scope": "user",
+                    "gitCommitSha": "deadbeef1234abcd",
+                },
+            )
+        ],
+        target_type="endpoint",
+        target="~/.claude",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    refs = component_refs_from_cyclonedx(encoded)
+
+    assert refs[0].extra["scope"] == "user"
+    assert refs[0].extra["gitCommitSha"] == "deadbeef1234abcd"
+
+
 def test_parse_purl_strips_qualifiers_and_subpath():
     """PURLs with qualifiers (?...) or subpath (#...) must yield a clean version."""
     doc = {

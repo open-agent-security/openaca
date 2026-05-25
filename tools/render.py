@@ -725,9 +725,7 @@ def _stdio_command_label(install_source: object) -> Optional[str]:
 # Bare or scoped npm/PyPI package names only: alphanumeric + ._- with optional @scope/ prefix.
 # Rejects URLs (contain ://), file paths (start with . or /), and other non-name forms that
 # could carry credentials in query strings or URL userinfo.
-_SAFE_PACKAGE_NAME_RE = re.compile(
-    r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
-)
+_SAFE_PACKAGE_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _stdio_unpinned_label(identity: str | None, command: str | None) -> Optional[str]:

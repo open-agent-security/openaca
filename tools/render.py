@@ -698,6 +698,9 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
             transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
             return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"
         return None
+    unpinned_label = _stdio_unpinned_label(ref.component_identity, command)
+    if unpinned_label:
+        return unpinned_label
     if command:
         return f"{command} (stdio, args hidden)"
     return None
@@ -716,6 +719,21 @@ def _stdio_command_label(install_source: object) -> Optional[str]:
     if not command:
         return None
     return Path(command).name
+
+
+def _stdio_unpinned_label(identity: str | None, command: str | None) -> Optional[str]:
+    if not identity:
+        return None
+    prefixes = {
+        "mcp-stdio/npx-unpinned:": "npx",
+        "mcp-stdio/uvx-unpinned:": "uvx",
+    }
+    for prefix, fallback_command in prefixes.items():
+        if identity.startswith(prefix):
+            package = identity[len(prefix) :]
+            if package:
+                return f"{package} (stdio via {command or fallback_command}, unpinned)"
+    return None
 
 
 def _redact_url_credentials(url: str) -> Optional[str]:
@@ -877,6 +895,7 @@ def _build_direct_node(
     refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
+    source_note_root: Path | None = None,
 ) -> _TreeNode | None:
     cats = _direct_categories(refs)
     if not cats:
@@ -891,13 +910,24 @@ def _build_direct_node(
         duplicate_labels = {x for x in base_labels if base_labels.count(x) > 1}
         for r in sorted(items, key=lambda x: (_leaf_label(x).lower(), x.source_manifest)):
             leaf_label = _leaf_label(r)
-            if leaf_label in duplicate_labels and r.source_manifest:
+            source_note = _repo_source_note(r, source_note_root)
+            if leaf_label in duplicate_labels and r.source_manifest and not source_note:
                 leaf_label = f"{leaf_label} (from {r.source_manifest})"
-            leaf_label = f"{leaf_label}{_source_provenance_note(r)}"
+            leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
             cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
         root.children.append(cat)
     return root
+
+
+def _repo_source_note(ref: ComponentRef, root: Path | None) -> str:
+    if root is None or not ref.source_manifest:
+        return ""
+    try:
+        source = Path(ref.source_manifest).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        source = Path(ref.source_manifest)
+    return f" (from {source})"
 
 
 def _format_tree_lines(node: _TreeNode, chars: dict) -> list[str]:
@@ -1008,6 +1038,7 @@ def render_repo_inventory_tree(
             all_refs,
             findings_by_ref,
             use_color,
+            root,
         )
         assigned_keys.update(assigned)
         root_node.children.append(node)
@@ -1019,7 +1050,7 @@ def render_repo_inventory_tree(
         and r.scope == "agent-component"
         and _ref_key(r) not in assigned_keys
     ]
-    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color)
+    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, root)
     if direct_node is not None:
         root_node.children.append(direct_node)
 
@@ -1083,6 +1114,7 @@ def _build_repo_plugin_node(
     all_refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
+    source_note_root: Path | None = None,
 ) -> tuple[_TreeNode, set[tuple]]:
     marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
     plugin_identity = plugin_ref.component_identity or ""
@@ -1134,7 +1166,8 @@ def _build_repo_plugin_node(
         dep_node = _TreeNode(label=f"package deps/ ({len(deps)})")
         for ref in sorted(deps, key=lambda x: _leaf_label(x).lower()):
             marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
-            dep_node.children.append(_TreeNode(label=f"{_leaf_label(ref)}{marker}"))
+            label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
+            dep_node.children.append(_TreeNode(label=label))
         root.children.append(dep_node)
 
     for label, _ in _TREE_CATEGORIES:
@@ -1144,7 +1177,8 @@ def _build_repo_plugin_node(
         cat = _TreeNode(label=f"{label}/ ({len(items)})")
         for ref in sorted(items, key=lambda x: _leaf_label(x).lower()):
             marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
-            cat.children.append(_TreeNode(label=f"{_leaf_label(ref)}{marker}"))
+            label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
+            cat.children.append(_TreeNode(label=label))
         root.children.append(cat)
 
     if not root.children:

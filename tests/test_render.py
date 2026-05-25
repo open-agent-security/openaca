@@ -808,7 +808,7 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
 def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     refs = [
         ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:my-mcp-server",
+            component_identity="mcp-stdio/binary:npx",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "npx my-mcp-server --api-key=sk-secret123 --token secret",
@@ -822,6 +822,35 @@ def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     assert "secret" not in out
     assert "my-mcp-server" not in out
     assert "npx (stdio, args hidden)" in out
+
+
+def test_tree_source_less_unpinned_stdio_mcp_leaf_shows_safe_package_name():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:@modelcontextprotocol/server-filesystem",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": (
+                    "npx @modelcontextprotocol/server-filesystem --api-key=sk-secret123"
+                ),
+            },
+        ),
+        ComponentRef(
+            component_identity="mcp-stdio/uvx-unpinned:some-mcp-server",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "uvx some-mcp-server --token secret",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned)" in out
+    assert "some-mcp-server (stdio via uvx, unpinned)" in out
+    assert "sk-secret123" not in out
+    assert "secret" not in out
+    assert "args hidden" not in out
 
 
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
@@ -1191,9 +1220,9 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     assert f"repo {tmp_path}" in out
     assert "claude-plugin/demo-plugin@1.0.0" in out
     assert "package deps/ (1)" in out
-    assert "lodash@4.17.20  [! GHSA-L]" in out
+    assert "lodash@4.17.20 (from package.json)  [! GHSA-L]" in out
     assert "MCPs/ (1)" in out
-    assert "@cyanheads/git-mcp-server@1.1.0" in out
+    assert "@cyanheads/git-mcp-server@1.1.0 (from .mcp.json)" in out
 
 
 def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
@@ -1223,7 +1252,7 @@ def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
 
     assert "direct components/" in out
     assert "MCPs/ (1)" in out
-    assert "@example/mcp@2.0.0" in out
+    assert f"@example/mcp@2.0.0 (from {mcp_json.relative_to(tmp_path)})" in out
     assert "software deps suppressed/ (1)" in out
     assert "left-pad" not in out
 
@@ -1290,9 +1319,10 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
         use_unicode=True,
     )
 
-    # skill-a must appear exactly once; skill-b must appear exactly once.
-    assert out.count("skill-a") == 1
-    assert out.count("skill-b") == 1
+    # skill-a must appear exactly once as a leaf; skill-b likewise. Their
+    # source paths also contain the skill names.
+    assert out.count("── skill-a ") == 1
+    assert out.count("── skill-b ") == 1
     # Each plugin node must show exactly 1 skill, not 2.
     assert out.count("skills/ (2)") == 0
 
@@ -1358,9 +1388,10 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
         use_unicode=True,
     )
 
-    # Each skill must appear exactly once; no cross-contamination.
-    assert out.count("outer-skill") == 1
-    assert out.count("inner-skill") == 1
+    # Each skill must appear exactly once as a leaf; source paths also contain
+    # the skill names.
+    assert out.count("── outer-skill ") == 1
+    assert out.count("── inner-skill ") == 1
     assert out.count("skills/ (2)") == 0
 
 

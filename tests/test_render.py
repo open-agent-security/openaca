@@ -853,6 +853,25 @@ def test_tree_source_less_unpinned_stdio_mcp_leaf_shows_safe_package_name():
     assert "args hidden" not in out
 
 
+def test_tree_source_less_unpinned_stdio_mcp_url_spec_falls_back_to_args_hidden():
+    """URL-style npx specs (e.g. with query-string tokens) must not be rendered verbatim."""
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/npx-unpinned:https://registry.example.com/my-pkg?token=abc123",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "npx https://registry.example.com/my-pkg?token=abc123",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "token=abc123" not in out
+    assert "https://" not in out
+    assert "npx (stdio, args hidden)" in out
+
+
 def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(

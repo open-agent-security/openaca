@@ -21,6 +21,7 @@ near-identical blocks.
 from __future__ import annotations
 
 import json
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -721,6 +722,14 @@ def _stdio_command_label(install_source: object) -> Optional[str]:
     return Path(command).name
 
 
+# Bare or scoped npm/PyPI package names only: alphanumeric + ._- with optional @scope/ prefix.
+# Rejects URLs (contain ://), file paths (start with . or /), and other non-name forms that
+# could carry credentials in query strings or URL userinfo.
+_SAFE_PACKAGE_NAME_RE = re.compile(
+    r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+)
+
+
 def _stdio_unpinned_label(identity: str | None, command: str | None) -> Optional[str]:
     if not identity:
         return None
@@ -731,7 +740,7 @@ def _stdio_unpinned_label(identity: str | None, command: str | None) -> Optional
     for prefix, fallback_command in prefixes.items():
         if identity.startswith(prefix):
             package = identity[len(prefix) :]
-            if package:
+            if package and _SAFE_PACKAGE_NAME_RE.match(package):
                 return f"{package} (stdio via {command or fallback_command}, unpinned)"
     return None
 

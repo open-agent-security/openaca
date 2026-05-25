@@ -39,6 +39,8 @@ class AgentBOM:
     edges: list[BOMEdge]
     target_type: str
     target: str | None = None
+    source_unit_count: int | None = None
+    source_unit_label: str | None = None
 
     def component_refs(self) -> list[ComponentRef]:
         return [component.ref for component in self.components]
@@ -50,6 +52,14 @@ class AgentBOM:
         ]
         if self.target is not None:
             metadata_properties.append({"name": "openaca:target", "value": self.target})
+        if self.source_unit_count is not None:
+            metadata_properties.append(
+                {"name": "openaca:source_unit_count", "value": str(self.source_unit_count)}
+            )
+        if self.source_unit_label is not None:
+            metadata_properties.append(
+                {"name": "openaca:source_unit_label", "value": self.source_unit_label}
+            )
 
         dependencies: dict[str, list[str]] = {
             component.bom_ref: [] for component in self.components
@@ -77,6 +87,8 @@ def build_agent_bom(
     *,
     target_type: str,
     target: str | None = None,
+    source_unit_count: int | None = None,
+    source_unit_label: str | None = None,
 ) -> AgentBOM:
     components = [
         BOMComponent(ref=ref, bom_ref=bom_ref)
@@ -87,6 +99,8 @@ def build_agent_bom(
         edges=_build_edges(components),
         target_type=target_type,
         target=target,
+        source_unit_count=source_unit_count,
+        source_unit_label=source_unit_label,
     )
 
 
@@ -125,6 +139,16 @@ def target_info_from_cyclonedx(doc: dict[str, Any]) -> tuple[str | None, str | N
         return None, None
     props = _properties_by_name(metadata)
     return props.get("openaca:target_type"), props.get("openaca:target")
+
+
+def source_unit_from_cyclonedx(doc: dict[str, Any]) -> tuple[int | None, str | None]:
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return None, None
+    props = _properties_by_name(metadata)
+    count_raw = props.get("openaca:source_unit_count")
+    count = int(count_raw) if count_raw is not None and count_raw.isdigit() else None
+    return count, props.get("openaca:source_unit_label")
 
 
 def _stable_bom_refs(refs: list[ComponentRef]) -> list[str]:

@@ -42,7 +42,12 @@ from pathlib import Path
 import click
 from click.core import ParameterSource
 
-from tools.bom import build_agent_bom, component_refs_from_cyclonedx, target_info_from_cyclonedx
+from tools.bom import (
+    build_agent_bom,
+    component_refs_from_cyclonedx,
+    source_unit_from_cyclonedx,
+    target_info_from_cyclonedx,
+)
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
@@ -512,6 +517,8 @@ def repo(
         _filter_agent_scope_refs(all_refs),
         target_type="repo",
         target=str(target),
+        source_unit_count=n_found,
+        source_unit_label="manifest",
     ).component_refs()
     n_failed = n_found - len(grouped)
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
@@ -651,6 +658,8 @@ def endpoint(
         refs,
         target_type="endpoint",
         target=str(config_dir),
+        source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
+        source_unit_label="active plugin",
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -772,6 +781,7 @@ def scan_bom(
             f"{input_path}: BOM must be a JSON object, got {type(doc).__name__}"
         )
     target_type, target = target_info_from_cyclonedx(doc)
+    source_unit_count, source_unit_label = source_unit_from_cyclonedx(doc)
     refs = build_agent_bom(
         _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
         target_type="bom",
@@ -786,7 +796,9 @@ def scan_bom(
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
-        click.echo(f"scanned 1 agent BOM, {len(refs)} component(s):", err=True)
+        unit_count = source_unit_count if source_unit_count is not None else 1
+        unit_label = source_unit_label or "agent BOM"
+        click.echo(f"scanned {unit_count} {unit_label}(s), {len(refs)} component(s):", err=True)
         tree = _render_bom_inventory_tree(
             refs,
             findings,
@@ -811,8 +823,8 @@ def scan_bom(
         click.echo(f"sarif: wrote {sarif}", err=True)
 
     stats = ScanStats(
-        unit_count=1,
-        unit_label="agent BOM",
+        unit_count=source_unit_count if source_unit_count is not None else 1,
+        unit_label=source_unit_label or "agent BOM",
         component_count=len(refs),
         sources=_collect_corpus_sources(corpus),
     )
@@ -824,7 +836,13 @@ def scan_bom(
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
     )
-    _stderr_summary(findings, f"scanned 1 agent BOM, {len(refs)} component(s)", output_format)
+    unit_count = source_unit_count if source_unit_count is not None else 1
+    unit_label = source_unit_label or "agent BOM"
+    _stderr_summary(
+        findings,
+        f"scanned {unit_count} {unit_label}(s), {len(refs)} component(s)",
+        output_format,
+    )
     _exit_for_findings(fail_on, findings)
 
 

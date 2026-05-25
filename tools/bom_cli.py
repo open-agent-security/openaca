@@ -23,6 +23,27 @@ def main() -> None:
 main.add_command(lint_cmd, name="lint")
 
 
+_output_option = click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write the CycloneDX Agent BOM JSON to this file instead of stdout.",
+)
+
+
+def _emit_bom_json(document: dict, output_path: Path | None) -> None:
+    rendered = json.dumps(document, indent=2)
+    if output_path is None:
+        click.echo(rendered)
+        return
+    try:
+        output_path.write_text(f"{rendered}\n", encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"failed to write BOM to {output_path}: {exc}") from exc
+
+
 @main.command()
 @click.option(
     "--target",
@@ -36,7 +57,8 @@ main.add_command(lint_cmd, name="lint")
     default=False,
     help="Walk paths matched by <target>/.gitignore.",
 )
-def repo(target: Path, include_gitignored: bool) -> None:
+@_output_option
+def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> None:
     """Generate an Agent BOM from repository manifests."""
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     n_parsed = len(grouped)
@@ -48,7 +70,7 @@ def repo(target: Path, include_gitignored: bool) -> None:
         )
     refs = _filter_agent_scope_refs(flatten_grouped(grouped))
     bom = build_agent_bom(refs, target_type="repo", target=str(target))
-    click.echo(json.dumps(bom.to_cyclonedx(), indent=2))
+    _emit_bom_json(bom.to_cyclonedx(), output_path)
 
 
 @main.command()
@@ -64,7 +86,8 @@ def repo(target: Path, include_gitignored: bool) -> None:
     default=None,
     help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
 )
-def endpoint(config_dir: Path | None, project: Path | None) -> None:
+@_output_option
+def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
     """Generate an Agent BOM from active endpoint composition."""
     config_dir = _resolve_endpoint_config_dir(config_dir)
     refs, warnings = parse_install(
@@ -76,7 +99,7 @@ def endpoint(config_dir: Path | None, project: Path | None) -> None:
     for warning in warnings:
         click.echo(f"warning: {warning}", err=True)
     bom = build_agent_bom(refs, target_type="endpoint", target=str(config_dir))
-    click.echo(json.dumps(bom.to_cyclonedx(), indent=2))
+    _emit_bom_json(bom.to_cyclonedx(), output_path)
 
 
 def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:

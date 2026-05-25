@@ -29,6 +29,64 @@ def test_bom_repo_command_emits_cyclonedx_agent_bom(tmp_path):
     assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
 
 
+def test_bom_repo_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inspector": {
+                        "command": "npx",
+                        "args": ["@mcpjam/inspector@1.4.2"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "openaca.bom.json"
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "repo", "--target", str(tmp_path), "--output", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+    doc = json.loads(output.read_text(encoding="utf-8"))
+    assert doc["bomFormat"] == "CycloneDX"
+    assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
+
+
+def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
+    config_dir = tmp_path / "claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inspector": {
+                        "command": "npx",
+                        "args": ["@mcpjam/inspector@1.4.2"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "endpoint.bom.json"
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--config-dir", str(config_dir), "-o", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+    doc = json.loads(output.read_text(encoding="utf-8"))
+    assert doc["bomFormat"] == "CycloneDX"
+    assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
+
+
 def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
     bom = {
         "bomFormat": "CycloneDX",

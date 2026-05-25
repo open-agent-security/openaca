@@ -249,6 +249,8 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:install_source", (ref.extra or {}).get("install_source"))
     _append_prop(props, "openaca:transport", (ref.extra or {}).get("transport"))
     _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
+    _append_prop(props, "openaca:plugin_scope", (ref.extra or {}).get("scope"))
+    _append_prop(props, "openaca:git_commit_sha", (ref.extra or {}).get("gitCommitSha"))
     source_provenance = (ref.extra or {}).get("source_provenance")
     if source_provenance is not None:
         _append_prop(
@@ -302,6 +304,8 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         ("openaca:install_source", "install_source"),
         ("openaca:transport", "transport"),
         ("openaca:url", "url"),
+        ("openaca:plugin_scope", "scope"),
+        ("openaca:git_commit_sha", "gitCommitSha"),
     ):
         value = props.get(prop_name)
         if value:

@@ -201,6 +201,30 @@ def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
     assert any(f["id"] == "GHSA-3q26-f695-pp76" for f in payload["findings"])
 
 
+def test_scan_bom_rejects_include_posture(tmp_path):
+    bom_path = tmp_path / "agent.bom.json"
+    bom_path.write_text(
+        json.dumps(
+            {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.7",
+                "version": 1,
+                "components": [],
+                "dependencies": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["--include-posture", "bom", "--input", str(bom_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "--include-posture is not supported for scan bom" in result.output
+
+
 def test_bom_repo_warns_on_parse_failures(tmp_path):
     """bom repo emits a stderr warning when manifests fail to parse."""
     (tmp_path / ".mcp.json").write_text("not valid json{{{", encoding="utf-8")

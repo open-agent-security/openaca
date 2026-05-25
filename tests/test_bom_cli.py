@@ -87,6 +87,74 @@ def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
     assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
 
 
+def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["@modelcontextprotocol/server-filesystem"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    bom_path = tmp_path / "openaca.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "repo", "--target", str(tmp_path), "--output", str(bom_path)],
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+
+    direct = CliRunner().invoke(scan_main, ["repo", "--target", str(tmp_path), "-v"])
+    from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "-v"])
+
+    assert direct.exit_code == 0, direct.output
+    assert from_bom.exit_code == 0, from_bom.output
+    expected = "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned) (from .mcp.json)"
+    assert f"repo {tmp_path}" in direct.output
+    assert f"repo {tmp_path}" in from_bom.output
+    assert expected in direct.output
+    assert expected in from_bom.output
+
+
+def test_scan_bom_verbose_renders_endpoint_inventory_from_bom(tmp_path):
+    config_dir = tmp_path / "claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["@modelcontextprotocol/server-filesystem"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    bom_path = tmp_path / "endpoint.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--config-dir", str(config_dir), "--output", str(bom_path)],
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+
+    direct = CliRunner().invoke(scan_main, ["endpoint", "--config-dir", str(config_dir), "-v"])
+    from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "-v"])
+
+    assert direct.exit_code == 0, direct.output
+    assert from_bom.exit_code == 0, from_bom.output
+    expected = "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned)"
+    assert "0 active plugins, 1 direct component, 1 total component" in direct.output
+    assert "0 active plugins, 1 direct component, 1 total component" in from_bom.output
+    assert expected in direct.output
+    assert expected in from_bom.output
+
+
 def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
     bom = {
         "bomFormat": "CycloneDX",

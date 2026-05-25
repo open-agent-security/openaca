@@ -175,6 +175,42 @@ def test_cyclonedx_round_trips_components_needed_for_matching():
     assert refs[1].extra["component_type"] == "hook"
 
 
+def test_cyclonedx_round_trips_output_context_metadata():
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                ecosystem="npm",
+                name="@cyanheads/git-mcp-server",
+                version="1.1.0",
+                source_manifest="/repo/sample-mcp/mcp.json",
+                source_locator="$.mcpServers.git",
+                extra={
+                    "component_type": "mcp_server",
+                    "runtime_hosts": ["claude-code"],
+                    "declared_by": {"kind": "manifest", "path": "/repo/sample-mcp/mcp.json"},
+                    "component_path": [{"type": "mcp_server", "name": "git"}],
+                    "install_source": "npx @cyanheads/git-mcp-server@1.1.0",
+                    "transport": "stdio",
+                },
+            )
+        ],
+        target_type="repo",
+        target="/repo",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    refs = component_refs_from_cyclonedx(encoded)
+
+    assert refs[0].extra["runtime_hosts"] == ["claude-code"]
+    assert refs[0].extra["declared_by"] == {
+        "kind": "manifest",
+        "path": "/repo/sample-mcp/mcp.json",
+    }
+    assert refs[0].extra["component_path"] == [{"type": "mcp_server", "name": "git"}]
+    assert refs[0].extra["install_source"] == "npx @cyanheads/git-mcp-server@1.1.0"
+    assert refs[0].extra["transport"] == "stdio"
+
+
 def test_parse_purl_strips_qualifiers_and_subpath():
     """PURLs with qualifiers (?...) or subpath (#...) must yield a clean version."""
     doc = {

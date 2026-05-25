@@ -119,6 +119,14 @@ def component_refs_from_cyclonedx(doc: dict[str, Any]) -> list[ComponentRef]:
     return refs
 
 
+def target_info_from_cyclonedx(doc: dict[str, Any]) -> tuple[str | None, str | None]:
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return None, None
+    props = _properties_by_name(metadata)
+    return props.get("openaca:target_type"), props.get("openaca:target")
+
+
 def _stable_bom_refs(refs: list[ComponentRef]) -> list[str]:
     preferred = [_preferred_bom_ref(ref) for ref in refs]
     counts: dict[str, int] = {}
@@ -210,6 +218,13 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
     _append_prop(props, "openaca:attributed_to", ref.attributed_to)
+    _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
+    _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))
+    _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
+    _append_json_prop(props, "openaca:source", (ref.extra or {}).get("source"))
+    _append_prop(props, "openaca:install_source", (ref.extra or {}).get("install_source"))
+    _append_prop(props, "openaca:transport", (ref.extra or {}).get("transport"))
+    _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
     source_provenance = (ref.extra or {}).get("source_provenance")
     if source_provenance is not None:
         _append_prop(
@@ -223,6 +238,11 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
 def _append_prop(props: list[dict[str, str]], name: str, value: object) -> None:
     if isinstance(value, str) and value:
         props.append({"name": name, "value": value})
+
+
+def _append_json_prop(props: list[dict[str, str]], name: str, value: object) -> None:
+    if value is not None:
+        props.append({"name": name, "value": json.dumps(value, sort_keys=True)})
 
 
 def _properties_by_name(component: dict[str, Any]) -> dict[str, str]:
@@ -242,6 +262,26 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     component_type = props.get("openaca:component_type")
     if component_type:
         extra["component_type"] = component_type
+    for prop_name, extra_key in (
+        ("openaca:runtime_hosts", "runtime_hosts"),
+        ("openaca:declared_by", "declared_by"),
+        ("openaca:component_path", "component_path"),
+        ("openaca:source", "source"),
+    ):
+        value = props.get(prop_name)
+        if value:
+            try:
+                extra[extra_key] = json.loads(value)
+            except json.JSONDecodeError:
+                extra[extra_key] = value
+    for prop_name, extra_key in (
+        ("openaca:install_source", "install_source"),
+        ("openaca:transport", "transport"),
+        ("openaca:url", "url"),
+    ):
+        value = props.get(prop_name)
+        if value:
+            extra[extra_key] = value
     source_provenance = props.get("openaca:source_provenance")
     if source_provenance:
         try:

@@ -42,7 +42,7 @@ from pathlib import Path
 import click
 from click.core import ParameterSource
 
-from tools.bom import build_agent_bom, component_refs_from_cyclonedx
+from tools.bom import build_agent_bom, component_refs_from_cyclonedx, target_info_from_cyclonedx
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
@@ -379,6 +379,33 @@ def _emit(
         )
     if rendered:
         click.echo(rendered)
+
+
+def _render_bom_inventory_tree(
+    refs: list[ComponentRef],
+    findings: list[Finding],
+    *,
+    target_type: str | None,
+    target: str | None,
+    input_path: Path,
+    use_color: bool,
+    use_unicode: bool,
+) -> str:
+    if target_type == "repo":
+        root = Path(target) if target else input_path.parent
+        grouped = _group_refs_for_repo_tree(refs)
+        return render_repo_inventory_tree(
+            root, grouped, findings, use_color=use_color, use_unicode=use_unicode
+        )
+    return render_inventory_tree(refs, findings, use_color=use_color, use_unicode=use_unicode)
+
+
+def _group_refs_for_repo_tree(refs: list[ComponentRef]) -> list[tuple[Path, list[ComponentRef]]]:
+    grouped: dict[str, list[ComponentRef]] = {}
+    for ref in refs:
+        key = ref.source_manifest or ""
+        grouped.setdefault(key, []).append(ref)
+    return [(Path(path), refs) for path, refs in grouped.items()]
 
 
 def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
@@ -744,6 +771,7 @@ def scan_bom(
         raise click.ClickException(
             f"{input_path}: BOM must be a JSON object, got {type(doc).__name__}"
         )
+    target_type, target = target_info_from_cyclonedx(doc)
     refs = build_agent_bom(
         _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
         target_type="bom",
@@ -758,6 +786,18 @@ def scan_bom(
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
+        click.echo(f"scanned 1 agent BOM, {len(refs)} component(s):", err=True)
+        tree = _render_bom_inventory_tree(
+            refs,
+            findings,
+            target_type=target_type,
+            target=target,
+            input_path=input_path,
+            use_color=_use_color(no_color, output_format),
+            use_unicode=_use_unicode(no_color),
+        )
+        if tree:
+            click.echo(tree, err=True)
         for line in _federation_targets_lines(refs, len(corpus)):
             click.echo(line, err=True)
         if findings:

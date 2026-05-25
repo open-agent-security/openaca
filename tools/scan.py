@@ -761,7 +761,7 @@ def scan_bom(
     BOM. Posture findings are not replayed because those rules require the
     original local configuration files, not just the composition snapshot.
     """
-    sarif, fail_on, verbose, output_format, no_color, _ = _apply_group_opts(
+    sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
         ctx,
         sarif,
         fail_on,
@@ -770,6 +770,12 @@ def scan_bom(
         no_color,
         include_posture=False,
     )
+    group_opts = (ctx.parent.obj if ctx.parent else None) or {}
+    if include_posture or group_opts.get("include_posture"):
+        raise click.ClickException(
+            "--include-posture is not supported for scan bom; posture checks "
+            "require the original repo or endpoint configuration."
+        )
     try:
         doc = json.loads(input_path.read_text(encoding="utf-8"))
     except UnicodeDecodeError as exc:

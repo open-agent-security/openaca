@@ -69,7 +69,13 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
             err=True,
         )
     refs = _filter_agent_scope_refs(flatten_grouped(grouped))
-    bom = build_agent_bom(refs, target_type="repo", target=str(target))
+    bom = build_agent_bom(
+        refs,
+        target_type="repo",
+        target=str(target),
+        source_unit_count=n_found,
+        source_unit_label="manifest",
+    )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
 
@@ -98,7 +104,14 @@ def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | 
     )
     for warning in warnings:
         click.echo(f"warning: {warning}", err=True)
-    bom = build_agent_bom(refs, target_type="endpoint", target=str(config_dir))
+    plugin_count = sum(1 for ref in refs if (ref.extra or {}).get("component_type") == "plugin")
+    bom = build_agent_bom(
+        refs,
+        target_type="endpoint",
+        target=str(config_dir),
+        source_unit_count=plugin_count,
+        source_unit_label="active plugin",
+    )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
 

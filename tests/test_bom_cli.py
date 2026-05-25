@@ -116,6 +116,10 @@ def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     expected = "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned) (from .mcp.json)"
     assert f"repo {tmp_path}" in direct.output
     assert f"repo {tmp_path}" in from_bom.output
+    assert "scanned 1 manifest(s), 1 component(s):" in direct.output
+    assert "scanned 1 manifest(s), 1 component(s):" in from_bom.output
+    assert "Scanned 1 manifest, 1 component" in direct.output
+    assert "Scanned 1 manifest, 1 component" in from_bom.output
     assert expected in direct.output
     assert expected in from_bom.output
 
@@ -151,6 +155,8 @@ def test_scan_bom_verbose_renders_endpoint_inventory_from_bom(tmp_path):
     expected = "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned)"
     assert "0 active plugins, 1 direct component, 1 total component" in direct.output
     assert "0 active plugins, 1 direct component, 1 total component" in from_bom.output
+    assert "Scanned 0 active plugins, 1 component" in direct.output
+    assert "Scanned 0 active plugins, 1 component" in from_bom.output
     assert expected in direct.output
     assert expected in from_bom.output
 

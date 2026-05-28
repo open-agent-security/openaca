@@ -21,6 +21,7 @@ from tools.fleet.collector import (
     _relativize_bom_paths,
     _relativize_declared_by,
     _relativize_path,
+    _relativize_source_provenance,
     build_endpoint_collection,
     collect_endpoint,
     upload_bom_file,
@@ -421,6 +422,86 @@ def test_relativize_declared_by_leaves_non_json_unchanged(tmp_path):
     assert _relativize_declared_by("not-json", config_dir) == "not-json"
 
 
+def test_relativize_source_provenance_relativizes_lockfile_and_resolved_path(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    lockfile = str(config_dir / ".skill-lock.json")
+    resolved = str(config_dir / "skills" / "my-skill" / "SKILL.md")
+    raw = json.dumps(
+        {
+            "status": "known",
+            "source": "github",
+            "source_type": "git",
+            "lockfile_path": lockfile,
+            "resolved_path": resolved,
+        },
+        sort_keys=True,
+    )
+    result = _relativize_source_provenance(raw, config_dir)
+    obj = json.loads(result)
+    assert obj["lockfile_path"] == ".skill-lock.json"
+    assert obj["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
+    assert obj["source"] == "github"
+
+
+def test_relativize_source_provenance_lockfile_outside_config_dir_returns_filename(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    lockfile = str(tmp_path / ".agents" / ".skill-lock.json")
+    raw = json.dumps({"status": "known", "lockfile_path": lockfile}, sort_keys=True)
+    result = _relativize_source_provenance(raw, config_dir)
+    obj = json.loads(result)
+    assert obj["lockfile_path"] == ".skill-lock.json"
+
+
+def test_relativize_source_provenance_symlink_target_only(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    resolved = str(tmp_path / "skills-repo" / "my-skill" / "SKILL.md")
+    raw = json.dumps({"status": "symlink-target", "resolved_path": resolved}, sort_keys=True)
+    result = _relativize_source_provenance(raw, config_dir)
+    obj = json.loads(result)
+    assert obj["resolved_path"] == "SKILL.md"
+
+
+def test_relativize_source_provenance_leaves_non_json_unchanged(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    assert _relativize_source_provenance("not-json", config_dir) == "not-json"
+
+
+def test_relativize_bom_paths_strips_home_paths_from_source_provenance(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    lockfile = str(config_dir / ".skill-lock.json")
+    resolved = str(config_dir / "skills" / "my-skill" / "SKILL.md")
+    provenance = json.dumps(
+        {
+            "status": "known",
+            "source": "github",
+            "source_type": "git",
+            "lockfile_path": lockfile,
+            "resolved_path": resolved,
+        },
+        sort_keys=True,
+    )
+    bom = {
+        "bomFormat": "CycloneDX",
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": "ref1",
+                "name": "my-skill",
+                "properties": [
+                    {"name": "openaca:source_provenance", "value": provenance},
+                    {"name": "openaca:scope", "value": "agent-component"},
+                ],
+            }
+        ],
+    }
+    result = _relativize_bom_paths(bom, config_dir)
+    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
+    obj = json.loads(props["openaca:source_provenance"])
+    assert obj["lockfile_path"] == ".skill-lock.json"
+    assert obj["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
+    assert props["openaca:scope"] == "agent-component"
+
+
 def test_relativize_bom_paths_strips_home_paths_from_source_manifest(tmp_path):
     config_dir = tmp_path / "dot-claude"
     abs_path = str(config_dir / "settings.json")
@@ -520,6 +601,65 @@ def test_build_endpoint_collection_bom_passes_validation_with_home_paths(tmp_pat
     assert props_by_name["openaca:source_manifest"] == "settings.json"
     declared = json.loads(props_by_name["openaca:declared_by"])
     assert declared["path"] == "installed_plugins.json"
+
+
+def test_build_endpoint_collection_bom_passes_validation_with_source_provenance_home_paths(
+    tmp_path, monkeypatch
+):
+    """BOM components with home-directory lockfile_path/resolved_path in source_provenance
+    must pass validate_fleet_upload_payload after relativization."""
+    config_dir = tmp_path / "dot-claude"
+    lockfile_path = str(config_dir / ".skill-lock.json")
+    resolved_path = str(config_dir / "skills" / "my-skill" / "SKILL.md")
+    ref = ComponentRef(
+        name="my-skill",
+        component_identity="claude-skill/my-skill",
+        source_manifest=str(config_dir / "skills" / "my-skill" / "SKILL.md"),
+        source_locator="skills.my-skill",
+        extra={
+            "component_type": "skill",
+            "source_provenance": {
+                "status": "known",
+                "source": "github.com/example/my-skill",
+                "source_type": "git",
+                "lockfile_path": lockfile_path,
+                "resolved_path": resolved_path,
+            },
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *a, **kw: [])
+
+    collection = build_endpoint_collection(config_dir=config_dir, project=None)
+
+    payload = {
+        "asset_id": "asset-123",
+        "source": "endpoint",
+        "openaca_version": "unknown",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": collection.bom,
+        "posture_findings": [],
+    }
+    validate_fleet_upload_payload(payload)
+
+    props_by_name = {}
+    for comp in collection.bom.get("components") or []:
+        for p in comp.get("properties") or []:
+            props_by_name[p["name"]] = p["value"]
+
+    provenance = json.loads(props_by_name["openaca:source_provenance"])
+    assert provenance["lockfile_path"] == ".skill-lock.json"
+    assert provenance["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
 
 
 def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:

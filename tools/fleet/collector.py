@@ -312,6 +312,10 @@ def _relativize_bom_paths(bom: JsonObject, config_dir: Path) -> JsonObject:
                 new_props.append(
                     {"name": name, "value": _relativize_declared_by(value, config_dir)}
                 )
+            elif name == "openaca:source_provenance":
+                new_props.append(
+                    {"name": name, "value": _relativize_source_provenance(value, config_dir)}
+                )
             else:
                 new_props.append(prop)
         sanitized_components.append({**component, "properties": new_props})
@@ -338,3 +342,18 @@ def _relativize_declared_by(json_value: str, config_dir: Path) -> str:
     if not isinstance(raw_path, str):
         return json_value
     return json.dumps({**obj, "path": _relativize_path(raw_path, config_dir)}, sort_keys=True)
+
+
+def _relativize_source_provenance(json_value: str, config_dir: Path) -> str:
+    try:
+        obj = json.loads(json_value)
+    except (ValueError, TypeError):
+        return json_value
+    if not isinstance(obj, dict):
+        return json_value
+    updated = dict(obj)
+    for field in ("lockfile_path", "resolved_path"):
+        raw = updated.get(field)
+        if isinstance(raw, str) and raw:
+            updated[field] = _relativize_path(raw, config_dir)
+    return json.dumps(updated, sort_keys=True)

@@ -1,10 +1,10 @@
 ---
 id: 0024
 title: Keep Fleet collection as an opt-in CLI surface
-status: accepted
+status: superseded
 date: 2026-05-28
 supersedes: null
-superseded-by: null
+superseded-by: 0025
 ---
 
 ## Context

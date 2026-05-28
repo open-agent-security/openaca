@@ -10,6 +10,18 @@ openaca fleet collect endpoint --quiet
 The LaunchAgent runs every 6 hours and writes logs under
 `~/Library/Logs/OpenACA/`.
 
+## Uploaded Data Surface
+
+Fleet upload is endpoint inventory. The collector uploads the Agent BOM,
+component identities, install references, source manifest/source locator
+metadata, posture findings, runtime host labels, and asset metadata needed for
+the Fleet dashboard.
+
+The collector does not upload source code, raw config file bodies, environment
+variable values, detected secrets, or full shell argv. Upload and pending-cache
+writes share the same final payload guard. See
+`docs/adrs/0025-fleet-upload-contract.md`.
+
 ## Required Variables
 
 - `OPENACA_FLEET_TOKEN`: Fleet API token for the organization.

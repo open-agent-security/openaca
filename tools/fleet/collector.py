@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import time
 from dataclasses import dataclass
@@ -128,6 +129,7 @@ def upload_bom_file(path: Path) -> BomUploadResult:
         raise CollectError(f"failed to read BOM from {path}") from exc
     if not isinstance(bom, dict):
         raise CollectError("BOM file must contain a JSON object")
+    bom = _relativize_bom_paths(bom, _default_config_dir())
     payload = _upload_payload(
         asset_id=config.asset_id,
         source="manual",
@@ -135,7 +137,10 @@ def upload_bom_file(path: Path) -> BomUploadResult:
         bom=bom,
         posture_findings=[],
     )
-    validate_fleet_upload_payload(payload)
+    try:
+        validate_fleet_upload_payload(payload)
+    except RedactionError as exc:
+        raise CollectError(f"BOM contains redaction-blocked content: {exc}") from exc
     client = FleetClient(api_url=config.api_url, token=config.token)
     return client.upload_bom(payload)
 
@@ -279,6 +284,13 @@ def _openaca_version() -> str:
         return version("openaca")
     except PackageNotFoundError:
         return "unknown"
+
+
+def _default_config_dir() -> Path:
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".claude"
 
 
 def _relativize_bom_paths(bom: JsonObject, config_dir: Path) -> JsonObject:

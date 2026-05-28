@@ -7,11 +7,14 @@ set -euo pipefail
 
 for arg in "$@"; do
   case "$arg" in
-    --exec | --exec=* | -x | -i | --interactive | --interactive=*)
+    --exec | --exec=* | -x* | -i* | --interactive | --interactive=*)
       printf '::error::git rebase %s is blocked (exec/interactive rebase disabled in autofix context)\n' "$arg" >&2
       exit 1
       ;;
   esac
 done
 
-exec git rebase "$@"
+# -c core.hooksPath=/dev/null prevents a PR-controlled pre-rebase hook
+# (planted in scripts/git-hooks/ before install-hooks.sh runs) from
+# executing arbitrary shell on a write-token runner.
+exec git -c core.hooksPath=/dev/null rebase "$@"

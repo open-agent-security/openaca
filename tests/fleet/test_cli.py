@@ -3,6 +3,7 @@ from __future__ import annotations
 from click.testing import CliRunner
 
 from tools.cli import main as openaca_main
+from tools.fleet.client import BomUploadResult, DriftResult
 from tools.fleet.config import load_fleet_config
 
 
@@ -131,6 +132,34 @@ def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, m
     assert "Acme Inc" in result.output
     assert "No asset configured" in result.output
     assert "openaca fleet collect endpoint" in result.output
+
+
+def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch):
+    calls: list[dict] = []
+
+    def fake_collect_endpoint(**kwargs):
+        calls.append(kwargs)
+        return _upload_result(asset_id="asset-123")
+
+    monkeypatch.setattr("tools.fleet.cli.collect_endpoint", fake_collect_endpoint)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "collect", "endpoint"])
+
+    assert result.exit_code == 0
+    assert calls[0]["config_dir"] == tmp_path
+
+
+def _upload_result(*, asset_id: str) -> BomUploadResult:
+    return BomUploadResult(
+        bom_id="bom-123",
+        asset_id=asset_id,
+        component_count=0,
+        finding_count=0,
+        policy_violation_count=0,
+        drift=DriftResult(added=0, removed=0, changed=0),
+        dashboard_url="https://app/boms/bom-123",
+    )
 
 
 def _me_result():

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from tools.fleet.client import FleetClient, FleetClientError
+from tools.fleet.collector import CollectError, collect_endpoint, upload_bom_file
 from tools.fleet.config import (
     DEFAULT_API_URL,
     ConfigError,
@@ -63,6 +66,72 @@ def status() -> None:
     click.echo(f"Latest BOM: {asset.latest_bom_id or 'none'}")
     click.echo(f"Last seen: {asset.last_seen_at or 'never'}")
     click.echo(f"Components: {asset.component_count} components")
+
+
+@main.group()
+def collect() -> None:
+    """Collect and upload Fleet data."""
+
+
+@collect.command()
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
+)
+@click.option(
+    "--project",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
+)
+@click.option("--quiet", is_flag=True, default=False, help="Minimize scheduled-run output.")
+@click.option(
+    "--allow-offline-cache",
+    is_flag=True,
+    default=False,
+    help="Exit zero when upload fails after writing a pending cache file.",
+)
+def endpoint(
+    config_dir: Path | None,
+    project: Path | None,
+    quiet: bool,
+    allow_offline_cache: bool,
+) -> None:
+    """Collect endpoint composition and upload it."""
+    try:
+        result = collect_endpoint(
+            config_dir=config_dir or Path.home() / ".claude",
+            project=project,
+            quiet=quiet,
+            allow_offline_cache=allow_offline_cache,
+        )
+    except CollectError as exc:
+        if not quiet:
+            click.echo(str(exc), err=True)
+        raise click.exceptions.Exit(exc.exit_code) from exc
+    _print_upload_result(result)
+
+
+@main.command()
+@click.argument("bom_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+def upload(bom_path: Path) -> None:
+    """Upload an existing Agent BOM file."""
+    try:
+        result = upload_bom_file(bom_path)
+    except CollectError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_upload_result(result)
+
+
+def _print_upload_result(result) -> None:
+    click.echo(f"Uploaded BOM: {result.bom_id}")
+    click.echo(f"Asset: {result.asset_id}")
+    click.echo(f"Components: {result.component_count}")
+    click.echo(f"Findings: {result.finding_count}")
+    click.echo(f"Policy violations: {result.policy_violation_count}")
+    click.echo(f"Dashboard: {result.dashboard_url}")
 
 
 def _mask_token(token: str) -> str:

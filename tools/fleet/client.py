@@ -176,7 +176,7 @@ class FleetClient:
                     "Accept": "application/json",
                 },
             )
-            if response.status_code in {502, 503} and attempt < len(delays):
+            if response.status_code in {502, 503, 504} and attempt < len(delays):
                 self._sleep(delays[attempt])
                 continue
             return _handle_response(response)
@@ -195,7 +195,7 @@ def _handle_response(response: httpx.Response) -> JsonObject:
     if response.status_code == 422:
         errors = body.get("validation_errors", [])
         raise FleetValidationError(message, errors if isinstance(errors, list) else [])
-    if response.status_code in {502, 503}:
+    if response.status_code in {502, 503, 504}:
         raise FleetServerError(message)
     raise FleetClientError(message)
 

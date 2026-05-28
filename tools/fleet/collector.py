@@ -312,7 +312,7 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
         return {**component, "properties": prepared_props}
     if _is_pinned_mcp_component(props_by_name):
         prepared_props = [
-            _trim_pinned_install_source(prop) if isinstance(prop, dict) else prop
+            _trim_pinned_install_source(prop, component) if isinstance(prop, dict) else prop
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
@@ -366,12 +366,25 @@ def _is_pinned_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     )
 
 
-def _trim_pinned_install_source(prop: JsonObject) -> JsonObject:
+def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> JsonObject:
     if prop.get("name") != "openaca:install_source":
         return prop
     value = prop.get("value")
     if not isinstance(value, str):
         return prop
+    # First token is always the launcher (npx/uvx), never a flag.
+    launcher = value.split(maxsplit=1)[0] if value.strip() else ""
+    if not launcher:
+        return prop
+    purl = component.get("purl")
+    name = component.get("name")
+    version = component.get("version")
+    if isinstance(purl, str) and isinstance(name, str) and isinstance(version, str):
+        if purl.startswith("pkg:npm/"):
+            return {**prop, "value": f"{launcher} {name}@{version}"}
+        if purl.startswith("pkg:pypi/"):
+            return {**prop, "value": f"{launcher} {name}=={version}"}
+    # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:
         return prop

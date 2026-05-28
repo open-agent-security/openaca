@@ -14,7 +14,7 @@ The LaunchAgent runs every 6 hours and writes logs under
 
 - `OPENACA_FLEET_TOKEN`: Fleet API token for the organization.
 - `OPENACA_FLEET_API_URL`: optional API URL. Defaults to `https://api.openaca.dev`.
-- `OPENACA_VERSION`: pinned `openaca` package version. Defaults to `0.1.0b5`.
+- `OPENACA_VERSION`: pinned `openaca` package version. Defaults to `0.1.0b6`.
 
 The scripts install or update `uv`, install the pinned `openaca` CLI into the
 console user's tool directory, configure Fleet, and load

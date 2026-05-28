@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -188,6 +190,33 @@ def test_collect_endpoint_caches_redacted_payload_on_interactive_offline_failure
     cached = json.loads(pending[0].read_text(encoding="utf-8"))
     assert cached["asset_id"] == "asset-existing"
     assert "/Users/" not in pending[0].read_text(encoding="utf-8")
+
+
+def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    with pytest.raises(CollectError):
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    pending = list(pending_dir.glob("pending-bom-*.json"))
+    assert len(pending) == 1
+    assert stat.S_IMODE(os.stat(pending[0]).st_mode) == 0o600
 
 
 def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path, monkeypatch):

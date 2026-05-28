@@ -12,7 +12,7 @@ if [ -z "${OPENACA_VERSION:-}" ] && [ -n "${6:-}" ]; then
 fi
 
 OPENACA_FLEET_API_URL="${OPENACA_FLEET_API_URL:-https://api.openaca.dev}"
-OPENACA_VERSION="${OPENACA_VERSION:-0.1.0b5}"
+OPENACA_VERSION="${OPENACA_VERSION:-0.1.0b6}"
 LABEL="com.openaca.fleet"
 
 if [ -z "${OPENACA_FLEET_TOKEN:-}" ]; then

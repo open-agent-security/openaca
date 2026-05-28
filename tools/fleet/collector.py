@@ -310,6 +310,12 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
+    if _is_pinned_mcp_component(props_by_name):
+        prepared_props = [
+            _trim_pinned_install_source(prop) if isinstance(prop, dict) else prop
+            for prop in properties
+        ]
+        return {**component, "properties": prepared_props}
     return component
 
 
@@ -351,3 +357,22 @@ def _trim_package_install_source(prop: JsonObject, props_by_name: dict[Any, Any]
         package = identity[len("mcp-stdio/uvx-unpinned:") :]
         return {**prop, "value": f"uvx {package}"}
     return prop
+
+
+def _is_pinned_mcp_component(props_by_name: dict[Any, Any]) -> bool:
+    return (
+        props_by_name.get("openaca:component_type") == "mcp_server"
+        and "openaca:identity" not in props_by_name
+    )
+
+
+def _trim_pinned_install_source(prop: JsonObject) -> JsonObject:
+    if prop.get("name") != "openaca:install_source":
+        return prop
+    value = prop.get("value")
+    if not isinstance(value, str):
+        return prop
+    parts = value.split(maxsplit=2)
+    if len(parts) <= 2:
+        return prop
+    return {**prop, "value": " ".join(parts[:2])}

@@ -1,13 +1,13 @@
-"""claude_desktop_config.json shares the mcp.json shape — registry test only.
+"""claude_desktop_config.json shares the mcp.json shape.
 
 The content parser (`mcp_json.parse`) is unit-tested in test_mcp_json.py;
-here we only verify that the new filename is registered and exercised by
-parse_repo against a fixture file with the canonical name.
+these tests cover Desktop-specific registry and runtime-host behavior.
 """
 
+import json
 from pathlib import Path
 
-from tools.parsers import parse_repo
+from tools.parsers import mcp_json, parse_repo
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
 
@@ -23,3 +23,32 @@ def test_parse_repo_records_source_manifest_filename():
     refs = parse_repo(REPOS / "sample-claude-desktop")
     sources = {r.source_manifest for r in refs}
     assert any(s.endswith("claude_desktop_config.json") for s in sources)
+
+
+def test_parse_repo_stamps_claude_desktop_config_as_claude_chat():
+    refs = parse_repo(REPOS / "sample-claude-desktop")
+    hosts = {tuple(r.extra.get("runtime_hosts") or []) for r in refs}
+    assert hosts == {("claude-chat",)}
+
+
+def test_parse_with_runtime_hosts_stamps_claude_chat(tmp_path):
+    manifest = tmp_path / "claude_desktop_config.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inspector": {
+                        "command": "npx",
+                        "args": ["@mcpjam/inspector@1.4.2"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    refs = mcp_json.parse_with_runtime_hosts(manifest, ["claude-chat"])
+
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40mcpjam/inspector@1.4.2"
+    assert refs[0].extra["runtime_hosts"] == ["claude-chat"]

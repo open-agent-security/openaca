@@ -22,12 +22,13 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | ✅ Done | — |
 | 014 | [Posture findings (scanner-side hygiene rules)](014-posture-findings.md) | ✅ Done | 007, 008, 009 |
 | 015 | [Agent component identity + scan output](015-agent-component-identity-and-scan-output.md) | ⏸ Pending | 013, 014 |
-| 016 | [Claude Code parser coverage](016-claude-code-parser-coverage.md) | 🟡 Active | 008, 009 |
+| 016 | [Claude Code parser coverage](016-claude-code-parser-coverage.md) | ✅ Done | 008, 009 |
 | 017 | [Generic skill ecosystem](017-generic-skill-ecosystem.md) | ✅ Done | 008 |
 | 018 | [Source ecosystem and component type cleanup](018-source-ecosystem-component-type.md) | ✅ Done | 017 |
 | 019 | [Remote MCP server inventory](019-remote-mcp-inventory.md) | ✅ Done | 018 |
 | 020 | [Skill lock source provenance](020-skill-lock-source-provenance.md) | ✅ Done | 018 |
 | 021 | [Agent BOM](021-agent-bom.md) | ✅ Done | 018, 020 |
+| 022 | [Claude Chat host profile](022-claude-chat-host.md) | 🟡 Active | 019, 021 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

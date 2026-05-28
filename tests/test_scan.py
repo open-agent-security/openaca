@@ -339,6 +339,94 @@ def test_endpoint_subcommand_minimal_install_no_findings():
     assert "no findings" in result.output
 
 
+def test_endpoint_claude_chat_reads_desktop_config(tmp_path):
+    config_dir = tmp_path / "Claude"
+    config_dir.mkdir()
+    (config_dir / "claude_desktop_config.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inspector": {
+                        "command": "npx",
+                        "args": ["@mcpjam/inspector@1.4.2"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--host",
+            "claude-chat",
+            "--config-dir",
+            str(config_dir),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"config_dir={config_dir}" in result.output
+    assert "host=claude-chat" in result.output
+    payload = json.loads(result.stdout)
+    assert payload["stats"]["unit"] == "manifest"
+    assert payload["stats"]["units"] == 1
+    assert payload["stats"]["components"] == 1
+
+
+def test_endpoint_default_host_remains_claude_code(tmp_path):
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(config_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "host=claude-code" in result.output
+    assert "Scanned 0 active plugins" in result.output
+
+
+def test_endpoint_claude_chat_include_posture_checks_desktop_config(tmp_path):
+    config_dir = tmp_path / "Claude"
+    config_dir.mkdir()
+    (config_dir / "claude_desktop_config.json").write_text(
+        json.dumps({"mcpServers": {"local": {"url": "http://localhost:3000/mcp"}}}),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    from unittest.mock import patch
+
+    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})):
+        result = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--host",
+                "claude-chat",
+                "--config-dir",
+                str(config_dir),
+                "--include-posture",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-insecure-transport" in result.output
+
+
 def test_endpoint_subcommand_matches_plugin_component_identity_advisory(tmp_path):
     """Endpoint mode matches source-less plugin advisories by explicit
     component identity, not by a component-type ecosystem."""

@@ -172,8 +172,9 @@ openaca scan repo \
     --fail-on any
 
 # Endpoint mode: install-state-aware scan of an installed Claude Code
-# endpoint. Defaults to $CLAUDE_CONFIG_DIR (else ~/.claude) for user
-# config. Project context is opt-in via --project.
+# endpoint. --host claude-code is the default. It defaults to
+# $CLAUDE_CONFIG_DIR (else ~/.claude) for user config. Project context
+# is opt-in via --project.
 openaca scan endpoint \
     --fail-on any
 
@@ -182,7 +183,16 @@ openaca scan endpoint \
 openaca scan endpoint \
     --config-dir ~/.claude \
     --project /path/to/your/repo
+
+# Claude Desktop Chat tab local MCP config.
+openaca scan endpoint \
+    --host claude-chat \
+    --config-dir "$HOME/Library/Application Support/Claude"
 ```
+
+`claude-chat` means Claude Desktop Chat local MCP config
+(`claude_desktop_config.json`); it does not include Claude Code tab,
+Cowork, Desktop Extensions, or remote connector state.
 
 A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
 `--format`, `--no-color`) can sit before or after the subcommand name —

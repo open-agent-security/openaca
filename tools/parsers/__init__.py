@@ -31,6 +31,10 @@ def _parse_repo_agent(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(path, kind="agent")
 
 
+def _parse_claude_desktop_config(path: Path) -> list[ComponentRef]:
+    return mcp_json.parse_with_runtime_hosts(path, ["claude-chat"])
+
+
 # Patterns whose parsers emit software-dependency refs (npm/PyPI deps from
 # manifests + lockfiles). These get scope-classified based on co-location
 # with a plugin manifest. All other registry patterns emit agent-component
@@ -50,10 +54,9 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     ("pyproject.toml", pyproject_toml.parse),
     ("mcp.json", mcp_json.parse),
     (".mcp.json", mcp_json.parse),
-    # Claude Desktop user-config: same JSON shape as `mcp.json`
-    # (`mcpServers` map of stdio launches), different filename. Reuse
-    # the same parser; the filename pattern is the only addition.
-    ("claude_desktop_config.json", mcp_json.parse),
+    # Claude Desktop Chat user-config: same JSON shape as `mcp.json`,
+    # but a distinct runtime host for scan/BOM attribution.
+    ("claude_desktop_config.json", _parse_claude_desktop_config),
     (".claude-plugin/plugin.json", claude_plugin.parse),
     (".claude/settings.json", claude_settings.parse),
     # Plan 008: agent-component inventory in repo mode. These

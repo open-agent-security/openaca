@@ -52,7 +52,7 @@ from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
 from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
-from tools.parsers import flatten_grouped, parse_repo_grouped
+from tools.parsers import flatten_grouped, mcp_json, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
@@ -73,6 +73,7 @@ from tools.render import (
 from tools.sarif import to_sarif
 
 _FORMAT_CHOICES = ("text", "github", "json")
+_HOST_CHOICES = ("claude-code", "claude-chat")
 
 # Internal ref classifications that are surfaced to users in V0. Everything
 # else (software-dependency) is suppressed from matching, federation, and
@@ -201,6 +202,16 @@ _project_option = click.option(
         "resolution. Pass `--project .` to include the current directory's project "
         "context. Endpoint scan does NOT include project context by default — when "
         "this flag is omitted, scan output reminds you how to add it."
+    ),
+)
+_host_option = click.option(
+    "--host",
+    type=click.Choice(_HOST_CHOICES),
+    default="claude-code",
+    show_default=True,
+    help=(
+        "Endpoint host profile. claude-code scans Claude Code config; "
+        "claude-chat scans Claude Desktop Chat local MCP config."
     ),
 )
 _sarif_option = click.option(
@@ -615,6 +626,7 @@ def repo(
 
 @main.command()
 @click.pass_context
+@_host_option
 @_config_dir_option
 @_project_option
 @_sarif_option
@@ -625,6 +637,7 @@ def repo(
 @_include_posture_option
 def endpoint(
     ctx: click.Context,
+    host: str,
     config_dir: Path | None,
     project: Path | None,
     sarif: Path | None,
@@ -638,28 +651,33 @@ def endpoint(
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )
-    config_dir = _resolve_endpoint_config_dir(config_dir)
+    config_dir = _resolve_endpoint_config_dir(config_dir, host=host)
 
     # Always announce what was scanned (config dir + project context) so the
     # scan scope is never hidden — transparency, not surprise.
     project_note = str(project) if project is not None else "(none)"
     click.echo(
-        f"detected config_dir={config_dir}, project={project_note} (mode=endpoint)",
+        f"detected host={host}, config_dir={config_dir}, project={project_note} (mode=endpoint)",
         err=True,
     )
 
-    refs, warnings = parse_install(
-        install_root=config_dir,
-        project_root=project,
-        mode="endpoint",
-        include_transitive=True,
-    )
+    if host == "claude-chat":
+        refs, warnings, source_unit_count, source_unit_label = _parse_claude_chat(config_dir)
+    else:
+        refs, warnings = parse_install(
+            install_root=config_dir,
+            project_root=project,
+            mode="endpoint",
+            include_transitive=True,
+        )
+        source_unit_count = sum(1 for r in refs if _is_plugin_ref(r))
+        source_unit_label = "active plugin"
     refs = build_agent_bom(
         refs,
         target_type="endpoint",
         target=str(config_dir),
-        source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
-        source_unit_label="active plugin",
+        source_unit_count=source_unit_count,
+        source_unit_label=source_unit_label,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -674,7 +692,7 @@ def endpoint(
         posture_findings = run_posture_rules(refs, manifests, settings_manifests)
 
     advisory_index = {a["id"]: a for a in corpus}
-    plugin_count = sum(1 for r in refs if _is_plugin_ref(r))
+    unit_count = source_unit_count
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
@@ -706,8 +724,8 @@ def endpoint(
         click.echo(f"sarif: wrote {sarif}", err=True)
 
     stats = ScanStats(
-        unit_count=plugin_count,
-        unit_label="active plugin",
+        unit_count=unit_count,
+        unit_label=source_unit_label,
         component_count=len(refs),
         sources=_collect_corpus_sources(corpus),
     )
@@ -720,14 +738,14 @@ def endpoint(
         verbose=verbose,
         posture_findings=posture_findings if include_posture else None,
     )
-    _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
+    _stderr_summary(findings, f"resolved {unit_count} {source_unit_label}(s)", output_format)
 
     # When --project is not provided, remind the user that project-local
     # skills/MCPs/plugin manifests are NOT included in this scan. The note
     # is unconditional (no cwd detection); the goal is for testers to
     # discover the flag the first time they run endpoint scan, not to be
     # clever about when to surface it.
-    if project is None:
+    if host == "claude-code" and project is None:
         click.echo(
             "\nNote: scanned user-level config only. To include project-local "
             "skills, MCPs, and plugin manifests, pass --project /path/to/project "
@@ -736,6 +754,16 @@ def endpoint(
         )
 
     _exit_for_findings(fail_on, findings)
+
+
+def _parse_claude_chat(config_dir: Path) -> tuple[list[ComponentRef], list[str], int, str]:
+    manifest = config_dir / "claude_desktop_config.json"
+    if not manifest.is_file():
+        return [], [], 0, "manifest"
+    try:
+        return mcp_json.parse_with_runtime_hosts(manifest, ["claude-chat"]), [], 1, "manifest"
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [], [f"{manifest}: failed to parse: {exc}"], 1, "manifest"
 
 
 @main.command(name="bom")
@@ -852,14 +880,19 @@ def scan_bom(
     _exit_for_findings(fail_on, findings)
 
 
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
+def _resolve_endpoint_config_dir(config_dir: Path | None, host: str = "claude-code") -> Path:
     """Resolve endpoint config directory defaults.
 
-    Explicit `--config-dir` wins. Otherwise use `$CLAUDE_CONFIG_DIR` when set,
-    then fall back to Claude Code's default user config directory.
+    Explicit `--config-dir` wins. Otherwise use the host-specific env var
+    when set, then fall back to the host's default user config directory.
     """
     if config_dir is not None:
         return config_dir.expanduser()
+    if host == "claude-chat":
+        configured = os.environ.get("CLAUDE_CHAT_CONFIG_DIR")
+        if configured:
+            return Path(configured).expanduser()
+        return Path.home() / "Library" / "Application Support" / "Claude"
     configured = os.environ.get("CLAUDE_CONFIG_DIR")
     if configured:
         return Path(configured).expanduser()

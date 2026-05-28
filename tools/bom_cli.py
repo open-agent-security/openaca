@@ -10,7 +10,8 @@ import click
 
 from tools.bom import build_agent_bom
 from tools.bom_lint import main as lint_cmd
-from tools.parsers import flatten_grouped, parse_repo_grouped
+from tools.component_ref import ComponentRef
+from tools.parsers import flatten_grouped, mcp_json, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
 from tools.scan import _filter_agent_scope_refs
 
@@ -22,6 +23,8 @@ def main() -> None:
 
 main.add_command(lint_cmd, name="lint")
 
+_HOST_CHOICES = ("claude-code", "claude-chat")
+
 
 _output_option = click.option(
     "-o",
@@ -30,6 +33,16 @@ _output_option = click.option(
     type=click.Path(dir_okay=False, path_type=Path),
     default=None,
     help="Write the CycloneDX Agent BOM JSON to this file instead of stdout.",
+)
+_host_option = click.option(
+    "--host",
+    type=click.Choice(_HOST_CHOICES),
+    default="claude-code",
+    show_default=True,
+    help=(
+        "Endpoint host profile. claude-code scans Claude Code config; "
+        "claude-chat scans Claude Desktop Chat local MCP config."
+    ),
 )
 
 
@@ -80,6 +93,7 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
 
 
 @main.command()
+@_host_option
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -93,31 +107,54 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
     help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
 )
 @_output_option
-def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
+def endpoint(
+    host: str, config_dir: Path | None, project: Path | None, output_path: Path | None
+) -> None:
     """Generate an Agent BOM from active endpoint composition."""
-    config_dir = _resolve_endpoint_config_dir(config_dir)
-    refs, warnings = parse_install(
-        install_root=config_dir,
-        project_root=project,
-        mode="endpoint",
-        include_transitive=True,
-    )
+    config_dir = _resolve_endpoint_config_dir(config_dir, host=host)
+    if host == "claude-chat":
+        refs, warnings, source_unit_count, source_unit_label = _parse_claude_chat(config_dir)
+    else:
+        refs, warnings = parse_install(
+            install_root=config_dir,
+            project_root=project,
+            mode="endpoint",
+            include_transitive=True,
+        )
+        source_unit_count = sum(
+            1 for ref in refs if (ref.extra or {}).get("component_type") == "plugin"
+        )
+        source_unit_label = "active plugin"
     for warning in warnings:
         click.echo(f"warning: {warning}", err=True)
-    plugin_count = sum(1 for ref in refs if (ref.extra or {}).get("component_type") == "plugin")
     bom = build_agent_bom(
         refs,
         target_type="endpoint",
         target=str(config_dir),
-        source_unit_count=plugin_count,
-        source_unit_label="active plugin",
+        source_unit_count=source_unit_count,
+        source_unit_label=source_unit_label,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
 
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
+def _parse_claude_chat(config_dir: Path) -> tuple[list[ComponentRef], list[str], int, str]:
+    manifest = config_dir / "claude_desktop_config.json"
+    if not manifest.is_file():
+        return [], [], 0, "manifest"
+    try:
+        return mcp_json.parse_with_runtime_hosts(manifest, ["claude-chat"]), [], 1, "manifest"
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [], [f"{manifest}: failed to parse: {exc}"], 1, "manifest"
+
+
+def _resolve_endpoint_config_dir(config_dir: Path | None, host: str = "claude-code") -> Path:
     if config_dir is not None:
         return config_dir.expanduser()
+    if host == "claude-chat":
+        configured = os.environ.get("CLAUDE_CHAT_CONFIG_DIR")
+        if configured:
+            return Path(configured).expanduser()
+        return Path.home() / "Library" / "Application Support" / "Claude"
     configured = os.environ.get("CLAUDE_CONFIG_DIR")
     if configured:
         return Path(configured).expanduser()

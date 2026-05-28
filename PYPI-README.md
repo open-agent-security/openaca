@@ -98,9 +98,12 @@ separately from vulnerability findings and never fail CI by default.
 
 ## V0 scope
 
-- **Endpoint mode** scans Claude Code only (`~/.claude` or
-  `$CLAUDE_CONFIG_DIR`). Other agent hosts aren't endpoint-supported
-  yet.
+- **Endpoint mode** scans Claude Code by default (`~/.claude` or
+  `$CLAUDE_CONFIG_DIR`). Pass `--host claude-chat` to scan Claude
+  Desktop Chat local MCP config:
+  `openaca scan endpoint --host claude-chat --config-dir "$HOME/Library/Application Support/Claude"`.
+  `claude-chat` means `claude_desktop_config.json`; it does not include
+  Claude Code tab, Cowork, Desktop Extensions, or remote connector state.
 - **Repo mode** parses Claude Code's declared manifests
   (`.claude-plugin/plugin.json`, `.claude/settings.json`) plus the
   host-agnostic `mcp.json` that most MCP-aware hosts use.

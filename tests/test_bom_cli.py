@@ -87,6 +87,47 @@ def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
     assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
 
 
+def test_bom_endpoint_claude_chat_emits_desktop_config_components(tmp_path):
+    config_dir = tmp_path / "Claude"
+    config_dir.mkdir()
+    (config_dir / "claude_desktop_config.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "inspector": {
+                        "command": "npx",
+                        "args": ["@mcpjam/inspector@1.4.2"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "claude-chat.bom.json"
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "bom",
+            "endpoint",
+            "--host",
+            "claude-chat",
+            "--config-dir",
+            str(config_dir),
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(output.read_text(encoding="utf-8"))
+    component = next(
+        c for c in doc["components"] if c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2"
+    )
+    props = {p["name"]: p["value"] for p in component["properties"]}
+    assert json.loads(props["openaca:runtime_hosts"]) == ["claude-chat"]
+
+
 def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     (tmp_path / ".mcp.json").write_text(
         json.dumps(

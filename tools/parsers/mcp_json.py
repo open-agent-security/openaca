@@ -448,6 +448,10 @@ def _format_install_source(raw_command: object, raw_args: list[str]) -> str:
 
 
 def parse(path: Path) -> list[ComponentRef]:
+    return parse_with_runtime_hosts(path, ["claude-code"])
+
+
+def parse_with_runtime_hosts(path: Path, runtime_hosts: list[str]) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     if not isinstance(data, dict):
         return []
@@ -459,7 +463,7 @@ def parse(path: Path) -> list[ComponentRef]:
             data["mcpServers"],
             source_manifest=str(path),
             locator_prefix="$.mcpServers",
-            runtime_hosts=["claude-code"],
+            runtime_hosts=runtime_hosts,
         )
     if isinstance(data.get("servers"), dict):
         # `servers` is the VS Code convention; host cannot be inferred here.

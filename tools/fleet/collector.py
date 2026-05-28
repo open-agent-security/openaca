@@ -52,13 +52,16 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         mode="endpoint",
         include_transitive=True,
     )
-    bom = build_agent_bom(
-        refs,
-        target_type="endpoint",
-        target=TARGET_LOCATOR_ENDPOINT,
-        source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
-        source_unit_label="active plugin",
-    ).to_cyclonedx()
+    bom = _relativize_bom_paths(
+        build_agent_bom(
+            refs,
+            target_type="endpoint",
+            target=TARGET_LOCATOR_ENDPOINT,
+            source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
+            source_unit_label="active plugin",
+        ).to_cyclonedx(),
+        config_dir,
+    )
     mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
     settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
     posture_findings = [
@@ -276,3 +279,62 @@ def _openaca_version() -> str:
         return version("openaca")
     except PackageNotFoundError:
         return "unknown"
+
+
+def _relativize_bom_paths(bom: JsonObject, config_dir: Path) -> JsonObject:
+    """Strip home-directory prefixes from openaca:source_manifest and
+    openaca:declared_by BOM properties before upload validation."""
+    components = bom.get("components")
+    if not isinstance(components, list):
+        return bom
+    sanitized_components = []
+    for component in components:
+        if not isinstance(component, dict):
+            sanitized_components.append(component)
+            continue
+        props = component.get("properties")
+        if not isinstance(props, list):
+            sanitized_components.append(component)
+            continue
+        new_props = []
+        for prop in props:
+            if not isinstance(prop, dict):
+                new_props.append(prop)
+                continue
+            name = prop.get("name")
+            value = prop.get("value")
+            if not isinstance(name, str) or not isinstance(value, str):
+                new_props.append(prop)
+                continue
+            if name == "openaca:source_manifest":
+                new_props.append({"name": name, "value": _relativize_path(value, config_dir)})
+            elif name == "openaca:declared_by":
+                new_props.append(
+                    {"name": name, "value": _relativize_declared_by(value, config_dir)}
+                )
+            else:
+                new_props.append(prop)
+        sanitized_components.append({**component, "properties": new_props})
+    return {**bom, "components": sanitized_components}
+
+
+def _relativize_path(path: str, config_dir: Path) -> str:
+    if not path or not Path(path).is_absolute():
+        return path
+    try:
+        return str(Path(path).relative_to(config_dir))
+    except ValueError:
+        return Path(path).name
+
+
+def _relativize_declared_by(json_value: str, config_dir: Path) -> str:
+    try:
+        obj = json.loads(json_value)
+    except (ValueError, TypeError):
+        return json_value
+    if not isinstance(obj, dict):
+        return json_value
+    raw_path = obj.get("path")
+    if not isinstance(raw_path, str):
+        return json_value
+    return json.dumps({**obj, "path": _relativize_path(raw_path, config_dir)}, sort_keys=True)

@@ -15,21 +15,16 @@ from tools.component_ref import ComponentRef
 from tools.fleet.client import (
     BomUploadResult,
     DriftResult,
+    FleetAuthError,
     RegisterAssetResult,
 )
 from tools.fleet.collector import (
     CollectError,
     EndpointCollection,
-    _relativize_bom_paths,
-    _relativize_declared_by,
-    _relativize_path,
-    _relativize_source_provenance,
     build_endpoint_collection,
     collect_endpoint,
-    upload_bom_file,
 )
 from tools.fleet.config import load_fleet_config
-from tools.fleet.redaction import RedactionError, validate_fleet_upload_payload
 from tools.posture.finding import PostureFinding, Standards
 
 
@@ -160,9 +155,7 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     assert calls == ["init", "asset-existing"]
 
 
-def test_collect_endpoint_caches_redacted_payload_on_interactive_offline_failure(
-    tmp_path, monkeypatch
-):
+def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     pending_dir = tmp_path / "pending"
     monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
@@ -189,7 +182,100 @@ def test_collect_endpoint_caches_redacted_payload_on_interactive_offline_failure
     assert len(pending) == 1
     cached = json.loads(pending[0].read_text(encoding="utf-8"))
     assert cached["asset_id"] == "asset-existing"
-    assert "/Users/" not in pending[0].read_text(encoding="utf-8")
+
+
+def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            raise FleetAuthError("invalid or revoked token")
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    with pytest.raises(CollectError) as exc:
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert exc.value.exit_code == 1
+    assert str(exc.value) == "invalid or revoked token"
+
+
+def test_collect_endpoint_converts_registration_network_error_to_collect_error(
+    tmp_path, monkeypatch
+):
+    config_path = _write_config(tmp_path, asset_id=None)
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def register_asset(self, payload):
+            raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    with pytest.raises(CollectError) as exc:
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert exc.value.exit_code == 2
+    assert "asset registration failed" in str(exc.value)
+
+
+def test_collect_endpoint_uploads_endpoint_inventory_paths(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    uploads: list[dict[str, Any]] = []
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(
+            bom={
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.7",
+                "components": [
+                    {
+                        "name": "mcp-server/test",
+                        "properties": [
+                            {
+                                "name": "openaca:source_manifest",
+                                "value": "/Users/alex/.claude/settings.json",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    collect_endpoint(config_dir=tmp_path, project=None)
+
+    props = uploads[0]["bom"]["components"][0]["properties"]
+    assert props[0]["value"] == "/Users/alex/.claude/settings.json"
 
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
@@ -378,96 +464,6 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
     assert (pending_dir / "pending-bom-stale.json").exists(), "stale file untouched by this run"
 
 
-def test_upload_bom_file_uploads_existing_bom_without_collecting_endpoint(tmp_path, monkeypatch):
-    config_path = _write_config(tmp_path, asset_id="asset-existing")
-    bom_path = tmp_path / "bom.json"
-    bom_path.write_text(json.dumps({"bomFormat": "CycloneDX", "components": []}), encoding="utf-8")
-    uploads: list[dict[str, Any]] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
-        lambda config_dir, project: pytest.fail("endpoint collection should not run"),
-    )
-
-    class FakeClient:
-        def __init__(self, *, api_url: str, token: str) -> None:
-            pass
-
-        def upload_bom(self, payload):
-            uploads.append(payload)
-            return _upload_result(asset_id=payload["asset_id"])
-
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
-
-    upload_bom_file(bom_path)
-
-    assert uploads[0]["asset_id"] == "asset-existing"
-    assert uploads[0]["source"] == "manual"
-    assert uploads[0]["bom"] == {"bomFormat": "CycloneDX", "components": []}
-    assert uploads[0]["posture_findings"] == []
-
-
-def test_upload_bom_file_sanitizes_home_paths_before_validation(tmp_path, monkeypatch):
-    """upload_bom_file must apply _relativize_bom_paths so BOMs produced by
-    'openaca bom endpoint' (which include absolute source_manifest paths) pass
-    validate_fleet_upload_payload without raising RedactionError."""
-    config_path = _write_config(tmp_path, asset_id="asset-existing")
-    bom = {
-        "bomFormat": "CycloneDX",
-        "specVersion": "1.7",
-        "components": [
-            {
-                "type": "library",
-                "name": "my-plugin",
-                "properties": [
-                    {
-                        "name": "openaca:source_manifest",
-                        "value": "/home/testuser/.claude/settings.json",
-                    }
-                ],
-            }
-        ],
-    }
-    bom_path = tmp_path / "bom.json"
-    bom_path.write_text(json.dumps(bom), encoding="utf-8")
-    uploads: list[dict] = []
-
-    class FakeClient:
-        def __init__(self, *, api_url: str, token: str) -> None:
-            pass
-
-        def upload_bom(self, payload):
-            uploads.append(payload)
-            return _upload_result(asset_id=payload["asset_id"])
-
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
-
-    upload_bom_file(bom_path)
-
-    assert len(uploads) == 1
-    props = uploads[0]["bom"]["components"][0]["properties"]
-    source_manifest = next(p["value"] for p in props if p["name"] == "openaca:source_manifest")
-    assert not source_manifest.startswith("/home/"), f"home path not stripped: {source_manifest!r}"
-
-
-def test_upload_bom_file_converts_redaction_error_to_collect_error(tmp_path, monkeypatch):
-    """RedactionError from validate_fleet_upload_payload must surface as CollectError so
-    the 'fleet upload' CLI command shows a clean error message instead of a traceback."""
-    config_path = _write_config(tmp_path, asset_id="asset-existing")
-    bom_path = tmp_path / "bom.json"
-    bom_path.write_text(json.dumps({"bomFormat": "CycloneDX", "components": []}), encoding="utf-8")
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-
-    def fake_validate(payload):
-        raise RedactionError("injected test redaction error")
-
-    monkeypatch.setattr("tools.fleet.collector.validate_fleet_upload_payload", fake_validate)
-
-    with pytest.raises(CollectError, match="redaction-blocked"):
-        upload_bom_file(bom_path)
-
-
 def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
     calls: list[dict[str, Any]] = []
 
@@ -495,302 +491,14 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
     assert "https://app/boms/bom-123" in result.output
 
 
-def test_upload_cli_prints_upload_summary(tmp_path, monkeypatch):
+def test_upload_cli_is_not_a_v0_command(tmp_path):
     bom_path = tmp_path / "bom.json"
     bom_path.write_text("{}", encoding="utf-8")
-    calls: list[Path] = []
-
-    def fake_upload_bom_file(path: Path):
-        calls.append(path)
-        return _upload_result(asset_id="asset-123")
-
-    monkeypatch.setattr("tools.fleet.cli.upload_bom_file", fake_upload_bom_file)
 
     result = CliRunner().invoke(openaca_main, ["fleet", "upload", str(bom_path)])
 
-    assert result.exit_code == 0
-    assert calls == [bom_path]
-    assert "bom-123" in result.output
-
-
-def test_relativize_path_makes_absolute_subpath_relative(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    path = str(config_dir / "settings.json")
-    assert _relativize_path(path, config_dir) == "settings.json"
-
-
-def test_relativize_path_nested_under_config_dir(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    path = str(config_dir / "projects" / "myproj" / ".claude" / "settings.json")
-    assert _relativize_path(path, config_dir) == str(
-        Path("projects") / "myproj" / ".claude" / "settings.json"
-    )
-
-
-def test_relativize_path_outside_config_dir_returns_filename(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    path = str(tmp_path / "myproject" / ".mcp.json")
-    assert _relativize_path(path, config_dir) == ".mcp.json"
-
-
-def test_relativize_path_relative_unchanged(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    assert _relativize_path("settings.json", config_dir) == "settings.json"
-    assert _relativize_path("", config_dir) == ""
-
-
-def test_relativize_declared_by_sanitizes_path_field(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    raw = f'{{"kind": "skill_lock", "path": "{config_dir / "installed_plugins.json"}"}}'
-    result = _relativize_declared_by(raw, config_dir)
-    obj = json.loads(result)
-    assert obj["path"] == "installed_plugins.json"
-    assert obj["kind"] == "skill_lock"
-
-
-def test_relativize_declared_by_leaves_non_json_unchanged(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    assert _relativize_declared_by("not-json", config_dir) == "not-json"
-
-
-def test_relativize_source_provenance_relativizes_lockfile_and_resolved_path(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    lockfile = str(config_dir / ".skill-lock.json")
-    resolved = str(config_dir / "skills" / "my-skill" / "SKILL.md")
-    raw = json.dumps(
-        {
-            "status": "known",
-            "source": "github",
-            "source_type": "git",
-            "lockfile_path": lockfile,
-            "resolved_path": resolved,
-        },
-        sort_keys=True,
-    )
-    result = _relativize_source_provenance(raw, config_dir)
-    obj = json.loads(result)
-    assert obj["lockfile_path"] == ".skill-lock.json"
-    assert obj["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
-    assert obj["source"] == "github"
-
-
-def test_relativize_source_provenance_lockfile_outside_config_dir_returns_filename(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    lockfile = str(tmp_path / ".agents" / ".skill-lock.json")
-    raw = json.dumps({"status": "known", "lockfile_path": lockfile}, sort_keys=True)
-    result = _relativize_source_provenance(raw, config_dir)
-    obj = json.loads(result)
-    assert obj["lockfile_path"] == ".skill-lock.json"
-
-
-def test_relativize_source_provenance_symlink_target_only(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    resolved = str(tmp_path / "skills-repo" / "my-skill" / "SKILL.md")
-    raw = json.dumps({"status": "symlink-target", "resolved_path": resolved}, sort_keys=True)
-    result = _relativize_source_provenance(raw, config_dir)
-    obj = json.loads(result)
-    assert obj["resolved_path"] == "SKILL.md"
-
-
-def test_relativize_source_provenance_leaves_non_json_unchanged(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    assert _relativize_source_provenance("not-json", config_dir) == "not-json"
-
-
-def test_relativize_bom_paths_strips_home_paths_from_source_provenance(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    lockfile = str(config_dir / ".skill-lock.json")
-    resolved = str(config_dir / "skills" / "my-skill" / "SKILL.md")
-    provenance = json.dumps(
-        {
-            "status": "known",
-            "source": "github",
-            "source_type": "git",
-            "lockfile_path": lockfile,
-            "resolved_path": resolved,
-        },
-        sort_keys=True,
-    )
-    bom = {
-        "bomFormat": "CycloneDX",
-        "components": [
-            {
-                "type": "application",
-                "bom-ref": "ref1",
-                "name": "my-skill",
-                "properties": [
-                    {"name": "openaca:source_provenance", "value": provenance},
-                    {"name": "openaca:scope", "value": "agent-component"},
-                ],
-            }
-        ],
-    }
-    result = _relativize_bom_paths(bom, config_dir)
-    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
-    obj = json.loads(props["openaca:source_provenance"])
-    assert obj["lockfile_path"] == ".skill-lock.json"
-    assert obj["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
-    assert props["openaca:scope"] == "agent-component"
-
-
-def test_relativize_bom_paths_strips_home_paths_from_source_manifest(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    abs_path = str(config_dir / "settings.json")
-    bom = {
-        "bomFormat": "CycloneDX",
-        "components": [
-            {
-                "type": "application",
-                "bom-ref": "ref1",
-                "name": "test-hook",
-                "properties": [
-                    {"name": "openaca:source_manifest", "value": abs_path},
-                    {"name": "openaca:scope", "value": "agent-component"},
-                ],
-            }
-        ],
-    }
-    result = _relativize_bom_paths(bom, config_dir)
-    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
-    assert props["openaca:source_manifest"] == "settings.json"
-    assert props["openaca:scope"] == "agent-component"
-
-
-def test_relativize_bom_paths_strips_home_paths_from_declared_by(tmp_path):
-    config_dir = tmp_path / "dot-claude"
-    declared_by = json.dumps(
-        {"kind": "skill_lock", "path": str(config_dir / "installed_plugins.json")},
-        sort_keys=True,
-    )
-    bom = {
-        "bomFormat": "CycloneDX",
-        "components": [
-            {
-                "type": "application",
-                "bom-ref": "ref1",
-                "name": "my-plugin",
-                "properties": [
-                    {"name": "openaca:declared_by", "value": declared_by},
-                ],
-            }
-        ],
-    }
-    result = _relativize_bom_paths(bom, config_dir)
-    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
-    obj = json.loads(props["openaca:declared_by"])
-    assert obj["path"] == "installed_plugins.json"
-
-
-def test_build_endpoint_collection_bom_passes_validation_with_home_paths(tmp_path, monkeypatch):
-    """BOM with home-directory source_manifest paths must pass validate_fleet_upload_payload."""
-    config_dir = tmp_path / "dot-claude"
-    abs_manifest = str(config_dir / "settings.json")
-    abs_declared_by = json.dumps(
-        {"kind": "skill_lock", "path": str(config_dir / "installed_plugins.json")},
-        sort_keys=True,
-    )
-    ref = ComponentRef(
-        name="my-plugin",
-        component_identity="claude-plugin/mktplace/my-plugin",
-        source_manifest=abs_manifest,
-        source_locator="$.plugins[0]",
-        extra={
-            "component_type": "plugin",
-            "declared_by": json.loads(abs_declared_by),
-        },
-    )
-
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
-    monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *a, **kw: [])
-
-    collection = build_endpoint_collection(config_dir=config_dir, project=None)
-
-    payload = {
-        "asset_id": "asset-123",
-        "source": "endpoint",
-        "openaca_version": "unknown",
-        "target_locator": "endpoint:user-scope",
-        "content_hash": "sha256:abc",
-        "bom": collection.bom,
-        "posture_findings": [],
-    }
-    validate_fleet_upload_payload(payload)
-
-    props_by_name = {}
-    for comp in collection.bom.get("components") or []:
-        for p in comp.get("properties") or []:
-            props_by_name[p["name"]] = p["value"]
-
-    assert props_by_name["openaca:source_manifest"] == "settings.json"
-    declared = json.loads(props_by_name["openaca:declared_by"])
-    assert declared["path"] == "installed_plugins.json"
-
-
-def test_build_endpoint_collection_bom_passes_validation_with_source_provenance_home_paths(
-    tmp_path, monkeypatch
-):
-    """BOM components with home-directory lockfile_path/resolved_path in source_provenance
-    must pass validate_fleet_upload_payload after relativization."""
-    config_dir = tmp_path / "dot-claude"
-    lockfile_path = str(config_dir / ".skill-lock.json")
-    resolved_path = str(config_dir / "skills" / "my-skill" / "SKILL.md")
-    ref = ComponentRef(
-        name="my-skill",
-        component_identity="claude-skill/my-skill",
-        source_manifest=str(config_dir / "skills" / "my-skill" / "SKILL.md"),
-        source_locator="skills.my-skill",
-        extra={
-            "component_type": "skill",
-            "source_provenance": {
-                "status": "known",
-                "source": "github.com/example/my-skill",
-                "source_type": "git",
-                "lockfile_path": lockfile_path,
-                "resolved_path": resolved_path,
-            },
-        },
-    )
-
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
-    monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *a, **kw: [])
-
-    collection = build_endpoint_collection(config_dir=config_dir, project=None)
-
-    payload = {
-        "asset_id": "asset-123",
-        "source": "endpoint",
-        "openaca_version": "unknown",
-        "target_locator": "endpoint:user-scope",
-        "content_hash": "sha256:abc",
-        "bom": collection.bom,
-        "posture_findings": [],
-    }
-    validate_fleet_upload_payload(payload)
-
-    props_by_name = {}
-    for comp in collection.bom.get("components") or []:
-        for p in comp.get("properties") or []:
-            props_by_name[p["name"]] = p["value"]
-
-    provenance = json.loads(props_by_name["openaca:source_provenance"])
-    assert provenance["lockfile_path"] == ".skill-lock.json"
-    assert provenance["resolved_path"] == str(Path("skills") / "my-skill" / "SKILL.md")
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
@@ -806,9 +514,9 @@ def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
     return config_path
 
 
-def _collection() -> EndpointCollection:
+def _collection(*, bom: dict[str, Any] | None = None) -> EndpointCollection:
     return EndpointCollection(
-        bom={"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        bom=bom or {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
         posture_findings=[
             {
                 "rule_id": "openaca-posture-insecure-transport",

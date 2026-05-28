@@ -14,9 +14,12 @@ import httpx
 
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef
-from tools.fleet.client import BomUploadResult, FleetClient, FleetServerError
+from tools.fleet.client import BomUploadResult, FleetClient, FleetClientError, FleetServerError
 from tools.fleet.config import FleetConfig, get_config_path, load_fleet_config, save_fleet_config
-from tools.fleet.redaction import RedactionError, validate_fleet_upload_payload
+from tools.fleet.upload_contract import (
+    FleetUploadContractError,
+    enforce_fleet_upload_contract,
+)
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
@@ -53,16 +56,13 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         mode="endpoint",
         include_transitive=True,
     )
-    bom = _relativize_bom_paths(
-        build_agent_bom(
-            refs,
-            target_type="endpoint",
-            target=TARGET_LOCATOR_ENDPOINT,
-            source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
-            source_unit_label="active plugin",
-        ).to_cyclonedx(),
-        config_dir,
-    )
+    bom = build_agent_bom(
+        refs,
+        target_type="endpoint",
+        target=TARGET_LOCATOR_ENDPOINT,
+        source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
+        source_unit_label="active plugin",
+    ).to_cyclonedx()
     mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
     settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
     posture_findings = [
@@ -95,7 +95,13 @@ def collect_endpoint(
     collection = build_endpoint_collection(config_dir=config_dir, project=project)
     asset_id = config.asset_id
     if asset_id is None:
-        registered = client.register_asset(_asset_registration_payload())
+        try:
+            registered = client.register_asset(_asset_registration_payload())
+        except (FleetServerError, httpx.TransportError) as exc:
+            exit_code = 0 if quiet or allow_offline_cache else 2
+            raise CollectError("asset registration failed (network)", exit_code=exit_code) from exc
+        except FleetClientError as exc:
+            raise CollectError(str(exc)) from exc
         asset_id = registered.asset_id
         config = FleetConfig(api_url=config.api_url, token=config.token, asset_id=asset_id)
         save_fleet_config(config, config_path)
@@ -107,7 +113,7 @@ def collect_endpoint(
         bom=collection.bom,
         posture_findings=collection.posture_findings,
     )
-    validate_fleet_upload_payload(payload)
+    enforce_fleet_upload_contract(payload)
     try:
         return client.upload_bom(payload)
     except (FleetServerError, httpx.TransportError) as exc:
@@ -116,34 +122,8 @@ def collect_endpoint(
         raise CollectError(
             f"saved to {path}; upload failed (network)", exit_code=exit_code
         ) from exc
-
-
-def upload_bom_file(path: Path) -> BomUploadResult:
-    config = load_fleet_config(get_config_path())
-    if config.token is None:
-        raise CollectError("Fleet is not configured; run openaca fleet configure --token <TOKEN>")
-    if config.asset_id is None:
-        raise CollectError("No asset configured yet. Run openaca fleet collect endpoint first.")
-    try:
-        bom = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CollectError(f"failed to read BOM from {path}") from exc
-    if not isinstance(bom, dict):
-        raise CollectError("BOM file must contain a JSON object")
-    bom = _relativize_bom_paths(bom, _default_config_dir())
-    payload = _upload_payload(
-        asset_id=config.asset_id,
-        source="manual",
-        target_locator="manual",
-        bom=bom,
-        posture_findings=[],
-    )
-    try:
-        validate_fleet_upload_payload(payload)
-    except RedactionError as exc:
-        raise CollectError(f"BOM contains redaction-blocked content: {exc}") from exc
-    client = FleetClient(api_url=config.api_url, token=config.token)
-    return client.upload_bom(payload)
+    except FleetClientError as exc:
+        raise CollectError(str(exc)) from exc
 
 
 def clear_pending_uploads() -> None:
@@ -164,18 +144,20 @@ def _replay_pending_uploads(client: FleetClient) -> None:
             path.unlink(missing_ok=True)
             continue
         try:
-            validate_fleet_upload_payload(payload)
+            enforce_fleet_upload_contract(payload)
             client.upload_bom(payload)
-        except RedactionError:
+        except FleetUploadContractError:
             path.unlink(missing_ok=True)
             continue
         except (FleetServerError, httpx.TransportError):
             break
+        except FleetClientError as exc:
+            raise CollectError(str(exc)) from exc
         path.unlink()
 
 
 def _write_pending_payload(payload: JsonObject) -> Path:
-    validate_fleet_upload_payload(payload)
+    enforce_fleet_upload_contract(payload)
     pending_dir = get_pending_dir()
     pending_dir.mkdir(parents=True, exist_ok=True)
     path = pending_dir / f"pending-bom-{time.time_ns()}.json"
@@ -294,88 +276,3 @@ def _openaca_version() -> str:
         return version("openaca")
     except PackageNotFoundError:
         return "unknown"
-
-
-def _default_config_dir() -> Path:
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
-
-
-def _relativize_bom_paths(bom: JsonObject, config_dir: Path) -> JsonObject:
-    """Strip home-directory prefixes from openaca:source_manifest and
-    openaca:declared_by BOM properties before upload validation."""
-    components = bom.get("components")
-    if not isinstance(components, list):
-        return bom
-    sanitized_components = []
-    for component in components:
-        if not isinstance(component, dict):
-            sanitized_components.append(component)
-            continue
-        props = component.get("properties")
-        if not isinstance(props, list):
-            sanitized_components.append(component)
-            continue
-        new_props = []
-        for prop in props:
-            if not isinstance(prop, dict):
-                new_props.append(prop)
-                continue
-            name = prop.get("name")
-            value = prop.get("value")
-            if not isinstance(name, str) or not isinstance(value, str):
-                new_props.append(prop)
-                continue
-            if name == "openaca:source_manifest":
-                new_props.append({"name": name, "value": _relativize_path(value, config_dir)})
-            elif name == "openaca:declared_by":
-                new_props.append(
-                    {"name": name, "value": _relativize_declared_by(value, config_dir)}
-                )
-            elif name == "openaca:source_provenance":
-                new_props.append(
-                    {"name": name, "value": _relativize_source_provenance(value, config_dir)}
-                )
-            else:
-                new_props.append(prop)
-        sanitized_components.append({**component, "properties": new_props})
-    return {**bom, "components": sanitized_components}
-
-
-def _relativize_path(path: str, config_dir: Path) -> str:
-    if not path or not Path(path).is_absolute():
-        return path
-    try:
-        return str(Path(path).relative_to(config_dir))
-    except ValueError:
-        return Path(path).name
-
-
-def _relativize_declared_by(json_value: str, config_dir: Path) -> str:
-    try:
-        obj = json.loads(json_value)
-    except (ValueError, TypeError):
-        return json_value
-    if not isinstance(obj, dict):
-        return json_value
-    raw_path = obj.get("path")
-    if not isinstance(raw_path, str):
-        return json_value
-    return json.dumps({**obj, "path": _relativize_path(raw_path, config_dir)}, sort_keys=True)
-
-
-def _relativize_source_provenance(json_value: str, config_dir: Path) -> str:
-    try:
-        obj = json.loads(json_value)
-    except (ValueError, TypeError):
-        return json_value
-    if not isinstance(obj, dict):
-        return json_value
-    updated = dict(obj)
-    for field in ("lockfile_path", "resolved_path"):
-        raw = updated.get(field)
-        if isinstance(raw, str) and raw:
-            updated[field] = _relativize_path(raw, config_dir)
-    return json.dumps(updated, sort_keys=True)

@@ -1,0 +1,169 @@
+import pytest
+
+from tools.fleet.upload_contract import FleetUploadContractError, enforce_fleet_upload_contract
+
+
+def test_allows_endpoint_inventory_paths_and_benign_url_queries():
+    payload = _payload(
+        target_locator="endpoint:user-scope",
+        bom={
+            "components": [
+                {
+                    "name": "mcp-server/test",
+                    "properties": [
+                        {
+                            "name": "openaca:source_manifest",
+                            "value": "/Users/alex/.claude/settings.json",
+                        },
+                        {
+                            "name": "openaca:source_provenance",
+                            "value": "https://example.test/package?version=1.2.3",
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
+def test_rejects_token_like_values_without_echoing_value():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:source_provenance",
+                            "value": "ghp_1234567890abcdefghijklmnopqrstuv",
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[0].value" in str(exc.value)
+    assert "ghp_" not in str(exc.value)
+
+
+def test_rejects_secret_query_parameters_without_rejecting_all_queries():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "externalReferences": [
+                        {"type": "distribution", "url": "https://example.test/mcp?token=secret"}
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].externalReferences[0].url" in str(exc.value)
+    assert "secret" not in str(exc.value)
+
+
+def test_rejects_forbidden_property_names():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:env", "value": "PATH"},
+                        {"name": "openaca:command", "value": "npx"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[0].value" in str(exc.value)
+    assert "PATH" not in str(exc.value)
+
+
+def test_rejects_raw_config_body_property_names():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:raw_config", "value": '{"mcpServers": {}}'},
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[0].value" in str(exc.value)
+    assert "mcpServers" not in str(exc.value)
+
+
+def test_rejects_full_shell_argv_properties():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:command", "value": "npx"},
+                        {"name": "openaca:command_args", "value": "--token abc @example/mcp"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "--token" not in str(exc.value)
+
+
+def test_allows_posture_evidence_without_rule_specific_allowlist():
+    payload = _payload(
+        posture_findings=[
+            {
+                "rule_id": "openaca-posture-mcp-auto-approve",
+                "rule_version": "1",
+                "severity": "MEDIUM",
+                "scope": "bom",
+                "component_identity": None,
+                "summary": "Auto-approve is enabled",
+                "fix": "Disable auto-approve.",
+                "evidence": {
+                    "approved_tool_names": ["Read", "Write"],
+                    "manifest_path": "/Users/alex/.claude/settings.json",
+                },
+            }
+        ]
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
+def _payload(**overrides):
+    payload = {
+        "asset_id": "asset-123",
+        "source": "endpoint",
+        "openaca_version": "0.1.0b5",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        "posture_findings": [],
+    }
+    payload.update(overrides)
+    return payload

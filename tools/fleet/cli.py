@@ -10,7 +10,6 @@ from tools.fleet.collector import (
     CollectError,
     clear_pending_uploads,
     collect_endpoint,
-    upload_bom_file,
 )
 from tools.fleet.config import (
     DEFAULT_API_URL,
@@ -122,17 +121,6 @@ def endpoint(
         if not quiet:
             click.echo(str(exc), err=True)
         raise click.exceptions.Exit(exc.exit_code) from exc
-    _print_upload_result(result)
-
-
-@main.command()
-@click.argument("bom_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-def upload(bom_path: Path) -> None:
-    """Upload an existing Agent BOM file."""
-    try:
-        result = upload_bom_file(bom_path)
-    except CollectError as exc:
-        raise click.ClickException(str(exc)) from exc
     _print_upload_result(result)
 
 

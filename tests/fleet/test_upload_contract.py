@@ -211,6 +211,74 @@ def test_rejects_uvx_mcp_install_source_with_raw_argv():
     assert "secret" not in str(exc.value)
 
 
+def test_rejects_pinned_npm_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "purl": "pkg:npm/%40scope%2Fpkg@1.2.3",
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "npx @scope/pkg@1.2.3 --token abc",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "token" not in str(exc.value)
+
+
+def test_rejects_pinned_pypi_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "purl": "pkg:pypi/mcp-server@1.2.3",
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "uvx mcp-server==1.2.3 --api-key secret",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "secret" not in str(exc.value)
+
+
+def test_allows_pinned_mcp_clean_install_source():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "purl": "pkg:npm/%40scope%2Fpkg@1.2.3",
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:install_source", "value": "npx @scope/pkg@1.2.3"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
 def test_allows_package_install_source_references():
     payload = _payload(
         bom={

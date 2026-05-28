@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OPENACA_FLEET_API_URL="${OPENACA_FLEET_API_URL:-https://api.openaca.dev}"
+OPENACA_VERSION="${OPENACA_VERSION:-0.1.0b5}"
+LABEL="com.openaca.fleet"
+
+if [ -z "${OPENACA_FLEET_TOKEN:-}" ]; then
+  echo "OPENACA_FLEET_TOKEN is required" >&2
+  exit 2
+fi
+
+CONSOLE_USER="${OPENACA_CONSOLE_USER:-$(stat -f %Su /dev/console)}"
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+  echo "No logged-in console user found" >&2
+  exit 3
+fi
+
+USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
+USER_UID="$(id -u "$CONSOLE_USER")"
+USER_PATH="$USER_HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+UV_BIN="$USER_HOME/.local/bin/uv"
+OPENACA_BIN="$USER_HOME/.local/bin/openaca"
+PLIST="$USER_HOME/Library/LaunchAgents/$LABEL.plist"
+LOG_DIR="$USER_HOME/Library/Logs/OpenACA"
+
+run_as_user() {
+  sudo -u "$CONSOLE_USER" env HOME="$USER_HOME" PATH="$USER_PATH" "$@"
+}
+
+if [ ! -x "$UV_BIN" ]; then
+  run_as_user sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+else
+  run_as_user "$UV_BIN" self update >/dev/null 2>&1 || true
+fi
+
+run_as_user "$UV_BIN" tool install "openaca==$OPENACA_VERSION" --force
+printf '%s\n' "$OPENACA_FLEET_TOKEN" | run_as_user "$OPENACA_BIN" fleet configure \
+  --api-url "$OPENACA_FLEET_API_URL"
+
+run_as_user mkdir -p "$LOG_DIR" "$USER_HOME/Library/LaunchAgents"
+cat > "$PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$OPENACA_BIN</string>
+    <string>fleet</string>
+    <string>collect</string>
+    <string>endpoint</string>
+    <string>--quiet</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>21600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/fleet.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/fleet.err.log</string>
+</dict>
+</plist>
+PLIST
+
+chown "$CONSOLE_USER":staff "$PLIST"
+chmod 0644 "$PLIST"
+launchctl bootout "gui/$USER_UID" "$PLIST" >/dev/null 2>&1 || true
+launchctl bootstrap "gui/$USER_UID" "$PLIST"
+launchctl kickstart -k "gui/$USER_UID/$LABEL" >/dev/null 2>&1 || true
+
+echo "OpenACA Fleet LaunchAgent installed for $CONSOLE_USER"

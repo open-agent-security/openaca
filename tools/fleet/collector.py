@@ -298,17 +298,32 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
     props_by_name = {
         prop.get("name"): prop.get("value") for prop in properties if isinstance(prop, dict)
     }
-    if not _is_binary_mcp_component(props_by_name):
-        return component
-    prepared_props = [
-        _trim_binary_install_source(prop) if isinstance(prop, dict) else prop for prop in properties
-    ]
-    return {**component, "properties": prepared_props}
+    if _is_binary_mcp_component(props_by_name):
+        prepared_props = [
+            _trim_binary_install_source(prop) if isinstance(prop, dict) else prop
+            for prop in properties
+        ]
+        return {**component, "properties": prepared_props}
+    if _is_package_mcp_component(props_by_name):
+        prepared_props = [
+            _trim_package_install_source(prop, props_by_name) if isinstance(prop, dict) else prop
+            for prop in properties
+        ]
+        return {**component, "properties": prepared_props}
+    return component
 
 
 def _is_binary_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     identity = props_by_name.get("openaca:identity")
     return isinstance(identity, str) and identity.startswith("mcp-stdio/binary:")
+
+
+def _is_package_mcp_component(props_by_name: dict[Any, Any]) -> bool:
+    identity = props_by_name.get("openaca:identity")
+    return isinstance(identity, str) and (
+        identity.startswith("mcp-stdio/npx-unpinned:")
+        or identity.startswith("mcp-stdio/uvx-unpinned:")
+    )
 
 
 def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
@@ -319,3 +334,20 @@ def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
         return prop
     command = value.split(maxsplit=1)[0] if value.strip() else value
     return {**prop, "value": command}
+
+
+def _trim_package_install_source(prop: JsonObject, props_by_name: dict[Any, Any]) -> JsonObject:
+    if prop.get("name") != "openaca:install_source":
+        return prop
+    identity = props_by_name.get("openaca:identity")
+    if not isinstance(identity, str):
+        return prop
+    # Reconstruct from identity rather than splitting argv, so flags like
+    # `-y` that precede the package name don't interfere.
+    if identity.startswith("mcp-stdio/npx-unpinned:"):
+        package = identity[len("mcp-stdio/npx-unpinned:") :]
+        return {**prop, "value": f"npx {package}"}
+    if identity.startswith("mcp-stdio/uvx-unpinned:"):
+        package = identity[len("mcp-stdio/uvx-unpinned:") :]
+        return {**prop, "value": f"uvx {package}"}
+    return prop

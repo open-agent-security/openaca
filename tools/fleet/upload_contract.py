@@ -79,11 +79,16 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
             props_by_name[name] = (prop.get("value"), index)
     identity = props_by_name.get("openaca:identity", (None, -1))[0]
     install_source, install_source_index = props_by_name.get("openaca:install_source", (None, -1))
-    if not isinstance(identity, str) or not identity.startswith("mcp-stdio/binary:"):
+    is_binary = isinstance(identity, str) and identity.startswith("mcp-stdio/binary:")
+    is_package = isinstance(identity, str) and identity.startswith(
+        ("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:")
+    )
+    if not is_binary and not is_package:
         return
     if not isinstance(install_source, str) or not install_source.strip():
         return
-    if install_source != install_source.split(maxsplit=1)[0]:
+    max_tokens = 1 if is_binary else 2
+    if len(install_source.split(maxsplit=max_tokens)) > max_tokens:
         raise FleetUploadContractError(
             f"{path}.properties[{install_source_index}].value is forbidden by Fleet upload contract"
         )

@@ -114,6 +114,62 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
     assert props["openaca:install_source"] == "python"
 
 
+def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="mcp-stdio/npx-unpinned:@example/mcp",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.example",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx @example/mcp --token abc",
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == "npx @example/mcp"
+
+
+def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="mcp-stdio/uvx-unpinned:mcp-server",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.example",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "uvx -y mcp-server --api-key secret",
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == "uvx mcp-server"
+
+
 def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id=None)
     pending_dir = tmp_path / "pending"

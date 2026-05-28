@@ -157,6 +157,60 @@ def test_rejects_binary_mcp_install_source_with_raw_argv():
     assert "tenant" not in str(exc.value)
 
 
+def test_rejects_npx_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:identity",
+                            "value": "mcp-stdio/npx-unpinned:@example/mcp",
+                        },
+                        {
+                            "name": "openaca:install_source",
+                            "value": "npx @example/mcp --token abc",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "token" not in str(exc.value)
+
+
+def test_rejects_uvx_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:identity",
+                            "value": "mcp-stdio/uvx-unpinned:mcp-server",
+                        },
+                        {
+                            "name": "openaca:install_source",
+                            "value": "uvx mcp-server --api-key secret",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "secret" not in str(exc.value)
+
+
 def test_allows_package_install_source_references():
     payload = _payload(
         bom={

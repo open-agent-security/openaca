@@ -133,6 +133,50 @@ def test_rejects_full_shell_argv_properties():
     assert "--token" not in str(exc.value)
 
 
+def test_rejects_binary_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:identity", "value": "mcp-stdio/binary:python"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "python server.py --tenant alice",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "tenant" not in str(exc.value)
+
+
+def test_allows_package_install_source_references():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:identity",
+                            "value": "mcp-stdio/npx-unpinned:@example/mcp",
+                        },
+                        {"name": "openaca:install_source", "value": "npx @example/mcp"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
 def test_allows_posture_evidence_without_rule_specific_allowlist():
     payload = _payload(
         posture_findings=[

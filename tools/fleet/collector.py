@@ -56,13 +56,15 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         mode="endpoint",
         include_transitive=True,
     )
-    bom = build_agent_bom(
-        refs,
-        target_type="endpoint",
-        target=TARGET_LOCATOR_ENDPOINT,
-        source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
-        source_unit_label="active plugin",
-    ).to_cyclonedx()
+    bom = _prepare_fleet_bom(
+        build_agent_bom(
+            refs,
+            target_type="endpoint",
+            target=TARGET_LOCATOR_ENDPOINT,
+            source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
+            source_unit_label="active plugin",
+        ).to_cyclonedx()
+    )
     mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
     settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
     posture_findings = [
@@ -276,3 +278,44 @@ def _openaca_version() -> str:
         return version("openaca")
     except PackageNotFoundError:
         return "unknown"
+
+
+def _prepare_fleet_bom(bom: JsonObject) -> JsonObject:
+    components = bom.get("components")
+    if not isinstance(components, list):
+        return bom
+    prepared_components = [
+        _prepare_fleet_component(component) if isinstance(component, dict) else component
+        for component in components
+    ]
+    return {**bom, "components": prepared_components}
+
+
+def _prepare_fleet_component(component: JsonObject) -> JsonObject:
+    properties = component.get("properties")
+    if not isinstance(properties, list):
+        return component
+    props_by_name = {
+        prop.get("name"): prop.get("value") for prop in properties if isinstance(prop, dict)
+    }
+    if not _is_binary_mcp_component(props_by_name):
+        return component
+    prepared_props = [
+        _trim_binary_install_source(prop) if isinstance(prop, dict) else prop for prop in properties
+    ]
+    return {**component, "properties": prepared_props}
+
+
+def _is_binary_mcp_component(props_by_name: dict[Any, Any]) -> bool:
+    identity = props_by_name.get("openaca:identity")
+    return isinstance(identity, str) and identity.startswith("mcp-stdio/binary:")
+
+
+def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
+    if prop.get("name") != "openaca:install_source":
+        return prop
+    value = prop.get("value")
+    if not isinstance(value, str):
+        return prop
+    command = value.split(maxsplit=1)[0] if value.strip() else value
+    return {**prop, "value": command}

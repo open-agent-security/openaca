@@ -45,6 +45,7 @@ def _validate_value(value: Any, path: str) -> None:
 
 
 def _validate_mapping(value: dict[Any, Any], path: str) -> None:
+    _validate_component_properties(value, path)
     property_name = value.get("name")
     if isinstance(property_name, str) and "value" in value and _is_forbidden_name(property_name):
         raise FleetUploadContractError(f"{path}.value is forbidden by Fleet upload contract")
@@ -63,3 +64,26 @@ def _validate_string(value: str, path: str) -> None:
 
 def _is_forbidden_name(value: str) -> bool:
     return bool(_FORBIDDEN_NAME_RE.search(value))
+
+
+def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
+    properties = value.get("properties")
+    if not isinstance(properties, list):
+        return
+    props_by_name: dict[str, tuple[Any, int]] = {}
+    for index, prop in enumerate(properties):
+        if not isinstance(prop, dict):
+            continue
+        name = prop.get("name")
+        if isinstance(name, str):
+            props_by_name[name] = (prop.get("value"), index)
+    identity = props_by_name.get("openaca:identity", (None, -1))[0]
+    install_source, install_source_index = props_by_name.get("openaca:install_source", (None, -1))
+    if not isinstance(identity, str) or not identity.startswith("mcp-stdio/binary:"):
+        return
+    if not isinstance(install_source, str) or not install_source.strip():
+        return
+    if install_source != install_source.split(maxsplit=1)[0]:
+        raise FleetUploadContractError(
+            f"{path}.properties[{install_source_index}].value is forbidden by Fleet upload contract"
+        )

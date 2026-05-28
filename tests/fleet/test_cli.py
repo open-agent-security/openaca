@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 from click.testing import CliRunner
 
 from tools.cli import main as openaca_main
@@ -263,6 +264,38 @@ def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, m
     assert "Acme Inc" in result.output
     assert "No asset configured" in result.output
     assert "openaca fleet collect endpoint" in result.output
+
+
+def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch):
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "http://fleet.test"',
+                'token = "ot_TEST"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def get_me(self):
+            raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "status"])
+
+    assert result.exit_code != 0
+    assert "Fleet API unreachable: connection refused" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch):

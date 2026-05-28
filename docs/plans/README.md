@@ -21,8 +21,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 012 | [Candidate annotation surface lock](012-candidate-annotation-surface-lock.md) | ✅ Done | 011 |
 | 013 | [Rename ASVE → OpenACA](013-rename-asve-to-openaca.md) | ✅ Done | — |
 | 014 | [Posture findings (scanner-side hygiene rules)](014-posture-findings.md) | ✅ Done | 007, 008, 009 |
-| 015 | [Agent component identity + scan output](015-agent-component-identity-and-scan-output.md) | ⏸ Pending | 013, 014 |
-| 016 | [Claude Code parser coverage](016-claude-code-parser-coverage.md) | 🟡 Active | 008, 009 |
+| 015 | [Agent component identity + scan output](015-agent-component-identity-and-scan-output.md) | ✅ Done | 013, 014 |
+| 016 | [Claude Code parser coverage](016-claude-code-parser-coverage.md) | ✅ Done | 008, 009 |
 | 017 | [Generic skill ecosystem](017-generic-skill-ecosystem.md) | ✅ Done | 008 |
 | 018 | [Source ecosystem and component type cleanup](018-source-ecosystem-component-type.md) | ✅ Done | 017 |
 | 019 | [Remote MCP server inventory](019-remote-mcp-inventory.md) | ✅ Done | 018 |

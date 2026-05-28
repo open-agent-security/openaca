@@ -1,0 +1,55 @@
+import os
+import stat
+
+import pytest
+
+from tools.fleet.config import (
+    ConfigError,
+    FleetConfig,
+    get_config_path,
+    load_fleet_config,
+    save_fleet_config,
+)
+
+
+def test_config_path_defaults_to_xdg_config_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert get_config_path() == tmp_path / ".config" / "openaca" / "fleet.toml"
+
+
+def test_config_round_trips_api_url_token_and_asset_id(tmp_path):
+    path = tmp_path / "fleet.toml"
+    config = FleetConfig(
+        api_url="https://api.example.test",
+        token="ot_TEST_TOKEN",
+        asset_id="asset-123",
+    )
+
+    save_fleet_config(config, path)
+    loaded = load_fleet_config(path)
+
+    assert loaded == config
+
+
+def test_save_config_writes_file_mode_0600(tmp_path):
+    path = tmp_path / "fleet.toml"
+
+    save_fleet_config(FleetConfig(token="ot_TEST_TOKEN"), path)
+
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+
+def test_load_missing_config_returns_defaults(tmp_path):
+    assert load_fleet_config(tmp_path / "missing.toml") == FleetConfig()
+
+
+def test_load_config_error_does_not_leak_token(tmp_path):
+    path = tmp_path / "fleet.toml"
+    path.write_text('[fleet]\ntoken = "ot_SECRET_TOKEN"\napi_url = [not valid]\n', encoding="utf-8")
+
+    with pytest.raises(ConfigError) as exc:
+        load_fleet_config(path)
+
+    assert "ot_SECRET_TOKEN" not in str(exc.value)
+    assert "fleet.toml" in str(exc.value)

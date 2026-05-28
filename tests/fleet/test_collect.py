@@ -18,11 +18,15 @@ from tools.fleet.client import (
 from tools.fleet.collector import (
     CollectError,
     EndpointCollection,
+    _relativize_bom_paths,
+    _relativize_declared_by,
+    _relativize_path,
     build_endpoint_collection,
     collect_endpoint,
     upload_bom_file,
 )
 from tools.fleet.config import load_fleet_config
+from tools.fleet.redaction import validate_fleet_upload_payload
 from tools.posture.finding import PostureFinding, Standards
 
 
@@ -375,6 +379,147 @@ def test_upload_cli_prints_upload_summary(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert calls == [bom_path]
     assert "bom-123" in result.output
+
+
+def test_relativize_path_makes_absolute_subpath_relative(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    path = str(config_dir / "settings.json")
+    assert _relativize_path(path, config_dir) == "settings.json"
+
+
+def test_relativize_path_nested_under_config_dir(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    path = str(config_dir / "projects" / "myproj" / ".claude" / "settings.json")
+    assert _relativize_path(path, config_dir) == str(
+        Path("projects") / "myproj" / ".claude" / "settings.json"
+    )
+
+
+def test_relativize_path_outside_config_dir_returns_filename(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    path = str(tmp_path / "myproject" / ".mcp.json")
+    assert _relativize_path(path, config_dir) == ".mcp.json"
+
+
+def test_relativize_path_relative_unchanged(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    assert _relativize_path("settings.json", config_dir) == "settings.json"
+    assert _relativize_path("", config_dir) == ""
+
+
+def test_relativize_declared_by_sanitizes_path_field(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    raw = f'{{"kind": "skill_lock", "path": "{config_dir / "installed_plugins.json"}"}}'
+    result = _relativize_declared_by(raw, config_dir)
+    obj = json.loads(result)
+    assert obj["path"] == "installed_plugins.json"
+    assert obj["kind"] == "skill_lock"
+
+
+def test_relativize_declared_by_leaves_non_json_unchanged(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    assert _relativize_declared_by("not-json", config_dir) == "not-json"
+
+
+def test_relativize_bom_paths_strips_home_paths_from_source_manifest(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    abs_path = str(config_dir / "settings.json")
+    bom = {
+        "bomFormat": "CycloneDX",
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": "ref1",
+                "name": "test-hook",
+                "properties": [
+                    {"name": "openaca:source_manifest", "value": abs_path},
+                    {"name": "openaca:scope", "value": "agent-component"},
+                ],
+            }
+        ],
+    }
+    result = _relativize_bom_paths(bom, config_dir)
+    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
+    assert props["openaca:source_manifest"] == "settings.json"
+    assert props["openaca:scope"] == "agent-component"
+
+
+def test_relativize_bom_paths_strips_home_paths_from_declared_by(tmp_path):
+    config_dir = tmp_path / "dot-claude"
+    declared_by = json.dumps(
+        {"kind": "skill_lock", "path": str(config_dir / "installed_plugins.json")},
+        sort_keys=True,
+    )
+    bom = {
+        "bomFormat": "CycloneDX",
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": "ref1",
+                "name": "my-plugin",
+                "properties": [
+                    {"name": "openaca:declared_by", "value": declared_by},
+                ],
+            }
+        ],
+    }
+    result = _relativize_bom_paths(bom, config_dir)
+    props = {p["name"]: p["value"] for p in result["components"][0]["properties"]}
+    obj = json.loads(props["openaca:declared_by"])
+    assert obj["path"] == "installed_plugins.json"
+
+
+def test_build_endpoint_collection_bom_passes_validation_with_home_paths(tmp_path, monkeypatch):
+    """BOM with home-directory source_manifest paths must pass validate_fleet_upload_payload."""
+    config_dir = tmp_path / "dot-claude"
+    abs_manifest = str(config_dir / "settings.json")
+    abs_declared_by = json.dumps(
+        {"kind": "skill_lock", "path": str(config_dir / "installed_plugins.json")},
+        sort_keys=True,
+    )
+    ref = ComponentRef(
+        name="my-plugin",
+        component_identity="claude-plugin/mktplace/my-plugin",
+        source_manifest=abs_manifest,
+        source_locator="$.plugins[0]",
+        extra={
+            "component_type": "plugin",
+            "declared_by": json.loads(abs_declared_by),
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *a, **kw: [])
+
+    collection = build_endpoint_collection(config_dir=config_dir, project=None)
+
+    payload = {
+        "asset_id": "asset-123",
+        "source": "endpoint",
+        "openaca_version": "unknown",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": collection.bom,
+        "posture_findings": [],
+    }
+    validate_fleet_upload_payload(payload)
+
+    props_by_name = {}
+    for comp in collection.bom.get("components") or []:
+        for p in comp.get("properties") or []:
+            props_by_name[p["name"]] = p["value"]
+
+    assert props_by_name["openaca:source_manifest"] == "settings.json"
+    declared = json.loads(props_by_name["openaca:declared_by"])
+    assert declared["path"] == "installed_plugins.json"
 
 
 def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:

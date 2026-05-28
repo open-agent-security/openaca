@@ -2,7 +2,7 @@
 set -euo pipefail
 
 OPENACA_FLEET_API_URL="${OPENACA_FLEET_API_URL:-https://api.openaca.dev}"
-OPENACA_VERSION="${OPENACA_VERSION:-0.1.0b6}"
+OPENACA_VERSION="${OPENACA_VERSION:-latest}"
 LABEL="com.openaca.fleet"
 
 if [ -z "${OPENACA_FLEET_TOKEN:-}" ]; then
@@ -34,7 +34,12 @@ else
   run_as_user "$UV_BIN" self update >/dev/null 2>&1 || true
 fi
 
-run_as_user "$UV_BIN" tool install "openaca==$OPENACA_VERSION" --force
+if [ "$OPENACA_VERSION" = "latest" ]; then
+  OPENACA_PACKAGE="openaca"
+else
+  OPENACA_PACKAGE="openaca==$OPENACA_VERSION"
+fi
+run_as_user "$UV_BIN" tool install "$OPENACA_PACKAGE" --force
 printf '%s\n' "$OPENACA_FLEET_TOKEN" | run_as_user "$OPENACA_BIN" fleet configure \
   --api-url "$OPENACA_FLEET_API_URL"
 

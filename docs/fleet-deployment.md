@@ -26,9 +26,10 @@ writes share the same final payload guard. See
 
 - `OPENACA_FLEET_TOKEN`: Fleet API token for the organization.
 - `OPENACA_FLEET_API_URL`: optional API URL. Defaults to `https://api.openaca.dev`.
-- `OPENACA_VERSION`: pinned `openaca` package version. Defaults to `0.1.0b6`.
+- `OPENACA_VERSION`: optional `openaca` package version. Defaults to `latest`;
+  set an exact version such as `0.1.0b6` to pin deployment.
 
-The scripts install or update `uv`, install the pinned `openaca` CLI into the
+The scripts install or update `uv`, install the selected `openaca` CLI into the
 console user's tool directory, configure Fleet, and load
 `~/Library/LaunchAgents/com.openaca.fleet.plist`.
 

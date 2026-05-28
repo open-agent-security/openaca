@@ -67,9 +67,9 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         "name": "openaca:target_type",
         "value": "endpoint",
     }
-    assert {"name": "openaca:target", "value": "endpoint:user-scope"} in collection.bom[
-        "metadata"
-    ]["properties"]
+    assert {"name": "openaca:target", "value": "endpoint:user-scope"} in collection.bom["metadata"][
+        "properties"
+    ]
     assert collection.posture_findings == [
         {
             "rule_id": "openaca-posture-mutable-install-reference",
@@ -103,7 +103,9 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
 
         def register_asset(self, payload):
             calls.append(("register_asset", payload))
-            return RegisterAssetResult(asset_id="asset-123", dashboard_url="https://app/assets/asset-123")
+            return RegisterAssetResult(
+                asset_id="asset-123", dashboard_url="https://app/assets/asset-123"
+            )
 
         def upload_bom(self, payload):
             calls.append(("upload_bom", payload))

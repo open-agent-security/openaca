@@ -40,11 +40,7 @@ def test_does_not_reject_pass_through_cyclonedx_external_reference_paths():
     payload = _payload(
         bom={
             "components": [
-                {
-                    "externalReferences": [
-                        {"type": "vcs", "url": "https://github.com/example/repo"}
-                    ]
-                }
+                {"externalReferences": [{"type": "vcs", "url": "https://github.com/example/repo"}]}
             ]
         }
     )

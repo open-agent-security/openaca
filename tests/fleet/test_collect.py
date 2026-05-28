@@ -308,6 +308,47 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
     assert len(uploads) == 1, "only the current upload ran, not the corrupt pending one"
 
 
+def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, monkeypatch):
+    """When asset_id is None (first run or post-reconfigure), replay must not run even
+    if pending files are present — those files belong to a previous backend context."""
+    config_path = _write_config(tmp_path, asset_id=None)
+    pending_dir = tmp_path / "pending"
+    pending_dir.mkdir()
+    stale_payload = _payload(asset_id="old-asset-id", content_hash="sha256:stale")
+    (pending_dir / "pending-bom-stale.json").write_text(json.dumps(stale_payload), encoding="utf-8")
+
+    uploads: list[dict] = []
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def register_asset(self, payload):
+            from tools.fleet.client import RegisterAssetResult
+
+            return RegisterAssetResult(
+                asset_id="new-asset-id", dashboard_url="https://app/assets/new-asset-id"
+            )
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert len(uploads) == 1, "only the current upload ran, not the stale pending one"
+    assert uploads[0]["asset_id"] == "new-asset-id"
+    assert (pending_dir / "pending-bom-stale.json").exists(), "stale file untouched by this run"
+
+
 def test_upload_bom_file_uploads_existing_bom_without_collecting_endpoint(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     bom_path = tmp_path / "bom.json"

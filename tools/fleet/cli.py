@@ -6,7 +6,12 @@ from pathlib import Path
 import click
 
 from tools.fleet.client import FleetClient, FleetClientError
-from tools.fleet.collector import CollectError, collect_endpoint, upload_bom_file
+from tools.fleet.collector import (
+    CollectError,
+    clear_pending_uploads,
+    collect_endpoint,
+    upload_bom_file,
+)
 from tools.fleet.config import (
     DEFAULT_API_URL,
     ConfigError,
@@ -33,6 +38,8 @@ def configure(token: str, api_url: str) -> None:
         preserved_asset_id = (
             existing.asset_id if existing.api_url == api_url and existing.token == token else None
         )
+        if preserved_asset_id is None and existing.asset_id is not None:
+            clear_pending_uploads()
         save_fleet_config(
             FleetConfig(api_url=api_url, token=token, asset_id=preserved_asset_id),
             config_path,

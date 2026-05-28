@@ -1,10 +1,10 @@
 ---
 id: 0025
 title: OSS install via uv + curl-pipe-sh; defer single-binary distribution
-status: accepted
+status: superseded
 date: 2026-05-28
 supersedes: null
-superseded-by: null
+superseded-by: 0026
 ---
 
 ## Context

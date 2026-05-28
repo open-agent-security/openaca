@@ -89,28 +89,20 @@ makes the distinction explicit.
 Two ways to run the scanner. Both produce SARIF v2.1.0 output and
 the same set of findings.
 
-### Prerequisites
-
-A working `curl` (preinstalled on macOS and most Linux distros).
-Everything else — Python 3.11+, isolated install, PATH wiring — is
-handled by [`uv`](https://docs.astral.sh/uv/getting-started/installation/),
-which OpenACA's install scripts bootstrap automatically on first run.
-
-### Try it in 30 seconds (no permanent install)
-
-Run a one-shot scan of your endpoint without permanently installing
-OpenACA. `uv` is fetched on first run; OpenACA itself is resolved
-ephemerally and discarded after the scan:
+### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | sh
 ```
 
-Or against a specific repo / directory (defaults to scanning the
-endpoint):
+This bootstraps [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+if it isn't already on your machine, then installs OpenACA as an
+isolated CLI tool.
+
+### Scan Your Endpoint
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh -s -- scan repo --target .
+openaca scan endpoint
 ```
 
 ### Try it on a sample project
@@ -129,7 +121,7 @@ cat > mcp.json <<'EOF'
   }
 }
 EOF
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh -s -- scan repo --target .
+openaca scan repo --target .
 ```
 
 Expected output:
@@ -155,19 +147,6 @@ repo and try each of its fixtures.
 
 The scanner is a normal Python package; run it against any local
 checkout. Two modes via subcommands.
-
-**Install persistently (recommended for everyone running OpenACA more
-than once):**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | sh
-```
-
-This bootstraps `uv` if it isn't already on your machine, then runs
-`uv tool install openaca`. The installer prints an exact scan command
-after installation. If your current shell cannot resolve `openaca`
-yet, use the printed absolute path or add uv's tool directory to
-`PATH`.
 
 **Pin a specific version (recommended for Fleet / MDM / CI):**
 
@@ -228,15 +207,6 @@ A subcommand is required. Shared options (`-v`, `--fail-on`, `--sarif`,
 `--format`, `--no-color`) can sit before or after the subcommand name —
 `openaca scan -v repo --target X ...` is equivalent to
 `openaca scan repo --target X ... -v`.
-
-Or via `uvx`, which clones, builds, and runs in one shot (no manual
-checkout):
-
-```bash
-uvx --from git+https://github.com/open-agent-security/openaca openaca scan repo \
-    --target /path/to/your/repo \
-    --sarif results.sarif
-```
 
 ### Output formats
 

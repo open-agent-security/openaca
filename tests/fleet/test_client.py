@@ -207,3 +207,38 @@ def test_repeated_503_raises_server_error_after_retries():
 
     with pytest.raises(FleetServerError):
         client.get_me()
+
+
+def test_504_raises_server_error():
+    client = FleetClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(504, json={"error": "gateway timeout"})
+        ),
+        sleep=lambda _: None,
+    )
+
+    with pytest.raises(FleetServerError):
+        client.get_me()
+
+
+def test_504_retries_with_backoff_then_raises_server_error():
+    statuses = [504, 504, 504]
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        statuses.pop(0)
+        return httpx.Response(504, json={"error": "gateway timeout"})
+
+    client = FleetClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(handler),
+        sleep=sleeps.append,
+    )
+
+    with pytest.raises(FleetServerError):
+        client.get_me()
+
+    assert sleeps == [1.0, 4.0]

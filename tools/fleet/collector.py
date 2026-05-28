@@ -179,7 +179,10 @@ def _write_pending_payload(payload: JsonObject) -> Path:
     pending_dir = get_pending_dir()
     pending_dir.mkdir(parents=True, exist_ok=True)
     path = pending_dir / f"pending-bom-{time.time_ns()}.json"
-    path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, sort_keys=True) + "\n")
+    os.chmod(path, 0o600)
     return path
 
 

@@ -91,16 +91,31 @@ the same set of findings.
 
 ### Prerequisites
 
-- Python 3.11+. If you don't have it, [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-  provisions Python for you alongside the install — easiest path.
-- For contributors hacking on source, `uv` is the dependency manager
-  used by the project.
+A working `curl` (preinstalled on macOS and most Linux distros).
+Everything else — Python 3.11+, isolated install, PATH wiring — is
+handled by [`uv`](https://docs.astral.sh/uv/getting-started/installation/),
+which OpenACA's install scripts bootstrap automatically on first run.
 
-### Try it in 30 seconds
+### Try it in 30 seconds (no permanent install)
 
-After installing OpenACA (`uv tool install openaca` recommended, or
-`pip install openaca` if you already have a Python 3.11+ workflow),
-drop a sample `mcp.json` in any empty directory and run the scanner:
+Run a one-shot scan of your endpoint without permanently installing
+OpenACA. `uv` is fetched on first run; OpenACA itself is resolved
+ephemerally and discarded after the scan:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh
+```
+
+Or against a specific repo / directory (defaults to scanning the
+endpoint):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh -s -- scan repo --target .
+```
+
+### Try it on a sample project
+
+Drop a sample `mcp.json` in any empty directory and scan it:
 
 ```bash
 mkdir openaca-demo && cd openaca-demo
@@ -114,7 +129,7 @@ cat > mcp.json <<'EOF'
   }
 }
 EOF
-openaca scan repo --target .
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/scan.sh | sh -s -- scan repo --target .
 ```
 
 Expected output:
@@ -141,17 +156,42 @@ repo and try each of its fixtures.
 The scanner is a normal Python package; run it against any local
 checkout. Two modes via subcommands.
 
-**Install from PyPI (recommended for beta testers):**
+**Install persistently (recommended for everyone running OpenACA more
+than once):**
 
 ```bash
-uv tool install openaca   # recommended
-# or
-pip install openaca       # if you prefer pip
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | sh
 ```
 
-(Both auto-pick the latest pre-release while no stable exists. Pin a
-specific build with `openaca==0.1.0b5` if you need to reproduce a bug
-report against an exact version.)
+This bootstraps `uv` if it isn't already on your machine, then runs
+`uv tool install openaca`. The installer prints an exact scan command
+after installation. If your current shell cannot resolve `openaca`
+yet, use the printed absolute path or add uv's tool directory to
+`PATH`.
+
+**Pin a specific version (recommended for Fleet / MDM / CI):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=0.1.0b5 sh
+```
+
+Pinning matters for reproducible deployments — every machine getting
+"whatever latest was that day" is bad for debugging fleet behavior.
+
+**Manual install (if you prefer not to pipe to sh, or want to control
+the path yourself):**
+
+```bash
+# With uv (recommended; handles Python version + isolation):
+uv tool install openaca
+
+# Or with pip (Python 3.11+ in your existing workflow):
+pip install openaca
+```
+
+(All install paths auto-pick the latest pre-release while no stable
+exists. Pin a specific build with `openaca==0.1.0b5` if you need to
+reproduce a bug report against an exact version.)
 
 **Install from source (for contributors):**
 

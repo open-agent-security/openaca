@@ -126,6 +126,63 @@ def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
     assert load_fleet_config(config_path).asset_id is None
 
 
+def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkeypatch):
+    """When token changes on reconfigure, any pending offline-cache files (which embed
+    the old asset_id) must be purged so they are never replayed against the new backend."""
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "https://api.openaca.dev"',
+                'token = "ot_OLD"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    pending_dir = tmp_path / "pending"
+    pending_dir.mkdir()
+    (pending_dir / "pending-bom-stale.json").write_text(
+        '{"asset_id":"asset-123"}', encoding="utf-8"
+    )
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_NEW"])
+
+    assert result.exit_code == 0
+    assert not list(pending_dir.glob("pending-bom-*.json")), "stale pending files must be purged"
+
+
+def test_configure_does_not_purge_pending_files_when_credentials_unchanged(tmp_path, monkeypatch):
+    """Re-running configure with identical credentials must not discard pending files."""
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "https://api.openaca.dev"',
+                'token = "ot_SAME"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    pending_dir = tmp_path / "pending"
+    pending_dir.mkdir()
+    (pending_dir / "pending-bom-keep.json").write_text('{"asset_id":"asset-123"}', encoding="utf-8")
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_SAME"])
+
+    assert result.exit_code == 0
+    assert (pending_dir / "pending-bom-keep.json").exists(), "pending file must be preserved"
+
+
 def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
     config_path = tmp_path / "fleet.toml"
     config_path.write_text(

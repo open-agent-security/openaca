@@ -89,7 +89,8 @@ def collect_endpoint(
         raise CollectError("Fleet is not configured; run openaca fleet configure --token <TOKEN>")
 
     client = FleetClient(api_url=config.api_url, token=config.token)
-    _replay_pending_uploads(client)
+    if config.asset_id is not None:
+        _replay_pending_uploads(client)
 
     collection = build_endpoint_collection(config_dir=config_dir, project=project)
     asset_id = config.asset_id
@@ -143,6 +144,12 @@ def upload_bom_file(path: Path) -> BomUploadResult:
         raise CollectError(f"BOM contains redaction-blocked content: {exc}") from exc
     client = FleetClient(api_url=config.api_url, token=config.token)
     return client.upload_bom(payload)
+
+
+def clear_pending_uploads() -> None:
+    """Remove all pending offline-cache files (call when credentials change)."""
+    for path in get_pending_dir().glob("pending-bom-*.json"):
+        path.unlink(missing_ok=True)
 
 
 def _replay_pending_uploads(client: FleetClient) -> None:

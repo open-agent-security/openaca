@@ -15,7 +15,7 @@ from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef
 from tools.fleet.client import BomUploadResult, FleetClient, FleetServerError
 from tools.fleet.config import FleetConfig, get_config_path, load_fleet_config, save_fleet_config
-from tools.fleet.redaction import validate_fleet_upload_payload
+from tools.fleet.redaction import RedactionError, validate_fleet_upload_payload
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
@@ -142,12 +142,20 @@ def _replay_pending_uploads(client: FleetClient) -> None:
     for path in sorted(pending_dir.glob("pending-bom-*.json")):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise CollectError(f"failed to read pending Fleet upload at {path}") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            path.unlink(missing_ok=True)
+            continue
         if not isinstance(payload, dict):
-            raise CollectError(f"pending Fleet upload at {path} is not a JSON object")
-        validate_fleet_upload_payload(payload)
-        client.upload_bom(payload)
+            path.unlink(missing_ok=True)
+            continue
+        try:
+            validate_fleet_upload_payload(payload)
+            client.upload_bom(payload)
+        except RedactionError:
+            path.unlink(missing_ok=True)
+            continue
+        except (FleetServerError, httpx.TransportError):
+            break
         path.unlink()
 
 

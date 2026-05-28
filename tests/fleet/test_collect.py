@@ -240,6 +240,69 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
     assert not list(pending_dir.glob("pending-bom-*.json"))
 
 
+def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    pending_dir = tmp_path / "pending"
+    pending_dir.mkdir()
+    old_payload = _payload(content_hash="sha256:old")
+    (pending_dir / "pending-bom-1.json").write_text(json.dumps(old_payload), encoding="utf-8")
+
+    collection_built: list[bool] = []
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: (collection_built.append(True), _collection())[1],
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    with pytest.raises(CollectError) as exc:
+        collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+
+    assert exc.value.exit_code == 0
+    assert collection_built, "current endpoint collection must run even when replay fails"
+    assert (pending_dir / "pending-bom-1.json").exists(), "old pending file kept for next attempt"
+    assert len(list(pending_dir.glob("pending-bom-*.json"))) == 2, "new pending file written"
+
+
+def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    pending_dir = tmp_path / "pending"
+    pending_dir.mkdir()
+    (pending_dir / "pending-bom-bad.json").write_text("not-json!!!", encoding="utf-8")
+
+    uploads: list[str] = []
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.fleet.collector.build_endpoint_collection",
+        lambda config_dir, project: _collection(),
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload["content_hash"])
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert not (pending_dir / "pending-bom-bad.json").exists(), "corrupt file removed"
+    assert len(uploads) == 1, "only the current upload ran, not the corrupt pending one"
+
+
 def test_upload_bom_file_uploads_existing_bom_without_collecting_endpoint(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     bom_path = tmp_path / "bom.json"

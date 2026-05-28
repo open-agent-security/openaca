@@ -20,7 +20,7 @@ the Fleet dashboard.
 The collector does not upload source code, raw config file bodies, environment
 variable values, detected secrets, or full shell argv. Upload and pending-cache
 writes share the same final payload guard. See
-`docs/adrs/0025-fleet-upload-contract.md`.
+`docs/adrs/0024-opt-in-fleet-cli.md`.
 
 ## Required Variables
 

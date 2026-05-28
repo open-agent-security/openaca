@@ -27,7 +27,7 @@ from tools.fleet.collector import (
     upload_bom_file,
 )
 from tools.fleet.config import load_fleet_config
-from tools.fleet.redaction import validate_fleet_upload_payload
+from tools.fleet.redaction import RedactionError, validate_fleet_upload_payload
 from tools.posture.finding import PostureFinding, Standards
 
 
@@ -335,6 +335,67 @@ def test_upload_bom_file_uploads_existing_bom_without_collecting_endpoint(tmp_pa
     assert uploads[0]["source"] == "manual"
     assert uploads[0]["bom"] == {"bomFormat": "CycloneDX", "components": []}
     assert uploads[0]["posture_findings"] == []
+
+
+def test_upload_bom_file_sanitizes_home_paths_before_validation(tmp_path, monkeypatch):
+    """upload_bom_file must apply _relativize_bom_paths so BOMs produced by
+    'openaca bom endpoint' (which include absolute source_manifest paths) pass
+    validate_fleet_upload_payload without raising RedactionError."""
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "components": [
+            {
+                "type": "library",
+                "name": "my-plugin",
+                "properties": [
+                    {
+                        "name": "openaca:source_manifest",
+                        "value": "/home/testuser/.claude/settings.json",
+                    }
+                ],
+            }
+        ],
+    }
+    bom_path = tmp_path / "bom.json"
+    bom_path.write_text(json.dumps(bom), encoding="utf-8")
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+
+    upload_bom_file(bom_path)
+
+    assert len(uploads) == 1
+    props = uploads[0]["bom"]["components"][0]["properties"]
+    source_manifest = next(p["value"] for p in props if p["name"] == "openaca:source_manifest")
+    assert not source_manifest.startswith("/home/"), f"home path not stripped: {source_manifest!r}"
+
+
+def test_upload_bom_file_converts_redaction_error_to_collect_error(tmp_path, monkeypatch):
+    """RedactionError from validate_fleet_upload_payload must surface as CollectError so
+    the 'fleet upload' CLI command shows a clean error message instead of a traceback."""
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    bom_path = tmp_path / "bom.json"
+    bom_path.write_text(json.dumps({"bomFormat": "CycloneDX", "components": []}), encoding="utf-8")
+    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+
+    def fake_validate(payload):
+        raise RedactionError("injected test redaction error")
+
+    monkeypatch.setattr("tools.fleet.collector.validate_fleet_upload_payload", fake_validate)
+
+    with pytest.raises(CollectError, match="redaction-blocked"):
+        upload_bom_file(bom_path)
 
 
 def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):

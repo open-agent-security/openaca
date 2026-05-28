@@ -30,8 +30,11 @@ def configure(token: str, api_url: str) -> None:
     config_path = get_config_path()
     try:
         existing = load_fleet_config(config_path)
+        preserved_asset_id = (
+            existing.asset_id if existing.api_url == api_url and existing.token == token else None
+        )
         save_fleet_config(
-            FleetConfig(api_url=api_url, token=token, asset_id=existing.asset_id),
+            FleetConfig(api_url=api_url, token=token, asset_id=preserved_asset_id),
             config_path,
         )
     except ConfigError as exc:

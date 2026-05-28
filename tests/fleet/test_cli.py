@@ -52,6 +52,80 @@ def test_configure_prompts_for_token(tmp_path, monkeypatch):
     assert load_fleet_config(config_path).token == "ot_PROMPT"
 
 
+def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monkeypatch):
+    """Re-running configure with identical token and api_url must not drop the cached asset_id."""
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "https://api.openaca.dev"',
+                'token = "ot_SAME"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_SAME"])
+
+    assert result.exit_code == 0
+    assert load_fleet_config(config_path).asset_id == "asset-123"
+
+
+def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
+    """Changing the token on reconfigure must clear the cached asset_id to prevent
+    uploads to an asset registered under a different org/token."""
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "https://api.openaca.dev"',
+                'token = "ot_OLD"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+
+    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_NEW"])
+
+    assert result.exit_code == 0
+    assert load_fleet_config(config_path).asset_id is None
+
+
+def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
+    """Changing api_url on reconfigure must clear the cached asset_id because the
+    asset belongs to the old backend and cannot be used with the new one."""
+    config_path = tmp_path / "fleet.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[fleet]",
+                'api_url = "https://api.openaca.dev"',
+                'token = "ot_TEST"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["fleet", "configure", "--token", "ot_TEST", "--api-url", "http://localhost:8000"],
+    )
+
+    assert result.exit_code == 0
+    assert load_fleet_config(config_path).asset_id is None
+
+
 def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
     config_path = tmp_path / "fleet.toml"
     config_path.write_text(

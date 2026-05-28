@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import click
+import httpx
 
 from tools.fleet.client import FleetClient, FleetClientError
 from tools.fleet.collector import (
@@ -69,6 +70,8 @@ def status() -> None:
             click.echo("No asset configured yet. Run openaca fleet collect endpoint first.")
             return
         asset = client.get_asset(config.asset_id)
+    except httpx.TransportError as exc:
+        raise click.ClickException(f"Fleet API unreachable: {exc}") from exc
     except FleetClientError as exc:
         raise click.ClickException(str(exc)) from exc
 

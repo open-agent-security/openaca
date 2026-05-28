@@ -92,7 +92,7 @@ def collect_endpoint(
 
     client = FleetClient(api_url=config.api_url, token=config.token)
     if config.asset_id is not None:
-        _replay_pending_uploads(client)
+        _replay_pending_uploads(client, config.asset_id)
 
     collection = build_endpoint_collection(config_dir=config_dir, project=project)
     asset_id = config.asset_id
@@ -134,7 +134,7 @@ def clear_pending_uploads() -> None:
         path.unlink(missing_ok=True)
 
 
-def _replay_pending_uploads(client: FleetClient) -> None:
+def _replay_pending_uploads(client: FleetClient, current_asset_id: str) -> None:
     pending_dir = get_pending_dir()
     for path in sorted(pending_dir.glob("pending-bom-*.json")):
         try:
@@ -143,6 +143,9 @@ def _replay_pending_uploads(client: FleetClient) -> None:
             path.unlink(missing_ok=True)
             continue
         if not isinstance(payload, dict):
+            path.unlink(missing_ok=True)
+            continue
+        if payload.get("asset_id") != current_asset_id:
             path.unlink(missing_ok=True)
             continue
         try:

@@ -72,7 +72,7 @@ string and target descriptor; the renderer only lays them out.
 
 ## Tasks
 
-- [ ] **Characterize current output first.** Add golden tests in
+- [x] **Characterize current output first.** Add golden tests in
   `tests/test_render.py` that snapshot the *current* `render_text` output for
   three cases — clean scan (no findings), findings present, findings + posture
   — using fixed `findings`/`advisory_index`/`stats` inputs and `use_color=False`.

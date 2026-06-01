@@ -1,0 +1,9 @@
+Found 1 vulnerability in 1 package.
+
+@cyanheads/git-mcp-server 1.1.0
+  location: mcp.json
+  fix:      upgrade to >=2.1.5
+
+  UNKNOWN  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
+
+Scanned 1 manifest, 1 component. Sources: osv.dev.

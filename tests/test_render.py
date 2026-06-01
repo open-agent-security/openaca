@@ -8,6 +8,9 @@ each renderer makes with its consumer.
 from __future__ import annotations
 
 import json
+import os
+import re
+from pathlib import Path
 
 import pytest
 
@@ -1491,3 +1494,74 @@ def test_json_omits_posture_findings_key_when_not_passed():
     out = render_json([], {}, _stats(unit_count=0, components=0))
     doc = json.loads(out)
     assert "posture_findings" not in doc
+
+
+# ── Golden snapshots ─────────────────────────────────────────────────────────
+#
+# These pin the *exact* default text output so the first-run-card refactor
+# (plan 022) can prove it does not regress the legacy (no-card-args) body and,
+# later, lock the new card shape. Snapshots are ANSI-stripped and path-stable.
+# Regenerate intentionally with: OPENACA_REGEN_GOLDEN=1 uv run pytest tests/test_render.py -k golden
+
+_REPORTS_DIR = Path(__file__).parent / "fixtures" / "reports"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(s: str) -> str:
+    return _ANSI_RE.sub("", s)
+
+
+def _assert_golden(actual: str, name: str) -> None:
+    normalized = _strip_ansi(actual).rstrip("\n") + "\n"
+    path = _REPORTS_DIR / name
+    if os.environ.get("OPENACA_REGEN_GOLDEN"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(normalized, encoding="utf-8")
+        return
+    assert path.exists(), f"missing golden fixture {path}; regen with OPENACA_REGEN_GOLDEN=1"
+    expected = path.read_text(encoding="utf-8")
+    assert normalized == expected, (
+        f"output drifted from {name}:\n--- expected ---\n{expected}\n--- actual ---\n{normalized}"
+    )
+
+
+def _golden_findings() -> tuple[list, dict]:
+    findings = [
+        _finding("GHSA-3q26-f695-pp76", "@cyanheads/git-mcp-server", "1.1.0", manifest="mcp.json")
+    ]
+    index = {
+        "GHSA-3q26-f695-pp76": _advisory(
+            "GHSA-3q26-f695-pp76",
+            "npm",
+            "@cyanheads/git-mcp-server",
+            fixed="2.1.5",
+            summary="@cyanheads/git-mcp-server vulnerable to command injection in several tools",
+            source="osv.dev",
+        )
+    }
+    return findings, index
+
+
+def test_golden_legacy_clean():
+    """Legacy (no card args) clean-scan output — baseline before plan 022."""
+    out = render_text([], {}, _stats(unit_count=2, components=86))
+    _assert_golden(out, "legacy-clean.txt")
+
+
+def test_golden_legacy_findings():
+    """Legacy (no card args) findings output — baseline before plan 022."""
+    findings, index = _golden_findings()
+    out = render_text(findings, index, _stats(unit_count=1, components=1, sources=("osv.dev",)))
+    _assert_golden(out, "legacy-findings.txt")
+
+
+def test_golden_legacy_findings_posture():
+    """Legacy (no card args) findings + posture output — baseline before plan 022."""
+    findings, index = _golden_findings()
+    out = render_text(
+        findings,
+        index,
+        _stats(unit_count=1, components=1, sources=("osv.dev",)),
+        posture_findings=[_posture()],
+    )
+    _assert_golden(out, "legacy-findings-posture.txt")

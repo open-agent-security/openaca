@@ -1565,3 +1565,76 @@ def test_golden_legacy_findings_posture():
         posture_findings=[_posture()],
     )
     _assert_golden(out, "legacy-findings-posture.txt")
+
+
+# ── Card mode (plan 022) ─────────────────────────────────────────────────────
+
+
+def test_no_card_args_preserves_legacy_body():
+    """All card args absent → legacy body, no Inventory/Summary section headers."""
+    out = render_text([], {}, _stats(unit_count=2, components=86))
+    assert "Inventory" not in out
+    assert "Summary" not in out
+    assert out.startswith("Scanned 2 manifests, 86 components — no findings.")
+
+
+def test_card_mode_triggered_by_any_single_card_arg():
+    """Any one of target/inventory_tree/next_actions switches to the card."""
+    out = render_text(
+        [],
+        {},
+        _stats(unit_count=1, components=1),
+        inventory_tree="superpowers@5.1.0\n└── (no bundled components)",
+    )
+    assert "Inventory" in out
+    assert "Summary" in out
+
+
+def test_golden_card_endpoint():
+    """Full endpoint card with findings (plan 022 shape)."""
+    from tools.render import RenderTarget
+
+    findings, index = _golden_findings()
+    target = RenderTarget(
+        host_surface="Claude Code",
+        rows=[("config", "~/.claude"), ("project", "not included")],
+    )
+    tree = (
+        "superpowers@5.1.0\n"
+        "├── skills/ (1)\n"
+        "│   └── brainstorming\n"
+        "└── MCPs/ (1)\n"
+        "    └── @cyanheads/git-mcp-server 1.1.0  [! GHSA-3q26-f695-pp76]"
+    )
+    out = render_text(
+        findings,
+        index,
+        _stats(unit_count=1, components=2, label="active plugin", sources=("osv.dev",)),
+        target=target,
+        inventory_tree=tree,
+        next_actions=[
+            "include project-local config: openaca scan endpoint --project .",
+            "emit Agent BOM: openaca bom endpoint --output openaca-bom.json",
+        ],
+    )
+    _assert_golden(out, "card-endpoint.txt")
+
+
+def test_golden_card_clean_scan():
+    """Clean scan still shows Target + Inventory + Summary (the 'feels useful' win)."""
+    from tools.render import RenderTarget
+
+    target = RenderTarget(
+        host_surface="Claude Code",
+        rows=[("config", "~/.claude"), ("project", "not included")],
+    )
+    tree = "superpowers@5.1.0\n└── skills/ (1)\n    └── brainstorming"
+    out = render_text(
+        [],
+        {},
+        _stats(unit_count=1, components=1, label="active plugin", sources=("osv.dev",)),
+        target=target,
+        inventory_tree=tree,
+        next_actions=["include project-local config: openaca scan endpoint --project ."],
+    )
+    _assert_golden(out, "card-clean.txt")

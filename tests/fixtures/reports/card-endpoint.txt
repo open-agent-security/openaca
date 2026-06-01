@@ -1,0 +1,30 @@
+Target
+  host surface: Claude Code
+  config: ~/.claude
+  project: not included
+
+Inventory
+
+superpowers@5.1.0
+├── skills/ (1)
+│   └── brainstorming
+└── MCPs/ (1)
+    └── @cyanheads/git-mcp-server 1.1.0  [! GHSA-3q26-f695-pp76]
+
+Findings
+
+Found 1 vulnerability in 1 package.
+
+@cyanheads/git-mcp-server 1.1.0
+  location: mcp.json
+  fix:      upgrade to >=2.1.5
+
+  UNKNOWN  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
+
+Summary
+  scanned 1 active plugin, 2 components · advisories: 1 · posture: skipped
+  sources: osv.dev
+
+Next
+  include project-local config: openaca scan endpoint --project .
+  emit Agent BOM: openaca bom endpoint --output openaca-bom.json

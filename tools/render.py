@@ -53,6 +53,19 @@ class ScanStats:
     sources: set[str] = field(default_factory=set)
 
 
+@dataclass
+class RenderTarget:
+    """Scan-scope descriptor for the first-run text card's Target block.
+
+    `rows` are ordered (label, value) pairs the command supplies (e.g.
+    `("config", "~/.claude")`); the renderer lays them out without hard-coding
+    scan modes, so repo/endpoint/bom each describe their own scope.
+    """
+
+    host_surface: str
+    rows: list[tuple[str, str]] = field(default_factory=list)
+
+
 _SEVERITY_RANK = {
     "CRITICAL": 5,
     "HIGH": 4,
@@ -247,8 +260,52 @@ def render_text(
     use_color: bool = False,
     verbose: bool = False,
     posture_findings: list[PostureFinding] | None = None,
+    target: RenderTarget | None = None,
+    inventory_tree: str | None = None,
+    next_actions: list[str] | None = None,
 ) -> str:
-    """Grouped human-readable output. See module docstring for shape."""
+    """Human-readable scan output.
+
+    Compositional: `target`, `inventory_tree`, and `next_actions` each add an
+    optional section. When all three are absent, this renders the legacy
+    findings/posture/footer body unchanged (the only callers that omit them are
+    unit tests exercising findings-formatting in isolation). The CLI scan paths
+    always supply all three, so real first-run output is the full inventory-first
+    card: Target -> Inventory -> Findings -> Posture -> Summary -> Next.
+    """
+    card_mode = target is not None or inventory_tree is not None or next_actions is not None
+    if not card_mode:
+        return _render_text_legacy(
+            findings,
+            advisory_index,
+            stats,
+            use_color=use_color,
+            verbose=verbose,
+            posture_findings=posture_findings,
+        )
+    return _render_text_card(
+        findings,
+        advisory_index,
+        stats,
+        use_color=use_color,
+        verbose=verbose,
+        posture_findings=posture_findings,
+        target=target,
+        inventory_tree=inventory_tree,
+        next_actions=next_actions,
+    )
+
+
+def _render_text_legacy(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    use_color: bool,
+    verbose: bool,
+    posture_findings: list[PostureFinding] | None,
+) -> str:
+    """Findings-grouped body without the inventory card (legacy default)."""
     posture_findings = posture_findings or []
     unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
     component_phrase = _pluralize(stats.component_count, "component")
@@ -267,6 +324,39 @@ def render_text(
             return head + "\n\n" + _render_posture_section(posture_findings, use_color)
         return head
 
+    n_pkgs = len(_group_findings(findings))
+    out: list[str] = []
+    out.append(
+        f"Found {len(findings)} "
+        f"vulnerabilit{'y' if len(findings) == 1 else 'ies'} in "
+        f"{n_pkgs} package{'' if n_pkgs == 1 else 's'}."
+    )
+    out.append("")
+    out.extend(
+        _render_finding_groups(findings, advisory_index, use_color=use_color, verbose=verbose)
+    )
+
+    sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
+    parse_note = f" ({stats.parse_failed} failed to parse)" if stats.parse_failed else ""
+    out.append(f"Scanned {unit_phrase}, {component_phrase}{parse_note}. Sources: {sources_str}.")
+    if posture_findings:
+        out.append("")
+        out.append(_render_posture_section(posture_findings, use_color))
+    return "\n".join(out)
+
+
+def _render_finding_groups(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    *,
+    use_color: bool,
+    verbose: bool,
+) -> list[str]:
+    """The per-component finding blocks, shared by the legacy and card paths.
+
+    One block per `(ecosystem, name, version, manifest)` group, severity-ranked.
+    Each block ends with a trailing blank line (callers trim as needed).
+    """
     groups = _group_findings(findings)
     ranked: list[tuple[int, str, GroupKey, list[Finding]]] = []
     for key, group_findings in groups.items():
@@ -276,14 +366,6 @@ def render_text(
     ranked.sort(key=lambda t: (-t[0], t[1]))
 
     out: list[str] = []
-    n_pkgs = len(groups)
-    out.append(
-        f"Found {len(findings)} "
-        f"vulnerabilit{'y' if len(findings) == 1 else 'ies'} in "
-        f"{n_pkgs} package{'' if n_pkgs == 1 else 's'}."
-    )
-    out.append("")
-
     for _, _, key, group_findings in ranked:
         _, _, _, source_manifest = key
         first = group_findings[0]
@@ -339,14 +421,73 @@ def render_text(
                 out.append(f"        confidence: {f.confidence}")
                 out.extend(f"        {line}" for line in _identity_detail_lines(f))
         out.append("")
+    return out
+
+
+def _render_text_card(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    use_color: bool,
+    verbose: bool,
+    posture_findings: list[PostureFinding] | None,
+    target: RenderTarget | None,
+    inventory_tree: str | None,
+    next_actions: list[str] | None,
+) -> str:
+    """Inventory-first first-run card: Target -> Inventory -> Findings ->
+    Posture -> Summary -> Next. `posture_findings is None` means posture was not
+    requested (`posture: skipped`); `[]` means it ran and found nothing."""
+    posture_skipped = posture_findings is None
+    posture_findings = posture_findings or []
+    unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
+    component_phrase = _pluralize(stats.component_count, "component")
+
+    sections: list[str] = []
+
+    if target is not None:
+        target_lines = ["Target", f"  host surface: {target.host_surface}"]
+        target_lines += [f"  {label}: {value}" for label, value in target.rows]
+        sections.append("\n".join(target_lines))
+
+    tree = (inventory_tree or "").rstrip("\n")
+    sections.append("Inventory\n\n" + (tree if tree else "  (no components detected)"))
+
+    if findings:
+        n_pkgs = len(_group_findings(findings))
+        finding_lines = [
+            "Findings",
+            "",
+            f"Found {len(findings)} "
+            f"vulnerabilit{'y' if len(findings) == 1 else 'ies'} in "
+            f"{n_pkgs} package{'' if n_pkgs == 1 else 's'}.",
+            "",
+        ]
+        finding_lines += _render_finding_groups(
+            findings, advisory_index, use_color=use_color, verbose=verbose
+        )
+        sections.append("\n".join(finding_lines).rstrip("\n"))
+    else:
+        sections.append("Findings\n\n  No advisories matched the scanned components.")
+
+    if posture_findings:
+        sections.append(_render_posture_section(posture_findings, use_color))
 
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
     parse_note = f" ({stats.parse_failed} failed to parse)" if stats.parse_failed else ""
-    out.append(f"Scanned {unit_phrase}, {component_phrase}{parse_note}. Sources: {sources_str}.")
-    if posture_findings:
-        out.append("")
-        out.append(_render_posture_section(posture_findings, use_color))
-    return "\n".join(out)
+    posture_count = "skipped" if posture_skipped else str(len(posture_findings))
+    sections.append(
+        "Summary\n"
+        f"  scanned {unit_phrase}, {component_phrase}{parse_note} · "
+        f"advisories: {len(findings)} · posture: {posture_count}\n"
+        f"  sources: {sources_str}"
+    )
+
+    if next_actions:
+        sections.append("Next\n" + "\n".join(f"  {a}" for a in next_actions))
+
+    return "\n\n".join(sections)
 
 
 # ── Posture findings section (configuration hygiene) ─────────────────────────

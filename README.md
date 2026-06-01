@@ -67,8 +67,9 @@ manifests today.
 
 OpenACA's parsers cover the agent-installation files general-purpose SCA
 tools don't read — `mcp.json`, `.mcp.json`, `claude_desktop_config.json`,
-`.claude-plugin/plugin.json`, `.claude/settings.json`, `pyproject.toml`,
-`package.json` — which is what makes the identity resolution and
+`.claude-plugin/plugin.json`, `.claude/settings.json` — and interpret
+package manifests (`pyproject.toml`, `package.json`) when they belong to
+agent components. That's what makes the identity resolution and
 composition graph above possible.
 
 ## Two scan modes

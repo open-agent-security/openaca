@@ -1,0 +1,2 @@
+Scanned 2 manifests, 86 components — no findings.
+OpenACA scans agent composition; for general software dependency scans, use a general-purpose SCA scanner.

@@ -223,6 +223,28 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
     assert "advisories: 0" in result.output
 
 
+def test_repo_default_output_is_inventory_card_with_findings():
+    """Default (non-verbose) repo text output is the inventory-first card:
+    Target block, the inventory tree, finding IDs, and the Summary line — all
+    on stdout, so first-run reads as 'understands my stack', not '0 CVEs'."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["repo", "--target", str(FIXTURES / "repos" / "exposed-mcp"), "--no-color"],
+    )
+    assert result.exit_code == 1, result.output
+    # Card sections present.
+    assert "host surface: repository" in result.output
+    assert "Inventory" in result.output
+    assert "Summary" in result.output
+    # Inventory tree shows the bundled component, flagged with its advisory id.
+    assert "@cyanheads/git-mcp-server" in result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
+    # Summary recaps the advisory count; Next guides the user onward.
+    assert "advisories: 1" in result.output
+    assert "openaca bom repo --target" in result.output
+
+
 def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
     """`-v` should enumerate every manifest scanned and every matched
     component → advisory pairing, so users can see what the scanner

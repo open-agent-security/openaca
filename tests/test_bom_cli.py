@@ -114,10 +114,11 @@ def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     assert direct.exit_code == 0, direct.output
     assert from_bom.exit_code == 0, from_bom.output
     expected = "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned) (from .mcp.json)"
+    # The inventory tree (root + component leaf) and the count now live in the
+    # default stdout card; the BOM-sourced scan reconstructs the same tree as a
+    # direct repo scan.
     assert f"repo {tmp_path}" in direct.output
     assert f"repo {tmp_path}" in from_bom.output
-    assert "scanned 1 manifest(s), 1 component(s):" in direct.output
-    assert "scanned 1 manifest(s), 1 component(s):" in from_bom.output
     assert "Scanned 1 manifest, 1 component" in direct.output
     assert "Scanned 1 manifest, 1 component" in from_bom.output
     assert expected in direct.output

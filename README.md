@@ -127,6 +127,19 @@ openaca scan repo --target .
 Expected output:
 
 ```
+Target
+  host surface: repository
+  path: .
+
+Inventory
+
+repo .
+`-- direct components/
+    `-- MCPs/ (1)
+        `-- @cyanheads/git-mcp-server@1.1.0 (stdio via npx) (from mcp.json)  [! GHSA-3q26-f695-pp76]
+
+Findings
+
 Found 1 vulnerability in 1 package.
 
 @cyanheads/git-mcp-server 1.1.0
@@ -135,7 +148,12 @@ Found 1 vulnerability in 1 package.
 
   HIGH  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
 
-Scanned 1 manifest, 1 component. Sources: osv.dev.
+Summary
+  Scanned 1 manifest, 1 component · advisories: 1 · posture: skipped
+  sources: osv.dev
+
+Next
+  emit Agent BOM: openaca bom repo --target . --output openaca-bom.json
 ```
 
 For more scenarios (clean scan, configuration-hygiene checks via

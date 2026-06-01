@@ -80,13 +80,13 @@ string and target descriptor; the renderer only lays them out.
   intentional. Add a small helper that strips ANSI and relativizes paths for
   snapshot comparison.
 
-- [ ] **Add a `RenderTarget` dataclass** to `tools/render.py` (alongside
+- [x] **Add a `RenderTarget` dataclass** to `tools/render.py` (alongside
   `ScanStats`): optional fields `host_surface: str | None`, plus an ordered
   `list[tuple[str, str]]` of label/value rows (e.g. `("config", "~/.claude")`)
   so each mode supplies its own rows without the renderer hard-coding modes.
   Pure data; no behavior.
 
-- [ ] **Extend `render_text` signature** with keyword-only optional params:
+- [x] **Extend `render_text` signature** with keyword-only optional params:
   `target: RenderTarget | None = None`, `inventory_tree: str | None = None`,
   `next_actions: list[str] | None = None`. Existing positional args unchanged.
   Add a unit test asserting that with all three new args absent, `render_text`
@@ -94,7 +94,7 @@ string and target descriptor; the renderer only lays them out.
   `test_render.py` call sites rely on this — they test findings-formatting in
   isolation and never supply card inputs).
 
-- [ ] **Restructure `render_text` into the sectioned card.** Emit, in order:
+- [x] **Restructure `render_text` into the sectioned card.** Emit, in order:
   a Target block (from `target`), an Inventory block (the `inventory_tree`
   string verbatim, or `(no components detected)` when empty/None), the existing
   Findings block (or the no-findings line), the existing Posture block, a

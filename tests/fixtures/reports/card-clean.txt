@@ -1,0 +1,21 @@
+Target
+  host surface: Claude Code
+  config: ~/.claude
+  project: not included
+
+Inventory
+
+superpowers@5.1.0
+└── skills/ (1)
+    └── brainstorming
+
+Findings
+
+  No advisories matched the scanned components.
+
+Summary
+  scanned 1 active plugin, 1 component · advisories: 0 · posture: skipped
+  sources: osv.dev
+
+Next
+  include project-local config: openaca scan endpoint --project .

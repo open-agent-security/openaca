@@ -218,6 +218,41 @@ def test_openaca_scan_cli_finds_real_advisory():
         sarif_path.unlink(missing_ok=True)
 
 
+def test_openaca_scan_attributes_bundled_finding_to_plugin():
+    """Risk Attribution (plan 023) end-to-end: when a plugin bundles a
+    vulnerable component, the default text output flags the *plugin* with a
+    distinct `[! bundles: …]` marker, keeps the direct `[! …]` on the leaf, and
+    shows the introduction `path:` — so "you installed plugin X, it's exposed
+    because it bundles Y" is legible across parser → matcher → composition graph
+    → renderer behind one CLI surface.
+    """
+    from tools.scan import main as scan_main
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(REPO_ROOT / "tests" / "fixtures" / "repos" / "exposed-mcp"),
+            "--no-color",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    out = result.output
+
+    # Plugin header flagged as bundling something vulnerable (containment marker).
+    plugin_line = next(ln for ln in out.splitlines() if "claude-plugin/exposed" in ln)
+    assert "[! bundles: GHSA-3q26-f695-pp76]" in plugin_line
+
+    # The bundled leaf keeps its own direct marker.
+    leaf_line = next(ln for ln in out.splitlines() if "@cyanheads/git-mcp-server" in ln)
+    assert "[! GHSA-3q26-f695-pp76]" in leaf_line
+
+    # The Findings section traces how the component entered the stack.
+    assert "path:" in out
+
+
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
     vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)

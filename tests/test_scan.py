@@ -156,7 +156,7 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
     # two manifests and two components.
     assert "Scanned 2 manifests" in result.output
     assert "2 components" in result.output
-    assert "no findings" in result.output
+    assert "advisories: 0" in result.output
 
 
 def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
@@ -218,9 +218,9 @@ def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path)
         ],
     )
     assert result.exit_code == 0
-    # No manifests visited → 0/0 footer with the "no findings" suffix.
+    # No manifests visited → 0/0 summary with zero advisories.
     assert "Scanned 0 manifests" in result.output
-    assert "no findings" in result.output
+    assert "advisories: 0" in result.output
 
 
 def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
@@ -246,8 +246,12 @@ def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
 
 
 def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
-    """Verbose mode against a clean repo should still show what was
-    scanned — that's the whole point of verbose."""
+    """Verbose mode against a clean repo should still show what was scanned.
+
+    For text output the manifest count lives in the card Summary (stdout) and
+    `-v` adds the overlay/federation diagnostics on stderr; the old
+    `scanned N manifest(s):` stderr enumeration was removed to avoid
+    duplicating the stdout inventory card."""
     clean = tmp_path / "clean"
     clean.mkdir()
     (clean / "package.json").write_text('{"name":"clean","version":"0","dependencies":{}}')
@@ -262,8 +266,9 @@ def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    assert "scanned 1 manifest(s)" in result.output
-    assert "package.json" in result.output
+    # Count is in the card Summary; verbose still emits the overlay diagnostic.
+    assert "Scanned 1 manifest" in result.output
+    assert "OpenACA overlay(s)" in result.output
 
 
 def test_esc_param_encodes_workflow_metacharacters():
@@ -336,7 +341,7 @@ def test_endpoint_subcommand_minimal_install_no_findings():
     )
     assert result.exit_code == 0
     assert "Scanned 1 active plugin" in result.output
-    assert "no findings" in result.output
+    assert "advisories: 0" in result.output
 
 
 def test_endpoint_subcommand_matches_plugin_component_identity_advisory(tmp_path):
@@ -645,8 +650,10 @@ def test_endpoint_omits_project_by_default_and_emits_note(tmp_path, monkeypatch)
     result = runner.invoke(main, ["endpoint"])
 
     assert result.exit_code == 0, result.output
-    assert "project=(none)" in result.output
-    assert "scanned user-level config only" in result.output.lower()
+    # Default text card: project shown as not included; the "add --project"
+    # guidance is a Next action (the legacy stderr note is verbose/non-text only).
+    assert "project: not included" in result.output
+    assert "include project-local config" in result.output
     assert "--project" in result.output
 
 
@@ -670,15 +677,16 @@ def test_endpoint_explicit_project_suppresses_the_note(tmp_path, monkeypatch):
     result = runner.invoke(main, ["endpoint", "--project", str(project)])
 
     assert result.exit_code == 0, result.output
-    assert f"project={project}" in result.output
-    assert "scanned user-level config only" not in result.output.lower()
+    assert f"project: {project}" in result.output
+    # --project given → no "add project context" Next action.
+    assert "include project-local config" not in result.output
 
 
-def test_endpoint_detected_line_emitted_in_default_mode(tmp_path, monkeypatch):
-    """The `detected config_dir=..., project=...` line is emitted in
-    default (non-verbose) mode so testers can always see what was
-    scanned. This is the "transparency, not surprise" principle: the
-    scan scope should never be hidden from the user."""
+def test_endpoint_scan_scope_visible_in_default_card(tmp_path, monkeypatch):
+    """Scan scope is never hidden ("transparency, not surprise"). For default
+    text output the card Target block shows the config dir and project context;
+    the legacy stderr `detected config_dir=...` line is emitted only with `-v`
+    or for machine formats (so it doesn't precede/duplicate the card)."""
     fake_home = tmp_path / "home"
     config_dir = fake_home / ".claude"
     config_dir.mkdir(parents=True)
@@ -688,14 +696,20 @@ def test_endpoint_detected_line_emitted_in_default_mode(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
 
     runner = CliRunner()
-    # No -v flag — must still emit the detected line.
+    # Default (non-verbose) text: scope is in the card Target block.
     result = runner.invoke(main, ["endpoint"])
-
     assert result.exit_code == 0, result.output
-    assert "detected" in result.output
-    assert f"config_dir={config_dir}" in result.output
-    assert "project=(none)" in result.output
-    assert "mode=endpoint" in result.output
+    assert "host surface: Claude Code" in result.output
+    assert f"config: {config_dir}" in result.output
+    assert "project: not included" in result.output
+    # The legacy stderr preamble is not shown for default text.
+    assert "detected config_dir=" not in result.output
+
+    # -v still emits the stderr diagnostic line.
+    result_v = runner.invoke(main, ["endpoint", "-v"])
+    assert result_v.exit_code == 0, result_v.output
+    assert f"detected config_dir={config_dir}" in result_v.output
+    assert "mode=endpoint" in result_v.output
 
 
 def test_fs_subcommand_is_not_kept_as_alias():
@@ -1574,7 +1588,7 @@ def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "GHSA-3q26-f695-pp76" not in result.output
-    assert "no findings" in result.output
+    assert "advisories: 0" in result.output
     assert "general-purpose SCA scanner" in result.output
 
 

@@ -108,7 +108,7 @@ string and target descriptor; the renderer only lays them out.
   zero findings); leave the legacy-body baselines from Task 1 intact as the
   no-card-args case.
 
-- [ ] **Build the inventory tree unconditionally and thread it through `_emit`.**
+- [x] **Build the inventory tree unconditionally and thread it through `_emit`.**
   In `repo`, `endpoint`, and `scan_bom`, build the tree string for text output
   regardless of `verbose` (repo: `render_repo_inventory_tree(target, grouped,
   findings, ...)`; endpoint: `render_inventory_tree(refs, findings, ...)`; bom:
@@ -116,7 +116,7 @@ string and target descriptor; the renderer only lays them out.
   `next_actions` params to `_emit` and forward them to `render_text`. Only the
   text renderer consumes them; `json`/`github`/SARIF paths ignore them.
 
-- [ ] **Demote the verbose stderr tree to avoid duplication.** Since the tree
+- [x] **Demote the verbose stderr tree to avoid duplication.** Since the tree
   now renders to stdout for text format, remove the `verbose` stderr tree prints
   in `repo` (scan.py ~548-556) and `endpoint` (~683-690) and `scan_bom` for the
   **text** format. Keep them for non-text formats (json/github/sarif) where
@@ -124,7 +124,7 @@ string and target descriptor; the renderer only lays them out.
   Keep all other `-v` diagnostics (overlay count, federation targets, parser
   warnings, raw `matched N finding(s)` lines) exactly as-is on stderr.
 
-- [ ] **Wire per-mode Target + Next-actions** in each command per the content
+- [x] **Wire per-mode Target + Next-actions** in each command per the content
   table above. For the endpoint command, the always-on stderr
   `detected config_dir=..., project=...` preamble must **not** precede the
   polished stdout card: emit it only for non-text formats or under `-v`. For

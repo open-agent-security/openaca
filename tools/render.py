@@ -469,7 +469,14 @@ def _render_text_card(
         )
         sections.append("\n".join(finding_lines).rstrip("\n"))
     else:
-        sections.append("Findings\n\n  No advisories matched the scanned components.")
+        # ACA framing: keep users from reading "0 findings" as "OpenACA found
+        # nothing" when general software deps were out of scope (same intent as
+        # the legacy footer).
+        sections.append(
+            "Findings\n\n  No advisories matched the scanned components.\n"
+            "  OpenACA scans agent composition; for general software dependency "
+            "scans,\n  use a general-purpose SCA scanner."
+        )
 
     if posture_findings:
         sections.append(_render_posture_section(posture_findings, use_color))
@@ -479,7 +486,7 @@ def _render_text_card(
     posture_count = "skipped" if posture_skipped else str(len(posture_findings))
     sections.append(
         "Summary\n"
-        f"  scanned {unit_phrase}, {component_phrase}{parse_note} · "
+        f"  Scanned {unit_phrase}, {component_phrase}{parse_note} · "
         f"advisories: {len(findings)} · posture: {posture_count}\n"
         f"  sources: {sources_str}"
     )

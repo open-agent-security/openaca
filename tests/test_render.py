@@ -1700,3 +1700,34 @@ def test_endpoint_tree_direct_and_bundled_both_shown_no_dup():
     assert "[! GHSA-PLUGIN]" in header
     assert "[! bundles: GHSA-CHILD]" in header
     assert "bundles: GHSA-PLUGIN" not in header
+
+
+def test_findings_section_shows_introduction_path_by_default():
+    """The containment path (how the component entered the stack) renders in the
+    default Findings output, not just verbose."""
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@modelcontextprotocol/server-filesystem",
+        version="1.0.2",
+        source_manifest=".mcp.json",
+        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [
+                {"type": "plugin", "name": "acme-devtools"},
+                {"type": "mcp_server", "name": "filesystem"},
+            ],
+        },
+    )
+    finding = Finding("GHSA-X", ref, "high", attributed_to=ref.attributed_to)
+    advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
+    out = render_text([finding], {"GHSA-X": advisory}, _stats())
+    assert "path:     plugin acme-devtools -> mcp_server filesystem" in out
+
+
+def test_findings_section_omits_path_for_direct_component():
+    """A direct component (no parent) has no introduction path."""
+    findings = [_finding("GHSA-A", "urllib3", "2.6.3")]
+    index = {"GHSA-A": _advisory("GHSA-A", "npm", "urllib3")}
+    out = render_text(findings, index, _stats())
+    assert "path:" not in out

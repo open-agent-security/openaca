@@ -48,20 +48,22 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
 
 ## Tasks
 
-- [ ] **Confirm attribution depth.** Read how `attributed_to` is set
-  (`tools/parsers/*`, `tools/matcher.py`) and whether a bundled dependency is
-  attributed to its MCP server or directly to the plugin. Write a short note at
-  the top of this plan recording the depth available (2-level vs deeper). This
-  decides whether the path line is `plugin → component` or
-  `plugin → mcp → dep`. No code; this gates Tasks 4-5's path rendering.
+- [x] **Confirm attribution depth.** **Finding:** `ComponentRef.attributed_to`
+  is a single string (one parent), set by `tools/parsers/*` and mirrored onto
+  `Finding.attributed_to` in `tools/matcher.py`. Bundled MCPs/skills/hooks *and*
+  tier-2 deps are all attributed directly to the plugin identity (no
+  MCP→dep intermediate link). So attribution is **single-level**: the
+  introduction path is `<plugin> → <component>`. Deeper chains
+  (`plugin → MCP → dep`) need a parent-chain model — deferred to the
+  `CompositionGraph` work. V1 path rendering is 2-level.
 
-- [ ] **Add a containment marker helper (TDD).** In `tools/render.py`, add
+- [x] **Add a containment marker helper (TDD).** In `tools/render.py`, add
   `_containment_marker(ids, use_color)` rendering `  [! bundles: <ids>]`
   (red when colored), parallel to the existing `_finding_marker`. Unit-test in
   `tests/test_render.py`: empty ids → `""`; ids → sorted deduped
   `[! bundles: GHSA-A, GHSA-B]`; colored wraps in the red ANSI codes.
 
-- [ ] **Propagate descendant findings to the plugin header — endpoint tree
+- [x] **Propagate descendant findings to the plugin header — endpoint tree
   (TDD).** In `_build_plugin_node` (`render.py` ~995), after computing the
   direct `marker`, collect advisory ids from all bundled category items and
   tier-2 dep refs (the same refs already iterated at ~1030 and ~1037), and
@@ -70,7 +72,7 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   self-identity but a bundled MCP that matched a finding renders
   `… [! bundles: GHSA-…]` on the header AND the leaf keeps its own `[! GHSA-…]`.
 
-- [ ] **Propagate descendant findings to the plugin header — repo tree (TDD).**
+- [x] **Propagate descendant findings to the plugin header — repo tree (TDD).**
   Apply the same change to the repo-tree `_build_plugin_node` variant
   (`render.py` ~1260, which marks the header at ~1274 from direct findings
   only). Test against the repo-tree builder with a plugin bundling a vulnerable

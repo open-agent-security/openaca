@@ -757,6 +757,40 @@ def _finding_marker(ids: list[str], use_color: bool) -> str:
     return f"\x1b[31m{text}\x1b[0m"
 
 
+def _containment_marker(ids: list[str], use_color: bool) -> str:
+    """Render the `[! bundles: <ids>]` suffix that flags a plugin/parent header
+    whose *bundled* components matched findings — distinct from a direct hit on
+    the parent itself (`_finding_marker`), so "is vulnerable" reads differently
+    from "bundles something vulnerable". Empty string when no findings."""
+    if not ids:
+        return ""
+    text = f"  [! bundles: {', '.join(sorted(set(ids)))}]"
+    if not use_color:
+        return text
+    return f"\x1b[31m{text}\x1b[0m"
+
+
+def _bundled_finding_ids(
+    categories: dict,
+    tier2: list,
+    findings_by_ref: dict[tuple, list[str]],
+    *,
+    exclude: set[str],
+) -> list[str]:
+    """Advisory ids from a plugin's bundled components — category items
+    (MCPs/skills/hooks/...) plus tier-2 dependency refs — excluding ids already
+    attributed directly to the plugin. Drives the containment marker on the
+    plugin header (shared by the endpoint and repo tree builders)."""
+    ids: list[str] = []
+    for items in categories.values():
+        for r in items:
+            ids += [fid for fid in findings_by_ref.get(_ref_key(r), []) if fid not in exclude]
+    for entry in tier2:
+        for r in entry[4]:  # (eco, kind, count, source, ecorefs)
+            ids += [fid for fid in findings_by_ref.get(_ref_key(r), []) if fid not in exclude]
+    return ids
+
+
 def _source_provenance_note(ref: ComponentRef) -> str:
     provenance = ref.extra.get("source_provenance")
     if not isinstance(provenance, dict):
@@ -1004,16 +1038,14 @@ def _build_plugin_node(
         context.append(f"sha: {sha[:8]}")
     context_note = f" ({', '.join(context)})" if context else ""
     scope = plugin_ref.extra.get("scope")
-    marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
+    direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
+    marker = _finding_marker(direct_ids, use_color)
     # Display identity includes version from ref.version (component_identity is
     # canonical and version-less; version is the observation-layer value).
     plugin_identity = plugin_ref.component_identity or ""
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
-    header = f"{display_id}{context_note} [scope={scope}]{marker}"
-    root = _TreeNode(label=header)
-
     # Derive `<plugin>` from `claude-plugin/<marketplace>/<plugin>`; strip it
     # from bundled command/agent/hook leaf labels so the leaf reads as `<name>`
     # not `<plugin>/<name>`.
@@ -1021,6 +1053,14 @@ def _build_plugin_node(
     # Bundled refs carry attributed_to = versioned identity; use display_id to match.
     categories = _bundled_categories(all_refs, display_id)
     tier2 = _tier2_summary(all_refs, display_id)
+
+    # Risk Attribution: flag the plugin header when a bundled component matched a
+    # finding (distinct from a direct hit on the plugin itself), so the parent
+    # that introduced the vulnerable component is visible at a glance.
+    bundled_ids = _bundled_finding_ids(categories, tier2, findings_by_ref, exclude=set(direct_ids))
+    containment = _containment_marker(bundled_ids, use_color)
+    header = f"{display_id}{context_note} [scope={scope}]{marker}{containment}"
+    root = _TreeNode(label=header)
 
     for label, _ in _TREE_CATEGORIES:
         items = categories.get(label)
@@ -1271,12 +1311,11 @@ def _build_repo_plugin_node(
     use_color: bool,
     source_note_root: Path | None = None,
 ) -> tuple[_TreeNode, set[tuple]]:
-    marker = _finding_marker(findings_by_ref.get(_ref_key(plugin_ref), []), use_color)
+    direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
     plugin_identity = plugin_ref.component_identity or ""
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
-    root = _TreeNode(label=f"{display_id}{marker}")
     assigned: set[tuple] = set()
 
     other_plugin_dirs = {
@@ -1316,6 +1355,14 @@ def _build_repo_plugin_node(
                 categories[label].append(ref)
                 assigned.add(_ref_key(ref))
                 break
+
+    # Risk Attribution: flag the plugin header when a bundled component (deps or
+    # category items) matched a finding, distinct from a direct hit on the plugin.
+    marker = _finding_marker(direct_ids, use_color)
+    bundled_ids = _bundled_finding_ids(
+        categories, [("", "", 0, "", deps)], findings_by_ref, exclude=set(direct_ids)
+    )
+    root = _TreeNode(label=f"{display_id}{marker}{_containment_marker(bundled_ids, use_color)}")
 
     if deps:
         dep_node = _TreeNode(label=f"package deps/ ({len(deps)})")

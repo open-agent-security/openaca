@@ -1638,3 +1638,65 @@ def test_golden_card_clean_scan():
         next_actions=["include project-local config: openaca scan endpoint --project ."],
     )
     _assert_golden(out, "card-clean.txt")
+
+
+# ── Risk Attribution: containment-aware finding markers (plan 023) ───────────
+
+
+def test_containment_marker_shape_and_distinct_from_direct():
+    from tools.render import _containment_marker, _finding_marker
+
+    assert _finding_marker(["GHSA-A"], use_color=False) == "  [! GHSA-A]"
+    assert _containment_marker(["GHSA-A"], use_color=False) == "  [! bundles: GHSA-A]"
+    assert _containment_marker([], use_color=False) == ""
+    # Sorted + deduped.
+    assert (
+        _containment_marker(["GHSA-B", "GHSA-A", "GHSA-A"], use_color=False)
+        == "  [! bundles: GHSA-A, GHSA-B]"
+    )
+    # Colored wraps in red.
+    assert _containment_marker(["GHSA-A"], use_color=True).startswith("\x1b[31m")
+
+
+def _f(advisory_id: str, component: ComponentRef) -> Finding:
+    return Finding(
+        advisory_id=advisory_id,
+        component=component,
+        confidence="high",
+        reason=f"{advisory_id} match",
+        attributed_to=component.attributed_to,
+    )
+
+
+def test_endpoint_tree_flags_plugin_for_bundled_finding():
+    """A clean plugin that bundles a vulnerable MCP gets `[! bundles: …]` on its
+    header; the bundled leaf keeps its own direct `[! …]`."""
+    plugin = _plugin_ref("a", "1.0.0")
+    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    out = render_inventory_tree([plugin, mcp], [_f("GHSA-CHILD", mcp)], use_unicode=True)
+    header = [ln for ln in out.splitlines() if "claude-plugin/a@1.0.0" in ln][0]
+    assert "[! bundles: GHSA-CHILD]" in header
+    leaf = [ln for ln in out.splitlines() if "@x/mcp" in ln][0]
+    assert "[! GHSA-CHILD]" in leaf
+
+
+def test_endpoint_tree_direct_plugin_hit_is_not_bundles():
+    """A finding on the plugin itself uses the direct marker, not `bundles:`."""
+    plugin = _plugin_ref("a", "1.0.0")
+    out = render_inventory_tree([plugin], [_f("GHSA-PLUGIN", plugin)], use_unicode=True)
+    assert "[! GHSA-PLUGIN]" in out
+    assert "bundles:" not in out
+
+
+def test_endpoint_tree_direct_and_bundled_both_shown_no_dup():
+    """Direct hit + vulnerable bundled child → both markers; the direct id is
+    not duplicated into the bundles list."""
+    plugin = _plugin_ref("a", "1.0.0")
+    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    out = render_inventory_tree(
+        [plugin, mcp], [_f("GHSA-PLUGIN", plugin), _f("GHSA-CHILD", mcp)], use_unicode=True
+    )
+    header = [ln for ln in out.splitlines() if "claude-plugin/a@1.0.0" in ln][0]
+    assert "[! GHSA-PLUGIN]" in header
+    assert "[! bundles: GHSA-CHILD]" in header
+    assert "bundles: GHSA-PLUGIN" not in header

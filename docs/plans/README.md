@@ -28,6 +28,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 019 | [Remote MCP server inventory](019-remote-mcp-inventory.md) | ✅ Done | 018 |
 | 020 | [Skill lock source provenance](020-skill-lock-source-provenance.md) | ✅ Done | 018 |
 | 021 | [Agent BOM](021-agent-bom.md) | ✅ Done | 018, 020 |
+| 022 | [First-run inventory output (product-shaped default text)](022-first-run-inventory-output.md) | ⏸ Pending | 015, 021 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

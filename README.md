@@ -26,9 +26,10 @@ graph.
   plugin keyed `name@marketplace`) into stable, matchable component
   identities, including components that have no package coordinates.
 - **Composition Graph** — show how components enter the agent stack:
-  host → plugin → skill / MCP server / hook → dependency. Findings tie
-  back to the manifest, plugin, or host surface that introduced the
-  component.
+  host → plugin → skill / MCP server / hook → dependency.
+- **Risk Attribution** — when a component is vulnerable, trace it back
+  through the graph to the plugin, skill, or MCP server that introduced
+  it (a plugin is flagged when something it bundles is vulnerable).
 - **Advisory Intelligence** — match graph components against upstream
   OSV / GHSA / CVE / MAL records at scan time, enriched with
   agent-specific context (impact, taxonomy, evidence level) where it

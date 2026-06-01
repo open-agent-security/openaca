@@ -103,18 +103,12 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   Findings section shows the `path:` line. This is the one-screen demonstration
   of the differentiator wiring up end to end.
 
-- [ ] **Promote the README to four capability bullets.** ⏳ BLOCKED on PR #94
-  merging — this branch was cut before #94, so it lacks the 3-bullet
-  `## What OpenACA does` section; adding the 4th now would conflict. After #94
-  merges, rebase this branch on main and add the fourth bullet to
-  `## What OpenACA does`:
-  fourth bullet to `## What OpenACA does`:
-  `**Risk Attribution** — when a component is vulnerable, trace it back through
-  the graph to the plugin, skill, or MCP server that introduced it.` Place it
-  between Composition Graph and Advisory Intelligence (the "what is it → what's
-  in my stack → how did the risk get here → what evidence says it's risky"
-  ladder). If #94 is not yet merged when the rest of this plan is done, do this
-  task last and rebase.
+- [x] **Promote the README to four capability bullets.** After #94 merged,
+  rebased this branch on main and added the **Risk Attribution** bullet between
+  Composition Graph and Advisory Intelligence (the "what is it → what's in my
+  stack → how did the risk get here → what evidence says it's risky" ladder).
+  Also trimmed the "findings tie back…" clause from the Composition Graph bullet
+  since Risk Attribution now owns that (clean discovery-vs-attribution split).
 
 - [x] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
   `uv run pyright`, `uv run pytest` (898 passed), `uv run openaca lint`. Green.

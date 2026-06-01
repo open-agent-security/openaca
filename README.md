@@ -14,7 +14,32 @@ components.
 > repo has the full path (install, first scan, what feedback I'm
 > looking for, how to report).
 
-## Why OpenACA
+## What OpenACA does
+
+OpenACA resolves stable identities for agent-stack components, builds a
+composition graph across hosts, plugins, skills, MCP servers, hooks,
+commands, and dependencies, then matches known advisories across that
+graph.
+
+- **Identity Resolution** — normalize messy agent config (an MCP server
+  launched via `npx @scope/foo@1.4.0`, a skill at a git subpath, a
+  plugin keyed `name@marketplace`) into stable, matchable component
+  identities, including components that have no package coordinates.
+- **Composition Graph** — show how components enter the agent stack:
+  host → plugin → skill / MCP server / hook → dependency. Findings tie
+  back to the manifest, plugin, or host surface that introduced the
+  component.
+- **Advisory Intelligence** — match graph components against upstream
+  OSV / GHSA / CVE / MAL records at scan time, enriched with
+  agent-specific context (impact, taxonomy, evidence level) where it
+  changes how a record should be read.
+
+OpenACA does not mint vulnerability IDs in V0. Vulnerability identity,
+affected ranges, severity, and fixes come from upstream OSV/GHSA/CVE
+records. OpenACA contributes identity resolution, composition graphing,
+manifest parsers, and agent-context enrichment on top.
+
+## Why OpenACA (the category)
 
 OpenACA is the open category and reference implementation for **Agent
 Composition Analysis (ACA)**: identifying the versioned plugins, MCP
@@ -40,21 +65,11 @@ install components a different way: an MCP server invoked from
 identifier. Most general-purpose SCA scanners do not parse those
 manifests today.
 
-OpenACA fills two gaps:
-
-1. **Manifest coverage** for agent-installation files SCA tools
-   don't parse — `mcp.json`, `.mcp.json`,
-   `claude_desktop_config.json`, `.claude-plugin/plugin.json`,
-   `.claude/settings.json`, `pyproject.toml`, `package.json`.
-2. **Agent-context metadata** layered on top of existing
-   CVE/GHSA/OSV records: agent-context taxonomy mappings (OWASP
-   Agentic Top 10, OWASP MCP Top 10, MITRE ATLAS), evidence level, and
-   a narrow malicious-package threat kind.
-
-OpenACA does not mint vulnerability IDs in V0. Vulnerability identity,
-affected ranges, severity, and fixes come from upstream OSV/GHSA/CVE
-records. OpenACA contributes the agent-component overlay schema and
-the manifest parsers on top.
+OpenACA's parsers cover the agent-installation files general-purpose SCA
+tools don't read — `mcp.json`, `.mcp.json`, `claude_desktop_config.json`,
+`.claude-plugin/plugin.json`, `.claude/settings.json`, `pyproject.toml`,
+`package.json` — which is what makes the identity resolution and
+composition graph above possible.
 
 ## Two scan modes
 

@@ -1,0 +1,27 @@
+name: Notify openaca-site
+
+# When the published corpus changes on main, ping openaca-site's Cloudflare
+# Pages deploy hook so the public site (openaca.dev) rebuilds with the new
+# overlays. openaca-site clones this repo at build time and renders pages from
+# overlays/ + candidates/ and serves scripts/install.sh at /scan.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "overlays/**"
+      - "candidates/**"
+      - "scripts/install.sh"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger openaca-site rebuild
+        env:
+          HOOK: ${{ secrets.CF_PAGES_SITE_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::CF_PAGES_SITE_DEPLOY_WEBHOOK not set; skipping rebuild trigger."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" -o /dev/null -w "deploy hook POST: HTTP %{http_code}\n"

@@ -134,14 +134,14 @@ string and target descriptor; the renderer only lays them out.
   `project is None` and the stderr note is dropped for text format (kept for
   non-text/`-v`).
 
-- [ ] **Integration assertions in `tests/test_scan.py`.** Assert default
+- [x] **Integration assertions in `tests/test_scan.py`.** Assert default
   (non-verbose) text output for an endpoint scan against a fixture config and a
   repo scan against a fixture repo now contains: the Target block, plugin/MCP/
   skill tree lines, finding IDs when findings exist, and the Summary line. Use
   the existing fixtures under `tests/fixtures/`; add a minimal endpoint/repo
   fixture only if none produces a non-trivial tree.
 
-- [ ] **(Optional, separate — do not block on this) Remove the BOM
+- [~] **(Optional, separate — DEFERRED) Remove the BOM
   pass-through** in `repo` and `endpoint` only. `build_agent_bom(...)
   .component_refs()` returns the input refs unchanged (frozen `ComponentRef`,
   strict zip, no dedup/mutation) and discards the computed bom-refs/edges — it
@@ -152,7 +152,7 @@ string and target descriptor; the renderer only lays them out.
   reasoning about BOM semantics, skip it and leave a one-line note for the later
   `ScanReport` refactor.
 
-- [ ] **Update the README expected-output block.** `README.md` (~line 124) has
+- [x] **Update the README expected-output block.** `README.md` (~line 124) has
   an "Expected output:" block showing the old findings-first format
   (`Found 1 vulnerability in 1 package. ...`). Replace it with the new card
   shape for that same `openaca scan repo --target .` demo (Target → Inventory →
@@ -161,7 +161,7 @@ string and target descriptor; the renderer only lays them out.
   referenced just below is out of scope here (separate repo) — only the
   in-README block is updated.
 
-- [ ] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
+- [x] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
   `uv run pyright`, `uv run pytest`, and `uv run openaca lint` (if the change
   touches anything lint covers). All green before done.
 

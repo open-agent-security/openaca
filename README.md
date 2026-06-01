@@ -1,11 +1,11 @@
 # OpenACA — Open Agent Composition Analysis
 
-**Agent Composition Analysis (ACA)** — OSV-compatible agent-context
-overlays and a reference scanner for AI agent infrastructure: plugins,
-MCP servers, skills, agent frameworks, model proxies, and runtime
-components.
+**Agent Composition Analysis (ACA)** — a reference scanner that resolves
+stable identities for the plugins, MCP servers, skills, hooks, and
+dependencies that compose an AI agent, builds the composition graph, and
+matches it against known security advisories (OSV / GHSA / CVE / MAL).
 
-> Agent-context overlays for upstream security advisories.
+> Identity resolution and composition analysis for AI agent stacks.
 
 > **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b5`.
 > If you're a beta tester, the

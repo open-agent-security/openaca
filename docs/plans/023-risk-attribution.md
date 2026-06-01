@@ -78,20 +78,22 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   only). Test against the repo-tree builder with a plugin bundling a vulnerable
   dep.
 
-- [ ] **Add the introduction-path line to the card Findings section (TDD).** In
-  `_render_finding_groups` (`render.py`), where a group currently emits
-  `via:      <attributed_to>`, add an explicit path line when attribution
-  exists: `path:     <introduction path>` (e.g. `superpowers → @scope/foo`),
-  built to the depth Task 1 confirmed. Keep the existing `fix:` line. Golden:
-  regenerate `card-endpoint.txt` so the path line is locked; add a focused unit
-  test asserting the path renders for an attributed finding and is omitted for a
-  direct (unattributed) finding.
+- [x] **Add the introduction-path line to the card Findings section (TDD).**
+  Added `_introduction_path(finding)` and a `path:` line in
+  `_render_finding_groups`, shown **by default** (the full containment path was
+  previously verbose-only). It prefers the multi-level `component_path` from
+  `ref.extra` (`plugin X -> mcp_server Y`) — richer than the single-level
+  `attributed_to` Task 1 found — and falls back to `<parent> -> <component>`.
+  Unit tests assert it renders for an attributed finding and is omitted for a
+  direct one. No golden regen needed: the existing golden fixtures have no
+  attributed/path-bearing findings, so their output is unchanged.
 
-- [ ] **Surface attribution in SARIF (TDD).** In `tools/sarif.py` (which already
-  emits `properties.attributed_to`), add the resolved introduction path as
-  `properties.introduction_path` (string or ordered array). Unit-test that a
-  finding with attribution emits the property and one without omits it. Machine
-  consumers get the containment relationship without parsing text.
+- [x] **Surface attribution in SARIF — already covered, no new field.** SARIF
+  already emits the structured containment path as `properties.component_path`
+  (`sarif.py:87`) plus `properties.attributed_to` (`sarif.py:48`), with existing
+  test coverage (`tests/test_sarif.py:156,168`). Adding a separate
+  `introduction_path` would duplicate `component_path`. Machine consumers already
+  get the full path; no change made (simplicity over a redundant field).
 
 - [ ] **e2e: plugin flagged because a bundled component is vulnerable.** Add a
   test to `tests/test_e2e.py` using a fixture repo/endpoint where a plugin

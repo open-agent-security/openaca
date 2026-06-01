@@ -377,6 +377,12 @@ def _render_finding_groups(
 
         out.append(f"  location: {source_manifest}")
 
+        # Risk Attribution: show how the component entered the stack, by default
+        # (the full containment path was previously verbose-only).
+        intro_path = _introduction_path(first)
+        if intro_path:
+            out.append(f"  path:     {intro_path}")
+
         attributed = first.attributed_to
         if attributed:
             out.append(f"  via:      {attributed}")
@@ -530,6 +536,21 @@ def _render_posture_section(
             lines.append(f"       standards: {', '.join(standards_parts)}")
         lines.append("")
     return "\n".join(lines).rstrip()
+
+
+def _introduction_path(finding: Finding) -> str:
+    """How the vulnerable component entered the agent stack, for the Findings
+    `path:` line. Prefers the full containment path from `component_path`
+    (`plugin X -> mcp_server Y`); falls back to single-level `attributed_to`
+    (`<parent> -> <component>`). Empty when the component is direct (no parent)."""
+    out = finding_to_output(finding, None)
+    component_path = out.get("component_path") or []
+    if len(component_path) > 1:
+        return _component_path_label(component_path)
+    if finding.attributed_to:
+        name, _ = _component_label(finding.component)
+        return f"{finding.attributed_to} -> {name}"
+    return ""
 
 
 def _identity_detail_lines(finding: Finding) -> list[str]:

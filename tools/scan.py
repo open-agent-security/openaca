@@ -63,6 +63,7 @@ from tools.posture import (
     run_posture_rules,
 )
 from tools.render import (
+    RenderTarget,
     ScanStats,
     render_github,
     render_inventory_tree,
@@ -367,8 +368,15 @@ def _emit(
     use_color: bool,
     verbose: bool,
     posture_findings: list[PostureFinding] | None = None,
+    target: RenderTarget | None = None,
+    inventory_tree: str | None = None,
+    next_actions: list[str] | None = None,
 ) -> None:
-    """Dispatch to the chosen renderer and write to stdout."""
+    """Dispatch to the chosen renderer and write to stdout.
+
+    `target`/`inventory_tree`/`next_actions` drive the text card and are ignored
+    by the machine formats (github/json), whose stdout shape is unchanged.
+    """
     if output_format == "github":
         rendered = render_github(findings, posture_findings=posture_findings)
     elif output_format == "json":
@@ -381,6 +389,9 @@ def _emit(
             use_color=use_color,
             verbose=verbose,
             posture_findings=posture_findings,
+            target=target,
+            inventory_tree=inventory_tree,
+            next_actions=next_actions,
         )
     if rendered:
         click.echo(rendered)
@@ -538,22 +549,42 @@ def repo(
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
 
+    # Build the inventory tree for the text card (default stdout). For machine
+    # formats the tree stays a verbose-stderr-only diagnostic (below), since
+    # their stdout is consumed by tooling.
+    is_text = output_format == "text"
+    card_tree: str | None = None
+    if is_text and grouped:
+        card_tree = render_repo_inventory_tree(
+            target,
+            grouped,
+            findings,
+            use_color=_use_color(no_color, output_format),
+            use_unicode=_use_unicode(no_color),
+        )
+    card_target = RenderTarget(host_surface="repository", rows=[("path", str(target))])
+    card_next = [
+        f"emit Agent BOM: openaca bom repo --target {target} --output openaca-bom.json",
+    ]
+
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
         if grouped:
-            click.echo(
-                f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
-                err=True,
-            )
-            tree = render_repo_inventory_tree(
-                target,
-                grouped,
-                findings,
-                use_color=_use_color(no_color, output_format),
-                use_unicode=_use_unicode(no_color),
-            )
-            if tree:
-                click.echo(tree, err=True)
+            # For text, the tree is in the stdout card; don't duplicate on stderr.
+            if not is_text:
+                click.echo(
+                    f"scanned {n_found} manifest(s), {len(refs)} component(s){parse_note}:",
+                    err=True,
+                )
+                tree = render_repo_inventory_tree(
+                    target,
+                    grouped,
+                    findings,
+                    use_color=_use_color(no_color, output_format),
+                    use_unicode=_use_unicode(no_color),
+                )
+                if tree:
+                    click.echo(tree, err=True)
         elif n_found:
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
@@ -590,6 +621,9 @@ def repo(
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
         posture_findings=posture_findings if include_posture else None,
+        target=card_target,
+        inventory_tree=card_tree,
+        next_actions=card_next,
     )
 
     # For machine formats (github, json), keep the existing one-line stderr
@@ -640,13 +674,16 @@ def endpoint(
     )
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
-    # Always announce what was scanned (config dir + project context) so the
-    # scan scope is never hidden — transparency, not surprise.
+    # Scan-scope transparency. For the default text card the Target block owns
+    # this, so the stderr preamble would just precede (and duplicate) the card;
+    # emit it only for machine formats or verbose runs.
+    is_text = output_format == "text"
     project_note = str(project) if project is not None else "(none)"
-    click.echo(
-        f"detected config_dir={config_dir}, project={project_note} (mode=endpoint)",
-        err=True,
-    )
+    if not is_text or verbose:
+        click.echo(
+            f"detected config_dir={config_dir}, project={project_note} (mode=endpoint)",
+            err=True,
+        )
 
     refs, warnings = parse_install(
         install_root=config_dir,
@@ -676,18 +713,43 @@ def endpoint(
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if _is_plugin_ref(r))
 
-    if verbose:
-        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
-        for w in warnings:
-            click.echo(f"  warning: {w}", err=True)
-        tree = render_inventory_tree(
+    # Inventory tree for the text card (default stdout). Machine formats keep the
+    # tree as a verbose-stderr diagnostic only (below).
+    card_target = RenderTarget(
+        host_surface="Claude Code",
+        rows=[
+            ("config", str(config_dir)),
+            ("project", str(project) if project is not None else "not included"),
+        ],
+    )
+    card_tree: str | None = None
+    if is_text:
+        card_tree = render_inventory_tree(
             refs,
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
         )
-        if tree:
-            click.echo(tree, err=True)
+    card_next: list[str] = []
+    if project is None:
+        card_next.append("include project-local config: openaca scan endpoint --project .")
+    card_next.append("emit Agent BOM: openaca bom endpoint --output openaca-bom.json")
+    card_next.append("upload to Fleet: openaca fleet collect endpoint")
+
+    if verbose:
+        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
+        for w in warnings:
+            click.echo(f"  warning: {w}", err=True)
+        # For text, the tree is in the stdout card; don't duplicate on stderr.
+        if not is_text:
+            tree = render_inventory_tree(
+                refs,
+                findings,
+                use_color=_use_color(no_color, output_format),
+                use_unicode=_use_unicode(no_color),
+            )
+            if tree:
+                click.echo(tree, err=True)
         for line in _federation_targets_lines(refs, len(corpus)):
             click.echo(line, err=True)
         if findings:
@@ -719,15 +781,17 @@ def endpoint(
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
         posture_findings=posture_findings if include_posture else None,
+        target=card_target,
+        inventory_tree=card_tree,
+        next_actions=card_next,
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 
     # When --project is not provided, remind the user that project-local
-    # skills/MCPs/plugin manifests are NOT included in this scan. The note
-    # is unconditional (no cwd detection); the goal is for testers to
-    # discover the flag the first time they run endpoint scan, not to be
-    # clever about when to surface it.
-    if project is None:
+    # skills/MCPs/plugin manifests are NOT included in this scan. For the text
+    # card this lives in the Next block, so only emit the stderr note for
+    # machine formats or verbose runs (avoids duplicating it for text users).
+    if project is None and (not is_text or verbose):
         click.echo(
             "\nNote: scanned user-level config only. To include project-local "
             "skills, MCPs, and plugin manifests, pass --project /path/to/project "
@@ -800,12 +864,16 @@ def scan_bom(
     findings = match(refs, corpus)
     advisory_index = {a["id"]: a for a in corpus}
 
-    if verbose:
-        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
-        unit_count = source_unit_count if source_unit_count is not None else 1
-        unit_label = source_unit_label or "agent BOM"
-        click.echo(f"scanned {unit_count} {unit_label}(s), {len(refs)} component(s):", err=True)
-        tree = _render_bom_inventory_tree(
+    # Inventory tree for the text card; machine formats keep it verbose-only.
+    is_text = output_format == "text"
+    bom_rows: list[tuple[str, str]] = [("file", str(input_path))]
+    if target_type:
+        orig = f"{target_type} {target}".strip() if target else target_type
+        bom_rows.append(("original target", orig))
+    card_target = RenderTarget(host_surface="Agent BOM", rows=bom_rows)
+    card_tree: str | None = None
+    if is_text:
+        card_tree = _render_bom_inventory_tree(
             refs,
             findings,
             target_type=target_type,
@@ -814,8 +882,25 @@ def scan_bom(
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
         )
-        if tree:
-            click.echo(tree, err=True)
+
+    if verbose:
+        click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)
+        unit_count = source_unit_count if source_unit_count is not None else 1
+        unit_label = source_unit_label or "agent BOM"
+        # For text, the tree is in the stdout card; don't duplicate on stderr.
+        if not is_text:
+            click.echo(f"scanned {unit_count} {unit_label}(s), {len(refs)} component(s):", err=True)
+            tree = _render_bom_inventory_tree(
+                refs,
+                findings,
+                target_type=target_type,
+                target=target,
+                input_path=input_path,
+                use_color=_use_color(no_color, output_format),
+                use_unicode=_use_unicode(no_color),
+            )
+            if tree:
+                click.echo(tree, err=True)
         for line in _federation_targets_lines(refs, len(corpus)):
             click.echo(line, err=True)
         if findings:
@@ -841,6 +926,8 @@ def scan_bom(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
+        target=card_target,
+        inventory_tree=card_tree,
     )
     unit_count = source_unit_count if source_unit_count is not None else 1
     unit_label = source_unit_label or "agent BOM"

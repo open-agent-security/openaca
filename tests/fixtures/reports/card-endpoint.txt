@@ -22,7 +22,7 @@ Found 1 vulnerability in 1 package.
   UNKNOWN  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
 
 Summary
-  scanned 1 active plugin, 2 components · advisories: 1 · posture: skipped
+  Scanned 1 active plugin, 2 components · advisories: 1 · posture: skipped
   sources: osv.dev
 
 Next

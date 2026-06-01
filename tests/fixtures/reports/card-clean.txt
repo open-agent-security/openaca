@@ -12,9 +12,11 @@ superpowers@5.1.0
 Findings
 
   No advisories matched the scanned components.
+  OpenACA scans agent composition; for general software dependency scans,
+  use a general-purpose SCA scanner.
 
 Summary
-  scanned 1 active plugin, 1 component · advisories: 0 · posture: skipped
+  Scanned 1 active plugin, 1 component · advisories: 0 · posture: skipped
   sources: osv.dev
 
 Next

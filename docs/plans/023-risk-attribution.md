@@ -95,7 +95,7 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   `introduction_path` would duplicate `component_path`. Machine consumers already
   get the full path; no change made (simplicity over a redundant field).
 
-- [ ] **e2e: plugin flagged because a bundled component is vulnerable.** Add a
+- [x] **e2e: plugin flagged because a bundled component is vulnerable.** Add a
   test to `tests/test_e2e.py` using a fixture repo/endpoint where a plugin
   bundles a component that matches a bundled overlay (reuse/extend an existing
   fixture such as `exposed-mcp`). Assert default text output shows: the plugin
@@ -103,8 +103,11 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   Findings section shows the `path:` line. This is the one-screen demonstration
   of the differentiator wiring up end to end.
 
-- [ ] **Promote the README to four capability bullets.** After PR #94
-  (`docs/readme-positioning`) merges, rebase this branch on main and add the
+- [ ] **Promote the README to four capability bullets.** ⏳ BLOCKED on PR #94
+  merging — this branch was cut before #94, so it lacks the 3-bullet
+  `## What OpenACA does` section; adding the 4th now would conflict. After #94
+  merges, rebase this branch on main and add the fourth bullet to
+  `## What OpenACA does`:
   fourth bullet to `## What OpenACA does`:
   `**Risk Attribution** — when a component is vulnerable, trace it back through
   the graph to the plugin, skill, or MCP server that introduced it.` Place it
@@ -113,8 +116,8 @@ golden tests in `tests/test_render.py`, e2e in `tests/test_e2e.py`.
   ladder). If #94 is not yet merged when the rest of this plan is done, do this
   task last and rebase.
 
-- [ ] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
-  `uv run pyright`, `uv run pytest`, `uv run openaca lint`. All green.
+- [x] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
+  `uv run pyright`, `uv run pytest` (898 passed), `uv run openaca lint`. Green.
 
 ## Verification
 

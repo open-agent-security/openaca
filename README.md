@@ -34,10 +34,9 @@ graph.
   agent-specific context (impact, taxonomy, evidence level) where it
   changes how a record should be read.
 
-OpenACA does not mint vulnerability IDs in V0. Vulnerability identity,
-affected ranges, severity, and fixes come from upstream OSV/GHSA/CVE
-records. OpenACA contributes identity resolution, composition graphing,
-manifest parsers, and agent-context enrichment on top.
+OpenACA builds on upstream advisory records (OSV / GHSA / CVE / MAL)
+rather than minting its own — it contributes the identity resolution,
+composition graph, and agent-context enrichment on top.
 
 ## Why OpenACA (the category)
 

@@ -105,9 +105,7 @@ def test_collect_runtime_keys_bfs(tmp_path: Path):
         "body-parser": ["body-parser@1.20.0", "", {}, "sha512-b=="],
         "typescript": ["typescript@5.0.0", "", {}, "sha512-c=="],
     }
-    workspaces = {
-        "": {"dependencies": {"express": "^4"}, "devDependencies": {"typescript": "^5"}}
-    }
+    workspaces = {"": {"dependencies": {"express": "^4"}, "devDependencies": {"typescript": "^5"}}}
     keys = _collect_runtime_keys(packages, workspaces)
     assert keys == {"express", "body-parser"}
 

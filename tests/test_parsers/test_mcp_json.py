@@ -449,6 +449,7 @@ def test_docker_run_pull_flag_skips_policy_value():
         ["--ulimit", "nofile=1024:1024"],
         ["--device", "/dev/gpu0"],
         ["--cpuset-cpus", "0-3"],
+        ["--net", "host"],  # documented alias of --network
     ],
 )
 def test_docker_run_resource_flags_skip_their_values(extra_args: list[str]):

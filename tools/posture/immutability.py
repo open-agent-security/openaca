@@ -17,7 +17,12 @@ from __future__ import annotations
 
 import re
 
-from tools.parsers.mcp_json import _UV_VALUE_FLAGS, _parse_npx_args, _parse_uvx_args
+from tools.parsers.mcp_json import (
+    _UV_VALUE_FLAGS,
+    _parse_npx_args,
+    _parse_uvx_args,
+    _parse_uvx_github_from,
+)
 
 _SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _DOCKER_DIGEST_RE = re.compile(r"@sha256:[a-f0-9]{64}$")
@@ -45,6 +50,9 @@ def is_mutable_reference(ref: str) -> bool:
     # uvx package specs — parse --from flag before falling back to positional
     if ref.startswith("uvx "):
         args = ref[len("uvx ") :].split()
+        github_name, github_version = _parse_uvx_github_from(args)
+        if github_name is not None:
+            return github_version is None
         name, version, pinned = _parse_uvx_args(args)
         if not pinned or version is None:
             return True
@@ -63,7 +71,11 @@ def is_mutable_reference(ref: str) -> bool:
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
             # Delegate to _parse_uvx_args: handles --from, --python, --with, etc.
             # (uv tool run is semantically equivalent to uvx).
-            name, version, pinned = _parse_uvx_args(tokens[i + 2 :])
+            args = tokens[i + 2 :]
+            github_name, github_version = _parse_uvx_github_from(args)
+            if github_name is not None:
+                return github_version is None
+            name, version, pinned = _parse_uvx_args(args)
             if not pinned or version is None:
                 return True
             return _is_mutable_pkg_spec(f"{name}=={version}")

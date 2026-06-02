@@ -235,3 +235,4 @@ candidates/*
 !candidates/ready_for_review/
 candidates/ready_for_review/*
 !candidates/ready_for_review/*.yaml
+.superpowers/

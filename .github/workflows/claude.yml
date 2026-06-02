@@ -119,23 +119,25 @@ jobs:
           #    commit format-broken code but the wrapped `git push` hook fails
           #    on `ruff format --check` with no way to recover. PR #8 hit this.
           #
-          # 2. Verification tools (WebFetch, WebSearch, python, curl) — so the
-          #    bot can check claims about EXTERNAL behavior against ground truth
-          #    (fetch a spec, hit an API, parse a real sample) instead of
-          #    defending whatever the repo already asserts. Without these the
-          #    bot can only reason from in-repo files; on review disputes about
-          #    third-party formats/APIs it would confidently defend
-          #    self-referential ADRs/tests it cannot falsify (see PRs #97/#98).
+          # 2. Verification tools (WebFetch, WebSearch) — read-only, so the bot
+          #    can check claims about EXTERNAL behavior against ground truth
+          #    (fetch a spec, search for docs) instead of defending whatever the
+          #    repo already asserts. Without these the bot can only reason from
+          #    in-repo files; on review disputes about third-party formats/APIs
+          #    it would confidently defend self-referential ADRs/tests it cannot
+          #    falsify (see PRs #97/#98).
           #
-          # Security note: `Bash(uv run python:*)`/`Bash(python3:*)`/`Bash(curl:*)`
-          # are effectively arbitrary code execution + network — the prefix glob
-          # does NOT constrain what the script does, so this is close to
-          # `Bash(*)` on a write-token job. The ACTOR GATE (this workflow only
-          # runs for trusted OWNER/MEMBER/COLLABORATOR triggers) is the real
-          # safety boundary here, not the allowlist. WebFetch/WebSearch are
-          # read-only and low-risk by comparison.
+          # DELIBERATELY read-only. We do NOT grant `Bash(python:*)`/`Bash(curl:*)`
+          # (arbitrary code execution + network). This job runs with a write
+          # token and secrets in env, and it reads untrusted PR/issue content —
+          # a prompt-injection payload in that content could turn an arbitrary
+          # interpreter into a credential-exfiltration / malicious-push path.
+          # The actor gate restricts who can *trigger* the bot; it does NOT
+          # neutralize injection via content a triggered run reads. If
+          # local-execution verification is ever needed, run it on a separate
+          # sandboxed runner with no write token and no secrets — not here.
           claude_args: |
-            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),Bash(uv run python:*),Bash(python3:*),Bash(curl:*),WebFetch,WebSearch"
+            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),WebFetch,WebSearch"
 
           # Surface Claude's full SDK conversation in the workflow log.
           # Default is `false` (per claude-code-action upstream) which hides

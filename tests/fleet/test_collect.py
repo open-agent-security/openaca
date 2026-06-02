@@ -266,6 +266,51 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
     )
 
 
+@pytest.mark.parametrize(
+    "raw_source, expected",
+    [
+        (
+            "uvx --from git+https://github.com/oraios/serena.git@main serena --token secret",
+            "uvx git+https://github.com/oraios/serena@main",
+        ),
+        (
+            "uvx --from=git+https://github.com/oraios/serena serena --token secret",
+            "uvx git+https://github.com/oraios/serena",
+        ),
+    ],
+)
+def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
+    raw_source, expected, tmp_path, monkeypatch
+):
+    ref = ComponentRef(
+        ecosystem="github",
+        name="oraios/serena",
+        version=None,
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.serena",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": raw_source,
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == expected
+
+
 def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_path, monkeypatch):
     ref = ComponentRef(
         ecosystem="docker",

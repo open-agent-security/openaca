@@ -394,8 +394,33 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
         if purl.startswith("pkg:docker/"):
             sep = "@" if version.startswith("sha256:") else ":"
             return {**prop, "value": f"{launcher} {name}{sep}{version}"}
+    if isinstance(purl, str) and purl.startswith("pkg:github/") and isinstance(name, str):
+        return {**prop, "value": _github_install_source(launcher, name, value)}
     # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:
         return prop
     return {**prop, "value": " ".join(parts[:2])}
+
+
+def _github_install_source(launcher: str, name: str, install_source: str) -> str:
+    source = f"git+https://github.com/{name}"
+    raw_from = _extract_arg_value(install_source.split(), "--from")
+    prefix = f"git+https://github.com/{name}"
+    if raw_from is not None and raw_from.startswith(prefix):
+        suffix = raw_from[len(prefix) :]
+        if suffix.startswith(".git"):
+            suffix = suffix[len(".git") :]
+        if suffix.startswith("@"):
+            source = f"{source}{suffix}"
+    return f"{launcher} {source}"
+
+
+def _extract_arg_value(args: list[str], flag: str) -> str | None:
+    prefix = f"{flag}="
+    for index, arg in enumerate(args):
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+        if arg == flag and index + 1 < len(args):
+            return args[index + 1]
+    return None

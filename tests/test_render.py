@@ -830,6 +830,48 @@ def test_tree_stdio_mcp_leaf_uses_github_source_identity():
     assert "git+https://github.com/oraios/serena" not in out
 
 
+def test_tree_stdio_mcp_leaf_uses_docker_source_identity():
+    refs = [
+        _plugin_ref("terraform", "unknown", marketplace="official"),
+        ComponentRef(
+            ecosystem="docker",
+            name="hashicorp/terraform-mcp-server",
+            version="0.4.0",
+            attributed_to="claude-plugin/official/terraform@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "docker run -e TFE_TOKEN=${TFE_TOKEN} "
+                "hashicorp/terraform-mcp-server:0.4.0",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in out
+    assert "TFE_TOKEN" not in out
+
+
+def test_tree_local_stdio_mcp_leaf_uses_server_identity():
+    refs = [
+        ComponentRef(
+            component_identity="mcp-stdio/local:discord",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": (
+                    "bun run --cwd ${CLAUDE_PLUGIN_ROOT} --shell=bun --silent start"
+                ),
+                "component_path": [{"type": "mcp_server", "name": "discord"}],
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "discord (stdio via bun, local)" in out
+    assert "${CLAUDE_PLUGIN_ROOT}" not in out
+
+
 def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     refs = [
         ComponentRef(

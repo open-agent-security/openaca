@@ -309,6 +309,61 @@ def test_uvx_from_github_url_keeps_commit_ref_as_version():
     assert refs[0].purl == "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567"
 
 
+def test_uvx_from_github_url_with_deeper_path_is_skipped():
+    servers = {
+        "nested": {
+            "command": "uvx",
+            "args": ["--from", "git+https://github.com/oraios/serena/packages/mcp", "serena"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert refs == []
+
+
+def test_docker_run_emits_docker_purl():
+    servers = {
+        "terraform": {
+            "command": "docker",
+            "args": [
+                "run",
+                "-i",
+                "--rm",
+                "-e",
+                "TFE_TOKEN=${TFE_TOKEN}",
+                "hashicorp/terraform-mcp-server:0.4.0",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "hashicorp/terraform-mcp-server"
+    assert ref.version == "0.4.0"
+    assert ref.purl == "pkg:docker/hashicorp/terraform-mcp-server@0.4.0"
+    assert ref.extra["component_type"] == "mcp_server"
+
+
+def test_bun_run_local_mcp_emits_local_identity():
+    servers = {
+        "discord": {
+            "command": "bun",
+            "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "start"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-stdio/local:discord"
+    assert refs[0].extra["component_type"] == "mcp_server"
+
+
+def test_php_artisan_mcp_emits_local_identity():
+    servers = {"laravel-boost": {"command": "php", "args": ["artisan", "boost:mcp"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-stdio/local:laravel-boost"
+
+
 def test_uv_tool_run_dispatches_as_uvx():
     servers = {"y": {"command": "uv", "args": ["tool", "run", "weather-mcp==0.5.0"]}}
     refs = parse_mcp_servers(servers, source_manifest="fake.json")

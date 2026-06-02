@@ -80,7 +80,9 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
     identity = props_by_name.get("openaca:identity", (None, -1))[0]
     component_type = props_by_name.get("openaca:component_type", (None, -1))[0]
     install_source, install_source_index = props_by_name.get("openaca:install_source", (None, -1))
-    is_binary = isinstance(identity, str) and identity.startswith("mcp-stdio/binary:")
+    is_binary = isinstance(identity, str) and identity.startswith(
+        ("mcp-stdio/binary:", "mcp-stdio/local:")
+    )
     is_package = isinstance(identity, str) and identity.startswith(
         ("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:")
     )

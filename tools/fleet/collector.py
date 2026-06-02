@@ -324,7 +324,9 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
 
 def _is_binary_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     identity = props_by_name.get("openaca:identity")
-    return isinstance(identity, str) and identity.startswith("mcp-stdio/binary:")
+    return isinstance(identity, str) and identity.startswith(
+        ("mcp-stdio/binary:", "mcp-stdio/local:")
+    )
 
 
 def _is_package_mcp_component(props_by_name: dict[Any, Any]) -> bool:
@@ -387,6 +389,8 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
             return {**prop, "value": f"{launcher} {name}@{version}"}
         if purl.startswith("pkg:pypi/"):
             return {**prop, "value": f"{launcher} {name}=={version}"}
+        if purl.startswith("pkg:docker/"):
+            return {**prop, "value": f"{launcher} {name}:{version}"}
     # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:

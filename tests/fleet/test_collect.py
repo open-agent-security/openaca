@@ -230,6 +230,66 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
 
 
+def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        ecosystem="docker",
+        name="hashicorp/terraform-mcp-server",
+        version="0.4.0",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.terraform",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": (
+                "docker run -i --rm -e TFE_TOKEN=${TFE_TOKEN} hashicorp/terraform-mcp-server:0.4.0"
+            ),
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == "docker hashicorp/terraform-mcp-server:0.4.0"
+
+
+def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="mcp-stdio/local:discord",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.discord",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "bun run --cwd ${CLAUDE_PLUGIN_ROOT} --shell=bun start",
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == "bun"
+
+
 def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_prefix(
     tmp_path, monkeypatch
 ):

@@ -126,6 +126,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--ulimit",
         "--user",
         "-u",
+        "--userns",
         "--volume",
         "-v",
         "--volumes-from",

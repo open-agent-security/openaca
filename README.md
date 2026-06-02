@@ -100,6 +100,12 @@ means different things in each context — declared-in-source-control
 exposure vs. installed-on-this-machine exposure. The scanner output
 makes the distinction explicit.
 
+Unpinned components (e.g. an MCP launched via `npx pkg@latest` with no
+version) are inventoried but cannot be advisory-matched — OSV needs an
+exact version. Lockfile-pinned transitive dependencies
+(`package-lock.json`, `uv.lock`, `bun.lock`) carry exact versions and are
+matched.
+
 ## Quickstart
 
 Two ways to run the scanner. Both produce SARIF v2.1.0 output and

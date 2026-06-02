@@ -577,6 +577,41 @@ def test_install_walks_dependencies_from_plugin_json(tmp_path):
     assert dep_refs[0].attributed_to == "claude-plugin/m/superpowers@5.1.0"
 
 
+def test_install_bun_lock_takes_priority_over_package_lock_json(tmp_path):
+    """When both bun.lock and package-lock.json exist, bun.lock wins and
+    package-lock.json is not parsed — the same dependency is not reported twice."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="bun-plugin@m", plugin_name="bun-plugin", version="1.0.0"
+    )
+    (install_path / "bun.lock").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 1,
+                "workspaces": {"": {"name": "bun-plugin", "dependencies": {"ms": "2.1.3"}}},
+                "packages": {"ms": ["ms@2.1.3", "", {}, "sha512-bun=="]},
+            }
+        )
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "bun-plugin", "version": "1.0.0"},
+                    "node_modules/ms": {"version": "2.1.3"},
+                    "node_modules/extra": {"version": "1.0.0"},
+                },
+            }
+        )
+    )
+    refs, _ = parse_install(install_root=tmp_path)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    # Only one source for npm: bun.lock (ms@2.1.3). package-lock.json skipped.
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "ms"
+    assert npm_refs[0].source_manifest.endswith("bun.lock")
+
+
 def test_install_direct_mcp_from_user_settings(tmp_path):
     """`settings.json.mcpServers` (user scope) → emit npm/PyPI refs with no
     attribution (direct MCPs are declared directly by the user)."""

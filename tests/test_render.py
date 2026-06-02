@@ -808,6 +808,28 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
     assert "npx @playwright/mcp@latest" not in out
 
 
+def test_tree_stdio_mcp_leaf_uses_github_source_identity():
+    refs = [
+        _plugin_ref("serena", "unknown", marketplace="official"),
+        ComponentRef(
+            ecosystem="github",
+            name="oraios/serena",
+            attributed_to="claude-plugin/official/serena@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": (
+                    "uvx --from git+https://github.com/oraios/serena serena start-mcp-server"
+                ),
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "oraios/serena (stdio via uvx)" in out
+    assert "git+https://github.com/oraios/serena" not in out
+
+
 def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     refs = [
         ComponentRef(

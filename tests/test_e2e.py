@@ -253,6 +253,35 @@ def test_openaca_scan_attributes_bundled_finding_to_plugin():
     assert "path:" in out
 
 
+def test_openaca_scan_bun_lock_surfaces_bundled_finding():
+    """Risk Attribution over a bun.lock (plan 024): a bun-based plugin whose
+    bun.lock pins a vulnerable transitive dep gets the [! bundles: …] marker on
+    the plugin header and the direct marker on the dep leaf — across the
+    bun.lock parser → matcher → composition graph → renderer. Hermetic: the
+    pinned package is in conftest's offline-OSV fixture map, so no live OSV.
+    """
+    from tools.scan import main as scan_main
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(REPO_ROOT / "tests" / "fixtures" / "repos" / "bun-plugin"),
+            "--no-color",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    out = result.output
+    plugin_line = next(ln for ln in out.splitlines() if "bun-sample" in ln)
+    assert "[! bundles: GHSA-3q26-f695-pp76]" in plugin_line
+    leaf_line = next(ln for ln in out.splitlines() if "@cyanheads/git-mcp-server" in ln)
+    assert "[! GHSA-3q26-f695-pp76]" in leaf_line
+    # The dep was read from bun.lock, not a package.json/lock.
+    assert "from bun.lock" in out
+
+
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
     vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)

@@ -279,23 +279,28 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
     return _classify_pypi_spec(positional[0])
 
 
-def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None, str | None]:
+def _parse_uvx_github_from(
+    args: list[str],
+) -> tuple[str | None, str | None, str | None, str | None]:
     inline = _extract_flag_value(args, "from")
     if inline is None or _has_interpolation(inline):
-        return None, None, None
+        return None, None, None, None
     match = GITHUB_URL_RE.match(inline)
     if not match:
-        return None, None, None
+        return None, None, None, None
     repo = match.group("repo").removesuffix(".git")
     if not repo:
-        return None, None, None
+        return None, None, None, None
     ref = match.group("ref")
     # Only immutable commit SHAs may be encoded as PURL versions (ADR-0016).
-    # Mutable refs (branches, tags) stay in install_source for posture rules.
+    # Mutable refs (branches, tags) stay out of PURL versions but remain as
+    # metadata: the subdirectory for monorepo identity, and git_ref so OSV
+    # federation can use its GIT package/version query path.
     version = ref.lower() if (ref is not None and _COMMIT_SHA_RE.match(ref)) else None
+    git_ref = ref if (ref is not None and version is None) else None
     name = f"{match.group('owner')}/{repo}"
     subdirectory = _github_subdirectory(match.group("fragment"))
-    return name, version, subdirectory
+    return name, version, subdirectory, git_ref
 
 
 def _github_subdirectory(fragment: str | None) -> str | None:
@@ -526,11 +531,15 @@ def parse_mcp_servers(
                     )
                 )
         elif cmd_class == "uvx":
-            github_name, github_version, github_subdirectory = _parse_uvx_github_from(args)
+            github_name, github_version, github_subdirectory, github_ref = _parse_uvx_github_from(
+                args
+            )
             if github_name:
                 extra = _mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts)
                 if github_subdirectory is not None:
                     extra["source_subdirectory"] = github_subdirectory
+                if github_ref is not None:
+                    extra["git_ref"] = github_ref
                 refs.append(
                     ComponentRef(
                         ecosystem="github",

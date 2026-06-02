@@ -95,6 +95,133 @@ def test_github_commit_sha_does_not_emit_false_low_confidence():
     assert match(refs=[ref], advisories=advisories) == []
 
 
+def make_git_advisory(openaca_id: str, repo: str, versions: list[str] | None = None) -> dict:
+    advisory = {
+        "id": openaca_id,
+        "type": "vulnerability",
+        "summary": "test",
+        "modified": "2026-06-02T00:00:00Z",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": repo,
+                        "events": [{"introduced": "0"}],
+                    }
+                ],
+            }
+        ],
+    }
+    if versions is not None:
+        advisory["affected"][0]["versions"] = versions
+    return advisory
+
+
+def test_github_commit_sha_matches_federated_git_advisory_repo():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    advisory = make_git_advisory("GHSA-git-commit", "https://github.com/oraios/serena.git")
+    advisory["database_specific"] = {
+        "openaca": {
+            "osv_query_matches": [
+                {
+                    "kind": "git_commit",
+                    "repo": "github.com/oraios/serena",
+                    "ref": sha,
+                }
+            ]
+        }
+    }
+    ref = ComponentRef(
+        ecosystem="github",
+        name="oraios/serena",
+        version=sha,
+        source_manifest="mcp.json",
+        source_locator="$.mcpServers.serena",
+    )
+
+    findings = match(refs=[ref], advisories=[advisory])
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "GHSA-git-commit"
+    assert findings[0].confidence == "high"
+
+
+def test_github_commit_sha_requires_osv_commit_query_provenance():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    advisory = make_git_advisory("GHSA-git-commit", "https://github.com/oraios/serena.git")
+    ref = ComponentRef(ecosystem="github", name="oraios/serena", version=sha)
+
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
+def test_github_commit_sha_does_not_match_different_git_repo():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    advisory = make_git_advisory("GHSA-git-other", "https://github.com/other/repo.git")
+    advisory["database_specific"] = {
+        "openaca": {
+            "osv_query_matches": [
+                {
+                    "kind": "git_commit",
+                    "repo": "github.com/other/repo",
+                    "ref": sha,
+                }
+            ]
+        }
+    }
+    ref = ComponentRef(ecosystem="github", name="oraios/serena", version=sha)
+
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
+def test_github_mutable_ref_matches_git_version_list():
+    advisory = make_git_advisory(
+        "GHSA-git-tag", "https://github.com/oraios/serena.git", versions=["v1.0.0"]
+    )
+    ref = ComponentRef(ecosystem="github", name="oraios/serena", extra={"git_ref": "v1.0.0"})
+
+    findings = match(refs=[ref], advisories=[advisory])
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "GHSA-git-tag"
+    assert findings[0].confidence == "high"
+
+
+def test_github_mutable_ref_does_not_match_git_version_absent_from_advisory():
+    advisory = make_git_advisory(
+        "GHSA-git-tag", "https://github.com/oraios/serena.git", versions=["v2.0.0"]
+    )
+    ref = ComponentRef(ecosystem="github", name="oraios/serena", extra={"git_ref": "v1.0.0"})
+
+    assert match(refs=[ref], advisories=[advisory]) == []
+
+
+def test_github_mutable_ref_trusts_osv_git_version_provenance():
+    # OSV matched our GIT tag query server-side (tag resolution / GIT ranges),
+    # so the record carries no explicit `versions[]` entry for the tag. The
+    # matcher must trust the stamped git_version provenance the same way it
+    # trusts git_commit — otherwise the fetched record is dropped (false neg).
+    advisory = make_git_advisory("GHSA-git-tag", "https://github.com/oraios/serena.git")
+    advisory["database_specific"] = {
+        "openaca": {
+            "osv_query_matches": [
+                {
+                    "kind": "git_version",
+                    "repo": "github.com/oraios/serena",
+                    "ref": "v1.0.0",
+                }
+            ]
+        }
+    }
+    ref = ComponentRef(ecosystem="github", name="oraios/serena", extra={"git_ref": "v1.0.0"})
+
+    findings = match(refs=[ref], advisories=[advisory])
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "GHSA-git-tag"
+    assert findings[0].confidence == "high"
+
+
 def test_match_pypi_pinned():
     advisories = [make_advisory("CVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
     ref = ComponentRef(

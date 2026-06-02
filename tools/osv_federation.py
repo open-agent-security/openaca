@@ -5,12 +5,12 @@ records from OSV.dev for the matcher to consume. OpenACA overlays are
 applied by `tools.overlays` after these records are fetched.
 
 Behavior:
-- Only refs with a supported OSV PURL query shape (currently npm/PyPI +
-  name + version) are queried. Source-less agent components such as hooks,
-  commands, agents, skills, and plugins are skipped — OSV.dev would not have
-  records for them anyway. Generic Docker refs stay in inventory/BOM output
-  but are not queried until a container ecosystem mapping is explicit.
-- PURLs are deduplicated within a scan (same PURL queried once).
+- npm/PyPI refs use OSV package PURL queries.
+- GitHub commit refs use OSV commit queries.
+- GitHub mutable refs use OSV's GIT package/version query shape.
+- Generic Docker refs are inventory-only in V0 because OSV does not support
+  `pkg:docker/...` queries for ordinary container images.
+- Query targets are deduplicated within a scan.
 - /v1/querybatch caps at 1000 packages per request; chunked into
   multiple requests if needed.
 - Network errors fail-soft: return the base corpus (always empty in V0
@@ -28,7 +28,9 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from tools.component_ref import ComponentRef
 from tools.overlays import id_set
@@ -38,41 +40,52 @@ _VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
 _BATCH_SIZE = 1000
 _TIMEOUT_SECONDS = 30
 _PURL_QUERY_ECOSYSTEMS = frozenset({"npm", "PyPI", "pypi"})
+_GITHUB_ECOSYSTEMS = frozenset({"github", "GitHub"})
+
+
+@dataclass(frozen=True)
+class OsvQuery:
+    """A query payload plus metadata needed to interpret OSV results."""
+
+    key: str
+    label: str
+    payload: dict[str, Any]
+    kind: str
+    git_repo: str | None = None
+    git_ref: str | None = None
 
 
 def is_queryable(ref: ComponentRef) -> bool:
-    """A ref is sent to OSV.dev iff it has a version AND a PURL we can derive.
-
-    Source-less agent components have `purl=None`, so they're skipped here —
-    OSV.dev would not have records for them.
-    Same rule for any ecosystem-tagged ref missing a version.
-    """
-    return bool(ref.version) and ref.ecosystem in _PURL_QUERY_ECOSYSTEMS and ref.purl is not None
+    """Return true when the ref has a supported OSV.dev query shape."""
+    return _query_for_ref(ref) is not None
 
 
 def augment_corpus(
     refs: list[ComponentRef], base_corpus: list[dict]
 ) -> tuple[list[dict], list[str]]:
     """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
-    purls = collect_target_purls(refs)
-    if not purls:
+    queries = collect_osv_queries(refs)
+    if not queries:
         return list(base_corpus), []
     try:
-        vuln_ids = _query_batch(purls)
+        matches_by_id = _query_batch(queries)
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
         return list(base_corpus), [f"osv.dev federation failed: {exc}"]
-    if not vuln_ids:
+    if not matches_by_id:
         return list(base_corpus), []
     new_records: list[dict] = []
     fetch_warnings: list[str] = []
-    for vid in vuln_ids:
+    for vid, matching_queries in matches_by_id.items():
         try:
             record = _get_vuln(vid)
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
             fetch_warnings.append(f"osv.dev fetch failed for {vid}: {exc}")
             continue
         if isinstance(record, dict) and record.get("id"):
-            new_records.append(record)
+            record_matches = _record_matching_queries(record, matching_queries)
+            if record_matches:
+                _stamp_query_matches(record, record_matches)
+                new_records.append(record)
     covered_ids: set[str] = set()
     for advisory in base_corpus:
         if isinstance(advisory, dict):
@@ -86,42 +99,149 @@ def augment_corpus(
     return merged, fetch_warnings
 
 
-def collect_target_purls(refs: list[ComponentRef]) -> list[str]:
-    """Deduplicated, query-ready PURLs (versioned, PURL-mappable ecosystem).
-
-    Public so the CLI verbose path can surface what was sent to OSV.dev
-    without re-implementing the filter. Order is the order refs first
-    contributed a unique PURL — stable for reproducible verbose output.
-    """
+def collect_osv_queries(refs: list[ComponentRef]) -> list[OsvQuery]:
+    """Deduplicated OSV.dev queries in first-seen ref order."""
     seen: set[str] = set()
-    out: list[str] = []
-    for r in refs:
-        if not is_queryable(r):
+    out: list[OsvQuery] = []
+    for ref in refs:
+        query = _query_for_ref(ref)
+        if query is None or query.key in seen:
             continue
-        purl = r.purl
-        assert purl is not None  # narrowed by is_queryable
-        if purl in seen:
-            continue
-        seen.add(purl)
-        out.append(purl)
+        seen.add(query.key)
+        out.append(query)
     return out
 
 
-def _query_batch(purls: list[str]) -> list[str]:
+def collect_target_purls(refs: list[ComponentRef]) -> list[str]:
+    """Deduplicated package PURLs still queried through OSV's PURL path.
+
+    Kept for callers/tests that only need the package-query subset. Git and
+    Docker source identities may still have internal PURLs, but OSV does not
+    accept those generic PURL forms.
+    """
+    out: list[str] = []
+    for query in collect_osv_queries(refs):
+        package = query.payload.get("package")
+        if isinstance(package, dict):
+            purl = package.get("purl")
+            if isinstance(purl, str):
+                out.append(purl)
+    return out
+
+
+def collect_osv_query_labels(refs: list[ComponentRef]) -> list[str]:
+    """Readable labels for verbose output, in OSV query order."""
+    return [query.label for query in collect_osv_queries(refs)]
+
+
+def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
+    if ref.ecosystem in _PURL_QUERY_ECOSYSTEMS and ref.version and ref.purl is not None:
+        return OsvQuery(
+            key=f"purl:{ref.purl}",
+            label=ref.purl,
+            payload={"package": {"purl": ref.purl}},
+            kind="purl",
+        )
+    if ref.ecosystem in _GITHUB_ECOSYSTEMS and ref.name:
+        repo = f"github.com/{ref.name}"
+        if ref.version:
+            return OsvQuery(
+                key=f"git-commit:{repo}:{ref.version}",
+                label=f"{repo}@{ref.version}",
+                payload={"commit": ref.version},
+                kind="git_commit",
+                git_repo=repo,
+                git_ref=ref.version,
+            )
+        git_ref = ref.extra.get("git_ref") if isinstance(ref.extra, dict) else None
+        if isinstance(git_ref, str) and git_ref:
+            # OSV's GIT tag query expects the full repo URL in package.name (per
+            # the v1 query docs: `{"ecosystem": "GIT", "name":
+            # "https://github.com/owner/repo.git"}`). The bare `repo` form stays
+            # as git_repo for stamping/record matching, which normalize scheme
+            # and `.git` away.
+            return OsvQuery(
+                key=f"git-version:{repo}:{git_ref}",
+                label=f"{repo}@{git_ref}",
+                payload={
+                    "version": git_ref,
+                    "package": {"ecosystem": "GIT", "name": f"https://{repo}.git"},
+                },
+                kind="git_version",
+                git_repo=repo,
+                git_ref=git_ref,
+            )
+    return None
+
+
+def _query_batch(queries: list[OsvQuery]) -> dict[str, list[OsvQuery]]:
     """POST /v1/querybatch in chunks of <=1000; collect returned vuln IDs."""
-    ids: list[str] = []
-    seen: set[str] = set()
-    for i in range(0, len(purls), _BATCH_SIZE):
-        chunk = purls[i : i + _BATCH_SIZE]
-        payload = {"queries": [{"package": {"purl": p}} for p in chunk]}
+    matches: dict[str, list[OsvQuery]] = {}
+    seen_pairs: set[tuple[str, str]] = set()
+    for i in range(0, len(queries), _BATCH_SIZE):
+        chunk = queries[i : i + _BATCH_SIZE]
+        payload = {"queries": [query.payload for query in chunk]}
         response = _post_json(_QUERYBATCH_URL, payload)
-        for entry in response.get("results", []) or []:
+        for query, entry in zip(chunk, response.get("results", []) or []):
             for vuln in entry.get("vulns") or []:
                 vid = vuln.get("id")
-                if isinstance(vid, str) and vid not in seen:
-                    seen.add(vid)
-                    ids.append(vid)
-    return ids
+                if not isinstance(vid, str):
+                    continue
+                pair = (vid, query.key)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                matches.setdefault(vid, []).append(query)
+    return matches
+
+
+def _record_matching_queries(record: dict, queries: list[OsvQuery]) -> list[OsvQuery]:
+    matches: list[OsvQuery] = []
+    for query in queries:
+        if query.git_repo is None:
+            matches.append(query)
+        elif _record_has_git_repo(record, query.git_repo):
+            matches.append(query)
+    return matches
+
+
+def _stamp_query_matches(record: dict, queries: list[OsvQuery]) -> None:
+    git_matches = [
+        {"kind": query.kind, "repo": query.git_repo, "ref": query.git_ref}
+        for query in queries
+        if query.git_repo is not None and query.git_ref is not None
+    ]
+    if not git_matches:
+        return
+    ds = record.setdefault("database_specific", {})
+    if not isinstance(ds, dict):
+        return
+    openaca_block = ds.setdefault("openaca", {})
+    if not isinstance(openaca_block, dict):
+        return
+    existing = openaca_block.setdefault("osv_query_matches", [])
+    if isinstance(existing, list):
+        existing.extend(git_matches)
+
+
+def _record_has_git_repo(record: dict, repo: str) -> bool:
+    for affected in record.get("affected") or []:
+        for range_entry in affected.get("ranges") or []:
+            if range_entry.get("type") != "GIT":
+                continue
+            candidate = range_entry.get("repo")
+            if isinstance(candidate, str) and _normalize_git_repo(candidate) == repo:
+                return True
+    return False
+
+
+def _normalize_git_repo(repo: str) -> str:
+    parsed = urlparse(repo)
+    if parsed.netloc:
+        normalized = f"{parsed.netloc}{parsed.path}"
+    else:
+        normalized = repo
+    return normalized.rstrip("/").removesuffix(".git")
 
 
 def _get_vuln(vuln_id: str) -> dict:

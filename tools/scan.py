@@ -50,7 +50,7 @@ from tools.bom import (
 )
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
-from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
+from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
 from tools.parsers.claude_install import parse_install
@@ -126,22 +126,21 @@ def _finding_line(f: Finding) -> str:
 def _federation_targets_lines(refs: list[ComponentRef], fetched_count: int) -> list[str]:
     """Render the verbose OSV.dev federation summary.
 
-    Three parts: fetched record count, queried PURL list (what was actually
+    Three parts: fetched record count, queried target list (what was actually
     sent), and skipped refs bucketed by source ecosystem or component type.
-    Source-less agent components have no PURL; OSV.dev would not have records
-    for them.
+    Source-less agent components have no supported OSV query shape.
     """
-    queried = collect_target_purls(refs)
+    queried = collect_osv_query_labels(refs)
     lines: list[str] = []
     if queried:
         lines.append(
-            f"federation: queried {len(queried)} PURL(s) on osv.dev; "
+            f"federation: queried {len(queried)} target(s) on osv.dev; "
             f"fetched {fetched_count} advisory record(s)"
         )
-        for p in queried:
-            lines.append(f"  {p}")
+        for target in queried:
+            lines.append(f"  {target}")
     else:
-        lines.append("federation: no queryable PURLs (no versioned, OSV-mappable refs)")
+        lines.append("federation: no queryable OSV.dev targets")
     skipped_by_eco: dict[str, int] = {}
     for r in refs:
         if is_queryable(r):
@@ -151,7 +150,9 @@ def _federation_targets_lines(refs: list[ComponentRef], fetched_count: int) -> l
     if skipped_by_eco:
         parts = ", ".join(f"{k}={v}" for k, v in sorted(skipped_by_eco.items()))
         total = sum(skipped_by_eco.values())
-        lines.append(f"federation: skipped {total} ref(s) without queryable PURL ({parts})")
+        lines.append(
+            f"federation: skipped {total} ref(s) without supported OSV.dev query ({parts})"
+        )
     return lines
 
 

@@ -371,6 +371,7 @@ def test_uvx_from_github_url_mutable_ref_not_encoded_as_version():
             f"mutable ref {mutable_ref!r} must not be encoded as version; got {ref.version!r}"
         )
         assert ref.purl == "pkg:github/oraios/serena"
+        assert ref.extra["git_ref"] == mutable_ref
 
 
 def test_uvx_from_github_url_with_deeper_path_is_skipped():

@@ -31,6 +31,9 @@ NPM_PINNED_RE = re.compile(r"^(?P<name>(?:@[^/]+/)?[^@]+)@(?P<version>[^@\s]+)$"
 PYPI_PINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[A-Za-z0-9_.+-]+)$")
 PYPI_AT_VERSION_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)@(?P<version>[^@\s]+)$")
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
+GITHUB_URL_RE = re.compile(
+    r"^git\+https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/@\s#]+)(?:@(?P<ref>[^#\s]+))?"
+)
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 
 
@@ -149,6 +152,19 @@ def _parse_uvx_args(args: list[str]) -> tuple[str | None, str | None, bool]:
     if not positional:
         return None, None, False
     return _classify_pypi_spec(positional[0])
+
+
+def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
+    inline = _extract_flag_value(args, "from")
+    if inline is None or _has_interpolation(inline):
+        return None, None
+    match = GITHUB_URL_RE.match(inline)
+    if not match:
+        return None, None
+    repo = match.group("repo").removesuffix(".git")
+    if not repo:
+        return None, None
+    return f"{match.group('owner')}/{repo}", match.group("ref")
 
 
 # uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
@@ -299,13 +315,13 @@ def parse_mcp_servers(
                     )
                 )
         elif cmd_class == "uvx":
-            name, version, pinned = _parse_uvx_args(args)
-            if name and pinned:
+            github_name, github_version = _parse_uvx_github_from(args)
+            if github_name:
                 refs.append(
                     ComponentRef(
-                        ecosystem="PyPI",
-                        name=name,
-                        version=version,
+                        ecosystem="github",
+                        name=github_name,
+                        version=github_version,
                         source_manifest=source_manifest,
                         source_locator=locator,
                         extra=_mcp_ref_extra(
@@ -313,17 +329,32 @@ def parse_mcp_servers(
                         ),
                     )
                 )
-            elif name:
-                refs.append(
-                    ComponentRef(
-                        component_identity=f"mcp-stdio/uvx-unpinned:{name}",
-                        source_manifest=source_manifest,
-                        source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+            else:
+                name, version, pinned = _parse_uvx_args(args)
+                if name and pinned:
+                    refs.append(
+                        ComponentRef(
+                            ecosystem="PyPI",
+                            name=name,
+                            version=version,
+                            source_manifest=source_manifest,
+                            source_locator=locator,
+                            extra=_mcp_ref_extra(
+                                source_manifest, install_source, server_name, runtime_hosts
+                            ),
+                        )
                     )
-                )
+                elif name:
+                    refs.append(
+                        ComponentRef(
+                            component_identity=f"mcp-stdio/uvx-unpinned:{name}",
+                            source_manifest=source_manifest,
+                            source_locator=locator,
+                            extra=_mcp_ref_extra(
+                                source_manifest, install_source, server_name, runtime_hosts
+                            ),
+                        )
+                    )
         elif command:
             refs.append(
                 ComponentRef(

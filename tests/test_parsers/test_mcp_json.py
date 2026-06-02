@@ -266,6 +266,49 @@ def test_uvx_space_separated_from_flag():
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
 
 
+def test_uvx_from_github_url_emits_github_purl():
+    servers = {
+        "serena": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "git+https://github.com/oraios/serena",
+                "serena",
+                "start-mcp-server",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "github"
+    assert ref.name == "oraios/serena"
+    assert ref.version is None
+    assert ref.purl == "pkg:github/oraios/serena"
+    assert ref.extra["component_type"] == "mcp_server"
+    assert ref.extra["install_source"] == (
+        "uvx --from git+https://github.com/oraios/serena serena start-mcp-server"
+    )
+
+
+def test_uvx_from_github_url_keeps_commit_ref_as_version():
+    servers = {
+        "serena": {
+            "command": "uvx",
+            "args": [
+                "--from=git+https://github.com/oraios/serena.git"
+                "@0123456789abcdef0123456789abcdef01234567",
+                "serena",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].name == "oraios/serena"
+    assert refs[0].version == "0123456789abcdef0123456789abcdef01234567"
+    assert refs[0].purl == "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567"
+
+
 def test_uv_tool_run_dispatches_as_uvx():
     servers = {"y": {"command": "uv", "args": ["tool", "run", "weather-mcp==0.5.0"]}}
     refs = parse_mcp_servers(servers, source_manifest="fake.json")

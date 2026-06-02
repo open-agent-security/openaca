@@ -390,7 +390,8 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
         if purl.startswith("pkg:pypi/"):
             return {**prop, "value": f"{launcher} {name}=={version}"}
         if purl.startswith("pkg:docker/"):
-            return {**prop, "value": f"{launcher} {name}:{version}"}
+            sep = "@" if version.startswith("sha256:") else ":"
+            return {**prop, "value": f"{launcher} {name}{sep}{version}"}
     # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:

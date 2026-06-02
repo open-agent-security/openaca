@@ -344,6 +344,29 @@ def test_docker_run_emits_docker_purl():
     assert ref.extra["component_type"] == "mcp_server"
 
 
+def test_docker_run_pull_flag_skips_policy_value():
+    servers = {
+        "terraform": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--pull",
+                "always",
+                "-i",
+                "--rm",
+                "hashicorp/terraform-mcp-server:0.4.0",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "hashicorp/terraform-mcp-server"
+    assert ref.version == "0.4.0"
+    assert ref.purl == "pkg:docker/hashicorp/terraform-mcp-server@0.4.0"
+
+
 def test_bun_run_local_mcp_emits_local_identity():
     servers = {
         "discord": {

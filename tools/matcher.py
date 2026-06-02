@@ -39,6 +39,13 @@ _UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
     "mcp-stdio/uvx-unpinned:": "PyPI",
 }
 
+# Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
+# ranges. The current matcher only evaluates packaging.Version ranges, so refs
+# with a commit SHA (or any non-PEP-440 ref) as version are non-queryable until
+# GIT range support is added. Skip them rather than emitting a false low-
+# confidence "range/spec" finding.
+_FORGE_ECOSYSTEMS: frozenset[str] = frozenset({"github", "GitHub", "gitlab", "GitLab", "git"})
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -170,6 +177,8 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
             if pkg.get("ecosystem") != ref.ecosystem or pkg.get("name") != ref.name:
                 continue
             if parsed is None:
+                if ref.ecosystem in _FORGE_ECOSYSTEMS:
+                    break
                 findings.append(
                     Finding(
                         advisory_id=advisory["id"],

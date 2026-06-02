@@ -36,6 +36,7 @@ GITHUB_URL_RE = re.compile(
     r"(?:@(?P<ref>[^#\s]+))?(?:#[^\s]*)?$"
 )
 LOCAL_MCP_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+_COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 _DOCKER_VALUE_FLAGS = frozenset(
     {
@@ -197,7 +198,11 @@ def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
     repo = match.group("repo").removesuffix(".git")
     if not repo:
         return None, None
-    return f"{match.group('owner')}/{repo}", match.group("ref")
+    ref = match.group("ref")
+    # Only immutable commit SHAs may be encoded as PURL versions (ADR-0016).
+    # Mutable refs (branches, tags) stay in install_source for posture rules.
+    version = ref if (ref is not None and _COMMIT_SHA_RE.match(ref)) else None
+    return f"{match.group('owner')}/{repo}", version
 
 
 def _parse_docker_run_image(args: list[str]) -> tuple[str | None, str | None]:

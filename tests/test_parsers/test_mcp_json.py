@@ -309,6 +309,29 @@ def test_uvx_from_github_url_keeps_commit_ref_as_version():
     assert refs[0].purl == "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567"
 
 
+def test_uvx_from_github_url_mutable_ref_not_encoded_as_version():
+    """Mutable branch/tag refs must not appear as PURL @version (ADR-0016)."""
+    for mutable_ref in ("main", "master", "v1.0.0", "feat/my-branch"):
+        servers = {
+            "serena": {
+                "command": "uvx",
+                "args": [
+                    f"--from=git+https://github.com/oraios/serena.git@{mutable_ref}",
+                    "serena",
+                ],
+            }
+        }
+        refs = parse_mcp_servers(servers, source_manifest="fake.json")
+        assert len(refs) == 1, f"expected one ref for ref={mutable_ref!r}"
+        ref = refs[0]
+        assert ref.ecosystem == "github"
+        assert ref.name == "oraios/serena"
+        assert ref.version is None, (
+            f"mutable ref {mutable_ref!r} must not be encoded as version; got {ref.version!r}"
+        )
+        assert ref.purl == "pkg:github/oraios/serena"
+
+
 def test_uvx_from_github_url_with_deeper_path_is_skipped():
     servers = {
         "nested": {

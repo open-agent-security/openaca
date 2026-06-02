@@ -41,6 +41,7 @@ INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 _DOCKER_VALUE_FLAGS = frozenset(
     {
         "--add-host",
+        "--annotation",
         "--attach",
         "-a",
         "--blkio-weight",
@@ -129,6 +130,19 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--volumes-from",
         "--workdir",
         "-w",
+    }
+)
+_DOCKER_GLOBAL_VALUE_FLAGS = frozenset(
+    {
+        "--config",
+        "--context",
+        "-c",
+        "--host",
+        "-H",
+        "--log-level",
+        "--tlscacert",
+        "--tlscert",
+        "--tlskey",
     }
 )
 
@@ -270,10 +284,22 @@ def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
 def _parse_docker_run_image(args: list[str]) -> tuple[str | None, str | None]:
     if not args:
         return None, None
-    if args[0] == "run":
-        i = 1
-    elif len(args) >= 2 and args[0] == "container" and args[1] == "run":
-        i = 2
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "run":
+            i += 1
+            break
+        if i + 1 < len(args) and arg == "container" and args[i + 1] == "run":
+            i += 2
+            break
+        if arg.startswith("-"):
+            if "=" not in arg and arg in _DOCKER_GLOBAL_VALUE_FLAGS:
+                i += 2
+            else:
+                i += 1
+            continue
+        return None, None
     else:
         return None, None
     while i < len(args):
@@ -518,6 +544,17 @@ def parse_mcp_servers(
                         ecosystem="docker",
                         name=name,
                         version=version,
+                        source_manifest=source_manifest,
+                        source_locator=locator,
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
+                    )
+                )
+            else:
+                refs.append(
+                    ComponentRef(
+                        component_identity=f"mcp-stdio/binary:{command}",
                         source_manifest=source_manifest,
                         source_locator=locator,
                         extra=_mcp_ref_extra(

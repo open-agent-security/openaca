@@ -311,6 +311,25 @@ def test_uvx_from_github_url_keeps_commit_ref_as_version():
     assert refs[0].purl == "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567"
 
 
+def test_uvx_from_github_url_accepts_uppercase_commit_sha_as_immutable():
+    """Git object IDs are case-insensitive, so an uppercase pin is still an
+    immutable commit — recognized as a version (lowercased), not a mutable ref."""
+    servers = {
+        "serena": {
+            "command": "uvx",
+            "args": [
+                "--from=git+https://github.com/oraios/serena.git"
+                "@ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+                "serena",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].version == "abcdef0123456789abcdef0123456789abcdef01"  # lowercased, canonical
+    assert refs[0].purl == "pkg:github/oraios/serena@abcdef0123456789abcdef0123456789abcdef01"
+
+
 def test_uvx_from_github_url_keeps_subdirectory_in_source_identity():
     commit = "0123456789abcdef0123456789abcdef01234567"
     servers = {

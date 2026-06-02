@@ -32,9 +32,41 @@ PYPI_PINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[A-Za-z0-9
 PYPI_AT_VERSION_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)@(?P<version>[^@\s]+)$")
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
 GITHUB_URL_RE = re.compile(
-    r"^git\+https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/@\s#]+)(?:@(?P<ref>[^#\s]+))?"
+    r"^git\+https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/@\s#]+)"
+    r"(?:@(?P<ref>[^#\s]+))?(?:#[^\s]*)?$"
 )
+LOCAL_MCP_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
+_DOCKER_VALUE_FLAGS = frozenset(
+    {
+        "--add-host",
+        "--attach",
+        "-a",
+        "--cidfile",
+        "--cpus",
+        "--dns",
+        "--entrypoint",
+        "--env",
+        "-e",
+        "--env-file",
+        "--hostname",
+        "-h",
+        "--label",
+        "-l",
+        "--mount",
+        "--name",
+        "--network",
+        "--platform",
+        "--publish",
+        "-p",
+        "--user",
+        "-u",
+        "--volume",
+        "-v",
+        "--workdir",
+        "-w",
+    }
+)
 
 
 def _has_interpolation(spec: str) -> bool:
@@ -165,6 +197,56 @@ def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
     if not repo:
         return None, None
     return f"{match.group('owner')}/{repo}", match.group("ref")
+
+
+def _parse_docker_run_image(args: list[str]) -> tuple[str | None, str | None]:
+    if not args or args[0] != "run":
+        return None, None
+    i = 1
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            i += 1
+            break
+        if arg.startswith("-"):
+            if "=" not in arg and arg in _DOCKER_VALUE_FLAGS:
+                i += 2
+            else:
+                i += 1
+            continue
+        break
+    if i >= len(args):
+        return None, None
+    return _classify_docker_image(args[i])
+
+
+def _classify_docker_image(image: str) -> tuple[str | None, str | None]:
+    if _has_interpolation(image) or "://" in image:
+        return None, None
+    image_without_digest, sep, digest = image.partition("@")
+    last_slash = image_without_digest.rfind("/")
+    last_colon = image_without_digest.rfind(":")
+    if last_colon > last_slash:
+        name = image_without_digest[:last_colon]
+        version = image_without_digest[last_colon + 1 :]
+    else:
+        name = image_without_digest
+        version = None
+    if not name:
+        return None, None
+    if sep and digest:
+        version = digest
+    return name, version
+
+
+def _local_mcp_identity(command: str, args: list[str], server_name: object) -> str | None:
+    if not isinstance(server_name, str) or not LOCAL_MCP_ID_RE.match(server_name):
+        return None
+    if command == "bun" and args[:1] == ["run"]:
+        return f"mcp-stdio/local:{server_name}"
+    if command == "php" and len(args) >= 2 and args[0] == "artisan" and args[1].endswith(":mcp"):
+        return f"mcp-stdio/local:{server_name}"
+    return None
 
 
 # uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
@@ -355,7 +437,35 @@ def parse_mcp_servers(
                             ),
                         )
                     )
+        elif cmd_class == "docker":
+            name, version = _parse_docker_run_image(args)
+            if name:
+                refs.append(
+                    ComponentRef(
+                        ecosystem="docker",
+                        name=name,
+                        version=version,
+                        source_manifest=source_manifest,
+                        source_locator=locator,
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
+                    )
+                )
         elif command:
+            local_identity = _local_mcp_identity(cmd_class, args, server_name)
+            if local_identity:
+                refs.append(
+                    ComponentRef(
+                        component_identity=local_identity,
+                        source_manifest=source_manifest,
+                        source_locator=locator,
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
+                    )
+                )
+                continue
             refs.append(
                 ComponentRef(
                     component_identity=f"mcp-stdio/binary:{command}",

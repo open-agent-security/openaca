@@ -897,11 +897,14 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
             return f"{display_url} ({transport})"
         return display_url
     command = _stdio_command_label(ref.extra.get("install_source"))
-    if ref.ecosystem in {"npm", "PyPI", "github"} and ref.name:
+    if ref.ecosystem in {"npm", "PyPI", "github", "docker"} and ref.name:
         if command:
             transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
             return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"
         return None
+    local_label = _stdio_local_label(ref.component_identity, ref.extra, command)
+    if local_label:
+        return local_label
     unpinned_label = _stdio_unpinned_label(ref.component_identity, command)
     if unpinned_label:
         return unpinned_label
@@ -929,6 +932,23 @@ def _stdio_command_label(install_source: object) -> Optional[str]:
 # Rejects URLs (contain ://), file paths (start with . or /), and other non-name forms that
 # could carry credentials in query strings or URL userinfo.
 _SAFE_PACKAGE_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _stdio_local_label(identity: str | None, extra: dict, command: str | None) -> Optional[str]:
+    prefix = "mcp-stdio/local:"
+    if not identity or not identity.startswith(prefix):
+        return None
+    label = identity[len(prefix) :]
+    path = extra.get("component_path")
+    if isinstance(path, list) and path:
+        last = path[-1]
+        if isinstance(last, dict):
+            name = last.get("name")
+            if isinstance(name, str) and name:
+                label = name
+    if not _SAFE_PACKAGE_NAME_RE.match(label):
+        return None
+    return f"{label} (stdio via {command or 'local command'}, local)"
 
 
 def _stdio_unpinned_label(identity: str | None, command: str | None) -> Optional[str]:

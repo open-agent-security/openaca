@@ -157,6 +157,30 @@ def test_rejects_binary_mcp_install_source_with_raw_argv():
     assert "tenant" not in str(exc.value)
 
 
+def test_rejects_local_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:identity", "value": "mcp-stdio/local:discord"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "bun run --cwd ${CLAUDE_PLUGIN_ROOT} start",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "CLAUDE_PLUGIN_ROOT" not in str(exc.value)
+
+
 def test_rejects_npx_mcp_install_source_with_raw_argv():
     payload = _payload(
         bom={
@@ -259,6 +283,34 @@ def test_rejects_pinned_pypi_mcp_install_source_with_raw_argv():
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "secret" not in str(exc.value)
+
+
+def test_rejects_pinned_docker_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "purl": "pkg:docker/hashicorp/terraform-mcp-server@0.4.0",
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": (
+                                "docker run -e TFE_TOKEN=${TFE_TOKEN} "
+                                "hashicorp/terraform-mcp-server:0.4.0"
+                            ),
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "TFE_TOKEN" not in str(exc.value)
 
 
 def test_allows_pinned_mcp_clean_install_source():

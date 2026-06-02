@@ -7,19 +7,49 @@ real OSV.dev endpoint.
 from unittest.mock import patch
 
 from tools.component_ref import ComponentRef
-from tools.osv_federation import augment_corpus, collect_target_purls, is_queryable
+from tools.osv_federation import (
+    augment_corpus,
+    collect_osv_queries,
+    collect_target_purls,
+    is_queryable,
+)
 
 
 def _ref(eco: str, name: str, version: str) -> ComponentRef:
     return ComponentRef(ecosystem=eco, name=name, version=version)
 
 
-def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
+def test_is_queryable_requires_supported_osv_query_shape():
     assert is_queryable(_ref("npm", "lodash", "4.17.20")) is True
+    assert is_queryable(_ref("PyPI", "requests", "2.31.0")) is True
+    assert (
+        is_queryable(
+            ComponentRef(
+                ecosystem="github",
+                name="oraios/serena",
+                version="0123456789abcdef0123456789abcdef01234567",
+            )
+        )
+        is True
+    )
+    assert (
+        is_queryable(
+            ComponentRef(
+                ecosystem="github",
+                name="oraios/serena",
+                extra={"git_ref": "v1.0.0"},
+            )
+        )
+        is True
+    )
     # Docker PURLs are inventory/BOM identities in V0, not OSV query targets.
     assert is_queryable(_ref("docker", "ghcr.io/org/server", "1.0")) is False
     # No version → not queryable (PURL can't be formed)
     assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
+    assert is_queryable(ComponentRef(ecosystem="github", name="oraios/serena")) is False
+    assert (
+        is_queryable(ComponentRef(ecosystem="docker", name="repo/image", version="1.0.0")) is False
+    )
     # Source-less agent components → no PURL, not queryable
     assert (
         is_queryable(
@@ -50,6 +80,35 @@ def test_collect_target_purls_dedupes_and_preserves_order():
     ]
     purls = collect_target_purls(refs)
     assert purls == ["pkg:npm/lodash@4.17.20", "pkg:pypi/requests@2.31.0"]
+
+
+def test_collect_osv_queries_uses_supported_query_shapes():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    refs = [
+        _ref("npm", "lodash", "4.17.20"),
+        _ref("PyPI", "requests", "2.31.0"),
+        ComponentRef(ecosystem="github", name="oraios/serena", version=sha),
+        ComponentRef(ecosystem="github", name="oraios/serena", extra={"git_ref": "v1.0.0"}),
+        ComponentRef(ecosystem="docker", name="hashicorp/terraform-mcp-server", version="0.4.0"),
+    ]
+
+    queries = collect_osv_queries(refs)
+
+    assert [query.payload for query in queries] == [
+        {"package": {"purl": "pkg:npm/lodash@4.17.20"}},
+        {"package": {"purl": "pkg:pypi/requests@2.31.0"}},
+        {"commit": sha},
+        {
+            "version": "v1.0.0",
+            "package": {"ecosystem": "GIT", "name": "https://github.com/oraios/serena.git"},
+        },
+    ]
+    assert [query.label for query in queries] == [
+        "pkg:npm/lodash@4.17.20",
+        "pkg:pypi/requests@2.31.0",
+        f"github.com/oraios/serena@{sha}",
+        "github.com/oraios/serena@v1.0.0",
+    ]
 
 
 def test_augment_returns_base_corpus_when_no_refs():
@@ -112,6 +171,80 @@ def test_augment_batches_purls_and_merges_results():
     assert warnings == []
     ids = {a["id"] for a in augmented}
     assert ids == {"CVE-2026-0001", "GHSA-1111", "GHSA-2222"}
+
+
+def test_augment_batches_mixed_osv_queries_and_filters_git_repo():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    refs = [
+        _ref("npm", "lodash", "4.17.20"),
+        ComponentRef(ecosystem="github", name="oraios/serena", version=sha),
+    ]
+    querybatch_response = {
+        "results": [
+            {"vulns": [{"id": "GHSA-npm"}]},
+            {"vulns": [{"id": "GHSA-git-match"}, {"id": "GHSA-git-other"}]},
+        ]
+    }
+    vuln_records = {
+        "GHSA-npm": {
+            "id": "GHSA-npm",
+            "affected": [{"package": {"ecosystem": "npm", "name": "lodash"}}],
+        },
+        "GHSA-git-match": {
+            "id": "GHSA-git-match",
+            "affected": [
+                {
+                    "ranges": [
+                        {
+                            "type": "GIT",
+                            "repo": "https://github.com/oraios/serena.git",
+                            "events": [{"introduced": "0"}],
+                        }
+                    ]
+                }
+            ],
+        },
+        "GHSA-git-other": {
+            "id": "GHSA-git-other",
+            "affected": [
+                {
+                    "ranges": [
+                        {
+                            "type": "GIT",
+                            "repo": "https://github.com/other/repo.git",
+                            "events": [{"introduced": "0"}],
+                        }
+                    ]
+                }
+            ],
+        },
+    }
+
+    def fake_post(url, payload):
+        assert payload["queries"] == [
+            {"package": {"purl": "pkg:npm/lodash@4.17.20"}},
+            {"commit": sha},
+        ]
+        return querybatch_response
+
+    def fake_get(url):
+        return vuln_records[url.rsplit("/", 1)[-1]]
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augmented, warnings = augment_corpus(refs=refs, base_corpus=[])
+
+    assert warnings == []
+    assert [record["id"] for record in augmented] == ["GHSA-npm", "GHSA-git-match"]
+    assert augmented[1]["database_specific"]["openaca"]["osv_query_matches"] == [
+        {
+            "kind": "git_commit",
+            "repo": "github.com/oraios/serena",
+            "ref": sha,
+        }
+    ]
 
 
 def test_augment_dedupes_returned_records_by_alias_graph():

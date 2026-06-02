@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
 
@@ -116,6 +117,8 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
 
 def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     if ref.ecosystem and ref.name:
+        if ref.ecosystem in _FORGE_ECOSYSTEMS:
+            return _match_git_ref(ref, advisories)
         return _match_versioned(ref, advisories)
 
     if ref.component_identity:
@@ -166,6 +169,106 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Findin
                 )
             )
     return findings
+
+
+def _match_git_ref(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+    repo = _git_repo_name(ref)
+    if repo is None:
+        return []
+    git_ref = ref.extra.get("git_ref") if isinstance(ref.extra, dict) else None
+    findings: list[Finding] = []
+    for advisory in advisories:
+        matching_entries = [
+            entry
+            for entry in advisory.get("affected") or []
+            if _affected_entry_has_git_repo(entry, repo)
+        ]
+        if not matching_entries:
+            continue
+        if ref.version and _advisory_has_osv_query_match(advisory, "git_commit", repo, ref.version):
+            findings.append(
+                Finding(
+                    advisory_id=advisory["id"],
+                    component=ref,
+                    confidence="high",
+                    reason=f"{repo}@{ref.version} matches {advisory['id']} (GIT commit)",
+                    attributed_to=ref.attributed_to,
+                )
+            )
+            continue
+        if isinstance(git_ref, str) and (
+            _advisory_has_osv_query_match(advisory, "git_version", repo, git_ref)
+            or any(_affected_entry_has_git_version(entry, git_ref) for entry in matching_entries)
+        ):
+            findings.append(
+                Finding(
+                    advisory_id=advisory["id"],
+                    component=ref,
+                    confidence="high",
+                    reason=f"{repo}@{git_ref} matches {advisory['id']} (GIT version)",
+                    attributed_to=ref.attributed_to,
+                )
+            )
+    return findings
+
+
+def _advisory_has_osv_query_match(advisory: dict, kind: str, repo: str, ref: str) -> bool:
+    ds = advisory.get("database_specific") or {}
+    if not isinstance(ds, dict):
+        return False
+    openaca_block = ds.get("openaca") or {}
+    if not isinstance(openaca_block, dict):
+        return False
+    matches = openaca_block.get("osv_query_matches") or []
+    for match_entry in matches:
+        if not isinstance(match_entry, dict):
+            continue
+        if (
+            match_entry.get("kind") == kind
+            and match_entry.get("repo") == repo
+            and match_entry.get("ref") == ref
+        ):
+            return True
+    return False
+
+
+def _git_repo_name(ref: ComponentRef) -> str | None:
+    if not ref.name:
+        return None
+    if ref.ecosystem in {"github", "GitHub"}:
+        return f"github.com/{ref.name}"
+    return ref.name
+
+
+def _affected_entry_has_git_repo(entry: dict, repo: str) -> bool:
+    for range_entry in entry.get("ranges") or []:
+        if range_entry.get("type") != "GIT":
+            continue
+        candidate = range_entry.get("repo")
+        if isinstance(candidate, str) and _normalize_git_repo(candidate) == repo:
+            return True
+    return False
+
+
+def _affected_entry_has_git_version(entry: dict, git_ref: str) -> bool:
+    candidates = {_normalize_git_ref(git_ref)}
+    for version in entry.get("versions") or []:
+        if isinstance(version, str) and _normalize_git_ref(version) in candidates:
+            return True
+    return False
+
+
+def _normalize_git_repo(repo: str) -> str:
+    parsed = urlparse(repo)
+    if parsed.netloc:
+        normalized = f"{parsed.netloc}{parsed.path}"
+    else:
+        normalized = repo
+    return normalized.rstrip("/").removesuffix(".git")
+
+
+def _normalize_git_ref(ref: str) -> str:
+    return ref.removeprefix("refs/tags/")
 
 
 def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:

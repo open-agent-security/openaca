@@ -995,7 +995,7 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
 
 
 def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
-    """Verbose output surfaces queried PURLs and skipped refs."""
+    """Verbose output surfaces queried OSV targets and skipped refs."""
     from unittest.mock import patch
 
     cache_dir = tmp_path / "cache" / "demo" / "1.0.0"
@@ -1039,8 +1039,10 @@ def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
             ],
         )
     assert result.exit_code == 0, result.output
-    # The lodash dep should appear as a queried PURL
-    assert "federation: queried 1 PURL(s) on osv.dev; fetched 0 advisory record(s)" in result.output
+    # The lodash dep should appear as a queried OSV target.
+    assert (
+        "federation: queried 1 target(s) on osv.dev; fetched 0 advisory record(s)" in result.output
+    )
     assert "pkg:npm/lodash@4.17.20" in result.output
     # The source-less plugin self-identity ref should be in the skip count
     assert "plugin=1" in result.output
@@ -1070,7 +1072,9 @@ def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
             ],
         )
     assert result.exit_code == 0, result.output
-    assert "federation: queried 1 PURL(s) on osv.dev; fetched 0 advisory record(s)" in result.output
+    assert (
+        "federation: queried 1 target(s) on osv.dev; fetched 0 advisory record(s)" in result.output
+    )
     assert "loaded 0 OSV advisory record(s)" not in result.output
 
 
@@ -1134,7 +1138,7 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
 
 
 def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
-    """When nothing has a queryable PURL (e.g., only source-less plugin refs),
+    """When nothing has a queryable OSV target (e.g., only source-less plugin refs),
     verbose says so explicitly rather than emitting an empty list."""
     from unittest.mock import patch
 
@@ -1168,7 +1172,7 @@ def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
             ],
         )
     assert result.exit_code == 0, result.output
-    assert "no queryable PURLs" in result.output
+    assert "no queryable OSV.dev targets" in result.output
 
 
 def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):

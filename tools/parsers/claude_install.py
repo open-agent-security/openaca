@@ -484,10 +484,13 @@ def _walk_plugin_install_root(
 
 # (ecosystem, lockfile_filename, parser_callable) — parsed in order; multiple
 # ecosystems can coexist (a single plugin can ship JS + embedded Python).
+# For same-ecosystem lockfiles (bun.lock / package-lock.json both npm), only
+# the first match is used — bun.lock takes priority as the authoritative
+# lockfile for Bun-migrated projects.
 _LOCKFILE_DISPATCH: list[tuple[str, str, object]] = [
+    ("npm", "bun.lock", bun_lock.parse),
     ("npm", "package-lock.json", package_lock_json.parse),
     ("PyPI", "uv.lock", uv_lock.parse),
-    ("npm", "bun.lock", bun_lock.parse),
 ]
 
 # Manifest fallback runs ONLY for ecosystems not already covered by a lockfile.
@@ -509,8 +512,10 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
     manifest-fall-back for ecosystems not covered by a lockfile.
 
     ADR-0008: lockfile = full transitive; manifest fallback = direct deps
-    only with extra["transitive"]=False. Parse ALL supported lockfiles, not
-    first-match, so multi-language plugins emit refs for every ecosystem.
+    only with extra["transitive"]=False. For each ecosystem, only the first
+    matching lockfile in _LOCKFILE_DISPATCH is used — same-ecosystem lockfiles
+    (e.g. bun.lock + package-lock.json) are not double-parsed. Multi-language
+    plugins still emit refs for every ecosystem they cover.
     All emissions tagged with the caller-supplied attributed_to.
     """
     if not install_path.is_dir():
@@ -518,6 +523,8 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
     refs: list[ComponentRef] = []
     covered: set[str] = set()
     for ecosystem, filename, parser in _LOCKFILE_DISPATCH:
+        if ecosystem in covered:
+            continue  # already have a lockfile for this ecosystem; skip the redundant one
         lockfile = install_path / filename
         if not lockfile.is_file():
             continue

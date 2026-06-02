@@ -8,6 +8,7 @@ from typing import Callable
 
 from tools.component_ref import ComponentRef
 from tools.parsers import (
+    bun_lock,
     claude_command_agent,
     claude_plugin,
     claude_settings,
@@ -41,6 +42,7 @@ _DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
         "pyproject.toml",
         "package-lock.json",
         "uv.lock",
+        "bun.lock",
     }
 )
 
@@ -67,6 +69,7 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
     ("package-lock.json", package_lock_json.parse),
     ("uv.lock", uv_lock.parse),
+    ("bun.lock", bun_lock.parse),
 ]
 
 

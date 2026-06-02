@@ -460,9 +460,64 @@ def test_docker_container_run_form_emits_docker_purl():
     assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
 
 
+def test_docker_global_context_before_run_emits_docker_purl():
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": [
+                "--context",
+                "desktop-linux",
+                "run",
+                "-i",
+                "--rm",
+                "ghcr.io/org/server:1.0",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
+
+
+def test_docker_global_host_before_container_run_emits_docker_purl():
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": [
+                "--host",
+                "unix:///var/run/docker.sock",
+                "container",
+                "run",
+                "-i",
+                "--rm",
+                "ghcr.io/org/server:1.0",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
+
+
+def test_unparsed_docker_command_falls_back_to_binary_identity():
+    servers = {"myserver": {"command": "docker", "args": ["compose", "up"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].component_identity == "mcp-stdio/binary:docker"
+
+
 @pytest.mark.parametrize(
     "extra_args",
     [
+        ["--annotation", "org.opencontainers.image.title=mcp"],
         ["--expose", "8080"],
         ["--health-cmd", "curl -f http://localhost/health"],
         ["--health-interval", "30s"],

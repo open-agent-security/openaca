@@ -36,6 +36,7 @@ from typing import Literal, Optional
 
 from tools.component_ref import ComponentRef
 from tools.parsers import (
+    bun_lock,
     claude_command_agent,
     claude_skill,
     hooks_json,
@@ -486,6 +487,7 @@ def _walk_plugin_install_root(
 _LOCKFILE_DISPATCH: list[tuple[str, str, object]] = [
     ("npm", "package-lock.json", package_lock_json.parse),
     ("PyPI", "uv.lock", uv_lock.parse),
+    ("npm", "bun.lock", bun_lock.parse),
 ]
 
 # Manifest fallback runs ONLY for ecosystems not already covered by a lockfile.

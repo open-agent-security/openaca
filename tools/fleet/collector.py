@@ -389,6 +389,8 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
             return {**prop, "value": f"{launcher} {name}@{version}"}
         if purl.startswith("pkg:pypi/"):
             return {**prop, "value": f"{launcher} {name}=={version}"}
+        if purl.startswith("pkg:github/"):
+            return {**prop, "value": f"{launcher} git+https://github.com/{name}@{version}"}
         if purl.startswith("pkg:docker/"):
             sep = "@" if version.startswith("sha256:") else ":"
             return {**prop, "value": f"{launcher} {name}{sep}{version}"}

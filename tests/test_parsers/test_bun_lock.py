@@ -34,7 +34,7 @@ def test_parse_extracts_pinned_versions_and_skips_root(tmp_path: Path):
     "": { "name": "host-pkg", "dependencies": { "hono": "^4" }, },
   },
   "packages": {
-    "hono": ["hono@4.12.5", "", { "ms": "2.1.3" }, "sha512-abc=="],
+    "hono": ["hono@4.12.5", "", { "dependencies": { "ms": "2.1.3" } }, "sha512-abc=="],
     "ms": ["ms@2.1.3", "", {}, "sha512-ghi=="],
     "@types/node": ["@types/node@20.0.0", "", {}, "sha512-dev=="],
   },
@@ -100,14 +100,55 @@ def test_parse_no_workspaces_emits_all(tmp_path: Path):
 
 
 def test_collect_runtime_keys_bfs(tmp_path: Path):
+    # entry[2] is a metadata object; transitive deps are NESTED under
+    # "dependencies" (the shape `bun install` actually emits) — not flat keys.
     packages = {
-        "express": ["express@4.18.0", "", {"body-parser": "1.20.0"}, "sha512-a=="],
+        "express": [
+            "express@4.18.0",
+            "",
+            {"dependencies": {"body-parser": "1.20.0"}},
+            "sha512-a==",
+        ],
         "body-parser": ["body-parser@1.20.0", "", {}, "sha512-b=="],
         "typescript": ["typescript@5.0.0", "", {}, "sha512-c=="],
     }
     workspaces = {"": {"dependencies": {"express": "^4"}, "devDependencies": {"typescript": "^5"}}}
     keys = _collect_runtime_keys(packages, workspaces)
     assert keys == {"express", "body-parser"}
+
+
+def test_transitive_dep_nested_under_dependencies_key_is_reached(tmp_path: Path):
+    """Regression guard for the real bun.lock shape: a transitive runtime dep is
+    nested under entry[2]["dependencies"], NOT a top-level key of entry[2]
+    (whose keys are "dependencies"/"peerDependencies"/...). A parser that walks
+    entry[2] directly drops the entire transitive tree. This fixture mirrors
+    `bun install` output; the transitive `undici` must be emitted.
+    """
+    lock = tmp_path / "bun.lock"
+    lock.write_text(
+        """{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": { "name": "host", "dependencies": { "@scope/rest": "^2" }, },
+  },
+  "packages": {
+    "@scope/rest": ["@scope/rest@2.6.0", "", {
+      "dependencies": { "undici": "6.21.3" },
+      "peerDependencies": { "should-not-be-walked": "^1" }
+    }, "sha512-r=="],
+    "undici": ["undici@6.21.3", "", {}, "sha512-u=="],
+  },
+}
+""",
+        encoding="utf-8",
+    )
+    names = {r.name for r in parse(lock)}
+    assert "undici" in names  # transitive, nested under "dependencies" — must be found
+    assert "@scope/rest" in names
+    # The literal metadata key "peerDependencies" / its target must NOT be emitted
+    # as a package (it isn't in `packages`), and must not derail the walk.
+    assert "should-not-be-walked" not in names
+    assert "peerDependencies" not in names
 
 
 def test_collect_runtime_keys_no_runtime_seeds_returns_none():

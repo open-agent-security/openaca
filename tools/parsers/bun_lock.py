@@ -10,10 +10,11 @@ so the lockfile-vs-manifest distinction propagates to SARIF
 properties.coverage.
 
 Dev-dep filtering: when `workspaces` is present, a BFS from each workspace's
-`dependencies` and `optionalDependencies` (through each package's own dep map
-at `packages[name][2]`) collects runtime-reachable keys. Entries not in that
-set are `devDependencies`-only and are skipped. When `workspaces` is absent or
-yields no runtime seeds, all entries are emitted (safe degradation).
+`dependencies` and `optionalDependencies` (through each package's own nested dep
+maps at `packages[name][2]["dependencies"]` / `["optionalDependencies"]`)
+collects runtime-reachable keys. Entries not in that set are
+`devDependencies`-only and are skipped. When `workspaces` is absent or yields no
+runtime seeds, all entries are emitted (safe degradation).
 
 Bun lockfiles observed in the wild are strict JSON with trailing commas — no
 comments, single quotes, or unquoted keys. We therefore strip trailing commas
@@ -104,9 +105,18 @@ def _collect_runtime_keys(packages: dict, workspaces: dict) -> set[str] | None:
         reachable.add(name)
         entry = packages.get(name)
         if isinstance(entry, list) and len(entry) >= 3 and isinstance(entry[2], dict):
-            for dep_name in entry[2]:
-                if dep_name not in reachable:
-                    queue.append(dep_name)
+            # bun.lock's entry[2] is a metadata object whose dep maps are nested
+            # under "dependencies"/"optionalDependencies" — NOT a flat
+            # name->range map. Iterating entry[2] directly would walk the literal
+            # keys "dependencies"/"peerDependencies"/... and reach no real deps,
+            # silently dropping the entire transitive tree.
+            meta = entry[2]
+            for group in ("dependencies", "optionalDependencies"):
+                group_map = meta.get(group)
+                if isinstance(group_map, dict):
+                    for dep_name in group_map:
+                        if dep_name not in reachable:
+                            queue.append(dep_name)
     return reachable
 
 

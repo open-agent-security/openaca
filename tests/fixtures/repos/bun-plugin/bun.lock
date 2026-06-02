@@ -1,9 +1,23 @@
 {
-  "lockfileVersion": 1,
-  "workspaces": {
-    "": { "name": "bun-sample", "dependencies": { "@cyanheads/git-mcp-server": "1.1.0" }, },
-  },
-  "packages": {
-    "@cyanheads/git-mcp-server": ["@cyanheads/git-mcp-server@1.1.0", "", {}, "sha512-fixturehash=="],
-  },
+    "lockfileVersion": 1,
+    "workspaces": {
+        "": {
+            "name": "bun-sample",
+            "dependencies": {"mcp-wrapper": "1.0.0"},
+        },
+    },
+    "packages": {
+        "mcp-wrapper": [
+            "mcp-wrapper@1.0.0",
+            "",
+            {"dependencies": {"@cyanheads/git-mcp-server": "1.1.0"}},
+            "sha512-wrap==",
+        ],
+        "@cyanheads/git-mcp-server": [
+            "@cyanheads/git-mcp-server@1.1.0",
+            "",
+            {},
+            "sha512-fixturehash==",
+        ],
+    },
 }

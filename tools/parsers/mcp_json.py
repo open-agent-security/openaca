@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from tools.component_ref import ComponentRef
 
@@ -33,7 +33,7 @@ PYPI_AT_VERSION_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)@(?P<version>[^@\s]+
 PYPI_UNPINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)$")
 GITHUB_URL_RE = re.compile(
     r"^git\+https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/@\s#]+)"
-    r"(?:@(?P<ref>[^#\s]+))?(?:#[^\s]*)?$"
+    r"(?:@(?P<ref>[^#\s]+))?(?:#(?P<fragment>[^\s]*))?$"
 )
 LOCAL_MCP_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -287,7 +287,24 @@ def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
     # Only immutable commit SHAs may be encoded as PURL versions (ADR-0016).
     # Mutable refs (branches, tags) stay in install_source for posture rules.
     version = ref if (ref is not None and _COMMIT_SHA_RE.match(ref)) else None
-    return f"{match.group('owner')}/{repo}", version
+    name = f"{match.group('owner')}/{repo}"
+    subdirectory = _github_subdirectory(match.group("fragment"))
+    if subdirectory is not None:
+        name = f"{name}/{subdirectory}"
+    return name, version
+
+
+def _github_subdirectory(fragment: str | None) -> str | None:
+    if not fragment:
+        return None
+    values = parse_qs(fragment).get("subdirectory")
+    if not values:
+        return None
+    subdirectory = values[0].strip("/")
+    parts = subdirectory.split("/")
+    if not subdirectory or any(part in {"", ".", ".."} for part in parts):
+        return None
+    return subdirectory
 
 
 def _parse_docker_run_image(args: list[str]) -> tuple[str | None, str | None]:

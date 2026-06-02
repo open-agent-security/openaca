@@ -311,6 +311,25 @@ def test_uvx_from_github_url_keeps_commit_ref_as_version():
     assert refs[0].purl == "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567"
 
 
+def test_uvx_from_github_url_keeps_subdirectory_in_source_identity():
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    servers = {
+        "monorepo": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                f"git+https://github.com/org/mono.git@{commit}#subdirectory=packages/mcp",
+                "mcp",
+            ],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].name == "org/mono/packages/mcp"
+    assert refs[0].version == commit
+    assert refs[0].purl == f"pkg:github/org/mono/packages/mcp@{commit}"
+
+
 def test_uvx_from_github_url_mutable_ref_not_encoded_as_version():
     """Mutable branch/tag refs must not appear as PURL @version (ADR-0016)."""
     for mutable_ref in ("main", "master", "v1.0.0", "feat/my-branch"):

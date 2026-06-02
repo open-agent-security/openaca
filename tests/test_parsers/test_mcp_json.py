@@ -460,6 +460,47 @@ def test_docker_container_run_form_emits_docker_purl():
     assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
 
 
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--expose", "8080"],
+        ["--health-cmd", "curl -f http://localhost/health"],
+        ["--health-interval", "30s"],
+        ["--health-retries", "3"],
+        ["--health-start-period", "10s"],
+        ["--health-timeout", "10s"],
+        ["--link", "redis:redis"],
+        ["--volumes-from", "data-container"],
+        ["--sysctl", "net.core.somaxconn=1024"],
+        ["--tmpfs", "/run:rw,noexec,nosuid,size=65536k"],
+        ["--group-add", "video"],
+        ["--mac-address", "92:d0:c6:0a:29:33"],
+        ["--ip", "172.30.100.104"],
+        ["--ip6", "2001:db8::33"],
+        ["--cgroup-parent", "m-executor-abcd"],
+        ["--memory-reservation", "200m"],
+        ["--pids-limit", "100"],
+        ["--blkio-weight", "300"],
+        ["--cpu-period", "100000"],
+        ["--cpu-quota", "50000"],
+    ],
+)
+def test_docker_run_health_and_network_flags_skip_their_values(extra_args: list[str]):
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": ["run", *extra_args, "-i", "--rm", "ghcr.io/org/server:1.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
+
+
 def test_bun_run_local_mcp_emits_local_identity():
     servers = {
         "discord": {

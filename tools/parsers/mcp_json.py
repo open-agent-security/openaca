@@ -113,6 +113,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--memory-swappiness",
         "--mount",
         "--name",
+        "--net",  # documented alias of --network; takes a value
         "--network",
         "--network-alias",
         "--oom-score-adj",

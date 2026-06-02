@@ -530,6 +530,7 @@ def test_unparsed_docker_command_falls_back_to_binary_identity():
         ["--sysctl", "net.core.somaxconn=1024"],
         ["--tmpfs", "/run:rw,noexec,nosuid,size=65536k"],
         ["--group-add", "video"],
+        ["--userns", "host"],
         ["--mac-address", "92:d0:c6:0a:29:33"],
         ["--ip", "172.30.100.104"],
         ["--ip6", "2001:db8::33"],

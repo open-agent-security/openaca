@@ -272,12 +272,13 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
     commit = "0123456789abcdef0123456789abcdef01234567"
     ref = ComponentRef(
         ecosystem="github",
-        name="org/mono/packages/mcp",
+        name="org/mono",
         version=commit,
         source_manifest=".mcp.json",
         source_locator="mcpServers.monorepo",
         extra={
             "component_type": "mcp_server",
+            "source_subdirectory": "packages/mcp",
             "install_source": (
                 "uvx --from "
                 f"git+https://github.com/org/mono.git@{commit}#subdirectory=packages/mcp "

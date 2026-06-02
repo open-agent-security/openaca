@@ -315,7 +315,9 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
         return {**component, "properties": prepared_props}
     if _is_pinned_mcp_component(props_by_name):
         prepared_props = [
-            _trim_pinned_install_source(prop, component) if isinstance(prop, dict) else prop
+            _trim_pinned_install_source(prop, component, props_by_name)
+            if isinstance(prop, dict)
+            else prop
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
@@ -371,7 +373,9 @@ def _is_pinned_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     )
 
 
-def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> JsonObject:
+def _trim_pinned_install_source(
+    prop: JsonObject, component: JsonObject, props_by_name: dict[Any, Any]
+) -> JsonObject:
     if prop.get("name") != "openaca:install_source":
         return prop
     value = prop.get("value")
@@ -385,7 +389,16 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
     name = component.get("name")
     version = component.get("version")
     if isinstance(purl, str) and purl.startswith("pkg:github/") and isinstance(name, str):
-        return {**prop, "value": _github_install_source(launcher, name, value)}
+        subdirectory = props_by_name.get("openaca:source_subdirectory")
+        return {
+            **prop,
+            "value": _github_install_source(
+                launcher,
+                name,
+                value,
+                subdirectory if isinstance(subdirectory, str) else None,
+            ),
+        }
     if isinstance(purl, str) and isinstance(name, str) and isinstance(version, str):
         if purl.startswith("pkg:npm/"):
             return {**prop, "value": f"{launcher} {name}@{version}"}
@@ -401,11 +414,12 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
     return {**prop, "value": " ".join(parts[:2])}
 
 
-def _github_install_source(launcher: str, name: str, install_source: str) -> str:
-    repo_name, subdirectory = _split_github_repo_subdirectory(name)
-    source = f"git+https://github.com/{repo_name}"
+def _github_install_source(
+    launcher: str, name: str, install_source: str, subdirectory: str | None
+) -> str:
+    source = f"git+https://github.com/{name}"
     raw_from = _extract_arg_value(install_source.split(), "--from")
-    prefix = f"git+https://github.com/{repo_name}"
+    prefix = f"git+https://github.com/{name}"
     if raw_from is not None and raw_from.startswith(prefix):
         suffix = raw_from[len(prefix) :]
         if suffix.startswith(".git"):
@@ -415,13 +429,6 @@ def _github_install_source(launcher: str, name: str, install_source: str) -> str
     if subdirectory is not None:
         source = f"{source}#subdirectory={subdirectory}"
     return f"{launcher} {source}"
-
-
-def _split_github_repo_subdirectory(name: str) -> tuple[str, str | None]:
-    parts = name.split("/", maxsplit=2)
-    if len(parts) < 3:
-        return name, None
-    return f"{parts[0]}/{parts[1]}", parts[2]
 
 
 def _extract_arg_value(args: list[str], flag: str) -> str | None:

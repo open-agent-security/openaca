@@ -53,7 +53,7 @@ only for this format).
 Read `tools/parsers/package_lock_json.py` first — this mirrors its contract
 (npm refs, `transitive: True`, skip the root entry, fail closed).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_parsers/test_bun_lock.py`:
 
@@ -122,12 +122,12 @@ def test_parse_missing_packages_returns_empty(tmp_path: Path):
     assert parse(lock) == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_parsers/test_bun_lock.py -q`
 Expected: FAIL with `ModuleNotFoundError: tools.parsers.bun_lock`.
 
-- [ ] **Step 3: Implement the parser**
+- [x] **Step 3: Implement the parser**
 
 Create `tools/parsers/bun_lock.py`:
 
@@ -232,12 +232,12 @@ def _strip_trailing_commas(text: str) -> str:
     return "".join(out)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_parsers/test_bun_lock.py -q`
 Expected: PASS — 7/7.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/parsers/bun_lock.py tests/test_parsers/test_bun_lock.py
@@ -251,7 +251,7 @@ git commit -m "feat(parsers): bun.lock parser (npm transitive deps)"
 **Files:**
 - Modify: `tools/parsers/__init__.py` (three spots: import, `_DEP_MANIFEST_PATTERNS`, `REGISTRY`)
 
-- [ ] **Step 1: Add the import**
+- [x] **Step 1: Add the import**
 
 In the `from tools.parsers import (...)` block (alongside `package_lock_json`,
 `uv_lock`), add `bun_lock`:
@@ -267,7 +267,7 @@ In the `from tools.parsers import (...)` block (alongside `package_lock_json`,
 )
 ```
 
-- [ ] **Step 2: Add `bun.lock` to `_DEP_MANIFEST_PATTERNS`**
+- [x] **Step 2: Add `bun.lock` to `_DEP_MANIFEST_PATTERNS`**
 
 ```python
 _DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
@@ -281,7 +281,7 @@ _DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
 )
 ```
 
-- [ ] **Step 3: Add `bun.lock` to `REGISTRY`**
+- [x] **Step 3: Add `bun.lock` to `REGISTRY`**
 
 After the `("uv.lock", uv_lock.parse),` entry:
 
@@ -292,12 +292,12 @@ After the `("uv.lock", uv_lock.parse),` entry:
 ]
 ```
 
-- [ ] **Step 4: Verify nothing regressed**
+- [x] **Step 4: Verify nothing regressed**
 
 Run: `uv run pytest tests/test_parsers/ -q`
 Expected: PASS (existing parser tests + the new bun.lock tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/parsers/__init__.py
@@ -311,12 +311,12 @@ git commit -m "feat(parsers): route bun.lock in repo-scan dispatch"
 **Files:**
 - Modify: `tools/parsers/claude_install.py` (import + `_LOCKFILE_DISPATCH`)
 
-- [ ] **Step 1: Add the import**
+- [x] **Step 1: Add the import**
 
 Alongside the existing `package_lock_json` / `uv_lock` imports in
 `claude_install.py`, add `bun_lock`.
 
-- [ ] **Step 2: Add the dispatch entry**
+- [x] **Step 2: Add the dispatch entry**
 
 ```python
 _LOCKFILE_DISPATCH: list[tuple[str, str, object]] = [
@@ -326,12 +326,12 @@ _LOCKFILE_DISPATCH: list[tuple[str, str, object]] = [
 ]
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `uv run pytest tests/test_parsers/ tests/test_scan.py -q`
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tools/parsers/claude_install.py
@@ -353,7 +353,7 @@ offline-OSV map (`_osv_fixture_for_ref` → `ghsa-3q26-f695-pp76.json`), so no
 live OSV and no new fixture. It reuses the exact assertion pattern from
 `test_openaca_scan_attributes_bundled_finding_to_plugin` (#95).
 
-- [ ] **Step 1: Create the fixture plugin**
+- [x] **Step 1: Create the fixture plugin**
 
 `tests/fixtures/repos/bun-plugin/.claude-plugin/plugin.json`:
 
@@ -376,7 +376,7 @@ also the real-format check):
 }
 ```
 
-- [ ] **Step 2: Write the failing e2e test**
+- [x] **Step 2: Write the failing e2e test**
 
 Add to `tests/test_e2e.py` (near `test_openaca_scan_attributes_bundled_finding_to_plugin`):
 
@@ -406,14 +406,14 @@ def test_openaca_scan_bun_lock_surfaces_bundled_finding():
     assert "[! GHSA-3q26-f695-pp76]" in leaf_line
 ```
 
-- [ ] **Step 3: Run it**
+- [x] **Step 3: Run it**
 
 Run: `uv run pytest tests/test_e2e.py::test_openaca_scan_bun_lock_surfaces_bundled_finding -q`
 Expected: PASS. (If the plugin header label differs from `bun-sample`, adjust
 the `plugin_line` match to the actual plugin display id printed by the tree —
 confirm against the real output, don't guess.)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/repos/bun-plugin/ tests/test_e2e.py
@@ -431,7 +431,7 @@ bun.lock pins exact versions, so it matches well. But MCP servers launched via
 `npx pkg@latest` (no version) can't be OSV-range-matched — that's inherent, not
 a parser bug.
 
-- [ ] **Step 1: Add a one-line known-limitation note**
+- [x] **Step 1: Add a one-line known-limitation note**
 
 In the README's scope/limitations area, add:
 
@@ -442,7 +442,7 @@ In the README's scope/limitations area, add:
   `bun.lock`) are matched.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add README.md
@@ -453,7 +453,7 @@ git commit -m "docs: note unpinned-component matching limitation"
 
 ## Task 6: Full gate
 
-- [ ] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
+- [x] **Run the full gate:** `uv run ruff format`, `uv run ruff check`,
   `uv run pyright`, `uv run pytest`, `uv run openaca lint`. All green before
   done.
 

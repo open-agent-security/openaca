@@ -266,6 +266,45 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
     )
 
 
+def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv(
+    tmp_path, monkeypatch
+):
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    ref = ComponentRef(
+        ecosystem="github",
+        name="org/mono/packages/mcp",
+        version=commit,
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.monorepo",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": (
+                "uvx --from "
+                f"git+https://github.com/org/mono.git@{commit}#subdirectory=packages/mcp "
+                "mcp --token secret"
+            ),
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:install_source"] == (
+        f"uvx git+https://github.com/org/mono@{commit}#subdirectory=packages/mcp"
+    )
+
+
 @pytest.mark.parametrize(
     "raw_source, expected",
     [

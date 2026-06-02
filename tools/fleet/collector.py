@@ -384,18 +384,16 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
     purl = component.get("purl")
     name = component.get("name")
     version = component.get("version")
+    if isinstance(purl, str) and purl.startswith("pkg:github/") and isinstance(name, str):
+        return {**prop, "value": _github_install_source(launcher, name, value)}
     if isinstance(purl, str) and isinstance(name, str) and isinstance(version, str):
         if purl.startswith("pkg:npm/"):
             return {**prop, "value": f"{launcher} {name}@{version}"}
         if purl.startswith("pkg:pypi/"):
             return {**prop, "value": f"{launcher} {name}=={version}"}
-        if purl.startswith("pkg:github/"):
-            return {**prop, "value": f"{launcher} git+https://github.com/{name}@{version}"}
         if purl.startswith("pkg:docker/"):
             sep = "@" if version.startswith("sha256:") else ":"
             return {**prop, "value": f"{launcher} {name}{sep}{version}"}
-    if isinstance(purl, str) and purl.startswith("pkg:github/") and isinstance(name, str):
-        return {**prop, "value": _github_install_source(launcher, name, value)}
     # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:
@@ -404,16 +402,26 @@ def _trim_pinned_install_source(prop: JsonObject, component: JsonObject) -> Json
 
 
 def _github_install_source(launcher: str, name: str, install_source: str) -> str:
-    source = f"git+https://github.com/{name}"
+    repo_name, subdirectory = _split_github_repo_subdirectory(name)
+    source = f"git+https://github.com/{repo_name}"
     raw_from = _extract_arg_value(install_source.split(), "--from")
-    prefix = f"git+https://github.com/{name}"
+    prefix = f"git+https://github.com/{repo_name}"
     if raw_from is not None and raw_from.startswith(prefix):
         suffix = raw_from[len(prefix) :]
         if suffix.startswith(".git"):
             suffix = suffix[len(".git") :]
         if suffix.startswith("@"):
-            source = f"{source}{suffix}"
+            source = f"{source}{suffix.split('#', 1)[0]}"
+    if subdirectory is not None:
+        source = f"{source}#subdirectory={subdirectory}"
     return f"{launcher} {source}"
+
+
+def _split_github_repo_subdirectory(name: str) -> tuple[str, str | None]:
+    parts = name.split("/", maxsplit=2)
+    if len(parts) < 3:
+        return name, None
+    return f"{parts[0]}/{parts[1]}", parts[2]
 
 
 def _extract_arg_value(args: list[str], flag: str) -> str | None:

@@ -274,9 +274,7 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
         source_locator="mcpServers.github",
         extra={
             "component_type": "mcp_server",
-            "install_source": (
-                f"docker run -i --rm ghcr.io/github/github-mcp-server@{digest}"
-            ),
+            "install_source": (f"docker run -i --rm ghcr.io/github/github-mcp-server@{digest}"),
         },
     )
 
@@ -294,9 +292,7 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:install_source"] == (
-        f"docker ghcr.io/github/github-mcp-server@{digest}"
-    )
+    assert props["openaca:install_source"] == (f"docker ghcr.io/github/github-mcp-server@{digest}")
 
 
 def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path, monkeypatch):

@@ -59,6 +59,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--platform",
         "--publish",
         "-p",
+        "--pull",
         "--user",
         "-u",
         "--volume",

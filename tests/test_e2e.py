@@ -22,8 +22,13 @@ from jsonschema import Draft202012Validator
 from packaging.version import Version
 
 from tools import lint
+from tools.bom import build_agent_bom, component_refs_from_cyclonedx
+from tools.component_ref import ComponentRef
 from tools.export import build
+from tools.fleet.collector import _prepare_fleet_bom
+from tools.osv_federation import collect_osv_queries
 from tools.parsers.mcp_json import parse as parse_mcp
+from tools.render import render_inventory_tree
 
 REPO_ROOT = Path(__file__).parent.parent
 OVERLAYS_DIR = REPO_ROOT / "overlays"
@@ -734,3 +739,73 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
     assert properties.get("attributed_to") is None or "attributed_to" not in properties
+
+
+# Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and Fleet upload.
+
+
+def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    refs = [
+        ComponentRef(
+            ecosystem="github",
+            name="oraios/serena",
+            version=sha,
+            source_manifest=".mcp.json",
+            source_locator="mcpServers.serena",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": (
+                    f"uvx --from git+https://github.com/oraios/serena.git@{sha} "
+                    "serena --token secret"
+                ),
+            },
+        ),
+        ComponentRef(
+            ecosystem="docker",
+            name="hashicorp/terraform-mcp-server",
+            version="0.4.0",
+            source_manifest=".mcp.json",
+            source_locator="mcpServers.terraform",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": (
+                    "docker run -i --rm -e TFE_TOKEN=${TFE_TOKEN} "
+                    "hashicorp/terraform-mcp-server:0.4.0"
+                ),
+            },
+        ),
+    ]
+
+    bom = build_agent_bom(refs, target_type="endpoint").to_cyclonedx()
+    round_tripped = component_refs_from_cyclonedx(bom)
+
+    assert [ref.ecosystem for ref in round_tripped] == ["GitHub", "Docker"]
+    assert round_tripped[0].purl == f"pkg:github/oraios/serena@{sha}"
+    assert round_tripped[1].purl == "pkg:docker/hashicorp/terraform-mcp-server@0.4.0"
+    # The GitHub commit ref survives the round-trip as a queryable OSV git_commit
+    # query; the Docker ref stays inventory-only (skipped). collect_target_purls
+    # would be [] for both regardless, so it can't prove federation survived.
+    assert [(q.kind, q.git_repo, q.git_ref) for q in collect_osv_queries(round_tripped)] == [
+        ("git_commit", "github.com/oraios/serena", sha)
+    ]
+
+    rendered = render_inventory_tree(round_tripped, [], use_unicode=True)
+    assert f"oraios/serena@{sha} (stdio via uvx)" in rendered
+    assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in rendered
+    assert "uvx (stdio, args hidden)" not in rendered
+    assert "docker (stdio, args hidden)" not in rendered
+
+    prepared = _prepare_fleet_bom(bom)
+    github_props = _props_by_name(prepared["components"][0])
+    docker_props = _props_by_name(prepared["components"][1])
+    assert github_props["openaca:install_source"] == (
+        f"uvx git+https://github.com/oraios/serena@{sha}"
+    )
+    assert docker_props["openaca:install_source"] == ("docker hashicorp/terraform-mcp-server:0.4.0")
+    assert "secret" not in github_props["openaca:install_source"]
+    assert "TFE_TOKEN" not in docker_props["openaca:install_source"]
+
+
+def _props_by_name(component):
+    return {prop["name"]: prop["value"] for prop in component.get("properties", [])}

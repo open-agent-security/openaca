@@ -38,6 +38,24 @@ Keep at most **one** plan in 🟡 Active state at a time. Updating a plan's
 status here is the source of truth for project progress alongside checkbox
 state inside individual plans.
 
+## Identity lifecycle checklist
+
+Any plan that changes `ComponentRef.ecosystem`, `name`, `version`, `purl`,
+`component_identity`, or `extra.install_source` must include an explicit sink
+audit before implementation is marked complete:
+
+| Surface | Required check |
+|---|---|
+| Parser | Emits the expected `ComponentRef` fields. |
+| PURL | `ComponentRef.purl` is correct, or intentionally absent. |
+| Agent BOM | CycloneDX serialization and `scan bom` round-trip preserve identity. |
+| Renderer | `scan repo`, `scan endpoint`, and `scan bom` render useful labels. |
+| OSV federation | Query eligibility is intentional; unsupported refs do not false-query. |
+| Matcher | Unsupported or non-version-like refs do not produce false findings. |
+| Posture | Mutable/immutable install-reference behavior is intentional. |
+| Fleet upload | Upload preparation preserves safe source identity and drops raw argv. |
+| E2E | At least one realistic fixture proves the lifecycle across multiple sinks. |
+
 ## Pre-V0 setup (already done)
 
 - Repo at `open-agent-security/openaca`.

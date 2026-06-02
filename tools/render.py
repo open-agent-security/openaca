@@ -30,7 +30,7 @@ from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, is_package_source_ref
 from tools.finding_output import finding_to_output, posture_to_output
 from tools.matcher import Finding
 from tools.posture.finding import PostureFinding
@@ -897,8 +897,7 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
             return f"{display_url} ({transport})"
         return display_url
     command = _stdio_command_label(ref.extra.get("install_source"))
-    ecosystem = ref.ecosystem.lower() if isinstance(ref.ecosystem, str) else None
-    if ecosystem in {"npm", "pypi", "github", "docker"} and ref.name:
+    if is_package_source_ref(ref):
         if command:
             transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
             return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"

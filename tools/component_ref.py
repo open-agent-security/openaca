@@ -15,10 +15,90 @@ PURL_ECOSYSTEM_MAP = {
     "Docker": "docker",
     "docker": "docker",
 }
+PACKAGE_SOURCE_PURL_TYPES = frozenset({"npm", "pypi", "github", "docker"})
 
 
 def encode_purl_name(name: str) -> str:
     return quote(name, safe="/")
+
+
+def canonical_ecosystem(ecosystem: object) -> Optional[str]:
+    if not isinstance(ecosystem, str):
+        return None
+    return PURL_ECOSYSTEM_MAP.get(ecosystem) or ecosystem.lower()
+
+
+def purl_type_for_ecosystem(ecosystem: object) -> Optional[str]:
+    if not isinstance(ecosystem, str):
+        return None
+    return PURL_ECOSYSTEM_MAP.get(ecosystem)
+
+
+def purl_type(purl: object) -> Optional[str]:
+    if not isinstance(purl, str) or not purl.startswith("pkg:"):
+        return None
+    body = purl[4:]
+    if "/" not in body:
+        return None
+    value, _remainder = body.split("/", 1)
+    return value or None
+
+
+def is_package_source_ref(ref: "ComponentRef") -> bool:
+    return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
+
+
+def safe_pinned_mcp_install_source(
+    *,
+    launcher: str,
+    purl: object,
+    name: object,
+    version: object,
+    install_source: object = None,
+    source_subdirectory: object = None,
+) -> Optional[str]:
+    if not (isinstance(launcher, str) and launcher and isinstance(name, str) and name):
+        return None
+    subdirectory = source_subdirectory if isinstance(source_subdirectory, str) else None
+    package_type = purl_type(purl)
+    if package_type == "github":
+        source = f"git+https://github.com/{name}"
+        if isinstance(version, str) and version:
+            source = f"{source}@{version}"
+            if subdirectory is not None:
+                source = f"{source}#subdirectory={subdirectory}"
+            return f"{launcher} {source}"
+        raw_from = _extract_arg_value(str(install_source).split(), "--from")
+        prefix = f"git+https://github.com/{name}"
+        if raw_from is not None and raw_from.startswith(prefix):
+            suffix = raw_from[len(prefix) :]
+            if suffix.startswith(".git"):
+                suffix = suffix[len(".git") :]
+            if suffix.startswith("@"):
+                source = f"{source}{suffix.split('#', 1)[0]}"
+        if subdirectory is not None:
+            source = f"{source}#subdirectory={subdirectory}"
+        return f"{launcher} {source}"
+    if not (isinstance(version, str) and version):
+        return None
+    if package_type == "npm":
+        return f"{launcher} {name}@{version}"
+    if package_type == "pypi":
+        return f"{launcher} {name}=={version}"
+    if package_type == "docker":
+        sep = "@" if version.startswith("sha256:") else ":"
+        return f"{launcher} {name}{sep}{version}"
+    return None
+
+
+def _extract_arg_value(args: list[str], flag: str) -> Optional[str]:
+    prefix = f"{flag}="
+    for index, arg in enumerate(args):
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+        if arg == flag and index + 1 < len(args):
+            return args[index + 1]
+    return None
 
 
 @dataclass(frozen=True)
@@ -55,7 +135,7 @@ class ComponentRef:
     def purl(self) -> Optional[str]:
         if not (self.ecosystem and self.name):
             return None
-        purl_eco = PURL_ECOSYSTEM_MAP.get(self.ecosystem)
+        purl_eco = purl_type_for_ecosystem(self.ecosystem)
         if not purl_eco:
             return None
         encoded = encode_purl_name(self.name)

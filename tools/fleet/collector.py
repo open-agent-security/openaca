@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from tools.bom import build_agent_bom
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
 from tools.fleet.client import BomUploadResult, FleetClient, FleetClientError, FleetServerError
 from tools.fleet.config import FleetConfig, get_config_path, load_fleet_config, save_fleet_config
 from tools.fleet.upload_contract import (
@@ -388,54 +388,18 @@ def _trim_pinned_install_source(
     purl = component.get("purl")
     name = component.get("name")
     version = component.get("version")
-    if isinstance(purl, str) and purl.startswith("pkg:github/") and isinstance(name, str):
-        subdirectory = props_by_name.get("openaca:source_subdirectory")
-        return {
-            **prop,
-            "value": _github_install_source(
-                launcher,
-                name,
-                value,
-                subdirectory if isinstance(subdirectory, str) else None,
-            ),
-        }
-    if isinstance(purl, str) and isinstance(name, str) and isinstance(version, str):
-        if purl.startswith("pkg:npm/"):
-            return {**prop, "value": f"{launcher} {name}@{version}"}
-        if purl.startswith("pkg:pypi/"):
-            return {**prop, "value": f"{launcher} {name}=={version}"}
-        if purl.startswith("pkg:docker/"):
-            sep = "@" if version.startswith("sha256:") else ":"
-            return {**prop, "value": f"{launcher} {name}{sep}{version}"}
+    safe_source = safe_pinned_mcp_install_source(
+        launcher=launcher,
+        purl=purl,
+        name=name,
+        version=version,
+        install_source=value,
+        source_subdirectory=props_by_name.get("openaca:source_subdirectory"),
+    )
+    if safe_source is not None:
+        return {**prop, "value": safe_source}
     # Fallback: keep first two raw tokens when no PURL metadata is available.
     parts = value.split(maxsplit=2)
     if len(parts) <= 2:
         return prop
     return {**prop, "value": " ".join(parts[:2])}
-
-
-def _github_install_source(
-    launcher: str, name: str, install_source: str, subdirectory: str | None
-) -> str:
-    source = f"git+https://github.com/{name}"
-    raw_from = _extract_arg_value(install_source.split(), "--from")
-    prefix = f"git+https://github.com/{name}"
-    if raw_from is not None and raw_from.startswith(prefix):
-        suffix = raw_from[len(prefix) :]
-        if suffix.startswith(".git"):
-            suffix = suffix[len(".git") :]
-        if suffix.startswith("@"):
-            source = f"{source}{suffix.split('#', 1)[0]}"
-    if subdirectory is not None:
-        source = f"{source}#subdirectory={subdirectory}"
-    return f"{launcher} {source}"
-
-
-def _extract_arg_value(args: list[str], flag: str) -> str | None:
-    prefix = f"{flag}="
-    for index, arg in enumerate(args):
-        if arg.startswith(prefix):
-            return arg[len(prefix) :]
-        if arg == flag and index + 1 < len(args):
-            return args[index + 1]
-    return None

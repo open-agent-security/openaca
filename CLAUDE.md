@@ -147,6 +147,33 @@ Don't move existing unit tests here. Don't put e2e tests in module
 test files. The boundary is: *does this test fail if any one of
 several modules regresses?*
 
+## Verifying claims about external behavior
+
+When a review comment, design decision, or bug report turns on how a *third
+party* behaves — an API contract (e.g. OSV.dev query semantics), a file or
+lockfile format (e.g. `bun.lock`, `package-lock.json`), or a tool's actual
+output — verify against ground truth before accepting or rejecting it:
+
+- **Fetch the authoritative source.** Use `WebFetch` for the docs/spec,
+  `WebSearch` to find it, or run a script (`uv run python`, `curl`) to hit the
+  API or parse a real sample.
+- **In-repo ADRs, plans, and tests are NOT evidence for an external claim.**
+  They record what *we chose*, not what the third party actually requires. A
+  test written by the same author who holds an assumption is self-referential:
+  it confirms the assumption rather than falsifying it. (Both PR #97 and #98
+  stalled on exactly this — fixtures/ADRs cited as proof of an external format
+  or API contract they only asserted.)
+- **Distinguish "I verified this is false" from "I could not disprove it."**
+  Absence of in-repo disproof is not disproof. If you lack the access to
+  verify (no network, no real sample, a denied tool), say so explicitly and
+  **defer** — flag the uncertainty and escalate to a human reviewer rather
+  than confidently pushing back on a bare citation. A factual dispute about
+  external behavior that you cannot settle is a stop-and-ask, not a
+  win-the-argument.
+
+This applies to every agent — the interactive assistant, the `@claude` review
+bot, and any subagent — not just one surface.
+
 ## Risky / hard-to-reverse actions
 
 Carefully consider reversibility and blast radius. Local + reversible

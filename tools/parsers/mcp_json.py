@@ -92,6 +92,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--isolation",
         "--kernel-memory",
         "--label",
+        "--label-file",
         "-l",
         "--link",
         "--link-local-ip",

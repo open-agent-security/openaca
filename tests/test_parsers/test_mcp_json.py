@@ -524,6 +524,7 @@ def test_unparsed_docker_command_falls_back_to_binary_identity():
         ["--health-retries", "3"],
         ["--health-start-period", "10s"],
         ["--health-timeout", "10s"],
+        ["--label-file", "labels.txt"],
         ["--link", "redis:redis"],
         ["--volumes-from", "data-container"],
         ["--sysctl", "net.core.somaxconn=1024"],

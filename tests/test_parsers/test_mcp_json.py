@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.mcp_json import parse, parse_mcp_servers
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
@@ -388,6 +390,42 @@ def test_docker_run_pull_flag_skips_policy_value():
     assert ref.name == "hashicorp/terraform-mcp-server"
     assert ref.version == "0.4.0"
     assert ref.purl == "pkg:docker/hashicorp/terraform-mcp-server@0.4.0"
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["-m", "300M"],
+        ["--memory", "512m"],
+        ["--memory-swap", "1g"],
+        ["--shm-size", "256m"],
+        ["--gpus", "all"],
+        ["--runtime", "nvidia"],
+        ["--restart", "unless-stopped"],
+        ["--log-driver", "json-file"],
+        ["--log-opt", "max-size=10m"],
+        ["--cap-add", "SYS_PTRACE"],
+        ["--cap-drop", "ALL"],
+        ["--security-opt", "no-new-privileges"],
+        ["--ulimit", "nofile=1024:1024"],
+        ["--device", "/dev/gpu0"],
+        ["--cpuset-cpus", "0-3"],
+    ],
+)
+def test_docker_run_resource_flags_skip_their_values(extra_args: list[str]):
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": ["run", *extra_args, "-i", "--rm", "ghcr.io/org/server:1.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
 
 
 def test_bun_run_local_mcp_emits_local_identity():

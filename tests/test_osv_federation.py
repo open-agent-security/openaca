@@ -16,6 +16,8 @@ def _ref(eco: str, name: str, version: str) -> ComponentRef:
 
 def test_is_queryable_requires_version_and_purl_mappable_ecosystem():
     assert is_queryable(_ref("npm", "lodash", "4.17.20")) is True
+    # Docker PURLs are inventory/BOM identities in V0, not OSV query targets.
+    assert is_queryable(_ref("docker", "ghcr.io/org/server", "1.0")) is False
     # No version → not queryable (PURL can't be formed)
     assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
     # Source-less agent components → no PURL, not queryable
@@ -39,6 +41,7 @@ def test_collect_target_purls_dedupes_and_preserves_order():
     refs = [
         _ref("npm", "lodash", "4.17.20"),
         _ref("PyPI", "requests", "2.31.0"),
+        _ref("docker", "ghcr.io/org/server", "1.0"),  # skipped
         _ref("npm", "lodash", "4.17.20"),  # dup
         ComponentRef(
             name="supabase", version="0.1.6", extra={"component_type": "plugin"}

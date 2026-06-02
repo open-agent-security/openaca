@@ -48,6 +48,13 @@ from tools.posture.immutability import is_mutable_reference
         # uvx — --from flag forms
         ("uvx --from mcp-bar==1.0.0 mcp-bar", False),  # pinned via --from
         ("uvx --from mcp-bar mcp-bar", True),  # --from but no version
+        (
+            "uvx --from git+https://github.com/org/repo.git@"
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 repo",
+            False,
+        ),
+        ("uvx --from git+https://github.com/org/repo.git@main repo", True),
+        ("uvx --from git+https://github.com/org/repo.git@v1.0.0 repo", True),
         # uv tool run — equivalent to uvx; pinned spec is immutable
         ("uv tool run mcp-bar==1.0.0", False),
         ("uv tool run mcp-bar@1.2.3", False),
@@ -62,6 +69,11 @@ from tools.posture.immutability import is_mutable_reference
         ("uv tool run --python 3.12 weather-mcp==0.5.0", False),  # --python before spec
         ("uv tool run --python 3.12 weather-mcp", True),  # --python before unpinned spec
         ("uv tool run --from mcp-bar==1.0.0 mcp-bar", False),  # --from with pin
+        (
+            "uv tool run --from git+https://github.com/org/repo.git@"
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 repo",
+            False,
+        ),
         ("uv serve something", True),  # unrecognized subcommand
         # Local paths — never flag (not a remote install ref)
         ("./local/plugin", False),

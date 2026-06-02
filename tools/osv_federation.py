@@ -5,10 +5,11 @@ records from OSV.dev for the matcher to consume. OpenACA overlays are
 applied by `tools.overlays` after these records are fetched.
 
 Behavior:
-- Only refs with a derivable PURL (ecosystem in PURL_ECOSYSTEM_MAP +
+- Only refs with a supported OSV PURL query shape (currently npm/PyPI +
   name + version) are queried. Source-less agent components such as hooks,
   commands, agents, skills, and plugins are skipped — OSV.dev would not have
-  records for them anyway.
+  records for them anyway. Generic Docker refs stay in inventory/BOM output
+  but are not queried until a container ecosystem mapping is explicit.
 - PURLs are deduplicated within a scan (same PURL queried once).
 - /v1/querybatch caps at 1000 packages per request; chunked into
   multiple requests if needed.
@@ -36,6 +37,7 @@ _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 _VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
 _BATCH_SIZE = 1000
 _TIMEOUT_SECONDS = 30
+_PURL_QUERY_ECOSYSTEMS = frozenset({"npm", "PyPI", "pypi"})
 
 
 def is_queryable(ref: ComponentRef) -> bool:
@@ -45,7 +47,7 @@ def is_queryable(ref: ComponentRef) -> bool:
     OSV.dev would not have records for them.
     Same rule for any ecosystem-tagged ref missing a version.
     """
-    return bool(ref.version) and ref.purl is not None
+    return bool(ref.version) and ref.ecosystem in _PURL_QUERY_ECOSYSTEMS and ref.purl is not None
 
 
 def augment_corpus(

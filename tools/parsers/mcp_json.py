@@ -70,6 +70,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--mount",
         "--name",
         "--network",
+        "--network-alias",
         "--pid",
         "--platform",
         "--publish",
@@ -227,9 +228,14 @@ def _parse_uvx_github_from(args: list[str]) -> tuple[str | None, str | None]:
 
 
 def _parse_docker_run_image(args: list[str]) -> tuple[str | None, str | None]:
-    if not args or args[0] != "run":
+    if not args:
         return None, None
-    i = 1
+    if args[0] == "run":
+        i = 1
+    elif len(args) >= 2 and args[0] == "container" and args[1] == "run":
+        i = 2
+    else:
+        return None, None
     while i < len(args):
         arg = args[i]
         if arg == "--":

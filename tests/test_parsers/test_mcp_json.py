@@ -428,6 +428,38 @@ def test_docker_run_resource_flags_skip_their_values(extra_args: list[str]):
     assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
 
 
+def test_docker_run_network_alias_flag_skips_alias_value():
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": ["run", "--network-alias", "mcp", "-i", "--rm", "ghcr.io/org/server:1.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
+
+
+def test_docker_container_run_form_emits_docker_purl():
+    servers = {
+        "myserver": {
+            "command": "docker",
+            "args": ["container", "run", "-i", "--rm", "ghcr.io/org/server:1.0"],
+        }
+    }
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "docker"
+    assert ref.name == "ghcr.io/org/server"
+    assert ref.version == "1.0"
+    assert ref.purl == "pkg:docker/ghcr.io/org/server@1.0"
+
+
 def test_bun_run_local_mcp_emits_local_identity():
     servers = {
         "discord": {

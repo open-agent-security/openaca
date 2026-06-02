@@ -77,6 +77,24 @@ def test_unparseable_version_emits_low_confidence():
     assert findings[0].confidence == "low"
 
 
+def test_github_commit_sha_does_not_emit_false_low_confidence():
+    """A commit SHA is a concrete pinned ref, not a range/spec.
+
+    The matcher can't evaluate GIT ranges (no _in_range support for commit
+    SHAs), so github-ecosystem refs with an unparseable version must be
+    skipped silently — not emitted as a low-confidence "pin to verify" finding.
+    """
+    advisories = [make_advisory("GHSA-1234-5678-9abc", "github", "oraios/serena", "1.0.0")]
+    ref = ComponentRef(
+        ecosystem="github",
+        name="oraios/serena",
+        version="0123456789abcdef0123456789abcdef01234567",
+        source_manifest="mcp.json",
+        source_locator="$.mcpServers.serena",
+    )
+    assert match(refs=[ref], advisories=advisories) == []
+
+
 def test_match_pypi_pinned():
     advisories = [make_advisory("CVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
     ref = ComponentRef(

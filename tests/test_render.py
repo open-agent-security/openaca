@@ -852,6 +852,38 @@ def test_tree_stdio_mcp_leaf_uses_docker_source_identity():
     assert "TFE_TOKEN" not in out
 
 
+def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_source_identity():
+    refs = [
+        _plugin_ref("sources", "unknown", marketplace="official"),
+        ComponentRef(
+            ecosystem="GitHub",
+            name="oraios/serena",
+            attributed_to="claude-plugin/official/sources@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "uvx --from git+https://github.com/oraios/serena serena",
+            },
+        ),
+        ComponentRef(
+            ecosystem="Docker",
+            name="hashicorp/terraform-mcp-server",
+            version="0.4.0",
+            attributed_to="claude-plugin/official/sources@unknown",
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "docker run hashicorp/terraform-mcp-server:0.4.0",
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True)
+
+    assert "oraios/serena (stdio via uvx)" in out
+    assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in out
+    assert "uvx (stdio, args hidden)" not in out
+    assert "docker (stdio, args hidden)" not in out
+
+
 def test_tree_local_stdio_mcp_leaf_uses_server_identity():
     refs = [
         ComponentRef(

@@ -897,7 +897,8 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
             return f"{display_url} ({transport})"
         return display_url
     command = _stdio_command_label(ref.extra.get("install_source"))
-    if ref.ecosystem in {"npm", "PyPI", "github", "docker"} and ref.name:
+    ecosystem = ref.ecosystem.lower() if isinstance(ref.ecosystem, str) else None
+    if ecosystem in {"npm", "pypi", "github", "docker"} and ref.name:
         if command:
             transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
             return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"

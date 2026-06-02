@@ -247,6 +247,11 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
     _append_json_prop(props, "openaca:source", (ref.extra or {}).get("source"))
     _append_prop(props, "openaca:install_source", (ref.extra or {}).get("install_source"))
+    _append_prop(
+        props,
+        "openaca:source_subdirectory",
+        (ref.extra or {}).get("source_subdirectory"),
+    )
     _append_prop(props, "openaca:transport", (ref.extra or {}).get("transport"))
     _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
     _append_prop(props, "openaca:plugin_scope", (ref.extra or {}).get("scope"))
@@ -302,6 +307,7 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
                 extra[extra_key] = value
     for prop_name, extra_key in (
         ("openaca:install_source", "install_source"),
+        ("openaca:source_subdirectory", "source_subdirectory"),
         ("openaca:transport", "transport"),
         ("openaca:url", "url"),
         ("openaca:plugin_scope", "scope"),

@@ -50,7 +50,7 @@ def is_mutable_reference(ref: str) -> bool:
     # uvx package specs — parse --from flag before falling back to positional
     if ref.startswith("uvx "):
         args = ref[len("uvx ") :].split()
-        github_name, github_version = _parse_uvx_github_from(args)
+        github_name, github_version, _github_subdirectory = _parse_uvx_github_from(args)
         if github_name is not None:
             return github_version is None
         name, version, pinned = _parse_uvx_args(args)
@@ -72,7 +72,7 @@ def is_mutable_reference(ref: str) -> bool:
             # Delegate to _parse_uvx_args: handles --from, --python, --with, etc.
             # (uv tool run is semantically equivalent to uvx).
             args = tokens[i + 2 :]
-            github_name, github_version = _parse_uvx_github_from(args)
+            github_name, github_version, _github_subdirectory = _parse_uvx_github_from(args)
             if github_name is not None:
                 return github_version is None
             name, version, pinned = _parse_uvx_args(args)

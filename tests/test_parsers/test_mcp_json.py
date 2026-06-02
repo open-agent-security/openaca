@@ -325,9 +325,10 @@ def test_uvx_from_github_url_keeps_subdirectory_in_source_identity():
     }
     refs = parse_mcp_servers(servers, source_manifest="fake.json")
     assert len(refs) == 1
-    assert refs[0].name == "org/mono/packages/mcp"
+    assert refs[0].name == "org/mono"
     assert refs[0].version == commit
-    assert refs[0].purl == f"pkg:github/org/mono/packages/mcp@{commit}"
+    assert refs[0].purl == f"pkg:github/org/mono@{commit}"
+    assert refs[0].extra["source_subdirectory"] == "packages/mcp"
 
 
 def test_uvx_from_github_url_mutable_ref_not_encoded_as_version():

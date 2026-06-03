@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import quote
 
 PURL_ECOSYSTEM_MAP = {
@@ -116,7 +116,7 @@ class ComponentRef:
     source_locator: str = ""
     component_identity: Optional[str] = None
     attributed_to: Optional[str] = None
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
     # Composition classification, set by the repo walker post-parse:
     #   "agent-component"     — first-class agent surface (plugins, MCP
     #                           servers, skills, commands, agents, hooks,

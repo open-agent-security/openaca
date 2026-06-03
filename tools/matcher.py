@@ -236,7 +236,7 @@ def _git_repo_name(ref: ComponentRef) -> str | None:
     if not ref.name:
         return None
     if ref.ecosystem in {"github", "GitHub"}:
-        return f"github.com/{ref.name}"
+        return f"github.com/{ref.name.lower()}"
     return ref.name
 
 
@@ -264,7 +264,7 @@ def _normalize_git_repo(repo: str) -> str:
         normalized = f"{parsed.netloc}{parsed.path}"
     else:
         normalized = repo
-    return normalized.rstrip("/").removesuffix(".git")
+    return normalized.rstrip("/").removesuffix(".git").lower()
 
 
 def _normalize_git_ref(ref: str) -> str:

@@ -450,6 +450,8 @@ def test_docker_run_pull_flag_skips_policy_value():
         ["--device", "/dev/gpu0"],
         ["--cpuset-cpus", "0-3"],
         ["--net", "host"],  # documented alias of --network
+        ["--net-alias", "mcp"],  # hidden alias of --network-alias
+        ["--dns-opt", "use-vc"],  # hidden alias of --dns-option
     ],
 )
 def test_docker_run_resource_flags_skip_their_values(extra_args: list[str]):

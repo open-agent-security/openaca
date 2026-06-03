@@ -85,8 +85,12 @@ def is_mutable_reference(ref: str) -> bool:
     if ref.startswith(("git+", "git://")):
         return _is_mutable_git_ref(ref)
 
-    # Docker image refs (heuristic: registry path with a `/`, no scheme).
-    if "/" in ref:
+    # Docker image refs. The `/` heuristic catches registry-pathed images, but
+    # a digest-pinned *official* image has no namespace slash (e.g. a
+    # `docker run redis@sha256:<64hex>` install source), so also route refs
+    # carrying a digest — otherwise the digest pin is missed and the immutable
+    # install is reported as mutable.
+    if "/" in ref or _DOCKER_DIGEST_RE.search(ref):
         return _is_mutable_docker_ref(ref)
 
     # Opaque single-token reference — treat as mutable (conservative).

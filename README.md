@@ -7,7 +7,7 @@ matches it against known security advisories (OSV / GHSA / CVE / MAL).
 
 > Identity resolution and composition analysis for AI agent stacks.
 
-> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b5`.
+> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b6`.
 > If you're a beta tester, the
 > [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
 > in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
@@ -108,8 +108,9 @@ matched.
 
 ## Quickstart
 
-Two ways to run the scanner. Both produce SARIF v2.1.0 output and
-the same set of findings.
+Two ways to run the scanner. Both produce the same set of findings.
+By default the scanner prints text output; add `--sarif <path>` when
+you want a SARIF v2.1.0 artifact.
 
 ### Install
 
@@ -143,7 +144,7 @@ cat > mcp.json <<'EOF'
   }
 }
 EOF
-openaca scan repo --target .
+openaca scan repo --target . --fail-on none
 ```
 
 Expected output:
@@ -156,9 +157,9 @@ Target
 Inventory
 
 repo .
-`-- direct components/
-    `-- MCPs/ (1)
-        `-- @cyanheads/git-mcp-server@1.1.0 (stdio via npx) (from mcp.json)  [! GHSA-3q26-f695-pp76]
+└── direct components/
+    └── MCPs/ (1)
+        └── @cyanheads/git-mcp-server@1.1.0 (stdio via npx) (from mcp.json)  [! GHSA-3q26-f695-pp76]
 
 Findings
 
@@ -191,7 +192,7 @@ checkout. Two modes via subcommands.
 **Pin a specific version (recommended for Fleet / MDM / CI):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=0.1.0b5 sh
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=0.1.0b6 sh
 ```
 
 Pinning matters for reproducible deployments — every machine getting
@@ -209,7 +210,7 @@ pip install openaca
 ```
 
 (All install paths auto-pick the latest pre-release while no stable
-exists. Pin a specific build with `openaca==0.1.0b5` if you need to
+exists. Pin a specific build with `openaca==0.1.0b6` if you need to
 reproduce a bug report against an exact version.)
 
 **Install from source (for contributors):**

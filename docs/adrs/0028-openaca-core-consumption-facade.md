@@ -51,7 +51,8 @@ from a stored CycloneDX BOM to advisory findings with CLI-equivalent semantics:
   provenance stamping/filtering helpers the matcher depends on
 - `match`
 - severity normalization helpers
-- risk attribution / containment-path helpers
+- risk attribution (`ComponentRef.attributed_to`, `Finding.attributed_to`);
+  containment-path display is a consumer responsibility and is not re-exported
 
 The internal modules stay under `tools.*` for now; the facade wraps/re-exports
 them. Internals may later migrate from `tools.*` to `openaca.*` without

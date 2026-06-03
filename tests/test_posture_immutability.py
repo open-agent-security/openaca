@@ -40,6 +40,17 @@ from tools.posture.immutability import is_mutable_reference
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             False,
         ),
+        # Docker — digest-pinned *official* image (no namespace `/`) → immutable.
+        # Includes the `docker run ...` install-source form the scanner emits.
+        (
+            "redis@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            False,
+        ),
+        (
+            "docker run redis@sha256:"
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            False,
+        ),
         # npx — flag forms: --package, -p, --package=value
         ("npx --package @scope/pkg@1.2.3 -- cmd", False),  # pinned via --package
         ("npx -p @scope/pkg@1.2.3 -- cmd", False),  # pinned via -p

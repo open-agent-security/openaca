@@ -73,6 +73,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--device-write-bps",
         "--device-write-iops",
         "--dns",
+        "--dns-opt",  # hidden alias of --dns-option (docker/cli registers it MarkHidden)
         "--dns-option",
         "--dns-search",
         "--domainname",
@@ -114,6 +115,7 @@ _DOCKER_VALUE_FLAGS = frozenset(
         "--mount",
         "--name",
         "--net",  # documented alias of --network; takes a value
+        "--net-alias",  # hidden alias of --network-alias (docker/cli MarkHidden)
         "--network",
         "--network-alias",
         "--oom-score-adj",

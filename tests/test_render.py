@@ -1827,3 +1827,25 @@ def test_findings_section_omits_path_for_direct_component():
     index = {"GHSA-A": _advisory("GHSA-A", "npm", "urllib3")}
     out = render_text(findings, index, _stats())
     assert "path:" not in out
+
+
+def test_package_leaf_label_includes_github_subdirectory():
+    """GitHub monorepo subpackages must render distinctly — the subdirectory is
+    the only thing separating two MCPs at the same repo+revision."""
+    from tools.render import _package_leaf_label
+
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    ref = ComponentRef(
+        ecosystem="github",
+        name="org/mono",
+        version=sha,
+        extra={"source_subdirectory": "packages/mcp"},
+    )
+    assert _package_leaf_label(ref) == f"org/mono@{sha}#packages/mcp"
+
+
+def test_package_leaf_label_without_subdirectory_unchanged():
+    from tools.render import _package_leaf_label
+
+    ref = ComponentRef(ecosystem="npm", name="@x/mcp", version="1.0.0")
+    assert _package_leaf_label(ref) == "@x/mcp@1.0.0"

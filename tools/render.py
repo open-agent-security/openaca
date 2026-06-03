@@ -916,8 +916,16 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
 
 def _package_leaf_label(ref: ComponentRef) -> str:
     if ref.name and ref.version:
-        return f"{ref.name}@{ref.version}"
-    return ref.name or "<unnamed>"
+        base = f"{ref.name}@{ref.version}"
+    else:
+        base = ref.name or "<unnamed>"
+    # GitHub monorepo subpackages share repo+revision; the subdirectory is the
+    # only thing distinguishing them, so surface it in the label (only github
+    # refs carry source_subdirectory).
+    subdirectory = ref.extra.get("source_subdirectory")
+    if isinstance(subdirectory, str) and subdirectory:
+        return f"{base}#{subdirectory}"
+    return base
 
 
 def _stdio_command_label(install_source: object) -> Optional[str]:

@@ -86,9 +86,7 @@ def augment_corpus(
             fetch_warnings.append(f"osv.dev fetch failed for {vid}: {exc}")
             continue
         if isinstance(record, dict) and record.get("id"):
-            record_matches = _record_matching_queries(record, matching_queries)
-            if record_matches:
-                _stamp_query_matches(record, record_matches)
+            if stamp_osv_query_provenance(record, matching_queries):
                 new_records.append(record)
     covered_ids: set[str] = set()
     for advisory in base_corpus:
@@ -229,6 +227,27 @@ def _stamp_query_matches(record: dict, queries: list[OsvQuery]) -> None:
     existing = openaca_block.setdefault("osv_query_matches", [])
     if isinstance(existing, list):
         existing.extend(git_matches)
+
+
+def stamp_osv_query_provenance(record: dict, queries: list[OsvQuery]) -> bool:
+    """Stamp a fetched OSV record with the queries that returned it.
+
+    `match()` trusts `database_specific.openaca.osv_query_matches` for
+    git_commit / git_version findings (ADR-0027), so a consumer that fetches
+    advisories with its own client must stamp records the same way
+    `augment_corpus` does. Returns True when a query matched this record (by git
+    repo); a consumer fetching itself should drop the record when False.
+
+    `queries` MUST be only the queries that returned THIS record (e.g. the batch
+    result for a single vuln id), never all scan queries — non-git PURL queries
+    match unconditionally, so passing every query would stamp unrelated git
+    provenance onto the record.
+    """
+    matches = _record_matching_queries(record, queries)
+    if not matches:
+        return False
+    _stamp_query_matches(record, matches)
+    return True
 
 
 def _record_has_git_repo(record: dict, repo: str) -> bool:

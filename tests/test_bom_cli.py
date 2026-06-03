@@ -2,7 +2,9 @@ import json
 
 from click.testing import CliRunner
 
+from tools.bom import build_agent_bom, component_refs_from_cyclonedx
 from tools.cli import main as openaca_main
+from tools.component_ref import ComponentRef
 from tools.scan import main as scan_main
 
 
@@ -264,6 +266,22 @@ def test_scan_bom_rejects_malformed_json(tmp_path):
     assert result.exit_code != 0
     assert "invalid JSON" in result.output
     assert isinstance(result.exception, SystemExit)
+
+
+def test_git_ref_survives_bom_round_trip():
+    ref = ComponentRef(
+        ecosystem="github",
+        name="oraios/serena",
+        version=None,
+        source_manifest=".mcp.json",
+        source_locator="mcpServers/serena",
+        extra={"git_ref": "v1.0.0"},
+    )
+    bom = build_agent_bom([ref], target_type="repo")
+    doc = bom.to_cyclonedx()
+    restored = component_refs_from_cyclonedx(doc)
+    assert len(restored) == 1
+    assert restored[0].extra.get("git_ref") == "v1.0.0"
 
 
 def test_scan_bom_rejects_non_utf8_input(tmp_path):

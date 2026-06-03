@@ -30,7 +30,9 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 021 | [Agent BOM](021-agent-bom.md) | ✅ Done | 018, 020 |
 | 022 | [First-run inventory output (product-shaped default text)](022-first-run-inventory-output.md) | ✅ Done | 015, 021 |
 | 023 | [Risk Attribution (containment-aware findings)](023-risk-attribution.md) | ✅ Done | 022 |
-| 024 | [bun.lock parsing (npm transitive deps for bun MCP plugins)](024-bun-lock-parsing.md) | ⏸ Pending | 023 |
+| 024 | [bun.lock parsing (npm transitive deps for bun MCP plugins)](024-bun-lock-parsing.md) | ✅ Done | 023 |
+| 025 | [OSV-native query semantics (GitHub commit / Git tag / Docker skip)](025-osv-query-semantics.md) | ✅ Done | 021 |
+| 026 | [openaca.core consumption facade](026-openaca-core-facade.md) | ⏸ Pending | 025 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

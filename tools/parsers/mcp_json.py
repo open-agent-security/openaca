@@ -295,7 +295,9 @@ def _parse_uvx_github_from(
     # Only immutable commit SHAs may be encoded as PURL versions (ADR-0016).
     # Mutable refs (branches, tags) stay out of PURL versions but remain as
     # metadata: the subdirectory for monorepo identity, and git_ref so OSV
-    # federation can use its GIT package/version query path.
+    # federation can send the GIT package/version query. OSV's GIT version
+    # query matches tagged releases; branch names (e.g. "main") are preserved
+    # here but will return no results from OSV (see osv_federation.py).
     version = ref.lower() if (ref is not None and _COMMIT_SHA_RE.match(ref)) else None
     git_ref = ref if (ref is not None and version is None) else None
     name = f"{match.group('owner')}/{repo}"

@@ -7,7 +7,11 @@ applied by `tools.overlays` after these records are fetched.
 Behavior:
 - npm/PyPI refs use OSV package PURL queries.
 - GitHub commit refs use OSV commit queries.
-- GitHub mutable refs use OSV's GIT package/version query shape.
+- GitHub mutable refs use OSV's GIT package/version query shape. OSV's
+  documented GIT version query is for tagged releases; branch names (e.g.
+  "main") are sent as the version field but will return no advisory results
+  because OSV does not index branch pointers. Resolving branches to commit
+  SHAs for a commit query requires a GitHub API call and is deferred to V1.
 - Generic Docker refs are inventory-only in V0 because OSV does not support
   `pkg:docker/...` queries for ordinary container images.
 - Query targets are deduplicated within a scan.
@@ -155,11 +159,14 @@ def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
             )
         git_ref = ref.extra.get("git_ref") if isinstance(ref.extra, dict) else None
         if isinstance(git_ref, str) and git_ref:
-            # OSV's GIT tag query expects the full repo URL in package.name (per
-            # the v1 query docs: `{"ecosystem": "GIT", "name":
-            # "https://github.com/owner/repo.git"}`). The bare `repo` form stays
-            # as git_repo for stamping/record matching, which normalize scheme
-            # and `.git` away.
+            # OSV's GIT version query expects the full repo URL in package.name
+            # and a git tag in the version field (per the v1 query docs:
+            # `{"ecosystem": "GIT", "name": "https://github.com/owner/repo.git",
+            # "version": "8.5.0"}`). Branch names (e.g. "main") are passed
+            # through unchanged but will return no results from OSV because OSV
+            # does not index branch pointers — only tagged releases. The bare
+            # `repo` form stays as git_repo for stamping/record matching, which
+            # normalizes scheme and `.git` away on the response side.
             return OsvQuery(
                 key=f"git-version:{repo}:{git_ref}",
                 label=f"{repo}@{git_ref}",

@@ -21,7 +21,7 @@ path is the only one available.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from tools.cvss import score_v3, score_v4, severity_label
 
@@ -35,7 +35,7 @@ _LABEL_ALIASES = {
 }
 
 
-def _upstream_label(advisory: dict) -> Optional[str]:
+def _upstream_label(advisory: dict[str, Any]) -> Optional[str]:
     """Read `database_specific.severity` if present and non-empty.
 
     Normalize GHSA's `MODERATE` to FIRST's `MEDIUM` so the rest of the
@@ -52,7 +52,7 @@ def _upstream_label(advisory: dict) -> Optional[str]:
     return normalized
 
 
-def _computed_score_and_label(advisory: dict) -> tuple[Optional[float], Optional[str]]:
+def _computed_score_and_label(advisory: dict[str, Any]) -> tuple[Optional[float], Optional[str]]:
     """Return the first parseable (score, label) from advisory.severity[].
 
     Iterates in order; the first entry whose `type` is known and whose
@@ -81,7 +81,7 @@ def _computed_score_and_label(advisory: dict) -> tuple[Optional[float], Optional
     return None, None
 
 
-def derive_severity_label(advisory: dict) -> str:
+def derive_severity_label(advisory: dict[str, Any]) -> str:
     """Return the canonical severity label for `advisory`.
 
     Upstream `database_specific.severity` wins when present (preserves
@@ -95,7 +95,7 @@ def derive_severity_label(advisory: dict) -> str:
     return label if label is not None else "UNKNOWN"
 
 
-def derive_severity_score(advisory: dict) -> Optional[float]:
+def derive_severity_score(advisory: dict[str, Any]) -> Optional[float]:
     """Return the numeric CVSS base score for `advisory`, or None.
 
     Follows the same precedence as `derive_severity_label`: when

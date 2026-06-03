@@ -229,7 +229,7 @@ def _stamp_query_matches(record: dict, queries: list[OsvQuery]) -> None:
         existing.extend(git_matches)
 
 
-def stamp_osv_query_provenance(record: dict, queries: list[OsvQuery]) -> bool:
+def stamp_osv_query_provenance(record: dict[str, Any], queries: list[OsvQuery]) -> bool:
     """Stamp a fetched OSV record with the queries that returned it.
 
     `match()` trusts `database_specific.openaca.osv_query_matches` for

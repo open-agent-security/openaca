@@ -28,7 +28,7 @@ as evidence/documentation but aren't the matching mechanism in V0.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
@@ -335,7 +335,7 @@ def _match_unpinned(
     return findings
 
 
-def match(refs: list[ComponentRef], advisories: list[dict]) -> list[Finding]:
+def match(refs: list[ComponentRef], advisories: list[dict[str, Any]]) -> list[Finding]:
     findings: list[Finding] = []
     for ref in refs:
         findings.extend(_match_one(ref, advisories))

@@ -104,33 +104,50 @@ def build_agent_bom(
     )
 
 
-def component_refs_from_cyclonedx(doc: dict[str, Any]) -> list[ComponentRef]:
-    refs: list[ComponentRef] = []
-    for component in doc.get("components") or []:
+def bom_components_from_cyclonedx(doc: dict[str, Any]) -> list[BOMComponent]:
+    """Reconstruct components paired with their CycloneDX `bom-ref`.
+
+    Consumers persist findings against their stored rows by `bom-ref`, so they
+    need the ref alongside each reconstructed `ComponentRef`. Components emitted
+    by `build_agent_bom` always carry a `bom-ref`; a positional fallback covers
+    any externally-produced doc that omits it.
+    """
+    components: list[BOMComponent] = []
+    for index, component in enumerate(doc.get("components") or []):
         if not isinstance(component, dict):
             continue
-        props = _properties_by_name(component)
-        purl = component.get("purl")
-        parsed = _parse_purl(purl) if isinstance(purl, str) else {}
-        component_identity = props.get("openaca:identity")
-        if component_identity is None and not parsed:
-            bom_ref = component.get("bom-ref")
-            if isinstance(bom_ref, str) and bom_ref:
-                component_identity = bom_ref
-        refs.append(
-            ComponentRef(
-                ecosystem=parsed.get("ecosystem"),
-                name=parsed.get("name") or _string(component.get("name")),
-                version=parsed.get("version") or _string(component.get("version")),
-                source_manifest=props.get("openaca:source_manifest") or "",
-                source_locator=props.get("openaca:source_locator") or "",
-                component_identity=component_identity,
-                attributed_to=props.get("openaca:attributed_to"),
-                extra=_extra_from_properties(props),
-                scope=props.get("openaca:scope") or "agent-component",
-            )
-        )
-    return refs
+        ref = _component_ref_from_cyclonedx(component)
+        bom_ref = component.get("bom-ref")
+        if not (isinstance(bom_ref, str) and bom_ref):
+            bom_ref = f"component-{index}"
+        components.append(BOMComponent(ref=ref, bom_ref=bom_ref))
+    return components
+
+
+def component_refs_from_cyclonedx(doc: dict[str, Any]) -> list[ComponentRef]:
+    return [component.ref for component in bom_components_from_cyclonedx(doc)]
+
+
+def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
+    props = _properties_by_name(component)
+    purl = component.get("purl")
+    parsed = _parse_purl(purl) if isinstance(purl, str) else {}
+    component_identity = props.get("openaca:identity")
+    if component_identity is None and not parsed:
+        bom_ref = component.get("bom-ref")
+        if isinstance(bom_ref, str) and bom_ref:
+            component_identity = bom_ref
+    return ComponentRef(
+        ecosystem=parsed.get("ecosystem"),
+        name=parsed.get("name") or _string(component.get("name")),
+        version=parsed.get("version") or _string(component.get("version")),
+        source_manifest=props.get("openaca:source_manifest") or "",
+        source_locator=props.get("openaca:source_locator") or "",
+        component_identity=component_identity,
+        attributed_to=props.get("openaca:attributed_to"),
+        extra=_extra_from_properties(props),
+        scope=props.get("openaca:scope") or "agent-component",
+    )
 
 
 def target_info_from_cyclonedx(doc: dict[str, Any]) -> tuple[str | None, str | None]:

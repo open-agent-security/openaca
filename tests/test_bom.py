@@ -1,7 +1,49 @@
 import json
 
-from tools.bom import build_agent_bom, component_refs_from_cyclonedx
+from tools.bom import (
+    bom_components_from_cyclonedx,
+    build_agent_bom,
+    component_refs_from_cyclonedx,
+)
 from tools.component_ref import ComponentRef
+
+
+def test_bom_components_from_cyclonedx_pairs_refs_with_bom_refs():
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                ecosystem="npm",
+                name="hono",
+                version="4.12.5",
+                source_manifest="bun.lock",
+                source_locator="$.packages.hono",
+                extra={"transitive": True},
+            ),
+            ComponentRef(
+                ecosystem="github",
+                name="oraios/serena",
+                version="0123456789abcdef0123456789abcdef01234567",
+                source_manifest=".mcp.json",
+                source_locator="$.mcpServers.serena",
+                extra={"component_type": "mcp_server"},
+            ),
+        ],
+        target_type="repo",
+        target=".",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    components = bom_components_from_cyclonedx(encoded)
+
+    # bom-refs are preserved from the doc, matching what build_agent_bom assigned.
+    assert [c.bom_ref for c in components] == [c.bom_ref for c in original.components]
+    # The bare-ref reconstruction is exactly the .ref of each paired component.
+    assert [c.ref for c in components] == component_refs_from_cyclonedx(encoded)
+    # Reconstruction is faithful to the original identities.
+    assert [c.ref.purl for c in components] == [
+        "pkg:npm/hono@4.12.5",
+        "pkg:github/oraios/serena@0123456789abcdef0123456789abcdef01234567",
+    ]
 
 
 def test_cyclonedx_serializes_package_and_openaca_identity_components():

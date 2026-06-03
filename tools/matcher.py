@@ -66,7 +66,7 @@ def _parse_version(value: Optional[str]) -> Optional[Version]:
         return None
 
 
-def _in_range(version: Version, events: list[dict]) -> bool:
+def _in_range(version: Version, events: list[dict[str, Any]]) -> bool:
     """Return True if version falls in any vulnerable window encoded in events.
 
     OSV events alternate introduced/fixed/last_affected/limit within a single
@@ -115,7 +115,7 @@ def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
     return None
 
 
-def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+def _match_one(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
     if ref.ecosystem and ref.name:
         if ref.ecosystem in _FORGE_ECOSYSTEMS:
             return _match_git_ref(ref, advisories)
@@ -129,7 +129,7 @@ def _match_one(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     return []
 
 
-def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+def _match_by_identity(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
     """Match a ref by `component_identity`.
 
     Used for source-less agent components. The advisory carries the target
@@ -171,7 +171,7 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict]) -> list[Findin
     return findings
 
 
-def _match_git_ref(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+def _match_git_ref(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
     repo = _git_repo_name(ref)
     if repo is None:
         return []
@@ -212,7 +212,7 @@ def _match_git_ref(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
     return findings
 
 
-def _advisory_has_osv_query_match(advisory: dict, kind: str, repo: str, ref: str) -> bool:
+def _advisory_has_osv_query_match(advisory: dict[str, Any], kind: str, repo: str, ref: str) -> bool:
     ds = advisory.get("database_specific") or {}
     if not isinstance(ds, dict):
         return False
@@ -240,7 +240,7 @@ def _git_repo_name(ref: ComponentRef) -> str | None:
     return ref.name
 
 
-def _affected_entry_has_git_repo(entry: dict, repo: str) -> bool:
+def _affected_entry_has_git_repo(entry: dict[str, Any], repo: str) -> bool:
     for range_entry in entry.get("ranges") or []:
         if range_entry.get("type") != "GIT":
             continue
@@ -250,7 +250,7 @@ def _affected_entry_has_git_repo(entry: dict, repo: str) -> bool:
     return False
 
 
-def _affected_entry_has_git_version(entry: dict, git_ref: str) -> bool:
+def _affected_entry_has_git_version(entry: dict[str, Any], git_ref: str) -> bool:
     candidates = {_normalize_git_ref(git_ref)}
     for version in entry.get("versions") or []:
         if isinstance(version, str) and _normalize_git_ref(version) in candidates:
@@ -271,7 +271,7 @@ def _normalize_git_ref(ref: str) -> str:
     return ref.removeprefix("refs/tags/")
 
 
-def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]:
+def _match_versioned(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
     findings: list[Finding] = []
     parsed = _parse_version(ref.version)
     for advisory in advisories:
@@ -310,7 +310,7 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict]) -> list[Finding]
 
 
 def _match_unpinned(
-    ref: ComponentRef, package: tuple[str, str], advisories: list[dict]
+    ref: ComponentRef, package: tuple[str, str], advisories: list[dict[str, Any]]
 ) -> list[Finding]:
     ecosystem, name = package
     findings: list[Finding] = []

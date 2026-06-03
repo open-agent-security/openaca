@@ -65,8 +65,8 @@ def is_queryable(ref: ComponentRef) -> bool:
 
 
 def augment_corpus(
-    refs: list[ComponentRef], base_corpus: list[dict]
-) -> tuple[list[dict], list[str]]:
+    refs: list[ComponentRef], base_corpus: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
     queries = collect_osv_queries(refs)
     if not queries:
@@ -77,7 +77,7 @@ def augment_corpus(
         return list(base_corpus), [f"osv.dev federation failed: {exc}"]
     if not matches_by_id:
         return list(base_corpus), []
-    new_records: list[dict] = []
+    new_records: list[dict[str, Any]] = []
     fetch_warnings: list[str] = []
     for vid, matching_queries in matches_by_id.items():
         try:
@@ -200,7 +200,7 @@ def _query_batch(queries: list[OsvQuery]) -> dict[str, list[OsvQuery]]:
     return matches
 
 
-def _record_matching_queries(record: dict, queries: list[OsvQuery]) -> list[OsvQuery]:
+def _record_matching_queries(record: dict[str, Any], queries: list[OsvQuery]) -> list[OsvQuery]:
     matches: list[OsvQuery] = []
     for query in queries:
         if query.git_repo is None:
@@ -210,7 +210,7 @@ def _record_matching_queries(record: dict, queries: list[OsvQuery]) -> list[OsvQ
     return matches
 
 
-def _stamp_query_matches(record: dict, queries: list[OsvQuery]) -> None:
+def _stamp_query_matches(record: dict[str, Any], queries: list[OsvQuery]) -> None:
     git_matches = [
         {"kind": query.kind, "repo": query.git_repo, "ref": query.git_ref}
         for query in queries
@@ -250,7 +250,7 @@ def stamp_osv_query_provenance(record: dict[str, Any], queries: list[OsvQuery]) 
     return True
 
 
-def _record_has_git_repo(record: dict, repo: str) -> bool:
+def _record_has_git_repo(record: dict[str, Any], repo: str) -> bool:
     for affected in record.get("affected") or []:
         for range_entry in affected.get("ranges") or []:
             if range_entry.get("type") != "GIT":
@@ -270,12 +270,12 @@ def _normalize_git_repo(repo: str) -> str:
     return normalized.rstrip("/").removesuffix(".git").lower()
 
 
-def _get_vuln(vuln_id: str) -> dict:
+def _get_vuln(vuln_id: str) -> dict[str, Any]:
     """GET /v1/vulns/<id> → full advisory record."""
     return _get_json(_VULN_URL.format(id=vuln_id))
 
 
-def _post_json(url: str, payload: dict) -> dict[str, Any]:
+def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json"}, method="POST"

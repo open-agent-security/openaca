@@ -147,7 +147,7 @@ def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
             kind="purl",
         )
     if ref.ecosystem in _GITHUB_ECOSYSTEMS and ref.name:
-        repo = f"github.com/{ref.name}"
+        repo = f"github.com/{ref.name.lower()}"
         if ref.version:
             return OsvQuery(
                 key=f"git-commit:{repo}:{ref.version}",
@@ -248,7 +248,7 @@ def _normalize_git_repo(repo: str) -> str:
         normalized = f"{parsed.netloc}{parsed.path}"
     else:
         normalized = repo
-    return normalized.rstrip("/").removesuffix(".git")
+    return normalized.rstrip("/").removesuffix(".git").lower()
 
 
 def _get_vuln(vuln_id: str) -> dict:

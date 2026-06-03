@@ -680,3 +680,23 @@ def test_finding_mirrors_component_attribution():
 
     assert direct_finding.attributed_to is None
     assert direct_finding.component.attributed_to is None
+
+
+def test_github_ref_matches_advisory_regardless_of_repo_name_casing():
+    """Mixed-case owner/repo must match a lowercase canonical OSV GIT range URL."""
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    # OSV records use the lowercase canonical URL; user's install used mixed case.
+    advisory = make_git_advisory("GHSA-case", "https://github.com/oraios/serena.git")
+    advisory["database_specific"] = {
+        "openaca": {
+            "osv_query_matches": [
+                {"kind": "git_commit", "repo": "github.com/oraios/serena", "ref": sha}
+            ]
+        }
+    }
+    ref = ComponentRef(ecosystem="github", name="OraIOS/Serena", version=sha)
+
+    findings = match(refs=[ref], advisories=[advisory])
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "GHSA-case"

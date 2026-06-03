@@ -372,3 +372,40 @@ def test_augment_skips_purls_without_purl_form():
 
     with patch("tools.osv_federation._post_json", fake_post):
         augment_corpus(refs=refs, base_corpus=base)
+
+
+def test_augment_filters_git_repo_case_insensitive():
+    """Mixed-case owner/repo in a GitHub ref must still match a lowercase OSV GIT range URL."""
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    # User typed "OraIOS/Serena" (mixed case); OSV records use lowercase canonical URL.
+    ref = ComponentRef(ecosystem="github", name="OraIOS/Serena", version=sha)
+    querybatch_response = {"results": [{"vulns": [{"id": "GHSA-case-test"}]}]}
+    vuln_record = {
+        "id": "GHSA-case-test",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/oraios/serena.git",
+                        "events": [{"introduced": "0"}],
+                    }
+                ]
+            }
+        ],
+    }
+
+    def fake_post(url, payload):
+        return querybatch_response
+
+    def fake_get(url):
+        return vuln_record
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augmented, warnings = augment_corpus(refs=[ref], base_corpus=[])
+
+    assert warnings == []
+    assert any(r["id"] == "GHSA-case-test" for r in augmented)

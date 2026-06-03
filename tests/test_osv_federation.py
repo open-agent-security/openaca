@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 from tools.component_ref import ComponentRef
 from tools.osv_federation import (
+    OsvQuery,
     augment_corpus,
     collect_osv_queries,
     collect_target_purls,
     is_queryable,
+    stamp_osv_query_provenance,
 )
 
 
@@ -409,3 +411,58 @@ def test_augment_filters_git_repo_case_insensitive():
 
     assert warnings == []
     assert any(r["id"] == "GHSA-case-test" for r in augmented)
+
+
+def _git_version_query(repo: str, ref: str) -> OsvQuery:
+    return OsvQuery(
+        key=f"git-version:{repo}:{ref}",
+        label=f"{repo}@{ref}",
+        payload={"version": ref, "package": {"ecosystem": "GIT", "name": f"https://{repo}.git"}},
+        kind="git_version",
+        git_repo=repo,
+        git_ref=ref,
+    )
+
+
+def test_stamp_osv_query_provenance_stamps_matching_git_query():
+    record = {
+        "id": "GHSA-git",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/oraios/serena.git",
+                        "events": [{"introduced": "0"}],
+                    }
+                ]
+            }
+        ],
+    }
+    query = _git_version_query("github.com/oraios/serena", "v1.0.0")
+
+    assert stamp_osv_query_provenance(record, [query]) is True
+    assert record["database_specific"]["openaca"]["osv_query_matches"] == [
+        {"kind": "git_version", "repo": "github.com/oraios/serena", "ref": "v1.0.0"}
+    ]
+
+
+def test_stamp_osv_query_provenance_skips_when_no_query_matches_record_repo():
+    record = {
+        "id": "GHSA-other",
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/other/repo.git",
+                        "events": [{"introduced": "0"}],
+                    }
+                ]
+            }
+        ],
+    }
+    query = _git_version_query("github.com/oraios/serena", "v1.0.0")
+
+    assert stamp_osv_query_provenance(record, [query]) is False
+    assert "database_specific" not in record

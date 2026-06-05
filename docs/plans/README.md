@@ -32,7 +32,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 023 | [Risk Attribution (containment-aware findings)](023-risk-attribution.md) | ✅ Done | 022 |
 | 024 | [bun.lock parsing (npm transitive deps for bun MCP plugins)](024-bun-lock-parsing.md) | ✅ Done | 023 |
 | 025 | [OSV-native query semantics (GitHub commit / Git tag / Docker skip)](025-osv-query-semantics.md) | ✅ Done | 021 |
-| 026 | [openaca.core consumption facade](026-openaca-core-facade.md) | ⏸ Pending | 025 |
+| 026 | [openaca.core consumption facade](026-openaca-core-facade.md) | ✅ Done | 025 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

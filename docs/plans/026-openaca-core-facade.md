@@ -35,22 +35,22 @@ Consumers persist findings against their stored rows by CycloneDX `bom-ref`
 Reuse the existing `BOMComponent(ref, bom_ref)` type rather than inventing a
 tuple pairing.
 
-- [ ] **Write the failing test.** A CycloneDX doc with two components carrying
+- [x] **Write the failing test.** A CycloneDX doc with two components carrying
   `bom-ref` values round-trips through `bom_components_from_cyclonedx(doc)` to a
   `list[BOMComponent]` where each `.bom_ref` equals the source component's
   `bom-ref` and `.ref` equals what `component_refs_from_cyclonedx` produced for
   it (same order).
-- [ ] **Run it; confirm it fails** (`bom_components_from_cyclonedx` undefined).
-- [ ] **Implement.** Factor the per-component reconstruction loop in
+- [x] **Run it; confirm it fails** (`bom_components_from_cyclonedx` undefined).
+- [x] **Implement.** Factor the per-component reconstruction loop in
   `component_refs_from_cyclonedx` into `bom_components_from_cyclonedx(doc) ->
   list[BOMComponent]`, pairing each reconstructed `ComponentRef` with the
   component's `bom-ref` (fall back to a stable synthesized ref only if absent,
   mirroring `_stable_bom_refs` semantics if needed). Reimplement
   `component_refs_from_cyclonedx(doc)` as
   `[c.ref for c in bom_components_from_cyclonedx(doc)]`.
-- [ ] **Run tests; confirm pass.** The existing `component_refs_from_cyclonedx`
+- [x] **Run tests; confirm pass.** The existing `component_refs_from_cyclonedx`
   tests must remain green (behavior-preserving delegation).
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ## Task 2: `stamp_osv_query_provenance` (public provenance helper)
 
@@ -60,14 +60,14 @@ A consumer that fetches advisories with its own client must stamp records with
 the query provenance `match()` trusts (`osv_query_matches`). That logic lives
 privately inside `augment_corpus`'s loop today.
 
-- [ ] **Write the failing test.** Given a fetched OSV record with a `GIT` range
+- [x] **Write the failing test.** Given a fetched OSV record with a `GIT` range
   for `github.com/o/r` and a `git_version` `OsvQuery` for that repo/ref,
   `stamp_osv_query_provenance(record, [query])` returns `True` and the record
   gains the `database_specific.openaca.osv_query_matches` entry. Given a query
   whose git repo does not match the record, it returns `False` and stamps
   nothing.
-- [ ] **Run it; confirm it fails.**
-- [ ] **Implement.** Add `stamp_osv_query_provenance(record, queries) -> bool`
+- [x] **Run it; confirm it fails.**
+- [x] **Implement.** Add `stamp_osv_query_provenance(record, queries) -> bool`
   wrapping the existing `_record_matching_queries` + `_stamp_query_matches`:
   filter to matching queries, stamp, return whether any matched. Refactor
   `augment_corpus`'s inline loop to call it (single source of truth).
@@ -75,20 +75,20 @@ privately inside `augment_corpus`'s loop today.
   returned this record (e.g. `matches_by_id[vid]`), never all scan queries —
   otherwise non-git PURL queries always "match" and a different advisory's
   git query could be stamped onto the wrong record.
-- [ ] **Run tests; confirm pass.** All existing federation tests stay green
+- [x] **Run tests; confirm pass.** All existing federation tests stay green
   (proves the extraction is behavior-preserving).
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ## Task 3: `openaca/core/` facade package + packaging
 
 **Files:** create `openaca/core/` submodules; modify `pyproject.toml`; test
 `tests/test_core_facade.py`.
 
-- [ ] **Write the failing test.** Import each facade symbol from `openaca.core`
+- [x] **Write the failing test.** Import each facade symbol from `openaca.core`
   and assert it is the *same object* as the underlying `tools.*` symbol
   (re-export identity), for the full surface below.
-- [ ] **Run it; confirm it fails** (`openaca.core` does not exist).
-- [ ] **Implement the curated facade** as named re-exports (not wildcard),
+- [x] **Run it; confirm it fails** (`openaca.core` does not exist).
+- [x] **Implement the curated facade** as named re-exports (not wildcard),
   grouped into submodules:
   - `openaca/core/component_ref.py`: `ComponentRef`
   - `openaca/core/bom.py`: `BOMComponent`, `build_agent_bom`,
@@ -98,18 +98,18 @@ privately inside `augment_corpus`'s loop today.
   - `openaca/core/matching.py`: `Finding`, `match`
   - `openaca/core/severity.py`: `derive_severity_label`, `derive_severity_score`
   - `openaca/core/__init__.py`: re-export the above for `from openaca.core import ...`
-- [ ] **Update packaging.** Add the new `openaca` package to `pyproject.toml`
+- [x] **Update packaging.** Add the new `openaca` package to `pyproject.toml`
   build config so `openaca.core` ships when the package is installed/pinned.
-- [ ] **Run tests; confirm pass.**
-- [ ] **Commit.**
+- [x] **Run tests; confirm pass.**
+- [x] **Commit.**
 
 ## Verification
 
-- [ ] `uv run ruff format --check . && uv run ruff check . && uv run pyright`
-- [ ] `uv run pytest -q` (federation tests green = `augment_corpus` unchanged in
+- [x] `uv run ruff format --check . && uv run ruff check . && uv run pyright`
+- [x] `uv run pytest -q` (federation tests green = `augment_corpus` unchanged in
   behavior; facade identity tests pass)
-- [ ] `uv run openaca lint overlays/`
-- [ ] In a throwaway venv, `pip install`/build the package and confirm
+- [x] `uv run openaca lint overlays/`
+- [x] In a throwaway venv, `pip install`/build the package and confirm
   `from openaca.core import match, collect_osv_queries, stamp_osv_query_provenance,
   bom_components_from_cyclonedx` resolves (packaging actually ships the facade).
 

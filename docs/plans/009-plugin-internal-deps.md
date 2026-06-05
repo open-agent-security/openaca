@@ -1,6 +1,6 @@
 # 009 — Plugin-internal implementation deps + OSV.dev federation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add Tier-2 SCA coverage for both `repo` and `fs` modes (lockfile-rooted transitive deps with manifest fallback), plus opt-in OSV.dev live federation. Preserve OpenACA's install-state filtering and attribution as the differentiator over `trivy`/`osv-scanner`.
 
@@ -51,7 +51,7 @@ Plan 008 dogfooding produced empirical evidence that motivates the design: `triv
 
 The npm v3 lockfile uses a `packages` map keyed on filesystem path. The empty-string key is the host package (skip — `claude_install` emits the plugin self-identity from `installed_plugins.json`). `node_modules/<scope>/<name>` keys hold transitive dep entries.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_parsers/test_package_lock_json.py
@@ -88,7 +88,7 @@ def test_emits_one_ref_per_transitive_package(tmp_path):
     assert by_name["@scope/pkg"].version == "2.0.0"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/feat-plugin-internal-deps
@@ -97,7 +97,7 @@ uv run pytest tests/test_parsers/test_package_lock_json.py -q
 
 Expected: FAIL with `ImportError` (module doesn't exist yet).
 
-- [ ] **Step 3: Implement parser**
+- [x] **Step 3: Implement parser**
 
 ```python
 # tools/parsers/package_lock_json.py
@@ -169,7 +169,7 @@ def _name_from_key(key: str) -> str:
     return key[idx + len(marker) :]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 uv run pytest tests/test_parsers/test_package_lock_json.py -q
@@ -177,7 +177,7 @@ uv run pytest tests/test_parsers/test_package_lock_json.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Add edge-case tests**
+- [x] **Step 5: Add edge-case tests**
 
 ```python
 def test_skips_dev_dependencies(tmp_path):
@@ -284,7 +284,7 @@ def test_skips_non_dict_entries(tmp_path):
     assert {r.name for r in refs} == {"good-pkg"}
 ```
 
-- [ ] **Step 6: Run all package_lock tests + full gate**
+- [x] **Step 6: Run all package_lock tests + full gate**
 
 ```bash
 uv run pytest tests/test_parsers/test_package_lock_json.py -q
@@ -295,7 +295,7 @@ uv run pyright tools/ tests/
 
 Expected: all green; ruff format applies any whitespace fixes idempotently.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/parsers/package_lock_json.py tests/test_parsers/test_package_lock_json.py
@@ -316,7 +316,7 @@ surface properties.coverage. Plan 009, Task 1."
 
 `uv.lock` is TOML with one `[[package]]` table per resolved package. Dev-vs-runtime annotations aren't reliably encoded; V0 emits all packages and accepts over-reporting dev deps as a known limitation (spec §Out of scope).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_parsers/test_uv_lock.py
@@ -354,7 +354,7 @@ version = "2.0.4"
     assert by_name["requests"].extra["transitive"] is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_parsers/test_uv_lock.py -q
@@ -362,7 +362,7 @@ uv run pytest tests/test_parsers/test_uv_lock.py -q
 
 Expected: FAIL with `ImportError`.
 
-- [ ] **Step 3: Implement parser**
+- [x] **Step 3: Implement parser**
 
 ```python
 # tools/parsers/uv_lock.py
@@ -419,7 +419,7 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 uv run pytest tests/test_parsers/test_uv_lock.py -q
@@ -427,7 +427,7 @@ uv run pytest tests/test_parsers/test_uv_lock.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Add edge-case tests**
+- [x] **Step 5: Add edge-case tests**
 
 ```python
 def test_returns_empty_on_malformed_toml(tmp_path):
@@ -488,7 +488,7 @@ version = "1.0.0"
     assert refs[0].source_locator == "$.package[1]"
 ```
 
-- [ ] **Step 6: Run uv_lock tests + full gate**
+- [x] **Step 6: Run uv_lock tests + full gate**
 
 ```bash
 uv run pytest tests/test_parsers/test_uv_lock.py -q
@@ -499,7 +499,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/parsers/uv_lock.py tests/test_parsers/test_uv_lock.py
@@ -522,7 +522,7 @@ known limitation. Extra carries transitive=True. Plan 009, Task 2."
 
 Repo mode reads root-level lockfiles via the REGISTRY's `rglob` walk. Findings have `attributed_to=None` (host repo is direct, not "via a plugin").
 
-- [ ] **Step 1: Add fixtures**
+- [x] **Step 1: Add fixtures**
 
 ```bash
 mkdir -p tests/fixtures/repos/sample-lockfile-npm
@@ -553,7 +553,7 @@ name = "requests"
 version = "2.31.0"
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_parsers/test_repo_mode_lockfiles.py
@@ -591,7 +591,7 @@ def test_repo_mode_emits_uv_lock_refs():
     assert pypi_refs[0].attributed_to is None
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_parsers/test_repo_mode_lockfiles.py -q
@@ -599,7 +599,7 @@ uv run pytest tests/test_parsers/test_repo_mode_lockfiles.py -q
 
 Expected: FAIL (parsers not registered).
 
-- [ ] **Step 4: Wire parsers into REGISTRY**
+- [x] **Step 4: Wire parsers into REGISTRY**
 
 Edit `tools/parsers/__init__.py`:
 
@@ -630,7 +630,7 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 ]
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 ```bash
 uv run pytest tests/test_parsers/test_repo_mode_lockfiles.py -q
@@ -638,7 +638,7 @@ uv run pytest tests/test_parsers/test_repo_mode_lockfiles.py -q
 
 Expected: PASS.
 
-- [ ] **Step 6: Run full suite + gate**
+- [x] **Step 6: Run full suite + gate**
 
 ```bash
 uv run pytest -q
@@ -649,7 +649,7 @@ uv run pyright tools/ tests/
 
 Expected: all pre-existing tests still green; new tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/parsers/__init__.py tests/test_parsers/test_repo_mode_lockfiles.py tests/fixtures/repos/sample-lockfile-npm/ tests/fixtures/repos/sample-lockfile-uv/
@@ -670,7 +670,7 @@ the host repo declares these directly. Plan 009, Task 3."
 
 Per-active-plugin dispatch: parse every supported lockfile present at the installPath; for each ecosystem NOT covered by a lockfile, fall back to its manifest with `transitive=False`. The full helper threads `attributed_to` and (later) `include_transitive` through.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_parsers/test_claude_install.py`:
 
@@ -814,7 +814,7 @@ def test_install_pyproject_fallback_when_no_uv_lock(tmp_path):
     assert requests_ref.extra.get("transitive") is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_install.py -q -k "lockfile or transitive or pyproject_fallback"
@@ -822,7 +822,7 @@ uv run pytest tests/test_parsers/test_claude_install.py -q -k "lockfile or trans
 
 Expected: FAIL — parameter `include_transitive` doesn't exist on `parse_install` yet; lockfile walks don't happen.
 
-- [ ] **Step 3: Add `include_transitive` parameter to `parse_install`**
+- [x] **Step 3: Add `include_transitive` parameter to `parse_install`**
 
 Edit `tools/parsers/claude_install.py`:
 
@@ -835,7 +835,7 @@ def parse_install(
 ) -> tuple[list[ComponentRef], list[str]]:
 ```
 
-- [ ] **Step 4: Thread the parameter through `_walk_active_plugins`**
+- [x] **Step 4: Thread the parameter through `_walk_active_plugins`**
 
 Update the signature:
 
@@ -863,7 +863,7 @@ plugin_refs, plugin_walk_warnings = _walk_active_plugins(
 )
 ```
 
-- [ ] **Step 5: Wire the Tier-2 walk into the per-plugin loop**
+- [x] **Step 5: Wire the Tier-2 walk into the per-plugin loop**
 
 After the existing Tier-1 bundled walk in `_walk_active_plugins`:
 
@@ -884,7 +884,7 @@ After the existing Tier-1 bundled walk in `_walk_active_plugins`:
                 refs.extend(tier2_refs)
 ```
 
-- [ ] **Step 6: Implement `_walk_plugin_implementation_deps`**
+- [x] **Step 6: Implement `_walk_plugin_implementation_deps`**
 
 Add to `tools/parsers/claude_install.py` (alongside `_walk_plugin_install_root`):
 
@@ -951,7 +951,7 @@ def _walk_plugin_implementation_deps(
     return refs
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_install.py -q
@@ -959,7 +959,7 @@ uv run pytest tests/test_parsers/test_claude_install.py -q
 
 Expected: PASS, including the six new lockfile/manifest tests.
 
-- [ ] **Step 8: Full gate**
+- [x] **Step 8: Full gate**
 
 ```bash
 uv run pytest -q
@@ -970,7 +970,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add tools/parsers/claude_install.py tests/test_parsers/test_claude_install.py
@@ -998,7 +998,7 @@ wire it in Task 5. Plan 009, Task 4."
 
 The flag lets users skip Tier-2 entirely and focus on agent-stack inventory.
 
-- [ ] **Step 1: Write the failing CLI test**
+- [x] **Step 1: Write the failing CLI test**
 
 Append to `tests/test_scan.py`:
 
@@ -1060,7 +1060,7 @@ def test_fs_subcommand_exclude_transitive_skips_lockfile_walk(tmp_path):
     assert "demo-skill" in result.output or "1 bundled skills" in result.output
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_scan.py::test_fs_subcommand_exclude_transitive_skips_lockfile_walk -q
@@ -1068,7 +1068,7 @@ uv run pytest tests/test_scan.py::test_fs_subcommand_exclude_transitive_skips_lo
 
 Expected: FAIL — `--exclude-transitive` is not a recognized option.
 
-- [ ] **Step 3: Add the flag to the `fs` subcommand**
+- [x] **Step 3: Add the flag to the `fs` subcommand**
 
 In `tools/scan.py`, add the option decorator and parameter to the `fs` subcommand:
 
@@ -1108,7 +1108,7 @@ def fs(
     )
 ```
 
-- [ ] **Step 4: Run test**
+- [x] **Step 4: Run test**
 
 ```bash
 uv run pytest tests/test_scan.py::test_fs_subcommand_exclude_transitive_skips_lockfile_walk -q
@@ -1116,7 +1116,7 @@ uv run pytest tests/test_scan.py::test_fs_subcommand_exclude_transitive_skips_lo
 
 Expected: PASS.
 
-- [ ] **Step 5: Add the symmetric "default-on" test**
+- [x] **Step 5: Add the symmetric "default-on" test**
 
 ```python
 def test_fs_subcommand_includes_transitive_by_default(tmp_path):
@@ -1158,7 +1158,7 @@ def test_fs_subcommand_includes_transitive_by_default(tmp_path):
     assert any(r.ecosystem == "npm" and r.name == "lodash" for r in refs)
 ```
 
-- [ ] **Step 6: Run all scan tests + full gate**
+- [x] **Step 6: Run all scan tests + full gate**
 
 ```bash
 uv run pytest tests/test_scan.py -q
@@ -1170,7 +1170,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/scan.py tests/test_scan.py
@@ -1192,7 +1192,7 @@ Plan 009, Task 5."
 
 Live query OSV.dev with the emitted PURLs in a single batched pass. Fail-soft on network errors. Returns the augmented advisory corpus.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_osv_federation.py
@@ -1333,7 +1333,7 @@ def test_augment_skips_purls_without_purl_form():
         augment_corpus(refs=refs, base_corpus=base)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_osv_federation.py -q
@@ -1341,7 +1341,7 @@ uv run pytest tests/test_osv_federation.py -q
 
 Expected: FAIL with `ImportError`.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 ```python
 # tools/osv_federation.py
@@ -1470,7 +1470,7 @@ def _get_json(url: str) -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8"))
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```bash
 uv run pytest tests/test_osv_federation.py -q
@@ -1478,7 +1478,7 @@ uv run pytest tests/test_osv_federation.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Full gate**
+- [x] **Step 5: Full gate**
 
 ```bash
 uv run pytest -q
@@ -1489,7 +1489,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/osv_federation.py tests/test_osv_federation.py
@@ -1520,7 +1520,7 @@ never hit. Plan 009, Task 6."
 
 When set, after `parse_install` (or `parse_repo`), call `augment_corpus(refs, base_corpus)` and re-run the matcher against the augmented corpus. Network failures emit an unconditional stderr warning (not gated on `-v`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_scan.py`:
 
@@ -1628,7 +1628,7 @@ def test_fs_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd):
     assert "osv.dev federation failed" in result.output
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_scan.py -q -k federate_osv
@@ -1636,7 +1636,7 @@ uv run pytest tests/test_scan.py -q -k federate_osv
 
 Expected: FAIL — `--federate-osv` not recognized.
 
-- [ ] **Step 3: Import and wire**
+- [x] **Step 3: Import and wire**
 
 In `tools/scan.py`:
 
@@ -1687,7 +1687,7 @@ Wire after `parse_install` and before `match`:
     findings = match(refs, corpus)
 ```
 
-- [ ] **Step 4: Apply the same pattern to `repo` subcommand**
+- [x] **Step 4: Apply the same pattern to `repo` subcommand**
 
 ```python
 @click.option(
@@ -1716,7 +1716,7 @@ def repo(
     findings = match(refs, corpus)
 ```
 
-- [ ] **Step 5: Tag advisories with source for SARIF**
+- [x] **Step 5: Tag advisories with source for SARIF**
 
 After loading corpus and augmenting, walk both and stamp:
 
@@ -1773,7 +1773,7 @@ def _stamp_source(corpus: list[dict], source: str) -> None:
             openaca_block["source"] = source
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```bash
 uv run pytest tests/test_scan.py -q -k federate_osv
@@ -1781,7 +1781,7 @@ uv run pytest tests/test_scan.py -q -k federate_osv
 
 Expected: PASS.
 
-- [ ] **Step 7: Full gate**
+- [x] **Step 7: Full gate**
 
 ```bash
 uv run pytest -q
@@ -1792,7 +1792,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add tools/scan.py tests/test_scan.py
@@ -1818,7 +1818,7 @@ driven. Plan 009, Task 7."
 
 Surface the new metadata on each SARIF result. `coverage` and `transitive` come from `finding.component.extra`; `source` from `advisory["database_specific"]["openaca"]["source"]`. All three are absent when their underlying data is missing.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_sarif.py`:
 
@@ -1915,7 +1915,7 @@ def test_sarif_omits_coverage_for_tier1_findings():
     assert "transitive" not in properties
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_sarif.py -q -k "coverage or direct_only or tier1"
@@ -1923,7 +1923,7 @@ uv run pytest tests/test_sarif.py -q -k "coverage or direct_only or tier1"
 
 Expected: FAIL — properties not yet populated.
 
-- [ ] **Step 3: Update `tools/sarif.py`**
+- [x] **Step 3: Update `tools/sarif.py`**
 
 Locate the function that builds a SARIF result and extend its `properties` block. The relevant logic computes properties per finding:
 
@@ -1950,7 +1950,7 @@ def _properties_for(finding: Finding, advisory: dict | None) -> dict:
 
 Replace the inline properties construction in the SARIF result builder with a call to `_properties_for(finding, advisory_index.get(finding.advisory_id))`, emitting `properties=props` only when `props` is non-empty (existing behavior preserved for findings with no metadata).
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```bash
 uv run pytest tests/test_sarif.py -q
@@ -1958,7 +1958,7 @@ uv run pytest tests/test_sarif.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Full gate**
+- [x] **Step 5: Full gate**
 
 ```bash
 uv run pytest -q
@@ -1969,7 +1969,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/sarif.py tests/test_sarif.py
@@ -1994,7 +1994,7 @@ Documented in docs/sarif-conventions.md (Task 10). Plan 009, Task 8."
 
 Extend the fs-mode `-v` block to show per-plugin Tier-2 coverage and (when federation is on) a federation summary line.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_scan.py`:
 
@@ -2088,7 +2088,7 @@ def test_fs_verbose_shows_manifest_fallback_line(tmp_path):
     assert "package.json" in result.output
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 uv run pytest tests/test_scan.py::test_fs_verbose_shows_per_plugin_tier2_coverage -q
@@ -2096,7 +2096,7 @@ uv run pytest tests/test_scan.py::test_fs_verbose_shows_per_plugin_tier2_coverag
 
 Expected: FAIL — verbose output doesn't include per-plugin coverage lines yet.
 
-- [ ] **Step 3: Add Tier-2 coverage rendering**
+- [x] **Step 3: Add Tier-2 coverage rendering**
 
 In `tools/scan.py`, replace the per-plugin verbose echo with a helper-augmented form:
 
@@ -2151,7 +2151,7 @@ def _tier2_coverage_lines(
     return out
 ```
 
-- [ ] **Step 4: Add federation summary line**
+- [x] **Step 4: Add federation summary line**
 
 After the per-plugin block in the verbose path:
 
@@ -2171,7 +2171,7 @@ After the per-plugin block in the verbose path:
 
 (Place this guarded on `federate_osv` so it only appears when the flag is set. Hoist `advisory_index` if needed.)
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 ```bash
 uv run pytest tests/test_scan.py::test_fs_verbose_shows_per_plugin_tier2_coverage -q
@@ -2180,7 +2180,7 @@ uv run pytest tests/test_scan.py::test_fs_verbose_shows_manifest_fallback_line -
 
 Expected: PASS.
 
-- [ ] **Step 6: Full gate**
+- [x] **Step 6: Full gate**
 
 ```bash
 uv run pytest -q
@@ -2191,7 +2191,7 @@ uv run pyright tools/ tests/
 
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/scan.py tests/test_scan.py
@@ -2214,7 +2214,7 @@ osv.dev-sourced finding count. Plan 009, Task 9."
 - Create: `docs/sarif-conventions.md`
 - Modify: `docs/adrs/INDEX.md`
 
-- [ ] **Step 1: Write ADR-0008**
+- [x] **Step 1: Write ADR-0008**
 
 ```bash
 cat > docs/adrs/0008-lockfile-dispatch-and-osv-federation.md <<'EOF'
@@ -2346,7 +2346,7 @@ for downstream consumers.
 EOF
 ```
 
-- [ ] **Step 2: Write SARIF conventions doc**
+- [x] **Step 2: Write SARIF conventions doc**
 
 ```bash
 cat > docs/sarif-conventions.md <<'EOF'
@@ -2403,7 +2403,7 @@ OpenACA-only governance) filter out federation-sourced findings.
 EOF
 ```
 
-- [ ] **Step 3: Update ADR INDEX**
+- [x] **Step 3: Update ADR INDEX**
 
 Edit `docs/adrs/INDEX.md`, append to the "Active" list:
 
@@ -2411,7 +2411,7 @@ Edit `docs/adrs/INDEX.md`, append to the "Active" list:
 - [ADR-0008 — Lockfile dispatch, manifest fallback, OSV.dev federation](0008-lockfile-dispatch-and-osv-federation.md): parse ALL supported lockfiles per active plugin (not first-match); manifest fallback ≠ lockfile coverage (extra.transitive distinguishes); `--exclude-transitive` is opt-OUT; `--federate-osv` is opt-IN; OpenACA's value-add is install-state-aware filtering + attribution, not corpus coverage; SARIF `properties.source` uses ecosystem-style `openaca.dev`/`osv.dev` naming.
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/adrs/0008-lockfile-dispatch-and-osv-federation.md docs/adrs/INDEX.md docs/sarif-conventions.md
@@ -2435,7 +2435,7 @@ downstream consumers. Plan 009, Task 10."
 - Modify: `README.md`
 - Modify: `docs/plans/README.md`
 
-- [ ] **Step 1: Update README's tier table**
+- [x] **Step 1: Update README's tier table**
 
 Edit `README.md`, find the Tier table and change Tier 2's status from "✅ V0 (lockfiles in plan 009)" to "✅ V0".
 
@@ -2449,7 +2449,7 @@ full corpus — a more accurate Tier-2 scanner for agent stacks than generic
 recursive walkers. See `docs/adrs/0008-lockfile-dispatch-and-osv-federation.md`.
 ```
 
-- [ ] **Step 2: Update plans README**
+- [x] **Step 2: Update plans README**
 
 Edit `docs/plans/README.md`:
 
@@ -2459,7 +2459,7 @@ Edit `docs/plans/README.md`:
 
 Position it just after the 008 row.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md docs/plans/README.md
@@ -2476,7 +2476,7 @@ Plan 009, Task 11."
 - Modify: `tests/test_e2e.py`
 - Create: `tests/fixtures/installs/with-transitive-vuln/` and contents
 
-- [ ] **Step 1: Add fixture install layout**
+- [x] **Step 1: Add fixture install layout**
 
 ```bash
 mkdir -p tests/fixtures/installs/with-transitive-vuln/plugins
@@ -2505,7 +2505,7 @@ mkdir -p tests/fixtures/installs/with-transitive-vuln/cache/vuln-plugin/1.0.0
 
 (Re-uses the same package as CVE-2026-0001 in the existing corpus.)
 
-- [ ] **Step 2: Write the E2E test**
+- [x] **Step 2: Write the E2E test**
 
 Append to `tests/test_e2e.py`:
 
@@ -2670,7 +2670,7 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     assert properties.get("attributed_to") is None or "attributed_to" not in properties
 ```
 
-- [ ] **Step 3: Run E2E tests**
+- [x] **Step 3: Run E2E tests**
 
 ```bash
 uv run pytest tests/test_e2e.py -q
@@ -2678,7 +2678,7 @@ uv run pytest tests/test_e2e.py -q
 
 Expected: all pass, including the three new tests.
 
-- [ ] **Step 4: Full gate**
+- [x] **Step 4: Full gate**
 
 ```bash
 uv run pytest -q
@@ -2690,7 +2690,7 @@ uv run openaca lint advisories/
 
 Expected: all green.
 
-- [ ] **Step 5: Dogfood on real `~/.claude` install**
+- [x] **Step 5: Dogfood on real `~/.claude` install**
 
 ```bash
 uv run openaca scan fs --target ~/.claude --advisories advisories -v
@@ -2698,7 +2698,7 @@ uv run openaca scan fs --target ~/.claude --advisories advisories -v
 
 Expected: per-plugin Tier-2 coverage lines appear; no findings fire unless real-corpus matches exist; output stays sensible (no crashes, no warnings unless valid).
 
-- [ ] **Step 6: Dogfood with federation (online)**
+- [x] **Step 6: Dogfood with federation (online)**
 
 ```bash
 uv run openaca scan fs --target ~/.claude --advisories advisories --federate-osv -v
@@ -2706,7 +2706,7 @@ uv run openaca scan fs --target ~/.claude --advisories advisories --federate-osv
 
 Expected: federation summary line shows osv.dev results count; if OSV.dev is unreachable, unconditional stderr warning appears.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/test_e2e.py
@@ -2724,7 +2724,7 @@ Dogfooded against real ~/.claude (results vary by user's installed
 plugins). Plan 009, Task 12."
 ```
 
-- [ ] **Step 8: Push and open PR**
+- [x] **Step 8: Push and open PR**
 
 ```bash
 git push -u origin feat/plugin-internal-deps

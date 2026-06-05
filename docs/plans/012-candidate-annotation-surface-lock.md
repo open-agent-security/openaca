@@ -1,6 +1,6 @@
 # Candidate Annotation Surface Lock + Review Skill Template
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Constrain the LLM/agent-editable surface of OpenACA candidates to `taxonomies` + `evidence_level` (everything else seeder-owned or upstream-owned), enforce that boundary in CI via the validator and overlay linter, and ship a thin Claude Code skill template so local subscription-based annotation has a documented UX.
 
@@ -17,7 +17,7 @@
 **Files:**
 - Create: `docs/seed-review-rules.md`
 
-- [ ] **Step 1: Write the rules document**
+- [x] **Step 1: Write the rules document**
 
 Create `docs/seed-review-rules.md` with the structural-vs-semantic split:
 
@@ -145,7 +145,7 @@ database_specific:
 ```
 ````
 
-- [ ] **Step 2: Commit the rules document**
+- [x] **Step 2: Commit the rules document**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
@@ -161,7 +161,7 @@ git commit -m "Add canonical seed-review rules document"
 - Modify: `tools/seed/validator.py`
 - Test: `tests/test_seed_validator.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_seed_validator.py`:
 
@@ -194,7 +194,7 @@ def test_validate_candidate_accepts_threat_kind_on_mal_alias():
     assert validate_candidate(candidate) == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
@@ -203,7 +203,7 @@ uv run pytest tests/test_seed_validator.py::test_validate_candidate_rejects_thre
 
 Expected: 1 fail (`threat_kind_on_non_mal_record` — accepts because schema allows it), 2 may pass already (no threat_kind on _candidate fixture).
 
-- [ ] **Step 3: Implement the rule in validator.py**
+- [x] **Step 3: Implement the rule in validator.py**
 
 Add a helper after `validate_candidate` in `tools/seed/validator.py`:
 
@@ -253,7 +253,7 @@ def validate_candidate(candidate: dict[str, Any]) -> list[str]:
     return errors
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```bash
 uv run pytest tests/test_seed_validator.py -v
@@ -261,7 +261,7 @@ uv run pytest tests/test_seed_validator.py -v
 
 Expected: all tests pass (including the three new ones).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/seed/validator.py tests/test_seed_validator.py
@@ -276,7 +276,7 @@ git commit -m "Reject threat_kind on non-MAL candidates in validator"
 - Modify: `tools/seed/validator.py`
 - Test: `tests/test_seed_validator.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_seed_validator.py`:
 
@@ -308,7 +308,7 @@ def test_validate_candidate_accepts_non_empty_taxonomies():
     assert validate_candidate(_candidate()) == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 ```bash
 uv run pytest tests/test_seed_validator.py::test_validate_candidate_rejects_empty_taxonomy_array tests/test_seed_validator.py::test_validate_candidate_rejects_empty_supplemental_taxonomies -v
@@ -316,7 +316,7 @@ uv run pytest tests/test_seed_validator.py::test_validate_candidate_rejects_empt
 
 Expected: both fail.
 
-- [ ] **Step 3: Implement the rule in validator.py**
+- [x] **Step 3: Implement the rule in validator.py**
 
 Add a helper to `tools/seed/validator.py`:
 
@@ -344,7 +344,7 @@ Wire it into `validate_candidate` alongside the threat_kind check:
     errors.extend(_check_no_empty_taxonomy_buckets(candidate))
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```bash
 uv run pytest tests/test_seed_validator.py -v
@@ -352,7 +352,7 @@ uv run pytest tests/test_seed_validator.py -v
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/seed/validator.py tests/test_seed_validator.py
@@ -369,7 +369,7 @@ git commit -m "Reject empty taxonomy buckets in validator"
 
 The candidate validator catches issues at `openaca seed` time; the overlay linter (`openaca lint`) catches them at promotion time. Same rules, applied to the canonical overlay shape.
 
-- [ ] **Step 1: Inspect the existing overlay lint structure**
+- [x] **Step 1: Inspect the existing overlay lint structure**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
@@ -379,7 +379,7 @@ grep -n "def test_" tests/test_lint.py | head -10
 
 Note the existing `check_*` function pattern and the `main(target)` entry point that aggregates them.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Append to `tests/test_lint.py` (use the existing fixture style — look at adjacent tests for the overlay shape and how `main` is invoked):
 
@@ -429,7 +429,7 @@ def test_lint_rejects_empty_taxonomy_bucket_in_overlay(tmp_path):
 
 (Add `import pytest` and `from tools import lint` if missing.)
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 ```bash
 uv run pytest tests/test_lint.py::test_lint_rejects_threat_kind_on_non_mal_overlay tests/test_lint.py::test_lint_rejects_empty_taxonomy_bucket_in_overlay -v
@@ -437,7 +437,7 @@ uv run pytest tests/test_lint.py::test_lint_rejects_threat_kind_on_non_mal_overl
 
 Expected: both fail (lint accepts these today).
 
-- [ ] **Step 4: Add the two checks to lint.py**
+- [x] **Step 4: Add the two checks to lint.py**
 
 Add to `tools/lint.py` next to the other `check_*` functions:
 
@@ -483,7 +483,7 @@ Wire them into `main(target)` next to the existing checks. Locate the loop that 
         errors.extend(check_no_empty_taxonomy_buckets(overlay, path))
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 ```bash
 uv run pytest tests/test_lint.py -v
@@ -491,7 +491,7 @@ uv run pytest tests/test_lint.py -v
 
 Expected: all lint tests pass (including the two new ones).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/lint.py tests/test_lint.py
@@ -506,7 +506,7 @@ git commit -m "Apply threat_kind and empty-bucket checks to overlay linter"
 - Create: `tests/fixtures/candidates/flowise-nano-bad.yaml`
 - Test: `tests/test_seed_validator.py`
 
-- [ ] **Step 1: Create the fixture**
+- [x] **Step 1: Create the fixture**
 
 `tests/fixtures/candidates/flowise-nano-bad.yaml` — the literal nano-style output for GHSA-mq53-pc65-wjc4, slimmed to the openaca-relevant fields:
 
@@ -543,7 +543,7 @@ database_specific:
 summary: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Append to `tests/test_seed_validator.py`:
 
@@ -573,7 +573,7 @@ from pathlib import Path
 import yaml
 ```
 
-- [ ] **Step 3: Run tests to verify failure mode is right**
+- [x] **Step 3: Run tests to verify failure mode is right**
 
 ```bash
 uv run pytest tests/test_seed_validator.py::test_fixture_flowise_nano_bad_is_rejected_with_actionable_errors -v
@@ -581,7 +581,7 @@ uv run pytest tests/test_seed_validator.py::test_fixture_flowise_nano_bad_is_rej
 
 Expected: passes (Tasks 2 and 3 already implemented the checks; this test just exercises them through a real-world fixture).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/candidates/flowise-nano-bad.yaml tests/test_seed_validator.py
@@ -596,7 +596,7 @@ git commit -m "Add nano-Flowise regression fixture asserting validator rejects e
 - Create: `tests/fixtures/candidates/flowise-corrected-good.yaml`
 - Test: `tests/test_seed_validator.py`
 
-- [ ] **Step 1: Create the fixture**
+- [x] **Step 1: Create the fixture**
 
 `tests/fixtures/candidates/flowise-corrected-good.yaml` — opus-style correct annotation:
 
@@ -629,7 +629,7 @@ database_specific:
 summary: 'FlowiseAI: Evaluation create+update mass-assignment allows cross-workspace evaluation takeover'
 ```
 
-- [ ] **Step 2: Write the passing test**
+- [x] **Step 2: Write the passing test**
 
 Append to `tests/test_seed_validator.py`:
 
@@ -647,7 +647,7 @@ def test_fixture_flowise_corrected_good_validates():
     assert validate_candidate(candidate) == []
 ```
 
-- [ ] **Step 3: Run test**
+- [x] **Step 3: Run test**
 
 ```bash
 uv run pytest tests/test_seed_validator.py::test_fixture_flowise_corrected_good_validates -v
@@ -655,7 +655,7 @@ uv run pytest tests/test_seed_validator.py::test_fixture_flowise_corrected_good_
 
 Expected: passes.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/candidates/flowise-corrected-good.yaml tests/test_seed_validator.py
@@ -669,7 +669,7 @@ git commit -m "Add corrected Flowise fixture as the canonical good-annotation re
 **Files:**
 - Create: `examples/skills/claude/openaca-candidate-review/SKILL.md`
 
-- [ ] **Step 1: Create the skill template**
+- [x] **Step 1: Create the skill template**
 
 ```markdown
 ---
@@ -756,7 +756,7 @@ then surface the disagreement to the user in your summary message.
 Do not silently apply your own judgment over the documented rule.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add examples/skills/claude/openaca-candidate-review/SKILL.md
@@ -770,7 +770,7 @@ git commit -m "Add Claude Code skill template for candidate review"
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Locate the right section**
+- [x] **Step 1: Locate the right section**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
@@ -779,7 +779,7 @@ grep -n "openaca seed\|seeding\|candidate" README.md | head -10
 
 Identify where the existing seed/candidate flow is documented. Likely under a "Seeding" or "Workflows" section.
 
-- [ ] **Step 2: Add the local-subscription flow snippet**
+- [x] **Step 2: Add the local-subscription flow snippet**
 
 Append a subsection (or insert near the existing `openaca seed` documentation, matching the file's existing structure and headline level):
 
@@ -809,7 +809,7 @@ API-mode annotation (`--llm-provider openai|anthropic`) remains
 available for CI and batch runs.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md
@@ -820,7 +820,7 @@ git commit -m "Document local subscription-based annotation flow in README"
 
 ## Task 9: Full gate
 
-- [ ] **Step 1: Run the full test suite and lint gates**
+- [x] **Step 1: Run the full test suite and lint gates**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/candidate-annotation-surface
@@ -833,7 +833,7 @@ uv run openaca lint overlays/
 
 Expected: all green. The overlay linter run validates that no existing canonical overlays trip the new rules — important since this PR adds enforcement that wasn't there before.
 
-- [ ] **Step 2: If `openaca lint overlays/` reports new failures**
+- [x] **Step 2: If `openaca lint overlays/` reports new failures**
 
 These would be existing canonical overlays that violate the new rules. Two possibilities:
 
@@ -842,7 +842,7 @@ These would be existing canonical overlays that violate the new rules. Two possi
 
 Do not weaken the rules to accommodate broken existing data. Report the offending overlays in the summary and let the user decide whether to fix the overlays in this PR or in a follow-up.
 
-- [ ] **Step 3: Push the branch and open the PR**
+- [x] **Step 3: Push the branch and open the PR**
 
 ```bash
 git push -u origin feat/candidate-annotation-surface
@@ -871,7 +871,7 @@ EOF
 )"
 ```
 
-- [ ] **Step 4: Verify CI passes**
+- [x] **Step 4: Verify CI passes**
 
 ```bash
 gh pr checks --watch

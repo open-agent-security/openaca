@@ -1,6 +1,6 @@
 # 005 — Reference GitHub Action
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A thin, local-first GitHub Action that consumers invoke via `open-agent-security/openaca@v1`. The Action parses agent-installation manifests in the consumer's repo (using the parsers from Plan 003), looks up matching advisories from the OpenACA static export, and reports findings as both SARIF and GitHub annotations.
 
@@ -32,7 +32,7 @@
 **Files:**
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Add `packaging` to runtime deps**
+- [x] **Step 1: Add `packaging` to runtime deps**
 
 ```toml
 [project]
@@ -47,7 +47,7 @@ dependencies = [
 
 Sync deps: `uv sync`
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add pyproject.toml
@@ -62,7 +62,7 @@ git commit -m "chore: add packaging for version-range comparisons"
 - Create: `tools/matcher.py`
 - Create: `tests/test_matcher.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_matcher.py
@@ -115,12 +115,12 @@ def test_match_unknown_version_returns_finding_with_warning():
     assert findings[0].confidence == "low"   # range-vs-range: cannot resolve precisely
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_matcher.py -v`
 Expected: fails — module does not exist.
 
-- [ ] **Step 3: Implement `tools/matcher.py`**
+- [x] **Step 3: Implement `tools/matcher.py`**
 
 ```python
 """Match ComponentRefs against OpenACA advisories."""
@@ -230,12 +230,12 @@ def match(refs: list[ComponentRef], advisories: list[dict]) -> list[Finding]:
     return findings
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_matcher.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/matcher.py tests/test_matcher.py
@@ -250,7 +250,7 @@ git commit -m "feat: matcher pairs ComponentRefs with OpenACA advisories"
 - Create: `tools/sarif.py`
 - Create: `tests/test_sarif.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_sarif.py
@@ -280,12 +280,12 @@ def test_sarif_envelope():
     assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "package.json"
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_sarif.py -v`
 Expected: fails.
 
-- [ ] **Step 3: Implement `tools/sarif.py`**
+- [x] **Step 3: Implement `tools/sarif.py`**
 
 ```python
 """Render OpenACA findings as SARIF v2.1.0."""
@@ -332,12 +332,12 @@ def to_sarif(findings: list[Finding], advisory_index: dict[str, dict]) -> dict:
     }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_sarif.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/sarif.py tests/test_sarif.py
@@ -354,7 +354,7 @@ git commit -m "feat: SARIF v2.1.0 emission for OpenACA findings"
 - Create: `tests/fixtures/repos/exposed-mcp/package.json`
 - Create: `tests/fixtures/repos/exposed-mcp/.claude/settings.json`
 
-- [ ] **Step 1: Write fixtures**
+- [x] **Step 1: Write fixtures**
 
 `tests/fixtures/repos/exposed-mcp/package.json`:
 
@@ -378,7 +378,7 @@ git commit -m "feat: SARIF v2.1.0 emission for OpenACA findings"
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_scan.py
@@ -421,12 +421,12 @@ def test_scan_clean_repo_exits_zero(tmp_path):
     assert result.exit_code == 0, result.output
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `uv run pytest tests/test_scan.py -v`
 Expected: fails — `tools.scan` does not exist.
 
-- [ ] **Step 4: Implement `tools/scan.py`**
+- [x] **Step 4: Implement `tools/scan.py`**
 
 ```python
 """End-to-end OpenACA scan: parse → match → report (SARIF + annotations)."""
@@ -500,7 +500,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 5: Register console script**
+- [x] **Step 5: Register console script**
 
 Add to `pyproject.toml`:
 
@@ -510,12 +510,12 @@ openaca scan = "tools.scan:main"
 
 Sync deps: `uv sync`
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `uv run pytest tests/test_scan.py -v`
 Expected: both pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/scan.py tests/test_scan.py tests/fixtures/repos/exposed-mcp/ pyproject.toml
@@ -529,7 +529,7 @@ git commit -m "feat: end-to-end openaca scan CLI"
 **Files:**
 - Create: `action.yml`
 
-- [ ] **Step 1: Write the action**
+- [x] **Step 1: Write the action**
 
 ```yaml
 name: OpenACA Scan
@@ -585,12 +585,12 @@ runs:
         echo "sarif-path=${{ inputs.sarif }}" >> "$GITHUB_OUTPUT"
 ```
 
-- [ ] **Step 2: Smoke-test locally**
+- [x] **Step 2: Smoke-test locally**
 
 Run: `uv run openaca scan --target tests/fixtures/repos/exposed-mcp --advisories advisories --sarif /tmp/openaca-out.sarif`
 Expected: exits non-zero; `/tmp/openaca-out.sarif` written; CVE-2026-0001 listed.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add action.yml
@@ -606,7 +606,7 @@ A workflow that runs `openaca scan` on this repo's own manifests. Useful as both
 **Files:**
 - Create: `.github/workflows/self-scan.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
 
 ```yaml
 name: Self-scan
@@ -635,7 +635,7 @@ jobs:
         if: always()
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add .github/workflows/self-scan.yml
@@ -659,10 +659,10 @@ End-to-end (after pushing to GitHub): the self-scan workflow runs on every PR; S
 
 ## Self-review checklist
 
-- [ ] **Matcher** handles both versioned (range/list) and identity (detection_hints) cases.
-- [ ] **SARIF v2.1.0** envelope is correct: `version`, `runs[0].tool.driver`, `rules`, `results`, `locations`.
-- [ ] **GitHub annotations** on stdout follow `::error file=…,title=…::` syntax.
-- [ ] **Exit code policy** matches `--fail-on` (`any`/`high`/`none`).
-- [ ] **Composite action** uses Python entrypoint; no Node wrapper. Fewer moving parts.
-- [ ] **Self-scan workflow** uses `fail-on: none` because this repo *is* the database.
-- [ ] **No commercial / competitor framing** in `action.yml` description, branding, or output messages.
+- [x] **Matcher** handles both versioned (range/list) and identity (detection_hints) cases.
+- [x] **SARIF v2.1.0** envelope is correct: `version`, `runs[0].tool.driver`, `rules`, `results`, `locations`.
+- [x] **GitHub annotations** on stdout follow `::error file=…,title=…::` syntax.
+- [x] **Exit code policy** matches `--fail-on` (`any`/`high`/`none`).
+- [x] **Composite action** uses Python entrypoint; no Node wrapper. Fewer moving parts.
+- [x] **Self-scan workflow** uses `fail-on: none` because this repo *is* the database.
+- [x] **No commercial / competitor framing** in `action.yml` description, branding, or output messages.

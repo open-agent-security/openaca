@@ -49,7 +49,7 @@ fi
 # Install openaca into uv's isolated tool environment.
 echo "→ Installing openaca (${OPENACA_VERSION})..."
 if [ "$OPENACA_VERSION" = "latest" ]; then
-  uv tool install --upgrade openaca
+  uv tool install --upgrade --prerelease allow openaca
 else
   uv tool install --upgrade "openaca==${OPENACA_VERSION}"
 fi
@@ -67,11 +67,15 @@ if command -v openaca >/dev/null 2>&1; then
 elif [ -x "$OPENACA_BIN" ]; then
   echo "  $OPENACA_BIN scan endpoint"
 else
-  echo "  uvx openaca scan endpoint"
+  if [ "$OPENACA_VERSION" = "latest" ]; then
+    echo "  uvx --prerelease allow --from openaca openaca scan endpoint"
+  else
+    echo "  uvx --from openaca==${OPENACA_VERSION} openaca scan endpoint"
+  fi
 fi
 echo ""
 echo "If your shell cannot find 'openaca', add uv's tool directory to PATH:"
 echo "  export PATH=\"$TOOL_BIN_DIR:\$PATH\""
 echo ""
 echo "Pin a specific version (recommended for MDM/CI deploys):"
-echo "  curl -fsSL https://openaca.dev/install.sh | OPENACA_VERSION=0.1.0b5 sh"
+echo "  curl -fsSL https://openaca.dev/install.sh | OPENACA_VERSION=<version> sh"

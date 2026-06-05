@@ -7,7 +7,7 @@ matches it against known security advisories (OSV / GHSA / CVE / MAL).
 
 > Identity resolution and composition analysis for AI agent stacks.
 
-> **Beta status:** OpenACA is in closed beta on PyPI as `0.1.0b6`.
+> **Beta status:** OpenACA is in closed beta on PyPI.
 > If you're a beta tester, the
 > [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
 > in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
@@ -192,7 +192,7 @@ checkout. Two modes via subcommands.
 **Pin a specific version (recommended for Fleet / MDM / CI):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=0.1.0b6 sh
+curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=<version> sh
 ```
 
 Pinning matters for reproducible deployments — every machine getting
@@ -203,15 +203,15 @@ the path yourself):**
 
 ```bash
 # With uv (recommended; handles Python version + isolation):
-uv tool install openaca
+uv tool install --prerelease allow openaca
 
 # Or with pip (Python 3.11+ in your existing workflow):
-pip install openaca
+pip install --pre openaca
 ```
 
-(All install paths auto-pick the latest pre-release while no stable
-exists. Pin a specific build with `openaca==0.1.0b6` if you need to
-reproduce a bug report against an exact version.)
+(The explicit pre-release flags matter while OpenACA is in beta. Pin a
+specific build with `openaca==<version>` if you need to reproduce a bug
+report against an exact version.)
 
 **Install from source (for contributors):**
 

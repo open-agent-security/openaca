@@ -1,6 +1,6 @@
 # 007 — fs-mode foundation: CLI split, attribution, claude-plugin matcher
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Ship the data model and CLI shape for install-state-aware scanning of Claude Code installations. After this plan, `openaca scan repo` is today's behavior, `openaca scan fs` is a stub for plan 008, plugin advisories match through the existing range matcher, and `attributed_to` carries through ComponentRef → Finding → SARIF.
 
@@ -62,7 +62,7 @@ Plan 007 unblocks plugin advisory authoring even if 008/009 take time — `opena
 - Modify: `tools/component_ref.py`
 - Modify: `tests/test_component_ref.py`
 
-- [ ] **Step 1: Add the field**
+- [x] **Step 1: Add the field**
 
 ```python
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class ComponentRef:
     extra: dict = field(default_factory=dict)
 ```
 
-- [ ] **Step 2: Add tests**
+- [x] **Step 2: Add tests**
 
 ```python
 def test_attributed_to_defaults_to_none():
@@ -90,7 +90,7 @@ def test_attributed_to_round_trips():
     assert ref.attributed_to == "claude-plugin/foo@1.0.0"
 ```
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ```bash
 uv run pytest tests/test_component_ref.py -q
@@ -106,7 +106,7 @@ git commit -m "feat(component-ref): add attributed_to field"
 - Modify: `tools/matcher.py`
 - Modify: `tests/test_matcher.py`
 
-- [ ] **Step 1: Add Finding field, mirror at construction**
+- [x] **Step 1: Add Finding field, mirror at construction**
 
 ```python
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ class Finding:
 #   attributed_to=ref.attributed_to,
 ```
 
-- [ ] **Step 2: Test mirror invariant**
+- [x] **Step 2: Test mirror invariant**
 
 ```python
 def test_finding_mirrors_component_attribution():
@@ -134,7 +134,7 @@ def test_finding_mirrors_component_attribution():
     assert findings[0].attributed_to == findings[0].component.attributed_to
 ```
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ```bash
 uv run pytest tests/test_matcher.py -q
@@ -152,20 +152,20 @@ git commit -m "feat(matcher): mirror ref.attributed_to onto Finding"
 - Modify: `tests/test_scan.py`
 - Modify: `tests/test_sarif.py`
 
-- [ ] **Step 1: Text output `via <attributed_to>` suffix**
+- [x] **Step 1: Text output `via <attributed_to>` suffix**
 
 In `tools/scan.py`, when rendering findings for stdout/stderr (both default summary and `-v` matched-component listing), append `via <f.attributed_to>` when present.
 
-- [ ] **Step 2: SARIF `properties.attributed_to`**
+- [x] **Step 2: SARIF `properties.attributed_to`**
 
 In `tools/sarif.py`, add `attributed_to` to each `result.properties` when `f.attributed_to` is non-None. Keep existing properties unchanged.
 
-- [ ] **Step 3: Tests**
+- [x] **Step 3: Tests**
 
 `tests/test_scan.py`: synthetic finding with `attributed_to` set; assert text output contains `via claude-plugin/foo@1.0.0`.
 `tests/test_sarif.py`: same finding; assert SARIF result's `properties.attributed_to` matches.
 
-- [ ] **Step 4: Run, commit**
+- [x] **Step 4: Run, commit**
 
 ```bash
 uv run pytest tests/test_scan.py tests/test_sarif.py -q
@@ -182,7 +182,7 @@ git commit -m "feat(scan/sarif): surface attributed_to in output"
 - Modify: `tests/test_parsers/test_claude_plugin.py`
 - Modify: `tests/test_matcher.py`
 
-- [ ] **Step 1: Tag self-identity ref with ecosystem/name/version**
+- [x] **Step 1: Tag self-identity ref with ecosystem/name/version**
 
 In `tools/parsers/claude_plugin.py:parse`, when emitting the plugin's self-identity ref:
 
@@ -205,7 +205,7 @@ if name:
 
 `_match_one` in `tools/matcher.py` automatically routes through `_match_versioned` because ecosystem+name are now both set. No matcher changes.
 
-- [ ] **Step 2: Parser test**
+- [x] **Step 2: Parser test**
 
 ```python
 def test_plugin_self_identity_carries_ecosystem():
@@ -217,7 +217,7 @@ def test_plugin_self_identity_carries_ecosystem():
     assert plugin_self.component_identity == "claude-plugin/deployment-tools@1.2.0"
 ```
 
-- [ ] **Step 3: Matcher test**
+- [x] **Step 3: Matcher test**
 
 ```python
 def test_match_claude_plugin_in_range():
@@ -230,7 +230,7 @@ def test_match_claude_plugin_in_range():
     assert findings[0].attributed_to is None  # plugin itself is direct
 ```
 
-- [ ] **Step 4: Run, commit**
+- [x] **Step 4: Run, commit**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_plugin.py tests/test_matcher.py -q
@@ -248,7 +248,7 @@ git commit -m "feat(matcher): claude-plugin ecosystem matches via _match_version
 - Create: `tests/fixtures/repos/sample-plugin-string-mcp/.claude-plugin/plugin.json`
 - Create: `tests/fixtures/repos/sample-plugin-string-mcp/.mcp.json`
 
-- [ ] **Step 1: Create fixture**
+- [x] **Step 1: Create fixture**
 
 ```bash
 mkdir -p tests/fixtures/repos/sample-plugin-string-mcp/.claude-plugin
@@ -275,7 +275,7 @@ mkdir -p tests/fixtures/repos/sample-plugin-string-mcp/.claude-plugin
 }
 ```
 
-- [ ] **Step 2: Update `parse` in `tools/parsers/claude_plugin.py`**
+- [x] **Step 2: Update `parse` in `tools/parsers/claude_plugin.py`**
 
 Replace the existing `mcpServers` handling with:
 
@@ -303,7 +303,7 @@ elif isinstance(servers, str):
 
 Add `from tools.parsers import mcp_json` if not already imported.
 
-- [ ] **Step 3: Test**
+- [x] **Step 3: Test**
 
 ```python
 def test_mcp_servers_string_path_resolves_from_plugin_root():
@@ -315,7 +315,7 @@ def test_mcp_servers_string_path_resolves_from_plugin_root():
     assert npm_refs[0].version == "1.0.0"
 ```
 
-- [ ] **Step 4: Run, commit**
+- [x] **Step 4: Run, commit**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_plugin.py -q
@@ -331,7 +331,7 @@ git commit -m "fix(parsers): handle mcpServers as string path from plugin root"
 - Create: `tools/parsers/settings_layers.py`
 - Create: `tests/test_parsers/test_settings_layers.py`
 
-- [ ] **Step 1: Implement reader**
+- [x] **Step 1: Implement reader**
 
 ```python
 """Four-scope settings reader for Claude Code: Managed > Local > Project > User."""
@@ -413,7 +413,7 @@ def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLay
     return layers
 ```
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 ```python
 from pathlib import Path
@@ -492,7 +492,7 @@ def test_load_user_plus_project(tmp_path):
     assert layers.merged("fs")["theme"] == "neon"
 ```
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ```bash
 uv run pytest tests/test_parsers/test_settings_layers.py -q
@@ -509,7 +509,7 @@ git commit -m "feat(parsers): provenance-aware settings_layers reader"
 - Create: `tests/fixtures/installs/minimal/` (full fixture install)
 - Create: `tests/test_parsers/test_claude_install.py`
 
-- [ ] **Step 1: Create fixture install**
+- [x] **Step 1: Create fixture install**
 
 ```bash
 mkdir -p tests/fixtures/installs/minimal/plugins/cache/test-marketplace/sample-plugin/1.2.0/.claude-plugin
@@ -554,7 +554,7 @@ mkdir -p tests/fixtures/installs/minimal/plugins/cache/test-marketplace/sample-p
 }
 ```
 
-- [ ] **Step 2: Implement reader**
+- [x] **Step 2: Implement reader**
 
 ```python
 """Minimal install-state-aware Claude Code reader for fs-mode scanning.
@@ -683,7 +683,7 @@ def parse_install(
     return refs, warnings
 ```
 
-- [ ] **Step 3: Tests**
+- [x] **Step 3: Tests**
 
 ```python
 import json
@@ -780,7 +780,7 @@ def test_install_multi_entry_no_scope_match_falls_back_with_warning(tmp_path):
 
 Important: the `tests/fixtures/installs/minimal/plugins/installed_plugins.json` `installPath` field uses `<placeholder>` since it has to be absolute on the test machine. Implement test setup that rewrites the placeholder, OR (simpler) leave it as `<placeholder>` since plan 007 doesn't yet read installPath for actual file loading — the field is just metadata in the ComponentRef.
 
-- [ ] **Step 4: Run, commit**
+- [x] **Step 4: Run, commit**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_install.py -q
@@ -797,7 +797,7 @@ git commit -m "feat(parsers): minimal claude_install resolver (plan 007 scope)"
 - Modify: `tests/test_scan.py`
 - Modify: `action.yml`
 
-- [ ] **Step 1: Convert `main` into a Click group**
+- [x] **Step 1: Convert `main` into a Click group**
 
 Refactor `tools/scan.py` so that:
 
@@ -893,7 +893,7 @@ def ctx_exit_for_findings(default_code, fail_on, findings):
     sys.exit(default_code)
 ```
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 `tests/test_scan.py`:
 
@@ -952,11 +952,11 @@ affected:
     assert "CVE-2026-9999" in result.output
 ```
 
-- [ ] **Step 3: Verify the GitHub Action still works**
+- [x] **Step 3: Verify the GitHub Action still works**
 
 `action.yml` is updated to invoke `openaca scan repo` explicitly (no back-compat fallback exists).
 
-- [ ] **Step 4: Run all scan/install tests, commit**
+- [x] **Step 4: Run all scan/install tests, commit**
 
 ```bash
 uv run pytest tests/test_scan.py tests/test_parsers/test_claude_install.py -q
@@ -974,7 +974,7 @@ git commit -m "feat(scan): openaca scan repo and fs subcommands"
 - Modify: `README.md`
 - Modify: `CONTRIBUTING.md`
 
-- [ ] **Step 1: ADR-0006**
+- [x] **Step 1: ADR-0006**
 
 `docs/adrs/0006-openaca-scan-subcommands-and-attribution.md`:
 
@@ -1050,7 +1050,7 @@ the future without breaking ComponentRef immutability assumptions.
   rendering checks for None and elides the `via ...` suffix when absent.
 ```
 
-- [ ] **Step 2: Update INDEX.md**
+- [x] **Step 2: Update INDEX.md**
 
 Add entry under `## Active`:
 
@@ -1058,15 +1058,15 @@ Add entry under `## Active`:
 - [ADR-0006 — openaca scan subcommands, claude-plugin ecosystem, attribution](0006-openaca-scan-subcommands-and-attribution.md): the `repo`/`fs` subcommand split, the `claude-plugin` ecosystem convention for plugin advisories, and the `attributed_to` field shared between ComponentRef and Finding for "via plugin X" findings in plans 008 and 009.
 ```
 
-- [ ] **Step 3: README.md updates**
+- [x] **Step 3: README.md updates**
 
 Add `openaca scan repo` / `openaca scan fs` examples to the CLI section. Add a brief "fs mode" subsection noting that PR-A only emits one component per active plugin; PRs B and C extend.
 
-- [ ] **Step 4: CONTRIBUTING.md**
+- [x] **Step 4: CONTRIBUTING.md**
 
 In the "Filing an advisory" section, recognized ecosystems list: add `claude-plugin` alongside `npm`, `PyPI`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/adrs/0006-openaca-scan-subcommands-and-attribution.md docs/adrs/INDEX.md README.md CONTRIBUTING.md
@@ -1080,7 +1080,7 @@ git commit -m "docs: ADR-0006 for openaca scan subcommands, attribution, claude-
 **Files:**
 - Modify: `tests/test_e2e.py`
 
-- [ ] **Step 1: E2E test for fs mode**
+- [x] **Step 1: E2E test for fs mode**
 
 Add a test that runs `openaca scan fs` against the `tests/fixtures/installs/minimal/` fixture with an in-memory `claude-plugin` advisory in a tmp_path advisories dir. Assert:
 - exit code 1
@@ -1088,7 +1088,7 @@ Add a test that runs `openaca scan fs` against the `tests/fixtures/installs/mini
 - `confidence == "high"` in the matched-component listing
 - (No `via ...` suffix because plugin-level findings are direct.)
 
-- [ ] **Step 2: Run full gate**
+- [x] **Step 2: Run full gate**
 
 ```bash
 cd /Users/vinodkone/workspace/openaca/.worktrees/feat-scan-cli-and-attribution
@@ -1101,11 +1101,11 @@ uv run openaca lint advisories/
 
 All green required before commit/push.
 
-- [ ] **Step 3: Update plans index**
+- [x] **Step 3: Update plans index**
 
 Edit `docs/plans/README.md`: add row for plan 007 with status 🟡 Active. (Will flip to ✅ Done in the merge commit.)
 
-- [ ] **Step 4: Commit, push, open PR**
+- [x] **Step 4: Commit, push, open PR**
 
 ```bash
 git add tests/test_e2e.py docs/plans/007-fs-mode-cli-and-attribution.md docs/plans/README.md
@@ -1141,13 +1141,13 @@ uv run openaca scan fs --target ~/.claude --advisories advisories -v
 
 ## Self-review checklist
 
-- [ ] **No back-compat fallback**: `openaca scan --target X --advisories Y` (no subcommand) exits 2. `action.yml` uses `openaca scan repo` explicitly.
-- [ ] **claude-plugin ecosystem** flows end-to-end: parser sets ecosystem, matcher fires, advisory matches via `_match_versioned`.
-- [ ] **`mcpServers` string-path** resolves from plugin root (`manifest.parent.parent`), not manifest dir. Test with the new fixture.
-- [ ] **Attribution mirror invariant** holds: `finding.attributed_to == finding.component.attributed_to` for every finding.
-- [ ] **Multi-scope `installed_plugins.json`** entries: scope-matching preferred; `[0]` fallback with warning. Tested in `test_claude_install.py`.
-- [ ] **Settings layering** four scopes (managed/local/project/user); arrays union+dedupe; objects deep-merge; scalars override; `repo` mode skips local.
-- [ ] **`-v` output** surfaces install warnings (`installed_plugins.json` malformed, missing entries, multi-scope ambiguity).
-- [ ] **ADR-0006** captures decisions and rejected alternatives.
-- [ ] **No regressions in the existing 153-test suite**: full pytest passes.
-- [ ] **No `dependencies` parser code deleted** (Codex-corrected: stays as defensive code per CHANGELOG-supported field).
+- [x] **No back-compat fallback**: `openaca scan --target X --advisories Y` (no subcommand) exits 2. `action.yml` uses `openaca scan repo` explicitly.
+- [x] **claude-plugin ecosystem** flows end-to-end: parser sets ecosystem, matcher fires, advisory matches via `_match_versioned`.
+- [x] **`mcpServers` string-path** resolves from plugin root (`manifest.parent.parent`), not manifest dir. Test with the new fixture.
+- [x] **Attribution mirror invariant** holds: `finding.attributed_to == finding.component.attributed_to` for every finding.
+- [x] **Multi-scope `installed_plugins.json`** entries: scope-matching preferred; `[0]` fallback with warning. Tested in `test_claude_install.py`.
+- [x] **Settings layering** four scopes (managed/local/project/user); arrays union+dedupe; objects deep-merge; scalars override; `repo` mode skips local.
+- [x] **`-v` output** surfaces install warnings (`installed_plugins.json` malformed, missing entries, multi-scope ambiguity).
+- [x] **ADR-0006** captures decisions and rejected alternatives.
+- [x] **No regressions in the existing 153-test suite**: full pytest passes.
+- [x] **No `dependencies` parser code deleted** (Codex-corrected: stays as defensive code per CHANGELOG-supported field).

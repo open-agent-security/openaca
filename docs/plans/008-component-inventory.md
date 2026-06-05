@@ -1,6 +1,6 @@
 # 008 — Component inventory: declared (repo) and active (fs) agent stack
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make OpenACA see the full Tier-1 declarative agent-stack — not just plugin self-identity. In both `repo` mode (what this app will ship with) and `fs` mode (what's installed and running here), enumerate MCPs, skills, hooks, commands, and agents — with attribution that distinguishes plugin-bundled from bare/settings-scoped components.
 
@@ -68,7 +68,7 @@ Both modes use the same parsers and emit the same component types. The differenc
 
 Per the canonical Agent Skills spec at agentskills.io/specification, SKILL.md frontmatter has six top-level fields: `name` (required, must match parent dir), `description` (required), `license` (optional), `compatibility` (optional), `metadata` (optional map), `allowed-tools` (optional). No top-level `version` field — versioning is by convention in `metadata.version`.
 
-- [ ] **Step 1: Implement parser**
+- [x] **Step 1: Implement parser**
 
 ```python
 """Parse SKILL.md frontmatter per agentskills.io spec.
@@ -138,9 +138,9 @@ def _extract_frontmatter(text: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 ```
 
-- [ ] **Step 2: Tests** — cover: name+description+metadata.version present; no frontmatter (skip); no name field (fall back to dir name); invalid YAML (skip); top-level array (skip); name mismatch with parent dir (still emit, using frontmatter name); `attributed_to` propagation when passed.
+- [x] **Step 2: Tests** — cover: name+description+metadata.version present; no frontmatter (skip); no name field (fall back to dir name); invalid YAML (skip); top-level array (skip); name mismatch with parent dir (still emit, using frontmatter name); `attributed_to` propagation when passed.
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ```bash
 uv run pytest tests/test_parsers/test_claude_skill.py -q
@@ -168,7 +168,7 @@ Identity per ADR-0006 follow-up rules (will be captured in ADR-0007):
 
 `source_locator` carries the JSON path (e.g., `$.hooks.PreToolUse[0]`). Hook `type` (command vs. prompt) and the actual command/prompt string go in `extra`, not identity, so two semantically identical hooks at different indexes are distinct and a command edit at the same index keeps identity stable.
 
-- [ ] **Step 1: Implement two entry points**
+- [x] **Step 1: Implement two entry points**
 
 ```python
 def parse_plugin_hooks(
@@ -184,9 +184,9 @@ def parse_settings_hooks(
 
 Both share an internal `_walk_events(hooks_block, locator_prefix, identity_prefix, extra_base)` that iterates `{event: [...]}` and emits ComponentRefs.
 
-- [ ] **Step 2: Tests** — plugin format wrapping; settings format without wrapper; multiple events; multiple indexes per event; `type` and `command` captured in `extra`; identity prefix differentiation for plugin vs settings; per-scope identity for settings; malformed JSON / non-dict `hooks` skipped gracefully.
+- [x] **Step 2: Tests** — plugin format wrapping; settings format without wrapper; multiple events; multiple indexes per event; `type` and `command` captured in `extra`; identity prefix differentiation for plugin vs settings; per-scope identity for settings; malformed JSON / non-dict `hooks` skipped gracefully.
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ---
 
@@ -205,11 +205,11 @@ Slash commands and subagents are markdown files under a directory; identity = fi
 
 No version field exists for commands/agents; matcher fires only on exact identity (name-only matching). Sufficient for V0 inventory.
 
-- [ ] **Step 1: Implement enumerator** — single function `enumerate_dir(dir_path, identity_kind, identity_scope, attributed_to)` that walks `*.md`, opens each, optionally parses frontmatter for a `name` override, emits one ComponentRef per file.
+- [x] **Step 1: Implement enumerator** — single function `enumerate_dir(dir_path, identity_kind, identity_scope, attributed_to)` that walks `*.md`, opens each, optionally parses frontmatter for a `name` override, emits one ComponentRef per file.
 
-- [ ] **Step 2: Tests** — flat enumeration; frontmatter name override; missing frontmatter falls back to filename; non-md files skipped; empty dir returns empty list.
+- [x] **Step 2: Tests** — flat enumeration; frontmatter name override; missing frontmatter falls back to filename; non-md files skipped; empty dir returns empty list.
 
-- [ ] **Step 3: Run, commit**
+- [x] **Step 3: Run, commit**
 
 ---
 
@@ -233,7 +233,7 @@ For each active plugin, after emitting the plugin's self-identity ref (plan 007)
 
 The `claude_plugin.py` install-resolver sibling function (`parse_at_install_root`) handles CLAUDE_PLUGIN_ROOT-relative path resolution: relative paths in `plugin.json` resolve from the `installPath`, not from the manifest's parent dir.
 
-- [ ] Tests cover: bundled MCP + bundled skill + bundled hook + bundled command + bundled agent all emit correctly with `attributed_to` set; the same fixture exercising default + custom path merging.
+- [x] Tests cover: bundled MCP + bundled skill + bundled hook + bundled command + bundled agent all emit correctly with `attributed_to` set; the same fixture exercising default + custom path merging.
 
 ---
 
@@ -255,7 +255,7 @@ Three sources, all included in fs mode:
 3. **Bare skills**:
    - Walk `<install_root>/skills/<name>/` for any directory with a SKILL.md → emit `claude-skill/<name>[@version]` with `attributed_to=None`.
 
-- [ ] Tests cover: bare-MCP from settings + project `.mcp.json`; bare-hook scope identity for user/project/local; bare-skill discovery from `~/.claude/skills/`; empty cases.
+- [x] Tests cover: bare-MCP from settings + project `.mcp.json`; bare-hook scope identity for user/project/local; bare-skill discovery from `~/.claude/skills/`; empty cases.
 
 ---
 
@@ -282,7 +282,7 @@ REGISTRY: list[tuple[str, ParserFn]] = [
 
 For commands/agents in repo mode, identity uses the `claude-command/repo/<name>` and `claude-agent/repo/<name>` scopes — distinguishing repo-declared from plugin-bundled. (Plugin-bundled use `<plugin>` scope, set when walked from inside an active install path in fs mode.)
 
-- [ ] Tests cover: a fixture repo with `.claude/skills/<name>/SKILL.md`, `.claude/commands/foo.md`, `.claude/agents/reviewer.md`, and `.claude/settings.json` with `hooks` → all five appear in `openaca scan repo` output.
+- [x] Tests cover: a fixture repo with `.claude/skills/<name>/SKILL.md`, `.claude/commands/foo.md`, `.claude/agents/reviewer.md`, and `.claude/settings.json` with `hooks` → all five appear in `openaca scan repo` output.
 
 ---
 
@@ -299,7 +299,7 @@ Current `parse(path)` is repo-mode-friendly: reads a single plugin.json file in 
 
 `parse(path)` (repo mode) unchanged.
 
-- [ ] Tests cover: install-rooted resolution differs from manifest-rooted resolution when given a fixture where the two would land at different files.
+- [x] Tests cover: install-rooted resolution differs from manifest-rooted resolution when given a fixture where the two would land at different files.
 
 ---
 
@@ -406,11 +406,11 @@ uv run openaca scan repo --target . --advisories advisories -v
 
 ## Self-review checklist
 
-- [ ] **Same parsers wired into both modes** — no code duplication between repo and fs entry points. The wrapping decides `attributed_to` and identity scope; the parser logic is identical.
-- [ ] **CLAUDE_PLUGIN_ROOT semantics**: relative paths in `plugin.json` resolve from install root in fs mode, from plugin root (`manifest.parent.parent`) in repo mode. Both tested with explicit fixtures.
-- [ ] **Hook identity scopes** correctly differentiate: `claude-hook/<plugin>/...`, `claude-hook/settings/<user|project|local>/...`. No merging of hooks across scopes (each scope emits its own components).
-- [ ] **Default + custom path merging** for plugin component discovery — both paths walked, not just one.
-- [ ] **Attribution invariants**: bundled components carry `attributed_to = "claude-plugin/<name>@<version>"`; bare and repo-declared components carry `attributed_to = None`.
-- [ ] **No regressions** in the existing test suite (PR-A's 190 tests, plus new ones from this plan).
-- [ ] **ADR-0007** captures the design choices and the V1 boundary (no SDK-aware code extraction, no OpenAI/Cursor/Windsurf adapters yet).
-- [ ] **README and CONTRIBUTING** updated to list the new ecosystems and tier-1 surfaces.
+- [x] **Same parsers wired into both modes** — no code duplication between repo and fs entry points. The wrapping decides `attributed_to` and identity scope; the parser logic is identical.
+- [x] **CLAUDE_PLUGIN_ROOT semantics**: relative paths in `plugin.json` resolve from install root in fs mode, from plugin root (`manifest.parent.parent`) in repo mode. Both tested with explicit fixtures.
+- [x] **Hook identity scopes** correctly differentiate: `claude-hook/<plugin>/...`, `claude-hook/settings/<user|project|local>/...`. No merging of hooks across scopes (each scope emits its own components).
+- [x] **Default + custom path merging** for plugin component discovery — both paths walked, not just one.
+- [x] **Attribution invariants**: bundled components carry `attributed_to = "claude-plugin/<name>@<version>"`; bare and repo-declared components carry `attributed_to = None`.
+- [x] **No regressions** in the existing test suite (PR-A's 190 tests, plus new ones from this plan).
+- [x] **ADR-0007** captures the design choices and the V1 boundary (no SDK-aware code extraction, no OpenAI/Cursor/Windsurf adapters yet).
+- [x] **README and CONTRIBUTING** updated to list the new ecosystems and tier-1 surfaces.

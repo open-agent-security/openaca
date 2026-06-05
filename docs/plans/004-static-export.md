@@ -1,6 +1,6 @@
 # 004 — Static Export Pipeline
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Convert YAML advisories under `advisories/YYYY/` into the canonical published artifacts: per-advisory JSON files, an `all.zip` bundle, a `modified_id.csv` index, and a static GitHub Pages site that hosts both human-readable advisory pages and the raw artifacts.
 
@@ -48,7 +48,7 @@ dist/
 - Modify: `.gitignore`
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Append to `.gitignore`**
+- [x] **Step 1: Append to `.gitignore`**
 
 ```text
 
@@ -56,7 +56,7 @@ dist/
 dist/
 ```
 
-- [ ] **Step 2: Add `jinja2` to dev deps**
+- [x] **Step 2: Add `jinja2` to dev deps**
 
 Edit `pyproject.toml`:
 
@@ -72,7 +72,7 @@ dev = [
 
 Sync deps: `uv sync`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .gitignore pyproject.toml
@@ -86,7 +86,7 @@ git commit -m "chore: gitignore dist/, add jinja2 dev dep"
 **Files:**
 - Create: `tests/test_export.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_export.py
@@ -133,7 +133,7 @@ def test_build_emits_json_per_advisory(sample_corpus, tmp_path):
 
 > Note: the fixture deliberately writes the advisory under the canonical `OpenACA-` prefix; the duplicate write with the lowercase prefix is irrelevant to the test (cleaning that up is fine if you prefer; both produce the same content).
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `uv run pytest tests/test_export.py -v`
 Expected: fails — `tools.export` module does not exist.
@@ -145,7 +145,7 @@ Expected: fails — `tools.export` module does not exist.
 **Files:**
 - Create: `tools/export.py`
 
-- [ ] **Step 1: Implement initial `tools/export.py`**
+- [x] **Step 1: Implement initial `tools/export.py`**
 
 ```python
 """Build the static OpenACA export."""
@@ -185,12 +185,12 @@ def build(advisories_root: Path, schema_path: Path, dist: Path) -> None:
     schema_target.write_text(schema_path.read_text())
 ```
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `uv run pytest tests/test_export.py -v`
 Expected: both tests pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tools/export.py tests/test_export.py
@@ -205,7 +205,7 @@ git commit -m "feat: minimal YAML→JSON export to dist/"
 - Modify: `tools/export.py`
 - Modify: `tests/test_export.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_export.py`:
 
@@ -226,12 +226,12 @@ def test_all_zip_contains_each_advisory(sample_corpus, tmp_path):
     assert "schema/openaca.schema.json" in names
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_export.py::test_all_zip_contains_each_advisory -v`
 Expected: fails.
 
-- [ ] **Step 3: Implement zip building in `tools/export.py`**
+- [x] **Step 3: Implement zip building in `tools/export.py`**
 
 Add to `tools/export.py`:
 
@@ -253,12 +253,12 @@ In `build`, append:
     _bundle_zip(dist)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_export.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/export.py tests/test_export.py
@@ -273,7 +273,7 @@ git commit -m "feat: export bundles dist into all.zip"
 - Modify: `tools/export.py`
 - Modify: `tests/test_export.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import csv as csvlib
@@ -292,12 +292,12 @@ def test_modified_id_csv_lists_advisories(sample_corpus, tmp_path):
     assert row["modified"]  # ISO timestamp
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_export.py::test_modified_id_csv_lists_advisories -v`
 Expected: fails.
 
-- [ ] **Step 3: Implement CSV emission**
+- [x] **Step 3: Implement CSV emission**
 
 Add to `tools/export.py`:
 
@@ -320,12 +320,12 @@ In `build`, after the per-advisory JSON loop and before `_bundle_zip(dist)`:
     _emit_modified_csv(corpus, dist)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_export.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/export.py tests/test_export.py
@@ -342,7 +342,7 @@ git commit -m "feat: export emits modified_id.csv index"
 - Modify: `tools/export.py`
 - Modify: `tests/test_export.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_export_emits_html_pages(sample_corpus, tmp_path):
@@ -356,7 +356,7 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
     assert "CVE-2026-0001" in index_html
 ```
 
-- [ ] **Step 2: Write `tools/templates/advisory.html.j2`**
+- [x] **Step 2: Write `tools/templates/advisory.html.j2`**
 
 ```jinja
 <!doctype html>
@@ -408,7 +408,7 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
 </html>
 ```
 
-- [ ] **Step 3: Write `tools/templates/index.html.j2`**
+- [x] **Step 3: Write `tools/templates/index.html.j2`**
 
 ```jinja
 <!doctype html>
@@ -444,7 +444,7 @@ def test_export_emits_html_pages(sample_corpus, tmp_path):
 </html>
 ```
 
-- [ ] **Step 4: Wire HTML emission into `tools/export.py`**
+- [x] **Step 4: Wire HTML emission into `tools/export.py`**
 
 Add to `tools/export.py`:
 
@@ -477,7 +477,7 @@ In `build`, before `_bundle_zip(dist)`:
     _render_html(corpus, dist)
 ```
 
-- [ ] **Step 5: Add a `MANIFEST.in` so templates are installed**
+- [x] **Step 5: Add a `MANIFEST.in` so templates are installed**
 
 `MANIFEST.in` (new file at repo root):
 
@@ -494,12 +494,12 @@ tools = ["templates/*.j2"]
 
 Sync deps: `uv sync`
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `uv run pytest tests/test_export.py -v`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/export.py tools/templates/ MANIFEST.in pyproject.toml tests/test_export.py
@@ -513,7 +513,7 @@ git commit -m "feat: HTML pages for advisories and index"
 **Files:**
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Register `openaca export` console script**
+- [x] **Step 1: Register `openaca export` console script**
 
 In `pyproject.toml`:
 
@@ -527,7 +527,7 @@ openaca export = "tools.export:main"
 
 Sync deps: `uv sync`
 
-- [ ] **Step 2: Add a Click CLI entry point at the bottom of `tools/export.py`**
+- [x] **Step 2: Add a Click CLI entry point at the bottom of `tools/export.py`**
 
 ```python
 import click
@@ -549,12 +549,12 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 3: Smoke test from the repo root**
+- [x] **Step 3: Smoke test from the repo root**
 
 Run: `uv run openaca export`
 Expected: `dist/` is created with `all.zip`, `modified_id.csv`, `advisories/2026/...`, `schema/openaca.schema.json`, `index.html`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tools/export.py pyproject.toml
@@ -568,7 +568,7 @@ git commit -m "feat: openaca export console script"
 **Files:**
 - Create: `.github/workflows/publish.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
 
 ```yaml
 name: Publish
@@ -610,7 +610,7 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add .github/workflows/publish.yml
@@ -636,11 +636,11 @@ uv run pytest tests/test_export.py -v               # all pass
 
 ## Self-review checklist
 
-- [ ] **YAML → JSON round-trip** preserves the advisory record.
-- [ ] **`all.zip`** contains the same files served at top-level URLs.
-- [ ] **`modified_id.csv`** has `id` and `modified` columns and rows are sorted.
-- [ ] **HTML pages** auto-escape advisory content (`autoescape=True` on the Jinja env).
-- [ ] **Schema** is mirrored under `dist/schema/openaca.schema.json` (the canonical `$id` URL still works once the domain is wired).
-- [ ] **No HTTP API** in this plan — that's deferred past V0.
-- [ ] **Templates** ship with the package (`MANIFEST.in` + `package-data`).
-- [ ] **No commercial / competitor framing** in templates or output.
+- [x] **YAML → JSON round-trip** preserves the advisory record.
+- [x] **`all.zip`** contains the same files served at top-level URLs.
+- [x] **`modified_id.csv`** has `id` and `modified` columns and rows are sorted.
+- [x] **HTML pages** auto-escape advisory content (`autoescape=True` on the Jinja env).
+- [x] **Schema** is mirrored under `dist/schema/openaca.schema.json` (the canonical `$id` URL still works once the domain is wired).
+- [x] **No HTTP API** in this plan — that's deferred past V0.
+- [x] **Templates** ship with the package (`MANIFEST.in` + `package-data`).
+- [x] **No commercial / competitor framing** in templates or output.

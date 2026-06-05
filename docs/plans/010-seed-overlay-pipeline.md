@@ -18,13 +18,13 @@
 - Modify: `tools/templates/advisory.html.j2`
 - Test: `tests/test_schema.py`
 
-- [ ] Write tests that require `database_specific.openaca.taxonomies` and allow `threat_kind`.
-- [ ] Run focused schema tests and confirm they fail before schema changes.
-- [ ] Update schema to add `taxonomies` and `threat_kind`.
-- [ ] Migrate existing overlays from flat `owasp_agentic_top10` to `taxonomies.owasp_agentic_top10`.
-- [ ] Update export HTML template to render taxonomy groups.
-- [ ] Add ADR-0010 documenting taxonomy shape, candidate-vs-overlay boundary, no LLM in V0, and no CWE duplication by default.
-- [ ] Run `uv run openaca lint overlays/` and focused schema/export tests.
+- [x] Write tests that require `database_specific.openaca.taxonomies` and allow `threat_kind`.
+- [x] Run focused schema tests and confirm they fail before schema changes.
+- [x] Update schema to add `taxonomies` and `threat_kind`.
+- [x] Migrate existing overlays from flat `owasp_agentic_top10` to `taxonomies.owasp_agentic_top10`.
+- [x] Update export HTML template to render taxonomy groups.
+- [x] Add ADR-0010 documenting taxonomy shape, candidate-vs-overlay boundary, no LLM in V0, and no CWE duplication by default.
+- [x] Run `uv run openaca lint overlays/` and focused schema/export tests.
 
 ### Task 2: Promotion Boundary
 
@@ -33,12 +33,12 @@
 - Modify: `pyproject.toml`
 - Test: `tests/test_promote.py`
 
-- [ ] Write tests showing `openaca promote candidates/GHSA-x.yaml` strips `_candidate`, evidence, upstream summaries/details, and other candidate-only fields.
-- [ ] Run focused promotion tests and confirm they fail.
-- [ ] Implement `project_candidate_to_overlay()` and Click CLI.
-- [ ] Validate promoted overlays with the canonical JSON schema.
-- [ ] Register `openaca promote` in `pyproject.toml`.
-- [ ] Run focused promotion tests.
+- [x] Write tests showing `openaca promote candidates/GHSA-x.yaml` strips `_candidate`, evidence, upstream summaries/details, and other candidate-only fields.
+- [x] Run focused promotion tests and confirm they fail.
+- [x] Implement `project_candidate_to_overlay()` and Click CLI.
+- [x] Validate promoted overlays with the canonical JSON schema.
+- [x] Register `openaca promote` in `pyproject.toml`.
+- [x] Run focused promotion tests.
 
 ### Task 3: Candidate Validator
 
@@ -47,10 +47,10 @@
 - Create: `tools/seed/validator.py`
 - Test: `tests/test_seed_validator.py`
 
-- [ ] Write validator tests for valid candidates, invalid taxonomy IDs, invalid impact shapes, missing candidate review metadata, and upstream-owned canonical fields that promotion must drop.
-- [ ] Run focused validator tests and confirm they fail.
-- [ ] Implement deterministic candidate validation helpers that reuse the canonical schema on the projected overlay.
-- [ ] Run focused validator tests.
+- [x] Write validator tests for valid candidates, invalid taxonomy IDs, invalid impact shapes, missing candidate review metadata, and upstream-owned canonical fields that promotion must drop.
+- [x] Run focused validator tests and confirm they fail.
+- [x] Implement deterministic candidate validation helpers that reuse the canonical schema on the projected overlay.
+- [x] Run focused validator tests.
 
 ### Task 4: Deterministic Seeder CLI
 
@@ -59,25 +59,25 @@
 - Modify: `pyproject.toml`
 - Test: `tests/test_seed_cli.py`
 
-- [ ] Write CLI tests for deterministic discovery, candidate output, curated overlay dedup, MAL record handling, `modified_id.csv` incremental seeding, and dry-run output.
-- [ ] Run focused seeder tests and confirm they fail.
-- [ ] Implement OSV dump iteration, `modified_id.csv` incremental iteration, MCP/agent discovery heuristics, rule-based draft annotations, candidate validation, and `candidates/` output.
-- [ ] Register `openaca seed` in `pyproject.toml`.
-- [ ] Run focused seeder tests.
+- [x] Write CLI tests for deterministic discovery, candidate output, curated overlay dedup, MAL record handling, `modified_id.csv` incremental seeding, and dry-run output.
+- [x] Run focused seeder tests and confirm they fail.
+- [x] Implement OSV dump iteration, `modified_id.csv` incremental iteration, MCP/agent discovery heuristics, rule-based draft annotations, candidate validation, and `candidates/` output.
+- [x] Register `openaca seed` in `pyproject.toml`.
+- [x] Run focused seeder tests.
 
 ### Task 5: Full Verification And PR
 
 **Files:**
 - Modify as needed based on test fallout only.
 
-- [ ] Run `uv run pytest -q`.
-- [ ] Run `uv run ruff check .`.
-- [ ] Run `uv run ruff format --check .`.
-- [ ] Run `uv run pyright`.
-- [ ] Run `uv run openaca lint overlays/`.
-- [ ] Run `git diff --check`.
-- [ ] Review diff for accidental main-worktree spike carryover or canonical overlay noise.
-- [ ] Commit, push, and open a ready PR.
+- [x] Run `uv run pytest -q`.
+- [x] Run `uv run ruff check .`.
+- [x] Run `uv run ruff format --check .`.
+- [x] Run `uv run pyright`.
+- [x] Run `uv run openaca lint overlays/`.
+- [x] Run `git diff --check`.
+- [x] Review diff for accidental main-worktree spike carryover or canonical overlay noise.
+- [x] Commit, push, and open a ready PR.
 
 ### Task 6: npm/PyPI Incremental Seed Workflow
 

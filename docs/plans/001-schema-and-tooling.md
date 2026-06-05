@@ -1,6 +1,6 @@
 # 001 — Schema and Advisory-Authoring Tooling
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Produce a working JSON Schema for OpenACA advisories, a linter that enforces schema + ID format + CVSS v4 + OWASP ASI + path consistency + internal cross-references, an ID reservation helper, and CI that runs all of the above on every PR.
 
@@ -1313,9 +1313,9 @@ Once Plan 002 lands real advisories under `advisories/`, `openaca-reserve-id` wi
 
 ## Self-review checklist
 
-- [ ] **Spec coverage**: schema, linter (schema/CVSS/path/cross-ref), ID reservation, CI, ADRs, license decisions all present.
-- [ ] **No placeholders**: every step contains actual code, file content, or commands. No "TBD" or vague directions.
-- [ ] **Type consistency**: `ID_RE`, `check_schema`, `check_cvss`, `check_path_consistency`, `check_internal_aliases` are referenced consistently across tasks.
-- [ ] **OWASP ASI categories** in the schema are case-correct (`asi01`–`asi10`, lowercase, leading zero).
-- [ ] **`exposure`/`config` rejection** is verified by both schema (`allOf` blocks) and an integration test in Task 5.
-- [ ] **Out of scope**: link liveness, OSV/GHSA enrichment, remote alias resolution. These are scheduled-job territory; not in this plan.
+- [x] **Spec coverage**: schema, linter (schema/CVSS/path/cross-ref), ID reservation, CI, ADRs, license decisions all present.
+- [x] **No placeholders**: every step contains actual code, file content, or commands. No "TBD" or vague directions.
+- [x] **Type consistency**: `ID_RE`, `check_schema`, `check_cvss`, `check_path_consistency`, `check_internal_aliases` are referenced consistently across tasks.
+- [x] **OWASP ASI categories** in the schema are case-correct (`asi01`–`asi10`, lowercase, leading zero).
+- [x] **`exposure`/`config` rejection** is verified by both schema (`allOf` blocks) and an integration test in Task 5.
+- [x] **Out of scope**: link liveness, OSV/GHSA enrichment, remote alias resolution. These are scheduled-job territory; not in this plan.

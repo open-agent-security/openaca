@@ -1,6 +1,6 @@
 # 003 — Manifest Parsers
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the four V0 manifest parsers that read a target repository's agent-installation manifests and emit a normalized stream of `ComponentRef` records. Each parser owns one file format. The reference Action (Plan 005) consumes the combined output.
 
@@ -37,7 +37,7 @@
 - Create: `tools/component_ref.py`
 - Create: `tests/test_component_ref.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_component_ref.py
@@ -90,12 +90,12 @@ def test_native_identity_for_unknown_ecosystem():
     assert ref.component_identity == "mcp-stdio/uvx-launch:some-package@unpinned"
 ```
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `uv run pytest tests/test_component_ref.py -v`
 Expected: fails — module does not exist.
 
-- [ ] **Step 3: Implement `tools/component_ref.py`**
+- [x] **Step 3: Implement `tools/component_ref.py`**
 
 ```python
 """Normalized representation of a detected agent-stack component."""
@@ -148,12 +148,12 @@ class ComponentRef:
         return f"pkg:{purl_eco}/{encoded}"
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `uv run pytest tests/test_component_ref.py -v`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/component_ref.py tests/test_component_ref.py
@@ -171,7 +171,7 @@ git commit -m "feat: ComponentRef dataclass with PURL derivation"
 - Create: `tests/test_parsers/test_package_json.py`
 - Create: `tests/fixtures/repos/sample-npm/package.json`
 
-- [ ] **Step 1: Write fixture**
+- [x] **Step 1: Write fixture**
 
 `tests/fixtures/repos/sample-npm/package.json`:
 
@@ -189,7 +189,7 @@ git commit -m "feat: ComponentRef dataclass with PURL derivation"
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_parsers/test_package_json.py
@@ -219,12 +219,12 @@ def test_emits_source_metadata():
     assert by_name["typescript"].source_locator == "devDependencies"
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `uv run pytest tests/test_parsers/test_package_json.py -v`
 Expected: fails — module does not exist.
 
-- [ ] **Step 4: Implement `tools/parsers/__init__.py`**
+- [x] **Step 4: Implement `tools/parsers/__init__.py`**
 
 ```python
 """Manifest parser registry."""
@@ -269,7 +269,7 @@ def parse_repo(root: Path) -> list[ComponentRef]:
 >
 > Same for `claude_plugin.py` and `claude_settings.py`. Replace each with the real implementation in its respective task.
 
-- [ ] **Step 5: Implement `tools/parsers/package_json.py`**
+- [x] **Step 5: Implement `tools/parsers/package_json.py`**
 
 ```python
 """Parse Node.js package.json declared dependencies."""
@@ -301,12 +301,12 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `uv run pytest tests/test_parsers/test_package_json.py -v`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tools/parsers/ tests/test_parsers/__init__.py tests/test_parsers/test_package_json.py tests/fixtures/repos/sample-npm/package.json
@@ -326,7 +326,7 @@ git commit -m "feat: parser for package.json with PURL emission"
 - Create: `tests/test_parsers/test_mcp_json.py`
 - Create: `tests/fixtures/repos/sample-mcp/mcp.json`
 
-- [ ] **Step 1: Write fixture**
+- [x] **Step 1: Write fixture**
 
 `tests/fixtures/repos/sample-mcp/mcp.json`:
 
@@ -353,7 +353,7 @@ git commit -m "feat: parser for package.json with PURL emission"
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_parsers/test_mcp_json.py
@@ -399,12 +399,12 @@ def test_source_locator_jsonpath():
     assert git.source_locator == "$.mcpServers.git"
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `uv run pytest tests/test_parsers/test_mcp_json.py -v`
 Expected: fails — placeholder parser returns `[]`.
 
-- [ ] **Step 4: Implement `tools/parsers/mcp_json.py`**
+- [x] **Step 4: Implement `tools/parsers/mcp_json.py`**
 
 ```python
 """Parse mcp.json / .mcp.json files: extract MCP server installations."""
@@ -492,12 +492,12 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `uv run pytest tests/test_parsers/test_mcp_json.py -v`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/parsers/mcp_json.py tests/test_parsers/test_mcp_json.py tests/fixtures/repos/sample-mcp/mcp.json
@@ -513,7 +513,7 @@ git commit -m "feat: parser for mcp.json with npx/uvx and binary fallback"
 - Create: `tests/test_parsers/test_claude_plugin.py`
 - Create: `tests/fixtures/repos/sample-plugin/.claude-plugin/plugin.json`
 
-- [ ] **Step 1: Write fixture**
+- [x] **Step 1: Write fixture**
 
 `tests/fixtures/repos/sample-plugin/.claude-plugin/plugin.json`:
 
@@ -539,7 +539,7 @@ git commit -m "feat: parser for mcp.json with npx/uvx and binary fallback"
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_parsers/test_claude_plugin.py
@@ -578,12 +578,12 @@ def test_plugin_inlined_mcp_servers():
     assert len(binary_mcp) == 1
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `uv run pytest tests/test_parsers/test_claude_plugin.py -v`
 Expected: fails.
 
-- [ ] **Step 4: Implement `tools/parsers/claude_plugin.py`**
+- [x] **Step 4: Implement `tools/parsers/claude_plugin.py`**
 
 ```python
 """Parse .claude-plugin/plugin.json — plugin self-identity, deps, inlined MCP."""
@@ -656,12 +656,12 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `uv run pytest tests/test_parsers/test_claude_plugin.py -v`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/parsers/claude_plugin.py tests/test_parsers/test_claude_plugin.py tests/fixtures/repos/sample-plugin/
@@ -679,7 +679,7 @@ git commit -m "feat: parser for .claude-plugin/plugin.json"
 - Create: `tests/test_parsers/test_claude_settings.py`
 - Create: `tests/fixtures/repos/sample-settings/.claude/settings.json`
 
-- [ ] **Step 1: Write fixture**
+- [x] **Step 1: Write fixture**
 
 ```json
 {
@@ -691,7 +691,7 @@ git commit -m "feat: parser for .claude-plugin/plugin.json"
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```python
 # tests/test_parsers/test_claude_settings.py
@@ -719,12 +719,12 @@ def test_source_locator():
     assert any("$.enabledPlugins" in loc for loc in locators)
 ```
 
-- [ ] **Step 3: Run to verify failure**
+- [x] **Step 3: Run to verify failure**
 
 Run: `uv run pytest tests/test_parsers/test_claude_settings.py -v`
 Expected: fails.
 
-- [ ] **Step 4: Implement `tools/parsers/claude_settings.py`**
+- [x] **Step 4: Implement `tools/parsers/claude_settings.py`**
 
 ```python
 """Parse .claude/settings.json — enumerate enabled Claude Code plugins."""
@@ -751,12 +751,12 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `uv run pytest tests/test_parsers/test_claude_settings.py -v`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/parsers/claude_settings.py tests/test_parsers/test_claude_settings.py tests/fixtures/repos/sample-settings/
@@ -770,7 +770,7 @@ git commit -m "feat: parser for .claude/settings.json enabledPlugins"
 **Files:**
 - Create: `tests/test_parsers/test_registry.py`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```python
 # tests/test_parsers/test_registry.py
@@ -796,12 +796,12 @@ def test_parse_repo_combines_all_manifests():
     assert any(i.startswith("mcp-stdio/uvx-unpinned:") for i in identities)
 ```
 
-- [ ] **Step 2: Run all parser tests**
+- [x] **Step 2: Run all parser tests**
 
 Run: `uv run pytest tests/test_parsers/ tests/test_component_ref.py -v`
 Expected: all pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_parsers/test_registry.py
@@ -821,10 +821,10 @@ uv run python -c "from tools.parsers import parse_repo; from pathlib import Path
 
 ## Self-review checklist
 
-- [ ] **Four parsers** registered: `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`. Cursor + Windsurf are explicitly out of V0.
-- [ ] **PURL emission** is correct for known ecosystems; OpenACA-native identity for unknown.
-- [ ] **Source metadata** (`source_manifest`, `source_locator`) is on every ref so the Action can produce useful annotations.
-- [ ] **mcp.json edge cases**: pinned vs unpinned (`uvx X==1.0` vs `uvx X`); binary path; npx scoped vs unscoped.
-- [ ] **Plugin manifest dependencies** (string vs object form) both produce identities.
-- [ ] **Disabled plugins** in `.claude/settings.json` are skipped.
-- [ ] **No commercial / competitor framing** in code, comments, or fixtures.
+- [x] **Four parsers** registered: `package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`. Cursor + Windsurf are explicitly out of V0.
+- [x] **PURL emission** is correct for known ecosystems; OpenACA-native identity for unknown.
+- [x] **Source metadata** (`source_manifest`, `source_locator`) is on every ref so the Action can produce useful annotations.
+- [x] **mcp.json edge cases**: pinned vs unpinned (`uvx X==1.0` vs `uvx X`); binary path; npx scoped vs unscoped.
+- [x] **Plugin manifest dependencies** (string vs object form) both produce identities.
+- [x] **Disabled plugins** in `.claude/settings.json` are skipped.
+- [x] **No commercial / competitor framing** in code, comments, or fixtures.

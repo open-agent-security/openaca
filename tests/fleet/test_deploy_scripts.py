@@ -165,7 +165,7 @@ printf "token=%s\\n" "$token" >> "{log_dir / "openaca.log"}"
     )
 
     full_env = {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if not k.startswith("OPENACA_")},
         "PATH": f"{fakebin}:{os.environ['PATH']}",
         "OPENACA_CONSOLE_USER": "alice",
     }

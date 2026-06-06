@@ -1,6 +1,19 @@
+from __future__ import annotations
+
+import os
+import plistlib
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@dataclass(frozen=True)
+class ScriptRun:
+    result: subprocess.CompletedProcess[str]
+    home: Path
+    log_dir: Path
 
 
 def test_fleet_deploy_scripts_default_to_latest_openaca():
@@ -11,6 +24,212 @@ def test_fleet_deploy_scripts_default_to_latest_openaca():
         assert 'OPENACA_PACKAGE="openaca==$OPENACA_VERSION"' in text
         assert '"$UV_BIN" tool install "$OPENACA_PACKAGE" --force' in text
         assert 'tool install "openaca==' not in text
+
+
+def test_fleet_deploy_scripts_are_valid_bash():
+    for path in _fleet_deploy_scripts():
+        result = subprocess.run(
+            ["bash", "-n", str(path)],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+
+def test_fleet_deploy_scripts_require_token(tmp_path: Path):
+    for path in _fleet_deploy_scripts():
+        run = _run_script(path, tmp_path / path.stem)
+        assert run.result.returncode == 2
+        assert "OPENACA_FLEET_TOKEN is required" in run.result.stderr
+
+
+def test_fleet_deploy_scripts_reject_missing_console_user(tmp_path: Path):
+    for path in _fleet_deploy_scripts():
+        run = _run_script(
+            path,
+            tmp_path / path.stem,
+            env={"OPENACA_FLEET_TOKEN": "ot_TEST", "OPENACA_CONSOLE_USER": "root"},
+        )
+        assert run.result.returncode == 3
+        assert "No logged-in console user found" in run.result.stderr
+
+
+def test_jamf_script_accepts_standard_parameters(tmp_path: Path):
+    run = _run_script(
+        REPO_ROOT / "deploy" / "fleet" / "jamf.sh",
+        tmp_path,
+        args=["unused1", "unused2", "unused3", "ot_JAMF", "https://fleet.example", "0.1.0b6"],
+    )
+
+    _assert_successful_install(
+        run,
+        token="ot_JAMF",
+        api_url="https://fleet.example",
+        package="openaca==0.1.0b6",
+    )
+
+
+def test_kandji_script_configures_launchagent_from_environment(tmp_path: Path):
+    run = _run_script(
+        REPO_ROOT / "deploy" / "fleet" / "kandji.sh",
+        tmp_path,
+        env={
+            "OPENACA_FLEET_TOKEN": "ot_KANDJI",
+            "OPENACA_FLEET_API_URL": "https://fleet.example",
+            "OPENACA_VERSION": "0.1.0b6",
+        },
+    )
+
+    _assert_successful_install(
+        run,
+        token="ot_KANDJI",
+        api_url="https://fleet.example",
+        package="openaca==0.1.0b6",
+    )
+
+
+def test_intune_script_configures_launchagent_from_environment(tmp_path: Path):
+    run = _run_script(
+        REPO_ROOT / "deploy" / "fleet" / "intune-macos.sh",
+        tmp_path,
+        env={
+            "OPENACA_FLEET_TOKEN": "ot_INTUNE",
+            "OPENACA_FLEET_API_URL": "https://fleet.example",
+            "OPENACA_VERSION": "0.1.0b6",
+        },
+    )
+
+    _assert_successful_install(
+        run,
+        token="ot_INTUNE",
+        api_url="https://fleet.example",
+        package="openaca==0.1.0b6",
+    )
+
+
+def _run_script(
+    path: Path,
+    root: Path,
+    *,
+    env: dict[str, str] | None = None,
+    args: list[str] | None = None,
+) -> ScriptRun:
+    home = root / "home" / "alice"
+    log_dir = root / "logs"
+    fakebin = root / "fakebin"
+    openaca_bin = home / ".local" / "bin" / "openaca"
+    uv_bin = home / ".local" / "bin" / "uv"
+    home.mkdir(parents=True)
+    fakebin.mkdir(parents=True)
+    openaca_bin.parent.mkdir(parents=True)
+    log_dir.mkdir(parents=True)
+
+    _write_executable(fakebin / "dscl", f'printf "NFSHomeDirectory: {home}\\n"\n')
+    _write_executable(fakebin / "id", 'printf "501\\n"\n')
+    _write_executable(fakebin / "chown", "exit 0\n")
+    _write_executable(
+        fakebin / "launchctl",
+        f'printf "%s\\n" "$*" >> "{log_dir / "launchctl.log"}"\n',
+    )
+    _write_executable(
+        fakebin / "sudo",
+        f"""
+if [ "$1" = "-u" ]; then
+  shift 2
+fi
+if [ "$1" = "env" ]; then
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      HOME=*) export HOME="${{1#HOME=}}"; shift ;;
+      PATH=*) export PATH="{fakebin}:$PATH:${{1#PATH=}}"; shift ;;
+      *) break ;;
+    esac
+  done
+fi
+exec "$@"
+""",
+    )
+    _write_executable(
+        uv_bin,
+        f'printf "%s\\n" "$*" >> "{log_dir / "uv.log"}"\n',
+    )
+    _write_executable(
+        openaca_bin,
+        f"""
+token="$(cat)"
+printf "args=%s\\n" "$*" >> "{log_dir / "openaca.log"}"
+printf "token=%s\\n" "$token" >> "{log_dir / "openaca.log"}"
+""",
+    )
+
+    full_env = {
+        **os.environ,
+        "PATH": f"{fakebin}:{os.environ['PATH']}",
+        "OPENACA_CONSOLE_USER": "alice",
+    }
+    if env:
+        full_env.update(env)
+
+    result = subprocess.run(
+        ["bash", str(path), *(args or [])],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=full_env,
+    )
+    return ScriptRun(result=result, home=home, log_dir=log_dir)
+
+
+def _assert_successful_install(
+    run: ScriptRun,
+    *,
+    token: str,
+    api_url: str,
+    package: str,
+) -> None:
+    assert run.result.returncode == 0, run.result.stderr
+    assert "OpenACA Fleet LaunchAgent installed for alice" in run.result.stdout
+
+    assert (run.log_dir / "uv.log").read_text(encoding="utf-8").splitlines() == [
+        "self update",
+        f"tool install {package} --force",
+    ]
+    assert (run.log_dir / "openaca.log").read_text(encoding="utf-8").splitlines() == [
+        f"args=fleet configure --api-url {api_url}",
+        f"token={token}",
+    ]
+
+    plist_path = run.home / "Library" / "LaunchAgents" / "com.openaca.fleet.plist"
+    plist = plistlib.loads(plist_path.read_bytes())
+    assert plist["Label"] == "com.openaca.fleet"
+    assert plist["ProgramArguments"] == [
+        str(run.home / ".local" / "bin" / "openaca"),
+        "fleet",
+        "collect",
+        "endpoint",
+        "--quiet",
+    ]
+    assert plist["StartInterval"] == 21600
+    assert plist["RunAtLoad"] is True
+    assert plist["StandardOutPath"] == str(
+        run.home / "Library" / "Logs" / "OpenACA" / "fleet.out.log"
+    )
+    assert plist["StandardErrorPath"] == str(
+        run.home / "Library" / "Logs" / "OpenACA" / "fleet.err.log"
+    )
+
+    assert (run.log_dir / "launchctl.log").read_text(encoding="utf-8").splitlines() == [
+        f"bootout gui/501 {plist_path}",
+        f"bootstrap gui/501 {plist_path}",
+        "kickstart -k gui/501/com.openaca.fleet",
+    ]
+
+
+def _write_executable(path: Path, body: str) -> None:
+    path.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{body}", encoding="utf-8")
+    path.chmod(0o755)
 
 
 def _fleet_deploy_scripts() -> list[Path]:

@@ -67,10 +67,16 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
     )
     mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
     settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
-    posture_findings = [
-        _posture_finding_to_payload(finding)
-        for finding in run_posture_rules(refs, mcp_manifests, settings_manifests)
-    ]
+    findings = list(run_posture_rules(refs, mcp_manifests, settings_manifests))
+    posture_findings = [_posture_finding_to_payload(f) for f in findings]
+    # Posture rules emit `component_identity` as the leaf name (e.g. `github`)
+    # because that's what their `component_path` carries. The backend joins
+    # findings to BomComponent by the full `openaca:identity` (e.g.
+    # `claude-plugin/claude-plugins-official/github`), so we rewrite each
+    # finding's identity to match the BOM's view before upload. Without this,
+    # the backend's ingest rejects with "posture finding component_identity
+    # did not match BOM component" for any plugin-rooted finding.
+    _align_posture_identities_to_bom(posture_findings, findings, bom)
     return EndpointCollection(
         bom=bom,
         posture_findings=posture_findings,
@@ -325,6 +331,54 @@ def _asset_registration_payload() -> JsonObject:
             "openaca_version": _openaca_version(),
         },
     }
+
+
+def _align_posture_identities_to_bom(
+    posture_payloads: list[JsonObject],
+    findings: list[PostureFinding],
+    bom: JsonObject,
+) -> None:
+    """Rewrite each posture payload's `component_identity` from the leaf
+    name the rule emitted (e.g. `github`, `code-review`) to the full BOM
+    `openaca:identity` (e.g. `claude-plugin/claude-plugins-official/github`),
+    so the backend's ingest can join on `BomComponent.identity`.
+
+    Some leaf names appear under multiple component types in the BOM
+    (`code-review` is both a plugin and a command, for instance). We
+    disambiguate using the source PostureFinding's `component["type"]`
+    when available. If lookup fails — truly novel finding shape, or BOM
+    drift — we leave the original value so the backend's existing error
+    message still surfaces the problem.
+    """
+    by_key: dict[tuple[str, str], str] = {}
+    for comp in bom.get("components", []) or []:
+        if not isinstance(comp, dict):
+            continue
+        name = comp.get("name")
+        ctype: str | None = None
+        identity: str | None = None
+        for prop in comp.get("properties", []) or []:
+            if not isinstance(prop, dict):
+                continue
+            pname = prop.get("name")
+            pvalue = prop.get("value")
+            if pname == "openaca:component_type" and isinstance(pvalue, str):
+                ctype = pvalue
+            elif pname == "openaca:identity" and isinstance(pvalue, str):
+                identity = pvalue
+        if isinstance(name, str) and ctype is not None and identity is not None:
+            by_key.setdefault((ctype, name), identity)
+
+    for payload, finding in zip(posture_payloads, findings, strict=True):
+        current = payload.get("component_identity")
+        if not isinstance(current, str):
+            continue
+        ctype = finding.component.get("type")
+        if not isinstance(ctype, str):
+            continue
+        full_identity = by_key.get((ctype, current))
+        if full_identity:
+            payload["component_identity"] = full_identity
 
 
 def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:

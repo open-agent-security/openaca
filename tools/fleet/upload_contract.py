@@ -100,13 +100,9 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                 value = prop.get("value")
                 if not isinstance(value, str):
                     continue
-                location = (
-                    f"$.bom.components[{c_idx}].properties[{p_idx}].value"
-                )
+                location = f"$.bom.components[{c_idx}].properties[{p_idx}].value"
                 if _is_absolute_path(value):
-                    raise FleetUploadContractError(
-                        f"{location} is an absolute path ({name!r})"
-                    )
+                    raise FleetUploadContractError(f"{location} is an absolute path ({name!r})")
                 if _is_url_with_path_or_query(value):
                     raise FleetUploadContractError(
                         f"{location} is a URL with a path or query ({name!r})"
@@ -125,9 +121,7 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
             if _is_absolute_path(value):
                 raise FleetUploadContractError(f"{location} is an absolute path")
             if _is_url_with_path_or_query(value):
-                raise FleetUploadContractError(
-                    f"{location} is a URL with a path or query"
-                )
+                raise FleetUploadContractError(f"{location} is a URL with a path or query")
 
 
 def _is_url_with_path_or_query(value: str) -> bool:

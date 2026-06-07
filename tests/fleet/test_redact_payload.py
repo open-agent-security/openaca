@@ -10,7 +10,6 @@ from tools.fleet.collector import (
 )
 from tools.fleet.upload_contract import FleetUploadContractError, enforce_fleet_upload_contract
 
-
 # --- _is_absolute_path -------------------------------------------------------
 
 
@@ -94,9 +93,7 @@ def test_relativize_prefers_config_dir_when_both_match() -> None:
     cfg = Path("/home/u/.claude")
     proj = Path("/home/u")
     assert (
-        _relativize_path_for_fleet(
-            "/home/u/.claude/skills/x.md", config_dir=cfg, project=proj
-        )
+        _relativize_path_for_fleet("/home/u/.claude/skills/x.md", config_dir=cfg, project=proj)
         == "skills/x.md"
     )
 
@@ -145,22 +142,16 @@ def test_redact_leaves_relative_paths_alone() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("skills/clerk-cli/SKILL.md")
     _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
-    assert (
-        payload["bom"]["components"][0]["properties"][0]["value"]
-        == "skills/clerk-cli/SKILL.md"
-    )
+    assert payload["bom"]["components"][0]["properties"][0]["value"] == "skills/clerk-cli/SKILL.md"
 
 
 def test_redact_ignores_non_openaca_properties() -> None:
     cfg = Path("/home/u/.claude")
-    payload = _payload_with_property(
-        "/home/u/.claude/skills/x.md", name="cdx:other:source-path"
-    )
+    payload = _payload_with_property("/home/u/.claude/skills/x.md", name="cdx:other:source-path")
     _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
     # Untouched — pass-through CycloneDX content is out of scope (ADR 0003).
     assert (
-        payload["bom"]["components"][0]["properties"][0]["value"]
-        == "/home/u/.claude/skills/x.md"
+        payload["bom"]["components"][0]["properties"][0]["value"] == "/home/u/.claude/skills/x.md"
     )
 
 
@@ -184,10 +175,7 @@ def test_redact_handles_posture_evidence() -> None:
         ],
     }
     _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
-    assert (
-        payload["posture_findings"][0]["evidence"]["manifest_path"]
-        == "settings.json"
-    )
+    assert payload["posture_findings"][0]["evidence"]["manifest_path"] == "settings.json"
     assert payload["posture_findings"][0]["evidence"]["transport"] == "http"
 
 
@@ -261,22 +249,17 @@ def test_redact_replaces_url_paths_in_openaca_properties() -> None:
     )
     _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
     assert (
-        payload["bom"]["components"][0]["properties"][0]["value"]
-        == "https://api.githubcopilot.com"
+        payload["bom"]["components"][0]["properties"][0]["value"] == "https://api.githubcopilot.com"
     )
 
 
 def test_contract_rejects_url_with_path_in_openaca_property() -> None:
-    payload = _payload_with_property(
-        "https://api.example.com/mcp/", name="openaca:install_source"
-    )
+    payload = _payload_with_property("https://api.example.com/mcp/", name="openaca:install_source")
     with pytest.raises(FleetUploadContractError) as exc:
         enforce_fleet_upload_contract(payload)
     assert "URL with a path" in str(exc.value)
 
 
 def test_contract_accepts_bare_host_url() -> None:
-    payload = _payload_with_property(
-        "https://example.test", name="openaca:source_provenance"
-    )
+    payload = _payload_with_property("https://example.test", name="openaca:source_provenance")
     enforce_fleet_upload_contract(payload)  # must not raise

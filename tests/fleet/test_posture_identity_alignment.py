@@ -135,12 +135,12 @@ def test_skips_findings_without_string_component_identity() -> None:
     assert payloads[0]["component_identity"] is None
 
 
-def test_uses_first_bom_match_when_duplicate_keys_present() -> None:
-    """When the BOM has two components with the same `(type, name)` —
-    e.g., duplicate hook declarations from multiple plugin manifests
-    pointing at the same hash identity — `setdefault` keeps the first
-    one. This is intentional: identical hashed hooks are by definition
-    the same component, so any of them is the right answer.
+def test_uses_first_bom_match_when_duplicate_keys_have_same_identity() -> None:
+    """When the BOM has two components with the same `(type, name)` and
+    the SAME identity — e.g., duplicate hook declarations from multiple
+    plugin manifests pointing at the same hash identity — the first one
+    is kept. Identical hashed hooks are by definition the same component,
+    so any of them is the right answer.
     """
     shared_identity = "claude-hook/hook:a3fd7e17b2bab038"
     bom = {
@@ -163,3 +163,32 @@ def test_uses_first_bom_match_when_duplicate_keys_present() -> None:
     _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] == shared_identity
+
+
+def test_leaves_finding_unchanged_when_same_type_name_has_different_identities() -> None:
+    """ADR-0019: two marketplaces can provide the same plugin name, so a BOM
+    can legitimately have two components with the same `(type="plugin", name)`
+    but different `openaca:identity` values. The alignment cannot pick the
+    right one, so it leaves those findings untouched and lets the backend
+    surface the ambiguity instead of silently rewriting to the wrong row.
+    """
+    bom = {
+        "components": [
+            _bom_component(
+                name="github",
+                component_type="plugin",
+                identity="claude-plugin/marketplace-a/github",
+            ),
+            _bom_component(
+                name="github",
+                component_type="plugin",
+                identity="claude-plugin/marketplace-b/github",
+            ),
+        ]
+    }
+    payloads: list[dict[str, Any]] = [{"component_identity": "github"}]
+    findings = [_finding(component_type="plugin")]
+
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
+
+    assert payloads[0]["component_identity"] == "github"

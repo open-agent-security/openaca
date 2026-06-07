@@ -21,6 +21,7 @@ from tools.fleet.client import (
 from tools.fleet.collector import (
     CollectError,
     EndpointCollection,
+    _content_hash,
     build_endpoint_collection,
     collect_endpoint,
 )
@@ -708,6 +709,8 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     # Inside config_dir → relativized; outside config_dir → basename fallback.
     assert props[0]["value"] == "skills/x/SKILL.md"
     assert props[1]["value"] == "settings.json"
+    # content_hash must reflect the redacted BOM that was actually sent.
+    assert uploads[0]["content_hash"] == _content_hash(uploads[0]["bom"])
 
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):

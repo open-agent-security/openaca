@@ -130,6 +130,7 @@ def collect_endpoint(
     # distinct relative path), and fall back to basename only when no known
     # root applies.
     _redact_payload_for_fleet(payload, config_dir=config_dir, project=project)
+    payload["content_hash"] = _content_hash(payload["bom"])
     enforce_fleet_upload_contract(payload)
     try:
         return client.upload_bom(payload)
@@ -367,7 +368,11 @@ def _align_posture_identities_to_bom(
             elif pname == "openaca:identity" and isinstance(pvalue, str):
                 identity = pvalue
         if isinstance(name, str) and ctype is not None and identity is not None:
-            by_key.setdefault((ctype, name), identity)
+            key = (ctype, name)
+            if key not in by_key:
+                by_key[key] = identity
+            elif by_key[key] != identity:
+                by_key[key] = ""  # ambiguous: same (type, name), different identities
 
     for payload, finding in zip(posture_payloads, findings, strict=True):
         current = payload.get("component_identity")

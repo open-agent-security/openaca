@@ -115,6 +115,15 @@ def collect_endpoint(
         bom=collection.bom,
         posture_findings=collection.posture_findings,
     )
+    # ADR 0003 (Fleet redaction contract): the OSS BOM can carry absolute
+    # filesystem paths because the OSS CLI runs on the user's own machine;
+    # those paths are useful for offline analysis. Fleet uploads cross a
+    # SaaS network boundary into a multi-tenant store, so we redact at the
+    # upload boundary. Relativize against config_dir / project first to
+    # preserve component provenance (each skill still identifies as a
+    # distinct relative path), and fall back to basename only when no known
+    # root applies.
+    _redact_payload_for_fleet(payload, config_dir=config_dir, project=project)
     enforce_fleet_upload_contract(payload)
     try:
         return client.upload_bom(payload)
@@ -126,6 +135,120 @@ def collect_endpoint(
         ) from exc
     except FleetClientError as exc:
         raise CollectError(str(exc)) from exc
+
+
+def _is_absolute_path(value: str) -> bool:
+    if value.startswith("/"):
+        return True
+    if value.startswith("\\\\"):
+        return True
+    return len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
+
+
+def _redact_url_for_fleet(value: str) -> str:
+    """Strip path + query from an http(s) URL so only `scheme://host` remains.
+
+    The backend's redaction rule rejects URLs with paths or queries in
+    `openaca:*` property values (see `redaction._validate_string`). Bare
+    `https://api.example.com` is fine; `https://api.example.com/mcp/` is
+    not. Non-URL strings pass through unchanged.
+    """
+    if not (value.startswith("http://") or value.startswith("https://")):
+        return value
+    scheme, rest = value.split("://", 1)
+    # Drop everything after the first '/', '?', or '#' — keeping only the host.
+    for delim in ("/", "?", "#"):
+        idx = rest.find(delim)
+        if idx >= 0:
+            rest = rest[:idx]
+    return f"{scheme}://{rest}" if rest else value
+
+
+def _relativize_path_for_fleet(
+    value: str,
+    *,
+    config_dir: Path,
+    project: Path | None,
+) -> str:
+    """Convert an absolute filesystem path into a redacted form safe for
+    Fleet upload.
+
+    Order matters. Try to preserve provenance:
+      1. If the path is under `config_dir` (e.g. ~/.claude), return the
+         path relative to it (e.g. `skills/clerk-billing/SKILL.md`).
+      2. If the path is under `project` (when set), return `project/<rel>`.
+      3. Otherwise, fall back to the basename so we never ship absolute
+         paths over the wire.
+
+    Non-absolute strings are returned unchanged.
+    """
+    if not _is_absolute_path(value):
+        return value
+    try:
+        candidate = Path(value)
+    except (TypeError, ValueError):
+        return Path(value).name
+    try:
+        return candidate.relative_to(config_dir).as_posix()
+    except ValueError:
+        pass
+    if project is not None:
+        try:
+            relative = candidate.relative_to(project).as_posix()
+            return f"project/{relative}"
+        except ValueError:
+            pass
+    return candidate.name
+
+
+def _redact_payload_for_fleet(
+    payload: JsonObject,
+    *,
+    config_dir: Path,
+    project: Path | None,
+) -> None:
+    """In-place redaction of absolute filesystem paths inside a Fleet
+    upload payload. Scope mirrors the backend's `validate_upload_privacy`
+    rule (`backend/src/openaca_fleet/redaction.py`): scan only the
+    CLI-synthesized property/evidence values that the backend will scan,
+    not arbitrary pass-through CycloneDX content.
+    """
+    bom = payload.get("bom")
+    if isinstance(bom, dict):
+        for component in bom.get("components", []) or []:
+            if not isinstance(component, dict):
+                continue
+            for prop in component.get("properties", []) or []:
+                if not isinstance(prop, dict):
+                    continue
+                name = prop.get("name")
+                if not isinstance(name, str) or not name.startswith("openaca:"):
+                    continue
+                value = prop.get("value")
+                if not isinstance(value, str):
+                    continue
+                if _is_absolute_path(value):
+                    prop["value"] = _relativize_path_for_fleet(
+                        value, config_dir=config_dir, project=project
+                    )
+                elif value.startswith("http://") or value.startswith("https://"):
+                    prop["value"] = _redact_url_for_fleet(value)
+
+    for finding in payload.get("posture_findings", []) or []:
+        if not isinstance(finding, dict):
+            continue
+        evidence = finding.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+        for key, value in list(evidence.items()):
+            if not isinstance(value, str):
+                continue
+            if _is_absolute_path(value):
+                evidence[key] = _relativize_path_for_fleet(
+                    value, config_dir=config_dir, project=project
+                )
+            elif value.startswith("http://") or value.startswith("https://"):
+                evidence[key] = _redact_url_for_fleet(value)
 
 
 def clear_pending_uploads() -> None:

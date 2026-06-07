@@ -658,11 +658,21 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
     assert "asset registration failed" in str(exc.value)
 
 
-def test_collect_endpoint_uploads_endpoint_inventory_paths(tmp_path, monkeypatch):
+def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeypatch):
+    """ADR 0003: the CLI redacts absolute paths before upload so the Fleet
+    backend's redaction check passes. Paths under config_dir are
+    relativized; paths under an unknown root fall back to basename.
+    """
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     uploads: list[dict[str, Any]] = []
     monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+
+    # Two openaca:* properties: one inside the test's config_dir (tmp_path)
+    # which should relativize, and one outside which should fall back to
+    # basename.
+    inside = tmp_path / "skills" / "x" / "SKILL.md"
+    outside = "/Users/alex/.claude/settings.json"
     monkeypatch.setattr(
         "tools.fleet.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(
@@ -673,10 +683,8 @@ def test_collect_endpoint_uploads_endpoint_inventory_paths(tmp_path, monkeypatch
                     {
                         "name": "mcp-server/test",
                         "properties": [
-                            {
-                                "name": "openaca:source_manifest",
-                                "value": "/Users/alex/.claude/settings.json",
-                            }
+                            {"name": "openaca:source_manifest", "value": str(inside)},
+                            {"name": "openaca:source_manifest", "value": outside},
                         ],
                     }
                 ],
@@ -697,7 +705,9 @@ def test_collect_endpoint_uploads_endpoint_inventory_paths(tmp_path, monkeypatch
     collect_endpoint(config_dir=tmp_path, project=None)
 
     props = uploads[0]["bom"]["components"][0]["properties"]
-    assert props[0]["value"] == "/Users/alex/.claude/settings.json"
+    # Inside config_dir → relativized; outside config_dir → basename fallback.
+    assert props[0]["value"] == "skills/x/SKILL.md"
+    assert props[1]["value"] == "settings.json"
 
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):

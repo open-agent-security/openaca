@@ -30,8 +30,16 @@ def enforce_fleet_upload_contract(payload: dict[str, Any]) -> None:
     Fleet uploads are endpoint inventory. They may include paths, component
     identities, install references, and posture evidence, but must not include
     raw config bodies, env values, detected secrets, or full shell argv.
+
+    Also mirrors the backend's `validate_upload_privacy` rule
+    (`backend/src/openaca_fleet/redaction.py`) so absolute paths in
+    CLI-synthesized `openaca:*` property values or posture evidence fail
+    locally with a clear contract error instead of round-tripping to the
+    server. The collector applies `_redact_payload_for_fleet` before
+    calling this enforcer, so this check is defense-in-depth.
     """
     _validate_value(payload, "$")
+    _validate_no_absolute_paths(payload)
 
 
 def _validate_value(value: Any, path: str) -> None:
@@ -60,6 +68,76 @@ def _validate_mapping(value: dict[Any, Any], path: str) -> None:
 def _validate_string(value: str, path: str) -> None:
     if _SECRET_VALUE_RE.search(value) or _SECRET_ASSIGNMENT_RE.search(value):
         raise FleetUploadContractError(f"{path} contains a blocked value")
+
+
+def _is_absolute_path(value: str) -> bool:
+    if value.startswith("/"):
+        return True
+    if value.startswith("\\\\"):
+        return True
+    return len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
+
+
+def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
+    """Mirror the backend's path scope so we fail locally with the same
+    message instead of round-tripping to the server.
+
+    Scope: CLI-synthesized `openaca:*` component property values and any
+    string under `posture_findings[*].evidence`. Pass-through CycloneDX
+    content is not scanned (consistent with backend behavior).
+    """
+    bom = payload.get("bom")
+    if isinstance(bom, dict):
+        for c_idx, component in enumerate(bom.get("components", []) or []):
+            if not isinstance(component, dict):
+                continue
+            for p_idx, prop in enumerate(component.get("properties", []) or []):
+                if not isinstance(prop, dict):
+                    continue
+                name = prop.get("name")
+                if not isinstance(name, str) or not name.startswith("openaca:"):
+                    continue
+                value = prop.get("value")
+                if not isinstance(value, str):
+                    continue
+                location = (
+                    f"$.bom.components[{c_idx}].properties[{p_idx}].value"
+                )
+                if _is_absolute_path(value):
+                    raise FleetUploadContractError(
+                        f"{location} is an absolute path ({name!r})"
+                    )
+                if _is_url_with_path_or_query(value):
+                    raise FleetUploadContractError(
+                        f"{location} is a URL with a path or query ({name!r})"
+                    )
+
+    for f_idx, finding in enumerate(payload.get("posture_findings", []) or []):
+        if not isinstance(finding, dict):
+            continue
+        evidence = finding.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+        for key, value in evidence.items():
+            if not isinstance(value, str):
+                continue
+            location = f"$.posture_findings[{f_idx}].evidence.{key}"
+            if _is_absolute_path(value):
+                raise FleetUploadContractError(f"{location} is an absolute path")
+            if _is_url_with_path_or_query(value):
+                raise FleetUploadContractError(
+                    f"{location} is a URL with a path or query"
+                )
+
+
+def _is_url_with_path_or_query(value: str) -> bool:
+    """Mirror the backend rule: an http(s) URL with anything after the host
+    (path, query, fragment) leaks endpoint specifics.
+    """
+    if not (value.startswith("http://") or value.startswith("https://")):
+        return False
+    _, rest = value.split("://", 1)
+    return any(d in rest for d in ("/", "?", "#"))
 
 
 def _is_forbidden_name(value: str) -> bool:

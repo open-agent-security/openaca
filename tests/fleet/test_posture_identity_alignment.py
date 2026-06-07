@@ -52,7 +52,7 @@ def test_aligns_plugin_leaf_name_to_full_identity() -> None:
     ]
     findings = [_finding(component_type="plugin")]
 
-    _align_posture_identities_to_bom(payloads, findings, bom)
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] == "claude-plugin/claude-plugins-official/github"
 
@@ -86,7 +86,7 @@ def test_disambiguates_by_component_type_when_name_collides() -> None:
         _finding(component_type="command"),
     ]
 
-    _align_posture_identities_to_bom(payloads, findings, bom)
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] == "claude-plugin/claude-plugins-official/code-review"
     assert payloads[1]["component_identity"] == "claude-command/code-review/code-review"
@@ -114,7 +114,7 @@ def test_leaves_payload_alone_when_no_bom_match() -> None:
     payloads: list[dict[str, Any]] = [{"component_identity": "@playwright/mcp"}]
     findings = [_finding(component_type="mcp_server")]
 
-    _align_posture_identities_to_bom(payloads, findings, bom)
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] == "@playwright/mcp"
 
@@ -130,7 +130,7 @@ def test_skips_findings_without_string_component_identity() -> None:
     ]
     findings = [_finding(component_type="asset")]
 
-    _align_posture_identities_to_bom(payloads, findings, bom)
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] is None
 
@@ -160,6 +160,6 @@ def test_uses_first_bom_match_when_duplicate_keys_present() -> None:
     payloads: list[dict[str, Any]] = [{"component_identity": "claude-hook/hook:a3fd7e17b2bab038"}]
     findings = [_finding(component_type="hook")]
 
-    _align_posture_identities_to_bom(payloads, findings, bom)
+    _align_posture_identities_to_bom(payloads, findings, bom)  # type: ignore[arg-type]
 
     assert payloads[0]["component_identity"] == shared_identity

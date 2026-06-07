@@ -208,6 +208,31 @@ def _relativize_path_for_fleet(
     return candidate.name
 
 
+def _redact_json_structure(
+    value: Any,
+    *,
+    config_dir: Path,
+    project: Path | None,
+) -> Any:
+    """Recursively redact absolute paths and URL paths inside a deserialized
+    JSON structure. Used to scrub embedded paths in JSON-valued ``openaca:*``
+    BOM properties such as ``openaca:declared_by``."""
+    if isinstance(value, str):
+        if _is_absolute_path(value):
+            return _relativize_path_for_fleet(value, config_dir=config_dir, project=project)
+        if value.startswith("http://") or value.startswith("https://"):
+            return _redact_url_for_fleet(value)
+        return value
+    if isinstance(value, dict):
+        return {
+            k: _redact_json_structure(v, config_dir=config_dir, project=project)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_json_structure(v, config_dir=config_dir, project=project) for v in value]
+    return value
+
+
 def _redact_payload_for_fleet(
     payload: JsonObject,
     *,
@@ -240,6 +265,17 @@ def _redact_payload_for_fleet(
                     )
                 elif value.startswith("http://") or value.startswith("https://"):
                     prop["value"] = _redact_url_for_fleet(value)
+                elif value.startswith(("{", "[")):
+                    try:
+                        parsed = json.loads(value)
+                    except json.JSONDecodeError:
+                        pass
+                    else:
+                        redacted = _redact_json_structure(
+                            parsed, config_dir=config_dir, project=project
+                        )
+                        if redacted != parsed:
+                            prop["value"] = json.dumps(redacted, sort_keys=True)
 
     for finding in payload.get("posture_findings", []) or []:
         if not isinstance(finding, dict):

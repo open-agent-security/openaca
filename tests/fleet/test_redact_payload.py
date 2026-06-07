@@ -263,3 +263,88 @@ def test_contract_rejects_url_with_path_in_openaca_property() -> None:
 def test_contract_accepts_bare_host_url() -> None:
     payload = _payload_with_property("https://example.test", name="openaca:source_provenance")
     enforce_fleet_upload_contract(payload)  # must not raise
+
+
+# --- JSON-valued openaca properties: embedded path redaction -----------------
+
+
+def _payload_with_json_property(value: object, name: str) -> dict:
+    import json
+
+    return _payload_with_property(json.dumps(value, sort_keys=True), name=name)
+
+
+def test_redact_json_declared_by_redacts_embedded_path() -> None:
+    """openaca:declared_by serializes as JSON; its `path` key holds an
+    absolute manifest path that the current per-property check misses."""
+    cfg = Path("/home/u/.claude")
+    payload = _payload_with_json_property(
+        {"kind": "skill_lock", "path": "/home/u/.claude/plugins.json"},
+        name="openaca:declared_by",
+    )
+    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    import json
+
+    result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
+    assert result["kind"] == "skill_lock"
+    assert result["path"] == "plugins.json"
+
+
+def test_redact_json_source_provenance_redacts_resolved_path() -> None:
+    """openaca:source_provenance can carry a resolved_path that is absolute."""
+    cfg = Path("/home/u/.claude")
+    payload = _payload_with_json_property(
+        {
+            "lockfile_path": "/home/u/.claude/skills-lock.json",
+            "resolved_path": "/home/u/.claude/skills/clerk-cli",
+            "source": "github:anthropics/skills",
+            "status": "known",
+        },
+        name="openaca:source_provenance",
+    )
+    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    import json
+
+    result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
+    assert result["lockfile_path"] == "skills-lock.json"
+    assert result["resolved_path"] == "skills/clerk-cli"
+    assert result["source"] == "github:anthropics/skills"
+
+
+def test_redact_json_without_paths_unchanged() -> None:
+    """JSON properties that contain no paths or URLs pass through untouched."""
+    cfg = Path("/home/u/.claude")
+    payload = _payload_with_json_property(
+        [{"type": "plugin", "name": "github"}],
+        name="openaca:component_path",
+    )
+    original_value = payload["bom"]["components"][0]["properties"][0]["value"]
+    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    assert payload["bom"]["components"][0]["properties"][0]["value"] == original_value
+
+
+def test_redact_json_declared_by_then_contract_passes() -> None:
+    """After redacting a JSON-valued property, the upload contract must accept it."""
+    cfg = Path("/home/u/.claude")
+    payload = _payload_with_json_property(
+        {"kind": "manifest", "path": "/home/u/.claude/extensions/mcp.json"},
+        name="openaca:declared_by",
+    )
+    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    payload["content_hash"] = "sha256:irrelevant"
+    enforce_fleet_upload_contract(payload)  # must not raise
+
+
+def test_contract_rejects_json_embedded_absolute_path() -> None:
+    """Defense-in-depth: the contract validator also catches unredacted
+    embedded paths inside JSON-valued openaca:* properties."""
+    import json
+
+    payload = _payload_with_property(
+        json.dumps({"kind": "skill_lock", "path": "/home/u/.claude/plugins.json"}, sort_keys=True),
+        name="openaca:declared_by",
+    )
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+    assert "embeds an absolute path" in str(exc.value)
+    assert "openaca:declared_by" in str(exc.value)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -107,6 +108,17 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                     raise FleetUploadContractError(
                         f"{location} is a URL with a path or query ({name!r})"
                     )
+                if value.startswith(("{", "[")):
+                    try:
+                        parsed = json.loads(value)
+                    except json.JSONDecodeError:
+                        pass
+                    else:
+                        if _contains_absolute_path_or_url_with_path(parsed):
+                            raise FleetUploadContractError(
+                                f"{location} embeds an absolute path or URL with path"
+                                f" in JSON ({name!r})"
+                            )
 
     for f_idx, finding in enumerate(payload.get("posture_findings", []) or []):
         if not isinstance(finding, dict):
@@ -132,6 +144,19 @@ def _is_url_with_path_or_query(value: str) -> bool:
         return False
     _, rest = value.split("://", 1)
     return any(d in rest for d in ("/", "?", "#"))
+
+
+def _contains_absolute_path_or_url_with_path(value: Any) -> bool:
+    """Recursively check a deserialized JSON value for embedded absolute
+    paths or URLs with paths/queries. Used to detect unredacted paths inside
+    JSON-valued ``openaca:*`` BOM properties such as ``openaca:declared_by``."""
+    if isinstance(value, str):
+        return _is_absolute_path(value) or _is_url_with_path_or_query(value)
+    if isinstance(value, dict):
+        return any(_contains_absolute_path_or_url_with_path(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_contains_absolute_path_or_url_with_path(v) for v in value)
+    return False
 
 
 def _is_forbidden_name(value: str) -> bool:

@@ -363,6 +363,10 @@ def _is_binary_mcp_component(
     return first not in ("npx", "uvx")
 
 
+# Flags whose value IS the package spec to report (takes precedence over positional arg).
+# npx --package/-p installs the named package; uvx --from installs from that source.
+_NPX_UVX_PACKAGE_FLAGS = frozenset({"--package", "-p", "--from"})
+
 _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
     {
         "--package",
@@ -377,14 +381,36 @@ _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
 
 
 def _extract_package_from_install_source(install_source: str) -> str | None:
-    """Return the first positional (non-flag) arg after the launcher in an npx/uvx command.
+    """Return the package identifier from an npx/uvx command.
 
-    Mirrors the flag-skipping logic in the mcp_json parser's _positional_args()
-    so that `npx -y @scope/pkg --token …` → `@scope/pkg`.
+    Prefers explicit --package/-p/--from flag values over the first positional
+    arg, so that `npx --package @scope/pkg cmd …` → `@scope/pkg` rather than
+    `cmd`. Falls back to the first positional arg, skipping value-taking flags
+    like `-y` and `--python 3.11`.
     """
     tokens = install_source.split()
     if len(tokens) < 2:
         return None
+    # First pass: explicit package flags take precedence over the positional arg.
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            break
+        if token.startswith("-"):
+            # --package=<val> / --from=<val> inline form
+            for flag in _NPX_UVX_PACKAGE_FLAGS:
+                if token.startswith(f"{flag}="):
+                    pkg = token[len(flag) + 1 :]
+                    if pkg:
+                        return pkg
+            # --package <val> / --from <val> space-separated form
+            if token in _NPX_UVX_PACKAGE_FLAGS and i + 1 < len(tokens):
+                candidate = tokens[i + 1]
+                if not candidate.startswith("-"):
+                    return candidate
+        i += 1
+    # Second pass: return first positional arg, skipping value-taking flags.
     skip_next = False
     for token in tokens[1:]:
         if skip_next:

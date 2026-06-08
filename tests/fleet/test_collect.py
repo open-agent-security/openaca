@@ -200,6 +200,75 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
     assert props["openaca:install_source"] == "npx @scope/pkg@1.2.3"
 
 
+def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
+    tmp_path, monkeypatch
+):
+    ref = ComponentRef(
+        component_identity="mcp-stdio/npx-unpinned:@playwright/mcp",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.playwright",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx @playwright/mcp@latest",
+            "component_path": [{"type": "mcp_server", "name": "playwright"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/playwright"
+    assert collection.bom["components"][0]["bom-ref"] == "mcp-server/playwright"
+    assert collection.posture_findings[0]["component_identity"] == "mcp-server/playwright"
+
+
+def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
+    tmp_path, monkeypatch
+):
+    manifest_path = tmp_path / ".mcp.json"
+    manifest = {"mcpServers": {"foo": {"url": "http://example.com/mcp"}}}
+    ref = ComponentRef(
+        component_identity="mcp-remote/example.com/mcp",
+        source_manifest=str(manifest_path),
+        source_locator="$.mcpServers.foo",
+        extra={
+            "component_type": "mcp_server",
+            "transport": "http",
+            "url": "http://example.com/mcp",
+            "install_source": "http://example.com/mcp",
+            "component_path": [{"type": "mcp_server", "name": "foo"}],
+            "declared_by": {"kind": "manifest", "path": str(manifest_path)},
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [(manifest_path, manifest)],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/foo"
+    assert collection.bom["components"][0]["bom-ref"] == "mcp-server/foo"
+    assert collection.posture_findings[0]["component_identity"] == "mcp-server/foo"
+
+
 def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_path, monkeypatch):
     ref = ComponentRef(
         ecosystem="PyPI",

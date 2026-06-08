@@ -1,10 +1,10 @@
 ---
 id: 0020
 title: Remote MCP server inventory via mcp-remote identity namespace
-status: accepted
+status: superseded
 date: 2026-05-20
 supersedes: null
-superseded-by: null
+superseded-by: 0029
 ---
 
 ## Context

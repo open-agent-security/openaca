@@ -2,6 +2,7 @@ import pytest
 
 from tools.component_ref import (
     ComponentRef,
+    canonical_component_identity,
     canonical_ecosystem,
     encode_purl_name,
     is_package_source_ref,
@@ -41,6 +42,48 @@ def test_purl_for_pypi():
         source_locator="line:5",
     )
     assert ref.purl == "pkg:pypi/aws-mcp-server@0.3.1"
+
+
+def test_canonical_identity_for_package_backed_mcp_uses_server_occurrence():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@playwright/mcp",
+        version="latest",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.playwright",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "playwright"}],
+        },
+    )
+
+    assert canonical_component_identity(ref) == "mcp-server/playwright"
+
+
+def test_canonical_identity_for_plugin_dependency_uses_parent_occurrence():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="hono",
+        version="4.12.5",
+        source_manifest="external_plugins/discord/bun.lock",
+        source_locator="$.packages.hono",
+        attributed_to="claude-plugin/claude-plugins-official/discord@0.0.4",
+        scope="agent-dependency",
+    )
+
+    assert (
+        canonical_component_identity(ref)
+        == "claude-plugin/claude-plugins-official/discord/deps/npm/hono"
+    )
+
+
+def test_canonical_identity_preserves_explicit_source_less_identity():
+    ref = ComponentRef(
+        component_identity="claude-hook/hook:a3fd7e17b2bab038",
+        extra={"component_type": "hook"},
+    )
+
+    assert canonical_component_identity(ref) == "claude-hook/hook:a3fd7e17b2bab038"
 
 
 @pytest.mark.parametrize(

@@ -57,7 +57,6 @@ def test_bom_lint_rejects_dangling_dependency_refs(tmp_path):
 def test_bom_lint_rejects_component_without_identity(tmp_path):
     doc = _valid_bom_doc()
     component = doc["components"][0]
-    component.pop("purl")
     component["properties"] = [
         prop for prop in component["properties"] if prop["name"] != "openaca:identity"
     ]
@@ -67,7 +66,7 @@ def test_bom_lint_rejects_component_without_identity(tmp_path):
     result = CliRunner().invoke(bom_main, ["lint", str(path)])
 
     assert result.exit_code == 1
-    assert "must have either purl or openaca:identity" in result.output
+    assert "must have openaca:identity" in result.output
 
 
 def test_bom_lint_rejects_invalid_openaca_component_type(tmp_path):
@@ -116,6 +115,7 @@ def _valid_bom_doc() -> dict:
                 "version": "1.4.2",
                 "purl": "pkg:npm/%40mcpjam/inspector@1.4.2",
                 "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/inspector"},
                     {"name": "openaca:component_type", "value": "mcp_server"},
                     {"name": "openaca:scope", "value": "agent-component"},
                 ],

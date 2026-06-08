@@ -362,6 +362,74 @@ def test_parse_purl_strips_qualifiers_and_subpath():
     assert refs[2].version == "3.0.0"
 
 
+def test_infer_unpinned_mcp_package_skips_launcher_flags():
+    """scan bom must recover the package when npx/uvx argv has launcher flags before it.
+
+    npx -y @scope/pkg: -y is a flag with no value, must be skipped to find @scope/pkg.
+    uvx --python 3.11 my-tool: --python takes a value (3.11), must skip both tokens.
+    """
+    doc = {
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "mcp-server/npx-mcp",
+                "name": "mcp-server/npx-mcp",
+                "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/npx-mcp"},
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:install_source", "value": "npx -y @scope/pkg"},
+                    {"name": "openaca:source_manifest", "value": ".mcp.json"},
+                    {"name": "openaca:source_locator", "value": "$.mcpServers.npx-mcp"},
+                ],
+            },
+            {
+                "type": "library",
+                "bom-ref": "mcp-server/uvx-mcp",
+                "name": "mcp-server/uvx-mcp",
+                "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/uvx-mcp"},
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:install_source", "value": "uvx --python 3.11 my-tool"},
+                    {"name": "openaca:source_manifest", "value": ".mcp.json"},
+                    {"name": "openaca:source_locator", "value": "$.mcpServers.uvx-mcp"},
+                ],
+            },
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(doc)
+
+    assert refs[0].ecosystem == "npm"
+    assert refs[0].name == "@scope/pkg"
+    assert refs[1].ecosystem == "PyPI"
+    assert refs[1].name == "my-tool"
+
+
+def test_infer_unpinned_mcp_package_prefers_package_flag():
+    """npx --package @scope/pkg cmd must resolve to @scope/pkg, not cmd."""
+    doc = {
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "mcp-server/pkg-flag-mcp",
+                "name": "mcp-server/pkg-flag-mcp",
+                "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/pkg-flag-mcp"},
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:install_source", "value": "npx --package @scope/pkg cmd"},
+                    {"name": "openaca:source_manifest", "value": ".mcp.json"},
+                    {"name": "openaca:source_locator", "value": "$.mcpServers.pkg-flag-mcp"},
+                ],
+            },
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(doc)
+
+    assert refs[0].ecosystem == "npm"
+    assert refs[0].name == "@scope/pkg"
+
+
 def _metadata_property(doc: dict, name: str) -> str | None:
     for prop in doc["metadata"]["properties"]:
         if prop["name"] == name:

@@ -728,6 +728,11 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
             "npx -p @scope/pkg cmd --token sk-1234",
             "npx @scope/pkg",
         ),
+        # npx option-terminator form: `npx -- <pkg>` is documented as `npm exec -- <pkg>`
+        (
+            "npx -- @scope/pkg --token sk-1234",
+            "npx @scope/pkg",
+        ),
     ],
 )
 def test_build_endpoint_collection_trims_npx_package_flag_install_source(

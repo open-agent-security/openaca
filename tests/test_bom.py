@@ -430,6 +430,31 @@ def test_infer_unpinned_mcp_package_prefers_package_flag():
     assert refs[0].name == "@scope/pkg"
 
 
+def test_infer_unpinned_mcp_package_option_terminator():
+    """npx -- @scope/pkg must resolve to @scope/pkg (documented `npm exec -- <pkg>` form)."""
+    doc = {
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "mcp-server/terminator-mcp",
+                "name": "mcp-server/terminator-mcp",
+                "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/terminator-mcp"},
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:install_source", "value": "npx -- @scope/pkg"},
+                    {"name": "openaca:source_manifest", "value": ".mcp.json"},
+                    {"name": "openaca:source_locator", "value": "$.mcpServers.terminator-mcp"},
+                ],
+            },
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(doc)
+
+    assert refs[0].ecosystem == "npm"
+    assert refs[0].name == "@scope/pkg"
+
+
 def _metadata_property(doc: dict, name: str) -> str | None:
     for prop in doc["metadata"]["properties"]:
         if prop["name"] == name:

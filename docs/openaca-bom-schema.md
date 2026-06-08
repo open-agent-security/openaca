@@ -46,17 +46,20 @@ openaca bom lint agent.bom.json
 
 Each detected agent component is serialized as one CycloneDX component.
 
-Package-backed components use their PURL as both `purl` and the preferred
-`bom-ref` when the PURL is unique in the BOM:
+OpenACA-generated components use their agent graph occurrence identity as the
+preferred `bom-ref` when it is unique in the BOM, and carry the same value as
+`openaca:identity`. Package-backed components also carry their external package
+coordinate as `purl`:
 
 ```json
 {
   "type": "application",
-  "bom-ref": "pkg:npm/%40modelcontextprotocol/server-filesystem@1.0.0",
+  "bom-ref": "mcp-server/filesystem",
   "name": "@modelcontextprotocol/server-filesystem",
   "version": "1.0.0",
   "purl": "pkg:npm/%40modelcontextprotocol/server-filesystem@1.0.0",
   "properties": [
+    {"name": "openaca:identity", "value": "mcp-server/filesystem"},
     {"name": "openaca:component_type", "value": "mcp_server"},
     {"name": "openaca:scope", "value": "agent-component"},
     {"name": "openaca:source_manifest", "value": ".mcp.json"},
@@ -65,16 +68,18 @@ Package-backed components use their PURL as both `purl` and the preferred
 }
 ```
 
-Source-less components use `ComponentRef.component_identity` as the preferred
-`bom-ref` and also carry it as `openaca:identity`:
+Source-less components use the graph occurrence identity as `openaca:identity`.
+When the source-less advisory matching identity is different, OpenACA also
+emits `openaca:source_identity`:
 
 ```json
 {
   "type": "application",
-  "bom-ref": "mcp-remote/mcp.example.com/mcp",
-  "name": "mcp-remote/mcp.example.com/mcp",
+  "bom-ref": "mcp-server/example",
+  "name": "mcp-server/example",
   "properties": [
-    {"name": "openaca:identity", "value": "mcp-remote/mcp.example.com/mcp"},
+    {"name": "openaca:identity", "value": "mcp-server/example"},
+    {"name": "openaca:source_identity", "value": "mcp-remote/mcp.example.com/mcp"},
     {"name": "openaca:component_type", "value": "mcp_server"}
   ]
 }
@@ -90,7 +95,8 @@ suffix derived from the component observation fields.
 | `openaca:schema_version` | OpenACA Agent BOM schema version. Stored on BOM metadata. |
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
-| `openaca:identity` | OpenACA logical identity for source-less components. |
+| `openaca:identity` | OpenACA agent graph occurrence identity. |
+| `openaca:source_identity` | Source-less component identity used for advisory matching when no PURL or Git source coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `component`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |

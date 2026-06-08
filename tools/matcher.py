@@ -149,6 +149,9 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict[str, Any]]) -> l
     if not identity:
         return []
     candidate_targets: set[str] = {identity}
+    source_identity = ref.extra.get("source_identity") if ref.extra else None
+    if isinstance(source_identity, str) and source_identity:
+        candidate_targets.add(source_identity)
     marketplace = ref.extra.get("marketplace") if ref.extra else None
     if marketplace and isinstance(marketplace, str):
         prefix = f"plugin/{marketplace}/"

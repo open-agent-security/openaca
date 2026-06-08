@@ -10,25 +10,21 @@ def test_plugin_self_identity():
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
     plugin_self = [
-        r
-        for r in refs
-        if r.component_identity and r.component_identity.startswith("claude-plugin/")
+        r for r in refs if r.component_identity and r.component_identity.startswith("plugin/")
     ]
     assert len(plugin_self) == 1
-    assert plugin_self[0].component_identity == "claude-plugin/deployment-tools"
+    assert plugin_self[0].component_identity == "plugin/deployment-tools"
 
 
 def test_plugin_dependencies():
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
     deps = [
-        r
-        for r in refs
-        if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
+        r for r in refs if r.component_identity and r.component_identity.startswith("plugin-dep/")
     ]
     identities = {r.component_identity for r in deps}
-    assert "claude-plugin-dep/helper-lib" in identities
-    assert "claude-plugin-dep/secrets-vault@~2.1.0" in identities
+    assert "plugin-dep/helper-lib" in identities
+    assert "plugin-dep/secrets-vault@~2.1.0" in identities
 
 
 def test_plugin_inlined_mcp_servers():
@@ -52,9 +48,7 @@ def test_dependencies_as_string_does_not_produce_bogus_refs(tmp_path):
     manifest.write_text('{"name": "my-plugin", "dependencies": "foo,bar"}')
     refs = parse(manifest)
     dep_refs = [
-        r
-        for r in refs
-        if r.component_identity and r.component_identity.startswith("claude-plugin-dep/")
+        r for r in refs if r.component_identity and r.component_identity.startswith("plugin-dep/")
     ]
     assert dep_refs == []
 
@@ -76,7 +70,7 @@ def test_plugin_self_identity_carries_component_type_not_ecosystem():
     the manifest or lockfile provides a real source coordinate."""
     manifest = REPOS / "sample-plugin" / ".claude-plugin" / "plugin.json"
     refs = parse(manifest)
-    plugin_self = next(r for r in refs if r.component_identity == "claude-plugin/deployment-tools")
+    plugin_self = next(r for r in refs if r.component_identity == "plugin/deployment-tools")
     assert plugin_self.ecosystem is None
     assert plugin_self.extra["component_type"] == "plugin"
     assert plugin_self.name == "deployment-tools"
@@ -100,7 +94,7 @@ def test_repo_mode_walks_default_bundled_skills(tmp_path):
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].component_identity == "skill/scan"
-    assert skill_refs[0].attributed_to == "claude-plugin/openaca@0.1.0"
+    assert skill_refs[0].attributed_to == "plugin/openaca@0.1.0"
 
 
 def test_default_skills_dir_symlink_outside_plugin_root_is_rejected(tmp_path):
@@ -222,7 +216,7 @@ def test_plugin_non_string_version_coerced_to_none(tmp_path):
     assert len(plugin_self) == 1
     assert plugin_self[0].name == "my-plugin"
     assert plugin_self[0].version is None
-    assert plugin_self[0].component_identity == "claude-plugin/my-plugin"
+    assert plugin_self[0].component_identity == "plugin/my-plugin"
 
 
 def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
@@ -247,7 +241,7 @@ def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
 
 def test_parse_at_install_root_returns_empty_when_plugin_json_absent(tmp_path):
     """No plugin.json at <install_root>/.claude-plugin/ — return []."""
-    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
 
 
 def test_parse_at_install_root_emits_dependencies_with_attribution(tmp_path):
@@ -262,11 +256,11 @@ def test_parse_at_install_root_emits_dependencies_with_attribution(tmp_path):
             }
         )
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
     assert len(refs) == 2
-    assert all(r.attributed_to == "claude-plugin/p@1.0" for r in refs)
+    assert all(r.attributed_to == "plugin/p@1.0" for r in refs)
     identities = sorted(r.component_identity or "" for r in refs)
-    assert identities == ["claude-plugin-dep/helper-lib", "claude-plugin-dep/secrets-vault@2.1.0"]
+    assert identities == ["plugin-dep/helper-lib", "plugin-dep/secrets-vault@2.1.0"]
 
 
 def test_parse_at_install_root_emits_inline_mcp_servers_with_attribution(tmp_path):
@@ -281,10 +275,10 @@ def test_parse_at_install_root_emits_inline_mcp_servers_with_attribution(tmp_pat
             }
         )
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
     assert len(npm_refs) == 1
-    assert npm_refs[0].attributed_to == "claude-plugin/p@1.0"
+    assert npm_refs[0].attributed_to == "plugin/p@1.0"
 
 
 def test_parse_at_install_root_string_path_resolves_from_install_root(tmp_path):
@@ -302,11 +296,11 @@ def test_parse_at_install_root_string_path_resolves_from_install_root(tmp_path):
     (tmp_path / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@x/y@1.0"]}}})
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "@x/y"
-    assert npm_refs[0].attributed_to == "claude-plugin/p@1.0"
+    assert npm_refs[0].attributed_to == "plugin/p@1.0"
 
 
 def test_parse_at_install_root_rejects_path_traversal(tmp_path):
@@ -321,7 +315,7 @@ def test_parse_at_install_root_rejects_path_traversal(tmp_path):
     (plugin_dir / "plugin.json").write_text(
         json.dumps({"name": "trav", "version": "1.0", "mcpServers": "../outside.mcp.json"})
     )
-    refs = parse_at_install_root(install_root, attributed_to="claude-plugin/trav@1.0")
+    refs = parse_at_install_root(install_root, attributed_to="plugin/trav@1.0")
     assert all(r.ecosystem != "npm" for r in refs)
 
 
@@ -332,7 +326,7 @@ def test_parse_at_install_root_does_not_emit_plugin_self_identity(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text(json.dumps({"name": "p", "version": "1.0"}))
-    refs = parse_at_install_root(tmp_path, attributed_to="claude-plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
     assert all(r.ecosystem != "claude-plugin" for r in refs)
     assert refs == []  # no deps, no mcpServers → empty
 
@@ -341,14 +335,14 @@ def test_parse_at_install_root_skips_malformed_plugin_json(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text("{not json")
-    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
 
 
 def test_parse_at_install_root_skips_non_object_plugin_json(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text("[]")
-    assert parse_at_install_root(tmp_path, attributed_to="claude-plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
 
 
 def test_unreadable_skills_dir_does_not_drop_plugin_parse(tmp_path):
@@ -376,7 +370,7 @@ def test_unreadable_skills_dir_does_not_drop_plugin_parse(tmp_path):
     finally:
         os.chmod(skills_dir, stat.S_IRWXU)
 
-    plugin_refs = [r for r in refs if r.component_identity == "claude-plugin/guarded-plugin"]
+    plugin_refs = [r for r in refs if r.component_identity == "plugin/guarded-plugin"]
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     # Running as root bypasses permission checks — skip the self-ref assertion
     # in that environment (the important thing is no exception is raised).
@@ -424,7 +418,7 @@ def test_symlink_loop_skill_subdir_does_not_drop_plugin_parse(tmp_path):
 
     refs = parse(manifest)
 
-    plugin_refs = [r for r in refs if r.component_identity == "claude-plugin/skill-loop-plugin"]
+    plugin_refs = [r for r in refs if r.component_identity == "plugin/skill-loop-plugin"]
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(plugin_refs) == 1
     assert skill_refs == []

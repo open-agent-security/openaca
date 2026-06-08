@@ -247,7 +247,7 @@ def test_openaca_scan_attributes_bundled_finding_to_plugin():
     out = result.output
 
     # Plugin header flagged as bundling something vulnerable (containment marker).
-    plugin_line = next(ln for ln in out.splitlines() if "claude-plugin/exposed" in ln)
+    plugin_line = next(ln for ln in out.splitlines() if "plugin/exposed" in ln)
     assert "[! bundles: GHSA-3q26-f695-pp76]" in plugin_line
 
     # The bundled leaf keeps its own direct marker.
@@ -381,7 +381,7 @@ def test_repo_mode_finds_skill_component_identity_advisory(tmp_path):
 def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     """endpoint mode E2E: an active plugin bundles a vulnerable npm MCP via
     its `.mcp.json`. The finding fires with `attributed_to` set to
-    `claude-plugin/<name>@<version>`, surfacing in the verbose output."""
+    `plugin/<name>@<version>`, surfacing in the verbose output."""
     from tools.scan import main as scan_main
 
     # Install layout: install root + one active plugin pointing at a real
@@ -469,12 +469,12 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
         )
     assert result.exit_code == 1, result.output
     # Verbose output surfaces the attribution suffix.
-    assert "via claude-plugin/m/vuln-plugin@1.0.0" in result.output
+    assert "via plugin/m/vuln-plugin@1.0.0" in result.output
     # SARIF carries attributed_to in properties.
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     properties = [r.get("properties") or {} for r in sarif["runs"][0]["results"]]
     attributions = [p.get("attributed_to") for p in properties if "attributed_to" in p]
-    assert "claude-plugin/m/vuln-plugin@1.0.0" in attributions
+    assert "plugin/m/vuln-plugin@1.0.0" in attributions
 
 
 def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
@@ -634,7 +634,7 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     assert result.exit_code == 1, result.output
     assert "CVE-2026-9003" in result.output
     # Attribution propagates to the finding.
-    assert "via claude-plugin/m/hook-plugin@1.0.0" in result.output
+    assert "via plugin/m/hook-plugin@1.0.0" in result.output
 
 
 def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
@@ -687,7 +687,7 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
     )
     assert result.exit_code == 1, result.output
     assert "GHSA-3q26-f695-pp76" in result.output
-    assert "via claude-plugin/m/vuln-plugin@1.0.0" in result.output
+    assert "via plugin/m/vuln-plugin@1.0.0" in result.output
 
     sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
     results = sarif["runs"][0]["results"]
@@ -696,7 +696,7 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
     assert properties.get("transitive") is True
-    assert properties.get("attributed_to") == "claude-plugin/m/vuln-plugin@1.0.0"
+    assert properties.get("attributed_to") == "plugin/m/vuln-plugin@1.0.0"
     assert properties.get("source") == "osv.dev"
     assert properties.get("overlay_source") == "openaca.dev"
 

@@ -37,7 +37,7 @@ def parse(path: Path) -> list[ComponentRef]:
         version = None
     attributed_to = None
     if name:
-        component_identity = f"claude-plugin/{name}"
+        component_identity = f"plugin/{name}"
         attributed_to = f"{component_identity}@{version}" if version else component_identity
         refs.append(
             ComponentRef(

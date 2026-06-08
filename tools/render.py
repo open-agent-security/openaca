@@ -734,7 +734,7 @@ def _component_type_for_tree(ref: ComponentRef) -> str:
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
     return _component_type_for_tree(ref) == "plugin" and bool(
-        ref.component_identity and ref.component_identity.startswith("claude-plugin/")
+        ref.component_identity and ref.component_identity.startswith("plugin/")
     )
 
 
@@ -1070,12 +1070,12 @@ def _plugin_name_from_identity(plugin_identity: str, marketplace: object = None)
     """Extract plugin name from a Claude plugin identity.
 
     Current identities include marketplace when known:
-    `claude-plugin/<marketplace>/<plugin>`. Older local refs may use
-    `claude-plugin/<plugin>`. Display-only attributed refs may append `@version`.
+    `plugin/<marketplace>/<plugin>`. Older local refs may use
+    `plugin/<plugin>`. Display-only attributed refs may append `@version`.
     """
-    if not plugin_identity.startswith("claude-plugin/"):
+    if not plugin_identity.startswith("plugin/"):
         return ""
-    rest = plugin_identity[len("claude-plugin/") :]
+    rest = plugin_identity[len("plugin/") :]
     at = rest.rfind("@")
     last_slash = rest.rfind("/")
     if at > last_slash:
@@ -1105,7 +1105,7 @@ def _build_plugin_node(
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
-    # Derive `<plugin>` from `claude-plugin/<marketplace>/<plugin>`; strip it
+    # Derive `<plugin>` from `plugin/<marketplace>/<plugin>`; strip it
     # from bundled command/agent/hook leaf labels so the leaf reads as `<name>`
     # not `<plugin>/<name>`.
     parent_plugin = _plugin_name_from_identity(plugin_identity, plugin_ref.extra.get("marketplace"))

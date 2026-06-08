@@ -87,13 +87,12 @@ def test_canonical_identity_for_plugin_dependency_uses_parent_occurrence():
         version="4.12.5",
         source_manifest="external_plugins/discord/bun.lock",
         source_locator="$.packages.hono",
-        attributed_to="claude-plugin/claude-plugins-official/discord@0.0.4",
+        attributed_to="plugin/claude-plugins-official/discord@0.0.4",
         scope="agent-dependency",
     )
 
     assert (
-        canonical_component_identity(ref)
-        == "claude-plugin/claude-plugins-official/discord/deps/npm/hono"
+        canonical_component_identity(ref) == "plugin/claude-plugins-official/discord/deps/npm/hono"
     )
 
 
@@ -191,9 +190,9 @@ def test_attributed_to_round_trips():
         ecosystem="npm",
         name="x",
         version="1.0",
-        attributed_to="claude-plugin/foo@1.0.0",
+        attributed_to="plugin/foo@1.0.0",
     )
-    assert ref.attributed_to == "claude-plugin/foo@1.0.0"
+    assert ref.attributed_to == "plugin/foo@1.0.0"
 
 
 def test_attributed_to_participates_in_equality():
@@ -202,6 +201,6 @@ def test_attributed_to_participates_in_equality():
         ecosystem="npm",
         name="x",
         version="1.0",
-        attributed_to="claude-plugin/foo@1.0.0",
+        attributed_to="plugin/foo@1.0.0",
     )
     assert a != b

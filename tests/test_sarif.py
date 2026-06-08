@@ -123,11 +123,11 @@ def test_sarif_result_carries_attributed_to_when_set():
         advisory_id="CVE-2026-0001",
         component=_ref(),
         confidence="high",
-        attributed_to="claude-plugin/supabase@0.1.6",
+        attributed_to="plugin/supabase@0.1.6",
     )
     sarif = to_sarif([finding], {})
     result = sarif["runs"][0]["results"][0]
-    assert result["properties"]["attributed_to"] == "claude-plugin/supabase@0.1.6"
+    assert result["properties"]["attributed_to"] == "plugin/supabase@0.1.6"
 
 
 def test_sarif_omits_attributed_to_when_none():
@@ -176,7 +176,7 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         ecosystem="npm",
         name="lodash",
         version="4.17.20",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
         extra={"transitive": True},
     )
     finding = Finding(
@@ -184,7 +184,7 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
     )
     advisory = {
         "id": "GHSA-1",
@@ -198,7 +198,7 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
     assert properties.get("coverage") == "transitive"
     assert properties.get("transitive") is True
     assert properties.get("source") == "osv.dev"
-    assert properties.get("attributed_to") == "claude-plugin/demo@1.0.0"
+    assert properties.get("attributed_to") == "plugin/demo@1.0.0"
 
 
 def test_sarif_emits_direct_only_for_manifest_fallback_findings():
@@ -206,7 +206,7 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         ecosystem="npm",
         name="lodash",
         version="4.17.20",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
         extra={"transitive": False, "fallback_reason": "no npm lockfile present"},
     )
     finding = Finding(
@@ -214,7 +214,7 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
     )
     advisory = {
         "id": "GHSA-1",

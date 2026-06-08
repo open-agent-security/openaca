@@ -319,7 +319,7 @@ def test_text_attributed_finding_shows_via_and_remove_fix():
             "OpenACA-X",
             "@supabase/mcp-server",
             "1.0.4",
-            attributed_to="claude-plugin/supabase@0.1.6",
+            attributed_to="plugin/supabase@0.1.6",
             manifest="~/.claude/cache/supabase/0.1.6/.mcp.json",
         )
     ]
@@ -334,8 +334,8 @@ def test_text_attributed_finding_shows_via_and_remove_fix():
         )
     }
     out = render_text(findings, index, _stats())
-    assert "via:      claude-plugin/supabase@0.1.6" in out
-    assert "fix:      upgrade or remove claude-plugin/supabase@0.1.6" in out
+    assert "via:      plugin/supabase@0.1.6" in out
+    assert "fix:      upgrade or remove plugin/supabase@0.1.6" in out
     assert "CRITICAL" in out
 
 
@@ -401,7 +401,7 @@ def test_text_verbose_adds_plugin_bundled_component_path():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".claude/cache/acme/.mcp.json",
-        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
             "component_type": "mcp_server",
             "runtime_hosts": ["claude-code"],
@@ -454,9 +454,9 @@ def test_github_empty_findings_returns_empty_string():
 
 
 def test_github_attributed_finding_includes_via_in_message():
-    findings = [_finding("A", "p", "1", attributed_to="claude-plugin/x@1")]
+    findings = [_finding("A", "p", "1", attributed_to="plugin/x@1")]
     out = render_github(findings)
-    assert "(via claude-plugin/x@1)" in out
+    assert "(via plugin/x@1)" in out
 
 
 def test_github_emits_posture_findings_as_notice_for_low_severity():
@@ -558,7 +558,7 @@ def test_json_plugin_bundled_finding_contains_component_path():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".claude/cache/acme/.mcp.json",
-        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
             "component_type": "mcp_server",
             "runtime_hosts": ["claude-code"],
@@ -631,7 +631,7 @@ def _plugin_ref(
     return ComponentRef(
         name=name,
         version=version,
-        component_identity=f"claude-plugin/{identity_name}",
+        component_identity=f"plugin/{identity_name}",
         source_manifest="installed_plugins.json",
         source_locator=f"$.plugins.{name}",
         extra=extra,
@@ -669,7 +669,7 @@ def _bundled(
 def test_tree_header_counts_plugins_direct_total():
     refs = [
         _plugin_ref("a", "1.0.0"),
-        _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0"),
+        _bundled("npm", "@x/mcp", "1.0.0", attributed_to="plugin/a@1.0.0"),
         _bundled(
             "skill",
             "direct-skill",
@@ -690,18 +690,18 @@ def test_tree_groups_bundled_components_by_category():
             "skill",
             "supa-skill",
             None,
-            attributed_to="claude-plugin/supabase@0.1.6",
+            attributed_to="plugin/supabase@0.1.6",
             component_identity="skill/supa-skill",
         ),
         _bundled(
             "npm",
             "@supabase/mcp",
             "1.0.0",
-            attributed_to="claude-plugin/supabase@0.1.6",
+            attributed_to="plugin/supabase@0.1.6",
         ),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
-    assert "claude-plugin/supabase@0.1.6" in out
+    assert "plugin/supabase@0.1.6" in out
     # Both categories appear with counts.
     assert "MCPs/ (1)" in out
     assert "skills/ (1)" in out
@@ -714,7 +714,7 @@ def test_tree_remote_mcp_leaf_shows_url_and_transport():
         _plugin_ref("github", "unknown", marketplace="official"),
         ComponentRef(
             component_identity="mcp-remote/api.githubcopilot.com/mcp/",
-            attributed_to="claude-plugin/official/github@unknown",
+            attributed_to="plugin/official/github@unknown",
             extra={
                 "component_type": "mcp_server",
                 "url": "https://api.githubcopilot.com/mcp/",
@@ -793,7 +793,7 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
             ecosystem="npm",
             name="@playwright/mcp",
             version="latest",
-            attributed_to="claude-plugin/official/playwright@unknown",
+            attributed_to="plugin/official/playwright@unknown",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "npx @playwright/mcp@latest",
@@ -814,7 +814,7 @@ def test_tree_stdio_mcp_leaf_uses_github_source_identity():
         ComponentRef(
             ecosystem="github",
             name="oraios/serena",
-            attributed_to="claude-plugin/official/serena@unknown",
+            attributed_to="plugin/official/serena@unknown",
             extra={
                 "component_type": "mcp_server",
                 "install_source": (
@@ -837,7 +837,7 @@ def test_tree_stdio_mcp_leaf_uses_docker_source_identity():
             ecosystem="docker",
             name="hashicorp/terraform-mcp-server",
             version="0.4.0",
-            attributed_to="claude-plugin/official/terraform@unknown",
+            attributed_to="plugin/official/terraform@unknown",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "docker run -e TFE_TOKEN=${TFE_TOKEN} "
@@ -858,7 +858,7 @@ def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_source_identity():
         ComponentRef(
             ecosystem="GitHub",
             name="oraios/serena",
-            attributed_to="claude-plugin/official/sources@unknown",
+            attributed_to="plugin/official/sources@unknown",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "uvx --from git+https://github.com/oraios/serena serena",
@@ -868,7 +868,7 @@ def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_source_identity():
             ecosystem="Docker",
             name="hashicorp/terraform-mcp-server",
             version="0.4.0",
-            attributed_to="claude-plugin/official/sources@unknown",
+            attributed_to="plugin/official/sources@unknown",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "docker run hashicorp/terraform-mcp-server:0.4.0",
@@ -975,7 +975,7 @@ def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
     refs = [
         ComponentRef(
             name="@acme/tool",
-            component_identity="claude-plugin/market/@acme/tool",
+            component_identity="plugin/market/@acme/tool",
             source_manifest="installed_plugins.json",
             source_locator="$.plugins.@acme/tool@market",
             extra={"component_type": "plugin", "scope": "user", "marketplace": "market"},
@@ -984,7 +984,7 @@ def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
             "claude-command",
             "deploy",
             None,
-            attributed_to="claude-plugin/market/@acme/tool",
+            attributed_to="plugin/market/@acme/tool",
             component_identity="claude-command/@acme/tool/deploy",
         ),
     ]
@@ -1000,7 +1000,7 @@ def test_tree_plugin_header_shows_marketplace_context():
 
     out = render_inventory_tree(refs, [], use_unicode=True)
 
-    assert "claude-plugin/official/superpowers@5.1.0" in out
+    assert "plugin/official/superpowers@5.1.0" in out
     assert "(sha: 917e5f53)" in out
     assert "[scope=user]" in out
 
@@ -1008,7 +1008,7 @@ def test_tree_plugin_header_shows_marketplace_context():
 def test_tree_empty_plugin_shows_no_bundled_components():
     refs = [_plugin_ref("github", "unknown")]
     out = render_inventory_tree(refs, [], use_unicode=True)
-    assert "claude-plugin/github@unknown" in out
+    assert "plugin/github@unknown" in out
     assert "(no bundled components)" in out
 
 
@@ -1066,14 +1066,14 @@ def test_tree_renders_logical_identities_without_location_prefix():
             "claude-command",
             "deploy",
             None,
-            attributed_to="claude-plugin/supabase@0.1.6",
+            attributed_to="plugin/supabase@0.1.6",
             component_identity="claude-command/deploy",
         ),
         _bundled(
             "claude-hook",
             None,
             None,
-            attributed_to="claude-plugin/supabase@0.1.6",
+            attributed_to="plugin/supabase@0.1.6",
             component_identity="claude-hook/command:abcd1234",
             extra={"event": "PreToolUse", "index": 0, "command": "echo pre"},
         ),
@@ -1092,14 +1092,14 @@ def test_tree_aggregates_tier2_deps_into_single_line():
             "npm",
             "lodash",
             "4.17.20",
-            attributed_to="claude-plugin/demo@1.0.0",
+            attributed_to="plugin/demo@1.0.0",
             extra={"transitive": True},
         ),
         _bundled(
             "npm",
             "underscore",
             "1.13.0",
-            attributed_to="claude-plugin/demo@1.0.0",
+            attributed_to="plugin/demo@1.0.0",
             extra={"transitive": True},
         ),
     ]
@@ -1117,7 +1117,7 @@ def test_tree_tier2_direct_only_when_no_lockfile():
             "npm",
             "lodash",
             "4.17.20",
-            attributed_to="claude-plugin/demo@1.0.0",
+            attributed_to="plugin/demo@1.0.0",
             extra={"transitive": False},
         ),
     ]
@@ -1131,7 +1131,7 @@ def test_tree_tier2_aggregate_carries_finding_marker():
         "npm",
         "lodash",
         "4.17.20",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
         extra={"transitive": True},
         source_manifest="package-lock.json",
     )
@@ -1141,7 +1141,7 @@ def test_tree_tier2_aggregate_carries_finding_marker():
         component=tier2_ref,
         confidence="high",
         reason="lodash@4.17.20 matches CVE-2026-0001",
-        attributed_to="claude-plugin/demo@1.0.0",
+        attributed_to="plugin/demo@1.0.0",
     )
     out = render_inventory_tree(refs, [finding], use_unicode=True, use_color=False)
     assert "[! CVE-2026-0001]" in out
@@ -1210,14 +1210,14 @@ def test_tree_marks_affected_leaves_with_finding_id():
         "npm",
         "@playwright/mcp",
         "latest",
-        attributed_to="claude-plugin/playwright@1.0.0",
+        attributed_to="plugin/playwright@1.0.0",
     )
     finding = Finding(
         advisory_id="GHSA-X",
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="claude-plugin/playwright@1.0.0",
+        attributed_to="plugin/playwright@1.0.0",
     )
     out = render_inventory_tree([plugin, ref], [finding], use_unicode=True)
     assert "[! GHSA-X]" in out
@@ -1236,7 +1236,7 @@ def test_tree_marks_plugin_header_when_plugin_advisory_matches():
     out = render_inventory_tree([plugin], [finding], use_unicode=True)
     # Header line carries the marker; the empty-plugin "(no bundled)" line
     # is separate.
-    plugin_line = [line for line in out.splitlines() if "claude-plugin/supabase@0.1.0" in line][0]
+    plugin_line = [line for line in out.splitlines() if "plugin/supabase@0.1.0" in line][0]
     assert "[! CVE-2026-XXXX]" in plugin_line
 
 
@@ -1247,7 +1247,7 @@ def test_tree_ascii_fallback_uses_ascii_chars():
             "skill",
             "x",
             None,
-            attributed_to="claude-plugin/a@1.0.0",
+            attributed_to="plugin/a@1.0.0",
             component_identity="skill/x",
         ),
     ]
@@ -1265,7 +1265,7 @@ def test_tree_unicode_default():
             "skill",
             "x",
             None,
-            attributed_to="claude-plugin/a@1.0.0",
+            attributed_to="plugin/a@1.0.0",
             component_identity="skill/x",
         ),
     ]
@@ -1281,15 +1281,15 @@ def test_tree_plugins_sorted_alphabetically():
         _plugin_ref("mu", "1.0.0"),
     ]
     out = render_inventory_tree(refs, [], use_unicode=True)
-    alpha_idx = out.index("claude-plugin/alpha")
-    mu_idx = out.index("claude-plugin/mu")
-    zeta_idx = out.index("claude-plugin/zeta")
+    alpha_idx = out.index("plugin/alpha")
+    mu_idx = out.index("plugin/mu")
+    zeta_idx = out.index("plugin/zeta")
     assert alpha_idx < mu_idx < zeta_idx
 
 
 def test_tree_finding_marker_color_when_enabled():
     plugin = _plugin_ref("a", "1.0.0")
-    ref = _bundled("npm", "x", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    ref = _bundled("npm", "x", "1.0.0", attributed_to="plugin/a@1.0.0")
     finding = Finding(advisory_id="X", component=ref, confidence="high")
     colored = render_inventory_tree([plugin, ref], [finding], use_color=True, use_unicode=True)
     plain = render_inventory_tree([plugin, ref], [finding], use_color=False, use_unicode=True)
@@ -1308,7 +1308,7 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     plugin = ComponentRef(
         name="demo-plugin",
         version="1.0.0",
-        component_identity="claude-plugin/demo-plugin",
+        component_identity="plugin/demo-plugin",
         source_manifest=str(plugin_json),
         extra={"component_type": "plugin"},
     )
@@ -1336,7 +1336,7 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     )
 
     assert f"repo {tmp_path}" in out
-    assert "claude-plugin/demo-plugin@1.0.0" in out
+    assert "plugin/demo-plugin@1.0.0" in out
     assert "package deps/ (1)" in out
     assert "lodash@4.17.20 (from package.json)  [! GHSA-L]" in out
     assert "MCPs/ (1)" in out
@@ -1378,7 +1378,7 @@ def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
 def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
     """Two plugins with the same name and version must not cross-contaminate.
 
-    Both emit attributed_to = "claude-plugin/foo@1.0", so matching solely on
+    Both emit attributed_to = "plugin/foo@1.0", so matching solely on
     attributed_to would assign skill-A under plugin-B and vice-versa.  The fix
     scopes the attributed_to match to the ref's plugin root directory.
     """
@@ -1393,14 +1393,14 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
     plugin_a = ComponentRef(
         name="foo",
         version="1.0",
-        component_identity="claude-plugin/foo",
+        component_identity="plugin/foo",
         source_manifest=str(plugin_a_json),
         extra={"component_type": "plugin"},
     )
     plugin_b = ComponentRef(
         name="foo",
         version="1.0",
-        component_identity="claude-plugin/foo",
+        component_identity="plugin/foo",
         source_manifest=str(plugin_b_json),
         extra={"component_type": "plugin"},
     )
@@ -1416,14 +1416,14 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
         component_identity="skill/skill-a",
         source_manifest=str(skill_a_md),
         scope="agent-component",
-        attributed_to="claude-plugin/foo@1.0",
+        attributed_to="plugin/foo@1.0",
         extra={"component_type": "skill"},
     )
     skill_b = ComponentRef(
         component_identity="skill/skill-b",
         source_manifest=str(skill_b_md),
         scope="agent-component",
-        attributed_to="claude-plugin/foo@1.0",
+        attributed_to="plugin/foo@1.0",
         extra={"component_type": "skill"},
     )
 
@@ -1463,14 +1463,14 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
     outer_plugin = ComponentRef(
         name="foo",
         version="1.0",
-        component_identity="claude-plugin/foo",
+        component_identity="plugin/foo",
         source_manifest=str(outer_json),
         extra={"component_type": "plugin"},
     )
     inner_plugin = ComponentRef(
         name="foo",
         version="1.0",
-        component_identity="claude-plugin/foo",
+        component_identity="plugin/foo",
         source_manifest=str(inner_json),
         extra={"component_type": "plugin"},
     )
@@ -1485,14 +1485,14 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
         component_identity="skill/outer-skill",
         source_manifest=str(outer_skill_md),
         scope="agent-component",
-        attributed_to="claude-plugin/foo@1.0",
+        attributed_to="plugin/foo@1.0",
         extra={"component_type": "skill"},
     )
     inner_skill = ComponentRef(
         component_identity="skill/inner-skill",
         source_manifest=str(inner_skill_md),
         scope="agent-component",
-        attributed_to="claude-plugin/foo@1.0",
+        attributed_to="plugin/foo@1.0",
         extra={"component_type": "skill"},
     )
 
@@ -1768,9 +1768,9 @@ def test_endpoint_tree_flags_plugin_for_bundled_finding():
     """A clean plugin that bundles a vulnerable MCP gets `[! bundles: …]` on its
     header; the bundled leaf keeps its own direct `[! …]`."""
     plugin = _plugin_ref("a", "1.0.0")
-    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="plugin/a@1.0.0")
     out = render_inventory_tree([plugin, mcp], [_f("GHSA-CHILD", mcp)], use_unicode=True)
-    header = [ln for ln in out.splitlines() if "claude-plugin/a@1.0.0" in ln][0]
+    header = [ln for ln in out.splitlines() if "plugin/a@1.0.0" in ln][0]
     assert "[! bundles: GHSA-CHILD]" in header
     leaf = [ln for ln in out.splitlines() if "@x/mcp" in ln][0]
     assert "[! GHSA-CHILD]" in leaf
@@ -1788,11 +1788,11 @@ def test_endpoint_tree_direct_and_bundled_both_shown_no_dup():
     """Direct hit + vulnerable bundled child → both markers; the direct id is
     not duplicated into the bundles list."""
     plugin = _plugin_ref("a", "1.0.0")
-    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="claude-plugin/a@1.0.0")
+    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="plugin/a@1.0.0")
     out = render_inventory_tree(
         [plugin, mcp], [_f("GHSA-PLUGIN", plugin), _f("GHSA-CHILD", mcp)], use_unicode=True
     )
-    header = [ln for ln in out.splitlines() if "claude-plugin/a@1.0.0" in ln][0]
+    header = [ln for ln in out.splitlines() if "plugin/a@1.0.0" in ln][0]
     assert "[! GHSA-PLUGIN]" in header
     assert "[! bundles: GHSA-CHILD]" in header
     assert "bundles: GHSA-PLUGIN" not in header
@@ -1806,7 +1806,7 @@ def test_findings_section_shows_introduction_path_by_default():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".mcp.json",
-        attributed_to="claude-plugin/acme-devtools@1.0.0",
+        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
             "component_type": "mcp_server",
             "component_path": [

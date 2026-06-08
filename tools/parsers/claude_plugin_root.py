@@ -73,14 +73,14 @@ def _parse_manifest_refs(
             if isinstance(dep, str):
                 refs.append(
                     ComponentRef(
-                        component_identity=f"claude-plugin-dep/{dep}",
+                        component_identity=f"plugin-dep/{dep}",
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
                         attributed_to=attributed_to,
                     )
                 )
             elif isinstance(dep, dict) and dep.get("name"):
-                ident = f"claude-plugin-dep/{dep['name']}"
+                ident = f"plugin-dep/{dep['name']}"
                 if dep.get("version"):
                     ident = f"{ident}@{dep['version']}"
                 refs.append(

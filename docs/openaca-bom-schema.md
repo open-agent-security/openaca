@@ -96,6 +96,7 @@ suffix derived from the component observation fields.
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |
 | `openaca:source_locator` | Locator inside the source manifest. |
 | `openaca:attributed_to` | Parent plugin identity when a component was discovered through an active plugin. |
+| `openaca:agent_host` | Agent host surface that loads, exposes, or executes the component. |
 | `openaca:source_provenance` | JSON-encoded source provenance recovered from lockfiles or symlink targets. |
 
 ## Composition Edges
@@ -106,7 +107,7 @@ dependency edge from the plugin's `bom-ref` to the child component's `bom-ref`.
 
 ```json
 {
-  "ref": "claude-plugin/claude-plugins-official/github@unknown",
+  "ref": "plugin/claude-plugins-official/github@unknown",
   "dependsOn": ["mcp-remote/api.githubcopilot.com/mcp/"]
 }
 ```

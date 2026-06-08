@@ -20,8 +20,8 @@ def test_enabled_plugins_emitted():
     assert "anthropics/dev-tools" in names
     assert "experimental" not in names  # is_enabled was False
     identities = {r.component_identity for r in refs}
-    assert "claude-plugin/test-market/deployment-tools" in identities
-    assert "claude-plugin/test-market/anthropics/dev-tools" in identities
+    assert "plugin/test-market/deployment-tools" in identities
+    assert "plugin/test-market/anthropics/dev-tools" in identities
     assert all(r.version is None for r in refs)
 
 
@@ -35,7 +35,7 @@ def test_settings_plugin_matches_component_identity_advisory():
     advisory = {
         "id": "OpenACA-TEST-PLUGIN-1",
         "database_specific": {
-            "openaca": {"component_identity": "claude-plugin/test-market/deployment-tools"}
+            "openaca": {"component_identity": "plugin/test-market/deployment-tools"}
         },
     }
     findings = match(refs, [advisory])
@@ -61,7 +61,7 @@ def test_settings_plugin_unscoped_name(tmp_path):
     refs = parse(manifest)
     assert len(refs) == 1
     assert refs[0].name == "bare-name"
-    assert refs[0].component_identity == "claude-plugin/bare-name"
+    assert refs[0].component_identity == "plugin/bare-name"
     assert refs[0].extra["marketplace"] is None
 
 
@@ -79,8 +79,8 @@ def test_settings_same_plugin_name_different_marketplaces_have_distinct_identiti
     )
     refs = parse(manifest)
     assert {r.component_identity for r in refs} == {
-        "claude-plugin/market-one/shared",
-        "claude-plugin/market-two/shared",
+        "plugin/market-one/shared",
+        "plugin/market-two/shared",
     }
 
 

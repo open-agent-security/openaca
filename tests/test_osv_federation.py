@@ -155,6 +155,24 @@ def test_collect_osv_queries_uses_package_query_for_unpinned_mcp_refs():
     assert queries[1].label == "PyPI:my-mcp-tool (unpinned)"
 
 
+def test_collect_osv_queries_uses_package_query_for_parser_emitted_unpinned_mcp_refs():
+    refs = [
+        ComponentRef(component_identity="mcp-stdio/npx-unpinned:@scope/mcp-server"),
+        ComponentRef(component_identity="mcp-stdio/uvx-unpinned:my-mcp-tool"),
+    ]
+
+    queries = collect_osv_queries(refs)
+
+    assert [query.payload for query in queries] == [
+        {"package": {"name": "@scope/mcp-server", "ecosystem": "npm"}},
+        {"package": {"name": "my-mcp-tool", "ecosystem": "PyPI"}},
+    ]
+    assert [query.label for query in queries] == [
+        "npm:@scope/mcp-server (unpinned)",
+        "PyPI:my-mcp-tool (unpinned)",
+    ]
+
+
 def test_collect_osv_queries_skips_plain_unversioned_package_refs():
     refs = [
         ComponentRef(ecosystem="npm", name="left-pad"),

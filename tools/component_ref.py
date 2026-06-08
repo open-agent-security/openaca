@@ -52,6 +52,26 @@ def is_package_source_ref(ref: "ComponentRef") -> bool:
     return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
 
 
+def _unpinned_mcp_package_from_identity(identity: object) -> Optional[tuple[str, str]]:
+    if not isinstance(identity, str):
+        return None
+    for prefix, ecosystem in UNPINNED_MCP_IDENTITY_PREFIXES.items():
+        if identity.startswith(prefix):
+            return ecosystem, identity[len(prefix) :]
+    return None
+
+
+def _mcp_package_launcher(install_source: str) -> str | None:
+    tokens = install_source.split()
+    if not tokens:
+        return None
+    if tokens[0] in {"npx", "uvx"}:
+        return tokens[0]
+    if len(tokens) >= 3 and tokens[:3] == ["uv", "tool", "run"]:
+        return "uvx"
+    return None
+
+
 def is_unpinned_mcp_package_launch(ref: "ComponentRef") -> bool:
     if ref.version or not (ref.ecosystem and ref.name):
         return False
@@ -60,16 +80,18 @@ def is_unpinned_mcp_package_launch(ref: "ComponentRef") -> bool:
     install_source = (ref.extra or {}).get("install_source")
     if not isinstance(install_source, str) or not install_source.strip():
         return False
-    launcher = install_source.split(maxsplit=1)[0]
+    launcher = _mcp_package_launcher(install_source)
     ecosystem = purl_type_for_ecosystem(ref.ecosystem)
     return (ecosystem == "npm" and launcher == "npx") or (ecosystem == "pypi" and launcher == "uvx")
 
 
 def unpinned_mcp_package(ref: "ComponentRef") -> Optional[tuple[str, str]]:
-    if ref.component_identity:
-        for prefix, ecosystem in UNPINNED_MCP_IDENTITY_PREFIXES.items():
-            if ref.component_identity.startswith(prefix):
-                return ecosystem, ref.component_identity[len(prefix) :]
+    source_package = _unpinned_mcp_package_from_identity(ref.component_identity)
+    if source_package is not None:
+        return source_package
+    source_package = _unpinned_mcp_package_from_identity((ref.extra or {}).get("source_identity"))
+    if source_package is not None:
+        return source_package
     if is_unpinned_mcp_package_launch(ref):
         assert ref.ecosystem is not None
         assert ref.name is not None

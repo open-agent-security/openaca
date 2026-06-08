@@ -7,6 +7,7 @@ from tools.component_ref import (
     encode_purl_name,
     is_package_source_ref,
     safe_pinned_mcp_install_source,
+    unpinned_mcp_package,
 )
 
 
@@ -122,6 +123,29 @@ def test_canonical_ecosystem(ecosystem, expected):
 def test_package_source_ref_accepts_bom_canonicalized_ecosystems():
     assert is_package_source_ref(ComponentRef(ecosystem="GitHub", name="org/repo"))
     assert is_package_source_ref(ComponentRef(ecosystem="Docker", name="org/image"))
+
+
+def test_unpinned_mcp_package_uses_source_identity_for_uv_tool_run_bom_ref():
+    ref = ComponentRef(
+        component_identity="mcp-server/weather",
+        extra={
+            "component_type": "mcp_server",
+            "source_identity": "mcp-stdio/uvx-unpinned:weather-mcp",
+            "install_source": "uv tool run weather-mcp",
+        },
+    )
+
+    assert unpinned_mcp_package(ref) == ("PyPI", "weather-mcp")
+
+
+def test_unpinned_mcp_package_treats_uv_tool_run_as_uvx_launch():
+    ref = ComponentRef(
+        ecosystem="PyPI",
+        name="weather-mcp",
+        extra={"component_type": "mcp_server", "install_source": "uv tool run weather-mcp"},
+    )
+
+    assert unpinned_mcp_package(ref) == ("PyPI", "weather-mcp")
 
 
 @pytest.mark.parametrize(

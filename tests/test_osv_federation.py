@@ -144,15 +144,22 @@ def test_collect_osv_queries_uses_package_query_for_unpinned_mcp_refs():
             name="my-mcp-tool",
             extra={"component_type": "mcp_server", "install_source": "uvx my-mcp-tool"},
         ),
+        ComponentRef(
+            ecosystem="PyPI",
+            name="weather-mcp",
+            extra={"component_type": "mcp_server", "install_source": "uv tool run weather-mcp"},
+        ),
     ]
 
     queries = collect_osv_queries(refs)
 
-    assert len(queries) == 2
+    assert len(queries) == 3
     assert queries[0].payload == {"package": {"name": "@scope/mcp-server", "ecosystem": "npm"}}
     assert queries[0].label == "npm:@scope/mcp-server (unpinned)"
     assert queries[1].payload == {"package": {"name": "my-mcp-tool", "ecosystem": "PyPI"}}
     assert queries[1].label == "PyPI:my-mcp-tool (unpinned)"
+    assert queries[2].payload == {"package": {"name": "weather-mcp", "ecosystem": "PyPI"}}
+    assert queries[2].label == "PyPI:weather-mcp (unpinned)"
 
 
 def test_collect_osv_queries_uses_package_query_for_parser_emitted_unpinned_mcp_refs():

@@ -61,6 +61,8 @@ def canonical_component_identity(ref: "ComponentRef") -> Optional[str]:
         server_name = _component_path_leaf(ref, "mcp_server")
         if server_name:
             return f"mcp-server/{server_name}"
+        if ref.component_identity and ref.component_identity.startswith("mcp-server/"):
+            return ref.component_identity
         if ref.name:
             return f"mcp-server/{ref.name}"
 

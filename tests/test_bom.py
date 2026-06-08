@@ -492,6 +492,34 @@ def test_infer_unpinned_mcp_package_option_terminator():
     assert refs[0].name == "@scope/pkg"
 
 
+def test_infer_unpinned_uvx_package_skips_short_python_flag():
+    """uvx -p 3.11 my-tool must treat -p as --python, not a package flag."""
+    doc = {
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "mcp-server/uvx-short-python",
+                "name": "mcp-server/uvx-short-python",
+                "properties": [
+                    {"name": "openaca:identity", "value": "mcp-server/uvx-short-python"},
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:install_source", "value": "uvx -p 3.11 my-tool"},
+                    {"name": "openaca:source_manifest", "value": ".mcp.json"},
+                    {
+                        "name": "openaca:source_locator",
+                        "value": "$.mcpServers.uvx-short-python",
+                    },
+                ],
+            },
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(doc)
+
+    assert refs[0].ecosystem == "PyPI"
+    assert refs[0].name == "my-tool"
+
+
 def _metadata_property(doc: dict, name: str) -> str | None:
     for prop in doc["metadata"]["properties"]:
         if prop["name"] == name:

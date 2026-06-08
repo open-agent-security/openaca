@@ -364,8 +364,10 @@ def _is_binary_mcp_component(
 
 
 # Flags whose value IS the package spec to report (takes precedence over positional arg).
-# npx --package/-p installs the named package; uvx --from installs from that source.
-_NPX_UVX_PACKAGE_FLAGS = frozenset({"--package", "-p", "--from"})
+_PACKAGE_FLAGS_BY_LAUNCHER = {
+    "npx": frozenset({"--package", "-p"}),
+    "uvx": frozenset({"--from"}),
+}
 
 _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
     {
@@ -383,14 +385,16 @@ _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
 def _extract_package_from_install_source(install_source: str) -> str | None:
     """Return the package identifier from an npx/uvx command.
 
-    Prefers explicit --package/-p/--from flag values over the first positional
-    arg, so that `npx --package @scope/pkg cmd …` → `@scope/pkg` rather than
-    `cmd`. Falls back to the first positional arg, skipping value-taking flags
+    Prefers explicit package flag values over the first positional arg, so that
+    `npx --package @scope/pkg cmd …` → `@scope/pkg` and `uvx --from pkg cmd` →
+    `pkg`. Falls back to the first positional arg, skipping value-taking flags
     like `-y` and `--python 3.11`.
     """
     tokens = install_source.split()
     if len(tokens) < 2:
         return None
+    launcher = tokens[0]
+    package_flags = _PACKAGE_FLAGS_BY_LAUNCHER.get(launcher, frozenset())
     # First pass: explicit package flags take precedence over the positional arg.
     i = 1
     while i < len(tokens):
@@ -399,13 +403,13 @@ def _extract_package_from_install_source(install_source: str) -> str | None:
             break
         if token.startswith("-"):
             # --package=<val> / --from=<val> inline form
-            for flag in _NPX_UVX_PACKAGE_FLAGS:
+            for flag in package_flags:
                 if token.startswith(f"{flag}="):
                     pkg = token[len(flag) + 1 :]
                     if pkg:
                         return pkg
             # --package <val> / --from <val> space-separated form
-            if token in _NPX_UVX_PACKAGE_FLAGS and i + 1 < len(tokens):
+            if token in package_flags and i + 1 < len(tokens):
                 candidate = tokens[i + 1]
                 if not candidate.startswith("-"):
                     return candidate

@@ -641,6 +641,78 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
     assert props["openaca:install_source"] == "bun"
 
 
+def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
+    tmp_path, monkeypatch
+):
+    # Realistic parser output: component_path causes canonical_component_identity() to return
+    # mcp-server/<name>. _is_package_mcp_component must detect the ADR-0029 unpinned case
+    # (first argv token is npx, no PURL) and extract the package, skipping flags like -y.
+    # Regression test: before this fix, the component fell through to _trim_pinned_install_source
+    # and the fallback kept two raw tokens ("npx -y") instead of "npx @scope/pkg".
+    ref = ComponentRef(
+        component_identity="mcp-stdio/npx-unpinned:@scope/pkg",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.my-mcp",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx -y @scope/pkg --token sk-1234",
+            "component_path": [{"type": "mcp_server", "name": "my-mcp"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/my-mcp"
+    assert props["openaca:install_source"] == "npx @scope/pkg"
+
+
+def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
+    tmp_path, monkeypatch
+):
+    # Same as above but for a uvx-launched unpinned MCP.
+    ref = ComponentRef(
+        component_identity="mcp-stdio/uvx-unpinned:my-tool",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.my-tool",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "uvx --python 3.11 my-tool --api-key secret",
+            "component_path": [{"type": "mcp_server", "name": "my-tool"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/my-tool"
+    # --python is a value-taking flag; "3.11" is its argument, not the package.
+    # "my-tool" is the first positional after the flags.
+    assert props["openaca:install_source"] == "uvx my-tool"
+
+
 def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id=None)
     pending_dir = tmp_path / "pending"

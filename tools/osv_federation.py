@@ -36,7 +36,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from tools.component_ref import ComponentRef, unpinned_mcp_package
+from tools.component_ref import ComponentRef
+from tools.identity import unpinned_mcp_package
 from tools.overlays import id_set
 
 _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"

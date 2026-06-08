@@ -33,7 +33,8 @@ from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.component_ref import ComponentRef, unpinned_mcp_package
+from tools.component_ref import ComponentRef
+from tools.identity import unpinned_mcp_package
 
 # Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
 # ranges. The current matcher only evaluates packaging.Version ranges, so refs

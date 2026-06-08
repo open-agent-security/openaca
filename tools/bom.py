@@ -261,7 +261,9 @@ def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
 
 def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     props: list[dict[str, str]] = []
-    _append_prop(props, "openaca:identity", canonical_component_identity(ref))
+    identity = canonical_component_identity(ref)
+    _append_prop(props, "openaca:identity", identity)
+    _append_prop(props, "openaca:source_identity", _source_identity(ref, identity))
     _append_prop(props, "openaca:component_type", (ref.extra or {}).get("component_type"))
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
@@ -320,6 +322,9 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     component_type = props.get("openaca:component_type")
     if component_type:
         extra["component_type"] = component_type
+    source_identity = props.get("openaca:source_identity")
+    if source_identity:
+        extra["source_identity"] = source_identity
     agent_host = props.get("openaca:agent_host")
     if agent_host:
         extra["agent_host"] = agent_host
@@ -362,6 +367,13 @@ def _agent_host(ref: ComponentRef) -> str | None:
         return None
     value = runtime_hosts[0]
     return value if isinstance(value, str) and value else None
+
+
+def _source_identity(ref: ComponentRef, identity: str | None) -> str | None:
+    source_identity = ref.component_identity
+    if not source_identity or source_identity == identity:
+        return None
+    return source_identity
 
 
 # Flags whose value IS the package spec (takes precedence over positional arg).

@@ -45,6 +45,9 @@ The identity model is:
   `mcp-server/playwright`,
   `plugin/claude-plugins-official/github`, or
   `plugin/claude-plugins-official/discord/deps/npm/hono`.
+- `openaca:source_identity`: source-less component identity used for advisory
+  matching when no package PURL or Git source coordinate exists, such as
+  `mcp-remote/api.example.com/mcp`. It is not the graph occurrence key.
 - `openaca:agent_host`: agent host surface that loads, exposes, or executes
   the component, such as `claude-code`, `claude-desktop`, `cursor`,
   `windsurf`, or `vscode`. It is provenance/execution context, not a package
@@ -84,9 +87,12 @@ not the primary identity mechanism.
 
 Advisory matching continues to use source identity (`purl`, Git query
 provenance, or explicit OpenACA component identity targets for source-less
-components). A finding row may still attach to a CycloneDX `bom-ref` when a
-specific BOM row is needed, because a single agent-graph occurrence identity
-can appear more than once in unusual BOMs.
+components). For generated BOMs, source-less component identities that differ
+from `openaca:identity` are preserved as `openaca:source_identity` so `scan bom`
+can reproduce the same advisory matching behavior as the original scan. A
+finding row may still attach to a CycloneDX `bom-ref` when a specific BOM row
+is needed, because a single agent-graph occurrence identity can appear more
+than once in unusual BOMs.
 
 ## Alternatives considered
 

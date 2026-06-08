@@ -73,11 +73,25 @@ def test_versionless_npm_ref_matches_as_unknown_confidence():
         version=None,
         source_manifest=".mcp.json",
         source_locator="$.mcpServers.my-mcp",
+        extra={"component_type": "mcp_server", "install_source": "npx @scope/my-mcp"},
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
     assert findings[0].advisory_id == "CVE-2026-0001"
     assert findings[0].confidence == "unknown"
+
+
+def test_versionless_non_mcp_package_ref_does_not_match_as_unpinned_launch():
+    advisories = [make_advisory("CVE-2026-0001", "npm", "left-pad", "2.0.0")]
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="left-pad",
+        version=None,
+        source_manifest="package.json",
+        source_locator="dependencies.left-pad",
+    )
+
+    assert match(refs=[ref], advisories=advisories) == []
 
 
 def test_unparseable_version_emits_low_confidence():

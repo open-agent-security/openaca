@@ -305,7 +305,8 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
         prop.get("name"): prop.get("value") for prop in properties if isinstance(prop, dict)
     }
     component_name = component.get("name")
-    if _is_binary_mcp_component(props_by_name, component_name):
+    component_purl = component.get("purl")
+    if _is_binary_mcp_component(props_by_name, component_name, component_purl):
         prepared_props = [
             _trim_binary_install_source(prop) if isinstance(prop, dict) else prop
             for prop in properties
@@ -330,12 +331,36 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
     return component
 
 
-def _is_binary_mcp_component(props_by_name: dict[Any, Any], component_name: object) -> bool:
+def _is_binary_mcp_component(
+    props_by_name: dict[Any, Any],
+    component_name: object,
+    component_purl: object = None,
+) -> bool:
     identity = props_by_name.get("openaca:identity")
     legacy_name = component_name if isinstance(component_name, str) else ""
-    return (
+    if (
         isinstance(identity, str) and identity.startswith(("mcp-stdio/binary:", "mcp-stdio/local:"))
-    ) or legacy_name.startswith(("mcp-stdio/binary:", "mcp-stdio/local:"))
+    ) or legacy_name.startswith(("mcp-stdio/binary:", "mcp-stdio/local:")):
+        return True
+    # ADR-0029: binary/local MCPs now carry mcp-server/<name> identity.
+    # Distinguish from package-backed MCPs by absence of PURL and from
+    # package-manager-launched MCPs (npx/uvx) by the install_source first token.
+    if not (
+        props_by_name.get("openaca:component_type") == "mcp_server"
+        and isinstance(identity, str)
+        and identity.startswith("mcp-server/")
+        and not component_purl
+        and "openaca:transport" not in props_by_name
+        and "openaca:install_source" in props_by_name
+    ):
+        return False
+    install_source = props_by_name.get("openaca:install_source", "")
+    first = (
+        install_source.split(maxsplit=1)[0]
+        if isinstance(install_source, str) and install_source.strip()
+        else ""
+    )
+    return first not in ("npx", "uvx")
 
 
 def _is_package_mcp_component(props_by_name: dict[Any, Any], component_name: object) -> bool:

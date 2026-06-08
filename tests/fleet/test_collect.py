@@ -577,6 +577,70 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
 
 
+def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path, monkeypatch):
+    # Realistic parser output: component_path is always set by _mcp_ref_extra, which causes
+    # canonical_component_identity() to return mcp-server/<name> instead of mcp-stdio/binary:<cmd>.
+    # Regression test for ADR-0029 identity: binary install_source must still be trimmed to 1 token.
+    ref = ComponentRef(
+        component_identity="mcp-stdio/binary:python",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.my-mcp",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "python server.py --tenant alice --secret sk-1234",
+            "component_path": [{"type": "mcp_server", "name": "my-mcp"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/my-mcp"
+    assert props["openaca:install_source"] == "python"
+
+
+def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path, monkeypatch):
+    # Same as above for local (bun/php) MCPs whose identity is now mcp-server/<name>.
+    ref = ComponentRef(
+        component_identity="mcp-stdio/local:discord",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.discord",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "bun run --cwd /home/user/plugin --shell=bun start",
+            "component_path": [{"type": "mcp_server", "name": "discord"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/discord"
+    assert props["openaca:install_source"] == "bun"
+
+
 def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id=None)
     pending_dir = tmp_path / "pending"

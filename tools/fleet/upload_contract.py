@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
+
 
 class FleetUploadContractError(Exception):
     pass
@@ -78,40 +80,33 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
         if isinstance(name, str):
             props_by_name[name] = (prop.get("value"), index)
     identity = props_by_name.get("openaca:identity", (None, -1))[0]
+    source_identity = props_by_name.get("openaca:source_identity", (None, -1))[0]
     component_type = props_by_name.get("openaca:component_type", (None, -1))[0]
     install_source, install_source_index = props_by_name.get("openaca:install_source", (None, -1))
     component_purl = value.get("purl")
+    graph_mcp_without_purl = (
+        component_type == "mcp_server"
+        and isinstance(identity, str)
+        and identity.startswith("mcp-server/")
+        and not component_purl
+        and "openaca:transport" not in props_by_name
+        and isinstance(install_source, str)
+        and install_source.strip()
+    )
+    is_package = (
+        safe_unpinned_mcp_install_source(
+            identity=identity,
+            source_identity=source_identity,
+            component_name=value.get("name"),
+            install_source=install_source,
+        )
+        is not None
+    )
     is_binary = isinstance(identity, str) and identity.startswith(
         ("mcp-stdio/binary:", "mcp-stdio/local:")
     )
-    # ADR-0029: binary/local MCPs carry mcp-server/<name> identity with no PURL,
-    # no transport, and an install_source that does not start with npx/uvx.
-    if not is_binary and (
-        component_type == "mcp_server"
-        and isinstance(identity, str)
-        and identity.startswith("mcp-server/")
-        and not component_purl
-        and "openaca:transport" not in props_by_name
-        and isinstance(install_source, str)
-        and install_source.strip()
-    ):
-        first = install_source.split(maxsplit=1)[0]
-        is_binary = first not in ("npx", "uvx")
-    is_package = isinstance(identity, str) and identity.startswith(
-        ("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:")
-    )
-    # ADR-0029: unpinned package MCPs carry mcp-server/<name> identity with no PURL.
-    if not is_package and (
-        component_type == "mcp_server"
-        and isinstance(identity, str)
-        and identity.startswith("mcp-server/")
-        and not component_purl
-        and "openaca:transport" not in props_by_name
-        and isinstance(install_source, str)
-        and install_source.strip()
-    ):
-        first = install_source.split(maxsplit=1)[0]
-        is_package = first in ("npx", "uvx")
+    if not is_binary and graph_mcp_without_purl and not is_package:
+        is_binary = not is_mcp_package_launch_install_source(install_source)
     is_pinned_mcp = component_type == "mcp_server" and (
         identity is None
         or (

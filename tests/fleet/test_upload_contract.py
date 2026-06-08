@@ -397,6 +397,57 @@ def test_allows_adr0029_unpinned_npx_mcp_clean_install_source():
     enforce_fleet_upload_contract(payload)
 
 
+def test_rejects_adr0029_unpinned_uv_tool_run_mcp_install_source_with_raw_argv():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:identity", "value": "mcp-server/weather"},
+                        {
+                            "name": "openaca:source_identity",
+                            "value": "mcp-stdio/uvx-unpinned:weather-mcp",
+                        },
+                        {
+                            "name": "openaca:install_source",
+                            "value": "uv tool run weather-mcp --token sk-1234",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[3].value" in str(exc.value)
+    assert "sk-1234" not in str(exc.value)
+
+
+def test_allows_adr0029_unpinned_uv_tool_run_mcp_clean_install_source():
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:identity", "value": "mcp-server/weather"},
+                        {
+                            "name": "openaca:source_identity",
+                            "value": "mcp-stdio/uvx-unpinned:weather-mcp",
+                        },
+                        {"name": "openaca:install_source", "value": "uvx weather-mcp"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
 def test_rejects_adr0029_pinned_mcp_install_source_with_raw_argv():
     # ADR-0029: pinned package MCPs carry mcp-server/<name> identity plus a PURL.
     # The contract must enforce the 2-token limit for this identity shape too.

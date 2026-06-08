@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.identity import infer_unpinned_mcp_package, source_identity_for_bom
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
 CYCLONEDX_SPEC_VERSION = "1.7"
@@ -134,7 +135,7 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
     parsed = _parse_purl(purl) if isinstance(purl, str) else {}
     extra = _extra_from_properties(props)
     if not parsed:
-        inferred_package = _infer_unpinned_mcp_package(extra)
+        inferred_package = infer_unpinned_mcp_package(extra)
         if inferred_package is not None:
             ecosystem, name = inferred_package
             parsed = {"ecosystem": ecosystem, "name": name}
@@ -263,7 +264,7 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     props: list[dict[str, str]] = []
     identity = canonical_component_identity(ref)
     _append_prop(props, "openaca:identity", identity)
-    _append_prop(props, "openaca:source_identity", _source_identity(ref, identity))
+    _append_prop(props, "openaca:source_identity", source_identity_for_bom(ref, identity))
     _append_prop(props, "openaca:component_type", (ref.extra or {}).get("component_type"))
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
@@ -367,129 +368,6 @@ def _agent_host(ref: ComponentRef) -> str | None:
         return None
     value = runtime_hosts[0]
     return value if isinstance(value, str) and value else None
-
-
-def _source_identity(ref: ComponentRef, identity: str | None) -> str | None:
-    source_identity = ref.component_identity
-    if not source_identity or source_identity == identity:
-        return None
-    return source_identity
-
-
-# Flags whose value IS the package spec (takes precedence over positional arg).
-# --with is intentionally excluded: in uvx it installs an extra dep, not the main package.
-_PACKAGE_FLAGS_BY_LAUNCHER = {
-    "npx": frozenset({"--package", "-p"}),
-    "uvx": frozenset({"--from"}),
-}
-
-# Flags that consume the next token as their value (used to skip past them).
-_NPX_UVX_FLAGS_WITH_VALUE = frozenset(
-    {
-        "--package",
-        "-p",
-        "--from",
-        "--with",
-        "--python",
-        "--call",
-        "-c",
-    }
-)
-
-
-def _launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
-    if len(tokens) >= 3 and tokens[:3] == ["uv", "tool", "run"]:
-        return "uvx", tokens[3:]
-    return tokens[0], tokens[1:]
-
-
-def _extract_mcp_package(install_source: str) -> str | None:
-    """Return the package identifier from an npx/uvx install command.
-
-    Prefers explicit package flag values over the first positional arg, so
-    `npx --package @scope/pkg cmd` → `@scope/pkg` and `uvx --from pkg cmd` →
-    `pkg`. Falls back to the first positional arg, skipping value-taking flags
-    like `-y` and `--python`.
-    """
-    tokens = install_source.split()
-    if len(tokens) < 2:
-        return None
-    launcher, args = _launcher_and_args(tokens)
-    if not args:
-        return None
-    package_flags = _PACKAGE_FLAGS_BY_LAUNCHER.get(launcher, frozenset())
-    # First pass: explicit package flags take precedence over the positional arg.
-    i = 0
-    while i < len(args):
-        token = args[i]
-        if token == "--":
-            break
-        if token.startswith("-"):
-            for flag in package_flags:
-                if token.startswith(f"{flag}="):
-                    pkg = token[len(flag) + 1 :]
-                    if pkg:
-                        return pkg
-            if token in package_flags and i + 1 < len(args):
-                candidate = args[i + 1]
-                if not candidate.startswith("-"):
-                    return candidate
-        i += 1
-    # Second pass: first positional arg, skipping value-taking flags.
-    # After `--` (option terminator), all remaining tokens are positional.
-    skip_next = False
-    after_terminator = False
-    for token in args:
-        if skip_next:
-            skip_next = False
-            continue
-        if after_terminator:
-            return token
-        if token == "--":
-            after_terminator = True
-            continue
-        if token.startswith("-"):
-            if token in _NPX_UVX_FLAGS_WITH_VALUE and "=" not in token:
-                skip_next = True
-            continue
-        return token
-    return None
-
-
-def _infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
-    if extra.get("component_type") != "mcp_server":
-        return None
-    install_source = extra.get("install_source")
-    if not isinstance(install_source, str):
-        return None
-    parts = install_source.split()
-    if len(parts) < 2:
-        return None
-    launcher, _args = _launcher_and_args(parts)
-    package = _extract_mcp_package(install_source)
-    if package is None:
-        return None
-    if launcher == "npx" and _safe_package_name(package, allow_scope=True):
-        return ("npm", package)
-    if launcher == "uvx" and _safe_package_name(package, allow_scope=False):
-        return ("PyPI", package)
-    return None
-
-
-def _safe_package_name(value: str, *, allow_scope: bool) -> bool:
-    if "://" in value or value.startswith(("/", ".")):
-        return False
-    if allow_scope and value.startswith("@"):
-        parts = value.split("/", 1)
-        if len(parts) != 2:
-            return False
-        scope = parts[0][1:]
-        name = parts[1]
-        return all(
-            part.replace(".", "").replace("_", "").replace("-", "").isalnum()
-            for part in (scope, name)
-        )
-    return value.replace(".", "").replace("_", "").replace("-", "").isalnum()
 
 
 def _parse_purl(purl: str) -> dict[str, str]:

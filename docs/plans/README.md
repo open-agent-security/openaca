@@ -33,6 +33,9 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 024 | [bun.lock parsing (npm transitive deps for bun MCP plugins)](024-bun-lock-parsing.md) | ✅ Done | 023 |
 | 025 | [OSV-native query semantics (GitHub commit / Git tag / Docker skip)](025-osv-query-semantics.md) | ✅ Done | 021 |
 | 026 | [openaca.core consumption facade](026-openaca-core-facade.md) | ✅ Done | 025 |
+| 027 | [Fleet deploy script tests](027-fleet-deploy-script-tests.md) | ✅ Done | 024 |
+| 029 | [Agent graph occurrence identity](029-agent-graph-identity.md) | ✅ Done | 026 |
+| 030 | [Identity semantics hardening](030-identity-hardening.md) | 🟡 Active | 029 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

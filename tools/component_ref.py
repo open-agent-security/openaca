@@ -48,6 +48,19 @@ def is_package_source_ref(ref: "ComponentRef") -> bool:
     return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
 
 
+def is_unpinned_mcp_package_launch(ref: "ComponentRef") -> bool:
+    if ref.version or not (ref.ecosystem and ref.name):
+        return False
+    if (ref.extra or {}).get("component_type") != "mcp_server":
+        return False
+    install_source = (ref.extra or {}).get("install_source")
+    if not isinstance(install_source, str) or not install_source.strip():
+        return False
+    launcher = install_source.split(maxsplit=1)[0]
+    ecosystem = purl_type_for_ecosystem(ref.ecosystem)
+    return (ecosystem == "npm" and launcher == "npx") or (ecosystem == "pypi" and launcher == "uvx")
+
+
 def canonical_component_identity(ref: "ComponentRef") -> Optional[str]:
     """Return the OpenACA agent-graph occurrence identity for a component.
 

@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, is_unpinned_mcp_package_launch
 
 _UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
     "mcp-stdio/npx-unpinned:": "npm",
@@ -119,9 +119,10 @@ def _match_one(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Find
     if ref.ecosystem and ref.name:
         if ref.ecosystem in _FORGE_ECOSYSTEMS:
             return _match_git_ref(ref, advisories)
-        if not ref.version:
-            # No version → inferred unpinned launch; match as unknown confidence.
+        if is_unpinned_mcp_package_launch(ref):
             return _match_unpinned(ref, (ref.ecosystem, ref.name), advisories)
+        if ref.version is None:
+            return []
         return _match_versioned(ref, advisories)
 
     if ref.component_identity:

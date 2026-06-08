@@ -371,6 +371,26 @@ def test_unpinned_uvx_matches_pypi_advisory():
     assert findings[0].confidence == "unknown"
 
 
+def test_unpinned_uv_tool_run_bom_source_identity_matches_pypi_advisory():
+    advisories = [make_advisory("CVE-2026-0005", "PyPI", "weather-mcp", "0.5.0")]
+    ref = ComponentRef(
+        component_identity="mcp-server/weather",
+        source_manifest="mcp.json",
+        source_locator="$.mcpServers.weather",
+        extra={
+            "component_type": "mcp_server",
+            "source_identity": "mcp-stdio/uvx-unpinned:weather-mcp",
+            "install_source": "uv tool run weather-mcp",
+        },
+    )
+
+    findings = match(refs=[ref], advisories=advisories)
+
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-0005"
+    assert findings[0].confidence == "unknown"
+
+
 def test_binary_component_identity_does_not_match():
     """An mcp-stdio/binary:<path> identity has no package info; must not falsely match."""
     advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]

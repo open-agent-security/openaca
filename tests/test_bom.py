@@ -135,6 +135,48 @@ def test_remote_mcp_bom_preserves_source_identity_for_matching():
     assert findings[0].advisory_id == "MAL-2026-REMOTE"
 
 
+def test_uv_tool_run_bom_preserves_source_identity_for_matching():
+    ref = ComponentRef(
+        component_identity="mcp-stdio/uvx-unpinned:weather-mcp",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.weather",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "uv tool run weather-mcp",
+            "component_path": [{"type": "mcp_server", "name": "weather"}],
+        },
+    )
+    advisory = {
+        "id": "CVE-2026-UVTOOL",
+        "affected": [
+            {
+                "package": {"ecosystem": "PyPI", "name": "weather-mcp"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [{"introduced": "0"}, {"fixed": "1.0.0"}],
+                    }
+                ],
+            }
+        ],
+    }
+
+    doc = build_agent_bom(
+        [ref], target_type="endpoint", target="endpoint:user-scope"
+    ).to_cyclonedx()
+
+    component = _component(doc, "mcp-server/weather")
+    assert _property(component, "openaca:identity") == "mcp-server/weather"
+    assert _property(component, "openaca:source_identity") == "mcp-stdio/uvx-unpinned:weather-mcp"
+    refs = component_refs_from_cyclonedx(doc)
+    assert refs[0].component_identity == "mcp-server/weather"
+    assert refs[0].extra["source_identity"] == "mcp-stdio/uvx-unpinned:weather-mcp"
+    findings = match(refs=refs, advisories=[advisory])
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-UVTOOL"
+    assert findings[0].confidence == "unknown"
+
+
 def test_plugin_dependency_bom_keeps_purl_as_source_identity_only():
     ref = ComponentRef(
         ecosystem="npm",

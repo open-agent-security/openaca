@@ -397,6 +397,12 @@ _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
 )
 
 
+def _launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
+    if len(tokens) >= 3 and tokens[:3] == ["uv", "tool", "run"]:
+        return "uvx", tokens[3:]
+    return tokens[0], tokens[1:]
+
+
 def _extract_mcp_package(install_source: str) -> str | None:
     """Return the package identifier from an npx/uvx install command.
 
@@ -408,12 +414,14 @@ def _extract_mcp_package(install_source: str) -> str | None:
     tokens = install_source.split()
     if len(tokens) < 2:
         return None
-    launcher = tokens[0]
+    launcher, args = _launcher_and_args(tokens)
+    if not args:
+        return None
     package_flags = _PACKAGE_FLAGS_BY_LAUNCHER.get(launcher, frozenset())
     # First pass: explicit package flags take precedence over the positional arg.
-    i = 1
-    while i < len(tokens):
-        token = tokens[i]
+    i = 0
+    while i < len(args):
+        token = args[i]
         if token == "--":
             break
         if token.startswith("-"):
@@ -422,8 +430,8 @@ def _extract_mcp_package(install_source: str) -> str | None:
                     pkg = token[len(flag) + 1 :]
                     if pkg:
                         return pkg
-            if token in package_flags and i + 1 < len(tokens):
-                candidate = tokens[i + 1]
+            if token in package_flags and i + 1 < len(args):
+                candidate = args[i + 1]
                 if not candidate.startswith("-"):
                     return candidate
         i += 1
@@ -431,7 +439,7 @@ def _extract_mcp_package(install_source: str) -> str | None:
     # After `--` (option terminator), all remaining tokens are positional.
     skip_next = False
     after_terminator = False
-    for token in tokens[1:]:
+    for token in args:
         if skip_next:
             skip_next = False
             continue
@@ -457,7 +465,7 @@ def _infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None
     parts = install_source.split()
     if len(parts) < 2:
         return None
-    launcher = parts[0]
+    launcher, _args = _launcher_and_args(parts)
     package = _extract_mcp_package(install_source)
     if package is None:
         return None

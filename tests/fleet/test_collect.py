@@ -743,6 +743,37 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
     assert props["openaca:install_source"] == "uvx my-tool"
 
 
+def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="mcp-stdio/uvx-unpinned:weather-mcp",
+        source_manifest=".mcp.json",
+        source_locator="mcpServers.weather",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "uv tool run weather-mcp --token secret",
+            "component_path": [{"type": "mcp_server", "name": "weather"}],
+        },
+    )
+
+    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+
+    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+
+    props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
+    assert props["openaca:identity"] == "mcp-server/weather"
+    assert props["openaca:source_identity"] == "mcp-stdio/uvx-unpinned:weather-mcp"
+    assert props["openaca:install_source"] == "uvx weather-mcp"
+
+
 @pytest.mark.parametrize(
     "raw_source, expected",
     [

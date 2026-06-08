@@ -7,16 +7,20 @@ name: Autofix
 #      address...`  ->  claude.yml fires, claude reads the review, fixes
 #      it, pushes commits, posts a "Claude finished" summary comment.
 #
-#   2. Claude bot's "finished" summary is itself the trigger for the second
-#      bounce: this workflow posts `@codex review`  ->  Codex re-reviews
-#      HEAD on the same PR. (Codex auto-reviews on PR open, draft->ready,
-#      and explicit @codex review comments — but NOT on subsequent pushes.
-#      Without this bounce, claude's fixes land unreviewed.)
+#   2. Any new commits land on a PR head (`pull_request: synchronize`) ->
+#      this workflow posts `@codex review` -> Codex re-reviews HEAD. ONE
+#      job covers every source of new commits — the claude bot's fixes, a
+#      human / local-agent push, AND the auto-rebase force-push below —
+#      because `synchronize` fires regardless of who pushed. (Codex
+#      auto-reviews on PR open / draft->ready natively, but NOT on
+#      subsequent pushes; without this, later commits land unreviewed.)
 #
 # The two bounces together produce: codex-flag -> claude-fix ->
-# codex-rereview -> ... bounded by the claude-side iteration cap below.
-# Codex is silent when clean (thumbs reaction), so an unnecessary @codex
-# review on a no-op SHA costs one cheap call with no PR noise.
+# codex-rereview -> ... bounded by the claude-side iteration cap in
+# bounce 1 (the cap counts claude runs, so push-driven re-reviews add
+# entry points, not an unbounded cycle). Codex is silent when clean
+# (thumbs reaction), so an unnecessary @codex review on a no-op SHA costs
+# one cheap call with no PR noise.
 #
 # Authentication: comments are posted (and PR branches are rebased)
 # using AUTOFIX_TRIGGER_PAT, NOT secrets.GITHUB_TOKEN. GitHub explicitly
@@ -52,14 +56,14 @@ name: Autofix
 on:
   pull_request_review:
     types: [submitted]
-  issue_comment:
-    # claude-code-action posts ONE progress comment when it starts and
-    # updates the SAME comment in place when it finishes — that fires
-    # `issue_comment.edited`, not `created`. Listen to both so the
-    # "Claude finished" marker is visible to bounce 2 regardless of
-    # whether the action posts fresh or updates in place. The body
-    # marker check in the `if:` gate keeps non-claude edits out.
-    types: [created, edited]
+  pull_request:
+    # Bounce 2: new commits on a PR head -> request a Codex re-review.
+    # `synchronize` fires for pushes from ANY author — claude bot fixes,
+    # human / local-agent pushes, AND the auto-rebase force-push from
+    # rebase-stale-prs. App-authored pushes (claude[bot]) are NOT the
+    # workflow's GITHUB_TOKEN, so they are not recursion-suppressed and DO
+    # fire this event (verified: CI runs on claude's pushed commits).
+    types: [synchronize]
   push:
     # Bounce 0: main moved -> rebase open PRs that are now stale. Catches
     # both PR merges AND direct pushes to main (manual hotfixes, manual
@@ -84,12 +88,13 @@ jobs:
       # already run 7+ times and Codex is still finding issues, the loop
       # isn't converging — force human attention rather than burn cycles.
       #
-      # Cap was 3 originally; bumped to 7 because legitimate Codex
+      # Default was 3 originally; bumped to 7 because legitimate Codex
       # reviews on substantive PRs routinely surface 5-6 rounds of real
-      # findings (defensive type guards across sibling parsers, CLI-flag
-      # table extensions one per round, OSV event-window edge cases).
-      # 3 was capping real review work, not just runaway loops; 7 keeps
-      # the safety net while accommodating multi-round legitimate review.
+      # findings (defensive type guards across sibling files, CLI-flag
+      # table extensions, OSV event-window edge cases). 3 was capping
+      # real review work, not just runaway loops; 7 keeps the safety
+      # net while accommodating multi-round legitimate review. Adjust
+      # MAX below if your project's review patterns differ.
       #
       # Count claude-code-action runs by counting top-level PR comments
       # authored by the bot (the action posts ONE in-progress comment
@@ -120,44 +125,53 @@ jobs:
       # Codex review above" — claude-code-action's default prompt
       # construction will include the full review thread so the bot has
       # the actual findings + line context to act on.
+      #
+      # No HEAD-SHA marker is needed here: bounce 2 is now driven by
+      # `pull_request: synchronize` (a real push), so "claude finished
+      # without pushing" simply produces no synchronize and no re-review —
+      # the old comment-driven no-push detection it required is gone.
       - name: Post @claude trigger comment
         run: |
           gh pr comment "$PR_NUM" -R "$REPO" --body "@claude please address the Codex review feedback above. CRITICAL: before applying any fix that depends on infrastructure or invariants you have not verified (DLQ, schema, contracts, ADRs in docs/adrs/), grep the repo for the prerequisite. If it is not present, push back via a PR comment explaining the missing context rather than implementing on a false premise."
 
-  trigger-codex-rereview-via-comment:
-    # Bounce 2: claude finished addressing -> @codex re-reviews HEAD.
-    # The "Claude finished" marker is the standard heading
-    # claude-code-action posts when it completes a task. Filtering on
-    # both bot login AND body marker prevents accidental firing from any
-    # other claude[bot] activity (e.g., scheduled tasks). The
-    # pull_request guard is required because issue_comment also fires
-    # on real Issues, where there is no PR head to review.
-    if: |
-      github.event_name == 'issue_comment'
-      && github.event.issue.pull_request != null
-      && github.event.comment.user.login == 'claude[bot]'
-      && contains(github.event.comment.body, 'Claude finished')
+  request-codex-rereview-on-push:
+    # Bounce 2: new commits pushed to a PR head -> @codex re-reviews HEAD.
+    # `pull_request: synchronize` fires on EVERY push to the PR head
+    # regardless of author — the claude bot's fixes, a human / local-agent
+    # push, AND the auto-rebase force-push from rebase-stale-prs — so this
+    # single job covers all of them. Replaces the old issue_comment /
+    # "Claude finished" trigger: claude-code-action commits via the Claude
+    # GitHub App (author claude[bot]), and App-authored pushes fire
+    # pull_request events (they are not the workflow's GITHUB_TOKEN, so not
+    # recursion-suppressed). "Claude finished without pushing" needs no
+    # special case now — no commits means no synchronize means no review.
+    #
+    # Same-repo only: GitHub withholds secrets from pull_request runs on
+    # fork PRs, so AUTOFIX_TRIGGER_PAT would be empty and `gh pr comment`
+    # would fail. Excluding forks here keeps fork PRs from producing red
+    # runs (and claude.yml refuses fork PRs downstream anyway).
+    if: >
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+    concurrency:
+      # Coalesce rapid pushes to one review of the final SHA. Without this,
+      # 5 quick commits = 5 separate @codex reviews (each distinct SHA
+      # dodges the per-SHA marker). cancel-in-progress keeps only the
+      # latest push's job, which then reads the current HEAD.
+      group: codex-rereview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     env:
       GH_TOKEN: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
       REPO: ${{ github.repository }}
-      PR_NUM: ${{ github.event.issue.number }}
-      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PR_NUM: ${{ github.event.pull_request.number }}
     steps:
-      # Skip if HEAD hasn't changed since our last @codex review request.
-      # Claude can post "Claude finished" without pushing any commits
-      # (e.g., it pushed back via comment instead of implementing).
-      # Without this check, a no-op finished-comment would trigger
-      # another @codex review on the same SHA, codex would re-flag the
-      # same issue, autofix would post @claude again, and the cycle
-      # could repeat indefinitely — the claude-side commit cap doesn't
-      # advance because claude isn't committing.
-      #
-      # Strategy: embed the HEAD SHA in our trigger-comment body via an
-      # HTML comment marker, then check on each run whether we've
-      # already requested review for the current SHA.
+      # Per-SHA idempotency: skip if we already requested review for the
+      # current HEAD. Guards a double-synchronize on the same SHA and any
+      # overlap with a manual @codex review. Read live HEAD (not the event
+      # SHA) so a coalesced burst reviews the latest commit.
       - name: Post @codex re-review trigger (idempotent per SHA)
         run: |
           HEAD_SHA=$(gh pr view "$PR_NUM" -R "$REPO" --json headRefOid --jq '.headRefOid')
@@ -165,11 +179,11 @@ jobs:
           ALREADY=$(gh pr view "$PR_NUM" -R "$REPO" --json comments \
             --jq "[.comments[] | select(.body | contains(\"$MARKER\"))] | length")
           if [ "$ALREADY" -gt 0 ]; then
-            echo "Already requested @codex review for $HEAD_SHA — skipping (claude finished without pushing new commits)."
+            echo "Already requested @codex review for $HEAD_SHA — skipping."
             exit 0
           fi
           gh pr comment "$PR_NUM" -R "$REPO" --body "$MARKER
-          @codex review the latest commits — claude bot just pushed fixes that haven't been reviewed yet."
+          @codex review the latest commits pushed to this PR."
 
   rebase-stale-prs:
     # Bounce 0: main moved -> for each open PR (same-repo only, fork PRs
@@ -200,7 +214,8 @@ jobs:
       # Graceful skip when the PAT secret isn't configured yet (initial
       # repo setup). Without this guard, actions/checkout fails with
       # "Input required and not supplied: token" on every push to main,
-      # turning every merge into a red workflow run.
+      # turning every merge into a red workflow run during the window
+      # between "workflows scaffolded" and "secrets configured."
       - id: have_pat
         name: Check AUTOFIX_TRIGGER_PAT presence
         env:

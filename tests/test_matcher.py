@@ -62,6 +62,24 @@ def test_match_npm_above_fixed_version_excluded():
     assert match(refs=[ref], advisories=advisories) == []
 
 
+def test_versionless_npm_ref_matches_as_unknown_confidence():
+    """An inferred unpinned MCP ref (ecosystem+name, version=None) must route to
+    _match_unpinned and emit unknown-confidence findings, not be silently dropped or
+    misclassified as low-confidence 'range/spec'."""
+    advisories = [make_advisory("CVE-2026-0001", "npm", "@scope/my-mcp", "2.0.0")]
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@scope/my-mcp",
+        version=None,
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.my-mcp",
+    )
+    findings = match(refs=[ref], advisories=advisories)
+    assert len(findings) == 1
+    assert findings[0].advisory_id == "CVE-2026-0001"
+    assert findings[0].confidence == "unknown"
+
+
 def test_unparseable_version_emits_low_confidence():
     """`^1.0.0`-style spec can't resolve to a single version — flag it but don't drop it."""
     advisories = [make_advisory("CVE-2026-0001", "npm", "@cyanheads/git-mcp-server", "1.2.3")]

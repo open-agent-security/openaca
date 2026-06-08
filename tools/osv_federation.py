@@ -144,6 +144,15 @@ def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
             payload={"package": {"purl": ref.purl}},
             kind="purl",
         )
+    # Unpinned launch: ecosystem+name without version (inferred from install_source).
+    # Query all advisories for the package so the matcher can emit unknown-confidence findings.
+    if ref.ecosystem in _PURL_QUERY_ECOSYSTEMS and ref.name and not ref.version:
+        return OsvQuery(
+            key=f"package:{ref.ecosystem}:{ref.name}",
+            label=f"{ref.ecosystem}:{ref.name} (unpinned)",
+            payload={"package": {"name": ref.name, "ecosystem": ref.ecosystem}},
+            kind="purl",
+        )
     if ref.ecosystem in _GITHUB_ECOSYSTEMS and ref.name:
         repo = f"github.com/{ref.name.lower()}"
         if ref.version:

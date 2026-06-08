@@ -46,8 +46,10 @@ def test_is_queryable_requires_supported_osv_query_shape():
     )
     # Docker PURLs are inventory/BOM identities in V0, not OSV query targets.
     assert is_queryable(_ref("docker", "ghcr.io/org/server", "1.0")) is False
-    # No version → not queryable (PURL can't be formed)
-    assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is False
+    # npm/PyPI without version → queryable via unversioned package query (unpinned launch)
+    assert is_queryable(ComponentRef(ecosystem="npm", name="lodash")) is True
+    assert is_queryable(ComponentRef(ecosystem="PyPI", name="requests")) is True
+    # GitHub without version and without git_ref → not queryable
     assert is_queryable(ComponentRef(ecosystem="github", name="oraios/serena")) is False
     assert (
         is_queryable(ComponentRef(ecosystem="docker", name="repo/image", version="1.0.0")) is False
@@ -78,7 +80,7 @@ def test_collect_target_purls_dedupes_and_preserves_order():
         ComponentRef(
             name="supabase", version="0.1.6", extra={"component_type": "plugin"}
         ),  # skipped
-        ComponentRef(ecosystem="npm", name="left-pad"),  # no version → skipped
+        ComponentRef(ecosystem="npm", name="left-pad"),  # no version → package query, not PURL
     ]
     purls = collect_target_purls(refs)
     assert purls == ["pkg:npm/lodash@4.17.20", "pkg:pypi/requests@2.31.0"]
@@ -111,6 +113,23 @@ def test_collect_osv_queries_uses_supported_query_shapes():
         f"github.com/oraios/serena@{sha}",
         "github.com/oraios/serena@v1.0.0",
     ]
+
+
+def test_collect_osv_queries_uses_package_query_for_unpinned_mcp_refs():
+    """Inferred unpinned MCP refs (ecosystem+name, no version) emit a name+ecosystem
+    package query so all advisories for the package are fetched."""
+    refs = [
+        ComponentRef(ecosystem="npm", name="@scope/mcp-server"),
+        ComponentRef(ecosystem="PyPI", name="my-mcp-tool"),
+    ]
+
+    queries = collect_osv_queries(refs)
+
+    assert len(queries) == 2
+    assert queries[0].payload == {"package": {"name": "@scope/mcp-server", "ecosystem": "npm"}}
+    assert queries[0].label == "npm:@scope/mcp-server (unpinned)"
+    assert queries[1].payload == {"package": {"name": "my-mcp-tool", "ecosystem": "PyPI"}}
+    assert queries[1].label == "PyPI:my-mcp-tool (unpinned)"
 
 
 def test_augment_returns_base_corpus_when_no_refs():
@@ -335,26 +354,29 @@ def test_augment_chunks_large_batches():
     assert len(calls[1]["queries"]) == 500
 
 
-def test_augment_skips_unversioned_refs():
-    """Refs with a purl-capable ecosystem but no version (e.g., manifest fallback
-    with an unpinned dep) must NOT be queried — OSV would return advisories for
-    all versions, creating noisy/incorrect findings."""
+def test_augment_queries_unversioned_refs_as_package_queries():
+    """Refs with ecosystem+name but no version (inferred unpinned MCP launches) are
+    queried via a name+ecosystem package query (not a PURL query) so all advisories
+    for the package are fetched; the matcher then emits unknown-confidence findings."""
     refs = [
         ComponentRef(ecosystem="PyPI", name="requests"),  # version=None
         ComponentRef(ecosystem="npm", name="lodash", version="4.17.20"),
     ]
     base = []
-    queries_seen: list[list[str]] = []
+    queries_seen: list[list[dict]] = []
 
     def fake_post(url, payload):
-        queries_seen.append([q["package"]["purl"] for q in payload["queries"]])
-        return {"results": [{"vulns": []}]}
+        queries_seen.append(payload["queries"])
+        return {"results": [{"vulns": []}, {"vulns": []}]}
 
     with patch("tools.osv_federation._post_json", fake_post):
         augment_corpus(refs=refs, base_corpus=base)
     assert len(queries_seen) == 1
-    purls = queries_seen[0]
-    assert purls == ["pkg:npm/lodash@4.17.20"]  # unversioned PyPI ref excluded
+    assert len(queries_seen[0]) == 2
+    # Unversioned PyPI ref uses name+ecosystem form (no purl key).
+    assert queries_seen[0][0] == {"package": {"name": "requests", "ecosystem": "PyPI"}}
+    # Versioned npm ref uses the PURL form.
+    assert queries_seen[0][1] == {"package": {"purl": "pkg:npm/lodash@4.17.20"}}
 
 
 def test_augment_skips_purls_without_purl_form():

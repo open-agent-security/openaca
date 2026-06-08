@@ -119,6 +119,9 @@ def _match_one(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Find
     if ref.ecosystem and ref.name:
         if ref.ecosystem in _FORGE_ECOSYSTEMS:
             return _match_git_ref(ref, advisories)
+        if not ref.version:
+            # No version → inferred unpinned launch; match as unknown confidence.
+            return _match_unpinned(ref, (ref.ecosystem, ref.name), advisories)
         return _match_versioned(ref, advisories)
 
     if ref.component_identity:

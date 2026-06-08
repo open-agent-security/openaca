@@ -352,6 +352,67 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     return extra
 
 
+# Flags whose value IS the package spec (takes precedence over positional arg).
+# --with is intentionally excluded: in uvx it installs an extra dep, not the main package.
+_NPX_UVX_PACKAGE_FLAGS = frozenset({"--package", "-p", "--from"})
+
+# Flags that consume the next token as their value (used to skip past them).
+_NPX_UVX_FLAGS_WITH_VALUE = frozenset(
+    {
+        "--package",
+        "-p",
+        "--from",
+        "--with",
+        "--python",
+        "--call",
+        "-c",
+    }
+)
+
+
+def _extract_mcp_package(install_source: str) -> str | None:
+    """Return the package identifier from an npx/uvx install command.
+
+    Prefers explicit --package/-p/--from flag values over the first positional
+    arg, so `npx --package @scope/pkg cmd` → `@scope/pkg`. Falls back to the
+    first positional arg, skipping value-taking flags like `-y` and `--python`.
+    """
+    tokens = install_source.split()
+    if len(tokens) < 2:
+        return None
+    # First pass: explicit package flags take precedence over the positional arg.
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            break
+        if token.startswith("-"):
+            for flag in _NPX_UVX_PACKAGE_FLAGS:
+                if token.startswith(f"{flag}="):
+                    pkg = token[len(flag) + 1 :]
+                    if pkg:
+                        return pkg
+            if token in _NPX_UVX_PACKAGE_FLAGS and i + 1 < len(tokens):
+                candidate = tokens[i + 1]
+                if not candidate.startswith("-"):
+                    return candidate
+        i += 1
+    # Second pass: first positional arg, skipping value-taking flags.
+    skip_next = False
+    for token in tokens[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--":
+            break
+        if token.startswith("-"):
+            if token in _NPX_UVX_FLAGS_WITH_VALUE and "=" not in token:
+                skip_next = True
+            continue
+        return token
+    return None
+
+
 def _infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
     if extra.get("component_type") != "mcp_server":
         return None
@@ -362,7 +423,9 @@ def _infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None
     if len(parts) < 2:
         return None
     launcher = parts[0]
-    package = parts[1]
+    package = _extract_mcp_package(install_source)
+    if package is None:
+        return None
     if launcher == "npx" and _safe_package_name(package, allow_scope=True):
         return ("npm", package)
     if launcher == "uvx" and _safe_package_name(package, allow_scope=False):

@@ -54,6 +54,22 @@ jobs:
             exit 1
           fi
 
+      - name: Verify release notes file exists
+        # Fail BEFORE PyPI publish if no notes file is committed. PyPI
+        # publishes are immutable — a missing notes file caught after
+        # publish would mean shipping to PyPI but leaving the GitHub
+        # Releases page silently inconsistent (which is what historically
+        # happened for b1, b2, b3, b4, b6). The release-openaca skill
+        # writes this file during the release prep PR. GITHUB_REF_NAME is
+        # a GitHub-injected env var (the tag name), not user input — it
+        # only contains git-ref-safe characters.
+        run: |
+          notes_path="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$notes_path" ]; then
+            echo "::error::missing release notes file at $notes_path. The release-openaca skill drafts this file from the commit log; run it before tagging."
+            exit 1
+          fi
+
       - name: Ruff check
         run: uv run ruff check .
 
@@ -100,3 +116,37 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  release-github:
+    # Create the GitHub Release object so the Releases page reflects what
+    # actually shipped. Runs only after PyPI publish succeeds — if PyPI
+    # failed there's no reason to advertise the release on GitHub. The
+    # notes file's presence was verified in the build job, so the only
+    # failure modes here are gh/API errors.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # gh release create writes the release
+    steps:
+      - uses: actions/checkout@v4
+        # Need the tag's tree (notes file) plus the tag ref itself.
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes_path="docs/releases/${TAG}.md"
+          # The first H1 line in the notes file becomes the Release title.
+          # If the file doesn't have one, fall back to the tag name.
+          title="$(grep -m1 '^# ' "$notes_path" | sed 's/^# //' || true)"
+          if [ -z "$title" ]; then
+            title="$TAG"
+          fi
+          gh release create "$TAG" \
+            --title "$title" \
+            --notes-file "$notes_path" \
+            --verify-tag

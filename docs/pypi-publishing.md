@@ -36,9 +36,16 @@ approvals before publishing:
 
 ## Publish a release
 
+The `release-openaca` skill walks through this end-to-end; the manual
+steps below are for the cases where the skill isn't being used.
+
 1. Ensure `pyproject.toml` has the version you intend to publish.
-2. Merge the release-prep PR to `main`.
-3. Tag the exact version on `main` and push the tag:
+2. **Write the release notes file** at `docs/releases/v<version>.md`.
+   The workflow refuses to publish without it (see Why below). Follow
+   the existing files' shape: H1 title with theme, `## Highlights`
+   bullets, `## Install`, `## Compatibility`.
+3. Merge the release-prep PR to `main`.
+4. Tag the exact version on `main` and push the tag:
 
    ```bash
    git checkout main
@@ -48,8 +55,19 @@ approvals before publishing:
    ```
 
 The `Publish PyPI` workflow builds the package, verifies the tag name
-matches `pyproject.toml`, runs the local quality gates, checks package
-metadata with `twine check`, and publishes to PyPI through OIDC.
+matches `pyproject.toml`, verifies the notes file exists, runs the
+local quality gates, checks package metadata with `twine check`, and
+publishes to PyPI through OIDC. After PyPI publish succeeds, the
+`release-github` job creates the GitHub Release object from the notes
+file.
+
+### Why the notes file is required
+
+Through `v0.1.0b6`, the GitHub Releases page silently drifted from
+PyPI — every tag shipped to PyPI, but the Release object on github.com
+was created by hand and only `v0.1.0b5` actually got one. The notes-file
+gate exists so that mistake can't happen again: no notes file → no PyPI
+publish (caught in the `build` job before any artifact is uploaded).
 
 PyPI versions are immutable. If a publish succeeds with the wrong
 contents, bump to the next version instead of trying to overwrite it.

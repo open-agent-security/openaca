@@ -312,7 +312,7 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
-    if _is_package_mcp_component(props_by_name, component_name):
+    if _is_package_mcp_component(props_by_name, component_name, component_purl):
         prepared_props = [
             _trim_package_install_source(prop, props_by_name, component_name)
             if isinstance(prop, dict)
@@ -363,16 +363,78 @@ def _is_binary_mcp_component(
     return first not in ("npx", "uvx")
 
 
-def _is_package_mcp_component(props_by_name: dict[Any, Any], component_name: object) -> bool:
+_NPX_UVX_FLAGS_WITH_VALUE = frozenset(
+    {
+        "--package",
+        "-p",
+        "--from",
+        "--with",
+        "--python",
+        "--call",
+        "-c",
+    }
+)
+
+
+def _extract_package_from_install_source(install_source: str) -> str | None:
+    """Return the first positional (non-flag) arg after the launcher in an npx/uvx command.
+
+    Mirrors the flag-skipping logic in the mcp_json parser's _positional_args()
+    so that `npx -y @scope/pkg --token …` → `@scope/pkg`.
+    """
+    tokens = install_source.split()
+    if len(tokens) < 2:
+        return None
+    skip_next = False
+    for token in tokens[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--":
+            break
+        if token.startswith("-"):
+            if token in _NPX_UVX_FLAGS_WITH_VALUE and "=" not in token:
+                skip_next = True
+            continue
+        return token
+    return None
+
+
+def _is_package_mcp_component(
+    props_by_name: dict[Any, Any],
+    component_name: object,
+    component_purl: object = None,
+) -> bool:
     identity = props_by_name.get("openaca:identity")
     legacy_name = component_name if isinstance(component_name, str) else ""
-    return (
+    # Legacy pre-ADR-0029 identity shapes
+    if (
         isinstance(identity, str)
         and (
             identity.startswith("mcp-stdio/npx-unpinned:")
             or identity.startswith("mcp-stdio/uvx-unpinned:")
         )
-    ) or legacy_name.startswith(("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:"))
+    ) or legacy_name.startswith(("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:")):
+        return True
+    # ADR-0029: unpinned package MCPs carry mcp-server/<name> identity.
+    # Distinguish from binary MCPs by npx/uvx first token, and from pinned
+    # package MCPs by absence of PURL.
+    if not (
+        props_by_name.get("openaca:component_type") == "mcp_server"
+        and isinstance(identity, str)
+        and identity.startswith("mcp-server/")
+        and not component_purl
+        and "openaca:transport" not in props_by_name
+        and "openaca:install_source" in props_by_name
+    ):
+        return False
+    install_source = props_by_name.get("openaca:install_source", "")
+    first = (
+        install_source.split(maxsplit=1)[0]
+        if isinstance(install_source, str) and install_source.strip()
+        else ""
+    )
+    return first in ("npx", "uvx")
 
 
 def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
@@ -409,7 +471,18 @@ def _trim_package_install_source(
     if identity.startswith("mcp-stdio/uvx-unpinned:"):
         package = identity[len("mcp-stdio/uvx-unpinned:") :]
         return {**prop, "value": f"uvx {package}"}
-    return prop
+    # ADR-0029: identity is mcp-server/<name>; recover launcher and package from argv.
+    value = prop.get("value")
+    if not isinstance(value, str):
+        return prop
+    tokens = value.split(maxsplit=1)
+    if not tokens or tokens[0] not in ("npx", "uvx"):
+        return prop
+    launcher = tokens[0]
+    package = _extract_package_from_install_source(value)
+    if package is None:
+        return prop
+    return {**prop, "value": f"{launcher} {package}"}
 
 
 def _is_pinned_mcp_component(props_by_name: dict[Any, Any]) -> bool:

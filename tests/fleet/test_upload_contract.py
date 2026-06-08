@@ -351,6 +351,80 @@ def test_allows_package_install_source_references():
     enforce_fleet_upload_contract(payload)
 
 
+def test_rejects_adr0029_unpinned_npx_mcp_install_source_with_raw_argv():
+    # ADR-0029: unpinned package MCPs carry mcp-server/<name> identity (no PURL).
+    # The contract must enforce the 2-token limit even for this new identity shape.
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:identity", "value": "mcp-server/my-mcp"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "npx -y @scope/pkg --token sk-1234",
+                        },
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[2].value" in str(exc.value)
+    assert "sk-1234" not in str(exc.value)
+
+
+def test_allows_adr0029_unpinned_npx_mcp_clean_install_source():
+    # After _prepare_fleet_component trims the argv, the contract must accept the result.
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:identity", "value": "mcp-server/my-mcp"},
+                        {"name": "openaca:install_source", "value": "npx @scope/pkg"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    enforce_fleet_upload_contract(payload)
+
+
+def test_rejects_adr0029_pinned_mcp_install_source_with_raw_argv():
+    # ADR-0029: pinned package MCPs carry mcp-server/<name> identity plus a PURL.
+    # The contract must enforce the 2-token limit for this identity shape too.
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "purl": "pkg:npm/%40scope%2Fpkg@1.2.3",
+                    "properties": [
+                        {"name": "openaca:component_type", "value": "mcp_server"},
+                        {"name": "openaca:identity", "value": "mcp-server/my-mcp"},
+                        {
+                            "name": "openaca:install_source",
+                            "value": "npx @scope/pkg@1.2.3 --token secret",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+
+    assert "bom.components[0].properties[2].value" in str(exc.value)
+    assert "secret" not in str(exc.value)
+
+
 def test_allows_posture_evidence_without_rule_specific_allowlist():
     payload = _payload(
         posture_findings=[

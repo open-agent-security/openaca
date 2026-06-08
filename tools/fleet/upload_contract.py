@@ -100,7 +100,27 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
     is_package = isinstance(identity, str) and identity.startswith(
         ("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:")
     )
-    is_pinned_mcp = component_type == "mcp_server" and identity is None
+    # ADR-0029: unpinned package MCPs carry mcp-server/<name> identity with no PURL.
+    if not is_package and (
+        component_type == "mcp_server"
+        and isinstance(identity, str)
+        and identity.startswith("mcp-server/")
+        and not component_purl
+        and "openaca:transport" not in props_by_name
+        and isinstance(install_source, str)
+        and install_source.strip()
+    ):
+        first = install_source.split(maxsplit=1)[0]
+        is_package = first in ("npx", "uvx")
+    is_pinned_mcp = component_type == "mcp_server" and (
+        identity is None
+        or (
+            isinstance(identity, str)
+            and identity.startswith("mcp-server/")
+            and bool(component_purl)
+            and "openaca:transport" not in props_by_name
+        )
+    )
     if not is_binary and not is_package and not is_pinned_mcp:
         return
     if not isinstance(install_source, str) or not install_source.strip():

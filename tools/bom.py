@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, canonical_component_identity
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
 CYCLONEDX_SPEC_VERSION = "1.7"
@@ -132,6 +132,12 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
     props = _properties_by_name(component)
     purl = component.get("purl")
     parsed = _parse_purl(purl) if isinstance(purl, str) else {}
+    extra = _extra_from_properties(props)
+    if not parsed:
+        inferred_package = _infer_unpinned_mcp_package(extra)
+        if inferred_package is not None:
+            ecosystem, name = inferred_package
+            parsed = {"ecosystem": ecosystem, "name": name}
     component_identity = props.get("openaca:identity")
     if component_identity is None and not parsed:
         bom_ref = component.get("bom-ref")
@@ -145,7 +151,7 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
         source_locator=props.get("openaca:source_locator") or "",
         component_identity=component_identity,
         attributed_to=props.get("openaca:attributed_to"),
-        extra=_extra_from_properties(props),
+        extra=extra,
         scope=props.get("openaca:scope") or "agent-component",
     )
 
@@ -183,10 +189,11 @@ def _stable_bom_refs(refs: list[ComponentRef]) -> list[str]:
 
 
 def _preferred_bom_ref(ref: ComponentRef) -> str:
+    identity = canonical_component_identity(ref)
+    if identity:
+        return identity
     if ref.purl:
         return ref.purl
-    if ref.component_identity:
-        return ref.component_identity
     if ref.ecosystem and ref.name:
         if ref.version:
             return f"{ref.ecosystem}:{ref.name}@{ref.version}"
@@ -199,7 +206,7 @@ def _short_component_hash(ref: ComponentRef, index: int) -> str:
     payload = {
         "index": index,
         "purl": ref.purl,
-        "component_identity": ref.component_identity,
+        "component_identity": canonical_component_identity(ref),
         "source_manifest": ref.source_manifest,
         "source_locator": ref.source_locator,
         "component_type": (ref.extra or {}).get("component_type"),
@@ -217,7 +224,7 @@ def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
     # even when the plugin's component_identity is stored without version.
     identity_to_bom_ref: dict[str, str] = {}
     for component in components:
-        ci = component.ref.component_identity
+        ci = canonical_component_identity(component.ref)
         if not ci:
             continue
         identity_to_bom_ref[ci] = component.bom_ref
@@ -236,10 +243,11 @@ def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
 
 def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
     ref = component.ref
+    identity = canonical_component_identity(ref)
     doc: dict[str, Any] = {
         "type": "application",
         "bom-ref": component.bom_ref,
-        "name": ref.name or ref.component_identity or "<unidentified>",
+        "name": ref.name or identity or ref.component_identity or "<unidentified>",
     }
     if ref.version:
         doc["version"] = ref.version
@@ -253,7 +261,7 @@ def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
 
 def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     props: list[dict[str, str]] = []
-    _append_prop(props, "openaca:identity", ref.component_identity)
+    _append_prop(props, "openaca:identity", canonical_component_identity(ref))
     _append_prop(props, "openaca:component_type", (ref.extra or {}).get("component_type"))
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
@@ -342,6 +350,40 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         except json.JSONDecodeError:
             extra["source_provenance"] = source_provenance
     return extra
+
+
+def _infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
+    if extra.get("component_type") != "mcp_server":
+        return None
+    install_source = extra.get("install_source")
+    if not isinstance(install_source, str):
+        return None
+    parts = install_source.split()
+    if len(parts) < 2:
+        return None
+    launcher = parts[0]
+    package = parts[1]
+    if launcher == "npx" and _safe_package_name(package, allow_scope=True):
+        return ("npm", package)
+    if launcher == "uvx" and _safe_package_name(package, allow_scope=False):
+        return ("PyPI", package)
+    return None
+
+
+def _safe_package_name(value: str, *, allow_scope: bool) -> bool:
+    if "://" in value or value.startswith(("/", ".")):
+        return False
+    if allow_scope and value.startswith("@"):
+        parts = value.split("/", 1)
+        if len(parts) != 2:
+            return False
+        scope = parts[0][1:]
+        name = parts[1]
+        return all(
+            part.replace(".", "").replace("_", "").replace("-", "").isalnum()
+            for part in (scope, name)
+        )
+    return value.replace(".", "").replace("_", "").replace("-", "").isalnum()
 
 
 def _parse_purl(purl: str) -> dict[str, str]:

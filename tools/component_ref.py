@@ -48,6 +48,60 @@ def is_package_source_ref(ref: "ComponentRef") -> bool:
     return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
 
 
+def canonical_component_identity(ref: "ComponentRef") -> Optional[str]:
+    """Return the OpenACA agent-graph occurrence identity for a component.
+
+    `ComponentRef.component_identity` predates ADR-0029 and can still carry
+    source-shaped MCP identities such as `mcp-remote/...`. This helper is the
+    boundary for the canonical `openaca:identity` value emitted into BOMs and
+    Fleet posture payloads.
+    """
+    component_type = (ref.extra or {}).get("component_type")
+    if component_type == "mcp_server":
+        server_name = _component_path_leaf(ref, "mcp_server")
+        if server_name:
+            return f"mcp-server/{server_name}"
+        if ref.name:
+            return f"mcp-server/{ref.name}"
+
+    if is_package_source_ref(ref) and ref.attributed_to:
+        parent = _without_observed_version(ref.attributed_to)
+        ecosystem = canonical_ecosystem(ref.ecosystem)
+        if parent and ecosystem and ref.name:
+            return f"{parent}/deps/{ecosystem}/{ref.name}"
+
+    if ref.component_identity:
+        return ref.component_identity
+
+    if is_package_source_ref(ref):
+        ecosystem = canonical_ecosystem(ref.ecosystem)
+        if ecosystem and ref.name:
+            return f"package/{ecosystem}/{ref.name}"
+
+    return None
+
+
+def _component_path_leaf(ref: "ComponentRef", component_type: str) -> Optional[str]:
+    component_path = (ref.extra or {}).get("component_path")
+    if not isinstance(component_path, list):
+        return None
+    for item in reversed(component_path):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != component_type:
+            continue
+        name = item.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return None
+
+
+def _without_observed_version(identity: str) -> str:
+    if identity.startswith("claude-plugin/") and "@" in identity.rsplit("/", 1)[-1]:
+        return identity.rsplit("@", 1)[0]
+    return identity
+
+
 def safe_pinned_mcp_install_source(
     *,
     launcher: str,

@@ -89,8 +89,8 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
 def _check_component(component: dict[str, Any], index: int) -> list[str]:
     errors: list[str] = []
     props = _properties_by_name(component)
-    if not component.get("purl") and "openaca:identity" not in props:
-        errors.append(f"components[{index}] must have either purl or openaca:identity")
+    if "openaca:identity" not in props:
+        errors.append(f"components[{index}] must have openaca:identity")
 
     component_type = props.get("openaca:component_type")
     if component_type is not None and component_type not in _COMPONENT_TYPES:

@@ -226,6 +226,9 @@ def _posture_scope(finding: PostureFinding) -> str:
 def _posture_component_identity(finding: PostureFinding) -> str | None:
     if _posture_scope(finding) != "component":
         return None
+    identity = finding.component.get("identity")
+    if isinstance(identity, str) and identity:
+        return identity
     for item in reversed(finding.component_path):
         name = item.get("name")
         if isinstance(name, str) and name:
@@ -301,15 +304,18 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
     props_by_name = {
         prop.get("name"): prop.get("value") for prop in properties if isinstance(prop, dict)
     }
-    if _is_binary_mcp_component(props_by_name):
+    component_name = component.get("name")
+    if _is_binary_mcp_component(props_by_name, component_name):
         prepared_props = [
             _trim_binary_install_source(prop) if isinstance(prop, dict) else prop
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
-    if _is_package_mcp_component(props_by_name):
+    if _is_package_mcp_component(props_by_name, component_name):
         prepared_props = [
-            _trim_package_install_source(prop, props_by_name) if isinstance(prop, dict) else prop
+            _trim_package_install_source(prop, props_by_name, component_name)
+            if isinstance(prop, dict)
+            else prop
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
@@ -324,19 +330,24 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
     return component
 
 
-def _is_binary_mcp_component(props_by_name: dict[Any, Any]) -> bool:
+def _is_binary_mcp_component(props_by_name: dict[Any, Any], component_name: object) -> bool:
     identity = props_by_name.get("openaca:identity")
-    return isinstance(identity, str) and identity.startswith(
-        ("mcp-stdio/binary:", "mcp-stdio/local:")
-    )
+    legacy_name = component_name if isinstance(component_name, str) else ""
+    return (
+        isinstance(identity, str) and identity.startswith(("mcp-stdio/binary:", "mcp-stdio/local:"))
+    ) or legacy_name.startswith(("mcp-stdio/binary:", "mcp-stdio/local:"))
 
 
-def _is_package_mcp_component(props_by_name: dict[Any, Any]) -> bool:
+def _is_package_mcp_component(props_by_name: dict[Any, Any], component_name: object) -> bool:
     identity = props_by_name.get("openaca:identity")
-    return isinstance(identity, str) and (
-        identity.startswith("mcp-stdio/npx-unpinned:")
-        or identity.startswith("mcp-stdio/uvx-unpinned:")
-    )
+    legacy_name = component_name if isinstance(component_name, str) else ""
+    return (
+        isinstance(identity, str)
+        and (
+            identity.startswith("mcp-stdio/npx-unpinned:")
+            or identity.startswith("mcp-stdio/uvx-unpinned:")
+        )
+    ) or legacy_name.startswith(("mcp-stdio/npx-unpinned:", "mcp-stdio/uvx-unpinned:"))
 
 
 def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
@@ -349,10 +360,20 @@ def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
     return {**prop, "value": command}
 
 
-def _trim_package_install_source(prop: JsonObject, props_by_name: dict[Any, Any]) -> JsonObject:
+def _trim_package_install_source(
+    prop: JsonObject, props_by_name: dict[Any, Any], component_name: object
+) -> JsonObject:
     if prop.get("name") != "openaca:install_source":
         return prop
     identity = props_by_name.get("openaca:identity")
+    if not (
+        isinstance(identity, str)
+        and (
+            identity.startswith("mcp-stdio/npx-unpinned:")
+            or identity.startswith("mcp-stdio/uvx-unpinned:")
+        )
+    ):
+        identity = component_name
     if not isinstance(identity, str):
         return prop
     # Reconstruct from identity rather than splitting argv, so flags like
@@ -369,7 +390,7 @@ def _trim_package_install_source(prop: JsonObject, props_by_name: dict[Any, Any]
 def _is_pinned_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     return (
         props_by_name.get("openaca:component_type") == "mcp_server"
-        and "openaca:identity" not in props_by_name
+        and "openaca:install_source" in props_by_name
     )
 
 

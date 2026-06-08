@@ -30,7 +30,7 @@ from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.component_ref import ComponentRef, is_package_source_ref
+from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import finding_to_output, posture_to_output
 from tools.matcher import Finding
 from tools.posture.finding import PostureFinding
@@ -900,7 +900,17 @@ def _mcp_leaf_label(ref: ComponentRef) -> Optional[str]:
     if is_package_source_ref(ref):
         if command:
             transport = _mcp_transport_label(ref.extra.get("transport")) or "stdio"
-            return f"{_package_leaf_label(ref)} ({transport.lower()} via {command})"
+            source_ecosystem = canonical_ecosystem(ref.ecosystem)
+            suffix = (
+                ", unpinned"
+                if (
+                    ref.version is None
+                    and command in {"npx", "uvx"}
+                    and source_ecosystem in {"npm", "pypi"}
+                )
+                else ""
+            )
+            return f"{_package_leaf_label(ref)} ({transport.lower()} via {command}{suffix})"
         return None
     local_label = _stdio_local_label(ref.component_identity, ref.extra, command)
     if local_label:

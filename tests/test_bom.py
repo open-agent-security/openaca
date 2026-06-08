@@ -69,12 +69,57 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
     assert _metadata_property(doc, "openaca:schema_version") == "0.1"
-    package = _component(doc, "pkg:npm/%40mcpjam/inspector@1.4.2")
+    package = _component(doc, "mcp-server/@mcpjam/inspector")
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
+    assert _property(package, "openaca:identity") == "mcp-server/@mcpjam/inspector"
     assert _property(package, "openaca:component_type") == "mcp_server"
     remote = _component(doc, "mcp-remote/api.example.com/mcp")
     assert _property(remote, "openaca:identity") == "mcp-remote/api.example.com/mcp"
     assert "vulnerabilities" not in doc
+
+
+def test_package_backed_mcp_bom_uses_agent_graph_identity_as_bom_ref():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@playwright/mcp",
+        version="latest",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.playwright",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "playwright"}],
+        },
+    )
+
+    doc = build_agent_bom(
+        [ref], target_type="endpoint", target="endpoint:user-scope"
+    ).to_cyclonedx()
+
+    component = _component(doc, "mcp-server/playwright")
+    assert component["name"] == "@playwright/mcp"
+    assert component["purl"] == "pkg:npm/%40playwright/mcp@latest"
+    assert _property(component, "openaca:identity") == "mcp-server/playwright"
+
+
+def test_plugin_dependency_bom_keeps_purl_as_source_identity_only():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="hono",
+        version="4.12.5",
+        source_manifest="external_plugins/discord/bun.lock",
+        source_locator="$.packages.hono",
+        attributed_to="claude-plugin/claude-plugins-official/discord@0.0.4",
+        scope="agent-dependency",
+    )
+
+    doc = build_agent_bom([ref], target_type="repo", target=".").to_cyclonedx()
+
+    component = _component(doc, "claude-plugin/claude-plugins-official/discord/deps/npm/hono")
+    assert component["purl"] == "pkg:npm/hono@4.12.5"
+    assert (
+        _property(component, "openaca:identity")
+        == "claude-plugin/claude-plugins-official/discord/deps/npm/hono"
+    )
 
 
 def test_cyclonedx_build_edges_resolves_versioned_attributed_to():
@@ -179,9 +224,8 @@ def test_cyclonedx_dependencies_includes_all_components_including_leaves():
     assert "claude-plugin/my-plugin" in deps_by_ref
     assert "mcp-stdio/some-server" in deps_by_ref
     assert deps_by_ref["mcp-stdio/some-server"] == []
-    purl = "pkg:npm/standalone-tool@1.0.0"
-    assert purl in deps_by_ref
-    assert deps_by_ref[purl] == []
+    assert "mcp-server/standalone-tool" in deps_by_ref
+    assert deps_by_ref["mcp-server/standalone-tool"] == []
 
 
 def test_cyclonedx_round_trips_components_needed_for_matching():

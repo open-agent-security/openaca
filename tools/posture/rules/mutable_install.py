@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.immutability import is_mutable_reference
 
@@ -86,6 +86,9 @@ def _component_for(ref: ComponentRef, install_source: str) -> dict[str, Any]:
         "type": _component_type_for(ref),
         "name": _format_component(ref, install_source),
     }
+    identity = canonical_component_identity(ref)
+    if identity:
+        component["identity"] = identity
     if ref.purl:
         component["source"] = {"purl": ref.purl}
     return component
@@ -155,6 +158,8 @@ def _standards_for(ref: ComponentRef) -> Standards:
 
 
 def _looks_like_mcp(ref: ComponentRef) -> bool:
+    if (ref.extra or {}).get("component_type") == "mcp_server":
+        return True
     if ref.component_identity and ref.component_identity.startswith("mcp-stdio/"):
         return True
     name = (ref.name or "").lower()

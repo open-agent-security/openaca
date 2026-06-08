@@ -33,12 +33,7 @@ from urllib.parse import urlparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.component_ref import ComponentRef, is_unpinned_mcp_package_launch
-
-_UNPINNED_IDENTITY_PREFIXES: dict[str, str] = {
-    "mcp-stdio/npx-unpinned:": "npm",
-    "mcp-stdio/uvx-unpinned:": "PyPI",
-}
+from tools.component_ref import ComponentRef, unpinned_mcp_package
 
 # Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
 # ranges. The current matcher only evaluates packaging.Version ranges, so refs
@@ -108,25 +103,19 @@ def _in_range(version: Version, events: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _unpinned_identity_to_package(identity: str) -> Optional[tuple[str, str]]:
-    for prefix, ecosystem in _UNPINNED_IDENTITY_PREFIXES.items():
-        if identity.startswith(prefix):
-            return ecosystem, identity[len(prefix) :]
-    return None
-
-
 def _match_one(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
     if ref.ecosystem and ref.name:
         if ref.ecosystem in _FORGE_ECOSYSTEMS:
             return _match_git_ref(ref, advisories)
-        if is_unpinned_mcp_package_launch(ref):
-            return _match_unpinned(ref, (ref.ecosystem, ref.name), advisories)
+        pkg = unpinned_mcp_package(ref)
+        if pkg is not None:
+            return _match_unpinned(ref, pkg, advisories)
         if ref.version is None:
             return []
         return _match_versioned(ref, advisories)
 
     if ref.component_identity:
-        pkg = _unpinned_identity_to_package(ref.component_identity)
+        pkg = unpinned_mcp_package(ref)
         if pkg is not None:
             return _match_unpinned(ref, pkg, advisories)
         return _match_by_identity(ref, advisories)

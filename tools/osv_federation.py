@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from tools.component_ref import ComponentRef, is_unpinned_mcp_package_launch
+from tools.component_ref import ComponentRef, unpinned_mcp_package
 from tools.overlays import id_set
 
 _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
@@ -146,11 +146,13 @@ def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
         )
     # Unpinned launch: ecosystem+name without version (inferred from install_source).
     # Query all advisories for the package so the matcher can emit unknown-confidence findings.
-    if is_unpinned_mcp_package_launch(ref):
+    unpinned_package = unpinned_mcp_package(ref)
+    if unpinned_package is not None:
+        ecosystem, name = unpinned_package
         return OsvQuery(
-            key=f"package:{ref.ecosystem}:{ref.name}",
-            label=f"{ref.ecosystem}:{ref.name} (unpinned)",
-            payload={"package": {"name": ref.name, "ecosystem": ref.ecosystem}},
+            key=f"package:{ecosystem}:{name}",
+            label=f"{ecosystem}:{name} (unpinned)",
+            payload={"package": {"name": name, "ecosystem": ecosystem}},
             kind="purl",
         )
     if ref.ecosystem in _GITHUB_ECOSYSTEMS and ref.name:

@@ -16,6 +16,10 @@ PURL_ECOSYSTEM_MAP = {
     "docker": "docker",
 }
 PACKAGE_SOURCE_PURL_TYPES = frozenset({"npm", "pypi", "github", "docker"})
+UNPINNED_MCP_IDENTITY_PREFIXES: dict[str, str] = {
+    "mcp-stdio/npx-unpinned:": "npm",
+    "mcp-stdio/uvx-unpinned:": "PyPI",
+}
 
 
 def encode_purl_name(name: str) -> str:
@@ -59,6 +63,18 @@ def is_unpinned_mcp_package_launch(ref: "ComponentRef") -> bool:
     launcher = install_source.split(maxsplit=1)[0]
     ecosystem = purl_type_for_ecosystem(ref.ecosystem)
     return (ecosystem == "npm" and launcher == "npx") or (ecosystem == "pypi" and launcher == "uvx")
+
+
+def unpinned_mcp_package(ref: "ComponentRef") -> Optional[tuple[str, str]]:
+    if ref.component_identity:
+        for prefix, ecosystem in UNPINNED_MCP_IDENTITY_PREFIXES.items():
+            if ref.component_identity.startswith(prefix):
+                return ecosystem, ref.component_identity[len(prefix) :]
+    if is_unpinned_mcp_package_launch(ref):
+        assert ref.ecosystem is not None
+        assert ref.name is not None
+        return ref.ecosystem, ref.name
+    return None
 
 
 def canonical_component_identity(ref: "ComponentRef") -> Optional[str]:

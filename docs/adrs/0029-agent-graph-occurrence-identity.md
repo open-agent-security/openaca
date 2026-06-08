@@ -32,16 +32,23 @@ not the agent-graph occurrence key.
 
 ## Decision
 
-`openaca:identity` is the stable agent-graph occurrence identity for a
-component in the observed agent surface. It is not a package coordinate, not a
-display label, and not a versioned external source identifier.
+`openaca:identity` is the canonical agent graph path for a component occurrence
+in the observed agent surface. It is graph-shaped but scanner-normalized: it
+uses stable agent-surface namespaces and parent/child occurrence names, not
+filesystem paths, manifest paths, URLs, or every intermediate parser edge. It
+is not a package coordinate, not a display label, and not a versioned external
+source identifier.
 
 The identity model is:
 
-- `openaca:identity`: stable occurrence key in the agent graph, such as
+- `openaca:identity`: canonical graph path in the observed agent surface, such as
   `mcp-server/playwright`,
-  `claude-plugin/claude-plugins-official/github`, or
-  `claude-plugin/claude-plugins-official/discord/deps/npm/hono`.
+  `plugin/claude-plugins-official/github`, or
+  `plugin/claude-plugins-official/discord/deps/npm/hono`.
+- `openaca:agent_host`: agent host surface that loads, exposes, or executes
+  the component, such as `claude-code`, `claude-desktop`, `cursor`,
+  `windsurf`, or `vscode`. It is provenance/execution context, not a package
+  ecosystem and not part of `openaca:identity`.
 - `purl`: external package/source coordinate used for OSV-compatible matching,
   such as `pkg:npm/%40playwright/mcp@latest` or `pkg:npm/hono@4.12.5`.
 - `version`: observed installed/source version. Versions stay outside
@@ -64,9 +71,10 @@ PURL separately. Plugin-bundled package dependencies use the plugin occurrence
 as their parent and add an unversioned dependency path:
 
 ```text
-openaca:identity = claude-plugin/claude-plugins-official/discord/deps/npm/hono
-purl             = pkg:npm/hono@4.12.5
-version          = 4.12.5
+openaca:identity   = plugin/claude-plugins-official/discord/deps/npm/hono
+openaca:agent_host = claude-code
+purl               = pkg:npm/hono@4.12.5
+version            = 4.12.5
 ```
 
 Posture findings MUST reference the same `openaca:identity` as the BOM
@@ -102,6 +110,10 @@ can appear more than once in unusual BOMs.
   are private, unstable across machines, and already handled as provenance.
   Path-derived suffixes are acceptable only as deterministic collision
   disambiguators.
+- **Include the agent host in `openaca:identity`.** Rejected because a host
+  value such as `claude-code` is provenance/execution context, while the graph
+  path should stay stable across equivalent host-specific observations. Host
+  context belongs in `openaca:agent_host`.
 
 ## Consequences
 

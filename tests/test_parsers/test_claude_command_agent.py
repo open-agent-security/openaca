@@ -25,7 +25,7 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner="superpowers",
-        attributed_to="claude-plugin/superpowers@5.1.0",
+        attributed_to="plugin/superpowers@5.1.0",
     )
     assert len(refs) == 2
     identities = sorted(r.component_identity or "" for r in refs)
@@ -35,7 +35,7 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
     ]
     assert all(r.ecosystem is None for r in refs)
     assert all(r.extra["component_type"] == "command" for r in refs)
-    assert all(r.attributed_to == "claude-plugin/superpowers@5.1.0" for r in refs)
+    assert all(r.attributed_to == "plugin/superpowers@5.1.0" for r in refs)
     assert all(r.extra["scope_owner"] == "superpowers" for r in refs)
 
 
@@ -180,7 +180,7 @@ def test_enumerate_plugin_named_repo_includes_owner_in_identity(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner="repo",
-        attributed_to="claude-plugin/repo@1.0.0",
+        attributed_to="plugin/repo@1.0.0",
     )
     assert len(refs) == 1
     assert refs[0].component_identity == "claude-command/repo/deploy"
@@ -192,11 +192,11 @@ def test_enumerate_propagates_scope_owner_for_plugin_bundled_agents(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner="superpowers",
-        attributed_to="claude-plugin/superpowers@5.1.0",
+        attributed_to="plugin/superpowers@5.1.0",
     )
     assert len(refs) == 1
     assert refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
-    assert refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert refs[0].attributed_to == "plugin/superpowers@5.1.0"
 
 
 def test_enumerate_frontmatter_without_name_field_falls_back_to_filename(tmp_path):

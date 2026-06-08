@@ -381,7 +381,7 @@ summary: test plugin advisory for plan 007
 modified: '2026-05-09T00:00:00Z'
 database_specific:
   openaca:
-    component_identity: claude-plugin/test-marketplace/sample-plugin
+    component_identity: plugin/test-marketplace/sample-plugin
 """
     )
     runner = CliRunner()
@@ -483,7 +483,7 @@ def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "openaca-posture-mutable-install-reference" in result.output
-    assert "claude-plugin/official/feature-dev@unknown" in result.output
+    assert "plugin/official/feature-dev@unknown" in result.output
 
 
 def test_endpoint_subcommand_verbose_lists_resolved_plugins():
@@ -499,7 +499,7 @@ def test_endpoint_subcommand_verbose_lists_resolved_plugins():
         ],
     )
     assert result.exit_code == 0
-    assert "claude-plugin/test-marketplace/sample-plugin@1.2.0" in result.output
+    assert "plugin/test-marketplace/sample-plugin@1.2.0" in result.output
     assert "deadbeef" in result.output  # gitCommitSha shortened
 
 
@@ -511,7 +511,7 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     fake_ref = ComponentRef(
         name="bad-sha-plugin",
         version="1.0.0",
-        component_identity="claude-plugin/bad-sha-plugin",
+        component_identity="plugin/bad-sha-plugin",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.bad-sha-plugin@test[0]",
         attributed_to=None,
@@ -1128,7 +1128,7 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert f"repo {tmp_path}" in result.output
-    assert "claude-plugin/demo-plugin@1.0.0" in result.output
+    assert "plugin/demo-plugin@1.0.0" in result.output
     assert "package deps/ (1)" in result.output
     assert "lodash@4.17.20" in result.output
     assert "skills/ (1)" in result.output

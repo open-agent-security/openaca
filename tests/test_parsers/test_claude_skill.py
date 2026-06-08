@@ -114,9 +114,9 @@ def test_parse_propagates_attributed_to(tmp_path):
         "bundled",
         "name: bundled\ndescription: ships inside a plugin\n",
     )
-    refs = parse(path, attributed_to="claude-plugin/superpowers@5.1.0")
+    refs = parse(path, attributed_to="plugin/superpowers@5.1.0")
     assert len(refs) == 1
-    assert refs[0].attributed_to == "claude-plugin/superpowers@5.1.0"
+    assert refs[0].attributed_to == "plugin/superpowers@5.1.0"
 
 
 def test_parse_skips_non_string_metadata_version(tmp_path):

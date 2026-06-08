@@ -122,6 +122,6 @@ def test_flatten_grouped_prefers_attributed_ref_over_unattributed_dup(tmp_path):
 
     npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/svc"]
     assert len(npm_refs) == 1, "dedup must collapse both discovery paths to one ref"
-    assert npm_refs[0].attributed_to == "claude-plugin/my-plugin@1.0.0", (
+    assert npm_refs[0].attributed_to == "plugin/my-plugin@1.0.0", (
         "attributed ref must win over the unattributed direct-walk duplicate"
     )

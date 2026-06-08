@@ -99,7 +99,7 @@ def _component_path_leaf(ref: "ComponentRef", component_type: str) -> Optional[s
 
 
 def _without_observed_version(identity: str) -> str:
-    if identity.startswith("claude-plugin/") and "@" in identity.rsplit("/", 1)[-1]:
+    if identity.startswith("plugin/") and "@" in identity.rsplit("/", 1)[-1]:
         return identity.rsplit("@", 1)[0]
     return identity
 

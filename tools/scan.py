@@ -27,7 +27,7 @@ subcommand name; the group forwards them either way:
     openaca scan repo --target X -v   # equivalent
 
 Findings carry an optional `attributed_to` field (e.g.,
-"claude-plugin/<marketplace>/<name>@<version>") set by parsers when a component was
+"plugin/<marketplace>/<name>@<version>") set by parsers when a component was
 discovered via an active plugin. Output prefixes the finding with `via <X>`
 when present; SARIF surfaces it in `properties.attributed_to`.
 """
@@ -97,7 +97,7 @@ def _component_type(ref: ComponentRef) -> str:
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
     return _component_type(ref) == "plugin" and bool(
-        ref.component_identity and ref.component_identity.startswith("claude-plugin/")
+        ref.component_identity and ref.component_identity.startswith("plugin/")
     )
 
 

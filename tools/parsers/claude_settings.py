@@ -4,7 +4,7 @@
 — settings doesn't carry version information. Refs are emitted with
 `component_type="plugin"` + `name=<plugin-name>` + `version=None`, and the
 logical identity includes marketplace when present:
-`claude-plugin/<marketplace>/<plugin-name>`.
+`plugin/<marketplace>/<plugin-name>`.
 Source ecosystem is unknown at settings scope; endpoint mode resolves versions
 through `installed_plugins.json`.
 
@@ -65,5 +65,5 @@ def _split_plugin_spec(spec: str) -> tuple[str, str | None]:
 
 def _plugin_identity(plugin_name: str, marketplace: str | None) -> str:
     if marketplace:
-        return f"claude-plugin/{marketplace}/{plugin_name}"
-    return f"claude-plugin/{plugin_name}"
+        return f"plugin/{marketplace}/{plugin_name}"
+    return f"plugin/{plugin_name}"

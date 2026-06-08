@@ -77,7 +77,7 @@ def _mutable_install_source_for(ref: ComponentRef) -> str | None:
             return ref.component_identity
         return f"{ref.component_identity}@unknown"
     if ref.name:
-        return f"claude-plugin/{ref.name}@unknown"
+        return f"plugin/{ref.name}@unknown"
     return None
 
 
@@ -133,9 +133,7 @@ def _component_type_for(ref: ComponentRef) -> str:
 
 
 def _format_component(ref: ComponentRef, install_source: str) -> str:
-    if (ref.extra or {}).get("component_type") == "plugin" and install_source.startswith(
-        "claude-plugin/"
-    ):
+    if (ref.extra or {}).get("component_type") == "plugin" and install_source.startswith("plugin/"):
         return install_source
     if ref.ecosystem and ref.name:
         return f"{ref.ecosystem}/{ref.name} ({install_source})"

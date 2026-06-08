@@ -135,8 +135,8 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict[str, Any]]) -> l
     Used for source-less agent components. The advisory carries the target
     identity at `database_specific.openaca.component_identity`.
 
-    For marketplace-qualified plugin refs (`claude-plugin/<marketplace>/<name>`),
-    also accepts advisories targeting the unqualified form (`claude-plugin/<name>`).
+    For marketplace-qualified plugin refs (`plugin/<marketplace>/<name>`),
+    also accepts advisories targeting the unqualified form (`plugin/<name>`).
     This lets advisory authors write one identity that covers both repo-mode
     scans (where marketplace is unavailable) and endpoint-mode scans (where
     marketplace is known). A marketplace-specific advisory only matches refs
@@ -148,10 +148,10 @@ def _match_by_identity(ref: ComponentRef, advisories: list[dict[str, Any]]) -> l
     candidate_targets: set[str] = {identity}
     marketplace = ref.extra.get("marketplace") if ref.extra else None
     if marketplace and isinstance(marketplace, str):
-        prefix = f"claude-plugin/{marketplace}/"
+        prefix = f"plugin/{marketplace}/"
         if identity.startswith(prefix):
             stripped = identity[len(prefix) :]
-            candidate_targets.add(f"claude-plugin/{stripped}")
+            candidate_targets.add(f"plugin/{stripped}")
 
     findings: list[Finding] = []
     for advisory in advisories:

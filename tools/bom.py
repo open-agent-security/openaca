@@ -220,7 +220,7 @@ def _short_hash(value: str) -> str:
 
 def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
     # Index by both versionless identity and versioned identity so that
-    # attributed_to values like "claude-plugin/mktplace/name@1.0.0" resolve
+    # attributed_to values like "plugin/mktplace/name@1.0.0" resolve
     # even when the plugin's component_identity is stored without version.
     identity_to_bom_ref: dict[str, str] = {}
     for component in components:
@@ -267,6 +267,7 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
     _append_prop(props, "openaca:attributed_to", ref.attributed_to)
+    _append_prop(props, "openaca:agent_host", _agent_host(ref))
     _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
     _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))
     _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
@@ -319,6 +320,9 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     component_type = props.get("openaca:component_type")
     if component_type:
         extra["component_type"] = component_type
+    agent_host = props.get("openaca:agent_host")
+    if agent_host:
+        extra["agent_host"] = agent_host
     for prop_name, extra_key in (
         ("openaca:runtime_hosts", "runtime_hosts"),
         ("openaca:declared_by", "declared_by"),
@@ -350,6 +354,14 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         except json.JSONDecodeError:
             extra["source_provenance"] = source_provenance
     return extra
+
+
+def _agent_host(ref: ComponentRef) -> str | None:
+    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
+    if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
+        return None
+    value = runtime_hosts[0]
+    return value if isinstance(value, str) and value else None
 
 
 # Flags whose value IS the package spec (takes precedence over positional arg).

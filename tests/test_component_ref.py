@@ -60,6 +60,26 @@ def test_canonical_identity_for_package_backed_mcp_uses_server_occurrence():
     assert canonical_component_identity(ref) == "mcp-server/playwright"
 
 
+def test_canonical_identity_prefers_stored_mcp_server_identity_when_no_component_path():
+    # BOM round-trip: component was written with openaca:identity = "mcp-server/playwright"
+    # and purl = pkg:npm/%40playwright/mcp@latest, but without openaca:component_path.
+    # Reading it back sets ref.name = "@playwright/mcp" (from PURL) and
+    # ref.component_identity = "mcp-server/playwright" (from stored identity).
+    # canonical_component_identity() must return the stored identity, not
+    # "mcp-server/@playwright/mcp".
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@playwright/mcp",
+        version="latest",
+        source_manifest=".mcp.json",
+        source_locator="$.mcpServers.playwright",
+        component_identity="mcp-server/playwright",
+        extra={"component_type": "mcp_server"},
+    )
+
+    assert canonical_component_identity(ref) == "mcp-server/playwright"
+
+
 def test_canonical_identity_for_plugin_dependency_uses_parent_occurrence():
     ref = ComponentRef(
         ecosystem="npm",

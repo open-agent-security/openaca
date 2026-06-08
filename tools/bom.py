@@ -398,13 +398,18 @@ def _extract_mcp_package(install_source: str) -> str | None:
                     return candidate
         i += 1
     # Second pass: first positional arg, skipping value-taking flags.
+    # After `--` (option terminator), all remaining tokens are positional.
     skip_next = False
+    after_terminator = False
     for token in tokens[1:]:
         if skip_next:
             skip_next = False
             continue
+        if after_terminator:
+            return token
         if token == "--":
-            break
+            after_terminator = True
+            continue
         if token.startswith("-"):
             if token in _NPX_UVX_FLAGS_WITH_VALUE and "=" not in token:
                 skip_next = True

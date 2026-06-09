@@ -3,7 +3,12 @@ import pytest
 from tools.fleet.upload_contract import FleetUploadContractError, enforce_fleet_upload_contract
 
 
-def test_allows_endpoint_inventory_paths_and_benign_url_queries():
+def test_allows_relative_inventory_paths_and_bare_host_urls():
+    """Relative inventory paths and bare-host URLs are allowed. Absolute
+    paths and URLs with paths/queries in `openaca:*` property values are
+    rejected — the collector's `_redact_payload_for_fleet` is responsible
+    for normalizing them BEFORE this enforcer runs.
+    """
     payload = _payload(
         target_locator="endpoint:user-scope",
         bom={
@@ -13,11 +18,11 @@ def test_allows_endpoint_inventory_paths_and_benign_url_queries():
                     "properties": [
                         {
                             "name": "openaca:source_manifest",
-                            "value": "/Users/alex/.claude/settings.json",
+                            "value": "settings.json",
                         },
                         {
                             "name": "openaca:source_provenance",
-                            "value": "https://example.test/package?version=1.2.3",
+                            "value": "https://example.test",
                         },
                     ],
                 }
@@ -26,6 +31,32 @@ def test_allows_endpoint_inventory_paths_and_benign_url_queries():
     )
 
     enforce_fleet_upload_contract(payload)
+
+
+def test_rejects_url_query_in_openaca_property():
+    """The backend rejects URL queries to prevent leaking parameters; the
+    CLI now mirrors that. Bare-host URLs are still allowed (see the test
+    above).
+    """
+    import pytest
+
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:source_provenance",
+                            "value": "https://example.test/package?version=1.2.3",
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+    assert "URL with a path" in str(exc.value)
 
 
 def test_rejects_token_like_values_without_echoing_value():
@@ -481,6 +512,9 @@ def test_rejects_adr0029_pinned_mcp_install_source_with_raw_argv():
 
 
 def test_allows_posture_evidence_without_rule_specific_allowlist():
+    """Posture evidence shape is allowed. Absolute paths in evidence fields
+    are rejected (collector redacts before this enforcer runs).
+    """
     payload = _payload(
         posture_findings=[
             {
@@ -493,7 +527,7 @@ def test_allows_posture_evidence_without_rule_specific_allowlist():
                 "fix": "Disable auto-approve.",
                 "evidence": {
                     "approved_tool_names": ["Read", "Write"],
-                    "manifest_path": "/Users/alex/.claude/settings.json",
+                    "manifest_path": "settings.json",
                 },
             }
         ]

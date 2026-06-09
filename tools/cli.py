@@ -6,7 +6,7 @@ import click
 
 from tools.bom_cli import main as bom_cmd
 from tools.export import main as export_cmd
-from tools.fleet.cli import main as fleet_cmd
+from tools.fleet.cli import main as remote_cmd
 from tools.lint import main as lint_cmd
 from tools.promote import main as promote_cmd
 from tools.scan import main as scan_cmd
@@ -23,7 +23,7 @@ scan_cmd.short_help = "Scan a repository or endpoint for agent-composition findi
 bom_cmd.short_help = "Generate an Agent BOM for a repository or endpoint."
 lint_cmd.short_help = "Validate overlay YAML against the schema."
 export_cmd.short_help = "Build the static overlay export."
-fleet_cmd.short_help = "Configure opt-in Fleet uploads."
+remote_cmd.short_help = "Configure opt-in remote uploads."
 promote_cmd.short_help = "Promote a reviewed candidate into the corpus."
 seed_cmd.short_help = "Generate review candidates from an OSV dump."
 
@@ -31,7 +31,7 @@ main.add_command(scan_cmd, name="scan")
 main.add_command(bom_cmd, name="bom")
 main.add_command(lint_cmd, name="lint")
 main.add_command(export_cmd, name="export")
-main.add_command(fleet_cmd, name="fleet")
+main.add_command(remote_cmd, name="remote")
 main.add_command(promote_cmd, name="promote")
 main.add_command(seed_cmd, name="seed")
 

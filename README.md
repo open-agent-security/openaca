@@ -189,14 +189,14 @@ repo and try each of its fixtures.
 The scanner is a normal Python package; run it against any local
 checkout. Two modes via subcommands.
 
-**Pin a specific version (recommended for Fleet / MDM / CI):**
+**Pin a specific version (recommended for remote sync / MDM / CI):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/open-agent-security/openaca/main/scripts/install.sh | OPENACA_VERSION=<version> sh
 ```
 
 Pinning matters for reproducible deployments — every machine getting
-"whatever latest was that day" is bad for debugging fleet behavior.
+"whatever latest was that day" is bad for debugging remote sync behavior.
 
 **Manual install (if you prefer not to pipe to sh, or want to control
 the path yourself):**

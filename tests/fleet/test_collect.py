@@ -1336,7 +1336,7 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
 
     result = CliRunner().invoke(
         openaca_main,
-        ["fleet", "collect", "endpoint", "--config-dir", str(tmp_path), "--quiet"],
+        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--quiet"],
     )
 
     assert result.exit_code == 0
@@ -1356,16 +1356,16 @@ def test_upload_cli_is_not_a_v0_command(tmp_path):
     bom_path = tmp_path / "bom.json"
     bom_path.write_text("{}", encoding="utf-8")
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "upload", str(bom_path)])
+    result = CliRunner().invoke(openaca_main, ["remote", "upload", str(bom_path)])
 
     assert result.exit_code != 0
     assert "No such command" in result.output
 
 
 def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     lines = [
-        "[fleet]",
+        "[remote]",
         'api_url = "http://fleet.test"',
         'token = "ot_TEST"',
     ]

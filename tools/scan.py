@@ -735,7 +735,7 @@ def endpoint(
     if project is None:
         card_next.append("include project-local config: openaca scan endpoint --project .")
     card_next.append("emit Agent BOM: openaca bom endpoint --output openaca-bom.json")
-    card_next.append("upload to Fleet: openaca fleet collect endpoint")
+    card_next.append("sync to remote: openaca remote sync endpoint")
 
     if verbose:
         click.echo(f"loaded {overlay_count} OpenACA overlay(s)", err=True)

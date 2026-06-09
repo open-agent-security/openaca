@@ -1,10 +1,10 @@
 ---
 id: 0024
 title: Keep Fleet collection opt-in with an endpoint inventory upload contract
-status: accepted
+status: superseded
 date: 2026-05-28
 supersedes: null
-superseded-by: null
+superseded-by: 0032
 ---
 
 ## Context

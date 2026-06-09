@@ -157,7 +157,7 @@ def _mask_token(token: str) -> str:
     # configured. Suffix only when the token is long enough that 4 chars
     # reveal little; real tokens are ot_ + 20+ chars.
     if token.startswith("ot_"):
-        if len(token) >= 12:
+        if len(token) >= 23:  # ot_ (3) + 20+ real secret chars
             return f"ot_...{token[-4:]}"
         return "ot_..."
     return "***"

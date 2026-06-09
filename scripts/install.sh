@@ -46,10 +46,14 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="${UV_INSTALL_DIR:-$HOME/.local/bin}:$PATH"
 fi
 
-# Install openaca into uv's isolated tool environment.
+# Install openaca into uv's isolated tool environment. No --prerelease
+# flag: uv's default strategy already picks openaca's beta (the package
+# only has pre-releases), while `--prerelease allow` would apply to the
+# ENTIRE resolution and drag dependencies onto their pre-releases too
+# (httpx 1.0.dev broke `openaca remote sync` exactly this way).
 echo "→ Installing openaca (${OPENACA_VERSION})..."
 if [ "$OPENACA_VERSION" = "latest" ]; then
-  uv tool install --upgrade --prerelease allow openaca
+  uv tool install --upgrade openaca
 else
   uv tool install --upgrade "openaca==${OPENACA_VERSION}"
 fi
@@ -68,7 +72,7 @@ elif [ -x "$OPENACA_BIN" ]; then
   echo "  $OPENACA_BIN scan endpoint"
 else
   if [ "$OPENACA_VERSION" = "latest" ]; then
-    echo "  uvx --prerelease allow --from openaca openaca scan endpoint"
+    echo "  uvx --from openaca openaca scan endpoint"
   else
     echo "  uvx --from openaca==${OPENACA_VERSION} openaca scan endpoint"
   fi

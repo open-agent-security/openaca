@@ -20,9 +20,13 @@ def test_remote_deploy_scripts_default_to_latest_openaca():
     for path in _remote_deploy_scripts():
         text = path.read_text(encoding="utf-8")
         assert 'OPENACA_VERSION="${OPENACA_VERSION:-latest}"' in text
-        # latest must upgrade in place AND allow pre-releases (openaca ships
-        # only betas, so without --prerelease an old build is never advanced).
-        assert '"$UV_BIN" tool install --upgrade --prerelease allow openaca' in text
+        # latest must upgrade in place. NO --prerelease flag: uv's default
+        # strategy already picks openaca's beta (the package only has
+        # pre-releases), while `--prerelease allow` applies to the whole
+        # resolution and drags dependencies onto their pre-releases too
+        # (httpx 1.0.dev broke `openaca remote sync` exactly this way).
+        assert '"$UV_BIN" tool install --upgrade openaca' in text
+        assert "--prerelease" not in text
         # a pinned version installs exactly that build, still upgrading in place.
         assert '"$UV_BIN" tool install --upgrade "openaca==$OPENACA_VERSION"' in text
         # the old non-upgrading form must be gone.
@@ -116,7 +120,9 @@ def test_remote_deploy_scripts_upgrade_to_latest_prerelease(tmp_path: Path):
     """With no pinned version (the default), each script must upgrade in place
     to the latest pre-release. The earlier `--force` form reinstalled but did
     not advance an already-installed build, so a managed endpoint kept its old
-    version across re-runs — the bug this guards against.
+    version across re-runs — the bug this guards against. No --prerelease
+    flag: uv's default strategy covers openaca's beta-only releases without
+    dragging dependencies onto their pre-releases.
     """
     for path in _remote_deploy_scripts():
         run = _run_script(
@@ -130,7 +136,7 @@ def test_remote_deploy_scripts_upgrade_to_latest_prerelease(tmp_path: Path):
         assert run.result.returncode == 0, run.result.stderr
         assert (run.log_dir / "uv.log").read_text(encoding="utf-8").splitlines() == [
             "self update",
-            "tool install --upgrade --prerelease allow openaca",
+            "tool install --upgrade openaca",
         ]
 
 

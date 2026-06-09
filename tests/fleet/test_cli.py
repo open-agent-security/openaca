@@ -8,11 +8,25 @@ from tools.fleet.client import BomUploadResult, DriftResult
 from tools.fleet.config import load_fleet_config
 
 
+def test_remote_is_public_upload_command_group() -> None:
+    result = CliRunner().invoke(openaca_main, ["remote", "--help"])
+
+    assert result.exit_code == 0
+    assert "Configure opt-in remote uploads" in result.output
+
+
+def test_fleet_command_group_is_not_public() -> None:
+    result = CliRunner().invoke(openaca_main, ["fleet", "--help"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
 def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_TEST"])
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_TEST"])
 
     assert result.exit_code == 0
     assert "ot_TEST" not in result.output
@@ -23,13 +37,13 @@ def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
 
 
 def test_configure_accepts_api_url_override(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(
         openaca_main,
         [
-            "fleet",
+            "remote",
             "configure",
             "--token",
             "ot_TEST",
@@ -43,10 +57,10 @@ def test_configure_accepts_api_url_override(tmp_path, monkeypatch):
 
 
 def test_configure_prompts_for_token(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure"], input="ot_PROMPT\n")
+    result = CliRunner().invoke(openaca_main, ["remote", "configure"], input="ot_PROMPT\n")
 
     assert result.exit_code == 0
     assert "ot_PROMPT" not in result.output
@@ -55,11 +69,11 @@ def test_configure_prompts_for_token(tmp_path, monkeypatch):
 
 def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monkeypatch):
     """Re-running configure with identical token and api_url must not drop the cached asset_id."""
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "https://api.openaca.dev"',
                 'token = "ot_SAME"',
                 'asset_id = "asset-123"',
@@ -70,7 +84,7 @@ def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monke
     )
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_SAME"])
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_SAME"])
 
     assert result.exit_code == 0
     assert load_fleet_config(config_path).asset_id == "asset-123"
@@ -79,11 +93,11 @@ def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monke
 def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
     """Changing the token on reconfigure must clear the cached asset_id to prevent
     uploads to an asset registered under a different org/token."""
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "https://api.openaca.dev"',
                 'token = "ot_OLD"',
                 'asset_id = "asset-123"',
@@ -94,7 +108,7 @@ def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_NEW"])
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_NEW"])
 
     assert result.exit_code == 0
     assert load_fleet_config(config_path).asset_id is None
@@ -103,11 +117,11 @@ def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
 def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
     """Changing api_url on reconfigure must clear the cached asset_id because the
     asset belongs to the old backend and cannot be used with the new one."""
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "https://api.openaca.dev"',
                 'token = "ot_TEST"',
                 'asset_id = "asset-123"',
@@ -120,7 +134,7 @@ def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
 
     result = CliRunner().invoke(
         openaca_main,
-        ["fleet", "configure", "--token", "ot_TEST", "--api-url", "http://localhost:8000"],
+        ["remote", "configure", "--token", "ot_TEST", "--api-url", "http://localhost:8000"],
     )
 
     assert result.exit_code == 0
@@ -130,11 +144,11 @@ def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
 def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkeypatch):
     """When token changes on reconfigure, any pending offline-cache files (which embed
     the old asset_id) must be purged so they are never replayed against the new backend."""
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "https://api.openaca.dev"',
                 'token = "ot_OLD"',
                 'asset_id = "asset-123"',
@@ -151,7 +165,7 @@ def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkey
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_NEW"])
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_NEW"])
 
     assert result.exit_code == 0
     assert not list(pending_dir.glob("pending-bom-*.json")), "stale pending files must be purged"
@@ -159,11 +173,11 @@ def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkey
 
 def test_configure_does_not_purge_pending_files_when_credentials_unchanged(tmp_path, monkeypatch):
     """Re-running configure with identical credentials must not discard pending files."""
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "https://api.openaca.dev"',
                 'token = "ot_SAME"',
                 'asset_id = "asset-123"',
@@ -178,18 +192,18 @@ def test_configure_does_not_purge_pending_files_when_credentials_unchanged(tmp_p
     monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "configure", "--token", "ot_SAME"])
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_SAME"])
 
     assert result.exit_code == 0
     assert (pending_dir / "pending-bom-keep.json").exists(), "pending file must be preserved"
 
 
 def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "http://fleet.test"',
                 'token = "ot_TEST"',
                 'asset_id = "asset-123"',
@@ -215,7 +229,7 @@ def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "status"])
+    result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
     assert result.exit_code == 0
     assert calls == [
@@ -229,11 +243,11 @@ def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
 
 
 def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "http://fleet.test"',
                 'token = "ot_TEST"',
                 "",
@@ -257,21 +271,21 @@ def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, m
 
     monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "status"])
+    result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
     assert result.exit_code == 0
     assert calls == ["init", "get_me"]
     assert "Acme Inc" in result.output
     assert "No asset configured" in result.output
-    assert "openaca fleet collect endpoint" in result.output
+    assert "openaca remote sync endpoint" in result.output
 
 
 def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch):
-    config_path = tmp_path / "fleet.toml"
+    config_path = tmp_path / "remote.toml"
     config_path.write_text(
         "\n".join(
             [
-                "[fleet]",
+                "[remote]",
                 'api_url = "http://fleet.test"',
                 'token = "ot_TEST"',
                 'asset_id = "asset-123"',
@@ -291,10 +305,10 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
 
     monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "status"])
+    result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
     assert result.exit_code != 0
-    assert "Fleet API unreachable: connection refused" in result.output
+    assert "Remote API unreachable: connection refused" in result.output
     assert "Traceback" not in result.output
 
 
@@ -308,7 +322,7 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
     monkeypatch.setattr("tools.fleet.cli.collect_endpoint", fake_collect_endpoint)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
 
-    result = CliRunner().invoke(openaca_main, ["fleet", "collect", "endpoint"])
+    result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
 
     assert result.exit_code == 0
     assert calls[0]["config_dir"] == tmp_path

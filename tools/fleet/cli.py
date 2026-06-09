@@ -24,14 +24,14 @@ from tools.fleet.config import (
 
 @click.group()
 def main() -> None:
-    """Configure opt-in Fleet uploads."""
+    """Configure opt-in remote uploads."""
 
 
 @main.command()
-@click.option("--token", prompt="Fleet API token", hide_input=True, help="Fleet API token.")
-@click.option("--api-url", default=DEFAULT_API_URL, show_default=True, help="Fleet API URL.")
+@click.option("--token", prompt="Remote API token", hide_input=True, help="Remote API token.")
+@click.option("--api-url", default=DEFAULT_API_URL, show_default=True, help="Remote API URL.")
 def configure(token: str, api_url: str) -> None:
-    """Write local Fleet configuration."""
+    """Write local remote configuration."""
     config_path = get_config_path()
     try:
         existing = load_fleet_config(config_path)
@@ -46,19 +46,19 @@ def configure(token: str, api_url: str) -> None:
         )
     except ConfigError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(f"Fleet configured at {api_url} with token {_mask_token(token)}")
+    click.echo(f"Remote configured at {api_url} with token {_mask_token(token)}")
 
 
 @main.command()
 def status() -> None:
-    """Show Fleet token and asset status."""
+    """Show remote token and asset status."""
     try:
         config = load_fleet_config(get_config_path())
     except ConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     if config.token is None:
         raise click.ClickException(
-            "Fleet is not configured; run openaca fleet configure --token <TOKEN>"
+            "Remote is not configured; run openaca remote configure --token <TOKEN>"
         )
 
     client = FleetClient(api_url=config.api_url, token=config.token)
@@ -67,11 +67,11 @@ def status() -> None:
         click.echo(f"Org: {me.org.name} ({me.org.id})")
         click.echo(f"Token: {me.token.name} ({me.token.id})")
         if config.asset_id is None:
-            click.echo("No asset configured yet. Run openaca fleet collect endpoint first.")
+            click.echo("No asset configured yet. Run openaca remote sync endpoint first.")
             return
         asset = client.get_asset(config.asset_id)
     except httpx.TransportError as exc:
-        raise click.ClickException(f"Fleet API unreachable: {exc}") from exc
+        raise click.ClickException(f"Remote API unreachable: {exc}") from exc
     except FleetClientError as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -82,11 +82,11 @@ def status() -> None:
 
 
 @main.group()
-def collect() -> None:
-    """Collect and upload Fleet data."""
+def sync() -> None:
+    """Collect and upload remote data."""
 
 
-@collect.command()
+@sync.command()
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -112,7 +112,7 @@ def endpoint(
     quiet: bool,
     allow_offline_cache: bool,
 ) -> None:
-    """Collect endpoint composition and upload it."""
+    """Sync endpoint composition to the configured remote."""
     try:
         result = collect_endpoint(
             config_dir=_resolve_endpoint_config_dir(config_dir),

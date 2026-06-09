@@ -89,7 +89,7 @@ def collect_endpoint(
     config_path = get_config_path()
     config = load_fleet_config(config_path)
     if config.token is None:
-        raise CollectError("Fleet is not configured; run openaca fleet configure --token <TOKEN>")
+        raise CollectError("Remote is not configured; run openaca remote configure --token <TOKEN>")
 
     client = FleetClient(api_url=config.api_url, token=config.token)
     if config.asset_id is not None:

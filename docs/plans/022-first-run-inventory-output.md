@@ -63,7 +63,7 @@ string and target descriptor; the renderer only lays them out.
   `project: <project | not included>`
 - Next: `include project-local config: openaca scan endpoint --project .`
   (only when `project is None`); `emit Agent BOM: openaca bom endpoint
-  --output openaca-bom.json`; `upload to Fleet: openaca fleet collect endpoint`
+  --output openaca-bom.json`; `sync to remote: openaca remote sync endpoint`
 
 `bom`:
 - Target: `source: Agent BOM`, `file: <input_path>`,

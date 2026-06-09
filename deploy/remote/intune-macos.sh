@@ -1,22 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ -z "${OPENACA_FLEET_TOKEN:-}" ] && [ -n "${4:-}" ]; then
-  OPENACA_FLEET_TOKEN="$4"
-fi
-if [ -z "${OPENACA_FLEET_API_URL:-}" ] && [ -n "${5:-}" ]; then
-  OPENACA_FLEET_API_URL="$5"
-fi
-if [ -z "${OPENACA_VERSION:-}" ] && [ -n "${6:-}" ]; then
-  OPENACA_VERSION="$6"
-fi
-
-OPENACA_FLEET_API_URL="${OPENACA_FLEET_API_URL:-https://api.openaca.dev}"
+OPENACA_REMOTE_API_URL="${OPENACA_REMOTE_API_URL:-https://api.openaca.dev}"
 OPENACA_VERSION="${OPENACA_VERSION:-latest}"
-LABEL="com.openaca.fleet"
+LABEL="com.openaca.remote"
 
-if [ -z "${OPENACA_FLEET_TOKEN:-}" ]; then
-  echo "OPENACA_FLEET_TOKEN is required, or pass it as Jamf parameter 4" >&2
+if [ -z "${OPENACA_REMOTE_TOKEN:-}" ]; then
+  echo "OPENACA_REMOTE_TOKEN is required" >&2
   exit 2
 fi
 
@@ -50,8 +40,8 @@ else
   OPENACA_PACKAGE="openaca==$OPENACA_VERSION"
 fi
 run_as_user "$UV_BIN" tool install "$OPENACA_PACKAGE" --force
-printf '%s\n' "$OPENACA_FLEET_TOKEN" | run_as_user "$OPENACA_BIN" fleet configure \
-  --api-url "$OPENACA_FLEET_API_URL"
+printf '%s\n' "$OPENACA_REMOTE_TOKEN" | run_as_user "$OPENACA_BIN" remote configure \
+  --api-url "$OPENACA_REMOTE_API_URL"
 
 run_as_user mkdir -p "$LOG_DIR" "$USER_HOME/Library/LaunchAgents"
 cat > "$PLIST" <<PLIST
@@ -65,8 +55,8 @@ cat > "$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>$OPENACA_BIN</string>
-    <string>fleet</string>
-    <string>collect</string>
+    <string>remote</string>
+    <string>sync</string>
     <string>endpoint</string>
     <string>--quiet</string>
   </array>
@@ -75,9 +65,9 @@ cat > "$PLIST" <<PLIST
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>$LOG_DIR/fleet.out.log</string>
+  <string>$LOG_DIR/remote.out.log</string>
   <key>StandardErrorPath</key>
-  <string>$LOG_DIR/fleet.err.log</string>
+  <string>$LOG_DIR/remote.err.log</string>
 </dict>
 </plist>
 PLIST
@@ -88,4 +78,4 @@ launchctl bootout "gui/$USER_UID" "$PLIST" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$USER_UID" "$PLIST"
 launchctl kickstart -k "gui/$USER_UID/$LABEL" >/dev/null 2>&1 || true
 
-echo "OpenACA Fleet LaunchAgent installed for $CONSOLE_USER"
+echo "OpenACA remote LaunchAgent installed for $CONSOLE_USER"

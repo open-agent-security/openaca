@@ -365,8 +365,8 @@ plugin-level components).
 1. **Parse** every supported manifest under `--target`. Each parser
    emits component identifiers — standard PURLs (`pkg:npm/...`,
    `pkg:pypi/...`) where possible, OpenACA-native identifiers
-   (`mcp-stdio/uvx-unpinned:<package>`) where standard PURLs don't
-   apply.
+   (`mcp-server/<name>` for MCP servers without a package coordinate)
+   where standard PURLs don't apply.
 2. **Match** queryable PURLs against OSV.dev records, then merge
    OpenACA overlays from the bundled `overlays/` directory by alias-set
    intersection. Confidence tiers:

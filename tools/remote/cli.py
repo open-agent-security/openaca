@@ -152,6 +152,12 @@ def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
 
 
 def _mask_token(token: str) -> str:
+    # Prefix + last 4 — the same last-4 the backend stores for console
+    # display — so a user with several tokens can tell which one is
+    # configured. Suffix only when the token is long enough that 4 chars
+    # reveal little; real tokens are ot_ + 20+ chars.
     if token.startswith("ot_"):
+        if len(token) >= 12:
+            return f"ot_...{token[-4:]}"
         return "ot_..."
     return "***"

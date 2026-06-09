@@ -206,15 +206,15 @@ the path yourself):**
 # resolution picks openaca's beta releases — no pre-release flag needed):
 uv tool install openaca
 
-# Or with pip (Python 3.11+ in your existing workflow; pip needs --pre
-# while OpenACA is in beta):
-pip install --pre openaca
+# Or with pip (Python 3.11+ in your existing workflow; pip's default
+# resolution picks openaca's beta — no --pre flag needed):
+pip install openaca
 ```
 
-(Avoid `uv … --prerelease allow` — it applies to the entire resolution
-and can pull *dependencies* onto their pre-releases too. Pin a specific
-build with `openaca==<version>` if you need to reproduce a bug report
-against an exact version.)
+(Avoid `uv … --prerelease allow` or `pip install --pre` — both apply
+to the *entire* resolution and can pull dependencies onto their
+pre-releases too. Pin a specific build with `openaca==<version>` if
+you need to reproduce a bug report against an exact version.)
 
 **Install from source (for contributors):**
 

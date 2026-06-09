@@ -32,8 +32,9 @@ backend implementation.
 ## Alternatives considered
 
 - **Keep `openaca fleet ...`**: rejected because it couples the OSS command
-  surface to one hosted product name and is easy to misread as a FleetDM
-  integration.
+  surface to one hosted product name and is easy to misread as an integration
+  with endpoint-management products that already use "fleet" as their primary
+  name.
 - **Use `openaca bom upload ...` for endpoint collection**: rejected because
   endpoint sync is not just artifact upload. It also registers/reuses an asset,
   scans local agent configuration, runs posture checks, and handles pending

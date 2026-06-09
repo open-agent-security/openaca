@@ -50,8 +50,9 @@ else
   OPENACA_PACKAGE="openaca==$OPENACA_VERSION"
 fi
 run_as_user "$UV_BIN" tool install "$OPENACA_PACKAGE" --force
-printf '%s\n' "$OPENACA_REMOTE_TOKEN" | run_as_user "$OPENACA_BIN" remote configure \
-  --api-url "$OPENACA_REMOTE_API_URL"
+run_as_user "$OPENACA_BIN" remote configure \
+  --api-url "$OPENACA_REMOTE_API_URL" \
+  --token "$OPENACA_REMOTE_TOKEN"
 
 run_as_user mkdir -p "$LOG_DIR" "$USER_HOME/Library/LaunchAgents"
 cat > "$PLIST" <<PLIST

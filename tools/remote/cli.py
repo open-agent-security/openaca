@@ -28,7 +28,13 @@ def main() -> None:
 
 
 @main.command()
-@click.option("--token", prompt="Remote API token", hide_input=True, help="Remote API token.")
+@click.option(
+    "--token",
+    envvar="OPENACA_REMOTE_TOKEN",
+    prompt="Remote API token",
+    hide_input=True,
+    help="Remote API token.",
+)
 @click.option("--api-url", default=DEFAULT_API_URL, show_default=True, help="Remote API URL.")
 def configure(token: str, api_url: str) -> None:
     """Write local remote configuration."""

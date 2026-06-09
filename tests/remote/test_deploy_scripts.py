@@ -170,6 +170,7 @@ if [ "$1" = "env" ]; then
     case "$1" in
       HOME=*) export HOME="${{1#HOME=}}"; shift ;;
       PATH=*) export PATH="{fakebin}:$PATH:${{1#PATH=}}"; shift ;;
+      *=*) export "$1"; shift ;;
       *) break ;;
     esac
   done
@@ -184,13 +185,8 @@ exec "$@"
     _write_executable(
         openaca_bin,
         f"""
-if [ ! -t 0 ]; then
-  token="$(cat)"
-else
-  token=""
-fi
 printf "args=%s\\n" "$*" >> "{log_dir / "openaca.log"}"
-printf "stdin=%s\\n" "$token" >> "{log_dir / "openaca.log"}"
+printf "token_env=%s\\n" "${{OPENACA_REMOTE_TOKEN:-}}" >> "{log_dir / "openaca.log"}"
 """,
     )
 
@@ -227,8 +223,8 @@ def _assert_successful_install(
         f"tool install --upgrade {package}",
     ]
     assert (run.log_dir / "openaca.log").read_text(encoding="utf-8").splitlines() == [
-        f"args=remote configure --api-url {api_url} --token {token}",
-        "stdin=",
+        f"args=remote configure --api-url {api_url}",
+        f"token_env={token}",
     ]
 
     plist_path = run.home / "Library" / "LaunchAgents" / "com.openaca.remote.plist"

@@ -95,3 +95,21 @@ def test_load_migration_ignores_corrupt_fleet_toml(monkeypatch, tmp_path):
     config = load_fleet_config()
 
     assert config == FleetConfig()
+
+
+def test_load_migrates_legacy_fleet_toml_via_explicit_default_path(monkeypatch, tmp_path):
+    # CLI callers pass load_fleet_config(get_config_path()) — migration must run even
+    # when an explicit (but default) path is given, not only when path is None.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy = tmp_path / ".config" / "openaca" / "fleet.toml"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        '[fleet]\ntoken = "ot_LEGACY"\nasset_id = "asset-old"\n',
+        encoding="utf-8",
+    )
+
+    config = load_fleet_config(get_config_path())
+
+    assert config.token == "ot_LEGACY"
+    assert config.asset_id == "asset-old"
+    assert (tmp_path / ".config" / "openaca" / "remote.toml").exists()

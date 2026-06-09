@@ -26,7 +26,7 @@ def get_config_path() -> Path:
 def load_fleet_config(path: Path | None = None) -> FleetConfig:
     config_path = path or get_config_path()
     if not config_path.exists():
-        if path is None:
+        if config_path == get_config_path():
             _maybe_migrate_legacy(config_path)
         if not config_path.exists():
             return FleetConfig()

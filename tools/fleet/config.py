@@ -26,7 +26,10 @@ def get_config_path() -> Path:
 def load_fleet_config(path: Path | None = None) -> FleetConfig:
     config_path = path or get_config_path()
     if not config_path.exists():
-        return FleetConfig()
+        if path is None:
+            _maybe_migrate_legacy(config_path)
+        if not config_path.exists():
+            return FleetConfig()
     try:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -70,3 +73,25 @@ def _to_toml(config: FleetConfig) -> str:
 
 def _escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _maybe_migrate_legacy(remote_path: Path) -> None:
+    """Migrate ~/.config/openaca/fleet.toml → remote.toml on first run after the rename."""
+    legacy = remote_path.parent / "fleet.toml"
+    if not legacy.exists():
+        return
+    try:
+        data = tomllib.loads(legacy.read_text(encoding="utf-8"))
+        section = data.get("fleet", {})
+        api_url = section.get("api_url", DEFAULT_API_URL)
+        token = section.get("token")
+        asset_id = section.get("asset_id")
+        if not isinstance(api_url, str):
+            api_url = DEFAULT_API_URL
+        if not isinstance(token, str):
+            token = None
+        if not isinstance(asset_id, str):
+            asset_id = None
+        save_fleet_config(FleetConfig(api_url=api_url, token=token, asset_id=asset_id), remote_path)
+    except (OSError, tomllib.TOMLDecodeError, AttributeError):
+        pass

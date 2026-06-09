@@ -84,6 +84,8 @@ PLIST
 
 chown "$CONSOLE_USER":staff "$PLIST"
 chmod 0644 "$PLIST"
+launchctl bootout "gui/$USER_UID/com.openaca.fleet" >/dev/null 2>&1 || true
+rm -f "$USER_HOME/Library/LaunchAgents/com.openaca.fleet.plist"
 launchctl bootout "gui/$USER_UID" "$PLIST" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$USER_UID" "$PLIST"
 launchctl kickstart -k "gui/$USER_UID/$LABEL" >/dev/null 2>&1 || true

@@ -44,6 +44,25 @@ def test_finding_to_output_explains_direct_mcp_component():
     assert out["matched_advisory"]["id"] == "GHSA-xxxx-yyyy-zzzz"
 
 
+def test_finding_to_output_surfaces_external_match_coordinate():
+    ref = ComponentRef(
+        component_identity="skill/frontend-design",
+        source_manifest="skills/frontend-design/SKILL.md",
+        source_locator="$",
+        extra={
+            "component_type": "skill",
+            "match_coordinate": "skills.sh:anthropics/skills/frontend-design",
+        },
+    )
+    finding = Finding("MAL-2026-SKILL", ref, "high")
+
+    out = finding_to_output(finding, {"id": "MAL-2026-SKILL", "summary": "Skill issue"})
+
+    assert out["component"]["source"] == {
+        "match_coordinate": "skills.sh:anthropics/skills/frontend-design"
+    }
+
+
 def test_finding_to_output_marks_source_unknown_for_source_less_skill():
     ref = ComponentRef(
         name="bootstrap",

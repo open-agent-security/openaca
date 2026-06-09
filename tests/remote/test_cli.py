@@ -57,11 +57,17 @@ def test_configure_masked_token_shows_last4_for_disambiguation(tmp_path, monkeyp
 def test_mask_token_short_and_unknown_shapes_reveal_nothing():
     """A short token's last 4 could be most of its secret, and an
     unknown-shaped secret has no safe prefix — both stay fully masked.
+    Real tokens are ot_ + 20+ chars; anything shorter stays fully masked
+    so 4 chars never represent a meaningful fraction of the secret.
     """
     from tools.remote.cli import _mask_token
 
     assert _mask_token("ot_TEST") == "ot_..."
     assert _mask_token("something-else") == "***"
+    # Mid-length ot_ token (9 secret chars) — suffix would be 44% of secret
+    assert _mask_token("ot_123456789") == "ot_..."
+    # One char below the threshold (22 total = ot_ + 19 secret chars)
+    assert _mask_token("ot_" + "A" * 19) == "ot_..."
 
 
 def test_configure_accepts_api_url_override(tmp_path, monkeypatch):

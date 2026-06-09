@@ -221,7 +221,6 @@ def _assert_successful_install(
     )
 
     assert (run.log_dir / "launchctl.log").read_text(encoding="utf-8").splitlines() == [
-        "bootout gui/501/com.openaca.fleet",
         f"bootout gui/501 {plist_path}",
         f"bootstrap gui/501 {plist_path}",
         "kickstart -k gui/501/com.openaca.remote",

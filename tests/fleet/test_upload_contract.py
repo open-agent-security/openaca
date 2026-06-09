@@ -59,6 +59,33 @@ def test_rejects_url_query_in_openaca_property():
     assert "URL with a path" in str(exc.value)
 
 
+def test_rejects_bare_userinfo_url_in_openaca_property():
+    """A URL with credentials in userinfo but no path/query
+    (`https://user:pass@host`) must be rejected. `_redact_url_for_fleet`
+    strips userinfo, but a stale offline-cache payload replayed via
+    `_replay_pending_uploads` is only validated by this contract (no
+    redaction pass), so the contract is the last line of defense against
+    uploading credentials.
+    """
+    payload = _payload(
+        bom={
+            "components": [
+                {
+                    "properties": [
+                        {
+                            "name": "openaca:install_source",
+                            "value": "https://alice:s3cr3t@example.com",
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    with pytest.raises(FleetUploadContractError) as exc:
+        enforce_fleet_upload_contract(payload)
+    assert "credentials" in str(exc.value)
+
+
 def test_rejects_token_like_values_without_echoing_value():
     payload = _payload(
         bom={

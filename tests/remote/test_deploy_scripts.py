@@ -20,9 +20,11 @@ def test_remote_deploy_scripts_default_to_latest_openaca():
     for path in _remote_deploy_scripts():
         text = path.read_text(encoding="utf-8")
         assert 'OPENACA_VERSION="${OPENACA_VERSION:-latest}"' in text
-        # latest must upgrade in place AND allow pre-releases (openaca ships
-        # only betas, so without --prerelease an old build is never advanced).
-        assert '"$UV_BIN" tool install --upgrade --prerelease allow openaca' in text
+        # latest must upgrade in place AND allow openaca's pre-releases — but
+        # ONLY openaca's, not its deps. --prerelease=explicit + an explicit beta
+        # specifier advances the beta while keeping httpx/pydantic/etc. on stable
+        # (a blanket --prerelease allow once pulled httpx 1.0.dev3 and broke it).
+        assert '"$UV_BIN" tool install --upgrade --prerelease=explicit "openaca>=0.1.0b0"' in text
         # a pinned version installs exactly that build, still upgrading in place.
         assert '"$UV_BIN" tool install --upgrade "openaca==$OPENACA_VERSION"' in text
         # the old non-upgrading form must be gone.
@@ -130,7 +132,7 @@ def test_remote_deploy_scripts_upgrade_to_latest_prerelease(tmp_path: Path):
         assert run.result.returncode == 0, run.result.stderr
         assert (run.log_dir / "uv.log").read_text(encoding="utf-8").splitlines() == [
             "self update",
-            "tool install --upgrade --prerelease allow openaca",
+            "tool install --upgrade --prerelease=explicit openaca>=0.1.0b0",
         ]
 
 

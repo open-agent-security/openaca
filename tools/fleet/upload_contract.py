@@ -109,6 +109,10 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                     raise FleetUploadContractError(
                         f"{location} is a URL with a path or query ({name!r})"
                     )
+                if _is_url_with_userinfo(value):
+                    raise FleetUploadContractError(
+                        f"{location} is a URL with credentials in userinfo ({name!r})"
+                    )
 
     for f_idx, finding in enumerate(payload.get("posture_findings", []) or []):
         if not isinstance(finding, dict):
@@ -124,6 +128,8 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                 raise FleetUploadContractError(f"{location} is an absolute path")
             if _is_url_with_path_or_query(value):
                 raise FleetUploadContractError(f"{location} is a URL with a path or query")
+            if _is_url_with_userinfo(value):
+                raise FleetUploadContractError(f"{location} is a URL with credentials in userinfo")
 
 
 def _is_url_with_path_or_query(value: str) -> bool:
@@ -134,6 +140,26 @@ def _is_url_with_path_or_query(value: str) -> bool:
         return False
     _, rest = value.split("://", 1)
     return any(d in rest for d in ("/", "?", "#"))
+
+
+def _is_url_with_userinfo(value: str) -> bool:
+    """An http(s) URL whose authority carries userinfo (`user:pass@host`)
+    embeds credentials. `_redact_url_for_fleet` strips these, but a stale
+    offline-cache payload replayed via `_replay_pending_uploads` skips the
+    redaction pass and is validated only here — so the contract must reject
+    userinfo as the last line of defense against uploading credentials. A
+    bare-host URL has no path/query/fragment, so `_is_url_with_path_or_query`
+    alone would let `https://user:pass@host` through.
+    """
+    if not value.lower().startswith(("http://", "https://")):
+        return False
+    _, rest = value.split("://", 1)
+    authority = rest
+    for delim in ("/", "?", "#"):
+        idx = authority.find(delim)
+        if idx >= 0:
+            authority = authority[:idx]
+    return "@" in authority
 
 
 def _is_forbidden_name(value: str) -> bool:

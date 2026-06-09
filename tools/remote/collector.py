@@ -14,12 +14,6 @@ import httpx
 
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
-from tools.fleet.client import BomUploadResult, FleetClient, FleetClientError, FleetServerError
-from tools.fleet.config import FleetConfig, get_config_path, load_fleet_config, save_fleet_config
-from tools.fleet.upload_contract import (
-    FleetUploadContractError,
-    enforce_fleet_upload_contract,
-)
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
@@ -27,6 +21,17 @@ from tools.posture import (
     collect_endpoint_mcp_manifests,
     collect_endpoint_settings_manifests,
     run_posture_rules,
+)
+from tools.remote.client import BomUploadResult, RemoteClient, RemoteClientError, RemoteServerError
+from tools.remote.config import (
+    RemoteConfig,
+    get_config_path,
+    load_remote_config,
+    save_remote_config,
+)
+from tools.remote.upload_contract import (
+    RemoteUploadContractError,
+    enforce_remote_upload_contract,
 )
 
 JsonObject = dict[str, Any]
@@ -57,7 +62,7 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         mode="endpoint",
         include_transitive=True,
     )
-    bom = _prepare_fleet_bom(
+    bom = _prepare_remote_bom(
         build_agent_bom(
             refs,
             target_type="endpoint",
@@ -87,11 +92,11 @@ def collect_endpoint(
     allow_offline_cache: bool = False,
 ) -> BomUploadResult:
     config_path = get_config_path()
-    config = load_fleet_config(config_path)
+    config = load_remote_config(config_path)
     if config.token is None:
         raise CollectError("Remote is not configured; run openaca remote configure --token <TOKEN>")
 
-    client = FleetClient(api_url=config.api_url, token=config.token)
+    client = RemoteClient(api_url=config.api_url, token=config.token)
     if config.asset_id is not None:
         _replay_pending_uploads(client, config.asset_id)
 
@@ -100,14 +105,14 @@ def collect_endpoint(
     if asset_id is None:
         try:
             registered = client.register_asset(_asset_registration_payload())
-        except (FleetServerError, httpx.TransportError) as exc:
+        except (RemoteServerError, httpx.TransportError) as exc:
             exit_code = 0 if quiet or allow_offline_cache else 2
             raise CollectError("asset registration failed (network)", exit_code=exit_code) from exc
-        except FleetClientError as exc:
+        except RemoteClientError as exc:
             raise CollectError(str(exc)) from exc
         asset_id = registered.asset_id
-        config = FleetConfig(api_url=config.api_url, token=config.token, asset_id=asset_id)
-        save_fleet_config(config, config_path)
+        config = RemoteConfig(api_url=config.api_url, token=config.token, asset_id=asset_id)
+        save_remote_config(config, config_path)
 
     payload = _upload_payload(
         asset_id=asset_id,
@@ -116,33 +121,33 @@ def collect_endpoint(
         bom=collection.bom,
         posture_findings=collection.posture_findings,
     )
-    # ADR 0003 (Fleet redaction contract): the OSS BOM can carry absolute
+    # ADR 0003 (remote redaction contract): the OSS BOM can carry absolute
     # filesystem paths because the OSS CLI runs on the user's own machine;
-    # those paths are useful for offline analysis. Fleet uploads cross a
+    # those paths are useful for offline analysis. remote uploads cross a
     # SaaS network boundary into a multi-tenant store, so we redact at the
     # upload boundary. Relativize against config_dir / project first to
     # preserve component provenance (each skill still identifies as a
     # distinct relative path), and fall back to basename only when no known
     # root applies.
-    _redact_payload_for_fleet(payload, config_dir=config_dir, project=project)
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=project)
     # Recompute content_hash AFTER redaction so the stored hash matches the
-    # stored raw_bom. The Fleet contract defines content_hash as
+    # stored raw_bom. The remote contract defines content_hash as
     # sha256(raw_bom); without this, the wire payload carries a hash of the
     # pre-redacted BOM while the backend stores the post-redacted BOM under
     # that hash — a row-level invariant violation that any downstream
     # integrity check would surface. Idempotency still works on subsequent
     # uploads because the redaction is deterministic.
     payload["content_hash"] = _content_hash(payload["bom"])
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
     try:
         return client.upload_bom(payload)
-    except (FleetServerError, httpx.TransportError) as exc:
+    except (RemoteServerError, httpx.TransportError) as exc:
         path = _write_pending_payload(payload)
         exit_code = 0 if quiet or allow_offline_cache else 2
         raise CollectError(
             f"saved to {path}; upload failed (network)", exit_code=exit_code
         ) from exc
-    except FleetClientError as exc:
+    except RemoteClientError as exc:
         raise CollectError(str(exc)) from exc
 
 
@@ -154,7 +159,7 @@ def _is_absolute_path(value: str) -> bool:
     return len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
 
 
-def _redact_url_for_fleet(value: str) -> str:
+def _redact_url_for_remote(value: str) -> str:
     """Strip path, query, fragment, and userinfo from an http(s) URL so only
     `scheme://host` remains.
 
@@ -180,14 +185,14 @@ def _redact_url_for_fleet(value: str) -> str:
     return f"{scheme}://{rest}" if rest else value
 
 
-def _relativize_path_for_fleet(
+def _relativize_path_for_remote(
     value: str,
     *,
     config_dir: Path,
     project: Path | None,
 ) -> str:
     """Convert an absolute filesystem path into a redacted form safe for
-    Fleet upload.
+    remote upload.
 
     Order matters. Try to preserve provenance:
       1. If the path is under `config_dir` (e.g. ~/.claude), return the
@@ -230,7 +235,7 @@ def _relativize_path_for_fleet(
     return candidate.name
 
 
-def _redact_json_node_for_fleet(
+def _redact_json_node_for_remote(
     node: object,
     *,
     config_dir: Path,
@@ -247,22 +252,22 @@ def _redact_json_node_for_fleet(
     """
     if isinstance(node, dict):
         return {
-            k: _redact_property_value_for_fleet(v, config_dir=config_dir, project=project)
+            k: _redact_property_value_for_remote(v, config_dir=config_dir, project=project)
             if isinstance(v, str)
-            else _redact_json_node_for_fleet(v, config_dir=config_dir, project=project)
+            else _redact_json_node_for_remote(v, config_dir=config_dir, project=project)
             for k, v in node.items()
         }
     if isinstance(node, list):
         return [
-            _redact_property_value_for_fleet(item, config_dir=config_dir, project=project)
+            _redact_property_value_for_remote(item, config_dir=config_dir, project=project)
             if isinstance(item, str)
-            else _redact_json_node_for_fleet(item, config_dir=config_dir, project=project)
+            else _redact_json_node_for_remote(item, config_dir=config_dir, project=project)
             for item in node
         ]
     return node
 
 
-def _redact_property_value_for_fleet(
+def _redact_property_value_for_remote(
     value: str,
     *,
     config_dir: Path,
@@ -277,28 +282,28 @@ def _redact_property_value_for_fleet(
       absolute paths or URLs with paths.
     """
     if _is_absolute_path(value):
-        return _relativize_path_for_fleet(value, config_dir=config_dir, project=project)
+        return _relativize_path_for_remote(value, config_dir=config_dir, project=project)
     if value.lower().startswith(("http://", "https://")):
-        return _redact_url_for_fleet(value)
+        return _redact_url_for_remote(value)
     if value.startswith("{") or value.startswith("["):
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
             return value
-        redacted = _redact_json_node_for_fleet(parsed, config_dir=config_dir, project=project)
+        redacted = _redact_json_node_for_remote(parsed, config_dir=config_dir, project=project)
         return json.dumps(redacted, sort_keys=True)
     return value
 
 
-def _redact_payload_for_fleet(
+def _redact_payload_for_remote(
     payload: JsonObject,
     *,
     config_dir: Path,
     project: Path | None,
 ) -> None:
-    """In-place redaction of absolute filesystem paths inside a Fleet
+    """In-place redaction of absolute filesystem paths inside a Remote
     upload payload. Scope mirrors the backend's `validate_upload_privacy`
-    rule (`backend/src/openaca_fleet/redaction.py`): scan only the
+    rule (`backend/src/openaca_remote/redaction.py`): scan only the
     CLI-synthesized property/evidence values that the backend will scan,
     not arbitrary pass-through CycloneDX content.
 
@@ -320,7 +325,7 @@ def _redact_payload_for_fleet(
                 value = prop.get("value")
                 if not isinstance(value, str):
                     continue
-                prop["value"] = _redact_property_value_for_fleet(
+                prop["value"] = _redact_property_value_for_remote(
                     value, config_dir=config_dir, project=project
                 )
 
@@ -333,7 +338,7 @@ def _redact_payload_for_fleet(
         for key, value in list(evidence.items()):
             if not isinstance(value, str):
                 continue
-            evidence[key] = _redact_property_value_for_fleet(
+            evidence[key] = _redact_property_value_for_remote(
                 value, config_dir=config_dir, project=project
             )
 
@@ -344,7 +349,7 @@ def clear_pending_uploads() -> None:
         path.unlink(missing_ok=True)
 
 
-def _replay_pending_uploads(client: FleetClient, current_asset_id: str) -> None:
+def _replay_pending_uploads(client: RemoteClient, current_asset_id: str) -> None:
     pending_dir = get_pending_dir()
     for path in sorted(pending_dir.glob("pending-bom-*.json")):
         try:
@@ -359,20 +364,20 @@ def _replay_pending_uploads(client: FleetClient, current_asset_id: str) -> None:
             path.unlink(missing_ok=True)
             continue
         try:
-            enforce_fleet_upload_contract(payload)
+            enforce_remote_upload_contract(payload)
             client.upload_bom(payload)
-        except FleetUploadContractError:
+        except RemoteUploadContractError:
             path.unlink(missing_ok=True)
             continue
-        except (FleetServerError, httpx.TransportError):
+        except (RemoteServerError, httpx.TransportError):
             break
-        except FleetClientError as exc:
+        except RemoteClientError as exc:
             raise CollectError(str(exc)) from exc
         path.unlink()
 
 
 def _write_pending_payload(payload: JsonObject) -> Path:
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
     pending_dir = get_pending_dir()
     pending_dir.mkdir(parents=True, exist_ok=True)
     path = pending_dir / f"pending-bom-{time.time_ns()}.json"
@@ -496,18 +501,18 @@ def _openaca_version() -> str:
         return "unknown"
 
 
-def _prepare_fleet_bom(bom: JsonObject) -> JsonObject:
+def _prepare_remote_bom(bom: JsonObject) -> JsonObject:
     components = bom.get("components")
     if not isinstance(components, list):
         return bom
     prepared_components = [
-        _prepare_fleet_component(component) if isinstance(component, dict) else component
+        _prepare_remote_component(component) if isinstance(component, dict) else component
         for component in components
     ]
     return {**bom, "components": prepared_components}
 
 
-def _prepare_fleet_component(component: JsonObject) -> JsonObject:
+def _prepare_remote_component(component: JsonObject) -> JsonObject:
     properties = component.get("properties")
     if not isinstance(properties, list):
         return component

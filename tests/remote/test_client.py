@@ -1,12 +1,12 @@
 import httpx
 import pytest
 
-from tools.fleet.client import (
-    FleetAuthError,
-    FleetClient,
-    FleetPayloadTooLargeError,
-    FleetServerError,
-    FleetValidationError,
+from tools.remote.client import (
+    RemoteAuthError,
+    RemoteClient,
+    RemotePayloadTooLargeError,
+    RemoteServerError,
+    RemoteValidationError,
 )
 
 
@@ -23,7 +23,7 @@ def test_register_asset_sends_bearer_token_and_returns_asset_id():
             json={"asset_id": "asset-123", "dashboard_url": "https://app.test/assets/asset-123"},
         )
 
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(handler),
@@ -35,7 +35,7 @@ def test_register_asset_sends_bearer_token_and_returns_asset_id():
     assert result.asset_id == "asset-123"
     assert seen["authorization"] == "Bearer ot_TEST"
     assert isinstance(seen["user_agent"], str)
-    assert seen["user_agent"].startswith("openaca-fleet/")
+    assert seen["user_agent"].startswith("openaca-remote/")
     assert seen["request_id"] == "req-test"
     assert '"external_id":"host"' in str(seen["json"])
 
@@ -58,7 +58,7 @@ def test_upload_bom_sends_bom_and_posture_findings():
             },
         )
 
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(handler),
@@ -79,7 +79,7 @@ def test_upload_bom_sends_bom_and_posture_findings():
 
 
 def test_get_me_returns_org_and_token_context():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(
@@ -100,7 +100,7 @@ def test_get_me_returns_org_and_token_context():
 
 
 def test_get_asset_returns_asset_summary():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(
@@ -130,29 +130,29 @@ def test_get_asset_returns_asset_summary():
 
 
 def test_401_raises_auth_error():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(lambda request: httpx.Response(401, json={"error": "bad"})),
     )
 
-    with pytest.raises(FleetAuthError):
+    with pytest.raises(RemoteAuthError):
         client.get_me()
 
 
 def test_413_raises_payload_too_large_error():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(lambda request: httpx.Response(413, json={"error": "large"})),
     )
 
-    with pytest.raises(FleetPayloadTooLargeError):
+    with pytest.raises(RemotePayloadTooLargeError):
         client.upload_bom({"bom": {}})
 
 
 def test_422_includes_backend_validation_errors():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(
@@ -162,7 +162,7 @@ def test_422_includes_backend_validation_errors():
         ),
     )
 
-    with pytest.raises(FleetValidationError) as exc:
+    with pytest.raises(RemoteValidationError) as exc:
         client.upload_bom({"bom": {}})
 
     assert exc.value.validation_errors == [{"field": "bom"}]
@@ -184,7 +184,7 @@ def test_502_and_503_retry_with_backoff():
             )
         return httpx.Response(status, json={"error": "try later"})
 
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(handler),
@@ -198,19 +198,19 @@ def test_502_and_503_retry_with_backoff():
 
 
 def test_repeated_503_raises_server_error_after_retries():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(lambda request: httpx.Response(503, json={"error": "down"})),
         sleep=lambda _: None,
     )
 
-    with pytest.raises(FleetServerError):
+    with pytest.raises(RemoteServerError):
         client.get_me()
 
 
 def test_504_raises_server_error():
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(
@@ -219,7 +219,7 @@ def test_504_raises_server_error():
         sleep=lambda _: None,
     )
 
-    with pytest.raises(FleetServerError):
+    with pytest.raises(RemoteServerError):
         client.get_me()
 
 
@@ -231,14 +231,14 @@ def test_504_retries_with_backoff_then_raises_server_error():
         statuses.pop(0)
         return httpx.Response(504, json={"error": "gateway timeout"})
 
-    client = FleetClient(
+    client = RemoteClient(
         api_url="https://api.test",
         token="ot_TEST",
         transport=httpx.MockTransport(handler),
         sleep=sleeps.append,
     )
 
-    with pytest.raises(FleetServerError):
+    with pytest.raises(RemoteServerError):
         client.get_me()
 
     assert sleeps == [1.0, 4.0]

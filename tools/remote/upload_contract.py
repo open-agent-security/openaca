@@ -6,7 +6,7 @@ from typing import Any
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 
 
-class FleetUploadContractError(Exception):
+class RemoteUploadContractError(Exception):
     pass
 
 
@@ -26,18 +26,18 @@ _FORBIDDEN_NAME_RE = re.compile(
 )
 
 
-def enforce_fleet_upload_contract(payload: dict[str, Any]) -> None:
-    """Enforce the narrow Fleet upload hygiene contract.
+def enforce_remote_upload_contract(payload: dict[str, Any]) -> None:
+    """Enforce the narrow remote upload hygiene contract.
 
-    Fleet uploads are endpoint inventory. They may include paths, component
+    remote uploads are endpoint inventory. They may include paths, component
     identities, install references, and posture evidence, but must not include
     raw config bodies, env values, detected secrets, or full shell argv.
 
     Also mirrors the backend's `validate_upload_privacy` rule
-    (`backend/src/openaca_fleet/redaction.py`) so absolute paths in
+    (`backend/src/openaca_remote/redaction.py`) so absolute paths in
     CLI-synthesized `openaca:*` property values or posture evidence fail
     locally with a clear contract error instead of round-tripping to the
-    server. The collector applies `_redact_payload_for_fleet` before
+    server. The collector applies `_redact_payload_for_remote` before
     calling this enforcer, so this check is defense-in-depth.
     """
     _validate_value(payload, "$")
@@ -58,18 +58,18 @@ def _validate_mapping(value: dict[Any, Any], path: str) -> None:
     _validate_component_properties(value, path)
     property_name = value.get("name")
     if isinstance(property_name, str) and "value" in value and _is_forbidden_name(property_name):
-        raise FleetUploadContractError(f"{path}.value is forbidden by Fleet upload contract")
+        raise RemoteUploadContractError(f"{path}.value is forbidden by remote upload contract")
 
     for key, item in value.items():
         item_path = f"{path}.{key}" if isinstance(key, str) else f"{path}[{key!r}]"
         if isinstance(key, str) and _is_forbidden_name(key):
-            raise FleetUploadContractError(f"{item_path} is forbidden by Fleet upload contract")
+            raise RemoteUploadContractError(f"{item_path} is forbidden by remote upload contract")
         _validate_value(item, item_path)
 
 
 def _validate_string(value: str, path: str) -> None:
     if _SECRET_VALUE_RE.search(value) or _SECRET_ASSIGNMENT_RE.search(value):
-        raise FleetUploadContractError(f"{path} contains a blocked value")
+        raise RemoteUploadContractError(f"{path} contains a blocked value")
 
 
 def _is_absolute_path(value: str) -> bool:
@@ -104,13 +104,13 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                     continue
                 location = f"$.bom.components[{c_idx}].properties[{p_idx}].value"
                 if _is_absolute_path(value):
-                    raise FleetUploadContractError(f"{location} is an absolute path ({name!r})")
+                    raise RemoteUploadContractError(f"{location} is an absolute path ({name!r})")
                 if _is_url_with_path_or_query(value):
-                    raise FleetUploadContractError(
+                    raise RemoteUploadContractError(
                         f"{location} is a URL with a path or query ({name!r})"
                     )
                 if _is_url_with_userinfo(value):
-                    raise FleetUploadContractError(
+                    raise RemoteUploadContractError(
                         f"{location} is a URL with credentials in userinfo ({name!r})"
                     )
 
@@ -125,11 +125,11 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                 continue
             location = f"$.posture_findings[{f_idx}].evidence.{key}"
             if _is_absolute_path(value):
-                raise FleetUploadContractError(f"{location} is an absolute path")
+                raise RemoteUploadContractError(f"{location} is an absolute path")
             if _is_url_with_path_or_query(value):
-                raise FleetUploadContractError(f"{location} is a URL with a path or query")
+                raise RemoteUploadContractError(f"{location} is a URL with a path or query")
             if _is_url_with_userinfo(value):
-                raise FleetUploadContractError(f"{location} is a URL with credentials in userinfo")
+                raise RemoteUploadContractError(f"{location} is a URL with credentials in userinfo")
 
 
 def _is_url_with_path_or_query(value: str) -> bool:
@@ -144,7 +144,7 @@ def _is_url_with_path_or_query(value: str) -> bool:
 
 def _is_url_with_userinfo(value: str) -> bool:
     """An http(s) URL whose authority carries userinfo (`user:pass@host`)
-    embeds credentials. `_redact_url_for_fleet` strips these, but a stale
+    embeds credentials. `_redact_url_for_remote` strips these, but a stale
     offline-cache payload replayed via `_replay_pending_uploads` skips the
     redaction pass and is validated only here — so the contract must reject
     userinfo as the last line of defense against uploading credentials. A
@@ -211,6 +211,5 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
         return
     max_tokens = 1 if is_binary else 2
     if len(install_source.split(maxsplit=max_tokens)) > max_tokens:
-        raise FleetUploadContractError(
-            f"{path}.properties[{install_source_index}].value is forbidden by Fleet upload contract"
-        )
+        location = f"{path}.properties[{install_source_index}].value"
+        raise RemoteUploadContractError(f"{location} is forbidden by remote upload contract")

@@ -12,25 +12,25 @@ import httpx
 JsonObject = dict[str, Any]
 
 
-class FleetClientError(Exception):
+class RemoteClientError(Exception):
     pass
 
 
-class FleetAuthError(FleetClientError):
+class RemoteAuthError(RemoteClientError):
     pass
 
 
-class FleetPayloadTooLargeError(FleetClientError):
+class RemotePayloadTooLargeError(RemoteClientError):
     pass
 
 
-class FleetValidationError(FleetClientError):
+class RemoteValidationError(RemoteClientError):
     def __init__(self, message: str, validation_errors: list[Any]) -> None:
         super().__init__(message)
         self.validation_errors = validation_errors
 
 
-class FleetServerError(FleetClientError):
+class RemoteServerError(RemoteClientError):
     pass
 
 
@@ -92,7 +92,7 @@ class AssetStatusResult:
     component_count: int
 
 
-class FleetClient:
+class RemoteClient:
     def __init__(
         self,
         *,
@@ -171,7 +171,7 @@ class FleetClient:
                 json=payload,
                 headers={
                     "Authorization": f"Bearer {self._token}",
-                    "User-Agent": f"openaca-fleet/{_openaca_version()}",
+                    "User-Agent": f"openaca-remote/{_openaca_version()}",
                     "X-Request-Id": self._request_id_factory(),
                     "Accept": "application/json",
                 },
@@ -189,21 +189,21 @@ def _handle_response(response: httpx.Response) -> JsonObject:
     body = _error_body(response)
     message = _error_message(response, body)
     if response.status_code == 401:
-        raise FleetAuthError(message)
+        raise RemoteAuthError(message)
     if response.status_code == 413:
-        raise FleetPayloadTooLargeError(message)
+        raise RemotePayloadTooLargeError(message)
     if response.status_code == 422:
         errors = body.get("validation_errors", [])
-        raise FleetValidationError(message, errors if isinstance(errors, list) else [])
+        raise RemoteValidationError(message, errors if isinstance(errors, list) else [])
     if response.status_code in {502, 503, 504}:
-        raise FleetServerError(message)
-    raise FleetClientError(message)
+        raise RemoteServerError(message)
+    raise RemoteClientError(message)
 
 
 def _response_object(response: httpx.Response) -> JsonObject:
     data = response.json()
     if not isinstance(data, dict):
-        raise FleetClientError("Fleet backend returned a non-object response")
+        raise RemoteClientError("remote backend returned a non-object response")
     return data
 
 
@@ -223,14 +223,14 @@ def _error_message(response: httpx.Response, body: JsonObject) -> str:
 def _required_object(data: JsonObject, key: str) -> JsonObject:
     value = data.get(key)
     if not isinstance(value, dict):
-        raise FleetClientError(f"Fleet backend response missing object field: {key}")
+        raise RemoteClientError(f"remote backend response missing object field: {key}")
     return value
 
 
 def _required_str(data: JsonObject, key: str) -> str:
     value = data.get(key)
     if not isinstance(value, str):
-        raise FleetClientError(f"Fleet backend response missing string field: {key}")
+        raise RemoteClientError(f"remote backend response missing string field: {key}")
     return value
 
 
@@ -238,13 +238,13 @@ def _optional_str(data: JsonObject, key: str) -> str | None:
     value = data.get(key)
     if value is None or isinstance(value, str):
         return value
-    raise FleetClientError(f"Fleet backend response has invalid string field: {key}")
+    raise RemoteClientError(f"remote backend response has invalid string field: {key}")
 
 
 def _required_int(data: JsonObject, key: str) -> int:
     value = data.get(key)
     if not isinstance(value, int):
-        raise FleetClientError(f"Fleet backend response missing integer field: {key}")
+        raise RemoteClientError(f"remote backend response missing integer field: {key}")
     return value
 
 

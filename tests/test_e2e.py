@@ -25,9 +25,9 @@ from tools import lint
 from tools.bom import build_agent_bom, component_refs_from_cyclonedx
 from tools.component_ref import ComponentRef
 from tools.export import build
-from tools.fleet.collector import _prepare_fleet_bom
 from tools.osv_federation import collect_osv_queries
 from tools.parsers.mcp_json import parse as parse_mcp
+from tools.remote.collector import _prepare_remote_bom
 from tools.render import render_inventory_tree
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -738,7 +738,7 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     assert properties.get("attributed_to") is None or "attributed_to" not in properties
 
 
-# Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and Fleet upload.
+# Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and remote upload.
 
 
 def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
@@ -793,7 +793,7 @@ def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
     assert "uvx (stdio, args hidden)" not in rendered
     assert "docker (stdio, args hidden)" not in rendered
 
-    prepared = _prepare_fleet_bom(bom)
+    prepared = _prepare_remote_bom(bom)
     github_props = _props_by_name(prepared["components"][0])
     docker_props = _props_by_name(prepared["components"][1])
     assert github_props["openaca:install_source"] == (

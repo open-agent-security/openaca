@@ -6,9 +6,9 @@ import click
 
 from tools.bom_cli import main as bom_cmd
 from tools.export import main as export_cmd
-from tools.fleet.cli import main as remote_cmd
 from tools.lint import main as lint_cmd
 from tools.promote import main as promote_cmd
+from tools.remote.cli import main as remote_cmd
 from tools.scan import main as scan_cmd
 from tools.seed.__main__ import main as seed_cmd
 

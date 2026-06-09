@@ -6,19 +6,19 @@ from pathlib import Path
 import click
 import httpx
 
-from tools.fleet.client import FleetClient, FleetClientError
-from tools.fleet.collector import (
+from tools.remote.client import RemoteClient, RemoteClientError
+from tools.remote.collector import (
     CollectError,
     clear_pending_uploads,
     collect_endpoint,
 )
-from tools.fleet.config import (
+from tools.remote.config import (
     DEFAULT_API_URL,
     ConfigError,
-    FleetConfig,
+    RemoteConfig,
     get_config_path,
-    load_fleet_config,
-    save_fleet_config,
+    load_remote_config,
+    save_remote_config,
 )
 
 
@@ -34,14 +34,14 @@ def configure(token: str, api_url: str) -> None:
     """Write local remote configuration."""
     config_path = get_config_path()
     try:
-        existing = load_fleet_config(config_path)
+        existing = load_remote_config(config_path)
         preserved_asset_id = (
             existing.asset_id if existing.api_url == api_url and existing.token == token else None
         )
         if preserved_asset_id is None and existing.asset_id is not None:
             clear_pending_uploads()
-        save_fleet_config(
-            FleetConfig(api_url=api_url, token=token, asset_id=preserved_asset_id),
+        save_remote_config(
+            RemoteConfig(api_url=api_url, token=token, asset_id=preserved_asset_id),
             config_path,
         )
     except ConfigError as exc:
@@ -53,7 +53,7 @@ def configure(token: str, api_url: str) -> None:
 def status() -> None:
     """Show remote token and asset status."""
     try:
-        config = load_fleet_config(get_config_path())
+        config = load_remote_config(get_config_path())
     except ConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     if config.token is None:
@@ -61,7 +61,7 @@ def status() -> None:
             "Remote is not configured; run openaca remote configure --token <TOKEN>"
         )
 
-    client = FleetClient(api_url=config.api_url, token=config.token)
+    client = RemoteClient(api_url=config.api_url, token=config.token)
     try:
         me = client.get_me()
         click.echo(f"Org: {me.org.name} ({me.org.id})")
@@ -72,7 +72,7 @@ def status() -> None:
         asset = client.get_asset(config.asset_id)
     except httpx.TransportError as exc:
         raise click.ClickException(f"Remote API unreachable: {exc}") from exc
-    except FleetClientError as exc:
+    except RemoteClientError as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(f"Asset: {asset.display_name} ({asset.id})")

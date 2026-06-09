@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from tools.fleet.collector import (
+from tools.remote.collector import (
     _is_absolute_path,
-    _redact_payload_for_fleet,
-    _redact_url_for_fleet,
-    _relativize_path_for_fleet,
+    _redact_payload_for_remote,
+    _redact_url_for_remote,
+    _relativize_path_for_remote,
 )
-from tools.fleet.upload_contract import FleetUploadContractError, enforce_fleet_upload_contract
+from tools.remote.upload_contract import RemoteUploadContractError, enforce_remote_upload_contract
 
 # --- _is_absolute_path -------------------------------------------------------
 
@@ -42,13 +42,13 @@ def test_is_absolute_path_false(value: str) -> None:
     assert not _is_absolute_path(value)
 
 
-# --- _relativize_path_for_fleet ---------------------------------------------
+# --- _relativize_path_for_remote ---------------------------------------------
 
 
 def test_relativize_under_config_dir() -> None:
     cfg = Path("/home/u/.claude")
     assert (
-        _relativize_path_for_fleet(
+        _relativize_path_for_remote(
             "/home/u/.claude/skills/clerk-cli/SKILL.md", config_dir=cfg, project=None
         )
         == "skills/clerk-cli/SKILL.md"
@@ -59,7 +59,7 @@ def test_relativize_under_project_prefixed() -> None:
     cfg = Path("/home/u/.claude")
     proj = Path("/home/u/code/myrepo")
     assert (
-        _relativize_path_for_fleet(
+        _relativize_path_for_remote(
             "/home/u/code/myrepo/.claude/skills/x.md",
             config_dir=cfg,
             project=proj,
@@ -71,7 +71,7 @@ def test_relativize_under_project_prefixed() -> None:
 def test_relativize_unknown_root_falls_back_to_basename() -> None:
     cfg = Path("/home/u/.claude")
     assert (
-        _relativize_path_for_fleet("/tmp/random/whatever.md", config_dir=cfg, project=None)
+        _relativize_path_for_remote("/tmp/random/whatever.md", config_dir=cfg, project=None)
         == "whatever.md"
     )
 
@@ -94,13 +94,13 @@ def test_relativize_windows_paths_strip_to_basename(value: str, expected: str) -
     relativize fallback must be consistent with that classification.
     """
     cfg = Path("/home/u/.claude")
-    assert _relativize_path_for_fleet(value, config_dir=cfg, project=None) == expected
+    assert _relativize_path_for_remote(value, config_dir=cfg, project=None) == expected
 
 
 def test_relativize_non_absolute_unchanged() -> None:
     cfg = Path("/home/u/.claude")
     assert (
-        _relativize_path_for_fleet("relative/path.md", config_dir=cfg, project=None)
+        _relativize_path_for_remote("relative/path.md", config_dir=cfg, project=None)
         == "relative/path.md"
     )
 
@@ -114,12 +114,12 @@ def test_relativize_prefers_config_dir_when_both_match() -> None:
     cfg = Path("/home/u/.claude")
     proj = Path("/home/u")
     assert (
-        _relativize_path_for_fleet("/home/u/.claude/skills/x.md", config_dir=cfg, project=proj)
+        _relativize_path_for_remote("/home/u/.claude/skills/x.md", config_dir=cfg, project=proj)
         == "skills/x.md"
     )
 
 
-# --- _redact_payload_for_fleet ----------------------------------------------
+# --- _redact_payload_for_remote ----------------------------------------------
 
 
 def _payload_with_property(value: str, name: str = "openaca:source_manifest") -> dict:
@@ -147,7 +147,7 @@ def _payload_with_property(value: str, name: str = "openaca:source_manifest") ->
 def test_redact_replaces_absolute_path_under_config_dir() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/clerk-cli/SKILL.md")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     new_value = payload["bom"]["components"][0]["properties"][0]["value"]
     assert new_value == "skills/clerk-cli/SKILL.md"
 
@@ -155,21 +155,21 @@ def test_redact_replaces_absolute_path_under_config_dir() -> None:
 def test_redact_uses_basename_for_unknown_root() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/var/lib/openaca/cache/manifest.json")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     assert payload["bom"]["components"][0]["properties"][0]["value"] == "manifest.json"
 
 
 def test_redact_leaves_relative_paths_alone() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("skills/clerk-cli/SKILL.md")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     assert payload["bom"]["components"][0]["properties"][0]["value"] == "skills/clerk-cli/SKILL.md"
 
 
 def test_redact_ignores_non_openaca_properties() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/x.md", name="cdx:other:source-path")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     # Untouched — pass-through CycloneDX content is out of scope (ADR 0003).
     assert (
         payload["bom"]["components"][0]["properties"][0]["value"] == "/home/u/.claude/skills/x.md"
@@ -195,7 +195,7 @@ def test_redact_handles_posture_evidence() -> None:
             }
         ],
     }
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     assert payload["posture_findings"][0]["evidence"]["manifest_path"] == "settings.json"
     assert payload["posture_findings"][0]["evidence"]["transport"] == "http"
 
@@ -205,8 +205,8 @@ def test_redact_handles_posture_evidence() -> None:
 
 def test_contract_rejects_absolute_openaca_property() -> None:
     payload = _payload_with_property("/Users/vinodkone/.claude/skills/x.md")
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "absolute path" in str(exc.value)
     assert "openaca:source_manifest" in str(exc.value)
 
@@ -229,23 +229,23 @@ def test_contract_rejects_absolute_in_posture_evidence() -> None:
             }
         ],
     }
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "absolute path" in str(exc.value)
     assert "manifest_path" in str(exc.value)
 
 
 def test_contract_accepts_relativized_payload() -> None:
-    """After `_redact_payload_for_fleet`, the contract should be satisfied —
+    """After `_redact_payload_for_remote`, the contract should be satisfied —
     the round-trip is the contract.
     """
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/x.md")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
-    enforce_fleet_upload_contract(payload)  # must not raise
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    enforce_remote_upload_contract(payload)  # must not raise
 
 
-# --- _redact_url_for_fleet --------------------------------------------------
+# --- _redact_url_for_remote --------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -268,8 +268,8 @@ def test_contract_accepts_relativized_payload() -> None:
         ("HTTPS://alice:s3cr3t@api.example.com/mcp?token=ABC", "HTTPS://api.example.com"),
     ],
 )
-def test_redact_url_for_fleet(value: str, expected: str) -> None:
-    assert _redact_url_for_fleet(value) == expected
+def test_redact_url_for_remote(value: str, expected: str) -> None:
+    assert _redact_url_for_remote(value) == expected
 
 
 def test_redact_uppercase_url_path_in_openaca_property() -> None:
@@ -280,7 +280,7 @@ def test_redact_uppercase_url_path_in_openaca_property() -> None:
     payload = _payload_with_property(
         "HTTPS://api.example.com/mcp/secret?token=ABC", name="openaca:install_source"
     )
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     assert payload["bom"]["components"][0]["properties"][0]["value"] == "HTTPS://api.example.com"
 
 
@@ -289,8 +289,8 @@ def test_contract_rejects_uppercase_url_with_path() -> None:
     case-insensitive, or an uppercase-scheme URL with a path slips past it.
     """
     payload = _payload_with_property("HTTPS://api.example.com/mcp/", name="openaca:install_source")
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "URL with a path" in str(exc.value)
 
 
@@ -299,7 +299,7 @@ def test_redact_replaces_url_paths_in_openaca_properties() -> None:
     payload = _payload_with_property(
         "https://api.githubcopilot.com/mcp/", name="openaca:install_source"
     )
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     assert (
         payload["bom"]["components"][0]["properties"][0]["value"] == "https://api.githubcopilot.com"
     )
@@ -307,14 +307,14 @@ def test_redact_replaces_url_paths_in_openaca_properties() -> None:
 
 def test_contract_rejects_url_with_path_in_openaca_property() -> None:
     payload = _payload_with_property("https://api.example.com/mcp/", name="openaca:install_source")
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "URL with a path" in str(exc.value)
 
 
 def test_contract_accepts_bare_host_url() -> None:
     payload = _payload_with_property("https://example.test", name="openaca:source_provenance")
-    enforce_fleet_upload_contract(payload)  # must not raise
+    enforce_remote_upload_contract(payload)  # must not raise
 
 
 # --- JSON-embedded path redaction -------------------------------------------
@@ -329,7 +329,7 @@ def test_redact_declared_by_json_embedded_path() -> None:
         {"kind": "manifest", "path": "/home/u/.claude/mcp.json"}, sort_keys=True
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["path"] == "mcp.json"
     assert result["kind"] == "manifest"
@@ -351,7 +351,7 @@ def test_redact_source_provenance_embedded_paths() -> None:
     payload = _payload_with_property(
         json.dumps(provenance, sort_keys=True), name="openaca:source_provenance"
     )
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["lockfile_path"] == "skills/.skill-lock.json"
     assert result["resolved_path"] == "skills/clerk-cli"
@@ -368,7 +368,7 @@ def test_redact_declared_by_plugin_with_absolute_path() -> None:
         sort_keys=True,
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["path"] == "plugins/my-plugin"
     assert result["name"] == "my-plugin"
@@ -384,7 +384,7 @@ def test_redact_json_url_with_path_inside_value() -> None:
         {"kind": "http", "url": "https://api.example.com/mcp/"}, sort_keys=True
     )
     payload = _payload_with_property(source_json, name="openaca:source")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["url"] == "https://api.example.com"
 
@@ -396,7 +396,7 @@ def test_redact_json_relative_path_unchanged() -> None:
     cfg = Path("/home/u/.claude")
     declared_by_json = json.dumps({"kind": "manifest", "path": "skills/x/SKILL.md"}, sort_keys=True)
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["path"] == "skills/x/SKILL.md"
 
@@ -410,5 +410,5 @@ def test_contract_accepts_payload_after_json_path_redaction() -> None:
         {"kind": "manifest", "path": "/home/u/.claude/mcp.json"}, sort_keys=True
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_fleet(payload, config_dir=cfg, project=None)
-    enforce_fleet_upload_contract(payload)  # must not raise
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    enforce_remote_upload_contract(payload)  # must not raise

@@ -4,8 +4,8 @@ import httpx
 from click.testing import CliRunner
 
 from tools.cli import main as openaca_main
-from tools.fleet.client import BomUploadResult, DriftResult
-from tools.fleet.config import load_fleet_config
+from tools.remote.client import BomUploadResult, DriftResult
+from tools.remote.config import load_remote_config
 
 
 def test_remote_is_public_upload_command_group() -> None:
@@ -24,21 +24,21 @@ def test_fleet_command_group_is_not_public() -> None:
 
 def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
     config_path = tmp_path / "remote.toml"
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_TEST"])
 
     assert result.exit_code == 0
     assert "ot_TEST" not in result.output
     assert "ot_..." in result.output
-    config = load_fleet_config(config_path)
+    config = load_remote_config(config_path)
     assert config.token == "ot_TEST"
     assert config.api_url == "https://api.openaca.dev"
 
 
 def test_configure_accepts_api_url_override(tmp_path, monkeypatch):
     config_path = tmp_path / "remote.toml"
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(
         openaca_main,
@@ -53,18 +53,18 @@ def test_configure_accepts_api_url_override(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert load_fleet_config(config_path).api_url == "http://localhost:8000"
+    assert load_remote_config(config_path).api_url == "http://localhost:8000"
 
 
 def test_configure_prompts_for_token(tmp_path, monkeypatch):
     config_path = tmp_path / "remote.toml"
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure"], input="ot_PROMPT\n")
 
     assert result.exit_code == 0
     assert "ot_PROMPT" not in result.output
-    assert load_fleet_config(config_path).token == "ot_PROMPT"
+    assert load_remote_config(config_path).token == "ot_PROMPT"
 
 
 def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monkeypatch):
@@ -82,12 +82,12 @@ def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monke
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_SAME"])
 
     assert result.exit_code == 0
-    assert load_fleet_config(config_path).asset_id == "asset-123"
+    assert load_remote_config(config_path).asset_id == "asset-123"
 
 
 def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
@@ -106,12 +106,12 @@ def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_NEW"])
 
     assert result.exit_code == 0
-    assert load_fleet_config(config_path).asset_id is None
+    assert load_remote_config(config_path).asset_id is None
 
 
 def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
@@ -130,7 +130,7 @@ def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     result = CliRunner().invoke(
         openaca_main,
@@ -138,7 +138,7 @@ def test_configure_clears_asset_id_when_api_url_changes(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert load_fleet_config(config_path).asset_id is None
+    assert load_remote_config(config_path).asset_id is None
 
 
 def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkeypatch):
@@ -162,8 +162,8 @@ def test_configure_purges_pending_files_when_credentials_change(tmp_path, monkey
     (pending_dir / "pending-bom-stale.json").write_text(
         '{"asset_id":"asset-123"}', encoding="utf-8"
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_NEW"])
 
@@ -189,8 +189,8 @@ def test_configure_does_not_purge_pending_files_when_credentials_unchanged(tmp_p
     pending_dir = tmp_path / "pending"
     pending_dir.mkdir()
     (pending_dir / "pending-bom-keep.json").write_text('{"asset_id":"asset-123"}', encoding="utf-8")
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
 
     result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_SAME"])
 
@@ -204,7 +204,7 @@ def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
         "\n".join(
             [
                 "[remote]",
-                'api_url = "http://fleet.test"',
+                'api_url = "http://remote.test"',
                 'token = "ot_TEST"',
                 'asset_id = "asset-123"',
                 "",
@@ -212,7 +212,7 @@ def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
     calls: list[tuple[str, object]] = []
 
     class FakeClient:
@@ -227,13 +227,13 @@ def test_status_calls_me_and_configured_asset(tmp_path, monkeypatch):
             calls.append(("get_asset", asset_id))
             return _asset_result()
 
-    monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
 
     result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
     assert result.exit_code == 0
     assert calls == [
-        ("init", {"api_url": "http://fleet.test", "token": "ot_TEST"}),
+        ("init", {"api_url": "http://remote.test", "token": "ot_TEST"}),
         ("get_me", None),
         ("get_asset", "asset-123"),
     ]
@@ -248,14 +248,14 @@ def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, m
         "\n".join(
             [
                 "[remote]",
-                'api_url = "http://fleet.test"',
+                'api_url = "http://remote.test"',
                 'token = "ot_TEST"',
                 "",
             ]
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
     calls: list[str] = []
 
     class FakeClient:
@@ -269,7 +269,7 @@ def test_status_without_asset_id_verifies_token_and_prints_next_step(tmp_path, m
         def get_asset(self, asset_id: str):
             raise AssertionError(f"unexpected asset lookup: {asset_id}")
 
-    monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
 
     result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
@@ -286,7 +286,7 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
         "\n".join(
             [
                 "[remote]",
-                'api_url = "http://fleet.test"',
+                'api_url = "http://remote.test"',
                 'token = "ot_TEST"',
                 'asset_id = "asset-123"',
                 "",
@@ -294,7 +294,7 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("tools.fleet.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
 
     class FakeClient:
         def __init__(self, *, api_url: str, token: str) -> None:
@@ -303,7 +303,7 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
         def get_me(self):
             raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr("tools.fleet.cli.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
 
     result = CliRunner().invoke(openaca_main, ["remote", "status"])
 
@@ -319,7 +319,7 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
         calls.append(kwargs)
         return _upload_result(asset_id="asset-123")
 
-    monkeypatch.setattr("tools.fleet.cli.collect_endpoint", fake_collect_endpoint)
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
 
     result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
@@ -341,7 +341,7 @@ def _upload_result(*, asset_id: str) -> BomUploadResult:
 
 
 def _me_result():
-    from tools.fleet.client import MeResult, OrgResult, TokenResult
+    from tools.remote.client import MeResult, OrgResult, TokenResult
 
     return MeResult(
         org=OrgResult(id="org_123", name="Acme Inc"),
@@ -350,7 +350,7 @@ def _me_result():
 
 
 def _asset_result():
-    from tools.fleet.client import AssetStatusResult
+    from tools.remote.client import AssetStatusResult
 
     return AssetStatusResult(
         id="asset-123",

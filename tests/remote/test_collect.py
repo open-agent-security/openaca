@@ -12,20 +12,20 @@ from click.testing import CliRunner
 
 from tools.cli import main as openaca_main
 from tools.component_ref import ComponentRef
-from tools.fleet.client import (
+from tools.posture.finding import PostureFinding, Standards
+from tools.remote.client import (
     BomUploadResult,
     DriftResult,
-    FleetAuthError,
     RegisterAssetResult,
+    RemoteAuthError,
 )
-from tools.fleet.collector import (
+from tools.remote.collector import (
     CollectError,
     EndpointCollection,
     build_endpoint_collection,
     collect_endpoint,
 )
-from tools.fleet.config import load_fleet_config
-from tools.posture.finding import PostureFinding, Standards
+from tools.remote.config import load_remote_config
 
 
 def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path, monkeypatch):
@@ -50,16 +50,16 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         assert settings_manifests == [("settings", {})]
         return [_posture("openaca-posture-mutable-install-reference")]
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", fake_parse_install)
+    monkeypatch.setattr("tools.remote.collector.parse_install", fake_parse_install)
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [("mcp", {})],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [("settings", {})],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", fake_run_posture_rules)
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", fake_run_posture_rules)
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -97,16 +97,16 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -127,16 +127,16 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -157,16 +157,16 @@ def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monke
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -187,16 +187,16 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -219,13 +219,13 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
 
@@ -256,13 +256,13 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [(manifest_path, manifest)],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
 
@@ -287,16 +287,16 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -321,16 +321,16 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -361,16 +361,16 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -408,16 +408,16 @@ def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -440,16 +440,16 @@ def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_p
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -473,16 +473,16 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -501,16 +501,16 @@ def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -533,16 +533,16 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_pre
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -565,16 +565,16 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -597,16 +597,16 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -628,16 +628,16 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -666,16 +666,16 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -700,16 +700,16 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -733,16 +733,16 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -764,16 +764,16 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -808,7 +808,7 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
 def test_build_endpoint_collection_trims_npx_package_flag_install_source(
     raw_source, expected, tmp_path, monkeypatch
 ):
-    # npx --package <pkg> cmd [...] installs <pkg> then runs cmd. For Fleet inventory the
+    # npx --package <pkg> cmd [...] installs <pkg> then runs cmd. For remote inventory the
     # package is what matters; before this fix, the helper returned the command name instead.
     # Regression: component_path causes ADR-0029 identity so the argv-recovery path is taken.
     ref = ComponentRef(
@@ -823,16 +823,16 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
         },
     )
 
-    monkeypatch.setattr("tools.fleet.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_mcp_manifests",
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
     )
     monkeypatch.setattr(
-        "tools.fleet.collector.collect_endpoint_settings_manifests",
+        "tools.remote.collector.collect_endpoint_settings_manifests",
         lambda config_dir, project: [],
     )
-    monkeypatch.setattr("tools.fleet.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -846,11 +846,11 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
     pending_dir = tmp_path / "pending"
     calls: list[tuple[str, Any]] = []
 
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
-    monkeypatch.setattr("tools.fleet.collector.socket.gethostname", lambda: "demo-host")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.socket.gethostname", lambda: "demo-host")
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -868,7 +868,7 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
             calls.append(("upload_bom", payload))
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     result = collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -879,19 +879,19 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
     assert calls[2][1]["asset_id"] == "asset-123"
     assert calls[2][1]["content_hash"].startswith("sha256:")
     assert calls[2][1]["posture_findings"][0]["rule_id"] == "openaca-posture-insecure-transport"
-    assert load_fleet_config(config_path).asset_id == "asset-123"
+    assert load_remote_config(config_path).asset_id == "asset-123"
 
 
 def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeypatch):
-    """Fleet's contract defines `content_hash = sha256(raw_bom)`. Before this
-    fix, `_upload_payload` computed the hash, then `_redact_payload_for_fleet`
+    """Remote's contract defines `content_hash = sha256(raw_bom)`. Before this
+    fix, `_upload_payload` computed the hash, then `_redact_payload_for_remote`
     mutated `payload["bom"]` in place, so the wire payload carried a hash
     of the pre-redacted BOM while the backend stored the post-redacted BOM
     under that hash. This test reproduces the upload path with a dirty BOM
     (absolute path under config_dir) and asserts the hash on the wire
     matches the BOM on the wire.
     """
-    from tools.fleet.collector import _content_hash
+    from tools.remote.collector import _content_hash
 
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     dirty_bom = {
@@ -912,9 +912,9 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
     }
     captured: dict[str, Any] = {}
 
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(bom=dirty_bom),
     )
 
@@ -926,7 +926,7 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
             captured["payload"] = payload
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -942,10 +942,10 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -960,7 +960,7 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
             calls.append(payload["asset_id"])
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -970,10 +970,10 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
 def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     pending_dir = tmp_path / "pending"
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -984,7 +984,7 @@ def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path
         def upload_bom(self, payload):
             raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
         collect_endpoint(config_dir=tmp_path, project=None)
@@ -998,10 +998,10 @@ def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path
 
 def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1010,9 +1010,9 @@ def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path
             pass
 
         def upload_bom(self, payload):
-            raise FleetAuthError("invalid or revoked token")
+            raise RemoteAuthError("invalid or revoked token")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
         collect_endpoint(config_dir=tmp_path, project=None)
@@ -1025,10 +1025,10 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
     tmp_path, monkeypatch
 ):
     config_path = _write_config(tmp_path, asset_id=None)
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1039,7 +1039,7 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
         def register_asset(self, payload):
             raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
         collect_endpoint(config_dir=tmp_path, project=None)
@@ -1049,14 +1049,14 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
 
 
 def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeypatch):
-    """ADR 0003: the CLI redacts absolute paths before upload so the Fleet
+    """ADR 0003: the CLI redacts absolute paths before upload so the Remote
     backend's redaction check passes. Paths under config_dir are
     relativized; paths under an unknown root fall back to basename.
     """
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     uploads: list[dict[str, Any]] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
 
     # Two openaca:* properties: one inside the test's config_dir (tmp_path)
     # which should relativize, and one outside which should fall back to
@@ -1064,7 +1064,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     inside = tmp_path / "skills" / "x" / "SKILL.md"
     outside = "/Users/alex/.claude/settings.json"
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(
             bom={
                 "bomFormat": "CycloneDX",
@@ -1090,7 +1090,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
             uploads.append(payload)
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -1102,11 +1102,11 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
     pending_dir = tmp_path / "pending"
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     config_path = _write_config(tmp_path, asset_id="asset-existing")
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1117,7 +1117,7 @@ def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
         def upload_bom(self, payload):
             raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError):
         collect_endpoint(config_dir=tmp_path, project=None)
@@ -1129,10 +1129,10 @@ def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
 
 def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1143,7 +1143,7 @@ def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path,
         def upload_bom(self, payload):
             raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
         collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
@@ -1158,10 +1158,10 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
     old_payload = _payload(asset_id="asset-existing", content_hash="sha256:old")
     (pending_dir / "pending-bom-1.json").write_text(json.dumps(old_payload), encoding="utf-8")
     uploads: list[str] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1173,7 +1173,7 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
             uploads.append(payload["content_hash"])
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -1190,10 +1190,10 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
     (pending_dir / "pending-bom-1.json").write_text(json.dumps(old_payload), encoding="utf-8")
 
     collection_built: list[bool] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: (collection_built.append(True), _collection())[1],
     )
 
@@ -1204,7 +1204,7 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
         def upload_bom(self, payload):
             raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
         collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
@@ -1222,10 +1222,10 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
     (pending_dir / "pending-bom-bad.json").write_text("not-json!!!", encoding="utf-8")
 
     uploads: list[str] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1237,7 +1237,7 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
             uploads.append(payload["content_hash"])
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -1255,10 +1255,10 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
     (pending_dir / "pending-bom-stale.json").write_text(json.dumps(stale_payload), encoding="utf-8")
 
     uploads: list[dict] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1267,7 +1267,7 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
             pass
 
         def register_asset(self, payload):
-            from tools.fleet.client import RegisterAssetResult
+            from tools.remote.client import RegisterAssetResult
 
             return RegisterAssetResult(
                 asset_id="new-asset-id", dashboard_url="https://app/assets/new-asset-id"
@@ -1277,7 +1277,7 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
             uploads.append(payload)
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -1301,10 +1301,10 @@ def test_collect_endpoint_purges_stale_asset_pending_files_on_replay(tmp_path, m
     stale_file.write_text(json.dumps(stale_payload), encoding="utf-8")
 
     uploads: list[dict] = []
-    monkeypatch.setattr("tools.fleet.collector.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.fleet.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.fleet.collector.build_endpoint_collection",
+        "tools.remote.collector.build_endpoint_collection",
         lambda config_dir, project: _collection(),
     )
 
@@ -1316,7 +1316,7 @@ def test_collect_endpoint_purges_stale_asset_pending_files_on_replay(tmp_path, m
             uploads.append(payload)
             return _upload_result(asset_id=payload["asset_id"])
 
-    monkeypatch.setattr("tools.fleet.collector.FleetClient", FakeClient)
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     collect_endpoint(config_dir=tmp_path, project=None)
 
@@ -1332,7 +1332,7 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
         calls.append(kwargs)
         return _upload_result(asset_id="asset-123")
 
-    monkeypatch.setattr("tools.fleet.cli.collect_endpoint", fake_collect_endpoint)
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
 
     result = CliRunner().invoke(
         openaca_main,
@@ -1366,7 +1366,7 @@ def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
     config_path = tmp_path / "remote.toml"
     lines = [
         "[remote]",
-        'api_url = "http://fleet.test"',
+        'api_url = "http://remote.test"',
         'token = "ot_TEST"',
     ]
     if asset_id is not None:

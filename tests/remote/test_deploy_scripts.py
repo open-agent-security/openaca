@@ -59,13 +59,13 @@ def test_jamf_script_accepts_standard_parameters(tmp_path: Path):
     run = _run_script(
         REPO_ROOT / "deploy" / "remote" / "jamf.sh",
         tmp_path,
-        args=["unused1", "unused2", "unused3", "ot_JAMF", "https://fleet.example", "0.1.0b6"],
+        args=["unused1", "unused2", "unused3", "ot_JAMF", "https://remote.example", "0.1.0b6"],
     )
 
     _assert_successful_install(
         run,
         token="ot_JAMF",
-        api_url="https://fleet.example",
+        api_url="https://remote.example",
         package="openaca==0.1.0b6",
     )
 
@@ -76,7 +76,7 @@ def test_kandji_script_configures_launchagent_from_environment(tmp_path: Path):
         tmp_path,
         env={
             "OPENACA_REMOTE_TOKEN": "ot_KANDJI",
-            "OPENACA_REMOTE_API_URL": "https://fleet.example",
+            "OPENACA_REMOTE_API_URL": "https://remote.example",
             "OPENACA_VERSION": "0.1.0b6",
         },
     )
@@ -84,7 +84,7 @@ def test_kandji_script_configures_launchagent_from_environment(tmp_path: Path):
     _assert_successful_install(
         run,
         token="ot_KANDJI",
-        api_url="https://fleet.example",
+        api_url="https://remote.example",
         package="openaca==0.1.0b6",
     )
 
@@ -95,7 +95,7 @@ def test_intune_script_configures_launchagent_from_environment(tmp_path: Path):
         tmp_path,
         env={
             "OPENACA_REMOTE_TOKEN": "ot_INTUNE",
-            "OPENACA_REMOTE_API_URL": "https://fleet.example",
+            "OPENACA_REMOTE_API_URL": "https://remote.example",
             "OPENACA_VERSION": "0.1.0b6",
         },
     )
@@ -103,7 +103,7 @@ def test_intune_script_configures_launchagent_from_environment(tmp_path: Path):
     _assert_successful_install(
         run,
         token="ot_INTUNE",
-        api_url="https://fleet.example",
+        api_url="https://remote.example",
         package="openaca==0.1.0b6",
     )
 

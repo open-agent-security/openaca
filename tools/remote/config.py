@@ -13,7 +13,7 @@ class ConfigError(Exception):
 
 
 @dataclass(frozen=True)
-class FleetConfig:
+class RemoteConfig:
     api_url: str = DEFAULT_API_URL
     token: str | None = field(default=None, repr=False)
     asset_id: str | None = None
@@ -23,10 +23,10 @@ def get_config_path() -> Path:
     return Path.home() / ".config" / "openaca" / "remote.toml"
 
 
-def load_fleet_config(path: Path | None = None) -> FleetConfig:
+def load_remote_config(path: Path | None = None) -> RemoteConfig:
     config_path = path or get_config_path()
     if not config_path.exists():
-        return FleetConfig()
+        return RemoteConfig()
     try:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -46,10 +46,10 @@ def load_fleet_config(path: Path | None = None) -> FleetConfig:
         raise ConfigError(f"invalid remote config at {config_path}: token must be a string")
     if asset_id is not None and not isinstance(asset_id, str):
         raise ConfigError(f"invalid remote config at {config_path}: asset_id must be a string")
-    return FleetConfig(api_url=api_url, token=token, asset_id=asset_id)
+    return RemoteConfig(api_url=api_url, token=token, asset_id=asset_id)
 
 
-def save_fleet_config(config: FleetConfig, path: Path | None = None) -> None:
+def save_remote_config(config: RemoteConfig, path: Path | None = None) -> None:
     config_path = path or get_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     content = _to_toml(config)
@@ -59,7 +59,7 @@ def save_fleet_config(config: FleetConfig, path: Path | None = None) -> None:
     os.chmod(config_path, 0o600)
 
 
-def _to_toml(config: FleetConfig) -> str:
+def _to_toml(config: RemoteConfig) -> str:
     lines = ["[remote]", f'api_url = "{_escape(config.api_url)}"']
     if config.token is not None:
         lines.append(f'token = "{_escape(config.token)}"')

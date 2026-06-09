@@ -1,12 +1,12 @@
 import pytest
 
-from tools.fleet.upload_contract import FleetUploadContractError, enforce_fleet_upload_contract
+from tools.remote.upload_contract import RemoteUploadContractError, enforce_remote_upload_contract
 
 
 def test_allows_relative_inventory_paths_and_bare_host_urls():
     """Relative inventory paths and bare-host URLs are allowed. Absolute
     paths and URLs with paths/queries in `openaca:*` property values are
-    rejected — the collector's `_redact_payload_for_fleet` is responsible
+    rejected — the collector's `_redact_payload_for_remote` is responsible
     for normalizing them BEFORE this enforcer runs.
     """
     payload = _payload(
@@ -30,7 +30,7 @@ def test_allows_relative_inventory_paths_and_bare_host_urls():
         },
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def test_rejects_url_query_in_openaca_property():
@@ -54,14 +54,14 @@ def test_rejects_url_query_in_openaca_property():
             ]
         }
     )
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "URL with a path" in str(exc.value)
 
 
 def test_rejects_bare_userinfo_url_in_openaca_property():
     """A URL with credentials in userinfo but no path/query
-    (`https://user:pass@host`) must be rejected. `_redact_url_for_fleet`
+    (`https://user:pass@host`) must be rejected. `_redact_url_for_remote`
     strips userinfo, but a stale offline-cache payload replayed via
     `_replay_pending_uploads` is only validated by this contract (no
     redaction pass), so the contract is the last line of defense against
@@ -81,8 +81,8 @@ def test_rejects_bare_userinfo_url_in_openaca_property():
             ]
         }
     )
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
     assert "credentials" in str(exc.value)
 
 
@@ -102,8 +102,8 @@ def test_rejects_token_like_values_without_echoing_value():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[0].value" in str(exc.value)
     assert "ghp_" not in str(exc.value)
@@ -122,8 +122,8 @@ def test_rejects_secret_query_parameters_without_rejecting_all_queries():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].externalReferences[0].url" in str(exc.value)
     assert "secret" not in str(exc.value)
@@ -143,8 +143,8 @@ def test_rejects_forbidden_property_names():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[0].value" in str(exc.value)
     assert "PATH" not in str(exc.value)
@@ -163,8 +163,8 @@ def test_rejects_raw_config_body_property_names():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[0].value" in str(exc.value)
     assert "mcpServers" not in str(exc.value)
@@ -184,8 +184,8 @@ def test_rejects_full_shell_argv_properties():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "--token" not in str(exc.value)
@@ -208,8 +208,8 @@ def test_rejects_binary_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "tenant" not in str(exc.value)
@@ -232,8 +232,8 @@ def test_rejects_local_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "CLAUDE_PLUGIN_ROOT" not in str(exc.value)
@@ -263,8 +263,8 @@ def test_rejects_npx_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "token" not in str(exc.value)
@@ -294,8 +294,8 @@ def test_rejects_uvx_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "secret" not in str(exc.value)
@@ -319,8 +319,8 @@ def test_rejects_pinned_npm_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "token" not in str(exc.value)
@@ -344,8 +344,8 @@ def test_rejects_pinned_pypi_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "secret" not in str(exc.value)
@@ -372,8 +372,8 @@ def test_rejects_pinned_docker_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[1].value" in str(exc.value)
     assert "TFE_TOKEN" not in str(exc.value)
@@ -394,7 +394,7 @@ def test_allows_pinned_mcp_clean_install_source():
         }
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def test_allows_package_install_source_references():
@@ -418,7 +418,7 @@ def test_allows_package_install_source_references():
         }
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def test_rejects_adr0029_unpinned_npx_mcp_install_source_with_raw_argv():
@@ -441,15 +441,15 @@ def test_rejects_adr0029_unpinned_npx_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "sk-1234" not in str(exc.value)
 
 
 def test_allows_adr0029_unpinned_npx_mcp_clean_install_source():
-    # After _prepare_fleet_component trims the argv, the contract must accept the result.
+    # After _prepare_remote_component trims the argv, the contract must accept the result.
     payload = _payload(
         bom={
             "components": [
@@ -464,7 +464,7 @@ def test_allows_adr0029_unpinned_npx_mcp_clean_install_source():
         }
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def test_rejects_adr0029_unpinned_uv_tool_run_mcp_install_source_with_raw_argv():
@@ -485,8 +485,8 @@ def test_rejects_adr0029_unpinned_uv_tool_run_mcp_install_source_with_raw_argv()
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "sk-1234" not in str(exc.value)
@@ -507,7 +507,7 @@ def test_allows_adr0029_unpinned_uv_tool_run_mcp_clean_install_source():
         }
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def test_rejects_adr0029_pinned_mcp_install_source_with_raw_argv():
@@ -531,8 +531,8 @@ def test_rejects_adr0029_pinned_mcp_install_source_with_raw_argv():
         }
     )
 
-    with pytest.raises(FleetUploadContractError) as exc:
-        enforce_fleet_upload_contract(payload)
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
 
     assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "secret" not in str(exc.value)
@@ -560,7 +560,7 @@ def test_allows_posture_evidence_without_rule_specific_allowlist():
         ]
     )
 
-    enforce_fleet_upload_contract(payload)
+    enforce_remote_upload_contract(payload)
 
 
 def _payload(**overrides):

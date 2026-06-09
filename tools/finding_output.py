@@ -48,6 +48,9 @@ def source_for(ref: ComponentRef) -> dict[str, Any]:
         source["name"] = ref.name
     if has_match_coordinate and ref.version:
         source["version"] = ref.version
+    external_coord = (ref.extra or {}).get("match_coordinate")
+    if isinstance(external_coord, str) and external_coord and not source:
+        source["match_coordinate"] = external_coord
     if not source:
         source["status"] = "unknown"
     return source

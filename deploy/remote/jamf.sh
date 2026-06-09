@@ -45,7 +45,7 @@ else
 fi
 
 if [ "$OPENACA_VERSION" = "latest" ]; then
-  run_as_user "$UV_BIN" tool install --upgrade --prerelease allow openaca
+  run_as_user "$UV_BIN" tool install --upgrade --prerelease=explicit "openaca>=0.1.0b0"
 else
   run_as_user "$UV_BIN" tool install --upgrade "openaca==$OPENACA_VERSION"
 fi

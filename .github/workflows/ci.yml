@@ -68,3 +68,29 @@ jobs:
           else
             echo "::notice::no overlays present yet; skipping openaca lint"
           fi
+
+  # lint-and-test installs from the committed uv.lock (--frozen) — the *dev*
+  # env. End users run `uv tool install` from PyPI, which ignores uv.lock and
+  # re-resolves deps from this package's metadata (pyproject constraints). That
+  # path shipped httpx 1.0.dev3 and broke the remote client. This job exercises
+  # it: build the wheel, install with deps resolved fresh (mirroring
+  # scripts/install.sh's --prerelease=explicit), and construct the httpx-backed
+  # RemoteClient — so a too-loose constraint fails CI here, not a user's shell.
+  smoke-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - name: Build wheel
+        run: uv build --wheel
+      - name: Install the wheel with deps resolved fresh (no lock)
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python --prerelease=explicit dist/*.whl
+      - name: Smoke — CLI runs + httpx-backed remote client constructs
+        run: |
+          /tmp/smoke/bin/openaca --version
+          /tmp/smoke/bin/python -c "from tools.remote.client import RemoteClient; RemoteClient(api_url='http://localhost', token='t'); print('remote client constructs against freshly-resolved deps - ok')"

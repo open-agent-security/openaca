@@ -49,7 +49,7 @@ fi
 # Install openaca into uv's isolated tool environment.
 echo "→ Installing openaca (${OPENACA_VERSION})..."
 if [ "$OPENACA_VERSION" = "latest" ]; then
-  uv tool install --upgrade --prerelease allow openaca
+  uv tool install --upgrade --prerelease=explicit "openaca>=0.1.0b0"
 else
   uv tool install --upgrade "openaca==${OPENACA_VERSION}"
 fi
@@ -68,7 +68,7 @@ elif [ -x "$OPENACA_BIN" ]; then
   echo "  $OPENACA_BIN scan endpoint"
 else
   if [ "$OPENACA_VERSION" = "latest" ]; then
-    echo "  uvx --prerelease allow --from openaca openaca scan endpoint"
+    echo "  uvx --prerelease=explicit --from 'openaca>=0.1.0b0' openaca scan endpoint"
   else
     echo "  uvx --from openaca==${OPENACA_VERSION} openaca scan endpoint"
   fi

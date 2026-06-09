@@ -25,9 +25,8 @@ def test_enabled_plugins_emitted():
     assert all(r.version is None for r in refs)
 
 
-def test_settings_plugin_matches_component_identity_advisory():
-    """Enabled plugins are source-less components, so advisories target their
-    logical component identity rather than a component-type ecosystem."""
+def test_settings_plugin_graph_identity_is_inventory_only():
+    """Enabled plugin graph identity is not a vulnerability match coordinate."""
     from tools.matcher import match
 
     manifest = REPOS / "sample-settings" / ".claude" / "settings.json"
@@ -40,8 +39,7 @@ def test_settings_plugin_matches_component_identity_advisory():
     }
     findings = match(refs, [advisory])
     matching = [f for f in findings if f.advisory_id == "OpenACA-TEST-PLUGIN-1"]
-    assert matching
-    assert matching[0].confidence == "high"
+    assert matching == []
 
 
 def test_settings_plugin_non_true_values_are_disabled(tmp_path):

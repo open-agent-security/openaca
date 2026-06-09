@@ -1,9 +1,11 @@
 from tools.component_ref import ComponentRef
 from tools.identity import (
+    MatchCoordinate,
     canonical_component_identity,
+    match_coordinate_for_bom,
+    match_coordinates,
     mcp_package_source,
     safe_unpinned_mcp_install_source,
-    source_identity_for_bom,
     unpinned_mcp_package,
 )
 
@@ -12,10 +14,9 @@ def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():
     ref = ComponentRef(
         ecosystem="npm",
         name="@playwright/mcp",
-        version="latest",
-        component_identity="mcp-stdio/npx-unpinned:@playwright/mcp",
         extra={
             "component_type": "mcp_server",
+            "install_source": "npx @playwright/mcp",
             "component_path": [{"type": "mcp_server", "name": "playwright"}],
         },
     )
@@ -23,8 +24,11 @@ def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():
     graph_identity = canonical_component_identity(ref)
 
     assert graph_identity == "mcp-server/playwright"
-    assert ref.purl == "pkg:npm/%40playwright/mcp@latest"
-    assert source_identity_for_bom(ref, graph_identity) == "mcp-stdio/npx-unpinned:@playwright/mcp"
+    assert ref.purl == "pkg:npm/%40playwright/mcp"
+    assert match_coordinate_for_bom(ref) is None
+    assert match_coordinates(ref) == [
+        MatchCoordinate(kind="package", ecosystem="npm", name="@playwright/mcp")
+    ]
 
 
 def test_plugin_dependency_graph_identity_uses_parent_without_observed_version():
@@ -38,10 +42,10 @@ def test_plugin_dependency_graph_identity_uses_parent_without_observed_version()
     assert (
         canonical_component_identity(ref) == "plugin/claude-plugins-official/discord/deps/npm/hono"
     )
-    assert source_identity_for_bom(ref, canonical_component_identity(ref)) is None
+    assert match_coordinate_for_bom(ref) is None
 
 
-def test_source_less_remote_mcp_keeps_source_identity_for_matching():
+def test_source_less_remote_mcp_has_no_match_coordinate_by_default():
     ref = ComponentRef(
         component_identity="mcp-remote/api.example.com/mcp",
         extra={
@@ -53,22 +57,26 @@ def test_source_less_remote_mcp_keeps_source_identity_for_matching():
     graph_identity = canonical_component_identity(ref)
 
     assert graph_identity == "mcp-server/example"
-    assert source_identity_for_bom(ref, graph_identity) == "mcp-remote/api.example.com/mcp"
+    assert match_coordinate_for_bom(ref) is None
+    assert match_coordinates(ref) == []
 
 
-def test_reconstructed_bom_ref_keeps_source_identity_for_second_serialization():
+def test_explicit_external_match_coordinate_round_trips():
     ref = ComponentRef(
-        component_identity="mcp-server/example",
+        component_identity="skill/frontend-design",
         extra={
-            "component_type": "mcp_server",
-            "source_identity": "mcp-remote/api.example.com/mcp",
+            "component_type": "skill",
+            "match_coordinate": "skills.sh:anthropics/skills/frontend-design",
         },
     )
 
     graph_identity = canonical_component_identity(ref)
 
-    assert graph_identity == "mcp-server/example"
-    assert source_identity_for_bom(ref, graph_identity) == "mcp-remote/api.example.com/mcp"
+    assert graph_identity == "skill/frontend-design"
+    assert match_coordinate_for_bom(ref) == "skills.sh:anthropics/skills/frontend-design"
+    assert match_coordinates(ref) == [
+        MatchCoordinate(kind="external_audit", value="skills.sh:anthropics/skills/frontend-design")
+    ]
 
 
 def test_source_less_direct_component_identity_is_already_graph_identity():
@@ -77,20 +85,47 @@ def test_source_less_direct_component_identity_is_already_graph_identity():
     graph_identity = canonical_component_identity(ref)
 
     assert graph_identity == "skill/direct-skill"
-    assert source_identity_for_bom(ref, graph_identity) is None
+    assert match_coordinate_for_bom(ref) is None
 
 
-def test_unpinned_mcp_package_prefers_source_identity_over_install_source():
+def test_unpinned_mcp_package_uses_install_source():
     ref = ComponentRef(
         component_identity="mcp-server/weather",
         extra={
             "component_type": "mcp_server",
-            "source_identity": "mcp-stdio/uvx-unpinned:weather-mcp",
-            "install_source": "uv tool run different-package",
+            "install_source": "uv tool run weather-mcp",
         },
     )
 
     assert unpinned_mcp_package(ref) == ("PyPI", "weather-mcp")
+
+
+def test_match_coordinates_never_fall_back_to_graph_identity():
+    ref = ComponentRef(
+        component_identity="skill/local-helper",
+        extra={"component_type": "skill"},
+    )
+
+    assert canonical_component_identity(ref) == "skill/local-helper"
+    assert match_coordinates(ref) == []
+
+
+def test_match_coordinates_normalize_unpinned_stdio_mcp_to_package_coordinate():
+    ref = ComponentRef(
+        component_identity="mcp-server/playwright",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx @playwright/mcp",
+        },
+    )
+
+    assert match_coordinates(ref) == [
+        MatchCoordinate(
+            kind="package",
+            ecosystem="npm",
+            name="@playwright/mcp",
+        )
+    ]
 
 
 def test_mcp_package_source_extracts_launcher_specific_packages():
@@ -117,21 +152,9 @@ def test_mcp_package_source_extracts_launcher_specific_packages():
     )
 
 
-def test_safe_unpinned_install_source_uses_source_identity_then_install_source():
+def test_safe_unpinned_install_source_uses_install_source():
     assert (
         safe_unpinned_mcp_install_source(
-            identity="mcp-server/weather",
-            source_identity="mcp-stdio/uvx-unpinned:weather-mcp",
-            component_name="mcp-server/weather",
-            install_source="uv tool run different-package",
-        )
-        == "uvx weather-mcp"
-    )
-    assert (
-        safe_unpinned_mcp_install_source(
-            identity="mcp-server/weather",
-            source_identity=None,
-            component_name="mcp-server/weather",
             install_source="uv tool run weather-mcp --token secret",
         )
         == "uvx weather-mcp"

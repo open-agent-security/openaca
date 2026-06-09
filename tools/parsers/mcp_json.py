@@ -524,7 +524,8 @@ def parse_mcp_servers(
             elif name:
                 refs.append(
                     ComponentRef(
-                        component_identity=f"mcp-stdio/npx-unpinned:{name}",
+                        ecosystem="npm",
+                        name=name,
                         source_manifest=source_manifest,
                         source_locator=locator,
                         extra=_mcp_ref_extra(
@@ -570,7 +571,8 @@ def parse_mcp_servers(
                 elif name:
                     refs.append(
                         ComponentRef(
-                            component_identity=f"mcp-stdio/uvx-unpinned:{name}",
+                            ecosystem="PyPI",
+                            name=name,
                             source_manifest=source_manifest,
                             source_locator=locator,
                             extra=_mcp_ref_extra(

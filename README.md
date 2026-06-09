@@ -272,7 +272,7 @@ carry `finding_type: "vulnerability"` and posture entries carry
 `finding_type: "posture"`. Each finding includes:
 
 - `component` — the vulnerable or risky agent component being reported.
-- `component.source` — the package/Git/source identity used for matching
+- `component.source` — the package/Git/source coordinate used for matching
   or explanation.
 - `active_in` — runtime host IDs observed by the scanner, when known.
 - `declared_by` — manifest, plugin, or lock entry that introduced the
@@ -407,15 +407,15 @@ software-dependency refs produces an explicit footer rather than a
 silent "no findings."
 
 Per-parser detail. Rows such as `claude-plugin/...`, `skill/...`, and
-`claude-hook/...` are logical component identities; source identity is separate
-and remains unknown unless the manifest or lock entry provides a source
-ecosystem such as `npm`, `PyPI`, or `github`.
+`claude-hook/...` are graph occurrence identities. Match coordinates are
+separate and exist only when the manifest or lock entry provides a package,
+Git, or explicit external audit/registry coordinate.
 
 | Manifest | Detects | Component/source identifier emitted |
 |---|---|---|
 | `package.json` | npm dependencies (deps + devDeps) | `pkg:npm/<name>@<version>` |
 | `pyproject.toml` | PEP 621 deps, optional-deps, PEP 735 dependency-groups | `pkg:pypi/<name>@<version>` |
-| `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL when pinned; `mcp-stdio/...` otherwise |
+| `mcp.json` / `.mcp.json` / `claude_desktop_config.json` | MCP server launches via `npx`, `uvx`, `python -m`, etc. | PURL for package launches; graph identity plus install context for local/binary launches |
 | `.claude-plugin/plugin.json` | Claude Code plugin identity | `claude-plugin/<name>` |
 | `.claude/settings.json` | Enabled-plugin enumeration; direct `mcpServers`; direct `hooks` per scope | mixed (see surface-specific rows) |
 | `installed_plugins.json` (endpoint mode) | Active plugins (resolved versions, gitCommitSha) | `claude-plugin/<marketplace>/<name>` when marketplace is known |

@@ -808,7 +808,7 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
     assert "npx @playwright/mcp@latest" not in out
 
 
-def test_tree_stdio_mcp_leaf_uses_github_source_identity():
+def test_tree_stdio_mcp_leaf_uses_github_match_coordinate():
     refs = [
         _plugin_ref("serena", "unknown", marketplace="official"),
         ComponentRef(
@@ -830,7 +830,7 @@ def test_tree_stdio_mcp_leaf_uses_github_source_identity():
     assert "git+https://github.com/oraios/serena" not in out
 
 
-def test_tree_stdio_mcp_leaf_uses_docker_source_identity():
+def test_tree_stdio_mcp_leaf_uses_docker_match_coordinate():
     refs = [
         _plugin_ref("terraform", "unknown", marketplace="official"),
         ComponentRef(
@@ -852,7 +852,7 @@ def test_tree_stdio_mcp_leaf_uses_docker_source_identity():
     assert "TFE_TOKEN" not in out
 
 
-def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_source_identity():
+def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_match_coordinate():
     refs = [
         _plugin_ref("sources", "unknown", marketplace="official"),
         ComponentRef(
@@ -926,7 +926,8 @@ def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
 def test_tree_source_less_unpinned_stdio_mcp_leaf_shows_safe_package_name():
     refs = [
         ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:@modelcontextprotocol/server-filesystem",
+            ecosystem="npm",
+            name="@modelcontextprotocol/server-filesystem",
             extra={
                 "component_type": "mcp_server",
                 "install_source": (
@@ -935,7 +936,8 @@ def test_tree_source_less_unpinned_stdio_mcp_leaf_shows_safe_package_name():
             },
         ),
         ComponentRef(
-            component_identity="mcp-stdio/uvx-unpinned:some-mcp-server",
+            ecosystem="PyPI",
+            name="some-mcp-server",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "uvx some-mcp-server --token secret",
@@ -956,7 +958,7 @@ def test_tree_source_less_unpinned_stdio_mcp_url_spec_falls_back_to_args_hidden(
     """URL-style npx specs (e.g. with query-string tokens) must not be rendered verbatim."""
     refs = [
         ComponentRef(
-            component_identity="mcp-stdio/npx-unpinned:https://registry.example.com/my-pkg?token=abc123",
+            component_identity="mcp-stdio/binary:npx",
             extra={
                 "component_type": "mcp_server",
                 "install_source": "npx https://registry.example.com/my-pkg?token=abc123",

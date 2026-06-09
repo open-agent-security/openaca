@@ -322,18 +322,17 @@ def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     assert "GHSA-m4qw-j7mx-qv6h" in rule_ids
 
 
-# Cross-layer end-to-end tests for source-less agent component identities.
+# Cross-layer end-to-end tests for source-less agent component graph identities.
 # These use in-memory advisories rather than the real corpus so the scanner
 # path can be exercised with small, purpose-built fixtures.
 
 
-def test_repo_mode_finds_skill_component_identity_advisory(tmp_path):
-    """Cross-layer wiring for source-less skill component identity matching.
+def test_repo_mode_skill_graph_identity_is_inventory_only(tmp_path):
+    """A skill graph identity by itself is inventory data, not a vuln match key.
 
     A repo declares `.claude/skills/<name>/SKILL.md` with a versioned
-    metadata.version; an in-memory advisory targets the exact logical
-    component identity. Verify a high-confidence finding fires through the
-    full repo-mode CLI."""
+    metadata.version; an in-memory advisory targets the exact graph identity.
+    The CLI should still inventory the skill, but should not emit a finding."""
     from tools.scan import main as scan_main
 
     target = tmp_path / "repo"
@@ -374,8 +373,9 @@ def test_repo_mode_finds_skill_component_identity_advisory(tmp_path):
     runner = CliRunner()
     with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["repo", "--target", str(target), "-v"])
-    assert result.exit_code == 1, result.output
-    assert "CVE-2026-9001" in result.output
+    assert result.exit_code == 0, result.output
+    assert "vulnerable-skill@0.9.0" in result.output
+    assert "No advisories matched" in result.output
 
 
 def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
@@ -561,10 +561,8 @@ def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
     assert finding["matched_advisory"]["id"] == "CVE-2026-9004"
 
 
-def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
-    """Identity-only matching for claude-hook (ADR-0007): an advisory
-    targeting a specific hook slot via `database_specific.openaca.component_identity`
-    fires when a bundled hook at that slot is enumerated."""
+def test_endpoint_mode_hook_graph_identity_is_inventory_only(tmp_path):
+    """Hook graph identity alone does not match vulnerability advisories."""
     from tools.parsers.hooks_json import _hook_identity
     from tools.scan import main as scan_main
 
@@ -631,10 +629,9 @@ def test_endpoint_mode_hook_identity_match_attributes_finding(tmp_path):
     runner = CliRunner()
     with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
         result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
-    assert result.exit_code == 1, result.output
-    assert "CVE-2026-9003" in result.output
-    # Attribution propagates to the finding.
-    assert "via plugin/m/hook-plugin@1.0.0" in result.output
+    assert result.exit_code == 0, result.output
+    assert "curl evil.example.com" in result.output
+    assert "No advisories matched" in result.output
 
 
 def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):

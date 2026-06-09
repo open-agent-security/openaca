@@ -164,8 +164,16 @@ def test_collect_osv_queries_uses_package_query_for_unpinned_mcp_refs():
 
 def test_collect_osv_queries_uses_package_query_for_parser_emitted_unpinned_mcp_refs():
     refs = [
-        ComponentRef(component_identity="mcp-stdio/npx-unpinned:@scope/mcp-server"),
-        ComponentRef(component_identity="mcp-stdio/uvx-unpinned:my-mcp-tool"),
+        ComponentRef(
+            ecosystem="npm",
+            name="@scope/mcp-server",
+            extra={"component_type": "mcp_server", "install_source": "npx @scope/mcp-server"},
+        ),
+        ComponentRef(
+            ecosystem="PyPI",
+            name="my-mcp-tool",
+            extra={"component_type": "mcp_server", "install_source": "uvx my-mcp-tool"},
+        ),
     ]
 
     queries = collect_osv_queries(refs)

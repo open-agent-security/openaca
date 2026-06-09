@@ -116,12 +116,14 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
 
 def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monkeypatch):
     ref = ComponentRef(
-        component_identity="mcp-stdio/npx-unpinned:@example/mcp",
+        ecosystem="npm",
+        name="@example/mcp",
         source_manifest=".mcp.json",
         source_locator="mcpServers.example",
         extra={
             "component_type": "mcp_server",
             "install_source": "npx @example/mcp --token abc",
+            "component_path": [{"type": "mcp_server", "name": "example"}],
         },
     )
 
@@ -144,12 +146,14 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
 
 def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monkeypatch):
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:mcp-server",
+        ecosystem="PyPI",
+        name="mcp-server",
         source_manifest=".mcp.json",
         source_locator="mcpServers.example",
         extra={
             "component_type": "mcp_server",
             "install_source": "uvx -y mcp-server --api-key secret",
+            "component_path": [{"type": "mcp_server", "name": "example"}],
         },
     )
 
@@ -204,7 +208,8 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
     tmp_path, monkeypatch
 ):
     ref = ComponentRef(
-        component_identity="mcp-stdio/npx-unpinned:@playwright/mcp",
+        ecosystem="npm",
+        name="@playwright/mcp",
         source_manifest=".mcp.json",
         source_locator="$.mcpServers.playwright",
         extra={
@@ -650,7 +655,8 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
     # Regression test: before this fix, the component fell through to _trim_pinned_install_source
     # and the fallback kept two raw tokens ("npx -y") instead of "npx @scope/pkg".
     ref = ComponentRef(
-        component_identity="mcp-stdio/npx-unpinned:@scope/pkg",
+        ecosystem="npm",
+        name="@scope/pkg",
         source_manifest=".mcp.json",
         source_locator="mcpServers.my-mcp",
         extra={
@@ -683,7 +689,8 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
 ):
     # Same as above but for a uvx-launched unpinned MCP.
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:my-tool",
+        ecosystem="PyPI",
+        name="my-tool",
         source_manifest=".mcp.json",
         source_locator="mcpServers.my-tool",
         extra={
@@ -715,7 +722,8 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
 
 def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeypatch):
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:my-tool",
+        ecosystem="PyPI",
+        name="my-tool",
         source_manifest=".mcp.json",
         source_locator="mcpServers.my-tool",
         extra={
@@ -745,7 +753,8 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
 
 def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path, monkeypatch):
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:weather-mcp",
+        ecosystem="PyPI",
+        name="weather-mcp",
         source_manifest=".mcp.json",
         source_locator="mcpServers.weather",
         extra={
@@ -770,7 +779,7 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/weather"
-    assert props["openaca:source_identity"] == "mcp-stdio/uvx-unpinned:weather-mcp"
+    assert "openaca:match_coordinate" not in props
     assert props["openaca:install_source"] == "uvx weather-mcp"
 
 
@@ -803,7 +812,8 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
     # package is what matters; before this fix, the helper returned the command name instead.
     # Regression: component_path causes ADR-0029 identity so the argv-recovery path is taken.
     ref = ComponentRef(
-        component_identity="mcp-stdio/npx-unpinned:@scope/pkg",
+        ecosystem="npm",
+        name="@scope/pkg",
         source_manifest=".mcp.json",
         source_locator="mcpServers.my-mcp",
         extra={

@@ -1,7 +1,8 @@
-"""Shared identity and MCP source-coordinate helpers."""
+"""Shared identity and MCP match-coordinate helpers."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -15,11 +16,6 @@ PURL_ECOSYSTEM_MAP = {
     "docker": "docker",
 }
 PACKAGE_SOURCE_PURL_TYPES = frozenset({"npm", "pypi", "github", "docker"})
-UNPINNED_MCP_IDENTITY_PREFIXES: dict[str, str] = {
-    "mcp-stdio/npx-unpinned:": "npm",
-    "mcp-stdio/uvx-unpinned:": "PyPI",
-}
-
 _PACKAGE_FLAGS_BY_LAUNCHER = {
     "npx": frozenset({"--package", "-p"}),
     "uvx": frozenset({"--from"}),
@@ -36,6 +32,18 @@ _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
         "-c",
     }
 )
+
+
+@dataclass(frozen=True)
+class MatchCoordinate:
+    kind: str
+    purl: str | None = None
+    ecosystem: str | None = None
+    name: str | None = None
+    version: str | None = None
+    git_repo: str | None = None
+    git_ref: str | None = None
+    value: str | None = None
 
 
 def encode_purl_name(name: str) -> str:
@@ -68,20 +76,9 @@ def is_package_source_ref(ref: Any) -> bool:
     return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
 
 
-def source_identity_for_bom(ref: Any, identity: str | None) -> str | None:
-    for candidate in ((ref.extra or {}).get("source_identity"), ref.component_identity):
-        if isinstance(candidate, str) and candidate and candidate != identity:
-            return candidate
-    return None
-
-
-def unpinned_mcp_package_from_identity(identity: object) -> Optional[tuple[str, str]]:
-    if not isinstance(identity, str):
-        return None
-    for prefix, ecosystem in UNPINNED_MCP_IDENTITY_PREFIXES.items():
-        if identity.startswith(prefix):
-            return ecosystem, identity[len(prefix) :]
-    return None
+def match_coordinate_for_bom(ref: Any) -> str | None:
+    candidate = (ref.extra or {}).get("match_coordinate")
+    return candidate if isinstance(candidate, str) and candidate else None
 
 
 def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
@@ -125,17 +122,44 @@ def is_unpinned_mcp_package_launch(ref: Any) -> bool:
 
 
 def unpinned_mcp_package(ref: Any) -> Optional[tuple[str, str]]:
-    source_package = unpinned_mcp_package_from_identity(ref.component_identity)
-    if source_package is not None:
-        return source_package
-    source_package = unpinned_mcp_package_from_identity((ref.extra or {}).get("source_identity"))
-    if source_package is not None:
-        return source_package
+    source = mcp_package_source((ref.extra or {}).get("install_source"))
+    if source is not None and not ref.version:
+        _launcher, ecosystem, package = source
+        if not ref.ecosystem or purl_type_for_ecosystem(ref.ecosystem) == purl_type_for_ecosystem(
+            ecosystem
+        ):
+            return ecosystem, package
     if is_unpinned_mcp_package_launch(ref):
         assert ref.ecosystem is not None
         assert ref.name is not None
         return ref.ecosystem, ref.name
     return None
+
+
+def match_coordinates(ref: Any) -> list[MatchCoordinate]:
+    unpinned_package = unpinned_mcp_package(ref)
+    if unpinned_package is not None:
+        ecosystem, name = unpinned_package
+        return [MatchCoordinate(kind="package", ecosystem=ecosystem, name=name)]
+
+    if ref.ecosystem and ref.name and ref.version and ref.purl:
+        if purl_type_for_ecosystem(ref.ecosystem) in {"npm", "pypi"}:
+            return [MatchCoordinate(kind="purl", purl=ref.purl)]
+        if ref.ecosystem in {"github", "GitHub"}:
+            repo = f"github.com/{ref.name.lower()}"
+            return [MatchCoordinate(kind="git_commit", git_repo=repo, git_ref=ref.version)]
+
+    if ref.ecosystem in {"github", "GitHub"} and ref.name:
+        git_ref = (ref.extra or {}).get("git_ref")
+        if isinstance(git_ref, str) and git_ref:
+            repo = f"github.com/{ref.name.lower()}"
+            return [MatchCoordinate(kind="git_version", git_repo=repo, git_ref=git_ref)]
+
+    match_coordinate = match_coordinate_for_bom(ref)
+    if match_coordinate:
+        return [MatchCoordinate(kind="external_audit", value=match_coordinate)]
+
+    return []
 
 
 def infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
@@ -154,22 +178,16 @@ def infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
 
 def safe_unpinned_mcp_install_source(
     *,
-    identity: object,
-    source_identity: object,
-    component_name: object,
     install_source: object,
 ) -> str | None:
-    for candidate in (identity, source_identity, component_name):
-        package = unpinned_mcp_package_from_identity(candidate)
-        if package is None:
-            continue
-        ecosystem, name = package
-        launcher = "npx" if ecosystem == "npm" else "uvx"
-        return f"{launcher} {name}"
     source = mcp_package_source(install_source)
     if source is None:
         return None
     launcher, _ecosystem, package = source
+    if _ecosystem == "npm" and not _safe_package_name(package, allow_scope=True):
+        return None
+    if _ecosystem == "PyPI" and not _safe_package_name(package, allow_scope=False):
+        return None
     return f"{launcher} {package}"
 
 

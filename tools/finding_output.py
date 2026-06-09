@@ -39,14 +39,14 @@ def source_for(ref: ComponentRef) -> dict[str, Any]:
     if isinstance(extra_source, dict):
         source.update({k: v for k, v in extra_source.items() if v is not None})
 
-    has_source_identity = bool(ref.ecosystem or ref.purl or source)
+    has_match_coordinate = bool(ref.ecosystem or ref.purl or source)
     if ref.ecosystem:
         source["ecosystem"] = ref.ecosystem
     if ref.purl:
         source["purl"] = ref.purl
-    if has_source_identity and ref.name:
+    if has_match_coordinate and ref.name:
         source["name"] = ref.name
-    if has_source_identity and ref.version:
+    if has_match_coordinate and ref.version:
         source["version"] = ref.version
     if not source:
         source["status"] = "unknown"

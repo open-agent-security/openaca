@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from tools.component_ref import ComponentRef, canonical_component_identity
-from tools.identity import infer_unpinned_mcp_package, source_identity_for_bom
+from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
 CYCLONEDX_SPEC_VERSION = "1.7"
@@ -264,7 +264,7 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     props: list[dict[str, str]] = []
     identity = canonical_component_identity(ref)
     _append_prop(props, "openaca:identity", identity)
-    _append_prop(props, "openaca:source_identity", source_identity_for_bom(ref, identity))
+    _append_prop(props, "openaca:match_coordinate", match_coordinate_for_bom(ref))
     _append_prop(props, "openaca:component_type", (ref.extra or {}).get("component_type"))
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
@@ -323,9 +323,9 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     component_type = props.get("openaca:component_type")
     if component_type:
         extra["component_type"] = component_type
-    source_identity = props.get("openaca:source_identity")
-    if source_identity:
-        extra["source_identity"] = source_identity
+    match_coordinate = props.get("openaca:match_coordinate")
+    if match_coordinate:
+        extra["match_coordinate"] = match_coordinate
     agent_host = props.get("openaca:agent_host")
     if agent_host:
         extra["agent_host"] = agent_host

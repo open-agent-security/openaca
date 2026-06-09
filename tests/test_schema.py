@@ -43,6 +43,15 @@ def test_schema_accepts_taxonomies_block_and_malicious_package_threat_kind(schem
     Draft202012Validator(schema).validate(advisory)
 
 
+def test_schema_accepts_openaca_match_coordinate(schema, sample_valid):
+    advisory = dict(sample_valid)
+    openaca = dict(advisory["database_specific"]["openaca"])
+    openaca["match_coordinate"] = "skills.sh:anthropics/skills/frontend-design"
+    advisory["database_specific"]["openaca"] = openaca
+
+    Draft202012Validator(schema).validate(advisory)
+
+
 def test_schema_rejects_unknown_threat_kind(schema, sample_valid):
     advisory = dict(sample_valid)
     openaca = dict(advisory["database_specific"]["openaca"])

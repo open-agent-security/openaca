@@ -366,9 +366,8 @@ def test_endpoint_subcommand_minimal_install_no_findings():
     assert "advisories: 0" in result.output
 
 
-def test_endpoint_subcommand_matches_plugin_component_identity_advisory(tmp_path):
-    """Endpoint mode matches source-less plugin advisories by explicit
-    component identity, not by a component-type ecosystem."""
+def test_endpoint_subcommand_treats_plugin_graph_identity_as_inventory_only(tmp_path):
+    """Endpoint mode inventories plugin graph identity but does not match on it."""
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     advisories_dir = tmp_path / "advisories"
     advisories_dir.mkdir()
@@ -398,8 +397,9 @@ database_specific:
                 str(config_dir),
             ],
         )
-    assert result.exit_code == 1, result.output
-    assert "CVE-2026-9999" in result.output
+    assert result.exit_code == 0, result.output
+    assert "plugin/test-marketplace/sample-plugin@1.2.0" in result.output
+    assert "No advisories matched" in result.output
 
 
 def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):

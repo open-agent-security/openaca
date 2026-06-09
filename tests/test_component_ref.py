@@ -125,12 +125,11 @@ def test_package_source_ref_accepts_bom_canonicalized_ecosystems():
     assert is_package_source_ref(ComponentRef(ecosystem="Docker", name="org/image"))
 
 
-def test_unpinned_mcp_package_uses_source_identity_for_uv_tool_run_bom_ref():
+def test_unpinned_mcp_package_uses_install_source_for_uv_tool_run_bom_ref():
     ref = ComponentRef(
         component_identity="mcp-server/weather",
         extra={
             "component_type": "mcp_server",
-            "source_identity": "mcp-stdio/uvx-unpinned:weather-mcp",
             "install_source": "uv tool run weather-mcp",
         },
     )

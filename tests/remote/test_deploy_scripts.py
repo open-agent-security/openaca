@@ -20,10 +20,14 @@ def test_remote_deploy_scripts_default_to_latest_openaca():
     for path in _remote_deploy_scripts():
         text = path.read_text(encoding="utf-8")
         assert 'OPENACA_VERSION="${OPENACA_VERSION:-latest}"' in text
-        assert 'OPENACA_PACKAGE="openaca"' in text
-        assert 'OPENACA_PACKAGE="openaca==$OPENACA_VERSION"' in text
-        assert '"$UV_BIN" tool install "$OPENACA_PACKAGE" --force' in text
-        assert 'tool install "openaca==' not in text
+        # latest must upgrade in place AND allow pre-releases (openaca ships
+        # only betas, so without --prerelease an old build is never advanced).
+        assert '"$UV_BIN" tool install --upgrade --prerelease allow openaca' in text
+        # a pinned version installs exactly that build, still upgrading in place.
+        assert '"$UV_BIN" tool install --upgrade "openaca==$OPENACA_VERSION"' in text
+        # the old non-upgrading form must be gone.
+        assert "--force" not in text
+        assert "OPENACA_PACKAGE" not in text
 
 
 def test_remote_deploy_scripts_are_valid_bash():
@@ -106,6 +110,28 @@ def test_intune_script_configures_launchagent_from_environment(tmp_path: Path):
         api_url="https://remote.example",
         package="openaca==0.1.0b6",
     )
+
+
+def test_remote_deploy_scripts_upgrade_to_latest_prerelease(tmp_path: Path):
+    """With no pinned version (the default), each script must upgrade in place
+    to the latest pre-release. The earlier `--force` form reinstalled but did
+    not advance an already-installed build, so a managed endpoint kept its old
+    version across re-runs — the bug this guards against.
+    """
+    for path in _remote_deploy_scripts():
+        run = _run_script(
+            path,
+            tmp_path / path.stem,
+            env={
+                "OPENACA_REMOTE_TOKEN": "ot_TEST",
+                "OPENACA_REMOTE_API_URL": "https://remote.example",
+            },
+        )
+        assert run.result.returncode == 0, run.result.stderr
+        assert (run.log_dir / "uv.log").read_text(encoding="utf-8").splitlines() == [
+            "self update",
+            "tool install --upgrade --prerelease allow openaca",
+        ]
 
 
 def _run_script(
@@ -194,7 +220,7 @@ def _assert_successful_install(
 
     assert (run.log_dir / "uv.log").read_text(encoding="utf-8").splitlines() == [
         "self update",
-        f"tool install {package} --force",
+        f"tool install --upgrade {package}",
     ]
     assert (run.log_dir / "openaca.log").read_text(encoding="utf-8").splitlines() == [
         f"args=remote configure --api-url {api_url}",

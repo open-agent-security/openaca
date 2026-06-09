@@ -1,6 +1,6 @@
 [project]
 name = "openaca"
-version = "0.1.0b6"
+version = "0.1.0b7"
 description = "OpenACA: Agent Composition Analysis — overlays and scanner for AI agent security."
 readme = "PYPI-README.md"
 requires-python = ">=3.11"

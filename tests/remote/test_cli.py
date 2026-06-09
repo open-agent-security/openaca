@@ -36,6 +36,34 @@ def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
     assert config.api_url == "https://api.openaca.dev"
 
 
+def test_configure_masked_token_shows_last4_for_disambiguation(tmp_path, monkeypatch):
+    """A realistic-length token is displayed as prefix + last 4
+    (`ot_...WXYZ`) so users with several tokens can tell which one is
+    configured — matching the last-4 display the backend stores for the
+    console (token_suffix). The rest of the secret must never appear.
+    """
+    config_path = tmp_path / "remote.toml"
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    token = "ot_A1b2C3d4E5f6G7h8WXYZ"
+
+    result = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", token])
+
+    assert result.exit_code == 0
+    assert "ot_...WXYZ" in result.output
+    assert token not in result.output
+    assert "A1b2C3d4E5f6G7h8" not in result.output
+
+
+def test_mask_token_short_and_unknown_shapes_reveal_nothing():
+    """A short token's last 4 could be most of its secret, and an
+    unknown-shaped secret has no safe prefix — both stay fully masked.
+    """
+    from tools.remote.cli import _mask_token
+
+    assert _mask_token("ot_TEST") == "ot_..."
+    assert _mask_token("something-else") == "***"
+
+
 def test_configure_accepts_api_url_override(tmp_path, monkeypatch):
     config_path = tmp_path / "remote.toml"
     monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)

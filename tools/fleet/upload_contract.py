@@ -80,7 +80,6 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
         if isinstance(name, str):
             props_by_name[name] = (prop.get("value"), index)
     identity = props_by_name.get("openaca:identity", (None, -1))[0]
-    source_identity = props_by_name.get("openaca:source_identity", (None, -1))[0]
     component_type = props_by_name.get("openaca:component_type", (None, -1))[0]
     install_source, install_source_index = props_by_name.get("openaca:install_source", (None, -1))
     component_purl = value.get("purl")
@@ -93,15 +92,7 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
         and isinstance(install_source, str)
         and install_source.strip()
     )
-    is_package = (
-        safe_unpinned_mcp_install_source(
-            identity=identity,
-            source_identity=source_identity,
-            component_name=value.get("name"),
-            install_source=install_source,
-        )
-        is not None
-    )
+    is_package = safe_unpinned_mcp_install_source(install_source=install_source) is not None
     is_binary = isinstance(identity, str) and identity.startswith(
         ("mcp-stdio/binary:", "mcp-stdio/local:")
     )

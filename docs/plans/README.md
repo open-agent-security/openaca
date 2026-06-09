@@ -58,7 +58,7 @@ audit before implementation is marked complete:
 | OSV federation | Query eligibility is intentional; unsupported refs do not false-query. |
 | Matcher | Unsupported or non-version-like refs do not produce false findings. |
 | Posture | Mutable/immutable install-reference behavior is intentional. |
-| Fleet upload | Upload preparation preserves safe source identity and drops raw argv. |
+| Fleet upload | Upload preparation preserves safe source coordinates and drops raw argv. |
 | E2E | At least one realistic fixture proves the lifecycle across multiple sinks. |
 
 ## Pre-V0 setup (already done)

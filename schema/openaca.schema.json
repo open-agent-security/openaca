@@ -109,6 +109,7 @@
       "required": ["taxonomies", "evidence_level"],
       "properties": {
         "threat_kind": {"type": "string", "enum": ["malicious_package"]},
+        "match_coordinate": {"type": "string", "minLength": 1},
         "taxonomies": {"$ref": "#/$defs/openaca_taxonomies"},
         "evidence_level": {
           "type": "string",

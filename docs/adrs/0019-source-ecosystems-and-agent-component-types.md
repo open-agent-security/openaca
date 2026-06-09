@@ -1,10 +1,10 @@
 ---
 id: 0019
 title: Separate source ecosystems from agent component types
-status: accepted
+status: superseded
 date: 2026-05-20
 supersedes: 0018
-superseded-by: null
+superseded-by: 0031
 ---
 
 ## Context

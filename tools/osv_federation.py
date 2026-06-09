@@ -37,15 +37,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from tools.component_ref import ComponentRef
-from tools.identity import unpinned_mcp_package
+from tools.identity import match_coordinates
 from tools.overlays import id_set
 
 _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 _VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
 _BATCH_SIZE = 1000
 _TIMEOUT_SECONDS = 30
-_PURL_QUERY_ECOSYSTEMS = frozenset({"npm", "PyPI", "pypi"})
-_GITHUB_ECOSYSTEMS = frozenset({"github", "GitHub"})
 
 
 @dataclass(frozen=True)
@@ -138,37 +136,31 @@ def collect_osv_query_labels(refs: list[ComponentRef]) -> list[str]:
 
 
 def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
-    if ref.ecosystem in _PURL_QUERY_ECOSYSTEMS and ref.version and ref.purl is not None:
-        return OsvQuery(
-            key=f"purl:{ref.purl}",
-            label=ref.purl,
-            payload={"package": {"purl": ref.purl}},
-            kind="purl",
-        )
-    # Unpinned launch: ecosystem+name without version (inferred from install_source).
-    # Query all advisories for the package so the matcher can emit unknown-confidence findings.
-    unpinned_package = unpinned_mcp_package(ref)
-    if unpinned_package is not None:
-        ecosystem, name = unpinned_package
-        return OsvQuery(
-            key=f"package:{ecosystem}:{name}",
-            label=f"{ecosystem}:{name} (unpinned)",
-            payload={"package": {"name": name, "ecosystem": ecosystem}},
-            kind="purl",
-        )
-    if ref.ecosystem in _GITHUB_ECOSYSTEMS and ref.name:
-        repo = f"github.com/{ref.name.lower()}"
-        if ref.version:
+    for coordinate in match_coordinates(ref):
+        if coordinate.kind == "purl" and coordinate.purl:
             return OsvQuery(
-                key=f"git-commit:{repo}:{ref.version}",
-                label=f"{repo}@{ref.version}",
-                payload={"commit": ref.version},
-                kind="git_commit",
-                git_repo=repo,
-                git_ref=ref.version,
+                key=f"purl:{coordinate.purl}",
+                label=coordinate.purl,
+                payload={"package": {"purl": coordinate.purl}},
+                kind="purl",
             )
-        git_ref = ref.extra.get("git_ref") if isinstance(ref.extra, dict) else None
-        if isinstance(git_ref, str) and git_ref:
+        if coordinate.kind == "package" and coordinate.ecosystem and coordinate.name:
+            return OsvQuery(
+                key=f"package:{coordinate.ecosystem}:{coordinate.name}",
+                label=f"{coordinate.ecosystem}:{coordinate.name} (unpinned)",
+                payload={"package": {"name": coordinate.name, "ecosystem": coordinate.ecosystem}},
+                kind="purl",
+            )
+        if coordinate.kind == "git_commit" and coordinate.git_repo and coordinate.git_ref:
+            return OsvQuery(
+                key=f"git-commit:{coordinate.git_repo}:{coordinate.git_ref}",
+                label=f"{coordinate.git_repo}@{coordinate.git_ref}",
+                payload={"commit": coordinate.git_ref},
+                kind="git_commit",
+                git_repo=coordinate.git_repo,
+                git_ref=coordinate.git_ref,
+            )
+        if coordinate.kind == "git_version" and coordinate.git_repo and coordinate.git_ref:
             # OSV's GIT version query expects the full repo URL in package.name
             # and a git tag in the version field (per the v1 query docs:
             # `{"ecosystem": "GIT", "name": "https://github.com/owner/repo.git",
@@ -178,15 +170,15 @@ def _query_for_ref(ref: ComponentRef) -> OsvQuery | None:
             # `repo` form stays as git_repo for stamping/record matching, which
             # normalizes scheme and `.git` away on the response side.
             return OsvQuery(
-                key=f"git-version:{repo}:{git_ref}",
-                label=f"{repo}@{git_ref}",
+                key=f"git-version:{coordinate.git_repo}:{coordinate.git_ref}",
+                label=f"{coordinate.git_repo}@{coordinate.git_ref}",
                 payload={
-                    "version": git_ref,
-                    "package": {"ecosystem": "GIT", "name": f"https://{repo}.git"},
+                    "version": coordinate.git_ref,
+                    "package": {"ecosystem": "GIT", "name": f"https://{coordinate.git_repo}.git"},
                 },
                 kind="git_version",
-                git_repo=repo,
-                git_ref=git_ref,
+                git_repo=coordinate.git_repo,
+                git_ref=coordinate.git_ref,
             )
     return None
 

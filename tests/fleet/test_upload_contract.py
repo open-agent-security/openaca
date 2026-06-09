@@ -188,8 +188,12 @@ def test_rejects_npx_mcp_install_source_with_raw_argv():
                 {
                     "properties": [
                         {
+                            "name": "openaca:component_type",
+                            "value": "mcp_server",
+                        },
+                        {
                             "name": "openaca:identity",
-                            "value": "mcp-stdio/npx-unpinned:@example/mcp",
+                            "value": "mcp-server/example",
                         },
                         {
                             "name": "openaca:install_source",
@@ -204,7 +208,7 @@ def test_rejects_npx_mcp_install_source_with_raw_argv():
     with pytest.raises(FleetUploadContractError) as exc:
         enforce_fleet_upload_contract(payload)
 
-    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "token" not in str(exc.value)
 
 
@@ -215,8 +219,12 @@ def test_rejects_uvx_mcp_install_source_with_raw_argv():
                 {
                     "properties": [
                         {
+                            "name": "openaca:component_type",
+                            "value": "mcp_server",
+                        },
+                        {
                             "name": "openaca:identity",
-                            "value": "mcp-stdio/uvx-unpinned:mcp-server",
+                            "value": "mcp-server/example",
                         },
                         {
                             "name": "openaca:install_source",
@@ -231,7 +239,7 @@ def test_rejects_uvx_mcp_install_source_with_raw_argv():
     with pytest.raises(FleetUploadContractError) as exc:
         enforce_fleet_upload_contract(payload)
 
-    assert "bom.components[0].properties[1].value" in str(exc.value)
+    assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "secret" not in str(exc.value)
 
 
@@ -338,8 +346,12 @@ def test_allows_package_install_source_references():
                 {
                     "properties": [
                         {
+                            "name": "openaca:component_type",
+                            "value": "mcp_server",
+                        },
+                        {
                             "name": "openaca:identity",
-                            "value": "mcp-stdio/npx-unpinned:@example/mcp",
+                            "value": "mcp-server/example",
                         },
                         {"name": "openaca:install_source", "value": "npx @example/mcp"},
                     ]
@@ -406,10 +418,6 @@ def test_rejects_adr0029_unpinned_uv_tool_run_mcp_install_source_with_raw_argv()
                         {"name": "openaca:component_type", "value": "mcp_server"},
                         {"name": "openaca:identity", "value": "mcp-server/weather"},
                         {
-                            "name": "openaca:source_identity",
-                            "value": "mcp-stdio/uvx-unpinned:weather-mcp",
-                        },
-                        {
                             "name": "openaca:install_source",
                             "value": "uv tool run weather-mcp --token sk-1234",
                         },
@@ -422,7 +430,7 @@ def test_rejects_adr0029_unpinned_uv_tool_run_mcp_install_source_with_raw_argv()
     with pytest.raises(FleetUploadContractError) as exc:
         enforce_fleet_upload_contract(payload)
 
-    assert "bom.components[0].properties[3].value" in str(exc.value)
+    assert "bom.components[0].properties[2].value" in str(exc.value)
     assert "sk-1234" not in str(exc.value)
 
 
@@ -434,10 +442,6 @@ def test_allows_adr0029_unpinned_uv_tool_run_mcp_clean_install_source():
                     "properties": [
                         {"name": "openaca:component_type", "value": "mcp_server"},
                         {"name": "openaca:identity", "value": "mcp-server/weather"},
-                        {
-                            "name": "openaca:source_identity",
-                            "value": "mcp-stdio/uvx-unpinned:weather-mcp",
-                        },
                         {"name": "openaca:install_source", "value": "uvx weather-mcp"},
                     ]
                 }

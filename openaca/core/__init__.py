@@ -15,6 +15,7 @@ from openaca.core.bom import (
     component_refs_from_cyclonedx,
 )
 from openaca.core.component_ref import ComponentRef
+from openaca.core.identity import MatchCoordinate, match_coordinates
 from openaca.core.matching import Finding, match
 from openaca.core.osv_queries import (
     OsvQuery,
@@ -27,6 +28,7 @@ __all__ = [
     "BOMComponent",
     "ComponentRef",
     "Finding",
+    "MatchCoordinate",
     "OsvQuery",
     "bom_components_from_cyclonedx",
     "build_agent_bom",
@@ -35,5 +37,6 @@ __all__ = [
     "derive_severity_label",
     "derive_severity_score",
     "match",
+    "match_coordinates",
     "stamp_osv_query_provenance",
 ]

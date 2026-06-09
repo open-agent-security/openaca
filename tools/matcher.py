@@ -12,11 +12,17 @@ Three match strategies, dispatched per-ref:
   packaging.Version can't reduce to a single point. We don't drop the
   ref — emit a finding so the consumer knows to pin and verify.
 
-- **Unpinned-launch match** (unknown confidence). Ref carries no
-  ecosystem/version but has a `component_identity` shaped like
-  `mcp-stdio/(npx|uvx)-unpinned:<package>`. Extract the package name and
-  match against advisory `affected[*].package`. Confidence is
-  "unknown" because we can't see the runtime-resolved version.
+- **Unpinned-launch match** (unknown confidence). Ref carries no resolved
+  version but has MCP launch provenance that resolves to a package coordinate.
+  Match against advisory `affected[*].package`. Confidence is "unknown"
+  because we can't see the runtime-resolved version.
+
+- **External match-coordinate match** (high confidence). Ref carries a
+  non-PURL/non-Git match coordinate, such as a future skills.sh audit handle,
+  and the advisory targets `database_specific.openaca.match_coordinate`.
+
+Graph occurrence identity (`openaca:identity`) is not a vulnerability matching
+coordinate.
 
 Out of V0 scope: the schema's `database_specific.openaca.detection_hints`
 field — substring matching against synthesized command lines is fragile
@@ -34,7 +40,7 @@ from urllib.parse import urlparse
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
-from tools.identity import unpinned_mcp_package
+from tools.identity import match_coordinates
 
 # Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
 # ranges. The current matcher only evaluates packaging.Version ranges, so refs
@@ -105,67 +111,57 @@ def _in_range(version: Version, events: list[dict[str, Any]]) -> bool:
 
 
 def _match_one(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
+    coordinates = match_coordinates(ref)
     if ref.ecosystem and ref.name:
         if ref.ecosystem in _FORGE_ECOSYSTEMS:
             return _match_git_ref(ref, advisories)
-        pkg = unpinned_mcp_package(ref)
+        pkg = _unpinned_package_coordinate(coordinates)
         if pkg is not None:
             return _match_unpinned(ref, pkg, advisories)
         if ref.version is None:
             return []
         return _match_versioned(ref, advisories)
 
-    if ref.component_identity:
-        pkg = unpinned_mcp_package(ref)
-        if pkg is not None:
-            return _match_unpinned(ref, pkg, advisories)
-        return _match_by_identity(ref, advisories)
-    return []
+    pkg = _unpinned_package_coordinate(coordinates)
+    if pkg is not None:
+        return _match_unpinned(ref, pkg, advisories)
+    return _match_external_coordinate(ref, coordinates, advisories)
 
 
-def _match_by_identity(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:
-    """Match a ref by `component_identity`.
-
-    Used for source-less agent components. The advisory carries the target
-    identity at `database_specific.openaca.component_identity`.
-
-    For marketplace-qualified plugin refs (`plugin/<marketplace>/<name>`),
-    also accepts advisories targeting the unqualified form (`plugin/<name>`).
-    This lets advisory authors write one identity that covers both repo-mode
-    scans (where marketplace is unavailable) and endpoint-mode scans (where
-    marketplace is known). A marketplace-specific advisory only matches refs
-    with the same marketplace.
-    """
-    identity = ref.component_identity
-    if not identity:
+def _match_external_coordinate(
+    ref: ComponentRef, coordinates: list[Any], advisories: list[dict[str, Any]]
+) -> list[Finding]:
+    targets = {
+        coordinate.value
+        for coordinate in coordinates
+        if coordinate.kind == "external_audit" and coordinate.value
+    }
+    if not targets:
         return []
-    candidate_targets: set[str] = {identity}
-    source_identity = ref.extra.get("source_identity") if ref.extra else None
-    if isinstance(source_identity, str) and source_identity:
-        candidate_targets.add(source_identity)
-    marketplace = ref.extra.get("marketplace") if ref.extra else None
-    if marketplace and isinstance(marketplace, str):
-        prefix = f"plugin/{marketplace}/"
-        if identity.startswith(prefix):
-            stripped = identity[len(prefix) :]
-            candidate_targets.add(f"plugin/{stripped}")
 
     findings: list[Finding] = []
     for advisory in advisories:
         ds = advisory.get("database_specific") or {}
         openaca_block = ds.get("openaca") or {}
-        target = openaca_block.get("component_identity")
-        if isinstance(target, str) and target in candidate_targets:
+        target = openaca_block.get("match_coordinate")
+        if isinstance(target, str) and target in targets:
             findings.append(
                 Finding(
                     advisory_id=advisory["id"],
                     component=ref,
                     confidence="high",
-                    reason=f"{ref.component_identity} matches {advisory['id']} (identity-only)",
+                    reason=f"{target} matches {advisory['id']} (match-coordinate)",
                     attributed_to=ref.attributed_to,
                 )
             )
     return findings
+
+
+def _unpinned_package_coordinate(coordinates: list[Any]) -> tuple[str, str] | None:
+    for coordinate in coordinates:
+        if coordinate.kind == "package" and coordinate.ecosystem and coordinate.name:
+            return coordinate.ecosystem, coordinate.name
+    return None
 
 
 def _match_git_ref(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[Finding]:

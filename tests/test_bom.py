@@ -102,7 +102,7 @@ def test_package_backed_mcp_bom_uses_agent_graph_identity_as_bom_ref():
     assert _property(component, "openaca:identity") == "mcp-server/playwright"
 
 
-def test_remote_mcp_bom_preserves_source_identity_for_matching():
+def test_remote_mcp_bom_does_not_invent_match_coordinate():
     ref = ComponentRef(
         component_identity="mcp-remote/api.example.com/mcp",
         source_manifest=".mcp.json",
@@ -114,11 +114,6 @@ def test_remote_mcp_bom_preserves_source_identity_for_matching():
             "component_path": [{"type": "mcp_server", "name": "example"}],
         },
     )
-    advisory = {
-        "id": "MAL-2026-REMOTE",
-        "affected": [],
-        "database_specific": {"openaca": {"component_identity": "mcp-remote/api.example.com/mcp"}},
-    }
 
     doc = build_agent_bom(
         [ref], target_type="endpoint", target="endpoint:user-scope"
@@ -126,18 +121,54 @@ def test_remote_mcp_bom_preserves_source_identity_for_matching():
 
     component = _component(doc, "mcp-server/example")
     assert _property(component, "openaca:identity") == "mcp-server/example"
-    assert _property(component, "openaca:source_identity") == "mcp-remote/api.example.com/mcp"
+    assert _property(component, "openaca:match_coordinate") is None
     refs = component_refs_from_cyclonedx(doc)
     assert refs[0].component_identity == "mcp-server/example"
-    assert refs[0].extra["source_identity"] == "mcp-remote/api.example.com/mcp"
+    assert "match_coordinate" not in refs[0].extra
+    assert match(refs=refs, advisories=[]) == []
+
+
+def test_explicit_external_match_coordinate_round_trips_for_matching():
+    ref = ComponentRef(
+        component_identity="skill/frontend-design",
+        source_manifest="skills/frontend-design/SKILL.md",
+        source_locator="$",
+        extra={
+            "component_type": "skill",
+            "match_coordinate": "skills.sh:anthropics/skills/frontend-design",
+        },
+    )
+    advisory = {
+        "id": "MAL-2026-SKILL",
+        "affected": [],
+        "database_specific": {
+            "openaca": {"match_coordinate": "skills.sh:anthropics/skills/frontend-design"}
+        },
+    }
+
+    doc = build_agent_bom(
+        [ref], target_type="endpoint", target="endpoint:user-scope"
+    ).to_cyclonedx()
+
+    component = _component(doc, "skill/frontend-design")
+    assert _property(component, "openaca:identity") == "skill/frontend-design"
+    assert (
+        _property(component, "openaca:match_coordinate")
+        == "skills.sh:anthropics/skills/frontend-design"
+    )
+    refs = component_refs_from_cyclonedx(doc)
+    assert refs[0].component_identity == "skill/frontend-design"
+    assert refs[0].extra["match_coordinate"] == "skills.sh:anthropics/skills/frontend-design"
     findings = match(refs=refs, advisories=[advisory])
     assert len(findings) == 1
-    assert findings[0].advisory_id == "MAL-2026-REMOTE"
+    assert findings[0].advisory_id == "MAL-2026-SKILL"
+    assert findings[0].confidence == "high"
 
 
-def test_uv_tool_run_bom_preserves_source_identity_for_matching():
+def test_uv_tool_run_bom_uses_purl_and_install_context_for_matching():
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:weather-mcp",
+        ecosystem="PyPI",
+        name="weather-mcp",
         source_manifest=".mcp.json",
         source_locator="$.mcpServers.weather",
         extra={
@@ -166,18 +197,19 @@ def test_uv_tool_run_bom_preserves_source_identity_for_matching():
     ).to_cyclonedx()
 
     component = _component(doc, "mcp-server/weather")
+    assert component["purl"] == "pkg:pypi/weather-mcp"
     assert _property(component, "openaca:identity") == "mcp-server/weather"
-    assert _property(component, "openaca:source_identity") == "mcp-stdio/uvx-unpinned:weather-mcp"
+    assert _property(component, "openaca:match_coordinate") is None
     refs = component_refs_from_cyclonedx(doc)
     assert refs[0].component_identity == "mcp-server/weather"
-    assert refs[0].extra["source_identity"] == "mcp-stdio/uvx-unpinned:weather-mcp"
+    assert "match_coordinate" not in refs[0].extra
     findings = match(refs=refs, advisories=[advisory])
     assert len(findings) == 1
     assert findings[0].advisory_id == "CVE-2026-UVTOOL"
     assert findings[0].confidence == "unknown"
 
 
-def test_plugin_dependency_bom_keeps_purl_as_source_identity_only():
+def test_plugin_dependency_bom_keeps_purl_as_match_coordinate_only():
     ref = ComponentRef(
         ecosystem="npm",
         name="hono",

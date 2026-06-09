@@ -68,19 +68,20 @@ coordinate as `purl`:
 }
 ```
 
-Source-less components use the graph occurrence identity as `openaca:identity`.
-When the source-less advisory matching identity is different, OpenACA also
-emits `openaca:source_identity`:
+Components use the graph occurrence identity as `openaca:identity`. Package and
+Git-backed components use their standard PURL/Git metadata for matching. When a
+parser has an explicit non-PURL/non-Git external audit or registry handle,
+OpenACA can also emit `openaca:match_coordinate`:
 
 ```json
 {
   "type": "application",
-  "bom-ref": "mcp-server/example",
-  "name": "mcp-server/example",
+  "bom-ref": "skill/frontend-design",
+  "name": "frontend-design",
   "properties": [
-    {"name": "openaca:identity", "value": "mcp-server/example"},
-    {"name": "openaca:source_identity", "value": "mcp-remote/mcp.example.com/mcp"},
-    {"name": "openaca:component_type", "value": "mcp_server"}
+    {"name": "openaca:identity", "value": "skill/frontend-design"},
+    {"name": "openaca:match_coordinate", "value": "skills.sh:anthropics/skills/frontend-design"},
+    {"name": "openaca:component_type", "value": "skill"}
   ]
 }
 ```
@@ -96,7 +97,7 @@ suffix derived from the component observation fields.
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
 | `openaca:identity` | OpenACA agent graph occurrence identity. |
-| `openaca:source_identity` | Source-less component identity used for advisory matching when no PURL or Git source coordinate exists. |
+| `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `component`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |

@@ -313,11 +313,9 @@ def _prepare_fleet_component(component: JsonObject) -> JsonObject:
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
-    if _is_package_mcp_component(props_by_name, component_name, component_purl):
+    if _is_package_mcp_component(props_by_name):
         prepared_props = [
-            _trim_package_install_source(prop, props_by_name, component_name)
-            if isinstance(prop, dict)
-            else prop
+            _trim_package_install_source(prop) if isinstance(prop, dict) else prop
             for prop in properties
         ]
         return {**component, "properties": prepared_props}
@@ -359,35 +357,20 @@ def _is_binary_mcp_component(
     return not is_mcp_package_launch_install_source(install_source)
 
 
-def _is_package_mcp_component(
-    props_by_name: dict[Any, Any],
-    component_name: object,
-    component_purl: object = None,
-) -> bool:
+def _is_package_mcp_component(props_by_name: dict[Any, Any]) -> bool:
     identity = props_by_name.get("openaca:identity")
-    source_identity = props_by_name.get("openaca:source_identity")
-    legacy_name = component_name if isinstance(component_name, str) else ""
-    if safe_unpinned_mcp_install_source(
-        identity=identity,
-        source_identity=source_identity,
-        component_name=legacy_name,
-        install_source=None,
-    ):
-        return True
-    # ADR-0029: unpinned package MCPs carry mcp-server/<name> identity.
-    # Distinguish from binary MCPs by npx/uvx first token, and from pinned
-    # package MCPs by absence of PURL.
+    # Package-backed MCPs carry mcp-server/<name> graph identity. Distinguish
+    # them from binary MCPs by npx/uvx first token in install_source.
     if not (
         props_by_name.get("openaca:component_type") == "mcp_server"
         and isinstance(identity, str)
         and identity.startswith("mcp-server/")
-        and not component_purl
         and "openaca:transport" not in props_by_name
         and "openaca:install_source" in props_by_name
     ):
         return False
     install_source = props_by_name.get("openaca:install_source", "")
-    return is_mcp_package_launch_install_source(install_source)
+    return safe_unpinned_mcp_install_source(install_source=install_source) is not None
 
 
 def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
@@ -400,19 +383,11 @@ def _trim_binary_install_source(prop: JsonObject) -> JsonObject:
     return {**prop, "value": command}
 
 
-def _trim_package_install_source(
-    prop: JsonObject, props_by_name: dict[Any, Any], component_name: object
-) -> JsonObject:
+def _trim_package_install_source(prop: JsonObject) -> JsonObject:
     if prop.get("name") != "openaca:install_source":
         return prop
-    identity = props_by_name.get("openaca:identity")
     value = prop.get("value")
-    safe_source = safe_unpinned_mcp_install_source(
-        identity=identity,
-        source_identity=props_by_name.get("openaca:source_identity"),
-        component_name=component_name,
-        install_source=value,
-    )
+    safe_source = safe_unpinned_mcp_install_source(install_source=value)
     if safe_source is None:
         return prop
     return {**prop, "value": safe_source}

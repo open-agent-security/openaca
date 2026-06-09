@@ -15,8 +15,8 @@ def test_parse_repo_combines_all_manifests():
 
     assert "pkg:npm/%40cyanheads/git-mcp-server@1.1.0" in purls
     assert "pkg:pypi/weather-mcp@0.5.0" in purls
+    assert "pkg:pypi/sketchy-mcp" in purls
     assert any(i.startswith("plugin/") for i in identities)
-    assert any(i.startswith("mcp-stdio/uvx-unpinned:") for i in identities)
 
 
 def test_one_malformed_manifest_does_not_abort_scan(tmp_path):

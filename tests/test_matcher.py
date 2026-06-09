@@ -268,7 +268,7 @@ def test_match_pypi_pinned():
     assert findings[0].confidence == "high"
 
 
-def test_source_less_skill_ref_matches_component_identity_advisory():
+def test_graph_identity_does_not_match_component_identity_advisory():
     advisory = make_identity_advisory("CVE-2026-SKILL", "skill/vulnerable-skill@0.9.0")
     ref = ComponentRef(
         name="vulnerable-skill",
@@ -281,9 +281,7 @@ def test_source_less_skill_ref_matches_component_identity_advisory():
 
     findings = match(refs=[ref], advisories=[advisory])
 
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-SKILL"
-    assert findings[0].confidence == "high"
+    assert findings == []
 
 
 def test_source_less_skill_ref_does_not_match_component_type_ecosystem_advisory():
@@ -300,7 +298,7 @@ def test_source_less_skill_ref_does_not_match_component_type_ecosystem_advisory(
     assert match(refs=[ref], advisories=advisories) == []
 
 
-def test_source_less_plugin_ref_matches_component_identity_advisory():
+def test_source_less_plugin_ref_does_not_match_component_identity_advisory():
     advisory = make_identity_advisory("CVE-2026-PLUGIN", "plugin/deployment-tools")
     ref = ComponentRef(
         name="deployment-tools",
@@ -313,9 +311,7 @@ def test_source_less_plugin_ref_matches_component_identity_advisory():
 
     findings = match(refs=[ref], advisories=[advisory])
 
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-PLUGIN"
-    assert findings[0].confidence == "high"
+    assert findings == []
 
 
 def test_no_match_when_package_name_differs():
@@ -348,9 +344,14 @@ def test_unpinned_npx_matches_affected_package_with_unknown_confidence():
     knows to pin the version."""
     advisories = [make_advisory("CVE-2026-0003", "npm", "@akoskm/create-mcp-server-stdio", "1.0.4")]
     ref = ComponentRef(
-        component_identity="mcp-stdio/npx-unpinned:@akoskm/create-mcp-server-stdio",
+        ecosystem="npm",
+        name="@akoskm/create-mcp-server-stdio",
         source_manifest="mcp.json",
         source_locator="$.mcpServers.x",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx @akoskm/create-mcp-server-stdio",
+        },
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
@@ -361,9 +362,11 @@ def test_unpinned_npx_matches_affected_package_with_unknown_confidence():
 def test_unpinned_uvx_matches_pypi_advisory():
     advisories = [make_advisory("CVE-2026-0004", "PyPI", "aws-mcp-server", "0.3.2")]
     ref = ComponentRef(
-        component_identity="mcp-stdio/uvx-unpinned:aws-mcp-server",
+        ecosystem="PyPI",
+        name="aws-mcp-server",
         source_manifest="mcp.json",
         source_locator="$.mcpServers.aws",
+        extra={"component_type": "mcp_server", "install_source": "uvx aws-mcp-server"},
     )
     findings = match(refs=[ref], advisories=advisories)
     assert len(findings) == 1
@@ -371,15 +374,16 @@ def test_unpinned_uvx_matches_pypi_advisory():
     assert findings[0].confidence == "unknown"
 
 
-def test_unpinned_uv_tool_run_bom_source_identity_matches_pypi_advisory():
+def test_unpinned_uv_tool_run_bom_install_source_matches_pypi_advisory():
     advisories = [make_advisory("CVE-2026-0005", "PyPI", "weather-mcp", "0.5.0")]
     ref = ComponentRef(
+        ecosystem="PyPI",
+        name="weather-mcp",
         component_identity="mcp-server/weather",
         source_manifest="mcp.json",
         source_locator="$.mcpServers.weather",
         extra={
             "component_type": "mcp_server",
-            "source_identity": "mcp-stdio/uvx-unpinned:weather-mcp",
             "install_source": "uv tool run weather-mcp",
         },
     )
@@ -560,8 +564,17 @@ def make_identity_advisory(openaca_id: str, component_identity: str) -> dict:
     }
 
 
-def test_claude_command_identity_match():
-    """Source-less command refs match explicit component_identity advisories."""
+def make_match_coordinate_advisory(openaca_id: str, match_coordinate: str) -> dict:
+    return {
+        "id": openaca_id,
+        "type": "vulnerability",
+        "summary": "test",
+        "modified": "2026-05-11T00:00:00Z",
+        "database_specific": {"openaca": {"match_coordinate": match_coordinate}},
+    }
+
+
+def test_claude_command_graph_identity_does_not_match():
     advisory = make_identity_advisory("CVE-2026-9001", "claude-command/deploy")
     ref = ComponentRef(
         name="deploy",
@@ -571,13 +584,10 @@ def test_claude_command_identity_match():
         extra={"component_type": "command"},
     )
     findings = match(refs=[ref], advisories=[advisory])
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-9001"
-    assert findings[0].confidence == "high"
+    assert findings == []
 
 
-def test_claude_agent_identity_match():
-    """Source-less agent refs match explicit component_identity advisories."""
+def test_claude_agent_graph_identity_does_not_match():
     advisory = make_identity_advisory("CVE-2026-9002", "claude-agent/reviewer")
     ref = ComponentRef(
         name="reviewer",
@@ -587,8 +597,27 @@ def test_claude_agent_identity_match():
         extra={"component_type": "agent"},
     )
     findings = match(refs=[ref], advisories=[advisory])
+    assert findings == []
+
+
+def test_explicit_external_match_coordinate_matches():
+    advisory = make_match_coordinate_advisory(
+        "MAL-2026-SKILL", "skills.sh:anthropics/skills/frontend-design"
+    )
+    ref = ComponentRef(
+        component_identity="skill/frontend-design",
+        source_manifest="skills/frontend-design/SKILL.md",
+        source_locator="$",
+        extra={
+            "component_type": "skill",
+            "match_coordinate": "skills.sh:anthropics/skills/frontend-design",
+        },
+    )
+
+    findings = match(refs=[ref], advisories=[advisory])
+
     assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-9002"
+    assert findings[0].advisory_id == "MAL-2026-SKILL"
     assert findings[0].confidence == "high"
 
 
@@ -637,10 +666,7 @@ def test_source_less_plugin_ref_does_not_match_component_type_ecosystem_advisory
     assert match(refs=[ref], advisories=advisories) == []
 
 
-def test_marketplace_qualified_ref_matches_unqualified_advisory():
-    """An advisory written as `plugin/<name>` (no marketplace) must match
-    marketplace-qualified endpoint refs, so authors can write a single identity
-    that covers both repo-mode and endpoint-mode scans."""
+def test_marketplace_qualified_ref_does_not_match_unqualified_graph_identity_advisory():
     advisory = make_identity_advisory("CVE-2026-XMODE", "plugin/my-plugin")
     ref = ComponentRef(
         name="my-plugin",
@@ -651,13 +677,10 @@ def test_marketplace_qualified_ref_matches_unqualified_advisory():
         extra={"component_type": "plugin", "marketplace": "anthropic"},
     )
     findings = match(refs=[ref], advisories=[advisory])
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-XMODE"
-    assert findings[0].confidence == "high"
+    assert findings == []
 
 
-def test_marketplace_qualified_ref_matches_same_marketplace_advisory():
-    """Exact marketplace match still works when advisory and ref both carry marketplace."""
+def test_marketplace_qualified_ref_does_not_match_same_graph_identity_advisory():
     advisory = make_identity_advisory("CVE-2026-EXACT", "plugin/anthropic/my-plugin")
     ref = ComponentRef(
         name="my-plugin",
@@ -668,8 +691,7 @@ def test_marketplace_qualified_ref_matches_same_marketplace_advisory():
         extra={"component_type": "plugin", "marketplace": "anthropic"},
     )
     findings = match(refs=[ref], advisories=[advisory])
-    assert len(findings) == 1
-    assert findings[0].advisory_id == "CVE-2026-EXACT"
+    assert findings == []
 
 
 def test_marketplace_qualified_ref_does_not_match_different_marketplace_advisory():

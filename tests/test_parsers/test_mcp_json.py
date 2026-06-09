@@ -36,11 +36,13 @@ def test_uvx_emits_pypi_purl_when_pinned():
     assert by_name["weather-mcp"].purl == "pkg:pypi/weather-mcp@0.5.0"
 
 
-def test_uvx_unpinned_emits_native_identity():
+def test_uvx_unpinned_emits_versionless_package_coordinate():
     refs = parse(REPOS / "sample-mcp" / "mcp.json")
-    unpinned = [r for r in refs if r.component_identity and "unpinned" in r.source_locator]
+    unpinned = [r for r in refs if r.name == "sketchy-mcp"]
     assert len(unpinned) == 1
-    assert unpinned[0].component_identity == "mcp-stdio/uvx-unpinned:sketchy-mcp"
+    assert unpinned[0].ecosystem == "PyPI"
+    assert unpinned[0].version is None
+    assert unpinned[0].purl == "pkg:pypi/sketchy-mcp"
 
 
 def test_binary_command_emits_native_identity():
@@ -330,7 +332,7 @@ def test_uvx_from_github_url_accepts_uppercase_commit_sha_as_immutable():
     assert refs[0].purl == "pkg:github/oraios/serena@abcdef0123456789abcdef0123456789abcdef01"
 
 
-def test_uvx_from_github_url_keeps_subdirectory_in_source_identity():
+def test_uvx_from_github_url_keeps_subdirectory_in_source_metadata():
     commit = "0123456789abcdef0123456789abcdef01234567"
     servers = {
         "monorepo": {

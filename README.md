@@ -7,12 +7,10 @@ matches it against known security advisories (OSV / GHSA / CVE / MAL).
 
 > Identity resolution and composition analysis for AI agent stacks.
 
-> **Beta status:** OpenACA is in closed beta on PyPI.
-> If you're a beta tester, the
-> [beta-tester guide](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md)
-> in the public [openaca-demo](https://github.com/open-agent-security/openaca-demo)
-> repo has the full path (install, first scan, what feedback I'm
-> looking for, how to report).
+> **Status:** V0 — early and evolving, with a stable release on PyPI.
+> The fastest path is the [Quickstart](#quickstart) below; for worked
+> examples with expected output, see the
+> [openaca-demo](https://github.com/open-agent-security/openaca-demo) repo.
 
 ## What OpenACA does
 

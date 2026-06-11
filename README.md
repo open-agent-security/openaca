@@ -348,7 +348,7 @@ App / OWASP Agentic / OWASP MCP), render in their own section in text
 output, share the JSON `findings[]` array, and emit as separate SARIF rules.
 They never affect
 `--fail-on` exit codes — they're signal, not gate. See
-[`docs/posture/`](docs/posture/README.md) for the V0 rule list and
+[`docs/posture/`](https://github.com/open-agent-security/openaca/blob/main/docs/posture/README.md) for the V0 rule list and
 per-rule remediation pages.
 
 Pass `-v` / `--verbose` for the per-manifest breakdown (repo mode) or
@@ -507,21 +507,21 @@ What OpenACA V0 doesn't see:
   `component_type`, `surfaces`, `agent_impact`, and evidence metadata.
 
 Sample overlay:
-[`overlays/GHSA-3q26-f695-pp76.yaml`](overlays/GHSA-3q26-f695-pp76.yaml).
+[`overlays/GHSA-3q26-f695-pp76.yaml`](https://github.com/open-agent-security/openaca/blob/main/overlays/GHSA-3q26-f695-pp76.yaml).
 Schema source of truth:
-[`schema/openaca.schema.json`](schema/openaca.schema.json).
+[`schema/openaca.schema.json`](https://github.com/open-agent-security/openaca/blob/main/schema/openaca.schema.json).
 
 ## Status
 
-V0, in development. See [`docs/specs/openaca-thesis.md`](docs/specs/openaca-thesis.md)
+V0, in development. See [`docs/specs/openaca-thesis.md`](https://github.com/open-agent-security/openaca/blob/main/docs/specs/openaca-thesis.md)
 for what OpenACA is and the V0 → V1 roadmap,
-[`docs/adrs/0009-overlay-only-v0.md`](docs/adrs/0009-overlay-only-v0.md)
-for the overlay-only architecture, and [`docs/plans/`](docs/plans/) for
+[`docs/adrs/0009-overlay-only-v0.md`](https://github.com/open-agent-security/openaca/blob/main/docs/adrs/0009-overlay-only-v0.md)
+for the overlay-only architecture, and [`docs/plans/`](https://github.com/open-agent-security/openaca/tree/main/docs/plans/) for
 implementation plans.
 
 ## License
 
-- **Code**: [Apache License 2.0](LICENSE).
+- **Code**: [Apache License 2.0](https://github.com/open-agent-security/openaca/blob/main/LICENSE).
 - **Overlay data** (YAML under `overlays/` and the static exports derived
   from them): [Creative Commons Attribution 4.0
   International](https://creativecommons.org/licenses/by/4.0/) (CC-BY-4.0)
@@ -530,15 +530,15 @@ implementation plans.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance.
+See [`CONTRIBUTING.md`](https://github.com/open-agent-security/openaca/blob/main/CONTRIBUTING.md) for contribution guidance.
 
 ## Coordinated disclosure
 
 OpenACA does not mint vulnerability IDs. Vulnerabilities in agent
 components are filed upstream (CVE / GHSA / OSV / PYSEC / MAL); once
 an upstream record is public, contribute an OpenACA overlay per
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+[`CONTRIBUTING.md`](https://github.com/open-agent-security/openaca/blob/main/CONTRIBUTING.md).
 
 For security issues in **OpenACA's own code**, see
-[`SECURITY.md`](SECURITY.md). Do not file public issues for
+[`SECURITY.md`](https://github.com/open-agent-security/openaca/blob/main/SECURITY.md). Do not file public issues for
 unembargoed vulnerabilities.

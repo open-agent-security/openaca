@@ -106,10 +106,10 @@ matched.
 
 ## Quickstart
 
-Two ways to run the scanner. Both produce the same set of findings,
-and everything runs locally — the scanner doesn't phone home. By
-default it prints text output; add `--sarif <path>` when you want a
-SARIF v2.1.0 artifact.
+Two ways to run the scanner. Both produce the same set of findings —
+component manifests are read locally, then matched against live
+advisories from OSV.dev (`api.osv.dev`). By default it prints text
+output; add `--sarif <path>` when you want a SARIF v2.1.0 artifact.
 
 ### Install
 

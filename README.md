@@ -38,12 +38,12 @@ OpenACA builds on upstream advisory records (OSV / GHSA / CVE / MAL)
 rather than minting its own — it contributes the identity resolution,
 composition graph, and agent-context enrichment on top.
 
-## Why OpenACA (the category)
+## Why OpenACA
 
-OpenACA is the open category and reference implementation for **Agent
-Composition Analysis (ACA)**: identifying the versioned plugins, MCP
-servers, skills, and framework components that make up an AI agent,
-and matching them against known security records.
+OpenACA is the open reference implementation for **Agent Composition
+Analysis (ACA)**: identifying the versioned plugins, MCP servers,
+skills, and framework components that make up an AI agent, and
+matching them against known security records.
 
 ACA is the AI-agent analogue of Software Composition Analysis (SCA):
 

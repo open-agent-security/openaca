@@ -21,11 +21,8 @@ dependencies = [
 openaca = "tools.cli:main"
 
 [project.urls]
-# openaca.dev (the static export site) isn't live yet, and the openaca
-# source repo is private during the closed beta — so the PyPI package
-# page links at public surfaces a tester can actually reach.
-Homepage = "https://github.com/open-agent-security/openaca-demo"
-Documentation = "https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md"
+Homepage = "https://github.com/open-agent-security/openaca"
+Documentation = "https://github.com/open-agent-security/openaca-demo"
 
 [build-system]
 requires = ["hatchling"]

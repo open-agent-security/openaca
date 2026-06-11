@@ -11,14 +11,14 @@ framework components that make up an AI agent, and matches them
 against known security records (CVE/GHSA/OSV + agent-context overlays
 maintained in this corpus).
 
-## Beta status
+## Status
 
-This is the `0.1.0b5` closed-beta pre-release. The scanner and
-overlay corpus are usable; expect rough edges. If you're a beta
-tester, start with the
-[**beta-tester guide**](https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md) —
-it covers install, first scan, what feedback I'm looking for, and
-how to report.
+V0 pre-release — early and evolving. The scanner and overlay corpus
+are usable; expect rough edges and breaking changes before 1.0.
+Worked examples in the
+[openaca-demo](https://github.com/open-agent-security/openaca-demo)
+repo; full install and scan walkthrough in the
+[repository README](https://github.com/open-agent-security/openaca).
 
 ## Install
 
@@ -33,18 +33,15 @@ uv tool install openaca
 openaca --version
 ```
 
-**Alternative — pip** (if you already have a Python 3.11+ workflow):
+**Alternative — pip** (if you already have a Python 3.11+ workflow;
+pip needs `--pre` while OpenACA has no stable release):
 
 ```bash
-pip install openaca
+pip install --pre openaca
 ```
 
-Both commands auto-pick the latest pre-release while OpenACA has no
-stable version yet. Current latest is `0.1.0b5`; check with `openaca
---version`.
-
 Pin to a specific build if you need to reproduce a bug report:
-`uv tool install openaca==0.1.0b5` or `pip install openaca==0.1.0b5`.
+`uv tool install openaca==<version>` or `pip install openaca==<version>`.
 
 ## Try it in 30 seconds
 
@@ -113,10 +110,8 @@ separately from vulnerability findings and never fail CI by default.
 
 ## Links
 
-- **Beta-tester guide**: https://github.com/open-agent-security/openaca-demo/blob/main/BETA-TESTER-GUIDE.md
-- **Sandbox fixtures**: https://github.com/open-agent-security/openaca-demo
-- **Feedback**: DM the maintainer (vinodkone@gmail.com). The
-  openaca source repo is private during the closed beta; GitHub
-  issues open up when the repo flips public.
+- **Repository**: https://github.com/open-agent-security/openaca
+- **Demo fixtures**: https://github.com/open-agent-security/openaca-demo
+- **Issues / feedback**: https://github.com/open-agent-security/openaca/issues
 
 Apache-2.0.

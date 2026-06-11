@@ -4,5 +4,5 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 paths = ['''tests/''']

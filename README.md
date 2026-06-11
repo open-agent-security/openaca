@@ -7,7 +7,7 @@ matches it against known security advisories (OSV / GHSA / CVE / MAL).
 
 > Identity resolution and composition analysis for AI agent stacks.
 
-> **Status:** V0 — early and evolving, with a stable release on PyPI.
+> **Status:** V0 — early and evolving, available on PyPI as a pre-release.
 > The fastest path is the [Quickstart](#quickstart) below; for worked
 > examples with expected output, see the
 > [openaca-demo](https://github.com/open-agent-security/openaca-demo) repo.

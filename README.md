@@ -106,9 +106,10 @@ matched.
 
 ## Quickstart
 
-Two ways to run the scanner. Both produce the same set of findings.
-By default the scanner prints text output; add `--sarif <path>` when
-you want a SARIF v2.1.0 artifact.
+Two ways to run the scanner. Both produce the same set of findings,
+and everything runs locally — the scanner doesn't phone home. By
+default it prints text output; add `--sarif <path>` when you want a
+SARIF v2.1.0 artifact.
 
 ### Install
 
@@ -310,6 +311,25 @@ Advanced Security, upload the SARIF to the Security tab via
 `openaca scan --help` lists all options. Exit codes: `0` clean (or
 findings below `--fail-on` threshold), `1` findings at or above the
 threshold.
+
+### Claude Code plugin
+
+Prefer staying inside Claude Code? The
+[OpenACA plugin](https://github.com/open-agent-security/openaca-claude-plugin)
+wraps the scanner in four slash commands:
+
+```text
+/plugin marketplace add open-agent-security/openaca-claude-plugin
+/plugin install openaca@openaca
+```
+
+- `/openaca:scan` — run an endpoint or repo scan
+- `/openaca:bom` — generate an Agent BOM
+- `/openaca:explain` — explain a finding in conversation
+- `/openaca:triage` — guided review after agent config changes
+
+The plugin is explicit-invocation only — no hooks, no background
+monitors, no modification of your Claude Code settings.
 
 ### Posture findings (`--include-posture`)
 

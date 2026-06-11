@@ -33,17 +33,18 @@ override upstream ownership of those fields.
 
 OpenACA-specific context lives under `database_specific.openaca`.
 
-That block carries fields such as:
+That block carries exactly four fields (the schema sets `additionalProperties: false`):
 
-- `component_type`
-- `surfaces`
-- `agent_impact`
-- evidence metadata
-- taxonomy mappings
-
-Taxonomies include OpenACA-defined mappings such as OWASP Agentic Top 10 and
-OWASP MCP Top 10. CWE is not duplicated by default when upstream already
-provides it.
+- `taxonomies` — taxonomy mappings (OWASP Agentic Top 10, OWASP MCP Top 10,
+  OWASP Agentic Skills Top 10, OWASP LLM Top 10, MITRE ATLAS, and
+  `supplemental_taxonomies` for anything else). CWE is not duplicated by
+  default when upstream already provides it.
+- `evidence_level` — confidence in the agent-context classification:
+  `confirmed`, `likely`, `research`, `disputed`, or `withdrawn`.
+- `threat_kind` — set to `malicious_package` for MAL-* records; omitted for
+  all other record types.
+- `match_coordinate` — free-text description of the specific construct the
+  scanner matched on (e.g. a tool description string or config key).
 
 ## Local scan context stays out of overlays
 

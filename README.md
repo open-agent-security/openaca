@@ -120,10 +120,10 @@ For clean scans, posture examples, and expected output, clone the
 
 OpenACA has two primary scan modes:
 
-| Command | Use it when |
-|---|---|
-| `openaca scan repo` | You want to review agent components declared in a repository, usually in CI or a PR check. |
-| `openaca scan endpoint` | You want to review agent components installed on a machine, such as a developer laptop or managed runner. |
+- `openaca scan repo` - review agent components declared in a repository,
+  usually in CI or a PR check.
+- `openaca scan endpoint` - review agent components installed on a machine,
+  such as a developer laptop or managed runner.
 
 Both modes produce inventory and findings. The mode tells you what observation
 context the result came from: declared-in-source-control vs.

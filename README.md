@@ -127,6 +127,11 @@ isolated CLI tool.
 openaca scan endpoint
 ```
 
+This scans your **user-level** Claude config (`~/.claude`). Skills, MCP
+servers, and plugin manifests that live inside a project are opt-in —
+add `--project <path>` (or `--project .` from inside the repo) to
+include them.
+
 ### Try it on a sample project
 
 Drop a sample `mcp.json` in any empty directory and scan it:
@@ -475,6 +480,16 @@ What OpenACA V0 doesn't see:
 - **Endpoint mode is Claude Code-specific.** It reads
   `~/.claude/installed_plugins.json` and friends. Codex CLI's
   `~/.codex/` and Cursor's local state will need their own resolvers.
+- **Advisory matching needs matchable coordinates.** Vulnerability
+  matching works for components with a package, Git, or known external
+  match coordinate. Local-only skills and source-less components are
+  inventory- and posture-only until a matchable coordinate exists.
+- **No runtime observation or enforcement.** OpenACA inventories and
+  assesses composition; it does not watch live tool invocations or
+  block agent tool use at runtime. It's the map of what's installed,
+  not a guardrail on what runs.
+- **The Agent BOM format is pre-1.0.** Field names, identities, and CLI
+  output may change before the first stable schema release.
 
 ## Overlay Schema
 

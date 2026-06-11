@@ -1,8 +1,7 @@
-# Gitleaks config for openaca. Test fixtures intentionally contain
-# secret-shaped strings (synthetic ot_* tokens, fake credentials in
-# redaction tests); they are not real secrets.
+# Gitleaks config for openaca. tests/remote/ contains synthetic ot_*
+# tokens used as stand-in credentials in remote-feature tests; not real.
 [extend]
 useDefault = true
 
 [[allowlists]]
-paths = ['''tests/''']
+paths = ['''tests/remote/''']

@@ -204,7 +204,7 @@ def test_redact_handles_posture_evidence() -> None:
 
 
 def test_contract_rejects_absolute_openaca_property() -> None:
-    payload = _payload_with_property("/Users/vinodkone/.claude/skills/x.md")
+    payload = _payload_with_property("/Users/alice/.claude/skills/x.md")
     with pytest.raises(RemoteUploadContractError) as exc:
         enforce_remote_upload_contract(payload)
     assert "absolute path" in str(exc.value)

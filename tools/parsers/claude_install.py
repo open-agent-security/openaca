@@ -533,7 +533,7 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
         except Exception:
             continue
         for r in lock_refs:
-            refs.append(replace(r, attributed_to=attributed_to))
+            refs.append(replace(r, attributed_to=attributed_to, scope="agent-dependency"))
         if lock_refs:
             covered.add(ecosystem)
     for ecosystem, filename, parser in _MANIFEST_FALLBACK:
@@ -553,7 +553,7 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             extra = dict(r.extra)
             extra["transitive"] = False
             extra["fallback_reason"] = f"no {ecosystem} lockfile present"
-            refs.append(replace(r, attributed_to=attributed_to, extra=extra))
+            refs.append(replace(r, attributed_to=attributed_to, extra=extra, scope="agent-dependency"))
     return refs
 
 

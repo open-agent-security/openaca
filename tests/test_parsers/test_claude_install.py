@@ -983,6 +983,31 @@ def test_install_include_transitive_false_skips_lockfile_and_manifest(tmp_path):
     assert len(skill_refs) == 1  # Tier-1 still emitted
 
 
+def test_install_transitive_lockfile_refs_have_agent_dependency_scope(tmp_path):
+    """Tier-2 refs from _walk_plugin_implementation_deps must carry
+    scope='agent-dependency' so the BOM emits them as CycloneDX library
+    components with openaca:component_type=package."""
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="webp@m", plugin_name="webp", version="1.0.0"
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "webp", "version": "1.0.0"},
+                    "node_modules/sharp": {"version": "0.33.0"},
+                },
+            }
+        )
+    )
+    refs, _ = parse_install(install_root=tmp_path, include_transitive=True)
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert len(npm_refs) == 1
+    assert npm_refs[0].name == "sharp"
+    assert npm_refs[0].scope == "agent-dependency"
+
+
 def test_install_pyproject_fallback_when_no_uv_lock(tmp_path):
     """No uv.lock but pyproject.toml exists → emit direct deps with transitive=False."""
     install_path = _build_install_with_plugin(

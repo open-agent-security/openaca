@@ -553,7 +553,9 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             extra = dict(r.extra)
             extra["transitive"] = False
             extra["fallback_reason"] = f"no {ecosystem} lockfile present"
-            refs.append(replace(r, attributed_to=attributed_to, extra=extra, scope="agent-dependency"))
+            refs.append(
+                replace(r, attributed_to=attributed_to, extra=extra, scope="agent-dependency")
+            )
     return refs
 
 

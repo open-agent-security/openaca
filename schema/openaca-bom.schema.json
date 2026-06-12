@@ -63,7 +63,7 @@
       "type": "object",
       "required": ["type", "bom-ref", "name"],
       "properties": {
-        "type": {"const": "application"},
+        "type": {"enum": ["application", "library"]},
         "bom-ref": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string"},

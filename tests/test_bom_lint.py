@@ -30,6 +30,29 @@ def test_bom_lint_accepts_generated_bom(tmp_path):
     assert f"{path}: ok" in result.output
 
 
+def test_bom_lint_accepts_generated_package_dependency(tmp_path):
+    bom = build_agent_bom(
+        [
+            ComponentRef(
+                ecosystem="npm",
+                name="hono",
+                version="4.12.5",
+                attributed_to="plugin/claude-plugins-official/discord@0.0.4",
+                scope="agent-dependency",
+            )
+        ],
+        target_type="repo",
+        target=".",
+    )
+    path = tmp_path / "agent.bom.json"
+    path.write_text(json.dumps(bom.to_cyclonedx()), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+    assert f"{path}: ok" in result.output
+
+
 def test_bom_lint_rejects_duplicate_bom_refs(tmp_path):
     doc = _valid_bom_doc()
     doc["components"].append(dict(doc["components"][0]))

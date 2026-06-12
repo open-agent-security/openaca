@@ -19,6 +19,7 @@ _COMPONENT_TYPES = {
     "component",
     "hook",
     "mcp_server",
+    "package",
     "plugin",
     "skill",
 }

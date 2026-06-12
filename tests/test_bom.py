@@ -71,6 +71,7 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
     assert doc["specVersion"] == "1.7"
     assert _metadata_property(doc, "openaca:schema_version") == "0.1"
     package = _component(doc, "mcp-server/@mcpjam/inspector")
+    assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
     assert _property(package, "openaca:identity") == "mcp-server/@mcpjam/inspector"
     assert _property(package, "openaca:component_type") == "mcp_server"
@@ -223,11 +224,16 @@ def test_plugin_dependency_bom_keeps_purl_as_match_coordinate_only():
     doc = build_agent_bom([ref], target_type="repo", target=".").to_cyclonedx()
 
     component = _component(doc, "plugin/claude-plugins-official/discord/deps/npm/hono")
+    assert component["type"] == "library"
     assert component["purl"] == "pkg:npm/hono@4.12.5"
     assert (
         _property(component, "openaca:identity")
         == "plugin/claude-plugins-official/discord/deps/npm/hono"
     )
+    assert _property(component, "openaca:component_type") == "package"
+    assert _property(component, "openaca:scope") == "agent-dependency"
+    refs = component_refs_from_cyclonedx(doc)
+    assert refs[0].extra["component_type"] == "package"
 
 
 def test_cyclonedx_build_edges_resolves_versioned_attributed_to():

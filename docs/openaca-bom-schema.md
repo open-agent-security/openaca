@@ -44,7 +44,8 @@ openaca bom lint agent.bom.json
 
 ## Components
 
-Each detected agent component is serialized as one CycloneDX component.
+Each detected agent component or agent dependency is serialized as one
+CycloneDX component.
 
 OpenACA-generated components use their agent graph occurrence identity as the
 preferred `bom-ref` when it is unique in the BOM, and carry the same value as
@@ -86,6 +87,26 @@ OpenACA can also emit `openaca:match_coordinate`:
 }
 ```
 
+Plugin-bundled package dependencies use CycloneDX `type: "library"` and
+`openaca:component_type: "package"` while keeping their agent graph occurrence
+under the parent plugin:
+
+```json
+{
+  "type": "library",
+  "bom-ref": "plugin/claude-plugins-official/discord/deps/npm/hono",
+  "name": "hono",
+  "version": "4.12.5",
+  "purl": "pkg:npm/hono@4.12.5",
+  "properties": [
+    {"name": "openaca:identity", "value": "plugin/claude-plugins-official/discord/deps/npm/hono"},
+    {"name": "openaca:component_type", "value": "package"},
+    {"name": "openaca:scope", "value": "agent-dependency"},
+    {"name": "openaca:attributed_to", "value": "plugin/claude-plugins-official/discord@0.0.4"}
+  ]
+}
+```
+
 If the preferred `bom-ref` is duplicated, OpenACA appends a stable short hash
 suffix derived from the component observation fields.
 
@@ -98,7 +119,7 @@ suffix derived from the component observation fields.
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
 | `openaca:identity` | OpenACA agent graph occurrence identity. |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
-| `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `component`. |
+| `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |
 | `openaca:source_locator` | Locator inside the source manifest. |

@@ -246,7 +246,7 @@ def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
     ref = component.ref
     identity = canonical_component_identity(ref)
     doc: dict[str, Any] = {
-        "type": "application",
+        "type": _cyclonedx_component_type(ref),
         "bom-ref": component.bom_ref,
         "name": ref.name or identity or ref.component_identity or "<unidentified>",
     }
@@ -265,7 +265,7 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     identity = canonical_component_identity(ref)
     _append_prop(props, "openaca:identity", identity)
     _append_prop(props, "openaca:match_coordinate", match_coordinate_for_bom(ref))
-    _append_prop(props, "openaca:component_type", (ref.extra or {}).get("component_type"))
+    _append_prop(props, "openaca:component_type", _openaca_component_type(ref))
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
@@ -294,6 +294,21 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
             json.dumps(source_provenance, sort_keys=True),
         )
     return props
+
+
+def _cyclonedx_component_type(ref: ComponentRef) -> str:
+    return "library" if _is_package_dependency(ref) else "application"
+
+
+def _openaca_component_type(ref: ComponentRef) -> str | None:
+    component_type = (ref.extra or {}).get("component_type")
+    if isinstance(component_type, str) and component_type:
+        return component_type
+    return "package" if _is_package_dependency(ref) else None
+
+
+def _is_package_dependency(ref: ComponentRef) -> bool:
+    return ref.scope == "agent-dependency" and ref.purl is not None
 
 
 def _append_prop(props: list[dict[str, str]], name: str, value: object) -> None:

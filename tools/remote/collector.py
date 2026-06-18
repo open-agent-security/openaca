@@ -160,9 +160,15 @@ def collect_endpoint(
 
 
 # Unix absolute path segment embedded within a larger string (e.g. inside Bash filter syntax).
-# Matches a `/` preceded by a character that is not itself `/` or a word character,
-# ensuring paths like `@scope/pkg` or `mcp-server/name` are not flagged.
-_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w])(/[^\s,)]*)")
+# Matches a `/` preceded by a character that is not itself `/`, a word character, or `:`.
+# Excluding `:` prevents URL schemes like `https://` from triggering the pattern;
+# `@scope/pkg` and `mcp-server/name` are still not flagged.
+_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w:])(/[^\s,)]*)")
+
+# http(s) URL embedded within a larger string (e.g. `Bash(curl https://host/path *)`).
+# Used to redact URL paths before the Unix-path regex runs, so URL path components like
+# `host/path` are not mistaken for embedded Unix absolute paths.
+_EMBEDDED_URL_RE = re.compile(r"https?://[^\s,)]*", re.IGNORECASE)
 
 
 def _is_absolute_path(value: str) -> bool:
@@ -300,6 +306,17 @@ def _redact_embedded_unix_paths(
     return _EMBEDDED_UNIX_PATH_RE.sub(_replace, value)
 
 
+def _redact_embedded_urls_in_string(value: str) -> str:
+    """Redact http(s) URLs embedded within a larger string.
+
+    Strips path, query, and fragment from each embedded URL so only
+    `scheme://host` remains — e.g. `Bash(curl https://api.example.com/mcp *)`
+    becomes `Bash(curl https://api.example.com *)`.  This must run before the
+    Unix-path regex so URL path components are not misidentified as Unix paths.
+    """
+    return _EMBEDDED_URL_RE.sub(lambda m: _redact_url_for_remote(m.group(0)), value)
+
+
 def _redact_property_value_for_remote(
     value: str,
     *,
@@ -327,6 +344,10 @@ def _redact_property_value_for_remote(
             return value
         redacted = _redact_json_node_for_remote(parsed, config_dir=config_dir, project=project)
         return json.dumps(redacted, sort_keys=True)
+    # Redact embedded URLs before checking for Unix paths: URL path components
+    # like `//host/path` would otherwise trigger `_EMBEDDED_UNIX_PATH_RE`.
+    if _EMBEDDED_URL_RE.search(value):
+        value = _redact_embedded_urls_in_string(value)
     if _EMBEDDED_UNIX_PATH_RE.search(value):
         return _redact_embedded_unix_paths(value, config_dir=config_dir, project=project)
     return value

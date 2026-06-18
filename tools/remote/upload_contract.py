@@ -16,7 +16,11 @@ _SECRET_VALUE_RE = re.compile(
 )
 # A Unix absolute path embedded inside a larger string (e.g. `Bash(/home/user/script *)`)
 # — the `/` is preceded by a character that cannot be part of a filesystem path itself.
-_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w])(/[a-zA-Z0-9_.])")
+# Excluding `:` prevents `://` in URL schemes from triggering the pattern.
+_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w:])(/[a-zA-Z0-9_.])")
+# Matches embedded http(s) URLs in a string; used to neutralize URL paths before the
+# Unix-path check so `host/path` components are not misidentified as absolute paths.
+_URL_PATTERN_RE = re.compile(r"https?://[^\s,)]*", re.IGNORECASE)
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)(?:token|api[_-]?key|apikey|secret|password|authorization|auth[_-]?token)="
 )
@@ -146,7 +150,10 @@ def _check_evidence_string_at(value: str, location: str) -> None:
         raise RemoteUploadContractError(f"{location} is a URL with a path or query")
     if _is_url_with_userinfo(value):
         raise RemoteUploadContractError(f"{location} is a URL with credentials in userinfo")
-    if _EMBEDDED_UNIX_PATH_RE.search(value):
+    # Strip embedded URL patterns before the Unix-path check so that URL path
+    # components like `host/path` are not misidentified as embedded Unix paths.
+    value_for_path_check = _URL_PATTERN_RE.sub("", value)
+    if _EMBEDDED_UNIX_PATH_RE.search(value_for_path_check):
         raise RemoteUploadContractError(f"{location} contains an embedded absolute path")
 
 

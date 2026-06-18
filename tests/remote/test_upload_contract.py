@@ -620,6 +620,33 @@ def test_rejects_embedded_absolute_path_in_observation_evidence_bash_filter():
     assert "embedded absolute path" in str(exc.value)
 
 
+def test_accepts_bash_filter_with_embedded_url():
+    """URLs embedded inside Bash filter syntax must NOT be rejected as embedded Unix paths.
+    `Bash(curl https://api.example.com/mcp *)` contains a URL path, not a Unix absolute path;
+    the enforcer must not false-positive on `host/path` URL components.
+    """
+    payload = _payload(
+        observations=[
+            {
+                "source": "openaca-skill-audit",
+                "source_version": "0.2.0b1",
+                "observation_id": "skill.allowed-executable-tool",
+                "severity": "LOW",
+                "confidence": "high",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "sha256:abc123",
+                "summary": "Skill declares executable tool access",
+                "evidence": {
+                    "allowed_tools": ["Bash(curl https://api.example.com/mcp *)"],
+                },
+            }
+        ]
+    )
+
+    # Should not raise — a URL path inside a Bash filter is not a Unix absolute path.
+    enforce_remote_upload_contract(payload)
+
+
 def test_rejects_absolute_observation_evidence_path():
     payload = _payload(
         observations=[

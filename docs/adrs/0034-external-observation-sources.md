@@ -55,10 +55,14 @@ The OpenACA responsibility boundary is:
   content, not a Git tree object, and the new name removes the implied Git
   dependency
 
-SARIF is accepted as an interchange format, not as a semantic contract. A SARIF
-adapter must still normalize rule identity, source attribution,
+SARIF is accepted as an interchange format, not as a semantic contract. OpenACA
+does not implement general SARIF semantics. Instead, **scanner-specific adapters**
+(e.g. a SkillSpector adapter) own source normalization against the subset each
+scanner actually emits — mapping rule identity, source attribution,
 severity/confidence, location, evidence, component identity, subject coordinate,
-and taxonomy categories.
+and taxonomy categories. Shared SARIF-reading helpers may exist as internal
+utilities, but a generic "handle any valid SARIF" adapter is explicitly not the
+product boundary.
 
 ## Consequences
 
@@ -80,6 +84,13 @@ and taxonomy categories.
 - **Treat SARIF ingestion as sufficient by itself.** SARIF moves results between
   tools, but does not define OpenACA identity semantics, taxonomy mappings,
   confidence rules, or safe evidence handling.
+- **Ship a generic, fully-conformant SARIF adapter as the boundary.** Valid SARIF
+  is an unbounded surface (tool extensions, hierarchical rule IDs, configuration
+  overrides, baseline/suppression state, localized message strings), while each
+  real scanner emits a narrow, stable subset. A per-scanner adapter is smaller,
+  testable against that scanner's actual output, and gives a principled boundary;
+  a generic adapter invites endless edge-case maintenance for shapes no integrated
+  scanner emits.
 - **Convert scanner hits into OpenACA advisory records.** Scanner observations
   are tied to source, configuration, and artifact bytes. Advisory records need
   durable affected ranges, disclosure process, and upstream ownership.

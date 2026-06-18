@@ -4,23 +4,29 @@ Status: complete
 
 ## Goal
 
-Add the first adapter boundary for third-party scanner results so OpenACA can
-normalize external skill scanner evidence as source-attributed observations
-without building a broad native content scanner.
+Establish the durable observation-source boundary — the `ObservationFinding`
+model, the `skill-content-hash` coordinate, and the ADR-0034 decision — so
+external skill scanner evidence can be normalized as source-attributed
+observations, without building a broad native content scanner or a generic
+"handle any valid SARIF" engine. Per-scanner adapters land in follow-up plans.
 
 ## Tasks
 
-- [x] Document the scanner-source boundary in ADR-0034.
-- [x] Add a generic SARIF observation adapter.
-- [x] Preserve scanner source, source version, rule ID, severity, confidence,
-      evidence, and categories.
-- [x] Attach external observations to OpenACA component identity and skill
-      artifact coordinates.
-- [x] Add focused tests for SARIF normalization.
+- [x] Document the scanner-source boundary in ADR-0034, including that
+      scanner-specific adapters own normalization and OpenACA does not implement
+      general SARIF semantics.
+- [x] Define the `ObservationFinding` model (source, source version, rule ID,
+      severity, confidence, evidence, categories, subject coordinate, component
+      identity).
+- [x] Establish the `skill-content-hash` coordinate (renamed from
+      `skill-tree-hash`).
+- [x] Keep native, deterministic OpenACA skill observations within the model.
 
 ## Deferred
 
-- [ ] Add scanner-specific adapters and taxonomy mappings.
+- [ ] Add a SkillSpector-specific adapter against SkillSpector's actual output,
+      with deterministic rule -> taxonomy mapping (next plan / PR #127).
+- [ ] Add later scanner-specific adapters (e.g. Cisco, bawbel) as needed.
 - [ ] Run candidate scanners against a shared fixture corpus and compare noise.
 - [ ] Add cross-scanner dedupe/disagreement handling.
 - [ ] Add structured OWASP Agentic Skills Top 10 taxonomy fields if category

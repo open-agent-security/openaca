@@ -246,7 +246,7 @@ def test_skill_artifact_coordinates_round_trip_through_bom():
             "component_type": "skill",
             "artifact_coordinates": [
                 {
-                    "kind": "skill-tree-hash",
+                    "kind": "skill-content-hash",
                     "algorithm": "sha256",
                     "value": "sha256:abc123",
                 }
@@ -262,11 +262,11 @@ def test_skill_artifact_coordinates_round_trip_through_bom():
     artifact_coordinates = _property(component, "openaca:artifact_coordinates")
     assert artifact_coordinates is not None
     assert json.loads(artifact_coordinates) == [
-        {"kind": "skill-tree-hash", "algorithm": "sha256", "value": "sha256:abc123"}
+        {"kind": "skill-content-hash", "algorithm": "sha256", "value": "sha256:abc123"}
     ]
     (round_tripped,) = component_refs_from_cyclonedx(doc)
     assert round_tripped.extra["artifact_coordinates"] == [
-        {"kind": "skill-tree-hash", "algorithm": "sha256", "value": "sha256:abc123"}
+        {"kind": "skill-content-hash", "algorithm": "sha256", "value": "sha256:abc123"}
     ]
 
 

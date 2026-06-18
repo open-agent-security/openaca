@@ -39,12 +39,12 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     assert ref.source_locator == "$.frontmatter"
     assert ref.attributed_to is None
     coordinates = ref.extra["artifact_coordinates"]
-    assert coordinates[0]["kind"] == "skill-tree-hash"
+    assert coordinates[0]["kind"] == "skill-content-hash"
     assert coordinates[0]["algorithm"] == "sha256"
     assert coordinates[0]["value"].startswith("sha256:")
 
 
-def test_parse_skill_tree_hash_covers_supporting_files(tmp_path):
+def test_parse_skill_content_hash_covers_supporting_files(tmp_path):
     path = _write_skill(
         tmp_path,
         "deploy",
@@ -62,7 +62,7 @@ def test_parse_skill_tree_hash_covers_supporting_files(tmp_path):
     assert second != first
 
 
-def test_parse_skill_tree_hash_excludes_signature_file(tmp_path):
+def test_parse_skill_content_hash_excludes_signature_file(tmp_path):
     path = _write_skill(
         tmp_path,
         "deploy",
@@ -187,7 +187,7 @@ def test_parse_returns_empty_on_unreadable_file(tmp_path):
 
 def test_parse_tolerates_symlink_loop_in_skill_dir(tmp_path):
     """A self-referential symlink inside a skill directory must not raise;
-    _skill_tree_hash catches (OSError, RuntimeError) and returns None so
+    _skill_content_hash catches (OSError, RuntimeError) and returns None so
     parsing degrades to a ref without an artifact coordinate.
     """
     import os

@@ -99,17 +99,17 @@ def _extract_version(frontmatter: dict) -> Optional[str]:
 
 
 def _skill_tree_coordinate(skill_dir: Path) -> dict[str, str] | None:
-    digest = _skill_tree_hash(skill_dir)
+    digest = _skill_content_hash(skill_dir)
     if digest is None:
         return None
     return {
-        "kind": "skill-tree-hash",
+        "kind": "skill-content-hash",
         "algorithm": "sha256",
         "value": f"sha256:{digest}",
     }
 
 
-def _skill_tree_hash(skill_dir: Path) -> str | None:
+def _skill_content_hash(skill_dir: Path) -> str | None:
     tree_entries: list[tuple[str, str, str]] = []
     try:
         paths = list(skill_dir.rglob("*"))

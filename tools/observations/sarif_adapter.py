@@ -44,12 +44,14 @@ class SarifObservationAdapter:
                 or _str(driver.get("version"))
                 or DEFAULT_SOURCE_VERSION
             )
-            rules = _rules_by_id(driver.get("rules"))
+            rules_list = _list_of_dicts(driver.get("rules"))
+            rules = _rules_by_id(rules_list)
             for result in _list_of_dicts(run.get("results")):
                 observation = self._observation_from_result(
                     ref=ref,
                     result=result,
                     rules=rules,
+                    rules_list=rules_list,
                     source=source,
                     source_version=source_version,
                 )
@@ -63,10 +65,18 @@ class SarifObservationAdapter:
         ref: ComponentRef,
         result: Mapping[str, Any],
         rules: Mapping[str, Mapping[str, Any]],
+        rules_list: list[Mapping[str, Any]],
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
         rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+        if rule_id is None:
+            # SARIF 2.1.0 §3.27.6/§3.27.7: rule may be identified by index alone
+            rule_index = result.get("ruleIndex")
+            if not isinstance(rule_index, int):
+                rule_index = _dict_at(result, "rule").get("index")
+            if isinstance(rule_index, int) and 0 <= rule_index < len(rules_list):
+                rule_id = _str(rules_list[rule_index].get("id"))
         if rule_id is None:
             return None
         rule = rules.get(rule_id, {})
@@ -107,9 +117,9 @@ class SarifObservationAdapter:
         )
 
 
-def _rules_by_id(raw: object) -> dict[str, Mapping[str, Any]]:
+def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
     rules: dict[str, Mapping[str, Any]] = {}
-    for rule in _list_of_dicts(raw):
+    for rule in rules_list:
         rule_id = _str(rule.get("id"))
         if rule_id is not None:
             rules[rule_id] = rule
@@ -132,13 +142,16 @@ def _severity(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Severity:
             return "low"
         return "info"
     level = _str(result.get("level"))
+    if level is None:
+        # SARIF 2.1.0: absent level inherits rule defaultConfiguration.level, then "warning"
+        level = _str(_dict_at(rule, "defaultConfiguration").get("level")) or "warning"
     if level == "error":
         return "high"
     if level == "warning":
         return "medium"
     if level in {"note", "none"}:
         return "low"
-    return "info"
+    return "medium"
 
 
 def _confidence(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Confidence:

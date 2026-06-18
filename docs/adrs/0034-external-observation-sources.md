@@ -39,6 +39,10 @@ The OpenACA responsibility boundary is:
 - keep native OpenACA skill observations limited to deterministic facts OpenACA
   can observe directly, such as declared executable tool access and artifact
   coordinates
+- rename the canonical skill coordinate kind from `skill-tree-hash` (ADR-0033)
+  to `skill-content-hash`: the coordinate hashes normalized skill-directory
+  content, not a Git tree object, and the new name removes the implied Git
+  dependency
 
 SARIF is accepted as an interchange format, not as a semantic contract. A SARIF
 adapter must still normalize rule identity, source attribution,

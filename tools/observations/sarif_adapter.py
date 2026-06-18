@@ -47,10 +47,10 @@ class SarifObservationAdapter:
                 or DEFAULT_SOURCE_VERSION
             )
             driver_rules_list = _list_of_dicts(driver.get("rules"))
-            extension_rules_lists = [
-                _list_of_dicts(ext.get("rules"))
-                for ext in _list_of_dicts(_dict_at(run, "tool").get("extensions"))
-            ]
+            extensions = _list_of_dicts(_dict_at(run, "tool").get("extensions"))
+            extension_rules_lists = [_list_of_dicts(ext.get("rules")) for ext in extensions]
+            # SARIF 2.1.0: run.artifacts resolves artifactLocation.index references
+            artifacts = _list_of_dicts(run.get("artifacts"))
             # Merge driver + extension rules for ID-based lookup (SARIF rule IDs are unique per run)
             rules = _rules_by_id(driver_rules_list)
             for ext_rules in extension_rules_lists:
@@ -65,6 +65,8 @@ class SarifObservationAdapter:
                     rules=rules,
                     driver_rules_list=driver_rules_list,
                     extension_rules_lists=extension_rules_lists,
+                    extensions=extensions,
+                    artifacts=artifacts,
                     source=source,
                     source_version=source_version,
                 )
@@ -80,15 +82,17 @@ class SarifObservationAdapter:
         rules: Mapping[str, Mapping[str, Any]],
         driver_rules_list: list[Mapping[str, Any]],
         extension_rules_lists: list[list[Mapping[str, Any]]],
+        extensions: list[Mapping[str, Any]],
+        artifacts: list[Mapping[str, Any]],
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
-        rule_id, rule = _resolve_rule(result, rules, driver_rules_list, extension_rules_lists)
+        rule_id, rule = _resolve_rule(result, rules, driver_rules_list, extension_rules_lists, extensions)
         if rule_id is None:
             return None
         message = _message_text(result.get("message"))
         title = _message_text(rule.get("shortDescription")) or message or rule_id
-        location = _first_location(result)
+        location = _first_location(result, artifacts)
         declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
         raw_tags = _raw_sarif_tags(result, rule)
         evidence = {
@@ -130,6 +134,7 @@ def _resolve_rule(
     rules: Mapping[str, Mapping[str, Any]],
     driver_rules_list: list[Mapping[str, Any]],
     extension_rules_lists: list[list[Mapping[str, Any]]],
+    extensions: list[Mapping[str, Any]],
 ) -> tuple[str | None, Mapping[str, Any]]:
     # SARIF 2.1.0 §3.27.6: when ruleIndex is present use it directly — it is
     # authoritative for disambiguation when duplicate rule ids exist in the array.
@@ -137,11 +142,14 @@ def _resolve_rule(
     if not isinstance(rule_index, int):
         rule_index = _dict_at(result, "rule").get("index")
     if isinstance(rule_index, int):
-        tc_index = _dict_at(result, "rule", "toolComponent").get("index")
+        tc_ref = _dict_at(result, "rule", "toolComponent")
+        tc_index = tc_ref.get("index")
         if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
             component_rules_list = extension_rules_lists[tc_index]
         else:
-            component_rules_list = driver_rules_list
+            # SARIF 2.1.0 toolComponentReference also allows name/guid to identify the component
+            named = _extension_rules_by_ref(tc_ref, extensions)
+            component_rules_list = named if named is not None else driver_rules_list
         if 0 <= rule_index < len(component_rules_list):
             indexed_rule = component_rules_list[rule_index]
             rule_id = (
@@ -155,6 +163,22 @@ def _resolve_rule(
     if rule_id is None:
         return None, {}
     return rule_id, rules.get(rule_id, {})
+
+
+def _extension_rules_by_ref(
+    tc_ref: Mapping[str, Any],
+    extensions: list[Mapping[str, Any]],
+) -> list[Mapping[str, Any]] | None:
+    tc_name = _str(tc_ref.get("name"))
+    tc_guid = _str(tc_ref.get("guid"))
+    if not tc_name and not tc_guid:
+        return None
+    for ext in extensions:
+        if tc_name and _str(ext.get("name")) == tc_name:
+            return _list_of_dicts(ext.get("rules"))
+        if tc_guid and _str(ext.get("guid")) == tc_guid:
+            return _list_of_dicts(ext.get("rules"))
+    return None
 
 
 def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
@@ -267,13 +291,21 @@ def _component_path(ref: ComponentRef) -> list[dict[str, str]]:
     return [{"type": "skill", "name": identity}] if identity else []
 
 
-def _first_location(result: Mapping[str, Any]) -> dict[str, Any]:
+def _first_location(
+    result: Mapping[str, Any],
+    artifacts: list[Mapping[str, Any]],
+) -> dict[str, Any]:
     for location in _list_of_dicts(result.get("locations")):
         physical = _dict_at(location, "physicalLocation")
         artifact = _dict_at(physical, "artifactLocation")
         region = _dict_at(physical, "region")
         out: dict[str, Any] = {}
         uri = _str(artifact.get("uri"))
+        if uri is None:
+            # SARIF 2.1.0: artifactLocation.index resolves into run.artifacts[index].location.uri
+            art_index = artifact.get("index")
+            if isinstance(art_index, int) and 0 <= art_index < len(artifacts):
+                uri = _str(_dict_at(artifacts[art_index], "location").get("uri"))
         if uri is not None:
             out["uri"] = uri
         start_line = region.get("startLine")

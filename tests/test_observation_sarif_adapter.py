@@ -263,6 +263,9 @@ def test_sarif_adapter_uses_rule_default_configuration_level(tmp_path: Path) -> 
 
 
 def test_sarif_adapter_resolves_extension_rule_metadata(tmp_path: Path) -> None:
+    # SARIF 2.1.0 §3.52.3: an extension rule is resolved only when the result explicitly
+    # references the extension (here via rule.toolComponent.name) — an absent toolComponent
+    # would reference the driver instead.
     ref = _skill_ref(tmp_path)
     sarif = {
         "runs": [
@@ -286,7 +289,7 @@ def test_sarif_adapter_resolves_extension_rule_metadata(tmp_path: Path) -> None:
                 },
                 "results": [
                     {
-                        "ruleId": "EXT-001",
+                        "rule": {"id": "EXT-001", "toolComponent": {"name": "ext-plugin"}},
                         "message": {"text": "Triggered extension rule."},
                     }
                 ],
@@ -304,6 +307,56 @@ def test_sarif_adapter_resolves_extension_rule_metadata(tmp_path: Path) -> None:
     assert observation.severity == "high"  # defaultConfiguration.level "error" → high
     assert observation.remediation == "See docs for remediation."
     assert observation.evidence.get("sarif_tags") == ["ext-tag"]
+
+
+def test_sarif_adapter_does_not_let_extension_shadow_same_id_driver_rule(
+    tmp_path: Path,
+) -> None:
+    # SARIF 2.1.0 §3.52.3: a compact result (ruleId only, no toolComponent) references the
+    # driver. A same-id extension rule must not shadow the driver descriptor, so the
+    # observation carries the driver's title/severity, not the extension's.
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "P1",
+                                "shortDescription": {"text": "Driver rule"},
+                                "defaultConfiguration": {"level": "note"},
+                            }
+                        ],
+                    },
+                    "extensions": [
+                        {
+                            "name": "ext-plugin",
+                            "rules": [
+                                {
+                                    "id": "P1",
+                                    "shortDescription": {"text": "Extension rule"},
+                                    "defaultConfiguration": {"level": "error"},
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "results": [
+                    {"ruleId": "P1", "message": {"text": "Hit the driver rule."}},
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    # Driver descriptor wins: title "Driver rule", level "note" -> low (not "error" -> high).
+    assert observation.title == "Driver rule"
+    assert observation.severity == "low"
 
 
 def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:

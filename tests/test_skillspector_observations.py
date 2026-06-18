@@ -308,6 +308,67 @@ def test_skillspector_verified_rule_family_categories(tmp_path: Path) -> None:
     assert by_rule["YR2"].categories == ["supply-chain"]
 
 
+def test_skillspector_complete_rule_family_categories(tmp_path: Path) -> None:
+    """Spot-check one rule from each newly mapped family against the upstream table."""
+    ref = _skill_ref(tmp_path)
+
+    rule_cases = [
+        # (rule_id, sarif_level, expected_category)
+        ("P6", "error", "prompt-injection"),  # Direct Leakage
+        ("P8", "error", "prompt-injection"),  # Tool-Based Exfiltration
+        ("EA1", "error", "excessive-agency"),  # Unrestricted Tool Access
+        ("EA3", "warning", "excessive-agency"),  # Scope Creep
+        ("OH1", "error", "prompt-injection"),  # Unvalidated Output Injection
+        ("OH2", "warning", "data-exfiltration"),  # Cross-Context Output
+        ("MP1", "error", "prompt-injection"),  # Persistent Context Injection
+        ("TM1", "error", "unsafe-tool-use"),  # Tool Parameter Abuse
+        ("RA2", "error", "excessive-agency"),  # Session Persistence
+        ("TR1", "warning", "excessive-agency"),  # Overly Broad Trigger
+        ("TR2", "error", "prompt-injection"),  # Shadow Command Trigger
+        ("AST2", "error", "unsafe-tool-use"),  # eval() Call
+        ("AST4", "error", "unsafe-tool-use"),  # subprocess Call
+        ("TT1", "error", "data-exfiltration"),  # Direct Taint Flow
+        ("TT4", "error", "data-exfiltration"),  # File Read to Network Exfiltration
+        ("YR3", "error", "supply-chain"),  # Cryptominer Match
+        ("YR4", "error", "supply-chain"),  # Hack Tool / Exploit Match
+        ("LP1", "error", "privilege-escalation"),  # Underdeclared Capability
+        ("LP2", "warning", "privilege-escalation"),  # Wildcard Permission
+        ("TP1", "error", "prompt-injection"),  # Hidden Instructions
+        ("TP4", "warning", "unsafe-tool-use"),  # Description-Behavior Mismatch
+    ]
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        results = [
+            {"ruleId": rule_id, "level": level, "message": {"text": f"{rule_id} finding."}}
+            for rule_id, level, _ in rule_cases
+        ]
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector", "version": "0.6.0"}},
+                            "results": results,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
+
+    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    assert warnings == []
+    by_rule = {obs.observation_id: obs for obs in observations}
+
+    for rule_id, _level, expected_category in rule_cases:
+        assert by_rule[rule_id].categories == [expected_category], (
+            f"{rule_id}: expected [{expected_category!r}], got {by_rule[rule_id].categories!r}"
+        )
+
+
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 

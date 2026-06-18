@@ -31,10 +31,17 @@ def collect_skill_observations(refs: list[ComponentRef]) -> list[ObservationFind
     return observations
 
 
+def _executable_tool_base(tool: str) -> str:
+    """Strip command-filter suffix, e.g. ``Bash(git:*)`` → ``Bash``."""
+    return tool.split("(", 1)[0].strip()
+
+
 def _allowed_executable_tool_observation(ref: ComponentRef) -> ObservationFinding | None:
     frontmatter = _read_frontmatter(Path(ref.source_manifest))
     allowed_tools = _allowed_tools(frontmatter)
-    executable = sorted(tool for tool in allowed_tools if tool.lower() in EXECUTABLE_TOOLS)
+    executable = sorted(
+        tool for tool in allowed_tools if _executable_tool_base(tool).lower() in EXECUTABLE_TOOLS
+    )
     if not executable:
         return None
     identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"

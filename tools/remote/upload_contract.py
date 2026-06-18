@@ -127,17 +127,22 @@ def _validate_evidence_strings(payload: dict[str, Any], key: str) -> None:
             if not isinstance(evidence, dict):
                 continue
             for evidence_key, value in evidence.items():
-                if not isinstance(value, str):
-                    continue
                 location = f"$.{key}[{f_idx}].{object_key}.{evidence_key}"
-                if _is_absolute_path(value):
-                    raise RemoteUploadContractError(f"{location} is an absolute path")
-                if _is_url_with_path_or_query(value):
-                    raise RemoteUploadContractError(f"{location} is a URL with a path or query")
-                if _is_url_with_userinfo(value):
-                    raise RemoteUploadContractError(
-                        f"{location} is a URL with credentials in userinfo"
-                    )
+                if isinstance(value, str):
+                    _check_evidence_string_at(value, location)
+                elif isinstance(value, list):
+                    for v_idx, item in enumerate(value):
+                        if isinstance(item, str):
+                            _check_evidence_string_at(item, f"{location}[{v_idx}]")
+
+
+def _check_evidence_string_at(value: str, location: str) -> None:
+    if _is_absolute_path(value):
+        raise RemoteUploadContractError(f"{location} is an absolute path")
+    if _is_url_with_path_or_query(value):
+        raise RemoteUploadContractError(f"{location} is a URL with a path or query")
+    if _is_url_with_userinfo(value):
+        raise RemoteUploadContractError(f"{location} is a URL with credentials in userinfo")
 
 
 def _is_url_with_path_or_query(value: str) -> bool:

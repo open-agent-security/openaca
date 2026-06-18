@@ -113,7 +113,7 @@ def _skill_tree_hash(skill_dir: Path) -> str | None:
     tree_entries: list[tuple[str, str, str]] = []
     try:
         paths = list(skill_dir.rglob("*"))
-    except OSError:
+    except (OSError, RuntimeError):
         return None
 
     for path in paths:
@@ -132,7 +132,7 @@ def _skill_tree_hash(skill_dir: Path) -> str | None:
                 content = path.read_bytes()
             else:
                 continue
-        except OSError:
+        except (OSError, RuntimeError):
             return None
         content_hash = hashlib.sha256(content).hexdigest()
         tree_entries.append((entry_type, rel_path, content_hash))

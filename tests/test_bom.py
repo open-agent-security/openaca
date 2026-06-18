@@ -236,6 +236,40 @@ def test_plugin_dependency_bom_keeps_purl_as_match_coordinate_only():
     assert refs[0].extra["component_type"] == "package"
 
 
+def test_skill_artifact_coordinates_round_trip_through_bom():
+    ref = ComponentRef(
+        component_identity="skill/deploy-helper",
+        name="deploy-helper",
+        source_manifest=".claude/skills/deploy-helper/SKILL.md",
+        source_locator="$.frontmatter",
+        extra={
+            "component_type": "skill",
+            "artifact_coordinates": [
+                {
+                    "kind": "content",
+                    "algorithm": "sha256",
+                    "value": "sha256:abc123",
+                }
+            ],
+        },
+    )
+
+    doc = build_agent_bom(
+        [ref], target_type="endpoint", target="endpoint:user-scope"
+    ).to_cyclonedx()
+
+    component = _component(doc, "skill/deploy-helper")
+    artifact_coordinates = _property(component, "openaca:artifact_coordinates")
+    assert artifact_coordinates is not None
+    assert json.loads(artifact_coordinates) == [
+        {"kind": "content", "algorithm": "sha256", "value": "sha256:abc123"}
+    ]
+    (round_tripped,) = component_refs_from_cyclonedx(doc)
+    assert round_tripped.extra["artifact_coordinates"] == [
+        {"kind": "content", "algorithm": "sha256", "value": "sha256:abc123"}
+    ]
+
+
 def test_cyclonedx_build_edges_resolves_versioned_attributed_to():
     """Bundled components with attributed_to='<identity>@<version>' resolve correctly.
 

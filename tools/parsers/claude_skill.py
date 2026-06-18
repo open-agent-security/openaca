@@ -18,6 +18,7 @@ the caller decides which by passing or omitting the kwarg.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -28,7 +29,8 @@ from tools.component_ref import ComponentRef
 
 def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[ComponentRef]:
     try:
-        text = skill_md_path.read_text()
+        raw = skill_md_path.read_bytes()
+        text = raw.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return []
     frontmatter = _extract_frontmatter(text)
@@ -56,7 +58,16 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
             source_manifest=str(skill_md_path),
             source_locator="$.frontmatter",
             attributed_to=attributed_to,
-            extra={"component_type": "skill"},
+            extra={
+                "component_type": "skill",
+                "artifact_coordinates": [
+                    {
+                        "kind": "content",
+                        "algorithm": "sha256",
+                        "value": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+                    }
+                ],
+            },
         )
     ]
 

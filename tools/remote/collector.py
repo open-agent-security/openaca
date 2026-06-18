@@ -15,6 +15,7 @@ import httpx
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
+from tools.observations import ObservationFinding, collect_skill_observations
 from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
@@ -42,6 +43,7 @@ TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
 class EndpointCollection:
     bom: JsonObject
     posture_findings: list[JsonObject]
+    observations: list[JsonObject]
     component_count: int
 
 
@@ -77,9 +79,13 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         _posture_finding_to_payload(finding)
         for finding in run_posture_rules(refs, mcp_manifests, settings_manifests)
     ]
+    observations = [
+        _observation_to_payload(finding) for finding in collect_skill_observations(refs)
+    ]
     return EndpointCollection(
         bom=bom,
         posture_findings=posture_findings,
+        observations=observations,
         component_count=len(bom.get("components") or []),
     )
 
@@ -120,6 +126,7 @@ def collect_endpoint(
         target_locator=TARGET_LOCATOR_ENDPOINT,
         bom=collection.bom,
         posture_findings=collection.posture_findings,
+        observations=collection.observations,
     )
     # ADR 0003 (remote redaction contract): the OSS BOM can carry absolute
     # filesystem paths because the OSS CLI runs on the user's own machine;
@@ -342,6 +349,20 @@ def _redact_payload_for_remote(
                 value, config_dir=config_dir, project=project
             )
 
+    for finding in payload.get("observations", []) or []:
+        if not isinstance(finding, dict):
+            continue
+        for key in ("evidence", "declared_by"):
+            value = finding.get(key)
+            if not isinstance(value, dict):
+                continue
+            for evidence_key, evidence_value in list(value.items()):
+                if not isinstance(evidence_value, str):
+                    continue
+                value[evidence_key] = _redact_property_value_for_remote(
+                    evidence_value, config_dir=config_dir, project=project
+                )
+
 
 def clear_pending_uploads() -> None:
     """Remove all pending offline-cache files (call when credentials change)."""
@@ -395,6 +416,7 @@ def _upload_payload(
     target_locator: str,
     bom: JsonObject,
     posture_findings: list[JsonObject],
+    observations: list[JsonObject],
 ) -> JsonObject:
     return {
         "asset_id": asset_id,
@@ -404,6 +426,7 @@ def _upload_payload(
         "content_hash": _content_hash(bom),
         "bom": bom,
         "posture_findings": posture_findings,
+        "observations": observations,
     }
 
 
@@ -430,6 +453,28 @@ def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
         "fix": finding.remediation,
         "evidence": _posture_evidence(finding),
     }
+
+
+def _observation_to_payload(finding: ObservationFinding) -> JsonObject:
+    return {
+        "source": finding.source,
+        "source_version": finding.source_version,
+        "observation_id": finding.observation_id,
+        "severity": finding.severity.upper(),
+        "confidence": finding.confidence,
+        "component_identity": _observation_component_identity(finding),
+        "subject_coordinate": finding.subject_coordinate,
+        "summary": finding.title,
+        "fix": finding.remediation,
+        "evidence": finding.evidence,
+        "categories": finding.categories,
+        "declared_by": finding.declared_by or {},
+    }
+
+
+def _observation_component_identity(finding: ObservationFinding) -> str:
+    identity = finding.component.get("identity")
+    return identity if isinstance(identity, str) and identity else finding.subject_coordinate
 
 
 def _posture_scope(finding: PostureFinding) -> str:

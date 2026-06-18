@@ -38,6 +38,10 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     assert ref.source_manifest == str(path)
     assert ref.source_locator == "$.frontmatter"
     assert ref.attributed_to is None
+    coordinates = ref.extra["artifact_coordinates"]
+    assert coordinates[0]["kind"] == "content"
+    assert coordinates[0]["algorithm"] == "sha256"
+    assert coordinates[0]["value"].startswith("sha256:")
 
 
 def test_parse_emits_ref_without_version_when_metadata_absent(tmp_path):

@@ -16,6 +16,7 @@ import pytest
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.observations import ObservationFinding
 from tools.render import (
     ScanStats,
     _aggregate_fix,
@@ -550,6 +551,35 @@ def test_json_finding_contains_full_record():
     assert entry["source"] == "osv.dev"
     assert entry["confidence"] == "high"
     assert entry["matched_advisory"]["id"] == "A"
+
+
+def test_json_observation_finding_is_source_attributed():
+    observation = ObservationFinding(
+        source="openaca-skill-audit",
+        source_version="0.2.0b1",
+        observation_id="skill.allowed-executable-tool",
+        title="Skill declares executable tool access",
+        severity="low",
+        confidence="high",
+        component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
+        subject_coordinate="sha256:abc123",
+        evidence={"allowed_tools": ["Bash"], "source_manifest": "skills/deploy/SKILL.md"},
+        categories=["skill-capability"],
+        remediation="Review whether executable tool access is needed.",
+        declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
+    )
+
+    out = render_json([], {}, _stats(unit_count=0, components=1), observations=[observation])
+    parsed = json.loads(out)
+    (entry,) = parsed["findings"]
+    assert entry["finding_type"] == "observation"
+    assert entry["source"] == "openaca-skill-audit"
+    assert entry["observation_id"] == "skill.allowed-executable-tool"
+    assert entry["severity"] == "low"
+    assert entry["confidence"] == "high"
+    assert entry["component"]["identity"] == "skill/deploy-helper"
+    assert entry["subject_coordinate"] == "sha256:abc123"
+    assert entry["evidence"]["allowed_tools"] == ["Bash"]
 
 
 def test_json_plugin_bundled_finding_contains_component_path():

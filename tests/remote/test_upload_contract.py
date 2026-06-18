@@ -563,6 +563,29 @@ def test_allows_posture_evidence_without_rule_specific_allowlist():
     enforce_remote_upload_contract(payload)
 
 
+def test_rejects_absolute_observation_evidence_path():
+    payload = _payload(
+        observations=[
+            {
+                "source": "openaca-skill-audit",
+                "source_version": "0.2.0b1",
+                "observation_id": "skill.allowed-executable-tool",
+                "severity": "LOW",
+                "confidence": "high",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "sha256:abc123",
+                "summary": "Skill declares executable tool access",
+                "evidence": {"source_manifest": "/Users/alice/.claude/skills/deploy/SKILL.md"},
+            }
+        ]
+    )
+
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
+
+    assert "observations[0].evidence.source_manifest" in str(exc.value)
+
+
 def _payload(**overrides):
     payload = {
         "asset_id": "asset-123",

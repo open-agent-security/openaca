@@ -591,6 +591,10 @@ def repo(
         )
         posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
 
+    # None means posture was not requested (rendered as "skipped"); [] means it ran and
+    # found nothing. Don't collapse the empty-but-ran case to None.
+    posture_output = posture_findings if include_posture else None
+
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
 
@@ -646,7 +650,7 @@ def repo(
             findings,
             advisory_index,
             overlay_id_map,
-            posture_findings=posture_findings or None,
+            posture_findings=posture_output,
             observations=observations or None,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
@@ -666,7 +670,7 @@ def repo(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
-        posture_findings=posture_findings or None,
+        posture_findings=posture_output,
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,
@@ -763,6 +767,10 @@ def endpoint(
         settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
         posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
 
+    # None means posture was not requested (rendered as "skipped"); [] means it ran and
+    # found nothing. Don't collapse the empty-but-ran case to None.
+    posture_output = posture_findings if include_posture else None
+
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if _is_plugin_ref(r))
 
@@ -815,7 +823,7 @@ def endpoint(
             findings,
             advisory_index,
             overlay_id_map,
-            posture_findings=posture_findings or None,
+            posture_findings=posture_output,
             observations=observations or None,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
@@ -834,7 +842,7 @@ def endpoint(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
-        posture_findings=posture_findings or None,
+        posture_findings=posture_output,
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,

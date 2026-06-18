@@ -450,6 +450,49 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
     assert "mcp-server/inactive @ http://inactive.example/mcp" not in result.output
 
 
+def test_endpoint_include_posture_with_no_findings_reports_ran_not_skipped(tmp_path):
+    # When --include-posture runs but no rule fires, the empty result must render as
+    # "posture: 0" (ran clean), not "posture: skipped" (which means not requested).
+    active_dir = tmp_path / "plugins" / "cache" / "official" / "active" / "1.0.0"
+    active_dir.mkdir(parents=True)
+    (active_dir / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"active": {"url": "https://active.example/mcp"}}})
+    )
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"active@official": True}})
+    )
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "active@official": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(active_dir)}
+                    ]
+                },
+            }
+        )
+    )
+
+    runner = CliRunner()
+    from unittest.mock import patch
+
+    with (
+        patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})),
+        patch("tools.scan.run_posture_rules", lambda *a, **k: []),
+    ):
+        ran = runner.invoke(main, ["endpoint", "--config-dir", str(tmp_path), "--include-posture"])
+        skipped = runner.invoke(main, ["endpoint", "--config-dir", str(tmp_path)])
+
+    assert ran.exit_code == 0, ran.output
+    assert "posture: 0" in ran.output
+    assert "posture: skipped" not in ran.output
+
+    # Without the flag, posture is genuinely not requested -> skipped.
+    assert skipped.exit_code == 0, skipped.output
+    assert "posture: skipped" in skipped.output
+
+
 def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
     cache_dir = tmp_path / "plugins" / "cache" / "official" / "feature-dev" / "unknown"
     cache_dir.mkdir(parents=True)

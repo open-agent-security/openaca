@@ -78,23 +78,9 @@ class SarifObservationAdapter:
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
-        rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
-        if rule_id is None:
-            # SARIF 2.1.0: toolComponent.index selects which extension's rules to resolve by index;
-            # absent toolComponent means driver rules
-            tc_index = _dict_at(result, "rule", "toolComponent").get("index")
-            if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
-                component_rules_list = extension_rules_lists[tc_index]
-            else:
-                component_rules_list = driver_rules_list
-            rule_index = result.get("ruleIndex")
-            if not isinstance(rule_index, int):
-                rule_index = _dict_at(result, "rule").get("index")
-            if isinstance(rule_index, int) and 0 <= rule_index < len(component_rules_list):
-                rule_id = _str(component_rules_list[rule_index].get("id"))
+        rule_id, rule = _resolve_rule(result, rules, driver_rules_list, extension_rules_lists)
         if rule_id is None:
             return None
-        rule = rules.get(rule_id, {})
         message = _message_text(result.get("message"))
         title = _message_text(rule.get("shortDescription")) or message or rule_id
         location = _first_location(result)
@@ -132,6 +118,38 @@ class SarifObservationAdapter:
             declared_by=declared_by,
             component_path=_component_path(ref),
         )
+
+
+def _resolve_rule(
+    result: Mapping[str, Any],
+    rules: Mapping[str, Mapping[str, Any]],
+    driver_rules_list: list[Mapping[str, Any]],
+    extension_rules_lists: list[list[Mapping[str, Any]]],
+) -> tuple[str | None, Mapping[str, Any]]:
+    # SARIF 2.1.0 §3.27.6: when ruleIndex is present use it directly — it is
+    # authoritative for disambiguation when duplicate rule ids exist in the array.
+    rule_index = result.get("ruleIndex")
+    if not isinstance(rule_index, int):
+        rule_index = _dict_at(result, "rule").get("index")
+    if isinstance(rule_index, int):
+        tc_index = _dict_at(result, "rule", "toolComponent").get("index")
+        if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
+            component_rules_list = extension_rules_lists[tc_index]
+        else:
+            component_rules_list = driver_rules_list
+        if 0 <= rule_index < len(component_rules_list):
+            indexed_rule = component_rules_list[rule_index]
+            rule_id = (
+                _str(indexed_rule.get("id"))
+                or _str(result.get("ruleId"))
+                or _str(_dict_at(result, "rule").get("id"))
+            )
+            return rule_id, indexed_rule
+    # Fall back to id-based lookup
+    rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+    if rule_id is None:
+        return None, {}
+    return rule_id, rules.get(rule_id, {})
 
 
 def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:

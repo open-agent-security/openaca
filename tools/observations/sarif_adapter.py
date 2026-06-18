@@ -84,6 +84,7 @@ class SarifObservationAdapter:
         title = _message_text(rule.get("shortDescription")) or message or rule_id
         location = _first_location(result)
         declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
+        raw_tags = _raw_sarif_tags(result, rule)
         evidence = {
             "sarif_rule_id": rule_id,
             **(
@@ -92,6 +93,7 @@ class SarifObservationAdapter:
             **({"sarif_message": message} if message else {}),
             **({"location_uri": location["uri"]} if "uri" in location else {}),
             **({"start_line": location["start_line"]} if "start_line" in location else {}),
+            **({"sarif_tags": raw_tags} if raw_tags else {}),
         }
         identity = (
             canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
@@ -110,7 +112,7 @@ class SarifObservationAdapter:
             },
             subject_coordinate=_subject_coordinate(ref),
             evidence=evidence,
-            categories=_categories(rule_id, self.category_map, result, rule),
+            categories=_categories(rule_id, self.category_map),
             remediation=_message_text(rule.get("help")) or None,
             declared_by=declared_by,
             component_path=_component_path(ref),
@@ -187,17 +189,17 @@ def _first_string_property(
 def _categories(
     rule_id: str,
     category_map: Mapping[str, list[str]],
-    result: Mapping[str, Any],
-    rule: Mapping[str, Any],
 ) -> list[str]:
-    if rule_id in category_map:
-        return list(dict.fromkeys(category_map[rule_id]))
+    return list(dict.fromkeys(category_map[rule_id])) if rule_id in category_map else []
+
+
+def _raw_sarif_tags(result: Mapping[str, Any], rule: Mapping[str, Any]) -> list[str]:
     values: list[str] = []
     for container in (_dict_at(result, "properties"), _dict_at(rule, "properties")):
         for key in ("tags", "categories"):
             raw = container.get(key)
             if isinstance(raw, list):
-                values.extend(str(item) for item in raw if isinstance(item, str) and item)
+                values.extend(item for item in raw if isinstance(item, str) and item)
     return list(dict.fromkeys(values))
 
 

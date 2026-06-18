@@ -1595,6 +1595,27 @@ def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch)
     assert observations[0]["source"] == "skillspector"
     assert observations[0]["observation_id"] == "P1"
     posture = [finding for finding in parsed["findings"] if finding["finding_type"] == "posture"]
+    assert posture == []
+
+    with_posture = CliRunner().invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--scanner",
+            "nvidia-skillspector",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert with_posture.exit_code == 0, with_posture.output
+    parsed = json.loads(
+        with_posture.output[with_posture.output.index("{") : with_posture.output.rindex("}") + 1]
+    )
+    posture = [finding for finding in parsed["findings"] if finding["finding_type"] == "posture"]
     assert len(posture) == 1
     assert posture[0]["source"] == "skillspector"
     assert posture[0]["rule_id"] == "LP2"

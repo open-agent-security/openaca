@@ -357,11 +357,19 @@ def _redact_payload_for_remote(
             if not isinstance(value, dict):
                 continue
             for evidence_key, evidence_value in list(value.items()):
-                if not isinstance(evidence_value, str):
-                    continue
-                value[evidence_key] = _redact_property_value_for_remote(
-                    evidence_value, config_dir=config_dir, project=project
-                )
+                if isinstance(evidence_value, str):
+                    value[evidence_key] = _redact_property_value_for_remote(
+                        evidence_value, config_dir=config_dir, project=project
+                    )
+                elif isinstance(evidence_value, list):
+                    value[evidence_key] = [
+                        _redact_property_value_for_remote(
+                            item, config_dir=config_dir, project=project
+                        )
+                        if isinstance(item, str)
+                        else item
+                        for item in evidence_value
+                    ]
 
 
 def clear_pending_uploads() -> None:

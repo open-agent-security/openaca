@@ -939,6 +939,38 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
     assert payload["content_hash"] == _content_hash(payload["bom"])
 
 
+def test_redact_payload_redacts_absolute_paths_in_observation_evidence_list(tmp_path):
+    """List-valued evidence fields must be recursed during redaction.
+    Without the fix an absolute path string inside a list would be uploaded unredacted.
+    """
+    from tools.remote.collector import _redact_payload_for_remote
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    abs_path = str(config_dir / "skills" / "deploy" / "SKILL.md")
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [],
+        "observations": [
+            {
+                "source": "openaca-skill-audit",
+                "observation_id": "skill.allowed-executable-tool",
+                "evidence": {
+                    "allowed_tools": [abs_path, "Read"],
+                    "source_manifest": abs_path,
+                },
+            }
+        ],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    evidence = payload["observations"][0]["evidence"]
+    assert not evidence["allowed_tools"][0].startswith("/"), evidence["allowed_tools"]
+    assert evidence["allowed_tools"][1] == "Read"
+    assert not evidence["source_manifest"].startswith("/")
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

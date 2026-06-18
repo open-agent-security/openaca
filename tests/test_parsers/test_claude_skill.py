@@ -185,6 +185,24 @@ def test_parse_returns_empty_on_unreadable_file(tmp_path):
     assert parse(fake / "SKILL.md") == []
 
 
+def test_parse_tolerates_symlink_loop_in_skill_dir(tmp_path):
+    """A self-referential symlink inside a skill directory must not raise;
+    _skill_tree_hash catches (OSError, RuntimeError) and returns None so
+    parsing degrades to a ref without an artifact coordinate.
+    """
+    import os
+
+    path = _write_skill(tmp_path, "loopy", "name: loopy\ndescription: has a loop\n")
+    loop = path.parent / "loop"
+    os.symlink("loop", loop)
+
+    refs = parse(path)
+
+    assert len(refs) == 1
+    assert refs[0].name == "loopy"
+    assert refs[0].extra.get("artifact_coordinates") is None
+
+
 def _artifact_coordinate_value(path: Path) -> str:
     refs = parse(path)
     assert len(refs) == 1

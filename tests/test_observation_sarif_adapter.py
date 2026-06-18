@@ -359,6 +359,54 @@ def test_sarif_adapter_does_not_let_extension_shadow_same_id_driver_rule(
     assert observation.severity == "low"
 
 
+def test_sarif_adapter_override_respects_tool_component_scope(tmp_path: Path) -> None:
+    # SARIF 2.1.0 §3.52.3: an extension-scoped ruleConfigurationOverride must not re-level a
+    # driver-scoped result that shares the rule id; a driver-scoped override does apply.
+    ref = _skill_ref(tmp_path)
+
+    def _sarif(override_tool_component: dict[str, str] | None) -> dict[str, object]:
+        descriptor: dict[str, object] = {"id": "P1"}
+        if override_tool_component is not None:
+            descriptor["toolComponent"] = override_tool_component
+        return {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "scanner",
+                            "rules": [{"id": "P1", "defaultConfiguration": {"level": "note"}}],
+                        },
+                        "extensions": [{"name": "ext", "rules": [{"id": "P1"}]}],
+                    },
+                    "invocations": [
+                        {
+                            "ruleConfigurationOverrides": [
+                                {"descriptor": descriptor, "configuration": {"level": "error"}}
+                            ]
+                        }
+                    ],
+                    # Compact driver result (no toolComponent), no explicit level.
+                    "results": [
+                        {
+                            "ruleId": "P1",
+                            "provenance": {"invocationIndex": 0},
+                            "message": {"text": "Driver finding."},
+                        }
+                    ],
+                }
+            ],
+        }
+
+    # Extension-scoped override must NOT apply to the driver result -> default "note" -> low.
+    ext_scoped = SarifObservationAdapter().collect(ref, _sarif({"name": "ext"}))
+    assert ext_scoped[0].severity == "low"
+
+    # Driver-scoped override (no toolComponent) DOES apply -> "error" -> high.
+    driver_scoped = SarifObservationAdapter().collect(ref, _sarif(None))
+    assert driver_scoped[0].severity == "high"
+
+
 def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {

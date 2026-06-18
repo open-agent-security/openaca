@@ -125,7 +125,7 @@ class SarifObservationAdapter:
             source_version=source_version,
             observation_id=rule_id,
             title=title,
-            severity=_severity(result, rule, invocations),
+            severity=_severity(result, rule, invocations, extensions),
             confidence=_confidence(result, rule),
             component={
                 "identity": identity,
@@ -264,6 +264,7 @@ def _severity(
     result: Mapping[str, Any],
     rule: Mapping[str, Any],
     invocations: list[Mapping[str, Any]],
+    extensions: list[Mapping[str, Any]],
 ) -> Severity:
     explicit = _first_string_property(result, rule, "openaca_severity", "severity")
     if explicit in _SEVERITIES:
@@ -285,7 +286,7 @@ def _severity(
         # ruleConfigurationOverride (§3.20.5) re-levels the rule for that run and takes
         # precedence over the rule's defaultConfiguration; fall back to "warning".
         level = (
-            _invocation_override_level(result, invocations)
+            _invocation_override_level(result, invocations, extensions)
             or _str(_dict_at(rule, "defaultConfiguration").get("level"))
             or "warning"
         )
@@ -301,6 +302,7 @@ def _severity(
 def _invocation_override_level(
     result: Mapping[str, Any],
     invocations: list[Mapping[str, Any]],
+    extensions: list[Mapping[str, Any]],
 ) -> str | None:
     # SARIF 2.1.0: a result selects its invocation via provenance.invocationIndex; that
     # invocation's ruleConfigurationOverrides may carry a configuration.level for the
@@ -310,14 +312,24 @@ def _invocation_override_level(
     if not isinstance(inv_index, int) or not (0 <= inv_index < len(invocations)):
         return None
     for override in _list_of_dicts(invocations[inv_index].get("ruleConfigurationOverrides")):
-        if _override_matches_rule(_dict_at(override, "descriptor"), result):
+        if _override_matches_rule(_dict_at(override, "descriptor"), result, extensions):
             level = _str(_dict_at(override, "configuration").get("level"))
             if level is not None:
                 return level
     return None
 
 
-def _override_matches_rule(descriptor: Mapping[str, Any], result: Mapping[str, Any]) -> bool:
+def _override_matches_rule(
+    descriptor: Mapping[str, Any],
+    result: Mapping[str, Any],
+    extensions: list[Mapping[str, Any]],
+) -> bool:
+    # SARIF 2.1.0 §3.52.3: the tool components must agree (absent → driver). An
+    # extension-scoped override must not apply to a driver-scoped result with the same id.
+    if _component_key(_dict_at(descriptor, "toolComponent"), extensions) != _component_key(
+        _dict_at(result, "rule", "toolComponent"), extensions
+    ):
+        return False
     desc_id = _str(descriptor.get("id"))
     result_rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
     if desc_id is not None and desc_id == result_rule_id:
@@ -327,6 +339,22 @@ def _override_matches_rule(descriptor: Mapping[str, Any], result: Mapping[str, A
     if not isinstance(result_index, int):
         result_index = _dict_at(result, "rule").get("index")
     return isinstance(desc_index, int) and desc_index == result_index
+
+
+def _component_key(tc_ref: Mapping[str, Any], extensions: list[Mapping[str, Any]]) -> str:
+    # Canonical key for the referenced tool component so references made by index vs.
+    # name/guid compare equal; an absent or unresolved reference is the driver.
+    tc_index = tc_ref.get("index")
+    if isinstance(tc_index, int) and 0 <= tc_index < len(extensions):
+        return f"ext:{tc_index}"
+    name = _str(tc_ref.get("name"))
+    guid = _str(tc_ref.get("guid"))
+    for index, ext in enumerate(extensions):
+        if name and _str(ext.get("name")) == name:
+            return f"ext:{index}"
+        if guid and _str(ext.get("guid")) == guid:
+            return f"ext:{index}"
+    return "driver"
 
 
 def _confidence(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Confidence:

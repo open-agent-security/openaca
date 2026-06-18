@@ -7,6 +7,7 @@ component/skill coordinate.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -107,7 +108,7 @@ class SarifObservationAdapter:
         )
         if rule_id is None:
             return None
-        message = _message_text(result.get("message"))
+        message = _result_message_text(result.get("message"), rule)
         title = _message_text(rule.get("shortDescription")) or message or rule_id
         location = _first_location(result, artifacts)
         declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
@@ -328,7 +329,15 @@ def _invocation_override_level(
     # result's rule (§3.20.5). Match the override descriptor to the result's rule by id
     # or index, mirroring _resolve_rule's reference handling.
     inv_index = _dict_at(result, "provenance").get("invocationIndex")
-    if not isinstance(inv_index, int) or not (0 <= inv_index < len(invocations)):
+    if not isinstance(inv_index, int):
+        # SARIF 2.1.0: invocationIndex defaults to -1 (no associated invocation). But when
+        # the run has exactly one invocation, a result without explicit provenance was
+        # produced by it, so its ruleConfigurationOverrides apply.
+        if len(invocations) == 1:
+            inv_index = 0
+        else:
+            return None
+    if not (0 <= inv_index < len(invocations)):
         return None
     for override in _list_of_dicts(invocations[inv_index].get("ruleConfigurationOverrides")):
         if _override_matches_rule(_dict_at(override, "descriptor"), result, extensions):
@@ -481,6 +490,39 @@ def _message_text(raw: object) -> str | None:
         if isinstance(text, str) and text:
             return text
     return None
+
+
+def _result_message_text(message: object, rule: Mapping[str, Any]) -> str | None:
+    # A literal text message is used directly; otherwise SARIF 2.1.0 §3.11.6 allows
+    # message.id (+ arguments) resolved against the rule's messageStrings, so id-based or
+    # localized scanner messages still produce evidence instead of collapsing to the title.
+    literal = _message_text(message)
+    if literal is not None:
+        return literal
+    if not isinstance(message, Mapping):
+        return None
+    msg_id = _str(message.get("id"))
+    if msg_id is None:
+        return None
+    template = _str(_dict_at(rule, "messageStrings", msg_id).get("text"))
+    if template is None:
+        return None
+    arguments = message.get("arguments")
+    return _substitute_arguments(template, arguments) if isinstance(arguments, list) else template
+
+
+def _substitute_arguments(template: str, arguments: list[object]) -> str:
+    # SARIF 2.1.0 §3.11.5: "{n}" -> arguments[n]; "{{" and "}}" are literal braces.
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token == "{{":
+            return "{"
+        if token == "}}":
+            return "}"
+        index = int(match.group(1))
+        return str(arguments[index]) if 0 <= index < len(arguments) else token
+
+    return re.sub(r"\{\{|\}\}|\{(\d+)\}", _replace, template)
 
 
 def _dict_at(raw: Mapping[str, Any], *path: str) -> dict[str, Any]:

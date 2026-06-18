@@ -87,7 +87,9 @@ class SarifObservationAdapter:
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
-        rule_id, rule = _resolve_rule(result, rules, driver_rules_list, extension_rules_lists, extensions)
+        rule_id, rule = _resolve_rule(
+            result, rules, driver_rules_list, extension_rules_lists, extensions
+        )
         if rule_id is None:
             return None
         message = _message_text(result.get("message"))

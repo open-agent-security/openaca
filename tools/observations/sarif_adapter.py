@@ -173,7 +173,7 @@ def _resolve_rule(
     rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
     if rule_id is None:
         return None, {}
-    return rule_id, rules.get(rule_id, {})
+    return rule_id, _rule_for_hierarchical_id(rule_id, rules)
 
 
 def _extension_rules_by_ref(
@@ -199,6 +199,23 @@ def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, 
         if rule_id is not None:
             rules[rule_id] = rule
     return rules
+
+
+def _rule_for_hierarchical_id(
+    rule_id: str, rules: Mapping[str, Mapping[str, Any]]
+) -> Mapping[str, Any]:
+    # SARIF 2.1.0 §3.52.4: a hierarchical reference id (e.g. "P1/sub") extends a base
+    # descriptor id. If the full id is not registered, fall back to the longest
+    # registered prefix so descriptor metadata (title, help, defaultConfiguration) is
+    # preserved instead of dropped.
+    if rule_id in rules:
+        return rules[rule_id]
+    parts = rule_id.split("/")
+    for end in range(len(parts) - 1, 0, -1):
+        prefix = "/".join(parts[:end])
+        if prefix in rules:
+            return rules[prefix]
+    return {}
 
 
 def _severity(

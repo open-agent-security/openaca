@@ -771,3 +771,49 @@ def test_sarif_adapter_honors_invocation_severity_override(tmp_path: Path) -> No
     # Without the provenance pointer, the rule defaultConfiguration ("note") applies -> low.
     defaulted = SarifObservationAdapter().collect(ref, _sarif(with_invocation_pointer=False))
     assert defaulted[0].severity == "low"
+
+
+def test_sarif_adapter_resolves_hierarchical_rule_id_to_base_descriptor_without_index(
+    tmp_path: Path,
+) -> None:
+    # SARIF 2.1.0 §3.52.4: a producer may emit a hierarchical result.ruleId ("P1/sub")
+    # while registering only the base descriptor ("P1") and omitting ruleIndex. The
+    # adapter must recover the base descriptor's metadata/level via longest-prefix match
+    # instead of dropping it (which would mis-severitize to the "warning" default).
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "SkillSpector",
+                        "rules": [
+                            {
+                                "id": "P1",
+                                "shortDescription": {"text": "Instruction override"},
+                                "defaultConfiguration": {"level": "error"},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "P1/ignore-instructions",
+                        "message": {"text": "Ignore prior instructions."},
+                    }
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    # Full hierarchical id remains the identity...
+    assert observation.observation_id == "P1/ignore-instructions"
+    # ...and the base descriptor's metadata + defaultConfiguration level are recovered
+    # ("error" -> high), not dropped to the "warning" default (-> medium).
+    assert observation.title == "Instruction override"
+    assert observation.severity == "high"

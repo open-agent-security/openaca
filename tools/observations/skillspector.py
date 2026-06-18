@@ -23,41 +23,85 @@ DEFAULT_TIMEOUT_SECONDS = 120.0
 RunCommand = Callable[[Sequence[str], float], subprocess.CompletedProcess[str]]
 
 _CATEGORY_MAP: dict[str, list[str]] = {
+    # Prompt Injection (P1-P8). Source: NVIDIA/SkillSpector README.
     "P1": ["prompt-injection"],
     "P2": ["prompt-injection"],
     "P3": ["prompt-injection"],
     "P4": ["prompt-injection"],
     "P5": ["prompt-injection"],
+    "P6": ["prompt-injection"],  # Direct Leakage
+    "P7": ["prompt-injection"],  # Indirect Extraction
+    "P8": ["prompt-injection"],  # Tool-Based Exfiltration
+    # Data Exfiltration (E1-E4). Source: NVIDIA/SkillSpector README.
     "E1": ["data-exfiltration"],
     "E2": ["data-exfiltration"],
     "E3": ["data-exfiltration"],
     "E4": ["data-exfiltration"],
+    # Privilege Escalation (PE1-PE3). Source: NVIDIA/SkillSpector README.
     "PE1": ["privilege-escalation"],
     "PE2": ["privilege-escalation"],
     "PE3": ["privilege-escalation"],
+    # Supply Chain (SC1-SC6). Source: NVIDIA/SkillSpector README.
     "SC1": ["supply-chain"],
     "SC2": ["supply-chain"],
     "SC3": ["supply-chain"],
     "SC4": ["supply-chain"],
     "SC5": ["supply-chain"],
     "SC6": ["supply-chain"],
-    # RA family: self-modification / restricted-action rules.
-    # Source: NVIDIA/SkillSpector README. RA2+ not yet mapped (descriptions unverified).
-    "RA1": ["excessive-agency"],
-    # AST family: abstract-syntax-tree code-execution rules.
-    # Source: NVIDIA/SkillSpector README. AST2–AST7 not yet mapped (descriptions unverified).
-    "AST1": ["unsafe-tool-use"],
-    "AST8": ["unsafe-tool-use"],
-    # TT family: tool-tampering / exfiltration-chain rules.
-    # Source: NVIDIA/SkillSpector README. TT1, TT2, TT4 not yet mapped (descriptions unverified).
-    "TT3": ["data-exfiltration"],
-    "TT5": ["prompt-injection"],
-    # YR family: YARA-rule matches (malware / webshell).
-    # Source: NVIDIA/SkillSpector README.
-    "YR1": ["supply-chain"],
-    "YR2": ["supply-chain"],
-    # Rule families not yet mapped — upstream rule descriptions unverified in this repo:
-    # EA, OH, P6–P8, MP, TM, TR, LP, TP — add entries once upstream table is confirmed.
+    # Excessive Agency (EA1-EA4). Source: NVIDIA/SkillSpector README.
+    "EA1": ["excessive-agency"],  # Unrestricted Tool Access
+    "EA2": ["excessive-agency"],  # Autonomous Decision Making
+    "EA3": ["excessive-agency"],  # Scope Creep
+    "EA4": ["excessive-agency"],  # Unbounded Resource Access
+    # Output Handling (OH1-OH3). Source: NVIDIA/SkillSpector README.
+    "OH1": ["prompt-injection"],  # Unvalidated Output Injection — injection via output
+    "OH2": ["data-exfiltration"],  # Cross-Context Output — data leaking across contexts
+    "OH3": ["data-exfiltration"],  # Unbounded Output — excessive data in output
+    # Memory Poisoning (MP1-MP3). Source: NVIDIA/SkillSpector README.
+    "MP1": ["prompt-injection"],  # Persistent Context Injection
+    "MP2": ["prompt-injection"],  # Context Window Stuffing
+    "MP3": ["prompt-injection"],  # Memory Manipulation
+    # Tool Misuse (TM1-TM3). Source: NVIDIA/SkillSpector README.
+    "TM1": ["unsafe-tool-use"],  # Tool Parameter Abuse
+    "TM2": ["unsafe-tool-use"],  # Chaining Abuse
+    "TM3": ["unsafe-tool-use"],  # Unsafe Defaults
+    # Rogue Agent (RA1-RA2). Source: NVIDIA/SkillSpector README.
+    "RA1": ["excessive-agency"],  # Self-Modification
+    "RA2": ["excessive-agency"],  # Session Persistence
+    # Trigger Abuse (TR1-TR3). Source: NVIDIA/SkillSpector README.
+    "TR1": ["excessive-agency"],  # Overly Broad Trigger — triggers beyond intended scope
+    "TR2": ["prompt-injection"],  # Shadow Command Trigger — hidden commands
+    "TR3": ["prompt-injection"],  # Keyword Baiting Trigger — baiting to override behavior
+    # Behavioral AST (AST1-AST8). Source: NVIDIA/SkillSpector README.
+    "AST1": ["unsafe-tool-use"],  # exec() Call
+    "AST2": ["unsafe-tool-use"],  # eval() Call
+    "AST3": ["unsafe-tool-use"],  # Dynamic Import
+    "AST4": ["unsafe-tool-use"],  # subprocess Call
+    "AST5": ["unsafe-tool-use"],  # os.system / exec-family
+    "AST6": ["unsafe-tool-use"],  # compile() Call
+    "AST7": ["unsafe-tool-use"],  # Dynamic getattr()
+    "AST8": ["unsafe-tool-use"],  # Dangerous Execution Chain
+    # Taint Tracking (TT1-TT5). Source: NVIDIA/SkillSpector README.
+    "TT1": ["data-exfiltration"],  # Direct Taint Flow
+    "TT2": ["data-exfiltration"],  # Variable-Mediated Taint Flow
+    "TT3": ["data-exfiltration"],  # Credential Exfiltration Chain
+    "TT4": ["data-exfiltration"],  # File Read to Network Exfiltration
+    "TT5": ["prompt-injection"],  # External Input to Code Execution
+    # YARA Signatures (YR1-YR4). Source: NVIDIA/SkillSpector README.
+    "YR1": ["supply-chain"],  # Malware Match
+    "YR2": ["supply-chain"],  # Webshell Match
+    "YR3": ["supply-chain"],  # Cryptominer Match
+    "YR4": ["supply-chain"],  # Hack Tool / Exploit Match
+    # MCP Least Privilege (LP1-LP4). Source: NVIDIA/SkillSpector README.
+    "LP1": ["privilege-escalation"],  # Underdeclared Capability
+    "LP2": ["privilege-escalation"],  # Wildcard Permission
+    "LP3": ["privilege-escalation"],  # Missing Permission Declaration
+    "LP4": ["privilege-escalation"],  # Overdeclared Permission
+    # MCP Tool Poisoning (TP1-TP4). Source: NVIDIA/SkillSpector README.
+    "TP1": ["prompt-injection"],  # Hidden Instructions
+    "TP2": ["prompt-injection"],  # Unicode Deception
+    "TP3": ["prompt-injection"],  # Parameter Description Injection
+    "TP4": ["unsafe-tool-use"],  # Description-Behavior Mismatch
 }
 
 _LEVEL_TO_SEVERITY: dict[str, Severity] = {

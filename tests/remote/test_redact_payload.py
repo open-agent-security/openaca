@@ -200,6 +200,56 @@ def test_redact_handles_posture_evidence() -> None:
     assert payload["posture_findings"][0]["evidence"]["transport"] == "http"
 
 
+def test_redact_handles_posture_evidence_list_items() -> None:
+    """allowed_tools is a list of strings; items with embedded absolute paths must be redacted."""
+    cfg = Path("/home/u/.claude")
+    payload = {
+        "asset_id": "ast_T",
+        "source": "endpoint",
+        "openaca_version": "0.1.0b5",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        "posture_findings": [
+            {
+                "rule_id": "openaca-posture-skill-executable-tool",
+                "evidence": {
+                    "allowed_tools": ["Bash(/home/u/.claude/skills/deploy/run.sh *)"],
+                    "manifest_path": "/home/u/.claude/skills/deploy/SKILL.md",
+                },
+            }
+        ],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    evidence = payload["posture_findings"][0]["evidence"]
+    assert evidence["allowed_tools"] == ["Bash(skills/deploy/run.sh *)"]
+    assert evidence["manifest_path"] == "skills/deploy/SKILL.md"
+
+
+def test_redact_posture_evidence_list_round_trip_contract() -> None:
+    """After redacting a posture finding with list-valued evidence, the contract must be satisfied."""
+    cfg = Path("/home/u/.claude")
+    payload = {
+        "asset_id": "ast_T",
+        "source": "endpoint",
+        "openaca_version": "0.1.0b5",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        "posture_findings": [
+            {
+                "rule_id": "openaca-posture-skill-executable-tool",
+                "evidence": {
+                    "allowed_tools": ["Bash(/home/u/scripts/deploy.sh *)", "Shell"],
+                    "manifest_path": "/home/u/.claude/skills/deploy/SKILL.md",
+                },
+            }
+        ],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    enforce_remote_upload_contract(payload)  # must not raise
+
+
 # --- contract enforcement: defense-in-depth ---------------------------------
 
 

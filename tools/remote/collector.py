@@ -394,11 +394,19 @@ def _redact_payload_for_remote(
         if not isinstance(evidence, dict):
             continue
         for key, value in list(evidence.items()):
-            if not isinstance(value, str):
-                continue
-            evidence[key] = _redact_property_value_for_remote(
-                value, config_dir=config_dir, project=project
-            )
+            if isinstance(value, str):
+                evidence[key] = _redact_property_value_for_remote(
+                    value, config_dir=config_dir, project=project
+                )
+            elif isinstance(value, list):
+                evidence[key] = [
+                    _redact_property_value_for_remote(
+                        item, config_dir=config_dir, project=project
+                    )
+                    if isinstance(item, str)
+                    else item
+                    for item in value
+                ]
 
     for finding in payload.get("observations", []) or []:
         if not isinstance(finding, dict):

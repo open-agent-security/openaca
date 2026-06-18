@@ -57,6 +57,10 @@ class SarifObservationAdapter:
             rules = _rules_by_id(driver_rules_list)
             for ext_rules in extension_rules_lists:
                 rules.update(_rules_by_id(ext_rules))
+            # SARIF 2.1.0 §3.52.3: a reportingDescriptorReference may locate a rule by guid
+            rules_by_guid = _rules_by_guid(driver_rules_list)
+            for ext_rules in extension_rules_lists:
+                rules_by_guid.update(_rules_by_guid(ext_rules))
             for result in _list_of_dicts(run.get("results")):
                 # SARIF 2.1.0: kind defaults to "fail"; skip non-finding evaluation states
                 if result.get("kind") in _NON_FINDING_KINDS:
@@ -65,6 +69,7 @@ class SarifObservationAdapter:
                     ref=ref,
                     result=result,
                     rules=rules,
+                    rules_by_guid=rules_by_guid,
                     driver_rules_list=driver_rules_list,
                     extension_rules_lists=extension_rules_lists,
                     extensions=extensions,
@@ -83,6 +88,7 @@ class SarifObservationAdapter:
         ref: ComponentRef,
         result: Mapping[str, Any],
         rules: Mapping[str, Mapping[str, Any]],
+        rules_by_guid: Mapping[str, Mapping[str, Any]],
         driver_rules_list: list[Mapping[str, Any]],
         extension_rules_lists: list[list[Mapping[str, Any]]],
         extensions: list[Mapping[str, Any]],
@@ -92,7 +98,7 @@ class SarifObservationAdapter:
         source_version: str,
     ) -> ObservationFinding | None:
         rule_id, rule = _resolve_rule(
-            result, rules, driver_rules_list, extension_rules_lists, extensions
+            result, rules, rules_by_guid, driver_rules_list, extension_rules_lists, extensions
         )
         if rule_id is None:
             return None
@@ -138,6 +144,7 @@ class SarifObservationAdapter:
 def _resolve_rule(
     result: Mapping[str, Any],
     rules: Mapping[str, Mapping[str, Any]],
+    rules_by_guid: Mapping[str, Mapping[str, Any]],
     driver_rules_list: list[Mapping[str, Any]],
     extension_rules_lists: list[list[Mapping[str, Any]]],
     extensions: list[Mapping[str, Any]],
@@ -171,9 +178,18 @@ def _resolve_rule(
             return rule_id, indexed_rule
     # Fall back to id-based lookup
     rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
-    if rule_id is None:
-        return None, {}
-    return rule_id, _rule_for_hierarchical_id(rule_id, rules)
+    if rule_id is not None:
+        return rule_id, _rule_for_hierarchical_id(rule_id, rules)
+    # SARIF 2.1.0 §3.52.3: a reference may locate the rule by guid instead of id/index.
+    # Resolve the descriptor by guid and use its (required) id as the observation identity.
+    rule_guid = _str(_dict_at(result, "rule").get("guid"))
+    if rule_guid is not None:
+        descriptor = rules_by_guid.get(rule_guid)
+        if descriptor is not None:
+            descriptor_id = _str(descriptor.get("id"))
+            if descriptor_id is not None:
+                return descriptor_id, descriptor
+    return None, {}
 
 
 def _extension_rules_by_ref(
@@ -198,6 +214,15 @@ def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, 
         rule_id = _str(rule.get("id"))
         if rule_id is not None:
             rules[rule_id] = rule
+    return rules
+
+
+def _rules_by_guid(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
+    rules: dict[str, Mapping[str, Any]] = {}
+    for rule in rules_list:
+        guid = _str(rule.get("guid"))
+        if guid is not None:
+            rules[guid] = rule
     return rules
 
 

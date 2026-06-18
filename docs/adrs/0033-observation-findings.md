@@ -1,6 +1,8 @@
 ---
-status: accepted
+status: superseded
 date: 2026-06-17
+supersedes: null
+superseded-by: 0034
 ---
 
 # ADR-0033: Separate scanner observations from advisories and posture

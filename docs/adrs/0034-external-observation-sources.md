@@ -1,6 +1,8 @@
 ---
 status: accepted
 date: 2026-06-18
+supersedes: 0033
+superseded-by: null
 ---
 
 # ADR-0034: Use external scanners as observation sources
@@ -20,6 +22,15 @@ evidence shape.
 OpenACA also has context those scanners do not own: Agent BOM identities,
 artifact coordinates, source provenance, component paths, advisory matching,
 posture findings, and downstream policy/evaluation history.
+
+## Supersedes ADR-0033
+
+This ADR carries forward ADR-0033's separation of observation findings from
+vulnerability advisories and posture findings unchanged; that three-family
+rationale remains the reference for *why* observations are a distinct family. It
+supersedes ADR-0033 only to (1) rename the canonical skill coordinate kind from
+`skill-tree-hash` to `skill-content-hash` (see Decision) and (2) record where
+external-scanner detection belongs.
 
 ## Decision
 

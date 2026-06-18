@@ -817,3 +817,45 @@ def test_sarif_adapter_resolves_hierarchical_rule_id_to_base_descriptor_without_
     # ("error" -> high), not dropped to the "warning" default (-> medium).
     assert observation.title == "Instruction override"
     assert observation.severity == "high"
+
+
+def test_sarif_adapter_resolves_guid_only_rule_reference(tmp_path: Path) -> None:
+    # SARIF 2.1.0 §3.52.3: a reportingDescriptorReference may locate a rule by guid
+    # instead of id/index. A guid-only result must still resolve (not be dropped), using
+    # the matched descriptor's id as the observation identity.
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "SkillSpector",
+                        "rules": [
+                            {
+                                "id": "P3",
+                                "guid": "11111111-2222-3333-4444-555555555555",
+                                "shortDescription": {"text": "Data exfiltration"},
+                                "defaultConfiguration": {"level": "error"},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "rule": {"guid": "11111111-2222-3333-4444-555555555555"},
+                        "message": {"text": "Sends data to an external host."},
+                    }
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    # Identity comes from the descriptor's id, not the guid.
+    assert observation.observation_id == "P3"
+    assert observation.title == "Data exfiltration"
+    assert observation.severity == "high"

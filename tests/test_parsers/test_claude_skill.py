@@ -39,9 +39,41 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     assert ref.source_locator == "$.frontmatter"
     assert ref.attributed_to is None
     coordinates = ref.extra["artifact_coordinates"]
-    assert coordinates[0]["kind"] == "content"
+    assert coordinates[0]["kind"] == "skill-tree-hash"
     assert coordinates[0]["algorithm"] == "sha256"
     assert coordinates[0]["value"].startswith("sha256:")
+
+
+def test_parse_skill_tree_hash_covers_supporting_files(tmp_path):
+    path = _write_skill(
+        tmp_path,
+        "deploy",
+        "name: deploy\ndescription: deploys services\n",
+    )
+    scripts = path.parent / "scripts"
+    scripts.mkdir()
+    helper = scripts / "deploy.py"
+    helper.write_text("print('v1')\n")
+
+    first = _artifact_coordinate_value(path)
+    helper.write_text("print('v2')\n")
+    second = _artifact_coordinate_value(path)
+
+    assert second != first
+
+
+def test_parse_skill_tree_hash_excludes_signature_file(tmp_path):
+    path = _write_skill(
+        tmp_path,
+        "deploy",
+        "name: deploy\ndescription: deploys services\n",
+    )
+
+    first = _artifact_coordinate_value(path)
+    (path.parent / "skill.sig").write_bytes(b"signature-bytes")
+    second = _artifact_coordinate_value(path)
+
+    assert second == first
 
 
 def test_parse_emits_ref_without_version_when_metadata_absent(tmp_path):
@@ -151,3 +183,13 @@ def test_parse_returns_empty_on_unreadable_file(tmp_path):
     fake.mkdir()
     (fake / "SKILL.md").mkdir()  # Directory where a file is expected.
     assert parse(fake / "SKILL.md") == []
+
+
+def _artifact_coordinate_value(path: Path) -> str:
+    refs = parse(path)
+    assert len(refs) == 1
+    coordinates = refs[0].extra["artifact_coordinates"]
+    assert isinstance(coordinates, list)
+    value = coordinates[0]["value"]
+    assert isinstance(value, str)
+    return value

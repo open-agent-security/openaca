@@ -7,6 +7,7 @@ first-run evidence without claiming a vulnerability verdict.
 
 from __future__ import annotations
 
+import re
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -96,7 +97,9 @@ def _read_frontmatter(path: Path) -> dict[str, Any]:
 def _allowed_tools(frontmatter: dict[str, Any]) -> set[str]:
     raw = frontmatter.get("allowed-tools")
     if isinstance(raw, str):
-        return {part.strip() for part in raw.split(",") if part.strip()}
+        # agentskills.io spec defines space-separated; Claude Code uses commas.
+        # Support both by splitting on any combination of commas and whitespace.
+        return {part for part in re.split(r"[\s,]+", raw) if part}
     if isinstance(raw, list):
         return {item for item in raw if isinstance(item, str) and item}
     return set()

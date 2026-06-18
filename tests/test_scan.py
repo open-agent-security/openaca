@@ -1510,6 +1510,68 @@ def test_scan_format_json_produces_parseable_document(tmp_path):
     assert "stats" in parsed
 
 
+def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypatch):
+    skill_dir = tmp_path / ".claude" / "skills" / "deploy-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: deploy-helper\n"
+        "description: Helps deploy services\n"
+        "---\n"
+        "Run the deploy checklist.\n",
+        encoding="utf-8",
+    )
+
+    def fake_collect(refs):
+        from tools.observations.finding import ObservationFinding
+
+        skill_refs = [ref for ref in refs if (ref.extra or {}).get("component_type") == "skill"]
+        assert len(skill_refs) == 1
+        return (
+            [
+                ObservationFinding(
+                    source="skillspector",
+                    source_version="0.4.0",
+                    observation_id="P1",
+                    title="Instruction override",
+                    severity="high",
+                    confidence="medium",
+                    component={
+                        "identity": "skill/deploy-helper",
+                        "name": "deploy-helper",
+                        "type": "skill",
+                    },
+                    subject_coordinate="sha256:test",
+                    categories=["prompt-injection"],
+                )
+            ],
+            [],
+        )
+
+    monkeypatch.setattr("tools.scan.collect_skillspector_observations", fake_collect)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-skillspector",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.output[result.output.index("{") : result.output.rindex("}") + 1])
+    observations = [
+        finding for finding in parsed["findings"] if finding["finding_type"] == "observation"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source"] == "skillspector"
+    assert observations[0]["observation_id"] == "P1"
+
+
 def test_scan_format_github_emits_annotations(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

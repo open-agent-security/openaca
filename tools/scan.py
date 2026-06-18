@@ -50,7 +50,11 @@ from tools.bom import (
 )
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
-from tools.observations import ObservationFinding, collect_skill_observations
+from tools.observations import (
+    ObservationFinding,
+    collect_skill_observations,
+    collect_skillspector_observations,
+)
 from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
@@ -100,6 +104,20 @@ def _is_plugin_ref(ref: ComponentRef) -> bool:
     return _component_type(ref) == "plugin" and bool(
         ref.component_identity and ref.component_identity.startswith("plugin/")
     )
+
+
+def _collect_observations(
+    refs: list[ComponentRef],
+    *,
+    include_skillspector: bool,
+) -> list[ObservationFinding]:
+    observations = collect_skill_observations(refs)
+    if not include_skillspector:
+        return observations
+    skillspector_observations, warnings = collect_skillspector_observations(refs)
+    for warning in warnings:
+        click.echo(f"warning: {warning}", err=True)
+    return [*observations, *skillspector_observations]
 
 
 def _component_label(ref: ComponentRef) -> str:
@@ -253,6 +271,15 @@ _include_posture_option = click.option(
         "mutable install refs, insecure transport, endpoint overrides, MCP auto-approval). "
         "These are distinct from vulnerability findings and never affect "
         "--fail-on exit codes."
+    ),
+)
+_include_skillspector_option = click.option(
+    "--include-skillspector",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run the installed SkillSpector CLI against discovered skills and include "
+        "its SARIF output as source-attributed observations."
     ),
 )
 _bom_input_option = click.option(
@@ -493,6 +520,7 @@ def _stderr_summary(
 @_format_option
 @_no_color_option
 @_include_posture_option
+@_include_skillspector_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -512,6 +540,7 @@ def repo(
     output_format: str,
     no_color: bool,
     include_posture: bool,
+    include_skillspector: bool,
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-component manifests committed in a repository.
@@ -549,7 +578,7 @@ def repo(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
-    observations = collect_skill_observations(refs)
+    observations = _collect_observations(refs, include_skillspector=include_skillspector)
 
     posture_findings: list[PostureFinding] = []
     if include_posture:
@@ -672,6 +701,7 @@ def repo(
 @_format_option
 @_no_color_option
 @_include_posture_option
+@_include_skillspector_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
@@ -682,6 +712,7 @@ def endpoint(
     output_format: str,
     no_color: bool,
     include_posture: bool,
+    include_skillspector: bool,
 ) -> None:
     """Scan the active agent composition installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
@@ -718,7 +749,7 @@ def endpoint(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
-    observations = collect_skill_observations(refs)
+    observations = _collect_observations(refs, include_skillspector=include_skillspector)
 
     posture_findings: list[PostureFinding] = []
     if include_posture:

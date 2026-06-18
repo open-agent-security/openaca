@@ -3,7 +3,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from tools.observations.skillspector import collect_skillspector_observations
+from tools.observations.skillspector import collect_skillspector_findings
 from tools.parsers.claude_skill import parse
 
 
@@ -68,7 +68,9 @@ def test_skillspector_collects_sarif_observations_even_when_cli_exits_nonzero(
         )
         return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
+    warnings = result.warnings
 
     assert warnings == []
     assert len(observations) == 1
@@ -118,7 +120,9 @@ def test_skillspector_prefixes_relative_artifact_uris(tmp_path: Path) -> None:
         )
         return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
+    warnings = result.warnings
 
     assert warnings == []
     assert len(observations) == 1
@@ -162,7 +166,9 @@ def test_skillspector_does_not_prefix_absolute_uris(tmp_path: Path) -> None:
         )
         return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
+    warnings = result.warnings
 
     assert warnings == []
     assert len(observations) == 1
@@ -230,7 +236,9 @@ def test_skillspector_critical_rules_reported_as_critical(tmp_path: Path) -> Non
         )
         return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
+    warnings = result.warnings
 
     assert warnings == []
     assert len(observations) == 2
@@ -296,7 +304,8 @@ def test_skillspector_verified_rule_family_categories(tmp_path: Path) -> None:
         )
         return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="")
 
-    observations, _ = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
     by_rule = {obs.observation_id: obs for obs in observations}
 
     assert by_rule["RA1"].categories == ["excessive-agency"]
@@ -359,14 +368,21 @@ def test_skillspector_complete_rule_family_categories(tmp_path: Path) -> None:
         )
         return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+    observations = result.observations
+    posture_findings = result.posture_findings
+    warnings = result.warnings
     assert warnings == []
     by_rule = {obs.observation_id: obs for obs in observations}
+    posture_by_rule = {finding.rule_id: finding for finding in posture_findings}
 
     for rule_id, _level, expected_category in rule_cases:
-        assert by_rule[rule_id].categories == [expected_category], (
-            f"{rule_id}: expected [{expected_category!r}], got {by_rule[rule_id].categories!r}"
-        )
+        if rule_id.startswith("LP"):
+            assert posture_by_rule[rule_id].evidence["categories"] == [expected_category]
+        else:
+            assert by_rule[rule_id].categories == [expected_category], (
+                f"{rule_id}: expected [{expected_category!r}], got {by_rule[rule_id].categories!r}"
+            )
 
 
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
@@ -375,7 +391,9 @@ def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     def missing_run(_args: Sequence[str], _timeout: float) -> subprocess.CompletedProcess[str]:
         raise FileNotFoundError("skillspector")
 
-    observations, warnings = collect_skillspector_observations([ref], run_command=missing_run)
+    result = collect_skillspector_findings([ref], run_command=missing_run)
+    observations = result.observations
+    warnings = result.warnings
 
     assert observations == []
     assert warnings == ["SkillSpector command not found: skillspector"]

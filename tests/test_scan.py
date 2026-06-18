@@ -1510,7 +1510,7 @@ def test_scan_format_json_produces_parseable_document(tmp_path):
     assert "stats" in parsed
 
 
-def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypatch):
+def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch):
     skill_dir = tmp_path / ".claude" / "skills" / "deploy-helper"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
@@ -1524,11 +1524,13 @@ def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypa
 
     def fake_collect(refs):
         from tools.observations.finding import ObservationFinding
+        from tools.observations.skillspector import SkillSpectorFindings
+        from tools.posture.finding import PostureFinding, Standards
 
         skill_refs = [ref for ref in refs if (ref.extra or {}).get("component_type") == "skill"]
         assert len(skill_refs) == 1
-        return (
-            [
+        return SkillSpectorFindings(
+            observations=[
                 ObservationFinding(
                     source="skillspector",
                     source_version="0.4.0",
@@ -1545,10 +1547,31 @@ def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypa
                     categories=["prompt-injection"],
                 )
             ],
-            [],
+            posture_findings=[
+                PostureFinding(
+                    source="skillspector",
+                    source_version="0.4.0",
+                    rule_id="LP2",
+                    title="Wildcard permission",
+                    severity="medium",
+                    confidence="medium",
+                    component={
+                        "identity": "skill/deploy-helper",
+                        "name": "deploy-helper",
+                        "type": "skill",
+                    },
+                    active_in=[],
+                    declared_by={"kind": "sarif", "path": "SKILL.md"},
+                    component_path=[{"type": "skill", "name": "skill/deploy-helper"}],
+                    standards=Standards(),
+                    remediation="Review the declared permission.",
+                    evidence={"sarif_rule_id": "LP2"},
+                )
+            ],
+            warnings=[],
         )
 
-    monkeypatch.setattr("tools.scan.collect_skillspector_observations", fake_collect)
+    monkeypatch.setattr("tools.scan.collect_skillspector_findings", fake_collect)
 
     result = CliRunner().invoke(
         main,
@@ -1556,7 +1579,8 @@ def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypa
             "repo",
             "--target",
             str(tmp_path),
-            "--include-skillspector",
+            "--scanner",
+            "nvidia-skillspector",
             "--format",
             "json",
         ],
@@ -1570,6 +1594,10 @@ def test_repo_include_skillspector_adds_external_observations(tmp_path, monkeypa
     assert len(observations) == 1
     assert observations[0]["source"] == "skillspector"
     assert observations[0]["observation_id"] == "P1"
+    posture = [finding for finding in parsed["findings"] if finding["finding_type"] == "posture"]
+    assert len(posture) == 1
+    assert posture[0]["source"] == "skillspector"
+    assert posture[0]["rule_id"] == "LP2"
 
 
 def test_scan_format_github_emits_annotations(tmp_path):

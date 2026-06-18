@@ -1,8 +1,8 @@
 """Optional SkillSpector integration.
 
 SkillSpector is consumed through its CLI/SARIF contract rather than imported as
-a Python dependency. That keeps OpenACA's default install small and preserves a
-clean source-attributed observation boundary.
+a Python dependency. That keeps OpenACA's default install small and preserves
+source attribution while classifying each scanner rule by claim type.
 """
 
 from __future__ import annotations
@@ -11,11 +11,20 @@ import json
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 from tools.component_ref import ComponentRef, canonical_component_identity
-from tools.observations.finding import Confidence, ObservationFinding, Severity
+from tools.observations.finding import (
+    Confidence,
+    ObservationFinding,
+)
+from tools.observations.finding import (
+    Severity as ObservationSeverity,
+)
+from tools.posture.finding import PostureFinding, Standards
+from tools.posture.finding import Severity as PostureSeverity
 
 DEFAULT_COMMAND = "skillspector"
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -105,7 +114,7 @@ _CATEGORY_MAP: dict[str, list[str]] = {
     "TP4": ["unsafe-tool-use"],  # Description-Behavior Mismatch
 }
 
-_LEVEL_TO_SEVERITY: dict[str, Severity] = {
+_LEVEL_TO_SEVERITY: dict[str, ObservationSeverity] = {
     "error": "high",
     "warning": "medium",
     "note": "low",
@@ -117,7 +126,7 @@ _LEVEL_TO_SEVERITY: dict[str, Severity] = {
 # to level="error"; entries here inject openaca_severity so the adapter emits
 # "critical" instead of "high".
 # Source: NVIDIA/SkillSpector README vulnerability-pattern table.
-_SEVERITY_MAP: dict[str, Severity] = {
+_SEVERITY_MAP: dict[str, ObservationSeverity] = {
     "P5": "critical",
     "RA1": "critical",
     "AST1": "critical",
@@ -128,15 +137,28 @@ _SEVERITY_MAP: dict[str, Severity] = {
     "YR2": "critical",
 }
 
+# SkillSpector least-privilege rules are claims about declared permission and
+# capability hygiene, so they are posture under ADR-0035. Other SkillSpector
+# rules currently observed by this adapter are content/behavior claims.
+_POSTURE_RULE_IDS = frozenset({"LP1", "LP2", "LP3", "LP4"})
 
-def collect_skillspector_observations(
+
+@dataclass(frozen=True)
+class SkillSpectorFindings:
+    observations: list[ObservationFinding] = field(default_factory=list)
+    posture_findings: list[PostureFinding] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def collect_skillspector_findings(
     refs: list[ComponentRef],
     *,
     command: str = DEFAULT_COMMAND,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     run_command: RunCommand | None = None,
-) -> tuple[list[ObservationFinding], list[str]]:
+) -> SkillSpectorFindings:
     observations: list[ObservationFinding] = []
+    posture_findings: list[PostureFinding] = []
     warnings: list[str] = []
     runner = run_command or _run_command
 
@@ -159,7 +181,11 @@ def collect_skillspector_observations(
             try:
                 result = runner(args, timeout_seconds)
             except FileNotFoundError:
-                return observations, [f"SkillSpector command not found: {command}"]
+                return SkillSpectorFindings(
+                    observations=observations,
+                    posture_findings=posture_findings,
+                    warnings=[f"SkillSpector command not found: {command}"],
+                )
             except subprocess.TimeoutExpired:
                 warnings.append(f"SkillSpector timed out for {scan_path}")
                 continue
@@ -172,9 +198,31 @@ def collect_skillspector_observations(
                     )
                 continue
             _apply_severity_overrides(sarif, _SEVERITY_MAP)
-            observations.extend(_observations_from_sarif(ref, sarif, scan_path))
+            ref_findings = _findings_from_sarif(ref, sarif, scan_path)
+            observations.extend(ref_findings.observations)
+            posture_findings.extend(ref_findings.posture_findings)
 
-    return observations, warnings
+    return SkillSpectorFindings(
+        observations=observations,
+        posture_findings=posture_findings,
+        warnings=warnings,
+    )
+
+
+def collect_skillspector_observations(
+    refs: list[ComponentRef],
+    *,
+    command: str = DEFAULT_COMMAND,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    run_command: RunCommand | None = None,
+) -> tuple[list[ObservationFinding], list[str]]:
+    result = collect_skillspector_findings(
+        refs,
+        command=command,
+        timeout_seconds=timeout_seconds,
+        run_command=run_command,
+    )
+    return result.observations, result.warnings
 
 
 def _run_command(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
@@ -205,43 +253,47 @@ def _read_sarif(path: Path) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _observations_from_sarif(
+def _findings_from_sarif(
     ref: ComponentRef,
     sarif: dict[str, Any],
     scan_path: Path,
-) -> list[ObservationFinding]:
+) -> SkillSpectorFindings:
     observations: list[ObservationFinding] = []
+    posture_findings: list[PostureFinding] = []
     for run in _list_of_dicts(sarif.get("runs")):
         driver = _dict_at(run, "tool", "driver")
         source_version = (
             _str(driver.get("semanticVersion")) or _str(driver.get("version")) or "unknown"
         )
         for result in _list_of_dicts(run.get("results")):
-            observation = _observation_from_result(ref, result, scan_path, source_version)
+            rule_id = _result_rule_id(result)
+            if rule_id is None:
+                continue
+            if rule_id in _POSTURE_RULE_IDS:
+                posture = _posture_from_result(ref, result, rule_id, scan_path, source_version)
+                if posture is not None:
+                    posture_findings.append(posture)
+                continue
+            observation = _observation_from_result(ref, result, rule_id, scan_path, source_version)
             if observation is not None:
                 observations.append(observation)
-    return observations
+    return SkillSpectorFindings(
+        observations=observations,
+        posture_findings=posture_findings,
+    )
 
 
 def _observation_from_result(
     ref: ComponentRef,
     result: dict[str, Any],
+    rule_id: str,
     scan_path: Path,
     source_version: str,
 ) -> ObservationFinding | None:
-    rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
-    if rule_id is None:
-        return None
     message = _message_text(result.get("message")) or rule_id
     location = _first_location(result, scan_path)
     declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
-    evidence = {
-        "sarif_rule_id": rule_id,
-        **({"sarif_level": result.get("level")} if isinstance(result.get("level"), str) else {}),
-        "sarif_message": message,
-        **({"location_uri": location["uri"]} if "uri" in location else {}),
-        **({"start_line": location["start_line"]} if "start_line" in location else {}),
-    }
+    evidence = _evidence_for_result(result, rule_id, message, location)
     identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
     return ObservationFinding(
         source="skillspector",
@@ -263,10 +315,65 @@ def _observation_from_result(
     )
 
 
-def _severity(result: dict[str, Any]) -> Severity:
+def _posture_from_result(
+    ref: ComponentRef,
+    result: dict[str, Any],
+    rule_id: str,
+    scan_path: Path,
+    source_version: str,
+) -> PostureFinding | None:
+    message = _message_text(result.get("message")) or rule_id
+    location = _first_location(result, scan_path)
+    declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
+    evidence = _evidence_for_result(result, rule_id, message, location)
+    categories = _CATEGORY_MAP.get(rule_id, [])
+    if categories:
+        evidence["categories"] = list(categories)
+    identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
+    return PostureFinding(
+        source="skillspector",
+        source_version=source_version,
+        rule_id=rule_id,
+        title=message,
+        severity=_posture_severity(result),
+        confidence=_confidence(result),
+        component={
+            "identity": identity,
+            "name": ref.name or identity,
+            "type": str((ref.extra or {}).get("component_type") or "component"),
+        },
+        active_in=_active_in(ref),
+        declared_by=declared_by,
+        component_path=_component_path(ref),
+        standards=Standards(),
+        remediation=message,
+        evidence=evidence,
+    )
+
+
+def _evidence_for_result(
+    result: dict[str, Any],
+    rule_id: str,
+    message: str,
+    location: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "sarif_rule_id": rule_id,
+        **({"sarif_level": result.get("level")} if isinstance(result.get("level"), str) else {}),
+        "sarif_message": message,
+        **({"location_uri": location["uri"]} if "uri" in location else {}),
+        **({"start_line": location["start_line"]} if "start_line" in location else {}),
+    }
+
+
+def _result_rule_id(result: dict[str, Any]) -> str | None:
+    return _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+
+
+def _severity(result: dict[str, Any]) -> ObservationSeverity:
     explicit = _first_string_property(result, "openaca_severity", "severity")
     if explicit in {"info", "low", "medium", "high", "critical"}:
-        return cast(Severity, explicit)
+        return cast(ObservationSeverity, explicit)
     score = _first_string_property(result, "security-severity", "security_severity")
     if score is not None:
         try:
@@ -285,6 +392,15 @@ def _severity(result: dict[str, Any]) -> Severity:
             return "info"
     level = _str(result.get("level")) or "warning"
     return _LEVEL_TO_SEVERITY.get(level, "medium")
+
+
+def _posture_severity(result: dict[str, Any]) -> PostureSeverity:
+    severity = _severity(result)
+    if severity == "critical":
+        return "high"
+    if severity == "info":
+        return "low"
+    return cast(PostureSeverity, severity)
 
 
 def _confidence(result: dict[str, Any]) -> Confidence:
@@ -351,7 +467,16 @@ def _is_absolute_uri(uri: str) -> bool:
     return uri.startswith(("/", "file://", "http://", "https://"))
 
 
-def _apply_severity_overrides(sarif: dict[str, Any], severity_map: dict[str, Severity]) -> None:
+def _active_in(ref: ComponentRef) -> list[str]:
+    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
+    if isinstance(runtime_hosts, list):
+        return [h for h in runtime_hosts if isinstance(h, str)]
+    return []
+
+
+def _apply_severity_overrides(
+    sarif: dict[str, Any], severity_map: dict[str, ObservationSeverity]
+) -> None:
     if not severity_map:
         return
     for run in _list_of_dicts(sarif.get("runs")):

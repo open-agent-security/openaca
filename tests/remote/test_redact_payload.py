@@ -227,7 +227,7 @@ def test_redact_handles_posture_evidence_list_items() -> None:
 
 
 def test_redact_posture_evidence_list_round_trip_contract() -> None:
-    """After redacting a posture finding with list-valued evidence, the contract must be satisfied."""
+    """After redacting list-valued posture evidence, the upload contract must be satisfied."""
     cfg = Path("/home/u/.claude")
     payload = {
         "asset_id": "ast_T",

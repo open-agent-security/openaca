@@ -19,7 +19,9 @@ the caller decides which by passing or omitting the kwarg.
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
+import os
+import unicodedata
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 import yaml
@@ -29,8 +31,7 @@ from tools.component_ref import ComponentRef
 
 def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[ComponentRef]:
     try:
-        raw = skill_md_path.read_bytes()
-        text = raw.decode("utf-8")
+        text = skill_md_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
     frontmatter = _extract_frontmatter(text)
@@ -50,6 +51,10 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
     identity = f"skill/{name}"
     if version:
         identity = f"{identity}@{version}"
+    extra: dict[str, object] = {"component_type": "skill"}
+    coordinate = _skill_tree_coordinate(skill_md_path.parent)
+    if coordinate is not None:
+        extra["artifact_coordinates"] = [coordinate]
     return [
         ComponentRef(
             name=name,
@@ -58,16 +63,7 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
             source_manifest=str(skill_md_path),
             source_locator="$.frontmatter",
             attributed_to=attributed_to,
-            extra={
-                "component_type": "skill",
-                "artifact_coordinates": [
-                    {
-                        "kind": "content",
-                        "algorithm": "sha256",
-                        "value": f"sha256:{hashlib.sha256(raw).hexdigest()}",
-                    }
-                ],
-            },
+            extra=extra,
         )
     ]
 
@@ -100,3 +96,66 @@ def _extract_version(frontmatter: dict) -> Optional[str]:
     if isinstance(version, str) and version:
         return version
     return None
+
+
+def _skill_tree_coordinate(skill_dir: Path) -> dict[str, str] | None:
+    digest = _skill_tree_hash(skill_dir)
+    if digest is None:
+        return None
+    return {
+        "kind": "skill-tree-hash",
+        "algorithm": "sha256",
+        "value": f"sha256:{digest}",
+    }
+
+
+def _skill_tree_hash(skill_dir: Path) -> str | None:
+    tree_entries: list[tuple[str, str, str]] = []
+    try:
+        paths = list(skill_dir.rglob("*"))
+    except OSError:
+        return None
+
+    for path in paths:
+        rel_path = _normalize_skill_path(path.relative_to(skill_dir).as_posix())
+        if not rel_path or rel_path == "skill.sig":
+            continue
+        try:
+            if path.is_symlink():
+                entry_type = "file"
+                content = _symlink_content(path, skill_dir)
+            elif path.is_dir():
+                entry_type = "dir"
+                content = b""
+            elif path.is_file():
+                entry_type = "file"
+                content = path.read_bytes()
+            else:
+                continue
+        except OSError:
+            return None
+        content_hash = hashlib.sha256(content).hexdigest()
+        tree_entries.append((entry_type, rel_path, content_hash))
+
+    tree_entries.sort(key=lambda item: item[1].encode("utf-8"))
+    hasher = hashlib.sha256()
+    for entry_type, path, content_hash in tree_entries:
+        hasher.update(f"{entry_type}\0{path}\0{content_hash}\n".encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def _normalize_skill_path(path: str) -> str:
+    normalized = path.replace("\\", "/")
+    normalized = unicodedata.normalize("NFC", normalized)
+    normalized = str(PurePosixPath(normalized))
+    while normalized.startswith("./") or normalized.startswith("/"):
+        normalized = normalized[2:] if normalized.startswith("./") else normalized[1:]
+    return "" if normalized == "." else normalized
+
+
+def _symlink_content(path: Path, skill_dir: Path) -> bytes:
+    target = path.resolve(strict=False)
+    root = skill_dir.resolve(strict=False)
+    if target.is_relative_to(root) and target.is_file():
+        return target.read_bytes()
+    return os.readlink(path).encode("utf-8")

@@ -43,8 +43,11 @@ The three evidence families are:
    advisory records.
 
 Skill artifact coordinates are first-class because they support deduplication,
-change detection, provenance, audit history, and policy exceptions. Advisory
-lookup by those coordinates is optional future upside, not the primary purpose.
+change detection, provenance, audit history, and policy exceptions. OpenACA
+will use one canonical skill artifact coordinate: a deterministic
+`skill-tree-hash` over the normalized skill directory, not a `SKILL.md`-only
+file hash. Advisory lookup by those coordinates is optional future upside, not
+the primary purpose.
 
 ## Consequences
 

@@ -337,3 +337,52 @@ def test_sarif_emits_observation_rule_and_result():
     )
     assert result["properties"]["finding_type"] == "observation"
     assert result["properties"]["subject_coordinate"] == "sha256:abc123"
+
+
+def test_sarif_observation_result_carries_evidence_and_categories():
+    """Observation results must include evidence and categories in SARIF properties so
+    code-scanning consumers can see which allowed_tools triggered the result."""
+    observation = ObservationFinding(
+        source="openaca-skill-audit",
+        source_version="0.2.0b1",
+        observation_id="skill.allowed-executable-tool",
+        title="Skill declares executable tool access",
+        severity="low",
+        confidence="high",
+        component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
+        subject_coordinate="sha256:abc123",
+        evidence={"allowed_tools": ["Bash(git:*)"], "source_manifest": "skills/deploy/SKILL.md"},
+        categories=["skill-capability", "ASI04"],
+        declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
+    )
+
+    doc = to_sarif([], {}, observations=[observation])
+    result = doc["runs"][0]["results"][0]
+
+    props = result["properties"]
+    assert props["evidence"] == {
+        "allowed_tools": ["Bash(git:*)"],
+        "source_manifest": "skills/deploy/SKILL.md",
+    }
+    assert props["categories"] == ["skill-capability", "ASI04"]
+
+
+def test_sarif_observation_result_omits_empty_evidence_and_categories():
+    """When evidence and categories are empty, they should be omitted from properties."""
+    observation = ObservationFinding(
+        source="openaca-skill-audit",
+        source_version="0.2.0b1",
+        observation_id="skill.allowed-executable-tool",
+        title="Skill declares executable tool access",
+        severity="low",
+        confidence="high",
+        component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
+        subject_coordinate="sha256:abc123",
+    )
+
+    doc = to_sarif([], {}, observations=[observation])
+    result = doc["runs"][0]["results"][0]
+
+    props = result["properties"]
+    assert "evidence" not in props
+    assert "categories" not in props

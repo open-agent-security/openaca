@@ -1004,6 +1004,37 @@ def test_redact_payload_redacts_embedded_absolute_path_in_bash_filter(tmp_path):
     assert evidence["allowed_tools"][1] == "Read"
 
 
+def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
+    """URLs embedded inside Bash filter syntax must be preserved (host-only) not corrupted.
+    `Bash(curl https://api.example.com/mcp *)` should become
+    `Bash(curl https://api.example.com *)` — URL path stripped, not mangled to `https:mcp`.
+    """
+    from tools.remote.collector import _redact_payload_for_remote
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [],
+        "observations": [
+            {
+                "source": "openaca-skill-audit",
+                "observation_id": "skill.allowed-executable-tool",
+                "evidence": {
+                    "allowed_tools": ["Bash(curl https://api.example.com/mcp *)", "Read"],
+                },
+            }
+        ],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    evidence = payload["observations"][0]["evidence"]
+    tool = evidence["allowed_tools"][0]
+    assert tool == "Bash(curl https://api.example.com *)", tool
+    assert evidence["allowed_tools"][1] == "Read"
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

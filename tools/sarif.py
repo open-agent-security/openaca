@@ -242,6 +242,10 @@ def to_sarif(
                         "source_version": observation.source_version,
                         "confidence": observation.confidence,
                         "subject_coordinate": observation.subject_coordinate,
+                        **({"evidence": observation.evidence} if observation.evidence else {}),
+                        **(
+                            {"categories": observation.categories} if observation.categories else {}
+                        ),
                     },
                 }
             )

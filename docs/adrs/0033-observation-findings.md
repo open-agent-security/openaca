@@ -54,8 +54,8 @@ the primary purpose.
 - OpenACA overlays remain conservative and score-free.
 - Observation sources can be added incrementally behind a common normalized
   shape.
-- Cloud can persist and policy-evaluate observations without mixing them into
-  vulnerability counts.
+- Downstream consumers can persist and policy-evaluate observations without
+  mixing them into vulnerability counts.
 - False positives are contained by attribution and confidence instead of being
   laundered into OpenACA-owned verdicts.
 

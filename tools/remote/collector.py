@@ -400,9 +400,7 @@ def _redact_payload_for_remote(
                 )
             elif isinstance(value, list):
                 evidence[key] = [
-                    _redact_property_value_for_remote(
-                        item, config_dir=config_dir, project=project
-                    )
+                    _redact_property_value_for_remote(item, config_dir=config_dir, project=project)
                     if isinstance(item, str)
                     else item
                     for item in value

@@ -137,10 +137,14 @@ _SEVERITY_MAP: dict[str, ObservationSeverity] = {
     "YR2": "critical",
 }
 
-# SkillSpector least-privilege rules are claims about declared permission and
-# capability hygiene, so they are posture under ADR-0035. Other SkillSpector
-# rules currently observed by this adapter are content/behavior claims.
-_POSTURE_RULE_IDS = frozenset({"LP1", "LP2", "LP3", "LP4"})
+# Posture = declarative configuration / permission / provenance hygiene claims; these
+# route to PostureFinding under ADR-0035. The rest are content/behavior claims
+# (observations). LP1-LP4: declared permission/capability hygiene. SC1/SC5/SC6: dependency
+# provenance hygiene (unpinned, abandoned, typosquatting declarations). SC2/SC3 (remote
+# code execution, obfuscated code) stay observations — they describe artifact behavior,
+# not the declaration. SC4 (known-vulnerable dependency / CVE match) is an advisory claim,
+# not handled here; OpenACA's own OSV path owns dependency vulnerabilities.
+_POSTURE_RULE_IDS = frozenset({"LP1", "LP2", "LP3", "LP4", "SC1", "SC5", "SC6"})
 
 
 @dataclass(frozen=True)

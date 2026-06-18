@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import socket
 import time
 from dataclasses import dataclass
@@ -158,6 +159,12 @@ def collect_endpoint(
         raise CollectError(str(exc)) from exc
 
 
+# Unix absolute path segment embedded within a larger string (e.g. inside Bash filter syntax).
+# Matches a `/` preceded by a character that is not itself `/` or a word character,
+# ensuring paths like `@scope/pkg` or `mcp-server/name` are not flagged.
+_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w])(/[^\s,)]*)")
+
+
 def _is_absolute_path(value: str) -> bool:
     if value.startswith("/"):
         return True
@@ -274,6 +281,25 @@ def _redact_json_node_for_remote(
     return node
 
 
+def _redact_embedded_unix_paths(
+    value: str,
+    *,
+    config_dir: Path,
+    project: Path | None,
+) -> str:
+    """Redact Unix absolute paths embedded within a larger string.
+
+    Handles values like `Bash(/Users/alice/.claude/skills/deploy/run.sh *)` by
+    replacing each embedded path segment with its relativized or basename-only form,
+    preserving the surrounding structure (e.g. `Bash(run.sh *)`).
+    """
+
+    def _replace(m: re.Match) -> str:  # type: ignore[type-arg]
+        return _relativize_path_for_remote(m.group(0), config_dir=config_dir, project=project)
+
+    return _EMBEDDED_UNIX_PATH_RE.sub(_replace, value)
+
+
 def _redact_property_value_for_remote(
     value: str,
     *,
@@ -287,6 +313,8 @@ def _redact_property_value_for_remote(
     - Plain http(s) URLs with path/query/fragment or userinfo → bare scheme://host.
     - JSON-encoded dicts/lists → recursively redact string leaves that are
       absolute paths or URLs with paths.
+    - Strings containing embedded Unix absolute paths (e.g. Bash filter syntax) →
+      relativize the embedded path segment, preserve surrounding structure.
     """
     if _is_absolute_path(value):
         return _relativize_path_for_remote(value, config_dir=config_dir, project=project)
@@ -299,6 +327,8 @@ def _redact_property_value_for_remote(
             return value
         redacted = _redact_json_node_for_remote(parsed, config_dir=config_dir, project=project)
         return json.dumps(redacted, sort_keys=True)
+    if _EMBEDDED_UNIX_PATH_RE.search(value):
+        return _redact_embedded_unix_paths(value, config_dir=config_dir, project=project)
     return value
 
 

@@ -380,6 +380,101 @@ def test_sarif_adapter_raw_tags_stay_in_evidence_not_categories(tmp_path: Path) 
     assert observation.evidence["sarif_tags"] == ["security", "external/cwe/CWE-77"]
 
 
+def test_sarif_adapter_skips_pass_kind_results(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {"id": "CHECK-001", "shortDescription": {"text": "Check passed"}}
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "CHECK-001",
+                        "kind": "pass",
+                        "message": {"text": "This check passed."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    # SARIF kind "pass" is not a security finding — must be filtered out
+    assert observations == []
+
+
+def test_sarif_adapter_skips_not_applicable_kind_results(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {"id": "N/A-001", "shortDescription": {"text": "Not applicable"}}
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "N/A-001",
+                        "kind": "notApplicable",
+                        "message": {"text": "Rule did not apply."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    # SARIF kind "notApplicable" is not a security finding — must be filtered out
+    assert observations == []
+
+
+def test_sarif_adapter_only_emits_findings_from_mixed_kinds(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {"id": "RULE-FAIL", "shortDescription": {"text": "Failing rule"}},
+                            {"id": "RULE-PASS", "shortDescription": {"text": "Passing rule"}},
+                            {"id": "RULE-NA", "shortDescription": {"text": "N/A rule"}},
+                        ],
+                    }
+                },
+                "results": [
+                    {"ruleId": "RULE-FAIL", "kind": "fail", "message": {"text": "Actual finding."}},
+                    {"ruleId": "RULE-PASS", "kind": "pass", "message": {"text": "Check passed."}},
+                    {
+                        "ruleId": "RULE-NA",
+                        "kind": "notApplicable",
+                        "message": {"text": "Not applicable."},
+                    },
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    # Only the "fail" result becomes an observation
+    assert len(observations) == 1
+    assert observations[0].observation_id == "RULE-FAIL"
+
+
 def test_sarif_adapter_index_takes_priority_over_id_dict_for_duplicate_rule_ids(
     tmp_path: Path,
 ) -> None:

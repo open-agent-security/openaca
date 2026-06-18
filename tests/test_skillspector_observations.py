@@ -239,6 +239,75 @@ def test_skillspector_critical_rules_reported_as_critical(tmp_path: Path) -> Non
     assert by_rule["P1"].severity == "high"
 
 
+def test_skillspector_verified_rule_family_categories(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector", "version": "0.5.0"}},
+                            "results": [
+                                {
+                                    "ruleId": "RA1",
+                                    "level": "error",
+                                    "message": {"text": "Self-modification detected."},
+                                },
+                                {
+                                    "ruleId": "AST1",
+                                    "level": "error",
+                                    "message": {"text": "exec() call detected."},
+                                },
+                                {
+                                    "ruleId": "AST8",
+                                    "level": "error",
+                                    "message": {"text": "Dangerous execution chain."},
+                                },
+                                {
+                                    "ruleId": "TT3",
+                                    "level": "error",
+                                    "message": {"text": "Credential exfiltration chain."},
+                                },
+                                {
+                                    "ruleId": "TT5",
+                                    "level": "warning",
+                                    "message": {"text": "External input to code execution."},
+                                },
+                                {
+                                    "ruleId": "YR1",
+                                    "level": "error",
+                                    "message": {"text": "Malware match."},
+                                },
+                                {
+                                    "ruleId": "YR2",
+                                    "level": "error",
+                                    "message": {"text": "Webshell match."},
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="")
+
+    observations, _ = collect_skillspector_observations([ref], run_command=fake_run)
+    by_rule = {obs.observation_id: obs for obs in observations}
+
+    assert by_rule["RA1"].categories == ["excessive-agency"]
+    assert by_rule["AST1"].categories == ["unsafe-tool-use"]
+    assert by_rule["AST8"].categories == ["unsafe-tool-use"]
+    assert by_rule["TT3"].categories == ["data-exfiltration"]
+    assert by_rule["TT5"].categories == ["prompt-injection"]
+    assert by_rule["YR1"].categories == ["supply-chain"]
+    assert by_rule["YR2"].categories == ["supply-chain"]
+
+
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 

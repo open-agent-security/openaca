@@ -41,6 +41,23 @@ _CATEGORY_MAP: dict[str, list[str]] = {
     "SC4": ["supply-chain"],
     "SC5": ["supply-chain"],
     "SC6": ["supply-chain"],
+    # RA family: self-modification / restricted-action rules.
+    # Source: NVIDIA/SkillSpector README. RA2+ not yet mapped (descriptions unverified).
+    "RA1": ["excessive-agency"],
+    # AST family: abstract-syntax-tree code-execution rules.
+    # Source: NVIDIA/SkillSpector README. AST2–AST7 not yet mapped (descriptions unverified).
+    "AST1": ["unsafe-tool-use"],
+    "AST8": ["unsafe-tool-use"],
+    # TT family: tool-tampering / exfiltration-chain rules.
+    # Source: NVIDIA/SkillSpector README. TT1, TT2, TT4 not yet mapped (descriptions unverified).
+    "TT3": ["data-exfiltration"],
+    "TT5": ["prompt-injection"],
+    # YR family: YARA-rule matches (malware / webshell).
+    # Source: NVIDIA/SkillSpector README.
+    "YR1": ["supply-chain"],
+    "YR2": ["supply-chain"],
+    # Rule families not yet mapped — upstream rule descriptions unverified in this repo:
+    # EA, OH, P6–P8, MP, TM, TR, LP, TP — add entries once upstream table is confirmed.
 }
 
 _LEVEL_TO_SEVERITY: dict[str, Severity] = {
@@ -152,9 +169,7 @@ def _observations_from_sarif(
     for run in _list_of_dicts(sarif.get("runs")):
         driver = _dict_at(run, "tool", "driver")
         source_version = (
-            _str(driver.get("semanticVersion"))
-            or _str(driver.get("version"))
-            or "unknown"
+            _str(driver.get("semanticVersion")) or _str(driver.get("version")) or "unknown"
         )
         for result in _list_of_dicts(run.get("results")):
             observation = _observation_from_result(ref, result, scan_path, source_version)
@@ -177,11 +192,7 @@ def _observation_from_result(
     declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
     evidence = {
         "sarif_rule_id": rule_id,
-        **(
-            {"sarif_level": result.get("level")}
-            if isinstance(result.get("level"), str)
-            else {}
-        ),
+        **({"sarif_level": result.get("level")} if isinstance(result.get("level"), str) else {}),
         "sarif_message": message,
         **({"location_uri": location["uri"]} if "uri" in location else {}),
         **({"start_line": location["start_line"]} if "start_line" in location else {}),

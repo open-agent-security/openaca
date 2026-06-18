@@ -48,6 +48,9 @@ class PostureFinding:
     component_path: list[dict[str, str]]
     standards: Standards
     remediation: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+    source: str = "openaca"
+    source_version: str = "unknown"
     finding_type: str = "posture"
 
     @property

@@ -128,6 +128,8 @@ def finding_to_output(finding: Finding, advisory: dict | None) -> dict[str, Any]
 def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
     out: dict[str, Any] = {
         "finding_type": "posture",
+        "source": finding.source,
+        "source_version": finding.source_version,
         "rule_id": finding.rule_id,
         "title": finding.title,
         "severity": finding.severity,
@@ -137,6 +139,7 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
         "component_path": finding.component_path,
         "standards": finding.standards.to_dict(),
         "remediation": finding.remediation,
+        "evidence": finding.evidence,
     }
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by

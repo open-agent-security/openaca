@@ -1,8 +1,8 @@
 ---
-status: accepted
+status: superseded
 date: 2026-06-18
 supersedes: 0033
-superseded-by: null
+superseded-by: 0035
 ---
 
 # ADR-0034: Use external scanners as observation sources

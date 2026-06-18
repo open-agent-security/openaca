@@ -573,13 +573,13 @@ def test_rejects_absolute_path_inside_observation_evidence_list():
             {
                 "source": "openaca-skill-audit",
                 "source_version": "0.2.0b1",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "severity": "LOW",
                 "confidence": "high",
                 "component_identity": "skill/deploy-helper",
                 "subject_coordinate": "sha256:abc123",
-                "summary": "Skill declares executable tool access",
-                "evidence": {"allowed_tools": ["/Users/alice/deploy.sh"]},
+                "summary": "Skill contains suspicious instruction override",
+                "evidence": {"matched_text": ["/Users/alice/deploy.sh"]},
             }
         ]
     )
@@ -587,7 +587,7 @@ def test_rejects_absolute_path_inside_observation_evidence_list():
     with pytest.raises(RemoteUploadContractError) as exc:
         enforce_remote_upload_contract(payload)
 
-    assert "observations[0].evidence.allowed_tools[0]" in str(exc.value)
+    assert "observations[0].evidence.matched_text[0]" in str(exc.value)
 
 
 def test_rejects_embedded_absolute_path_in_observation_evidence_bash_filter():
@@ -600,15 +600,13 @@ def test_rejects_embedded_absolute_path_in_observation_evidence_bash_filter():
             {
                 "source": "openaca-skill-audit",
                 "source_version": "0.2.0b1",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "severity": "LOW",
                 "confidence": "high",
                 "component_identity": "skill/deploy-helper",
                 "subject_coordinate": "sha256:abc123",
-                "summary": "Skill declares executable tool access",
-                "evidence": {
-                    "allowed_tools": ["Bash(/Users/alice/.claude/skills/deploy/run.sh *)"]
-                },
+                "summary": "Skill contains suspicious instruction override",
+                "evidence": {"matched_text": ["Bash(/Users/alice/.claude/skills/deploy/run.sh *)"]},
             }
         ]
     )
@@ -616,7 +614,7 @@ def test_rejects_embedded_absolute_path_in_observation_evidence_bash_filter():
     with pytest.raises(RemoteUploadContractError) as exc:
         enforce_remote_upload_contract(payload)
 
-    assert "observations[0].evidence.allowed_tools[0]" in str(exc.value)
+    assert "observations[0].evidence.matched_text[0]" in str(exc.value)
     assert "embedded absolute path" in str(exc.value)
 
 
@@ -630,14 +628,14 @@ def test_accepts_bash_filter_with_embedded_url():
             {
                 "source": "openaca-skill-audit",
                 "source_version": "0.2.0b1",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "severity": "LOW",
                 "confidence": "high",
                 "component_identity": "skill/deploy-helper",
                 "subject_coordinate": "sha256:abc123",
-                "summary": "Skill declares executable tool access",
+                "summary": "Skill contains suspicious instruction override",
                 "evidence": {
-                    "allowed_tools": ["Bash(curl https://api.example.com/mcp *)"],
+                    "matched_text": ["Bash(curl https://api.example.com/mcp *)"],
                 },
             }
         ]
@@ -653,12 +651,12 @@ def test_rejects_absolute_observation_evidence_path():
             {
                 "source": "openaca-skill-audit",
                 "source_version": "0.2.0b1",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "severity": "LOW",
                 "confidence": "high",
                 "component_identity": "skill/deploy-helper",
                 "subject_coordinate": "sha256:abc123",
-                "summary": "Skill declares executable tool access",
+                "summary": "Skill contains suspicious instruction override",
                 "evidence": {"source_manifest": "/Users/alice/.claude/skills/deploy/SKILL.md"},
             }
         ]

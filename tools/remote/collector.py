@@ -503,9 +503,12 @@ def _asset_registration_payload() -> JsonObject:
 
 def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
     return {
+        "source": finding.source,
+        "source_version": finding.source_version,
         "rule_id": finding.rule_id,
         "rule_version": "1",
         "severity": finding.severity.upper(),
+        "confidence": finding.confidence,
         "scope": _posture_scope(finding),
         "component_identity": _posture_component_identity(finding),
         "summary": finding.title,
@@ -560,6 +563,11 @@ def _posture_component_identity(finding: PostureFinding) -> str | None:
 
 def _posture_evidence(finding: PostureFinding) -> JsonObject:
     manifest_path = _manifest_path(finding)
+    if finding.rule_id == "openaca-posture-skill-executable-tool":
+        return {
+            "allowed_tools": finding.evidence.get("allowed_tools", []),
+            "manifest_path": manifest_path,
+        }
     if finding.rule_id == "openaca-posture-insecure-transport":
         return {"transport": "http", "manifest_path": manifest_path}
     if finding.rule_id == "openaca-posture-mutable-install-reference":

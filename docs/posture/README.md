@@ -4,7 +4,8 @@ Posture findings are scanner-emitted configuration-hygiene checks. They're
 distinct from vulnerability findings: no CVE lookup, no overlay record, no
 OpenACA ID minted. They flag risky agent-composition shapes
 (unpinned installs, `http://` MCP endpoints, endpoint overrides, and MCP
-auto-approval) that wouldn't surface in a corpus-driven scan.
+auto-approval, and broad skill capabilities) that wouldn't surface in a
+corpus-driven scan.
 
 Posture rules are gated behind `--include-posture`:
 
@@ -28,7 +29,8 @@ A repo or endpoint with no matched CVEs returns "no findings" today.
 That's accurate, but the typical reaction is "did the tool even do
 anything?" Posture rules give first-scan signal independent of the
 corpus: even a clean install gets *some* visible output if it has
-unpinned MCPs, `http://` endpoints, endpoint overrides, or MCP auto-approval.
+unpinned MCPs, `http://` endpoints, endpoint overrides, MCP auto-approval, or
+skills with executable tool access.
 
 ## V0 rules
 
@@ -38,6 +40,7 @@ unpinned MCPs, `http://` endpoints, endpoint overrides, or MCP auto-approval.
 | [`openaca-posture-insecure-transport`](openaca-posture-insecure-transport.md) | Remote MCP endpoint uses insecure transport | medium | high |
 | [`openaca-posture-api-endpoint-override`](openaca-posture-api-endpoint-override.md) | Claude API endpoint is overridden | medium/high | medium |
 | [`openaca-posture-mcp-auto-approve`](openaca-posture-mcp-auto-approve.md) | MCP server has auto-approval enabled | medium | medium |
+| [`openaca-posture-skill-executable-tool`](openaca-posture-skill-executable-tool.md) | Skill declares executable tool access | low | high |
 
 ## Standards mapping
 

@@ -520,3 +520,128 @@ def test_sarif_adapter_index_takes_priority_over_id_dict_for_duplicate_rule_ids(
     # Index 0 → "First DUP rule" with level "error" → severity "high"
     assert observation.title == "First DUP rule"
     assert observation.severity == "high"
+
+
+def test_sarif_adapter_resolves_extension_rule_by_tool_component_name(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    # SARIF 2.1.0 toolComponentReference: name instead of numeric index
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "DRIVER-R0", "shortDescription": {"text": "Driver rule"}}],
+                    },
+                    "extensions": [
+                        {
+                            "name": "my-plugin",
+                            "rules": [
+                                {
+                                    "id": "EXT-NAME-R0",
+                                    "shortDescription": {"text": "Extension rule by name"},
+                                    "defaultConfiguration": {"level": "error"},
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "results": [
+                    {
+                        # toolComponent identified by name, not numeric index
+                        "rule": {"index": 0, "toolComponent": {"name": "my-plugin"}},
+                        "message": {"text": "Extension rule resolved via toolComponent.name."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.observation_id == "EXT-NAME-R0"
+    assert observation.title == "Extension rule by name"
+    assert observation.severity == "high"  # defaultConfiguration.level "error" → high
+
+
+def test_sarif_adapter_resolves_extension_rule_by_tool_component_guid(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    guid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {"name": "scanner"},
+                    "extensions": [
+                        {
+                            "name": "ext-guid",
+                            "guid": guid,
+                            "rules": [
+                                {
+                                    "id": "EXT-GUID-R0",
+                                    "shortDescription": {"text": "Extension rule by guid"},
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "results": [
+                    {
+                        "rule": {"index": 0, "toolComponent": {"guid": guid}},
+                        "message": {"text": "Extension rule resolved via toolComponent.guid."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].observation_id == "EXT-GUID-R0"
+    assert observations[0].title == "Extension rule by guid"
+
+
+def test_sarif_adapter_resolves_artifact_location_by_index(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    # SARIF 2.1.0: artifactLocation.index resolves into run.artifacts[index].location.uri
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "ART-001", "shortDescription": {"text": "Artifact rule"}}],
+                    }
+                },
+                "artifacts": [
+                    {"location": {"uri": "src/skill/SKILL.md"}},
+                ],
+                "results": [
+                    {
+                        "ruleId": "ART-001",
+                        "message": {"text": "Finding in indexed artifact."},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    # URI absent; index points into run.artifacts
+                                    "artifactLocation": {"index": 0},
+                                    "region": {"startLine": 12},
+                                }
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.evidence.get("location_uri") == "src/skill/SKILL.md"
+    assert observation.evidence.get("start_line") == 12
+    assert observation.declared_by == {"kind": "sarif", "path": "src/skill/SKILL.md"}

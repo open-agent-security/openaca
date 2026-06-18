@@ -385,6 +385,44 @@ def test_skillspector_complete_rule_family_categories(tmp_path: Path) -> None:
             )
 
 
+def test_skillspector_supply_chain_declarative_rules_route_to_posture(tmp_path: Path) -> None:
+    # SC1/SC5/SC6 are declarative dependency-provenance claims (unpinned, abandoned,
+    # typosquatting) -> posture under ADR-0035. SC2/SC3 describe artifact behavior
+    # (remote code execution, obfuscation) -> observation.
+    ref = _skill_ref(tmp_path)
+    rule_ids = ["SC1", "SC2", "SC3", "SC5", "SC6"]
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector", "version": "0.6.0"}},
+                            "results": [
+                                {
+                                    "ruleId": r,
+                                    "level": "warning",
+                                    "message": {"text": f"{r} finding."},
+                                }
+                                for r in rule_ids
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
+
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+
+    assert {f.rule_id for f in result.posture_findings} == {"SC1", "SC5", "SC6"}
+    assert {o.observation_id for o in result.observations} == {"SC2", "SC3"}
+
+
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 

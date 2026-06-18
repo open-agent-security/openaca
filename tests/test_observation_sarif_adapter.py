@@ -262,6 +262,87 @@ def test_sarif_adapter_uses_rule_default_configuration_level(tmp_path: Path) -> 
     assert observations[0].severity == "high"
 
 
+def test_sarif_adapter_resolves_extension_rule_metadata(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {"name": "scanner"},
+                    "extensions": [
+                        {
+                            "name": "ext-plugin",
+                            "rules": [
+                                {
+                                    "id": "EXT-001",
+                                    "shortDescription": {"text": "Extension rule title"},
+                                    "defaultConfiguration": {"level": "error"},
+                                    "help": {"text": "See docs for remediation."},
+                                    "properties": {"tags": ["ext-tag"]},
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "results": [
+                    {
+                        "ruleId": "EXT-001",
+                        "message": {"text": "Triggered extension rule."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.observation_id == "EXT-001"
+    # Extension rule metadata must be resolved (not degraded to rule_id fallbacks)
+    assert observation.title == "Extension rule title"
+    assert observation.severity == "high"  # defaultConfiguration.level "error" → high
+    assert observation.remediation == "See docs for remediation."
+    assert observation.evidence.get("sarif_tags") == ["ext-tag"]
+
+
+def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "DRIVER-R0", "shortDescription": {"text": "Driver rule"}}],
+                    },
+                    "extensions": [
+                        {
+                            "name": "plugin-a",
+                            "rules": [
+                                {"id": "EXT-A-R0", "shortDescription": {"text": "Extension A rule"}}
+                            ],
+                        }
+                    ],
+                },
+                "results": [
+                    {
+                        # Rule identified only by index into extension 0's rules (no ruleId string)
+                        "rule": {"index": 0, "toolComponent": {"index": 0}},
+                        "message": {"text": "Extension rule by toolComponent.index."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].observation_id == "EXT-A-R0"
+    assert observations[0].title == "Extension A rule"
+
+
 def test_sarif_adapter_raw_tags_stay_in_evidence_not_categories(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {

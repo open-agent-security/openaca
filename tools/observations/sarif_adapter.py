@@ -44,14 +44,22 @@ class SarifObservationAdapter:
                 or _str(driver.get("version"))
                 or DEFAULT_SOURCE_VERSION
             )
-            rules_list = _list_of_dicts(driver.get("rules"))
-            rules = _rules_by_id(rules_list)
+            driver_rules_list = _list_of_dicts(driver.get("rules"))
+            extension_rules_lists = [
+                _list_of_dicts(ext.get("rules"))
+                for ext in _list_of_dicts(_dict_at(run, "tool").get("extensions"))
+            ]
+            # Merge driver + extension rules for ID-based lookup (SARIF rule IDs are unique per run)
+            rules = _rules_by_id(driver_rules_list)
+            for ext_rules in extension_rules_lists:
+                rules.update(_rules_by_id(ext_rules))
             for result in _list_of_dicts(run.get("results")):
                 observation = self._observation_from_result(
                     ref=ref,
                     result=result,
                     rules=rules,
-                    rules_list=rules_list,
+                    driver_rules_list=driver_rules_list,
+                    extension_rules_lists=extension_rules_lists,
                     source=source,
                     source_version=source_version,
                 )
@@ -65,18 +73,25 @@ class SarifObservationAdapter:
         ref: ComponentRef,
         result: Mapping[str, Any],
         rules: Mapping[str, Mapping[str, Any]],
-        rules_list: list[Mapping[str, Any]],
+        driver_rules_list: list[Mapping[str, Any]],
+        extension_rules_lists: list[list[Mapping[str, Any]]],
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
         rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
         if rule_id is None:
-            # SARIF 2.1.0 §3.27.6/§3.27.7: rule may be identified by index alone
+            # SARIF 2.1.0: toolComponent.index selects which extension's rules to resolve by index;
+            # absent toolComponent means driver rules
+            tc_index = _dict_at(result, "rule", "toolComponent").get("index")
+            if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
+                component_rules_list = extension_rules_lists[tc_index]
+            else:
+                component_rules_list = driver_rules_list
             rule_index = result.get("ruleIndex")
             if not isinstance(rule_index, int):
                 rule_index = _dict_at(result, "rule").get("index")
-            if isinstance(rule_index, int) and 0 <= rule_index < len(rules_list):
-                rule_id = _str(rules_list[rule_index].get("id"))
+            if isinstance(rule_index, int) and 0 <= rule_index < len(component_rules_list):
+                rule_id = _str(component_rules_list[rule_index].get("id"))
         if rule_id is None:
             return None
         rule = rules.get(rule_id, {})

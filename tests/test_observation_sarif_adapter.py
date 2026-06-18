@@ -440,6 +440,81 @@ def test_sarif_adapter_skips_inactive_baseline_and_suppressed_results(tmp_path: 
     assert ids == ["ACTIVE", "SUPPRESSION-REJECTED"]
 
 
+def test_sarif_adapter_applies_sole_invocation_override_without_provenance(
+    tmp_path: Path,
+) -> None:
+    # A result without provenance.invocationIndex normally has no associated invocation
+    # (SARIF default -1), but when the run has exactly one invocation its overrides apply.
+    ref = _skill_ref(tmp_path)
+
+    def _sarif(invocation_count: int) -> dict[str, object]:
+        invocation = {
+            "ruleConfigurationOverrides": [
+                {"descriptor": {"id": "P1"}, "configuration": {"level": "error"}}
+            ]
+        }
+        return {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "scanner",
+                            "rules": [{"id": "P1", "defaultConfiguration": {"level": "note"}}],
+                        }
+                    },
+                    "invocations": [invocation] * invocation_count,
+                    "results": [{"ruleId": "P1", "message": {"text": "Finding."}}],
+                }
+            ],
+        }
+
+    # Single invocation: override applies even without provenance -> "error" -> high.
+    single = SarifObservationAdapter().collect(ref, _sarif(1))
+    assert single[0].severity == "high"
+
+    # Multiple invocations: no provenance means no association -> default "note" -> low.
+    multiple = SarifObservationAdapter().collect(ref, _sarif(2))
+    assert multiple[0].severity == "low"
+
+
+def test_sarif_adapter_resolves_id_based_message_via_message_strings(tmp_path: Path) -> None:
+    # SARIF 2.1.0 §3.11.6: a result message may use id + arguments resolved against the
+    # rule's messageStrings; the resolved text must be preserved as evidence.
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "P1",
+                                "messageStrings": {
+                                    "default": {"text": "Found {0} secret(s) in {1}."}
+                                },
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "P1",
+                        "message": {"id": "default", "arguments": ["2", "config.yaml"]},
+                    }
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].evidence.get("sarif_message") == "Found 2 secret(s) in config.yaml."
+
+
 def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {
@@ -883,6 +958,8 @@ def test_sarif_adapter_honors_invocation_severity_override(tmp_path: Path) -> No
                             "rules": [{"id": "P2", "defaultConfiguration": {"level": "note"}}],
                         }
                     },
+                    # Two invocations, so the override is reached only via explicit
+                    # provenance (the sole-invocation default does not apply).
                     "invocations": [
                         {
                             "ruleConfigurationOverrides": [
@@ -891,18 +968,20 @@ def test_sarif_adapter_honors_invocation_severity_override(tmp_path: Path) -> No
                                     "configuration": {"level": "error"},
                                 }
                             ]
-                        }
+                        },
+                        {"ruleConfigurationOverrides": []},
                     ],
                     "results": [result],
                 }
             ],
         }
 
-    # With the invocation override in effect, "error" -> high (not the default "note" -> low).
+    # With provenance pointing at invocation 0, its override applies: "error" -> high.
     overridden = SarifObservationAdapter().collect(ref, _sarif(with_invocation_pointer=True))
     assert overridden[0].severity == "high"
 
-    # Without the provenance pointer, the rule defaultConfiguration ("note") applies -> low.
+    # Without provenance and with multiple invocations, there is no association, so the
+    # rule defaultConfiguration ("note") applies -> low.
     defaulted = SarifObservationAdapter().collect(ref, _sarif(with_invocation_pointer=False))
     assert defaulted[0].severity == "low"
 

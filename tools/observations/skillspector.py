@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.observations.finding import Confidence, ObservationFinding, Severity
@@ -49,6 +49,12 @@ _LEVEL_TO_SEVERITY: dict[str, Severity] = {
     "note": "low",
     "none": "low",
 }
+
+# Severity overrides for SkillSpector rules whose native severity exceeds what
+# SARIF level="error" can express. SkillSpector collapses HIGH and CRITICAL
+# findings to level="error"; populate this map once upstream SkillSpector
+# documentation confirms which rule IDs carry a native "critical" severity.
+_SEVERITY_MAP: dict[str, Severity] = {}
 
 
 def collect_skillspector_observations(
@@ -93,6 +99,7 @@ def collect_skillspector_observations(
                         f"SkillSpector failed for {scan_path}: exit {result.returncode}"
                     )
                 continue
+            _apply_severity_overrides(sarif, _SEVERITY_MAP)
             observations.extend(_observations_from_sarif(ref, sarif, scan_path))
 
     return observations, warnings
@@ -193,7 +200,7 @@ def _observation_from_result(
 def _severity(result: dict[str, Any]) -> Severity:
     explicit = _first_string_property(result, "openaca_severity", "severity")
     if explicit in {"info", "low", "medium", "high", "critical"}:
-        return explicit  # type: ignore[return-value]
+        return cast(Severity, explicit)
     score = _first_string_property(result, "security-severity", "security_severity")
     if score is not None:
         try:
@@ -217,7 +224,7 @@ def _severity(result: dict[str, Any]) -> Severity:
 def _confidence(result: dict[str, Any]) -> Confidence:
     explicit = _first_string_property(result, "openaca_confidence", "confidence", "precision")
     if explicit in {"low", "medium", "high"}:
-        return explicit  # type: ignore[return-value]
+        return cast(Confidence, explicit)
     if explicit == "very-high":
         return "high"
     return "medium"
@@ -266,13 +273,32 @@ def _first_location(result: dict[str, Any], scan_path: Path) -> dict[str, Any]:
         out: dict[str, Any] = {}
         uri = _str(artifact.get("uri"))
         if uri is not None:
-            uri_path = Path(uri)
-            out["uri"] = str(uri_path if uri_path.is_absolute() else scan_path / uri_path)
+            out["uri"] = uri if _is_absolute_uri(uri) else str(scan_path / uri)
         start_line = region.get("startLine")
         if isinstance(start_line, int):
             out["start_line"] = start_line
         return out
     return {}
+
+
+def _is_absolute_uri(uri: str) -> bool:
+    return uri.startswith(("/", "file://", "http://", "https://"))
+
+
+def _apply_severity_overrides(sarif: dict[str, Any], severity_map: dict[str, Severity]) -> None:
+    if not severity_map:
+        return
+    for run in _list_of_dicts(sarif.get("runs")):
+        for result in _list_of_dicts(run.get("results")):
+            rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+            if rule_id is None:
+                continue
+            severity = severity_map.get(rule_id)
+            if severity is None:
+                continue
+            props = result.setdefault("properties", {})
+            if isinstance(props, dict):
+                props["openaca_severity"] = severity
 
 
 def _message_text(raw: object) -> str | None:

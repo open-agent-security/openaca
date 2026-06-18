@@ -515,6 +515,42 @@ def test_sarif_adapter_resolves_id_based_message_via_message_strings(tmp_path: P
     assert observations[0].evidence.get("sarif_message") == "Found 2 secret(s) in config.yaml."
 
 
+def test_sarif_adapter_security_severity_out_of_range_defers_to_level(tmp_path: Path) -> None:
+    # GitHub SARIF convention: security-severity "0.0" (and values outside 0.1-10.0) means
+    # "no security severity"; severity must come from the SARIF level, not collapse to info.
+    ref = _skill_ref(tmp_path)
+
+    def _sarif(security_severity: str, level: str) -> dict[str, object]:
+        return {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "scanner",
+                            "rules": [
+                                {"id": "P1", "properties": {"security-severity": security_severity}}
+                            ],
+                        }
+                    },
+                    "results": [{"ruleId": "P1", "level": level, "message": {"text": "x"}}],
+                }
+            ],
+        }
+
+    # 0.0 with an explicit error level -> high (the level decides), not info.
+    zero = SarifObservationAdapter().collect(ref, _sarif("0.0", "error"))
+    assert zero[0].severity == "high"
+
+    # Above 10.0 is out of range -> defer to the warning level -> medium.
+    out_of_range = SarifObservationAdapter().collect(ref, _sarif("11.0", "warning"))
+    assert out_of_range[0].severity == "medium"
+
+    # In-range score still wins over the level.
+    in_range = SarifObservationAdapter().collect(ref, _sarif("9.5", "warning"))
+    assert in_range[0].severity == "critical"
+
+
 def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {

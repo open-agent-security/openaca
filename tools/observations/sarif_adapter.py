@@ -290,16 +290,17 @@ def _severity(
     if explicit in _SEVERITIES:
         return cast(Severity, explicit)
     score = _security_severity(result, rule)
-    if score is not None:
+    # GitHub SARIF convention: 9.0+ critical, 7.0-8.9 high, 4.0-6.9 medium, 0.1-3.9 low.
+    # A value of 0.0 or anything outside 0.1-10.0 has "no security severity" and must defer
+    # to the SARIF level rather than being forced to info (which would downgrade an error).
+    if score is not None and 0.1 <= score <= 10.0:
         if score >= 9.0:
             return "critical"
         if score >= 7.0:
             return "high"
         if score >= 4.0:
             return "medium"
-        if score > 0:
-            return "low"
-        return "info"
+        return "low"
     level = _str(result.get("level"))
     if level is None:
         # SARIF 2.1.0: when result.level is absent, an invocation

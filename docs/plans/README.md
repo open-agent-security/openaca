@@ -36,6 +36,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 029 | [Agent graph occurrence identity](029-agent-graph-identity.md) | ✅ Done | 026 |
 | 030 | [Identity semantics hardening](030-identity-hardening.md) | ✅ Done | 029 |
 | 031 | [Observation findings](031-observation-findings.md) | ✅ Done | 030 |
+| 032 | [External observation sources](032-external-observation-sources.md) | ✅ Done | 031 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

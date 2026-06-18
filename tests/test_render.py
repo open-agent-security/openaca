@@ -557,15 +557,18 @@ def test_json_observation_finding_is_source_attributed():
     observation = ObservationFinding(
         source="openaca-skill-audit",
         source_version="0.2.0b1",
-        observation_id="skill.allowed-executable-tool",
-        title="Skill declares executable tool access",
+        observation_id="skill.suspicious-instruction",
+        title="Skill contains suspicious instruction override",
         severity="low",
         confidence="high",
         component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
         subject_coordinate="sha256:abc123",
-        evidence={"allowed_tools": ["Bash"], "source_manifest": "skills/deploy/SKILL.md"},
-        categories=["skill-capability"],
-        remediation="Review whether executable tool access is needed.",
+        evidence={
+            "matched_text": ["ignore prior instructions"],
+            "source_manifest": "skills/deploy/SKILL.md",
+        },
+        categories=["skill-content"],
+        remediation="Review whether the instruction is appropriate.",
         declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
     )
 
@@ -574,12 +577,12 @@ def test_json_observation_finding_is_source_attributed():
     (entry,) = parsed["findings"]
     assert entry["finding_type"] == "observation"
     assert entry["source"] == "openaca-skill-audit"
-    assert entry["observation_id"] == "skill.allowed-executable-tool"
+    assert entry["observation_id"] == "skill.suspicious-instruction"
     assert entry["severity"] == "low"
     assert entry["confidence"] == "high"
     assert entry["component"]["identity"] == "skill/deploy-helper"
     assert entry["subject_coordinate"] == "sha256:abc123"
-    assert entry["evidence"]["allowed_tools"] == ["Bash"]
+    assert entry["evidence"]["matched_text"] == ["ignore prior instructions"]
 
 
 def test_json_plugin_bundled_finding_contains_component_path():

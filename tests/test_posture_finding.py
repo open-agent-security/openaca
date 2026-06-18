@@ -23,6 +23,9 @@ def test_posture_finding_minimum_fields():
         remediation="Pin to an exact version or commit SHA.",
     )
     assert f.rule_id == "openaca-posture-mutable-install-reference"
+    assert f.source == "openaca"
+    assert f.source_version == "unknown"
+    assert f.evidence == {}
     assert f.standards.cwe == ["CWE-1357"]
     assert f.finding_type == "posture"
 

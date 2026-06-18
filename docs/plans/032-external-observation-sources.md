@@ -4,11 +4,12 @@ Status: complete
 
 ## Goal
 
-Establish the durable observation-source boundary — the `ObservationFinding`
-model, the `skill-content-hash` coordinate, and the ADR-0034 decision — so
-external skill scanner evidence can be normalized as source-attributed
-observations, without building a broad native content scanner or a generic
-"handle any valid SARIF" engine. Per-scanner adapters land in follow-up plans.
+Establish the durable scanner-source boundary — the `ObservationFinding`
+model, the `skill-content-hash` coordinate, and the ADR-0034/0035 decisions —
+so external skill scanner evidence can be normalized with source attribution
+and classified by claim type, without building a broad native content scanner
+or a generic "handle any valid SARIF" engine. Per-scanner adapters land in
+follow-up plans.
 
 ## Tasks
 

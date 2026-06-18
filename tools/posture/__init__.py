@@ -21,6 +21,7 @@ from tools.posture.rules import (
     insecure_transport,
     mcp_auto_approve,
     mutable_install,
+    skill_capability,
 )
 
 __all__ = [
@@ -53,6 +54,7 @@ def run_posture_rules(
     findings.extend(insecure_transport.check_insecure_transport(manifests))
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
+    findings.extend(skill_capability.check_skill_executable_tools(refs))
     return findings
 
 

@@ -171,7 +171,11 @@ def to_sarif(
                         "shortDescription": {"text": p.title},
                         "fullDescription": {"text": p.remediation},
                         "helpUri": f"https://openaca.dev/posture/{p.rule_id}.html",
-                        "properties": {"standards": p.standards.to_dict()},
+                        "properties": {
+                            "source": p.source,
+                            "source_version": p.source_version,
+                            "standards": p.standards.to_dict(),
+                        },
                     }
                 )
             results.append(
@@ -193,8 +197,11 @@ def to_sarif(
                     "properties": {
                         **_identity_properties(normalized),
                         "finding_type": "posture",
+                        "source": p.source,
+                        "source_version": p.source_version,
                         "confidence": p.confidence,
                         "standards": p.standards.to_dict(),
+                        **({"evidence": p.evidence} if p.evidence else {}),
                     },
                 }
             )

@@ -312,25 +312,28 @@ def test_sarif_emits_observation_rule_and_result():
     observation = ObservationFinding(
         source="openaca-skill-audit",
         source_version="0.2.0b1",
-        observation_id="skill.allowed-executable-tool",
-        title="Skill declares executable tool access",
+        observation_id="skill.suspicious-instruction",
+        title="Skill contains suspicious instruction override",
         severity="low",
         confidence="high",
         component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
         subject_coordinate="sha256:abc123",
-        evidence={"allowed_tools": ["Bash"], "source_manifest": "skills/deploy/SKILL.md"},
-        categories=["skill-capability"],
+        evidence={
+            "matched_text": ["ignore prior instructions"],
+            "source_manifest": "skills/deploy/SKILL.md",
+        },
+        categories=["skill-content"],
         declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
     )
 
     doc = to_sarif([], {}, observations=[observation])
 
     rules = doc["runs"][0]["tool"]["driver"]["rules"]
-    assert [rule["id"] for rule in rules] == ["openaca-skill-audit:skill.allowed-executable-tool"]
+    assert [rule["id"] for rule in rules] == ["openaca-skill-audit:skill.suspicious-instruction"]
     results = doc["runs"][0]["results"]
     assert len(results) == 1
     result = results[0]
-    assert result["ruleId"] == "openaca-skill-audit:skill.allowed-executable-tool"
+    assert result["ruleId"] == "openaca-skill-audit:skill.suspicious-instruction"
     assert result["level"] == "note"
     assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == (
         "skills/deploy/SKILL.md"
@@ -341,18 +344,21 @@ def test_sarif_emits_observation_rule_and_result():
 
 def test_sarif_observation_result_carries_evidence_and_categories():
     """Observation results must include evidence and categories in SARIF properties so
-    code-scanning consumers can see which allowed_tools triggered the result."""
+    code-scanning consumers can see which content triggered the result."""
     observation = ObservationFinding(
         source="openaca-skill-audit",
         source_version="0.2.0b1",
-        observation_id="skill.allowed-executable-tool",
-        title="Skill declares executable tool access",
+        observation_id="skill.suspicious-instruction",
+        title="Skill contains suspicious instruction override",
         severity="low",
         confidence="high",
         component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
         subject_coordinate="sha256:abc123",
-        evidence={"allowed_tools": ["Bash(git:*)"], "source_manifest": "skills/deploy/SKILL.md"},
-        categories=["skill-capability", "ASI04"],
+        evidence={
+            "matched_text": ["ignore prior instructions"],
+            "source_manifest": "skills/deploy/SKILL.md",
+        },
+        categories=["skill-content", "ASI04"],
         declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
     )
 
@@ -361,10 +367,10 @@ def test_sarif_observation_result_carries_evidence_and_categories():
 
     props = result["properties"]
     assert props["evidence"] == {
-        "allowed_tools": ["Bash(git:*)"],
+        "matched_text": ["ignore prior instructions"],
         "source_manifest": "skills/deploy/SKILL.md",
     }
-    assert props["categories"] == ["skill-capability", "ASI04"]
+    assert props["categories"] == ["skill-content", "ASI04"]
 
 
 def test_sarif_observation_result_omits_empty_evidence_and_categories():
@@ -372,8 +378,8 @@ def test_sarif_observation_result_omits_empty_evidence_and_categories():
     observation = ObservationFinding(
         source="openaca-skill-audit",
         source_version="0.2.0b1",
-        observation_id="skill.allowed-executable-tool",
-        title="Skill declares executable tool access",
+        observation_id="skill.suspicious-instruction",
+        title="Skill contains suspicious instruction override",
         severity="low",
         confidence="high",
         component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},

@@ -74,9 +74,12 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     ]
     assert collection.posture_findings == [
         {
+            "source": "openaca",
+            "source_version": "unknown",
             "rule_id": "openaca-posture-mutable-install-reference",
             "rule_version": "1",
             "severity": "LOW",
+            "confidence": "high",
             "scope": "component",
             "component_identity": "mcp-server/example",
             "summary": "Mutable install",
@@ -954,9 +957,9 @@ def test_redact_payload_redacts_absolute_paths_in_observation_evidence_list(tmp_
         "observations": [
             {
                 "source": "openaca-skill-audit",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "evidence": {
-                    "allowed_tools": [abs_path, "Read"],
+                    "matched_text": [abs_path, "Read"],
                     "source_manifest": abs_path,
                 },
             }
@@ -966,8 +969,8 @@ def test_redact_payload_redacts_absolute_paths_in_observation_evidence_list(tmp_
     _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
 
     evidence = payload["observations"][0]["evidence"]
-    assert not evidence["allowed_tools"][0].startswith("/"), evidence["allowed_tools"]
-    assert evidence["allowed_tools"][1] == "Read"
+    assert not evidence["matched_text"][0].startswith("/"), evidence["matched_text"]
+    assert evidence["matched_text"][1] == "Read"
     assert not evidence["source_manifest"].startswith("/")
 
 
@@ -987,9 +990,9 @@ def test_redact_payload_redacts_embedded_absolute_path_in_bash_filter(tmp_path):
         "observations": [
             {
                 "source": "openaca-skill-audit",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "evidence": {
-                    "allowed_tools": [f"Bash({abs_path} *)", "Read"],
+                    "matched_text": [f"Bash({abs_path} *)", "Read"],
                 },
             }
         ],
@@ -998,10 +1001,10 @@ def test_redact_payload_redacts_embedded_absolute_path_in_bash_filter(tmp_path):
     _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
 
     evidence = payload["observations"][0]["evidence"]
-    tool = evidence["allowed_tools"][0]
+    tool = evidence["matched_text"][0]
     assert str(config_dir) not in tool, tool
     assert tool.startswith("Bash("), tool
-    assert evidence["allowed_tools"][1] == "Read"
+    assert evidence["matched_text"][1] == "Read"
 
 
 def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
@@ -1019,9 +1022,9 @@ def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
         "observations": [
             {
                 "source": "openaca-skill-audit",
-                "observation_id": "skill.allowed-executable-tool",
+                "observation_id": "skill.suspicious-instruction",
                 "evidence": {
-                    "allowed_tools": ["Bash(curl https://api.example.com/mcp *)", "Read"],
+                    "matched_text": ["Bash(curl https://api.example.com/mcp *)", "Read"],
                 },
             }
         ],
@@ -1030,9 +1033,9 @@ def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
     _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
 
     evidence = payload["observations"][0]["evidence"]
-    tool = evidence["allowed_tools"][0]
+    tool = evidence["matched_text"][0]
     assert tool == "Bash(curl https://api.example.com *)", tool
-    assert evidence["allowed_tools"][1] == "Read"
+    assert evidence["matched_text"][1] == "Read"
 
 
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):

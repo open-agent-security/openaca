@@ -550,6 +550,8 @@ def _render_posture_section(
         lines.append(f"  {label_disp}  {p.rule_id}  {p.component_label}")
         if p.location:
             lines.append(f"       location: {p.location}")
+        if p.source != "openaca":
+            lines.append(f"       source:   {p.source} ({p.source_version})")
         lines.append(f"       fix:      {p.remediation}")
         standards_parts: list[str] = []
         for values in p.standards.to_dict().values():

@@ -53,7 +53,7 @@ from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
     collect_skill_observations,
-    collect_skillspector_observations,
+    collect_skillspector_findings,
 )
 from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
@@ -106,18 +106,20 @@ def _is_plugin_ref(ref: ComponentRef) -> bool:
     )
 
 
-def _collect_observations(
+def _collect_scanner_findings(
     refs: list[ComponentRef],
     *,
-    include_skillspector: bool,
-) -> list[ObservationFinding]:
+    external_scanners: tuple[str, ...],
+) -> tuple[list[ObservationFinding], list[PostureFinding]]:
     observations = collect_skill_observations(refs)
-    if not include_skillspector:
-        return observations
-    skillspector_observations, warnings = collect_skillspector_observations(refs)
-    for warning in warnings:
-        click.echo(f"warning: {warning}", err=True)
-    return [*observations, *skillspector_observations]
+    posture_findings: list[PostureFinding] = []
+    if "nvidia-skillspector" in external_scanners:
+        skillspector_findings = collect_skillspector_findings(refs)
+        observations.extend(skillspector_findings.observations)
+        posture_findings.extend(skillspector_findings.posture_findings)
+        for warning in skillspector_findings.warnings:
+            click.echo(f"warning: {warning}", err=True)
+    return observations, posture_findings
 
 
 def _component_label(ref: ComponentRef) -> str:
@@ -269,18 +271,16 @@ _include_posture_option = click.option(
     help=(
         "Also emit scanner-side posture findings (configuration hygiene rules: "
         "mutable install refs, insecure transport, endpoint overrides, MCP auto-approval). "
-        "These are distinct from vulnerability findings and never affect "
-        "--fail-on exit codes."
+        "External scanner findings are controlled by --scanner. Posture findings are "
+        "distinct from vulnerability findings and never affect --fail-on exit codes."
     ),
 )
-_include_skillspector_option = click.option(
-    "--include-skillspector",
-    is_flag=True,
-    default=False,
-    help=(
-        "Run the installed SkillSpector CLI against discovered skills and include "
-        "its SARIF output as source-attributed observations."
-    ),
+_scanner_option = click.option(
+    "--scanner",
+    "external_scanners",
+    type=click.Choice(["nvidia-skillspector"]),
+    multiple=True,
+    help=("Run an optional external scanner. OpenACA analysis always runs. May be repeated."),
 )
 _bom_input_option = click.option(
     "--input",
@@ -520,7 +520,7 @@ def _stderr_summary(
 @_format_option
 @_no_color_option
 @_include_posture_option
-@_include_skillspector_option
+@_scanner_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -540,7 +540,7 @@ def repo(
     output_format: str,
     no_color: bool,
     include_posture: bool,
-    include_skillspector: bool,
+    external_scanners: tuple[str, ...],
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-component manifests committed in a repository.
@@ -578,15 +578,17 @@ def repo(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
-    observations = _collect_observations(refs, include_skillspector=include_skillspector)
+    observations, scanner_posture_findings = _collect_scanner_findings(
+        refs, external_scanners=external_scanners
+    )
 
-    posture_findings: list[PostureFinding] = []
+    posture_findings = list(scanner_posture_findings)
     if include_posture:
         manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
         settings_manifests = collect_settings_manifests(
             [target], include_gitignored=include_gitignored
         )
-        posture_findings = run_posture_rules(refs, manifests, settings_manifests)
+        posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
 
     advisory_index = {a["id"]: a for a in corpus}
     parse_note = f" ({n_failed} failed to parse)" if n_failed else ""
@@ -663,7 +665,7 @@ def repo(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
-        posture_findings=posture_findings if include_posture else None,
+        posture_findings=posture_findings or None,
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,
@@ -701,7 +703,7 @@ def repo(
 @_format_option
 @_no_color_option
 @_include_posture_option
-@_include_skillspector_option
+@_scanner_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
@@ -712,7 +714,7 @@ def endpoint(
     output_format: str,
     no_color: bool,
     include_posture: bool,
-    include_skillspector: bool,
+    external_scanners: tuple[str, ...],
 ) -> None:
     """Scan the active agent composition installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
@@ -749,13 +751,15 @@ def endpoint(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
-    observations = _collect_observations(refs, include_skillspector=include_skillspector)
+    observations, scanner_posture_findings = _collect_scanner_findings(
+        refs, external_scanners=external_scanners
+    )
 
-    posture_findings: list[PostureFinding] = []
+    posture_findings = list(scanner_posture_findings)
     if include_posture:
         manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
         settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
-        posture_findings = run_posture_rules(refs, manifests, settings_manifests)
+        posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
 
     advisory_index = {a["id"]: a for a in corpus}
     plugin_count = sum(1 for r in refs if _is_plugin_ref(r))
@@ -828,7 +832,7 @@ def endpoint(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
-        posture_findings=posture_findings if include_posture else None,
+        posture_findings=posture_findings or None,
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,

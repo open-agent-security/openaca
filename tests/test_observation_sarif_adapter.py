@@ -678,3 +678,96 @@ def test_sarif_adapter_resolves_artifact_location_by_index(tmp_path: Path) -> No
     assert observation.evidence.get("location_uri") == "src/skill/SKILL.md"
     assert observation.evidence.get("start_line") == 12
     assert observation.declared_by == {"kind": "sarif", "path": "src/skill/SKILL.md"}
+
+
+def test_sarif_adapter_prefers_hierarchical_result_rule_id_over_indexed_descriptor(
+    tmp_path: Path,
+) -> None:
+    # SARIF 2.1.0 §3.52.4: result.ruleId may extend the indexed descriptor id with
+    # extra hierarchical components. The observation identity (and category_map key)
+    # must use the more specific result id, not the descriptor's base id.
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "SkillSpector",
+                        "rules": [
+                            {"id": "P1", "shortDescription": {"text": "Instruction override"}}
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "P1/ignore-instructions",
+                        "ruleIndex": 0,
+                        "level": "error",
+                        "message": {"text": "Ignore prior instructions."},
+                    }
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter(
+        category_map={"P1/ignore-instructions": ["owasp-ast01"]}
+    ).collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    # Specific result id wins for identity...
+    assert observation.observation_id == "P1/ignore-instructions"
+    # ...while metadata still comes from the indexed descriptor.
+    assert observation.title == "Instruction override"
+    # ...and the category_map keyed on the emitted id applies.
+    assert observation.categories == ["owasp-ast01"]
+
+
+def test_sarif_adapter_honors_invocation_severity_override(tmp_path: Path) -> None:
+    # SARIF 2.1.0 §3.20.5: when result.level is absent, an invocation
+    # ruleConfigurationOverride re-levels the rule and takes precedence over the
+    # rule's defaultConfiguration.
+    ref = _skill_ref(tmp_path)
+
+    def _sarif(with_invocation_pointer: bool) -> dict:
+        result = {
+            "ruleId": "P2",
+            "ruleIndex": 0,
+            "message": {"text": "Possible tool poisoning."},
+        }
+        if with_invocation_pointer:
+            result["provenance"] = {"invocationIndex": 0}
+        return {
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "SkillSpector",
+                            "rules": [{"id": "P2", "defaultConfiguration": {"level": "note"}}],
+                        }
+                    },
+                    "invocations": [
+                        {
+                            "ruleConfigurationOverrides": [
+                                {
+                                    "descriptor": {"id": "P2", "index": 0},
+                                    "configuration": {"level": "error"},
+                                }
+                            ]
+                        }
+                    ],
+                    "results": [result],
+                }
+            ],
+        }
+
+    # With the invocation override in effect, "error" -> high (not the default "note" -> low).
+    overridden = SarifObservationAdapter().collect(ref, _sarif(with_invocation_pointer=True))
+    assert overridden[0].severity == "high"
+
+    # Without the provenance pointer, the rule defaultConfiguration ("note") applies -> low.
+    defaulted = SarifObservationAdapter().collect(ref, _sarif(with_invocation_pointer=False))
+    assert defaulted[0].severity == "low"

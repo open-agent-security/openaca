@@ -51,6 +51,8 @@ class SarifObservationAdapter:
             extension_rules_lists = [_list_of_dicts(ext.get("rules")) for ext in extensions]
             # SARIF 2.1.0: run.artifacts resolves artifactLocation.index references
             artifacts = _list_of_dicts(run.get("artifacts"))
+            # SARIF 2.1.0 §3.20.5: invocation ruleConfigurationOverrides re-level rules at runtime
+            invocations = _list_of_dicts(run.get("invocations"))
             # Merge driver + extension rules for ID-based lookup (SARIF rule IDs are unique per run)
             rules = _rules_by_id(driver_rules_list)
             for ext_rules in extension_rules_lists:
@@ -67,6 +69,7 @@ class SarifObservationAdapter:
                     extension_rules_lists=extension_rules_lists,
                     extensions=extensions,
                     artifacts=artifacts,
+                    invocations=invocations,
                     source=source,
                     source_version=source_version,
                 )
@@ -84,6 +87,7 @@ class SarifObservationAdapter:
         extension_rules_lists: list[list[Mapping[str, Any]]],
         extensions: list[Mapping[str, Any]],
         artifacts: list[Mapping[str, Any]],
+        invocations: list[Mapping[str, Any]],
         source: str,
         source_version: str,
     ) -> ObservationFinding | None:
@@ -115,7 +119,7 @@ class SarifObservationAdapter:
             source_version=source_version,
             observation_id=rule_id,
             title=title,
-            severity=_severity(result, rule),
+            severity=_severity(result, rule, invocations),
             confidence=_confidence(result, rule),
             component={
                 "identity": identity,
@@ -154,10 +158,15 @@ def _resolve_rule(
             component_rules_list = named if named is not None else driver_rules_list
         if 0 <= rule_index < len(component_rules_list):
             indexed_rule = component_rules_list[rule_index]
+            # SARIF 2.1.0 §3.52.4: the reference id MAY extend the descriptor id with
+            # additional hierarchical components, so the result-level id can be more
+            # specific than the indexed descriptor's id. Prefer the scanner-emitted
+            # reference id for the observation identity (and category_map key); keep the
+            # indexed descriptor for metadata (shortDescription, help, defaultConfiguration).
             rule_id = (
-                _str(indexed_rule.get("id"))
-                or _str(result.get("ruleId"))
+                _str(result.get("ruleId"))
                 or _str(_dict_at(result, "rule").get("id"))
+                or _str(indexed_rule.get("id"))
             )
             return rule_id, indexed_rule
     # Fall back to id-based lookup
@@ -192,7 +201,11 @@ def _rules_by_id(rules_list: list[Mapping[str, Any]]) -> dict[str, Mapping[str, 
     return rules
 
 
-def _severity(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Severity:
+def _severity(
+    result: Mapping[str, Any],
+    rule: Mapping[str, Any],
+    invocations: list[Mapping[str, Any]],
+) -> Severity:
     explicit = _first_string_property(result, rule, "openaca_severity", "severity")
     if explicit in _SEVERITIES:
         return cast(Severity, explicit)
@@ -209,8 +222,14 @@ def _severity(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Severity:
         return "info"
     level = _str(result.get("level"))
     if level is None:
-        # SARIF 2.1.0: absent level inherits rule defaultConfiguration.level, then "warning"
-        level = _str(_dict_at(rule, "defaultConfiguration").get("level")) or "warning"
+        # SARIF 2.1.0: when result.level is absent, an invocation
+        # ruleConfigurationOverride (§3.20.5) re-levels the rule for that run and takes
+        # precedence over the rule's defaultConfiguration; fall back to "warning".
+        level = (
+            _invocation_override_level(result, invocations)
+            or _str(_dict_at(rule, "defaultConfiguration").get("level"))
+            or "warning"
+        )
     if level == "error":
         return "high"
     if level == "warning":
@@ -218,6 +237,37 @@ def _severity(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Severity:
     if level in {"note", "none"}:
         return "low"
     return "medium"
+
+
+def _invocation_override_level(
+    result: Mapping[str, Any],
+    invocations: list[Mapping[str, Any]],
+) -> str | None:
+    # SARIF 2.1.0: a result selects its invocation via provenance.invocationIndex; that
+    # invocation's ruleConfigurationOverrides may carry a configuration.level for the
+    # result's rule (§3.20.5). Match the override descriptor to the result's rule by id
+    # or index, mirroring _resolve_rule's reference handling.
+    inv_index = _dict_at(result, "provenance").get("invocationIndex")
+    if not isinstance(inv_index, int) or not (0 <= inv_index < len(invocations)):
+        return None
+    for override in _list_of_dicts(invocations[inv_index].get("ruleConfigurationOverrides")):
+        if _override_matches_rule(_dict_at(override, "descriptor"), result):
+            level = _str(_dict_at(override, "configuration").get("level"))
+            if level is not None:
+                return level
+    return None
+
+
+def _override_matches_rule(descriptor: Mapping[str, Any], result: Mapping[str, Any]) -> bool:
+    desc_id = _str(descriptor.get("id"))
+    result_rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+    if desc_id is not None and desc_id == result_rule_id:
+        return True
+    desc_index = descriptor.get("index")
+    result_index = result.get("ruleIndex")
+    if not isinstance(result_index, int):
+        result_index = _dict_at(result, "rule").get("index")
+    return isinstance(desc_index, int) and desc_index == result_index
 
 
 def _confidence(result: Mapping[str, Any], rule: Mapping[str, Any]) -> Confidence:

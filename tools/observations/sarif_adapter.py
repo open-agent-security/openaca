@@ -18,8 +18,8 @@ DEFAULT_SOURCE_VERSION = "unknown"
 
 _SEVERITIES: set[str] = {"info", "low", "medium", "high", "critical"}
 _CONFIDENCES: set[str] = {"low", "medium", "high"}
-# SARIF 2.1.0 result.kind values that are not security findings
-_NON_FINDING_KINDS: frozenset[str] = frozenset({"pass", "notApplicable"})
+# SARIF 2.1.0 result.kind values that are not security findings (§3.27.9)
+_NON_FINDING_KINDS: frozenset[str] = frozenset({"pass", "notApplicable", "informational"})
 
 
 @dataclass(frozen=True)

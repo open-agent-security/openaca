@@ -114,22 +114,30 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                         f"{location} is a URL with credentials in userinfo ({name!r})"
                     )
 
-    for f_idx, finding in enumerate(payload.get("posture_findings", []) or []):
+    _validate_evidence_strings(payload, "posture_findings")
+    _validate_evidence_strings(payload, "observations")
+
+
+def _validate_evidence_strings(payload: dict[str, Any], key: str) -> None:
+    for f_idx, finding in enumerate(payload.get(key, []) or []):
         if not isinstance(finding, dict):
             continue
-        evidence = finding.get("evidence")
-        if not isinstance(evidence, dict):
-            continue
-        for key, value in evidence.items():
-            if not isinstance(value, str):
+        for object_key in ("evidence", "declared_by"):
+            evidence = finding.get(object_key)
+            if not isinstance(evidence, dict):
                 continue
-            location = f"$.posture_findings[{f_idx}].evidence.{key}"
-            if _is_absolute_path(value):
-                raise RemoteUploadContractError(f"{location} is an absolute path")
-            if _is_url_with_path_or_query(value):
-                raise RemoteUploadContractError(f"{location} is a URL with a path or query")
-            if _is_url_with_userinfo(value):
-                raise RemoteUploadContractError(f"{location} is a URL with credentials in userinfo")
+            for evidence_key, value in evidence.items():
+                if not isinstance(value, str):
+                    continue
+                location = f"$.{key}[{f_idx}].{object_key}.{evidence_key}"
+                if _is_absolute_path(value):
+                    raise RemoteUploadContractError(f"{location} is an absolute path")
+                if _is_url_with_path_or_query(value):
+                    raise RemoteUploadContractError(f"{location} is a URL with a path or query")
+                if _is_url_with_userinfo(value):
+                    raise RemoteUploadContractError(
+                        f"{location} is a URL with credentials in userinfo"
+                    )
 
 
 def _is_url_with_path_or_query(value: str) -> bool:

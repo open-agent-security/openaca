@@ -50,6 +50,7 @@ from tools.bom import (
 )
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding, match
+from tools.observations import ObservationFinding, collect_skill_observations
 from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
 from tools.parsers import flatten_grouped, parse_repo_grouped
@@ -369,6 +370,7 @@ def _emit(
     use_color: bool,
     verbose: bool,
     posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
@@ -379,9 +381,17 @@ def _emit(
     by the machine formats (github/json), whose stdout shape is unchanged.
     """
     if output_format == "github":
-        rendered = render_github(findings, posture_findings=posture_findings)
+        rendered = render_github(
+            findings, posture_findings=posture_findings, observations=observations
+        )
     elif output_format == "json":
-        rendered = render_json(findings, advisory_index, stats, posture_findings=posture_findings)
+        rendered = render_json(
+            findings,
+            advisory_index,
+            stats,
+            posture_findings=posture_findings,
+            observations=observations,
+        )
     else:
         rendered = render_text(
             findings,
@@ -390,6 +400,7 @@ def _emit(
             use_color=use_color,
             verbose=verbose,
             posture_findings=posture_findings,
+            observations=observations,
             target=target,
             inventory_tree=inventory_tree,
             next_actions=next_actions,
@@ -538,6 +549,7 @@ def repo(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
+    observations = collect_skill_observations(refs)
 
     posture_findings: list[PostureFinding] = []
     if include_posture:
@@ -603,6 +615,7 @@ def repo(
             advisory_index,
             overlay_id_map,
             posture_findings=posture_findings or None,
+            observations=observations or None,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
@@ -622,6 +635,7 @@ def repo(
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
         posture_findings=posture_findings if include_posture else None,
+        observations=observations,
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
@@ -704,6 +718,7 @@ def endpoint(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
+    observations = collect_skill_observations(refs)
 
     posture_findings: list[PostureFinding] = []
     if include_posture:
@@ -764,6 +779,7 @@ def endpoint(
             advisory_index,
             overlay_id_map,
             posture_findings=posture_findings or None,
+            observations=observations or None,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
@@ -782,6 +798,7 @@ def endpoint(
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
         posture_findings=posture_findings if include_posture else None,
+        observations=observations,
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
@@ -863,6 +880,7 @@ def scan_bom(
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus)
+    observations = []
     advisory_index = {a["id"]: a for a in corpus}
 
     # Inventory tree for the text card; machine formats keep it verbose-only.
@@ -910,7 +928,7 @@ def scan_bom(
                 click.echo(f"  {_finding_line(f)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map)
+        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map, observations=None)
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
@@ -927,6 +945,7 @@ def scan_bom(
         output_format=output_format,
         use_color=_use_color(no_color, output_format),
         verbose=verbose,
+        observations=observations,
         target=card_target,
         inventory_tree=card_tree,
     )

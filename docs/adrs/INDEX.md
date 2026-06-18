@@ -41,6 +41,7 @@ against the rules in effect at the time.
 - [ADR-0030 — Centralize identity semantics behind helper APIs](0030-centralize-identity-semantics.md): graph identity, match-coordinate classification, unpinned MCP launcher parsing, and Fleet-safe install-source rendering must live behind shared helper APIs rather than being reimplemented separately in BOM, matcher, OSV, Fleet collector, and upload-contract code.
 - [ADR-0031 — Separate graph identity from match coordinates](0031-match-coordinates.md): `openaca:identity` remains the graph occurrence key for BOM/posture/drift/policy joins, while vulnerability matching uses derived match coordinates from PURL, Git metadata, unpinned package launches, or `openaca:match_coordinate`; matching never falls back to graph identity.
 - [ADR-0032 — Use remote as the public upload CLI namespace](0032-remote-cli-namespace.md): supersedes ADR-0024's public `openaca fleet ...` command group; networked backend operations now live under product-neutral `openaca remote ...`, with endpoint collection exposed as `openaca remote sync endpoint`.
+- [ADR-0033 — Separate scanner observations from advisories and posture](0033-observation-findings.md): scanner/audit results are source-attributed observation findings, not OpenACA advisory verdicts; stable skill coordinates support dedupe, drift, audit history, and future lookup rather than implying a skill vulnerability database exists today.
 
 ## Superseded
 

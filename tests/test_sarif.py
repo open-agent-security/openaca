@@ -1,5 +1,6 @@
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.observations import ObservationFinding
 from tools.sarif import to_sarif
 
 
@@ -302,3 +303,37 @@ def test_sarif_no_posture_rules_when_kwarg_omitted():
     doc = to_sarif([], {})
     rules = doc["runs"][0]["tool"]["driver"]["rules"]
     assert not any(r["id"].startswith("openaca-posture-") for r in rules)
+
+
+# ── Observation findings in SARIF ────────────────────────────────────────────
+
+
+def test_sarif_emits_observation_rule_and_result():
+    observation = ObservationFinding(
+        source="openaca-skill-audit",
+        source_version="0.2.0b1",
+        observation_id="skill.allowed-executable-tool",
+        title="Skill declares executable tool access",
+        severity="low",
+        confidence="high",
+        component={"identity": "skill/deploy-helper", "name": "deploy-helper", "type": "skill"},
+        subject_coordinate="sha256:abc123",
+        evidence={"allowed_tools": ["Bash"], "source_manifest": "skills/deploy/SKILL.md"},
+        categories=["skill-capability"],
+        declared_by={"kind": "manifest", "path": "skills/deploy/SKILL.md"},
+    )
+
+    doc = to_sarif([], {}, observations=[observation])
+
+    rules = doc["runs"][0]["tool"]["driver"]["rules"]
+    assert [rule["id"] for rule in rules] == ["openaca-skill-audit:skill.allowed-executable-tool"]
+    results = doc["runs"][0]["results"]
+    assert len(results) == 1
+    result = results[0]
+    assert result["ruleId"] == "openaca-skill-audit:skill.allowed-executable-tool"
+    assert result["level"] == "note"
+    assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == (
+        "skills/deploy/SKILL.md"
+    )
+    assert result["properties"]["finding_type"] == "observation"
+    assert result["properties"]["subject_coordinate"] == "sha256:abc123"

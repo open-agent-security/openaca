@@ -31,8 +31,9 @@ from urllib.parse import urlparse, urlunparse
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
-from tools.finding_output import finding_to_output, posture_to_output
+from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
 from tools.matcher import Finding
+from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
 from tools.severity import derive_severity_label, derive_severity_score
 
@@ -260,6 +261,7 @@ def render_text(
     use_color: bool = False,
     verbose: bool = False,
     posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
@@ -282,6 +284,7 @@ def render_text(
             use_color=use_color,
             verbose=verbose,
             posture_findings=posture_findings,
+            observations=observations,
         )
     return _render_text_card(
         findings,
@@ -290,6 +293,7 @@ def render_text(
         use_color=use_color,
         verbose=verbose,
         posture_findings=posture_findings,
+        observations=observations,
         target=target,
         inventory_tree=inventory_tree,
         next_actions=next_actions,
@@ -304,9 +308,11 @@ def _render_text_legacy(
     use_color: bool,
     verbose: bool,
     posture_findings: list[PostureFinding] | None,
+    observations: list[ObservationFinding] | None,
 ) -> str:
     """Findings-grouped body without the inventory card (legacy default)."""
     posture_findings = posture_findings or []
+    observations = observations or []
     unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
     component_phrase = _pluralize(stats.component_count, "component")
     if not findings:
@@ -320,8 +326,13 @@ def _render_text_legacy(
             "\nOpenACA scans agent composition; for general software dependency "
             "scans, use a general-purpose SCA scanner."
         )
+        extras = []
+        if observations:
+            extras.append(_render_observation_section(observations, use_color))
         if posture_findings:
-            return head + "\n\n" + _render_posture_section(posture_findings, use_color)
+            extras.append(_render_posture_section(posture_findings, use_color))
+        if extras:
+            return head + "\n\n" + "\n\n".join(extras)
         return head
 
     n_pkgs = len(_group_findings(findings))
@@ -342,6 +353,9 @@ def _render_text_legacy(
     if posture_findings:
         out.append("")
         out.append(_render_posture_section(posture_findings, use_color))
+    if observations:
+        out.append("")
+        out.append(_render_observation_section(observations, use_color))
     return "\n".join(out)
 
 
@@ -438,6 +452,7 @@ def _render_text_card(
     use_color: bool,
     verbose: bool,
     posture_findings: list[PostureFinding] | None,
+    observations: list[ObservationFinding] | None,
     target: RenderTarget | None,
     inventory_tree: str | None,
     next_actions: list[str] | None,
@@ -446,7 +461,9 @@ def _render_text_card(
     Posture -> Summary -> Next. `posture_findings is None` means posture was not
     requested (`posture: skipped`); `[]` means it ran and found nothing."""
     posture_skipped = posture_findings is None
+    observations_ran = observations is not None
     posture_findings = posture_findings or []
+    observations = observations or []
     unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
     component_phrase = _pluralize(stats.component_count, "component")
 
@@ -486,14 +503,19 @@ def _render_text_card(
 
     if posture_findings:
         sections.append(_render_posture_section(posture_findings, use_color))
+    if observations:
+        sections.append(_render_observation_section(observations, use_color))
 
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
     parse_note = f" ({stats.parse_failed} failed to parse)" if stats.parse_failed else ""
     posture_count = "skipped" if posture_skipped else str(len(posture_findings))
+    evidence_counts = f"advisories: {len(findings)} · posture: {posture_count}"
+    if observations_ran:
+        evidence_counts += f" · observations: {len(observations)}"
     sections.append(
         "Summary\n"
         f"  Scanned {unit_phrase}, {component_phrase}{parse_note} · "
-        f"advisories: {len(findings)} · posture: {posture_count}\n"
+        f"{evidence_counts}\n"
         f"  sources: {sources_str}"
     )
 
@@ -534,6 +556,46 @@ def _render_posture_section(
             standards_parts.extend(values)
         if standards_parts:
             lines.append(f"       standards: {', '.join(standards_parts)}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+# ── Observation findings section (source-attributed audit evidence) ──────────
+
+
+_OBSERVATION_SEVERITY_LABEL = {
+    "info": "INFO",
+    "low": "LOW",
+    "medium": "MEDIUM",
+    "high": "HIGH",
+    "critical": "CRITICAL",
+}
+
+
+def _render_observation_section(
+    observations: list[ObservationFinding],
+    use_color: bool,
+) -> str:
+    rank = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
+    sorted_observations = sorted(
+        observations,
+        key=lambda o: (-rank.get(o.severity, 0), o.source, o.observation_id, o.component_label),
+    )
+    lines: list[str] = ["Audit observations (source-attributed):", ""]
+    for observation in sorted_observations:
+        label = _OBSERVATION_SEVERITY_LABEL.get(observation.severity, observation.severity.upper())
+        label_disp = _color(label, use_color)
+        lines.append(
+            f"  {label_disp}  {observation.source}:{observation.observation_id}  "
+            f"{observation.component_label}"
+        )
+        if observation.location:
+            lines.append(f"       location: {observation.location}")
+        lines.append(f"       observed: {observation.title}")
+        lines.append(f"       confidence: {observation.confidence}")
+        lines.append(f"       subject: {observation.subject_coordinate}")
+        if observation.remediation:
+            lines.append(f"       fix:      {observation.remediation}")
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -639,6 +701,7 @@ def _esc_data(value: str) -> str:
 def render_github(
     findings: list[Finding],
     posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
 ) -> str:
     """Emit one workflow-annotation line per finding. Matcher `confidence`
     maps to `::error` (high) or `::warning` (low/unknown). Posture findings
@@ -663,6 +726,20 @@ def render_github(
             lines.append(
                 f"::{kind} file={file_param},title={title_param}::{_esc_data(p.remediation)}"
             )
+    if observations:
+        observation_level = {
+            "critical": "error",
+            "high": "error",
+            "medium": "warning",
+            "low": "notice",
+            "info": "notice",
+        }
+        for observation in observations:
+            kind = observation_level.get(observation.severity, "notice")
+            file_param = _esc_param(observation.location or "")
+            title_param = _esc_param(observation.observation_id)
+            message = f"{observation.source} observed: {observation.title}"
+            lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
     return "\n".join(lines)
 
 
@@ -675,6 +752,7 @@ def render_json(
     stats: ScanStats,
     *,
     posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
 ) -> str:
     """Structured per-finding records + scan-level stats. The schema is
     documented in README; consumers should treat unknown keys as forward-
@@ -691,6 +769,8 @@ def render_json(
         out_findings.append(entry)
     for p in posture_findings or []:
         out_findings.append(posture_to_output(p))
+    for observation in observations or []:
+        out_findings.append(observation_to_output(observation))
     document = {
         "findings": out_findings,
         "stats": {

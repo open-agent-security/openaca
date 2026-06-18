@@ -1390,6 +1390,7 @@ def _collection(*, bom: dict[str, Any] | None = None) -> EndpointCollection:
                 "evidence": {"transport": "http", "manifest_path": ".mcp.json"},
             }
         ],
+        observations=[],
         component_count=0,
     )
 

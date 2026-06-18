@@ -1,5 +1,4 @@
 # OpenACA V0 — Implementation Plan Index
-
 V0 implementation: plans 001-006 are the original V0 deliverables. Plans
 007+ are pre-V0-launch refinements that fill in gaps surfaced from
 dogfooding. Each plan produces working, testable software on its own.
@@ -35,7 +34,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 026 | [openaca.core consumption facade](026-openaca-core-facade.md) | ✅ Done | 025 |
 | 027 | [Fleet deploy script tests](027-fleet-deploy-script-tests.md) | ✅ Done | 024 |
 | 029 | [Agent graph occurrence identity](029-agent-graph-identity.md) | ✅ Done | 026 |
-| 030 | [Identity semantics hardening](030-identity-hardening.md) | 🟡 Active | 029 |
+| 030 | [Identity semantics hardening](030-identity-hardening.md) | ✅ Done | 029 |
+| 031 | [Observation findings](031-observation-findings.md) | ✅ Done | 030 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

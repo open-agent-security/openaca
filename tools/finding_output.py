@@ -6,6 +6,7 @@ from typing import Any
 
 from tools.component_ref import ComponentRef
 from tools.matcher import Finding
+from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
 
 _PACKAGE_ECOSYSTEMS = {"npm", "PyPI", "pypi", "docker", "Docker"}
@@ -137,6 +138,28 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
         "standards": finding.standards.to_dict(),
         "remediation": finding.remediation,
     }
+    if finding.declared_by is not None:
+        out["declared_by"] = finding.declared_by
+    return out
+
+
+def observation_to_output(finding: ObservationFinding) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "finding_type": "observation",
+        "source": finding.source,
+        "source_version": finding.source_version,
+        "observation_id": finding.observation_id,
+        "title": finding.title,
+        "severity": finding.severity,
+        "confidence": finding.confidence,
+        "component": finding.component,
+        "subject_coordinate": finding.subject_coordinate,
+        "component_path": finding.component_path,
+        "categories": finding.categories,
+        "evidence": finding.evidence,
+    }
+    if finding.remediation is not None:
+        out["remediation"] = finding.remediation
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by
     return out

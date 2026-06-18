@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.finding_output import finding_to_output, posture_to_output
+from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
 from tools.matcher import Finding
+from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
 
 LEVEL_BY_CONFIDENCE: dict[str, str] = {
@@ -33,6 +34,14 @@ LEVEL_BY_POSTURE_SEVERITY: dict[str, str] = {
     "low": "note",
     "medium": "warning",
     "high": "error",
+}
+
+LEVEL_BY_OBSERVATION_SEVERITY: dict[str, str] = {
+    "info": "note",
+    "low": "note",
+    "medium": "warning",
+    "high": "error",
+    "critical": "error",
 }
 
 
@@ -99,6 +108,7 @@ def to_sarif(
     overlay_id_map: dict[str, str] | None = None,
     *,
     posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
 ) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
@@ -185,6 +195,53 @@ def to_sarif(
                         "finding_type": "posture",
                         "confidence": p.confidence,
                         "standards": p.standards.to_dict(),
+                    },
+                }
+            )
+
+    if observations:
+        seen_rule_ids = {r["id"] for r in rules}
+        for observation in observations:
+            normalized = observation_to_output(observation)
+            rule_id = f"{observation.source}:{observation.observation_id}"
+            if rule_id not in seen_rule_ids:
+                seen_rule_ids.add(rule_id)
+                rules.append(
+                    {
+                        "id": rule_id,
+                        "name": observation.observation_id,
+                        "shortDescription": {"text": observation.title},
+                        "fullDescription": {"text": observation.remediation or observation.title},
+                        "properties": {
+                            "source": observation.source,
+                            "source_version": observation.source_version,
+                            "finding_type": "observation",
+                        },
+                    }
+                )
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": LEVEL_BY_OBSERVATION_SEVERITY.get(observation.severity, "note"),
+                    "message": {"text": f"{observation.source} observed: {observation.title}"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": observation.location},
+                                "region": {
+                                    "startLine": 1,
+                                    "snippet": {"text": observation.component_label},
+                                },
+                            }
+                        }
+                    ],
+                    "properties": {
+                        **_identity_properties(normalized),
+                        "finding_type": "observation",
+                        "source": observation.source,
+                        "source_version": observation.source_version,
+                        "confidence": observation.confidence,
+                        "subject_coordinate": observation.subject_coordinate,
                     },
                 }
             )

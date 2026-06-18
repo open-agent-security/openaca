@@ -440,6 +440,39 @@ def test_sarif_adapter_skips_not_applicable_kind_results(tmp_path: Path) -> None
     assert observations == []
 
 
+def test_sarif_adapter_skips_informational_kind_results(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "INFO-001",
+                                "shortDescription": {"text": "Tool version notice"},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "INFO-001",
+                        "kind": "informational",
+                        "message": {"text": "Scanner version 1.2.3 used."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    # SARIF kind "informational" is a notification for the user, not a problem — must be filtered
+    assert observations == []
+
+
 def test_sarif_adapter_only_emits_findings_from_mixed_kinds(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {

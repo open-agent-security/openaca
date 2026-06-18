@@ -1,0 +1,149 @@
+from pathlib import Path
+
+from tools.observations import SarifObservationAdapter
+from tools.parsers.claude_skill import parse
+
+
+def _skill_ref(tmp_path: Path):
+    skill_dir = tmp_path / "deploy-helper"
+    skill_dir.mkdir()
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text(
+        "---\n"
+        "name: deploy-helper\n"
+        "description: Helps deploy services\n"
+        "---\n"
+        "Run the deploy checklist.\n"
+    )
+    return parse(skill_md)[0]
+
+
+def test_sarif_adapter_preserves_source_attribution_and_subject_coordinate(
+    tmp_path: Path,
+) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "SkillSpector",
+                        "semanticVersion": "1.2.3",
+                        "rules": [
+                            {
+                                "id": "P1",
+                                "shortDescription": {"text": "Instruction override"},
+                                "properties": {"tags": ["prompt-injection"]},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "P1",
+                        "level": "error",
+                        "message": {"text": "Skill asks the agent to ignore prior instructions."},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": "SKILL.md"},
+                                    "region": {"startLine": 7},
+                                }
+                            }
+                        ],
+                        "properties": {"confidence": "high"},
+                    }
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter(
+        category_map={"P1": ["owasp-ast01", "prompt-injection"]}
+    ).collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.source == "SkillSpector"
+    assert observation.source_version == "1.2.3"
+    assert observation.observation_id == "P1"
+    assert observation.title == "Instruction override"
+    assert observation.severity == "high"
+    assert observation.confidence == "high"
+    assert observation.subject_coordinate.startswith("sha256:")
+    assert observation.component == {
+        "identity": "skill/deploy-helper",
+        "name": "deploy-helper",
+        "type": "skill",
+    }
+    assert observation.categories == ["owasp-ast01", "prompt-injection"]
+    assert observation.evidence == {
+        "sarif_rule_id": "P1",
+        "sarif_level": "error",
+        "sarif_message": "Skill asks the agent to ignore prior instructions.",
+        "location_uri": "SKILL.md",
+        "start_line": 7,
+    }
+
+
+def test_sarif_adapter_uses_security_severity_and_default_confidence(
+    tmp_path: Path,
+) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "bawbel",
+                        "rules": [
+                            {
+                                "id": "AVE-2026-00001",
+                                "shortDescription": {"text": "Credential access"},
+                                "properties": {"security-severity": "9.4"},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "AVE-2026-00001",
+                        "level": "warning",
+                        "message": {"text": "Reads credential files."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter(source_version="unknown").collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.source == "bawbel"
+    assert observation.source_version == "unknown"
+    assert observation.severity == "critical"
+    assert observation.confidence == "medium"
+
+
+def test_sarif_adapter_accepts_nested_rule_id(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {"driver": {"name": "scanner"}},
+                "results": [
+                    {
+                        "rule": {"id": "nested-rule"},
+                        "message": {"text": "Nested rule id shape."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].observation_id == "nested-rule"

@@ -1,0 +1,72 @@
+---
+status: accepted
+date: 2026-06-18
+---
+
+# ADR-0034: Use external scanners as observation sources
+
+## Context
+
+ADR-0033 separates observation findings from vulnerability advisories and
+OpenACA posture findings. The next design question is where detection logic for
+skill-content risks belongs.
+
+Several existing tools already scan AI agent skills and related artifacts for
+content risks such as prompt injection, data exfiltration, excessive agency,
+unsafe tool use, secret access, and supply-chain drift. Some emit SARIF or JSON,
+and each has its own rule IDs, severity model, confidence model, taxonomy, and
+evidence shape.
+
+OpenACA also has context those scanners do not own: Agent BOM identities,
+artifact coordinates, source provenance, component paths, advisory matching,
+posture findings, and downstream policy/evaluation history.
+
+## Decision
+
+OpenACA will treat external skill/content scanners as **observation sources**.
+OpenACA will not build a broad native skill-content scanning engine in V0.
+
+The OpenACA responsibility boundary is:
+
+- attach scanner results to Agent BOM component identities and artifact
+  coordinates
+- preserve scanner source, source version, rule ID, severity, confidence, and
+  evidence
+- map scanner-specific categories into OpenACA-supported taxonomy labels only
+  through explicit adapter mappings
+- deduplicate and policy-evaluate observations without converting them into
+  OpenACA advisory records
+- keep native OpenACA skill observations limited to deterministic facts OpenACA
+  can observe directly, such as declared executable tool access and artifact
+  coordinates
+
+SARIF is accepted as an interchange format, not as a semantic contract. A SARIF
+adapter must still normalize rule identity, source attribution,
+severity/confidence, location, evidence, component identity, subject coordinate,
+and taxonomy categories.
+
+## Consequences
+
+- OpenACA can integrate scanner coverage incrementally without inheriting every
+  detector as OpenACA-owned logic.
+- Scanner disagreement remains visible because observations retain source
+  attribution.
+- OpenACA avoids presenting heuristic scanner output as durable vulnerability
+  advisories.
+- Additional adapters can be added without changing the core
+  `ObservationFinding` model.
+- OpenACA's native observation rules stay conservative and explainable.
+
+## Rejected
+
+- **Build broad native skill-content detectors now.** This duplicates existing
+  scanner work and would require an ongoing research/evaluation operation before
+  OpenACA has established that authority.
+- **Treat SARIF ingestion as sufficient by itself.** SARIF moves results between
+  tools, but does not define OpenACA identity semantics, taxonomy mappings,
+  confidence rules, or safe evidence handling.
+- **Convert scanner hits into OpenACA advisory records.** Scanner observations
+  are tied to source, configuration, and artifact bytes. Advisory records need
+  durable affected ranges, disclosure process, and upstream ownership.
+- **Fold external scanner output into posture findings.** Posture findings are
+  OpenACA rule verdicts. External scanner output must keep source attribution.

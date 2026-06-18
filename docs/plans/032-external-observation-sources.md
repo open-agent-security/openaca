@@ -22,11 +22,11 @@ follow-up plans.
 - [x] Establish the `skill-content-hash` coordinate (renamed from
       `skill-tree-hash`).
 - [x] Keep native, deterministic OpenACA skill observations within the model.
+- [x] Add an opt-in SkillSpector CLI adapter against SkillSpector's actual
+      output, with deterministic rule -> taxonomy mapping.
 
 ## Deferred
 
-- [ ] Add a SkillSpector-specific adapter against SkillSpector's actual output,
-      with deterministic rule -> taxonomy mapping (next plan / PR #127).
 - [ ] Add later scanner-specific adapters (e.g. Cisco, bawbel) as needed.
 - [ ] Run candidate scanners against a shared fixture corpus and compare noise.
 - [ ] Add cross-scanner dedupe/disagreement handling.

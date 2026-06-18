@@ -53,11 +53,11 @@ class SarifObservationAdapter:
             artifacts = _list_of_dicts(run.get("artifacts"))
             # SARIF 2.1.0 §3.20.5: invocation ruleConfigurationOverrides re-level rules at runtime
             invocations = _list_of_dicts(run.get("invocations"))
-            # Merge driver + extension rules for ID-based lookup (SARIF rule IDs are unique per run)
+            # SARIF 2.1.0 §3.52.3: an absent toolComponent references tool.driver, so the
+            # id-based fallback is driver-scoped — same-id extension rules must not shadow it.
+            # Extension rules are resolved only when a result explicitly references them.
             rules = _rules_by_id(driver_rules_list)
-            for ext_rules in extension_rules_lists:
-                rules.update(_rules_by_id(ext_rules))
-            # SARIF 2.1.0 §3.52.3: a reportingDescriptorReference may locate a rule by guid
+            # guids are globally unique across components, so a merged guid map is unambiguous.
             rules_by_guid = _rules_by_guid(driver_rules_list)
             for ext_rules in extension_rules_lists:
                 rules_by_guid.update(_rules_by_guid(ext_rules))
@@ -156,13 +156,10 @@ def _resolve_rule(
         rule_index = _dict_at(result, "rule").get("index")
     if isinstance(rule_index, int):
         tc_ref = _dict_at(result, "rule", "toolComponent")
-        tc_index = tc_ref.get("index")
-        if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
-            component_rules_list = extension_rules_lists[tc_index]
-        else:
-            # SARIF 2.1.0 toolComponentReference also allows name/guid to identify the component
-            named = _extension_rules_by_ref(tc_ref, extensions)
-            component_rules_list = named if named is not None else driver_rules_list
+        component_rules_list = (
+            _referenced_extension_rules(tc_ref, extension_rules_lists, extensions)
+            or driver_rules_list
+        )
         if 0 <= rule_index < len(component_rules_list):
             indexed_rule = component_rules_list[rule_index]
             # SARIF 2.1.0 §3.52.4: the reference id MAY extend the descriptor id with
@@ -176,9 +173,16 @@ def _resolve_rule(
                 or _str(indexed_rule.get("id"))
             )
             return rule_id, indexed_rule
-    # Fall back to id-based lookup
+    # Fall back to id-based lookup. SARIF 2.1.0 §3.52.3: an absent toolComponent references
+    # tool.driver, so resolve against an explicitly referenced extension if present, otherwise
+    # the driver-scoped `rules` map — a same-id extension rule must not shadow the driver rule.
     rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
     if rule_id is not None:
+        tc_ref = _dict_at(result, "rule", "toolComponent")
+        if tc_ref:
+            ext_rules_list = _referenced_extension_rules(tc_ref, extension_rules_lists, extensions)
+            if ext_rules_list is not None:
+                return rule_id, _rule_for_hierarchical_id(rule_id, _rules_by_id(ext_rules_list))
         return rule_id, _rule_for_hierarchical_id(rule_id, rules)
     # SARIF 2.1.0 §3.52.3: a reference may locate the rule by guid instead of id/index.
     # Resolve the descriptor by guid and use its (required) id as the observation identity.
@@ -190,6 +194,19 @@ def _resolve_rule(
             if descriptor_id is not None:
                 return descriptor_id, descriptor
     return None, {}
+
+
+def _referenced_extension_rules(
+    tc_ref: Mapping[str, Any],
+    extension_rules_lists: list[list[Mapping[str, Any]]],
+    extensions: list[Mapping[str, Any]],
+) -> list[Mapping[str, Any]] | None:
+    # Resolve the extension a reference points at by toolComponent index, then name/guid.
+    # Returns None when no extension is referenced (caller falls back to the driver).
+    tc_index = tc_ref.get("index")
+    if isinstance(tc_index, int) and 0 <= tc_index < len(extension_rules_lists):
+        return extension_rules_lists[tc_index]
+    return _extension_rules_by_ref(tc_ref, extensions)
 
 
 def _extension_rules_by_ref(

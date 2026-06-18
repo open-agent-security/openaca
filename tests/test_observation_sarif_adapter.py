@@ -378,3 +378,50 @@ def test_sarif_adapter_raw_tags_stay_in_evidence_not_categories(tmp_path: Path) 
     assert observation.categories == []
     # Raw tags are preserved in evidence so the scanner signal is not lost
     assert observation.evidence["sarif_tags"] == ["security", "external/cwe/CWE-77"]
+
+
+def test_sarif_adapter_index_takes_priority_over_id_dict_for_duplicate_rule_ids(
+    tmp_path: Path,
+) -> None:
+    ref = _skill_ref(tmp_path)
+    # Two rules share the same id "DUP"; _rules_by_id collapses them (last wins).
+    # ruleIndex=0 on the result must pin the *first* rule, not the dict survivor.
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "DUP",
+                                "shortDescription": {"text": "First DUP rule"},
+                                "defaultConfiguration": {"level": "error"},
+                            },
+                            {
+                                "id": "DUP",
+                                "shortDescription": {"text": "Second DUP rule"},
+                                "defaultConfiguration": {"level": "note"},
+                            },
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "DUP",
+                        "ruleIndex": 0,
+                        "message": {"text": "Finding matched to first DUP rule by index."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.observation_id == "DUP"
+    # Index 0 → "First DUP rule" with level "error" → severity "high"
+    assert observation.title == "First DUP rule"
+    assert observation.severity == "high"

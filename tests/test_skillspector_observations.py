@@ -198,6 +198,47 @@ def test_skillspector_severity_override_mechanism(tmp_path: Path) -> None:
     assert "properties" not in results[1]
 
 
+def test_skillspector_critical_rules_reported_as_critical(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector", "version": "0.5.0"}},
+                            "results": [
+                                {
+                                    "ruleId": "AST1",
+                                    "level": "error",
+                                    "message": {"text": "exec() call detected."},
+                                },
+                                {
+                                    "ruleId": "P1",
+                                    "level": "error",
+                                    "message": {"text": "Prompt injection pattern."},
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="")
+
+    observations, warnings = collect_skillspector_observations([ref], run_command=fake_run)
+
+    assert warnings == []
+    assert len(observations) == 2
+    by_rule = {obs.observation_id: obs for obs in observations}
+    assert by_rule["AST1"].severity == "critical"
+    assert by_rule["P1"].severity == "high"
+
+
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 

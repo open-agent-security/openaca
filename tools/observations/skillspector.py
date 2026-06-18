@@ -50,11 +50,21 @@ _LEVEL_TO_SEVERITY: dict[str, Severity] = {
     "none": "low",
 }
 
-# Severity overrides for SkillSpector rules whose native severity exceeds what
-# SARIF level="error" can express. SkillSpector collapses HIGH and CRITICAL
-# findings to level="error"; populate this map once upstream SkillSpector
-# documentation confirms which rule IDs carry a native "critical" severity.
-_SEVERITY_MAP: dict[str, Severity] = {}
+# Severity overrides for SkillSpector rules whose SARIF level="error" under-
+# reports native CRITICAL severity. SkillSpector collapses HIGH and CRITICAL
+# to level="error"; entries here inject openaca_severity so the adapter emits
+# "critical" instead of "high".
+# Source: NVIDIA/SkillSpector README vulnerability-pattern table.
+_SEVERITY_MAP: dict[str, Severity] = {
+    "P5": "critical",
+    "RA1": "critical",
+    "AST1": "critical",
+    "AST8": "critical",
+    "TT3": "critical",
+    "TT5": "critical",
+    "YR1": "critical",
+    "YR2": "critical",
+}
 
 
 def collect_skillspector_observations(

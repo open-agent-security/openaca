@@ -590,6 +590,36 @@ def test_rejects_absolute_path_inside_observation_evidence_list():
     assert "observations[0].evidence.allowed_tools[0]" in str(exc.value)
 
 
+def test_rejects_embedded_absolute_path_in_observation_evidence_bash_filter():
+    """Absolute paths embedded inside Bash filter syntax must be rejected.
+    A string like `Bash(/Users/alice/deploy.sh *)` does not start with `/` so
+    the whole-string `_is_absolute_path` check would miss it.
+    """
+    payload = _payload(
+        observations=[
+            {
+                "source": "openaca-skill-audit",
+                "source_version": "0.2.0b1",
+                "observation_id": "skill.allowed-executable-tool",
+                "severity": "LOW",
+                "confidence": "high",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "sha256:abc123",
+                "summary": "Skill declares executable tool access",
+                "evidence": {
+                    "allowed_tools": ["Bash(/Users/alice/.claude/skills/deploy/run.sh *)"]
+                },
+            }
+        ]
+    )
+
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
+
+    assert "observations[0].evidence.allowed_tools[0]" in str(exc.value)
+    assert "embedded absolute path" in str(exc.value)
+
+
 def test_rejects_absolute_observation_evidence_path():
     payload = _payload(
         observations=[

@@ -14,6 +14,9 @@ _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(ghp_[A-Za-z0-9_]{20,}|gho_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|"
     r"sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{20,}|ot_[A-Za-z0-9_]{20,})\b"
 )
+# A Unix absolute path embedded inside a larger string (e.g. `Bash(/home/user/script *)`)
+# — the `/` is preceded by a character that cannot be part of a filesystem path itself.
+_EMBEDDED_UNIX_PATH_RE = re.compile(r"(?<=[^/\w])(/[a-zA-Z0-9_.])")
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)(?:token|api[_-]?key|apikey|secret|password|authorization|auth[_-]?token)="
 )
@@ -143,6 +146,8 @@ def _check_evidence_string_at(value: str, location: str) -> None:
         raise RemoteUploadContractError(f"{location} is a URL with a path or query")
     if _is_url_with_userinfo(value):
         raise RemoteUploadContractError(f"{location} is a URL with credentials in userinfo")
+    if _EMBEDDED_UNIX_PATH_RE.search(value):
+        raise RemoteUploadContractError(f"{location} contains an embedded absolute path")
 
 
 def _is_url_with_path_or_query(value: str) -> bool:

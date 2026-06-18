@@ -971,6 +971,39 @@ def test_redact_payload_redacts_absolute_paths_in_observation_evidence_list(tmp_
     assert not evidence["source_manifest"].startswith("/")
 
 
+def test_redact_payload_redacts_embedded_absolute_path_in_bash_filter(tmp_path):
+    """Absolute paths embedded inside Bash filter syntax must be redacted.
+    `Bash(/config_dir/skills/deploy/run.sh *)` should become `Bash(skills/deploy/run.sh *)`
+    (relativized under config_dir) while preserving the surrounding structure.
+    """
+    from tools.remote.collector import _redact_payload_for_remote
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    abs_path = str(config_dir / "skills" / "deploy" / "run.sh")
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [],
+        "observations": [
+            {
+                "source": "openaca-skill-audit",
+                "observation_id": "skill.allowed-executable-tool",
+                "evidence": {
+                    "allowed_tools": [f"Bash({abs_path} *)", "Read"],
+                },
+            }
+        ],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    evidence = payload["observations"][0]["evidence"]
+    tool = evidence["allowed_tools"][0]
+    assert str(config_dir) not in tool, tool
+    assert tool.startswith("Bash("), tool
+    assert evidence["allowed_tools"][1] == "Read"
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

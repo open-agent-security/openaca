@@ -84,6 +84,7 @@ def test_sarif_adapter_preserves_source_attribution_and_subject_coordinate(
         "sarif_message": "Skill asks the agent to ignore prior instructions.",
         "location_uri": "SKILL.md",
         "start_line": 7,
+        "sarif_tags": ["prompt-injection"],
     }
 
 
@@ -259,3 +260,40 @@ def test_sarif_adapter_uses_rule_default_configuration_level(tmp_path: Path) -> 
 
     assert len(observations) == 1
     assert observations[0].severity == "high"
+
+
+def test_sarif_adapter_raw_tags_stay_in_evidence_not_categories(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "TAGGED-RULE",
+                                "shortDescription": {"text": "Tagged finding"},
+                                "properties": {"tags": ["security", "external/cwe/CWE-77"]},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "TAGGED-RULE",
+                        "message": {"text": "Finding with raw tags, no explicit mapping."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    observation = observations[0]
+    # ADR-0034: without an explicit category_map entry, raw SARIF tags must NOT become categories
+    assert observation.categories == []
+    # Raw tags are preserved in evidence so the scanner signal is not lost
+    assert observation.evidence["sarif_tags"] == ["security", "external/cwe/CWE-77"]

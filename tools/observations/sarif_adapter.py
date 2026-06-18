@@ -18,6 +18,8 @@ DEFAULT_SOURCE_VERSION = "unknown"
 
 _SEVERITIES: set[str] = {"info", "low", "medium", "high", "critical"}
 _CONFIDENCES: set[str] = {"low", "medium", "high"}
+# SARIF 2.1.0 result.kind values that are not security findings
+_NON_FINDING_KINDS: frozenset[str] = frozenset({"pass", "notApplicable"})
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,9 @@ class SarifObservationAdapter:
             for ext_rules in extension_rules_lists:
                 rules.update(_rules_by_id(ext_rules))
             for result in _list_of_dicts(run.get("results")):
+                # SARIF 2.1.0: kind defaults to "fail"; skip non-finding evaluation states
+                if result.get("kind") in _NON_FINDING_KINDS:
+                    continue
                 observation = self._observation_from_result(
                     ref=ref,
                     result=result,

@@ -270,9 +270,9 @@ _include_posture_option = click.option(
     default=False,
     help=(
         "Also emit scanner-side posture findings (configuration hygiene rules: "
-        "mutable install refs, insecure transport, endpoint overrides, MCP auto-approval). "
-        "External scanner findings are controlled by --scanner. Posture findings are "
-        "distinct from vulnerability findings and never affect --fail-on exit codes."
+        "mutable install refs, insecure transport, endpoint overrides, MCP auto-approval, "
+        "and posture claims from enabled external scanners). Posture findings are distinct "
+        "from vulnerability findings and never affect --fail-on exit codes."
     ),
 )
 _scanner_option = click.option(
@@ -582,8 +582,9 @@ def repo(
         refs, external_scanners=external_scanners
     )
 
-    posture_findings = list(scanner_posture_findings)
+    posture_findings: list[PostureFinding] = []
     if include_posture:
+        posture_findings.extend(scanner_posture_findings)
         manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
         settings_manifests = collect_settings_manifests(
             [target], include_gitignored=include_gitignored
@@ -755,8 +756,9 @@ def endpoint(
         refs, external_scanners=external_scanners
     )
 
-    posture_findings = list(scanner_posture_findings)
+    posture_findings: list[PostureFinding] = []
     if include_posture:
+        posture_findings.extend(scanner_posture_findings)
         manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
         settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
         posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))

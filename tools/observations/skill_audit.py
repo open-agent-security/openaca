@@ -98,8 +98,9 @@ def _allowed_tools(frontmatter: dict[str, Any]) -> set[str]:
     raw = frontmatter.get("allowed-tools")
     if isinstance(raw, str):
         # agentskills.io spec defines space-separated; Claude Code uses commas.
-        # Support both by splitting on any combination of commas and whitespace.
-        return {part for part in re.split(r"[\s,]+", raw) if part}
+        # Tokenize while respecting parentheses: Bash(git add *) must stay as one token
+        # even though it contains spaces inside the parentheses.
+        return set(re.findall(r"[^\s,(]+(?:\([^)]*\))?", raw))
     if isinstance(raw, list):
         return {item for item in raw if isinstance(item, str) and item}
     return set()

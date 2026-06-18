@@ -147,3 +147,115 @@ def test_sarif_adapter_accepts_nested_rule_id(tmp_path: Path) -> None:
 
     assert len(observations) == 1
     assert observations[0].observation_id == "nested-rule"
+
+
+def test_sarif_adapter_resolves_rule_index(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "R0", "shortDescription": {"text": "First rule"}}],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleIndex": 0,
+                        "level": "warning",
+                        "message": {"text": "Hit via ruleIndex."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].observation_id == "R0"
+    assert observations[0].title == "First rule"
+
+
+def test_sarif_adapter_resolves_rule_dot_index(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "R1", "shortDescription": {"text": "Second rule"}}],
+                    }
+                },
+                "results": [
+                    {
+                        "rule": {"index": 0},
+                        "level": "note",
+                        "message": {"text": "Hit via rule.index."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].observation_id == "R1"
+
+
+def test_sarif_adapter_missing_level_defaults_to_warning(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [{"id": "NO-LEVEL"}],
+                    }
+                },
+                "results": [{"ruleId": "NO-LEVEL", "message": {"text": "No level field."}}],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    # SARIF 2.1.0: absent level defaults to "warning" → medium severity
+    assert observations[0].severity == "medium"
+
+
+def test_sarif_adapter_uses_rule_default_configuration_level(tmp_path: Path) -> None:
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "scanner",
+                        "rules": [
+                            {
+                                "id": "RULE-WITH-DEFAULT",
+                                "defaultConfiguration": {"level": "error"},
+                            }
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "RULE-WITH-DEFAULT",
+                        "message": {"text": "Level absent; rule configures error."},
+                    }
+                ],
+            }
+        ]
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    assert len(observations) == 1
+    assert observations[0].severity == "high"

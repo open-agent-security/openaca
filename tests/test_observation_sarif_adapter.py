@@ -407,6 +407,39 @@ def test_sarif_adapter_override_respects_tool_component_scope(tmp_path: Path) ->
     assert driver_scoped[0].severity == "high"
 
 
+def test_sarif_adapter_skips_inactive_baseline_and_suppressed_results(tmp_path: Path) -> None:
+    # SARIF 2.1.0: an "absent" baselineState (fixed since baseline) and an accepted
+    # suppression are not current findings; rejected suppressions and normal results are.
+    ref = _skill_ref(tmp_path)
+    sarif = {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {"driver": {"name": "scanner"}},
+                "results": [
+                    {"ruleId": "ABSENT", "baselineState": "absent", "message": {"text": "fixed"}},
+                    {
+                        "ruleId": "SUPPRESSED",
+                        "suppressions": [{"kind": "external", "status": "accepted"}],
+                        "message": {"text": "muted"},
+                    },
+                    {
+                        "ruleId": "SUPPRESSION-REJECTED",
+                        "suppressions": [{"kind": "external", "status": "rejected"}],
+                        "message": {"text": "still active"},
+                    },
+                    {"ruleId": "ACTIVE", "baselineState": "new", "message": {"text": "current"}},
+                ],
+            }
+        ],
+    }
+
+    observations = SarifObservationAdapter().collect(ref, sarif)
+
+    ids = sorted(o.observation_id for o in observations)
+    assert ids == ["ACTIVE", "SUPPRESSION-REJECTED"]
+
+
 def test_sarif_adapter_resolves_extension_rule_by_tool_component_index(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     sarif = {

@@ -65,6 +65,11 @@ class SarifObservationAdapter:
                 # SARIF 2.1.0: kind defaults to "fail"; skip non-finding evaluation states
                 if result.get("kind") in _NON_FINDING_KINDS:
                     continue
+                # Skip results not active in the current run: an "absent" baseline state
+                # (fixed since baseline) or an accepted suppression would otherwise resurface
+                # as a current observation.
+                if _is_inactive_result(result):
+                    continue
                 observation = self._observation_from_result(
                     ref=ref,
                     result=result,
@@ -194,6 +199,20 @@ def _resolve_rule(
             if descriptor_id is not None:
                 return descriptor_id, descriptor
     return None, {}
+
+
+def _is_inactive_result(result: Mapping[str, Any]) -> bool:
+    # SARIF 2.1.0: baselineState "absent" means the result was present in the baseline but
+    # not the current run (i.e. fixed); an accepted suppression means it was intentionally
+    # muted. Either way it is not a current active observation. suppression.status defaults
+    # to "accepted" when omitted.
+    if result.get("baselineState") == "absent":
+        return True
+    for suppression in _list_of_dicts(result.get("suppressions")):
+        status = suppression.get("status")
+        if status is None or status == "accepted":
+            return True
+    return False
 
 
 def _referenced_extension_rules(

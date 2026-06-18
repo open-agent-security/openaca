@@ -23,15 +23,16 @@ DEFAULT_TIMEOUT_SECONDS = 120.0
 RunCommand = Callable[[Sequence[str], float], subprocess.CompletedProcess[str]]
 
 _CATEGORY_MAP: dict[str, list[str]] = {
-    # Prompt Injection (P1-P8). Source: NVIDIA/SkillSpector README.
+    # Prompt Injection (P1-P5). Source: NVIDIA/SkillSpector README.
     "P1": ["prompt-injection"],
     "P2": ["prompt-injection"],
     "P3": ["prompt-injection"],
     "P4": ["prompt-injection"],
     "P5": ["prompt-injection"],
-    "P6": ["prompt-injection"],  # Direct Leakage
-    "P7": ["prompt-injection"],  # Indirect Extraction
-    "P8": ["prompt-injection"],  # Tool-Based Exfiltration
+    # System Prompt Leakage (P6-P8). Source: NVIDIA/SkillSpector README.
+    "P6": ["data-exfiltration"],  # Direct Leakage
+    "P7": ["data-exfiltration"],  # Indirect Extraction
+    "P8": ["data-exfiltration"],  # Tool-Based Exfiltration
     # Data Exfiltration (E1-E4). Source: NVIDIA/SkillSpector README.
     "E1": ["data-exfiltration"],
     "E2": ["data-exfiltration"],

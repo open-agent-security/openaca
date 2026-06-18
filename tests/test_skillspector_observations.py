@@ -314,8 +314,8 @@ def test_skillspector_complete_rule_family_categories(tmp_path: Path) -> None:
 
     rule_cases = [
         # (rule_id, sarif_level, expected_category)
-        ("P6", "error", "prompt-injection"),  # Direct Leakage
-        ("P8", "error", "prompt-injection"),  # Tool-Based Exfiltration
+        ("P6", "error", "data-exfiltration"),  # Direct Leakage
+        ("P8", "error", "data-exfiltration"),  # Tool-Based Exfiltration
         ("EA1", "error", "excessive-agency"),  # Unrestricted Tool Access
         ("EA3", "warning", "excessive-agency"),  # Scope Creep
         ("OH1", "error", "prompt-injection"),  # Unvalidated Output Injection

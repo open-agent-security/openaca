@@ -123,14 +123,27 @@ def _classify_dep_manifest(manifest_path: Path) -> str:
 
     The check is intentionally narrow: only the *immediate* parent dir
     matters. A `pyproject.toml` two levels above a plugin/skill manifest is the
-    host repo's deps, not the component's.
+    host repo's deps, not the component's. The `SKILL.md` marker only counts in a
+    loadable skill location (`.claude/skills/<name>/`), matching the skill parser
+    pattern — a stray `SKILL.md` elsewhere does not promote co-located deps.
     """
     parent = manifest_path.parent
     if (parent / ".claude-plugin" / "plugin.json").is_file():
         return "agent-dependency"
-    if (parent / "SKILL.md").is_file():
+    if _is_loadable_skill_dir(parent):
         return "agent-dependency"
     return "software-dependency"
+
+
+def _is_loadable_skill_dir(directory: Path) -> bool:
+    """True iff `directory` is a loadable skill dir: `.../.claude/skills/<name>/`
+    holding a `SKILL.md`. Mirrors the `**/.claude/skills/*/SKILL.md` parser pattern,
+    so only deps that sit beside an actually-parsed skill are promoted."""
+    return (
+        directory.parent.name == "skills"
+        and directory.parent.parent.name == ".claude"
+        and (directory / "SKILL.md").is_file()
+    )
 
 
 def _filter_secondary_refs(

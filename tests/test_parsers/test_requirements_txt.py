@@ -83,3 +83,37 @@ def test_wildcard_pin_emits_no_version(tmp_path):
     assert len(refs) == 1
     assert refs[0].name == "foo"
     assert refs[0].version is None
+
+
+def test_inline_comment_is_stripped():
+    """pip-compile annotated lines (e.g. '# via ...') must still be parsed."""
+    refs = _refs()
+    boto3 = next((r for r in refs if r.name == "boto3"), None)
+    assert boto3 is not None, "boto3 line with inline comment was silently dropped"
+    assert boto3.version == "1.26.0"
+
+
+def test_hash_locked_dep_is_parsed():
+    """Hash-locked lines (--hash=sha256:...) must be parsed; hashes stripped."""
+    refs = _refs()
+    urllib3 = next((r for r in refs if r.name == "urllib3"), None)
+    assert urllib3 is not None, "urllib3 hash-locked line was silently dropped"
+    assert urllib3.version == "1.26.5"
+
+
+def test_inline_comment_strip_via_tmp(tmp_path):
+    f = tmp_path / "requirements.txt"
+    f.write_text("urllib3==1.26.5  # via botocore\n")
+    refs = parse(f)
+    assert len(refs) == 1
+    assert refs[0].name == "urllib3"
+    assert refs[0].version == "1.26.5"
+
+
+def test_hash_locked_strip_via_tmp(tmp_path):
+    f = tmp_path / "requirements.txt"
+    f.write_text("urllib3==1.26.5 --hash=sha256:abc123 --hash=sha256:def456\n")
+    refs = parse(f)
+    assert len(refs) == 1
+    assert refs[0].name == "urllib3"
+    assert refs[0].version == "1.26.5"

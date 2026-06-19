@@ -12,3 +12,9 @@ vcs-dep @ git+https://github.com/example/vcs-dep.git
 
 # options line — must be skipped
 -r base-requirements.txt
+
+# pip-compile style inline comment — must be parsed, comment stripped
+boto3==1.26.0  # via aws-cdk-lib
+
+# hash-locked (pip install --require-hashes) — must be parsed, hashes stripped
+urllib3==1.26.5 --hash=sha256:abc123def456 --hash=sha256:789xyzabc000

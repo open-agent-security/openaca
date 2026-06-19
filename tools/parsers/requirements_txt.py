@@ -23,12 +23,27 @@ def _pinned_version(req: Requirement) -> str | None:
     return None
 
 
+def _strip_pip_annotations(line: str) -> str:
+    """Remove pip-specific extensions that packaging.Requirement does not accept.
+
+    pip allows trailing inline comments (``# via botocore``) and
+    per-requirement options (``--hash=sha256:...``) after the PEP 508 specifier.
+    Neither is valid PEP 508, so both must be stripped before parsing.
+    """
+    line = re.sub(r"\s+#.*$", "", line)
+    line = re.sub(r"\s+--\S+", "", line)
+    return line.strip()
+
+
 def parse(path: Path) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     source = str(path)
     for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        line = _strip_pip_annotations(line)
+        if not line:
             continue
         try:
             req = Requirement(line)

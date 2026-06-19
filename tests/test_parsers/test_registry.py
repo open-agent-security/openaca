@@ -91,3 +91,22 @@ def test_stray_skill_md_outside_skills_dir_does_not_promote_deps(tmp_path):
     refs = parse_repo(tmp_path)
     npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
     assert npm_scopes == {"software-dependency"}
+
+
+def test_plugin_bundled_skill_deps_classified_as_agent_dep(tmp_path):
+    """A plugin bundles skills at `<plugin-root>/skills/<name>/SKILL.md` (not
+    `.claude/skills/`). Deps beside such a bundled skill are its implementation deps
+    and must be agent-dependency, since the plugin parser emits the skill component."""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1.0.0"}')
+    skill_dir = tmp_path / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: Deploys services\n---\nRun the deploy steps.\n"
+    )
+    (skill_dir / "package.json").write_text(
+        '{"name":"deploy","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}'
+    )
+    refs = parse_repo(tmp_path)
+    npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
+    assert npm_scopes == {"agent-dependency"}

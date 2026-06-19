@@ -136,14 +136,18 @@ def _classify_dep_manifest(manifest_path: Path) -> str:
 
 
 def _is_loadable_skill_dir(directory: Path) -> bool:
-    """True iff `directory` is a loadable skill dir: `.../.claude/skills/<name>/`
-    holding a `SKILL.md`. Mirrors the `**/.claude/skills/*/SKILL.md` parser pattern,
-    so only deps that sit beside an actually-parsed skill are promoted."""
-    return (
-        directory.parent.name == "skills"
-        and directory.parent.parent.name == ".claude"
-        and (directory / "SKILL.md").is_file()
-    )
+    """True iff `directory` is a loadable skill dir holding a `SKILL.md` — either
+    `.../.claude/skills/<name>/` (endpoint/repo skills, per the
+    `**/.claude/skills/*/SKILL.md` parser) or `<plugin-root>/skills/<name>/` where the
+    plugin root carries `.claude-plugin/plugin.json` (plugin-bundled skills, per the
+    plugin parser). Only deps beside an actually-parsed skill are promoted; a stray
+    `skills/<name>/SKILL.md` under neither marker is not."""
+    if directory.parent.name != "skills" or not (directory / "SKILL.md").is_file():
+        return False
+    container = directory.parent.parent  # the dir that holds `skills/`
+    if container.name == ".claude":
+        return True
+    return (container / ".claude-plugin" / "plugin.json").is_file()
 
 
 def _filter_secondary_refs(

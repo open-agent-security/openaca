@@ -423,6 +423,42 @@ def test_skillspector_supply_chain_declarative_rules_route_to_posture(tmp_path: 
     assert {o.observation_id for o in result.observations} == {"SC2", "SC3"}
 
 
+def test_skillspector_excludes_sc4_dependency_cve_findings(tmp_path: Path) -> None:
+    # SC4 (known-vulnerable dependency / CVE match) is owned by OpenACA's own OSV path, so
+    # SkillSpector's SC4 is excluded to avoid double-reporting. A co-reported non-SC4 rule
+    # still surfaces, proving the skip is SC4-specific.
+    ref = _skill_ref(tmp_path)
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector", "version": "0.6.0"}},
+                            "results": [
+                                {"ruleId": "SC4", "level": "error", "message": {"text": "SC4."}},
+                                {"ruleId": "P1", "level": "error", "message": {"text": "P1."}},
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
+
+    result = collect_skillspector_findings([ref], run_command=fake_run)
+
+    emitted = {o.observation_id for o in result.observations} | {
+        f.rule_id for f in result.posture_findings
+    }
+    assert "SC4" not in emitted
+    assert "P1" in {o.observation_id for o in result.observations}
+
+
 def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 

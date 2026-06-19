@@ -142,9 +142,14 @@ _SEVERITY_MAP: dict[str, ObservationSeverity] = {
 # (observations). LP1-LP4: declared permission/capability hygiene. SC1/SC5/SC6: dependency
 # provenance hygiene (unpinned, abandoned, typosquatting declarations). SC2/SC3 (remote
 # code execution, obfuscated code) stay observations — they describe artifact behavior,
-# not the declaration. SC4 (known-vulnerable dependency / CVE match) is an advisory claim,
-# not handled here; OpenACA's own OSV path owns dependency vulnerabilities.
+# not the declaration.
 _POSTURE_RULE_IDS = frozenset({"LP1", "LP2", "LP3", "LP4", "SC1", "SC5", "SC6"})
+
+# SC4 (known-vulnerable dependency) is a CVE/advisory match, not an observation, and
+# OpenACA's own OSV.dev lookup already covers dependency vulnerabilities. Skip it here so
+# the same advisory is not double-reported; dependency vulnerabilities come from OpenACA's
+# advisory path, not from a scanner observation.
+_SKIP_RULE_IDS = frozenset({"SC4"})
 
 
 @dataclass(frozen=True)
@@ -272,6 +277,8 @@ def _findings_from_sarif(
         for result in _list_of_dicts(run.get("results")):
             rule_id = _result_rule_id(result)
             if rule_id is None:
+                continue
+            if rule_id in _SKIP_RULE_IDS:
                 continue
             if rule_id in _POSTURE_RULE_IDS:
                 posture = _posture_from_result(ref, result, rule_id, scan_path, source_version)

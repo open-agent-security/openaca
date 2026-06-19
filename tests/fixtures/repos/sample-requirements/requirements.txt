@@ -1,0 +1,14 @@
+# Runtime dependencies for the sample fixture
+aws-mcp-server==0.3.0
+requests>=2.31.0
+langchain[community]>=0.3,<0.4; python_version>='3.11'
+AWS_MCP_Server>=1.0
+
+# Dev tools (unpinned)
+pytest
+
+# VCS dep — not a PyPI package, must be skipped
+vcs-dep @ git+https://github.com/example/vcs-dep.git
+
+# options line — must be skipped
+-r base-requirements.txt

@@ -77,3 +77,18 @@ def test_dep_manifest_co_located_with_skill_classified_as_agent_dep(tmp_path):
     refs = parse_repo(tmp_path)
     npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
     assert npm_scopes == {"agent-dependency"}
+
+
+def test_requirements_txt_co_located_with_skill_classified_as_agent_dep(tmp_path):
+    """A requirements.txt beside a SKILL.md is agent-dependency — skills are
+    agent components and their Python dep manifests must reach the OSV path,
+    not be silently filtered, so that SC4 exclusion doesn't create a coverage gap."""
+    skill_dir = tmp_path / ".claude" / "skills" / "fetch"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: fetch\ndescription: HTTP fetch skill\n---\nUse this skill to fetch URLs.\n"
+    )
+    (skill_dir / "requirements.txt").write_text("requests==2.31.0\nhttpx>=0.25.0\n")
+    refs = parse_repo(tmp_path)
+    pypi_scopes = {r.scope for r in refs if r.ecosystem == "PyPI"}
+    assert pypi_scopes == {"agent-dependency"}

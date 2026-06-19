@@ -145,10 +145,11 @@ _SEVERITY_MAP: dict[str, ObservationSeverity] = {
 # not the declaration.
 _POSTURE_RULE_IDS = frozenset({"LP1", "LP2", "LP3", "LP4", "SC1", "SC5", "SC6"})
 
-# SC4 (known-vulnerable dependency) is a CVE/advisory match, not an observation, and
-# OpenACA's own OSV.dev lookup already covers dependency vulnerabilities. Skip it here so
-# the same advisory is not double-reported; dependency vulnerabilities come from OpenACA's
-# advisory path, not from a scanner observation.
+# SC4 (known-vulnerable dependency) is a CVE/advisory match, not an observation.
+# OpenACA's own OSV.dev lookup covers skill/plugin dependency vulnerabilities via its
+# registered dep manifests (package.json, pyproject.toml, requirements.txt, and
+# lockfiles). Skip SC4 here so the same advisory is not double-reported; dep
+# vulnerabilities come from OpenACA's advisory path, not from a scanner observation.
 _SKIP_RULE_IDS = frozenset({"SC4"})
 
 

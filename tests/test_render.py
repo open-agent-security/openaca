@@ -1183,31 +1183,6 @@ def test_tree_tier2_aggregate_carries_finding_marker():
     assert "npm/ deps" in out
 
 
-def test_tree_shows_direct_skill_dependencies_with_marker():
-    """A direct skill's bundled dependency (agent-dependency, no plugin parent) must
-    appear under a `dependencies/` node with its finding marker — not be dropped from
-    the direct-component tree (which previously skipped agent-dependency refs)."""
-    skill = _bundled("skill", "deploy", None, attributed_to=None, component_identity="skill/deploy")
-    dep = ComponentRef(
-        ecosystem="npm",
-        name="lodash",
-        version="4.17.20",
-        scope="agent-dependency",
-        attributed_to=None,
-        source_manifest=".claude/skills/deploy/package.json",
-    )
-    finding = Finding(
-        advisory_id="CVE-2026-0002",
-        component=dep,
-        confidence="high",
-        reason="lodash@4.17.20 matches CVE-2026-0002",
-    )
-    out = render_inventory_tree([skill, dep], [finding], use_unicode=True, use_color=False)
-    assert "dependencies/" in out
-    assert "lodash" in out
-    assert "[! CVE-2026-0002]" in out
-
-
 def test_tree_direct_components_render_as_separate_root():
     refs = [
         _bundled(
@@ -1401,42 +1376,6 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     assert "lodash@4.17.20 (from package.json)  [! GHSA-L]" in out
     assert "MCPs/ (1)" in out
     assert "@cyanheads/git-mcp-server@1.1.0 (from .mcp.json)" in out
-
-
-def test_repo_tree_shows_direct_skill_deps_with_marker(tmp_path):
-    """A direct project skill's bundled dep (agent-dependency, no plugin parent) must
-    appear under `dependencies/` in the repo tree with its finding marker. Repo mode
-    previously filtered direct refs to agent-component before building the tree."""
-    skill_md = tmp_path / ".claude" / "skills" / "deploy" / "SKILL.md"
-    pkg_json = tmp_path / ".claude" / "skills" / "deploy" / "package.json"
-    skill = ComponentRef(
-        name="deploy",
-        component_identity="skill/deploy",
-        source_manifest=str(skill_md),
-        scope="agent-component",
-        attributed_to=None,
-        extra={"component_type": "skill"},
-    )
-    dep = ComponentRef(
-        ecosystem="npm",
-        name="lodash",
-        version="4.17.20",
-        source_manifest=str(pkg_json),
-        scope="agent-dependency",
-        attributed_to=None,
-    )
-    finding = Finding(advisory_id="GHSA-SK", component=dep, confidence="high")
-
-    out = render_repo_inventory_tree(
-        tmp_path,
-        [(skill_md, [skill]), (pkg_json, [dep])],
-        [finding],
-        use_unicode=True,
-    )
-
-    assert "dependencies/ (1)" in out
-    assert "lodash@4.17.20" in out
-    assert "[! GHSA-SK]" in out
 
 
 def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
@@ -1945,38 +1884,3 @@ def test_package_leaf_label_without_subdirectory_unchanged():
 
     ref = ComponentRef(ecosystem="npm", name="@x/mcp", version="1.0.0")
     assert _package_leaf_label(ref) == "@x/mcp@1.0.0"
-
-
-def test_direct_skill_agent_dep_not_shown_under_mcps():
-    """Direct-skill npm dep refs (scope='agent-dependency', attributed_to=None)
-    must not appear under MCPs/ in the endpoint inventory tree.
-
-    Before this fix, _direct_categories had no scope filter — npm/PyPI refs
-    with attributed_to=None fell through _component_type_for_tree to mcp_server
-    and were listed under MCPs/ as if they were MCP servers.
-    """
-    skill_ref = ComponentRef(
-        ecosystem="skill",
-        name="linter",
-        component_identity="skill/linter",
-        source_manifest=".claude/skills/linter/SKILL.md",
-        attributed_to=None,
-        extra={"component_type": "skill"},
-        scope="agent-component",
-    )
-    dep_ref = ComponentRef(
-        ecosystem="npm",
-        name="lodash",
-        version="4.17.21",
-        component_identity="lodash",
-        source_manifest=".claude/skills/linter/package.json",
-        attributed_to=None,
-        scope="agent-dependency",
-    )
-
-    out = render_inventory_tree([skill_ref, dep_ref], [], use_unicode=True)
-
-    for line in out.splitlines():
-        assert "lodash" not in line or "MCPs" not in line, (
-            f"skill dep lodash incorrectly listed under MCPs/: {line!r}"
-        )

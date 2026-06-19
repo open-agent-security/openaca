@@ -113,41 +113,21 @@ def _registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
 def _classify_dep_manifest(manifest_path: Path) -> str:
     """Classify a software-dep manifest as agent- or software-scoped.
 
-    A dep manifest is "agent-dependency" iff its immediate parent directory
-    also holds an agent-component marker — a `.claude-plugin/plugin.json` (the
-    deps power a plugin's own implementation) or a `SKILL.md` (the deps power a
-    skill's own implementation). Otherwise the manifest belongs to regular
-    software (a normal app/library that happens to live in the repo), and its
-    deps are "software-dependency" — out of scope for V0 agent-composition
-    analysis.
+    A dep manifest is "agent-dependency" iff a `.claude-plugin/plugin.json`
+    exists in its parent directory — i.e., the manifest declares deps for a
+    plugin's own implementation code. Otherwise the manifest belongs to
+    regular software (a normal app/library that happens to live in the
+    repo), and its deps are "software-dependency" — out of scope for V0
+    agent-composition analysis.
 
     The check is intentionally narrow: only the *immediate* parent dir
-    matters. A `pyproject.toml` two levels above a plugin/skill manifest is the
-    host repo's deps, not the component's. The `SKILL.md` marker only counts in a
-    loadable skill location (`.claude/skills/<name>/`), matching the skill parser
-    pattern — a stray `SKILL.md` elsewhere does not promote co-located deps.
+    matters. A `pyproject.toml` two levels above a plugin manifest is the
+    host repo's deps, not the plugin's.
     """
-    parent = manifest_path.parent
-    if (parent / ".claude-plugin" / "plugin.json").is_file():
-        return "agent-dependency"
-    if _is_loadable_skill_dir(parent):
+    plugin_marker = manifest_path.parent / ".claude-plugin" / "plugin.json"
+    if plugin_marker.is_file():
         return "agent-dependency"
     return "software-dependency"
-
-
-def _is_loadable_skill_dir(directory: Path) -> bool:
-    """True iff `directory` is a loadable skill dir holding a `SKILL.md` — either
-    `.../.claude/skills/<name>/` (endpoint/repo skills, per the
-    `**/.claude/skills/*/SKILL.md` parser) or `<plugin-root>/skills/<name>/` where the
-    plugin root carries `.claude-plugin/plugin.json` (plugin-bundled skills, per the
-    plugin parser). Only deps beside an actually-parsed skill are promoted; a stray
-    `skills/<name>/SKILL.md` under neither marker is not."""
-    if directory.parent.name != "skills" or not (directory / "SKILL.md").is_file():
-        return False
-    container = directory.parent.parent  # the dir that holds `skills/`
-    if container.name == ".claude":
-        return True
-    return (container / ".claude-plugin" / "plugin.json").is_file()
 
 
 def _filter_secondary_refs(

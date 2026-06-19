@@ -1408,3 +1408,55 @@ def test_project_symlinked_skill_uses_project_skills_lock(tmp_path):
     )
     assert skill.extra["source_provenance"]["source"] == "vercel-labs/agent-skills"
     assert skill.extra["source_provenance"]["hash_type"] == "computedHash"
+
+
+def test_direct_skill_dep_manifests_are_scanned(tmp_path):
+    """Direct skills: dep manifests beside SKILL.md are scanned in endpoint mode.
+
+    Before this fix, _walk_skill_dir only parsed SKILL.md and ignored any
+    package.json / pyproject.toml in the same skill subdir, leaving SC4
+    exclusion with no OpenACA replacement path.
+    """
+    skill_dir = tmp_path / "skills" / "linter"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: linter\ndescription: lints code\n---\nbody\n")
+    (skill_dir / "package.json").write_text(
+        json.dumps({"name": "linter-skill", "dependencies": {"lodash": "^4.17.0"}})
+    )
+
+    refs, _ = parse_install(install_root=tmp_path)
+
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert any(r.name == "lodash" for r in npm_refs), "skill-bundled dep must be queried"
+    dep = next(r for r in npm_refs if r.name == "lodash")
+    assert dep.scope == "agent-dependency"
+    assert dep.attributed_to is None
+
+
+def test_bundled_skill_dep_manifests_are_scanned(tmp_path):
+    """Plugin-bundled skills: dep manifests beside SKILL.md are scanned.
+
+    Before this fix, _walk_plugin_implementation_deps ran only at the plugin
+    install root. A package.json inside skills/<name>/ was never reached, so
+    SC4 exclusion silently dropped the finding with no replacement.
+    """
+    install_path = _build_install_with_plugin(
+        tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
+    )
+    skill_dir = install_path / "skills" / "bootstrap"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: bootstrap\ndescription: scaffold a project\n---\nbody\n"
+    )
+    (skill_dir / "pyproject.toml").write_text(
+        '[project]\nname = "bootstrap-skill"\nversion = "1.0.0"\n'
+        'dependencies = ["requests==2.31.0"]\n'
+    )
+
+    refs, _ = parse_install(install_root=tmp_path, include_transitive=True)
+
+    pypi_refs = [r for r in refs if r.ecosystem == "PyPI"]
+    assert any(r.name == "requests" for r in pypi_refs), "skill-bundled PyPI dep must be queried"
+    dep = next(r for r in pypi_refs if r.name == "requests")
+    assert dep.scope == "agent-dependency"
+    assert dep.attributed_to == "plugin/m/superpowers@5.1.0"

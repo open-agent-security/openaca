@@ -49,12 +49,13 @@ Skill-bundled dependency vulnerability coverage is **deferred**. In V0:
   dependency), because it is an advisory-lookup result with no OpenACA
   ingestion path — not because OpenACA already covers it.
 
-The composition graph (see `docs/specs/composition-graph.md`) is the correct
-mechanism: it models skills, plugins, and packages as nodes with composition
-edges and **derives** dependency scope from a node's lineage, so a skill's
-bundled deps fall out as agent-dependencies without any path-shape marker. That
-work — and a separate external-scanner vulnerability ingestion + deduplication
-path, if pursued — lands skill-bundled-dep coverage properly, after this PR.
+A planned first-class composition graph (separate design and ADR, forthcoming)
+is the correct mechanism: it models skills, plugins, and packages as nodes with
+composition edges and **derives** dependency scope from a node's lineage, so a
+skill's bundled deps fall out as agent-dependencies without any path-shape
+marker. That work — and a separate external-scanner vulnerability ingestion +
+deduplication path, if pursued — lands skill-bundled-dep coverage properly,
+after this PR.
 
 ## Consequences
 

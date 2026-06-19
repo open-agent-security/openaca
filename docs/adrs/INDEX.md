@@ -42,6 +42,7 @@ against the rules in effect at the time.
 - [ADR-0031 — Separate graph identity from match coordinates](0031-match-coordinates.md): `openaca:identity` remains the graph occurrence key for BOM/posture/drift/policy joins, while vulnerability matching uses derived match coordinates from PURL, Git metadata, unpinned package launches, or `openaca:match_coordinate`; matching never falls back to graph identity.
 - [ADR-0032 — Use remote as the public upload CLI namespace](0032-remote-cli-namespace.md): supersedes ADR-0024's public `openaca fleet ...` command group; networked backend operations now live under product-neutral `openaca remote ...`, with endpoint collection exposed as `openaca remote sync endpoint`.
 - [ADR-0035 — Classify findings by claim type; keep source attribution orthogonal](0035-source-orthogonal-finding-types.md): `finding_type` describes the claim (`vulnerability`, `posture`, `observation`), while `source` describes who made it; external scanner output is classified per rule, not forced into observations.
+- [ADR-0036 — Skill-bundled dependencies are agent-dependencies (in scope)](0036-skill-bundled-deps-in-scope.md): a dep manifest beside a `SKILL.md` is an `agent-dependency` (scanned + OSV-matched), like one beside `.claude-plugin/plugin.json`; closes the gap where skill-bundled deps were filtered as general software.
 
 ## Superseded
 

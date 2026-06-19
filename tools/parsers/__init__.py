@@ -113,19 +113,22 @@ def _registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
 def _classify_dep_manifest(manifest_path: Path) -> str:
     """Classify a software-dep manifest as agent- or software-scoped.
 
-    A dep manifest is "agent-dependency" iff a `.claude-plugin/plugin.json`
-    exists in its parent directory — i.e., the manifest declares deps for a
-    plugin's own implementation code. Otherwise the manifest belongs to
-    regular software (a normal app/library that happens to live in the
-    repo), and its deps are "software-dependency" — out of scope for V0
-    agent-composition analysis.
+    A dep manifest is "agent-dependency" iff its immediate parent directory
+    also holds an agent-component marker — a `.claude-plugin/plugin.json` (the
+    deps power a plugin's own implementation) or a `SKILL.md` (the deps power a
+    skill's own implementation). Otherwise the manifest belongs to regular
+    software (a normal app/library that happens to live in the repo), and its
+    deps are "software-dependency" — out of scope for V0 agent-composition
+    analysis.
 
     The check is intentionally narrow: only the *immediate* parent dir
-    matters. A `pyproject.toml` two levels above a plugin manifest is the
-    host repo's deps, not the plugin's.
+    matters. A `pyproject.toml` two levels above a plugin/skill manifest is the
+    host repo's deps, not the component's.
     """
-    plugin_marker = manifest_path.parent / ".claude-plugin" / "plugin.json"
-    if plugin_marker.is_file():
+    parent = manifest_path.parent
+    if (parent / ".claude-plugin" / "plugin.json").is_file():
+        return "agent-dependency"
+    if (parent / "SKILL.md").is_file():
         return "agent-dependency"
     return "software-dependency"
 

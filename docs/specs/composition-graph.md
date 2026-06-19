@@ -73,12 +73,12 @@ package-requires beyond what endpoint node types already imply, add `openaca:edg
 - **Scope**: a `package` is `agent-dependency` iff an agent component appears in its
   lineage *before* the `target` root; `software-dependency` iff its lineage reaches
   `target` with no agent component in between. (Replaces `_classify_dep_manifest`.)
-- **`attributed_to`**: the nearest `plugin` ancestor in the lineage — a derived
-  **legacy/display** projection ("via plugin X"), *not* the authoritative relationship
-  (which is the containment edge). It is `None` for a package under a standalone skill,
-  even though that package's real parent is the skill. Written to the BOM only as a
-  migration/compat field if Fleet or existing scan consumers still need it; otherwise
-  dropped from the core model.
+- **`attributed_to` is removed**, not stored. "Via plugin X" is `nearest_plugin_ancestor(node)`
+  — a pure derivation over the edges, computed on demand at the point of need (render
+  nesting, finding labels, SARIF). It carries no information the lineage doesn't already
+  have (it was just a denormalized cache of the nearest plugin, and `None` under a
+  standalone skill even though the skill is the real parent). All consumers move to the
+  graph; see "What changes" for the cross-repo impact.
 
 ## Construction — recursive descent
 
@@ -122,8 +122,10 @@ Component-type parsers (V1):
 - `dependencies[]` = composition edges (reusing the existing serialization): the root's
   bom-ref `dependsOn` top-level components; a plugin `dependsOn` its skills/MCPs/hooks/
   packages; a skill `dependsOn` its packages.
-- Derived `openaca:scope` stays as a component property. `openaca:attributed_to` is
-  written only as a legacy/compat projection (see above), not as the source of truth.
+- Derived `openaca:scope` stays as a component property. **`openaca:attributed_to` is
+  dropped** — "introducing plugin" is derived from the edges by any consumer that needs
+  it. (Optional: emit it as a *derived* property for one transitional release to let the
+  Fleet PR lag; otherwise drop outright.)
 - Future transitive package edges → additional `dependencies[]` entries.
 
 This reconciles ADR-0022 (Agent BOM is the composition IR; CycloneDX `dependencies[]`
@@ -138,7 +140,12 @@ node key = occurrence (`openaca:identity`), match = purl, edges = `dependencies[
   `bom.py`'s `edges`/`dependencies[]` serialization. Add `metadata.component` = target
   with a bom-ref (today the target is only an `openaca:target` property).
 - **Remove `_classify_dep_manifest`** — scope derives from lineage.
-- **Demote `attributed_to`** from source-of-truth to a derived legacy/display field.
+- **Remove `attributed_to` entirely** (no stored field, no `openaca:attributed_to`
+  property). Scanner consumers move to the edges: `render` nests by parent edges (not
+  `attributed_to`); `matcher`/findings and `sarif` derive "via plugin X" from the matched
+  node's lineage. **Cross-repo:** openaca-fleet (`ingest` reads the property today; plus a
+  DB column, schema field, and dashboard use) migrates to ingesting the `dependencies[]`
+  edges and deriving lineage — a coordinated Fleet PR. Pre-V0, so no back-compat hedge.
 - **Rename node type `dependency` → `package`.**
 - **Render / findings / scope** derive from the graph — the #129 render-nesting and
   scope cases become natural, not special-cased per mode/layout.
@@ -185,7 +192,8 @@ and supersede its heuristics here.
 4. Recursive descent with boundary-aware traversal (attribution by construction).
 5. Containment-only attribution for V1 (defer declaration-based).
 6. Single tree rooted at the scan target (`metadata.component`), not a forest.
-7. Scope derived from lineage (replace `_classify_dep_manifest`); `attributed_to`
-   demoted to a derived legacy/display projection.
+7. Scope derived from lineage (replace `_classify_dep_manifest`); **`attributed_to`
+   removed** — "via plugin X" is derived on demand from the edges, in both the scanner
+   and (coordinated PR) openaca-fleet.
 8. Defer transitive package-dependency resolution (future `package → package` DAG /
    deps.dev) and typed edges.

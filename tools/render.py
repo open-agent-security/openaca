@@ -1139,6 +1139,8 @@ def _direct_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]
     for r in refs:
         if r.attributed_to is not None:
             continue
+        if r.scope == "agent-dependency":
+            continue
         if _is_plugin_ref(r):
             continue
         for label, types in _TREE_CATEGORIES:

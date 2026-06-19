@@ -99,7 +99,9 @@ def parse_install(
         refs.extend(plugin_refs)
         warnings.extend(plugin_walk_warnings)
 
-    refs.extend(_walk_direct_components(install_root, project_root, layers, mode))
+    refs.extend(
+        _walk_direct_components(install_root, project_root, layers, mode, include_transitive)
+    )
     return refs, warnings
 
 
@@ -240,6 +242,7 @@ def _walk_direct_components(
     project_root: Optional[Path],
     layers: SettingsLayers,
     mode: Mode,
+    include_transitive: bool = True,
 ) -> list[ComponentRef]:
     """Enumerate components declared outside of any plugin.
 
@@ -318,7 +321,13 @@ def _walk_direct_components(
 
     # Direct skills at <install_root>/skills/.
     direct_skills_dir = install_root / "skills"
-    refs.extend(_walk_skill_dir(direct_skills_dir, project_root=project_root))
+    refs.extend(
+        _walk_skill_dir(
+            direct_skills_dir,
+            project_root=project_root,
+            include_transitive=include_transitive,
+        )
+    )
     refs.extend(
         claude_command_agent.enumerate_dir(
             install_root / "commands",
@@ -337,7 +346,7 @@ def _walk_direct_components(
     )
 
     if project_root is not None:
-        refs.extend(_walk_project_skill_dirs(project_root))
+        refs.extend(_walk_project_skill_dirs(project_root, include_transitive=include_transitive))
         refs.extend(
             claude_command_agent.enumerate_dir(
                 project_root / ".claude" / "commands",
@@ -358,7 +367,11 @@ def _walk_direct_components(
     return refs
 
 
-def _walk_skill_dir(skills_dir: Path, project_root: Optional[Path] = None) -> list[ComponentRef]:
+def _walk_skill_dir(
+    skills_dir: Path,
+    project_root: Optional[Path] = None,
+    include_transitive: bool = True,
+) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     if not skills_dir.is_dir():
         return refs
@@ -366,7 +379,8 @@ def _walk_skill_dir(skills_dir: Path, project_root: Optional[Path] = None) -> li
         skill_md = skill_subdir / "SKILL.md"
         if skill_md.is_file():
             refs.extend(_parse_direct_skill(skill_md, project_root=project_root))
-            refs.extend(_walk_plugin_implementation_deps(skill_subdir, attributed_to=None))
+            if include_transitive:
+                refs.extend(_walk_plugin_implementation_deps(skill_subdir, attributed_to=None))
     return refs
 
 
@@ -404,9 +418,18 @@ def _is_project_skill_file(path: Path, project_root: Path) -> bool:
     )
 
 
-def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
+def _walk_project_skill_dirs(
+    project_root: Path,
+    include_transitive: bool = True,
+) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
-    refs.extend(_walk_skill_dir(project_root / ".claude" / "skills", project_root=project_root))
+    refs.extend(
+        _walk_skill_dir(
+            project_root / ".claude" / "skills",
+            project_root=project_root,
+            include_transitive=include_transitive,
+        )
+    )
     seen = {(r.source_manifest, r.component_identity) for r in refs}
 
     spec = load_gitignore_spec(project_root)
@@ -421,7 +444,7 @@ def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
             seen.add(key)
             refs.append(ref)
             added_any = True
-        if added_any:
+        if added_any and include_transitive:
             refs.extend(_walk_plugin_implementation_deps(skill_md.parent, attributed_to=None))
     return refs
 

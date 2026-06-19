@@ -17,7 +17,6 @@ from tools.parsers import (
     package_json,
     package_lock_json,
     pyproject_toml,
-    requirements_txt,
     uv_lock,
 )
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
@@ -41,7 +40,6 @@ _DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
     {
         "package.json",
         "pyproject.toml",
-        "requirements.txt",
         "package-lock.json",
         "uv.lock",
         "bun.lock",
@@ -52,7 +50,6 @@ _DEP_MANIFEST_PATTERNS: frozenset[str] = frozenset(
 REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
     ("pyproject.toml", pyproject_toml.parse),
-    ("requirements.txt", requirements_txt.parse),
     ("mcp.json", mcp_json.parse),
     (".mcp.json", mcp_json.parse),
     # Claude Desktop user-config: same JSON shape as `mcp.json`

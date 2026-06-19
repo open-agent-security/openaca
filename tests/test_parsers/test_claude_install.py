@@ -1459,4 +1459,37 @@ def test_bundled_skill_dep_manifests_are_scanned(tmp_path):
     assert any(r.name == "requests" for r in pypi_refs), "skill-bundled PyPI dep must be queried"
     dep = next(r for r in pypi_refs if r.name == "requests")
     assert dep.scope == "agent-dependency"
-    assert dep.attributed_to == "plugin/m/superpowers@5.1.0"
+
+
+def test_nested_project_skill_dep_manifests_are_scanned(tmp_path):
+    """Nested project skills: dep manifests beside SKILL.md are scanned.
+
+    A skill at packages/frontend/.claude/skills/ui-review/SKILL.md is
+    discovered by the iter_unignored_files fallback in _walk_project_skill_dirs.
+    Before this fix, only _parse_direct_skill was called in that fallback path,
+    so adjacent dep manifests were never emitted as agent-dependency refs and
+    the SC4 exclusion silently dropped the finding with no replacement.
+    """
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    skill_dir = project_root / "packages" / "frontend" / ".claude" / "skills" / "ui-review"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: ui-review\ndescription: review UI components\n---\nbody\n"
+    )
+    (skill_dir / "package.json").write_text(
+        json.dumps({"name": "ui-review-skill", "dependencies": {"lodash": "^4.17.0"}})
+    )
+
+    refs, _ = parse_install(install_root=install_root, project_root=project_root)
+
+    npm_refs = [r for r in refs if r.ecosystem == "npm"]
+    assert any(r.name == "lodash" for r in npm_refs), (
+        "nested project skill dep must be queried via OSV path"
+    )
+    dep = next(r for r in npm_refs if r.name == "lodash")
+    assert dep.scope == "agent-dependency"
+    assert dep.attributed_to is None

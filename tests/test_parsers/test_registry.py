@@ -77,3 +77,17 @@ def test_dep_manifest_co_located_with_skill_classified_as_agent_dep(tmp_path):
     refs = parse_repo(tmp_path)
     npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
     assert npm_scopes == {"agent-dependency"}
+
+
+def test_stray_skill_md_outside_skills_dir_does_not_promote_deps(tmp_path):
+    """A file named SKILL.md that is NOT in a loadable skill location
+    (`.claude/skills/<name>/`) must not promote co-located deps to
+    agent-dependency — otherwise ordinary repo software gets OSV-queried and
+    produces out-of-scope SCA findings."""
+    (tmp_path / "SKILL.md").write_text("# not a Claude skill, just a doc\n")
+    (tmp_path / "package.json").write_text(
+        '{"name":"app","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}'
+    )
+    refs = parse_repo(tmp_path)
+    npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
+    assert npm_scopes == {"software-dependency"}

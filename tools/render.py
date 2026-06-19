@@ -1236,26 +1236,50 @@ def _build_direct_node(
     source_note_root: Path | None = None,
 ) -> _TreeNode | None:
     cats = _direct_categories(refs)
-    if not cats:
+    deps = _direct_dependencies(refs)
+    if not cats and not deps:
         return None
     root = _TreeNode(label="direct components/")
     for label, _ in _TREE_CATEGORIES:
         items = cats.get(label)
         if not items:
             continue
-        cat = _TreeNode(label=f"{label}/ ({len(items)})")
-        base_labels = [_leaf_label(r) for r in items]
-        duplicate_labels = {x for x in base_labels if base_labels.count(x) > 1}
-        for r in sorted(items, key=lambda x: (_leaf_label(x).lower(), x.source_manifest)):
-            leaf_label = _leaf_label(r)
-            source_note = _repo_source_note(r, source_note_root)
-            if leaf_label in duplicate_labels and r.source_manifest and not source_note:
-                leaf_label = f"{leaf_label} (from {r.source_manifest})"
-            leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
-            leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
-            cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
-        root.children.append(cat)
+        root.children.append(
+            _category_node(label, items, findings_by_ref, use_color, source_note_root)
+        )
+    # Direct (non-plugin) agent-dependency refs — e.g. a skill's bundled package.json
+    # deps — would otherwise be counted but never shown; surface them with their markers.
+    if deps:
+        root.children.append(
+            _category_node("dependencies", deps, findings_by_ref, use_color, source_note_root)
+        )
     return root
+
+
+def _direct_dependencies(refs: list[ComponentRef]) -> list[ComponentRef]:
+    """Direct agent-dependency refs (no plugin parent) — e.g. a skill's own deps."""
+    return [r for r in refs if r.attributed_to is None and r.scope == "agent-dependency"]
+
+
+def _category_node(
+    label: str,
+    items: list[ComponentRef],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    source_note_root: Path | None,
+) -> _TreeNode:
+    cat = _TreeNode(label=f"{label}/ ({len(items)})")
+    base_labels = [_leaf_label(r) for r in items]
+    duplicate_labels = {x for x in base_labels if base_labels.count(x) > 1}
+    for r in sorted(items, key=lambda x: (_leaf_label(x).lower(), x.source_manifest)):
+        leaf_label = _leaf_label(r)
+        source_note = _repo_source_note(r, source_note_root)
+        if leaf_label in duplicate_labels and r.source_manifest and not source_note:
+            leaf_label = f"{leaf_label} (from {r.source_manifest})"
+        leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
+        leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
+        cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
+    return cat
 
 
 def _repo_source_note(ref: ComponentRef, root: Path | None) -> str:

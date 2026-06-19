@@ -1183,6 +1183,31 @@ def test_tree_tier2_aggregate_carries_finding_marker():
     assert "npm/ deps" in out
 
 
+def test_tree_shows_direct_skill_dependencies_with_marker():
+    """A direct skill's bundled dependency (agent-dependency, no plugin parent) must
+    appear under a `dependencies/` node with its finding marker — not be dropped from
+    the direct-component tree (which previously skipped agent-dependency refs)."""
+    skill = _bundled("skill", "deploy", None, attributed_to=None, component_identity="skill/deploy")
+    dep = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        scope="agent-dependency",
+        attributed_to=None,
+        source_manifest=".claude/skills/deploy/package.json",
+    )
+    finding = Finding(
+        advisory_id="CVE-2026-0002",
+        component=dep,
+        confidence="high",
+        reason="lodash@4.17.20 matches CVE-2026-0002",
+    )
+    out = render_inventory_tree([skill, dep], [finding], use_unicode=True, use_color=False)
+    assert "dependencies/" in out
+    assert "lodash" in out
+    assert "[! CVE-2026-0002]" in out
+
+
 def test_tree_direct_components_render_as_separate_root():
     refs = [
         _bundled(

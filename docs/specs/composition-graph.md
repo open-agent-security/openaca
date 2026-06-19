@@ -123,9 +123,8 @@ Component-type parsers (V1):
   bom-ref `dependsOn` top-level components; a plugin `dependsOn` its skills/MCPs/hooks/
   packages; a skill `dependsOn` its packages.
 - Derived `openaca:scope` stays as a component property. **`openaca:attributed_to` is
-  dropped** — "introducing plugin" is derived from the edges by any consumer that needs
-  it. (Optional: emit it as a *derived* property for one transitional release to let the
-  Fleet PR lag; otherwise drop outright.)
+  dropped outright** (no transitional shim) — "introducing plugin" is derived from the
+  edges by any consumer that needs it. The scanner and Fleet land the change together.
 - Future transitive package edges → additional `dependencies[]` entries.
 
 This reconciles ADR-0022 (Agent BOM is the composition IR; CycloneDX `dependencies[]`
@@ -177,11 +176,22 @@ Each layout becomes a graph-shape assertion:
 
 ## Relationship to PR #129
 
-#129's containment heuristics (`_is_loadable_skill_dir`, the per-mode render
-direct-deps fixes) are interim patches for this same problem. This graph **replaces**
-`_classify_dep_manifest` / `_is_loadable_skill_dir` and the per-mode render
-special-casing. Recommendation: **land #129** (it is converging and ships value now)
-and supersede its heuristics here.
+#129 ships the SkillSpector observation source and **skips SC4** (known-vulnerable
+dependency) as a scoped limitation: OpenACA does not ingest external-scanner
+vulnerability findings, and skill-bundled dependency vulnerability coverage is
+deferred (ADR-0036). The interim skill-dep heuristics that were prototyped there
+(`_is_loadable_skill_dir`, the `_classify_dep_manifest` `SKILL.md` extension, the
+per-mode render direct-deps nesting, the `requirements.txt` parser) were **backed
+out** of #129 — it now leaves the narrow plugin-marker classification untouched.
+
+So this graph does not *supersede* anything in #129; it **adds skill-bundled-dep
+coverage fresh**. Deriving scope from a node's lineage means a skill's bundled deps
+fall out as agent-dependencies correct-by-construction, without the path-shape
+heuristics #129 deliberately declined to add. It still replaces the pre-existing
+`_classify_dep_manifest` plugin-marker rule (scope moves to lineage). When this graph
+lands, the SC4 skip can be revisited only if an external-scanner vulnerability
+*ingestion + deduplication* path is also built — a separate decision from the graph
+itself.
 
 ## Decisions for the companion ADR
 

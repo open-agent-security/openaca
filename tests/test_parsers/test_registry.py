@@ -60,3 +60,20 @@ def test_dep_manifest_co_located_with_plugin_classified_as_agent_dep(tmp_path):
     # The plugin self-identity ref stays agent-component (unchanged path).
     cp_scopes = {r.scope for r in refs if r.extra.get("component_type") == "plugin"}
     assert cp_scopes == {"agent-component"}
+
+
+def test_dep_manifest_co_located_with_skill_classified_as_agent_dep(tmp_path):
+    """A package.json beside a SKILL.md (a skill's own implementation deps) is
+    agent-dependency and in scope. Skills are agent components, so their bundled
+    deps must be scanned (and OSV-queried), not filtered as general software."""
+    skill_dir = tmp_path / ".claude" / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: Deploys services\n---\nRun the deploy steps.\n"
+    )
+    (skill_dir / "package.json").write_text(
+        '{"name":"deploy","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}'
+    )
+    refs = parse_repo(tmp_path)
+    npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
+    assert npm_scopes == {"agent-dependency"}

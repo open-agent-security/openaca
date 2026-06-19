@@ -225,6 +225,12 @@ def _walk_active_plugins(
                     Path(install_path), attributed_to=attributed_id
                 )
                 refs.extend(tier2_refs)
+                for bref in bundled_refs:
+                    if (bref.extra or {}).get("component_type") == "skill" and bref.source_manifest:
+                        skill_dir = Path(bref.source_manifest).parent
+                        refs.extend(
+                            _walk_plugin_implementation_deps(skill_dir, attributed_to=attributed_id)
+                        )
 
     return refs, warnings
 
@@ -360,6 +366,7 @@ def _walk_skill_dir(skills_dir: Path, project_root: Optional[Path] = None) -> li
         skill_md = skill_subdir / "SKILL.md"
         if skill_md.is_file():
             refs.extend(_parse_direct_skill(skill_md, project_root=project_root))
+            refs.extend(_walk_plugin_implementation_deps(skill_subdir, attributed_to=None))
     return refs
 
 
@@ -507,7 +514,9 @@ _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
 }
 
 
-def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> list[ComponentRef]:
+def _walk_plugin_implementation_deps(
+    install_path: Path, attributed_to: Optional[str]
+) -> list[ComponentRef]:
     """Tier-2 walk: parse every supported lockfile at the installPath, then
     manifest-fall-back for ecosystems not covered by a lockfile.
 

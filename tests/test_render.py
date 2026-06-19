@@ -1403,6 +1403,42 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     assert "@cyanheads/git-mcp-server@1.1.0 (from .mcp.json)" in out
 
 
+def test_repo_tree_shows_direct_skill_deps_with_marker(tmp_path):
+    """A direct project skill's bundled dep (agent-dependency, no plugin parent) must
+    appear under `dependencies/` in the repo tree with its finding marker. Repo mode
+    previously filtered direct refs to agent-component before building the tree."""
+    skill_md = tmp_path / ".claude" / "skills" / "deploy" / "SKILL.md"
+    pkg_json = tmp_path / ".claude" / "skills" / "deploy" / "package.json"
+    skill = ComponentRef(
+        name="deploy",
+        component_identity="skill/deploy",
+        source_manifest=str(skill_md),
+        scope="agent-component",
+        attributed_to=None,
+        extra={"component_type": "skill"},
+    )
+    dep = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest=str(pkg_json),
+        scope="agent-dependency",
+        attributed_to=None,
+    )
+    finding = Finding(advisory_id="GHSA-SK", component=dep, confidence="high")
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(skill_md, [skill]), (pkg_json, [dep])],
+        [finding],
+        use_unicode=True,
+    )
+
+    assert "dependencies/ (1)" in out
+    assert "lodash@4.17.20" in out
+    assert "[! GHSA-SK]" in out
+
+
 def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
     package_json = tmp_path / "package.json"
     mcp_json = tmp_path / ".mcp.json"

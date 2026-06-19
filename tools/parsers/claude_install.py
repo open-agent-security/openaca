@@ -413,12 +413,16 @@ def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
     for skill_md in iter_unignored_files(project_root, spec):
         if not _is_project_skill_file(skill_md, project_root):
             continue
+        added_any = False
         for ref in _parse_direct_skill(skill_md, project_root=project_root):
             key = (ref.source_manifest, ref.component_identity)
             if key in seen:
                 continue
             seen.add(key)
             refs.append(ref)
+            added_any = True
+        if added_any:
+            refs.extend(_walk_plugin_implementation_deps(skill_md.parent, attributed_to=None))
     return refs
 
 

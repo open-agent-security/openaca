@@ -1884,3 +1884,38 @@ def test_package_leaf_label_without_subdirectory_unchanged():
 
     ref = ComponentRef(ecosystem="npm", name="@x/mcp", version="1.0.0")
     assert _package_leaf_label(ref) == "@x/mcp@1.0.0"
+
+
+def test_direct_skill_agent_dep_not_shown_under_mcps():
+    """Direct-skill npm dep refs (scope='agent-dependency', attributed_to=None)
+    must not appear under MCPs/ in the endpoint inventory tree.
+
+    Before this fix, _direct_categories had no scope filter — npm/PyPI refs
+    with attributed_to=None fell through _component_type_for_tree to mcp_server
+    and were listed under MCPs/ as if they were MCP servers.
+    """
+    skill_ref = ComponentRef(
+        ecosystem="skill",
+        name="linter",
+        component_identity="skill/linter",
+        source_manifest=".claude/skills/linter/SKILL.md",
+        attributed_to=None,
+        extra={"component_type": "skill"},
+        scope="agent-component",
+    )
+    dep_ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.21",
+        component_identity="lodash",
+        source_manifest=".claude/skills/linter/package.json",
+        attributed_to=None,
+        scope="agent-dependency",
+    )
+
+    out = render_inventory_tree([skill_ref, dep_ref], [], use_unicode=True)
+
+    for line in out.splitlines():
+        assert "lodash" not in line or "MCPs" not in line, (
+            f"skill dep lodash incorrectly listed under MCPs/: {line!r}"
+        )

@@ -1405,11 +1405,14 @@ def render_repo_inventory_tree(
         assigned_keys.update(assigned)
         root_node.children.append(node)
 
+    # Include unassigned agent-dependency refs (e.g. a direct skill's bundled deps) so
+    # _build_direct_node surfaces them under `dependencies/`; without this they are
+    # matched and counted but omitted from the repo tree.
     direct_refs = [
         r
         for r in all_refs
         if not _is_plugin_ref(r)
-        and r.scope == "agent-component"
+        and r.scope in ("agent-component", "agent-dependency")
         and _ref_key(r) not in assigned_keys
     ]
     direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, root)

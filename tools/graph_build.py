@@ -21,7 +21,7 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
-from tools.parsers import package_json, pyproject_toml
+from tools.parsers import claude_plugin, claude_skill, package_json, pyproject_toml
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -37,17 +37,19 @@ _TARGET_KEY = "openaca:target"
 def occurrence_key(ref: ComponentRef) -> str:
     """The node key for a ref: its occurrence identity, never the bare purl.
 
-    Components use their canonical component identity. Packages use the
-    composite of where they were declared (source_manifest + source_locator)
-    and what they are (purl or name), so two manifests declaring the same purl
-    yield distinct keys.
+    The key is the occurrence — where the ref was declared
+    (source_manifest + source_locator) plus what it is — never the bare
+    component identity or purl (spec: openaca:identity ≈ source path +
+    locator + identity). So two same-named skills at different paths, or two
+    manifests declaring the same purl, yield distinct nodes; a single
+    occurrence reached by two discovery paths collapses (same manifest +
+    locator + what).
     """
     component_type = (ref.extra or {}).get("component_type")
     if component_type and component_type != "package":
-        identity = canonical_component_identity(ref)
-        if identity:
-            return identity
-    what = ref.purl or ref.name or ""
+        what = canonical_component_identity(ref) or ref.name or ""
+    else:
+        what = ref.purl or ref.name or ""
     return f"{ref.source_manifest}#{ref.source_locator}#{what}"
 
 
@@ -67,12 +69,86 @@ def build_graph(target: Path, mode: str) -> Graph:
 def descend(graph: Graph, parent: Node, directory: Path) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
-    Task 2.1 handles only top-level dependency manifests (the bare-package
-    case). Task 2.2+ adds agent-component boundary descent (plugins, skills,
-    MCP servers) here: each discovered component becomes a child node and
-    `descend` recurses into its directory with that node as the new parent.
+    Parentage is by construction: a child's parent is `parent` because we
+    descended into it from `parent`. The discovery surface depends on the
+    parent's kind:
+
+    - `target`: a `.claude-plugin/plugin.json` here makes `directory` a
+      plugin root (→ plugin child, descended *as a plugin*); project skills
+      (`.claude/skills/<name>/SKILL.md`) become skill children; bare
+      dependency manifests become `package` children (software-dependency).
+    - `plugin`: bundled `skills/<name>/SKILL.md` become skill children, and
+      the plugin's own dependency manifests become `package` children
+      (its implementation deps).
+    - `skill`: dependency manifests in the skill dir become `package`
+      children (agent-dependency).
+
+    Task 2.2 covers the three layouts above. Nested project skills, custom
+    plugin skill-dir paths, and endpoint mode are Tasks 2.3/2.4.
     """
-    _add_dep_manifest_packages(graph, parent, directory)
+    if parent.kind == "target":
+        plugin_manifest = directory / ".claude-plugin" / "plugin.json"
+        if plugin_manifest.is_file():
+            _descend_into_plugin(graph, parent, directory, plugin_manifest)
+        else:
+            _add_project_skills(graph, parent, directory)
+        _add_dep_manifest_packages(graph, parent, directory)
+    elif parent.kind == "plugin":
+        _add_bundled_skills(graph, parent, directory)
+        _add_dep_manifest_packages(graph, parent, directory)
+    elif parent.kind == "skill":
+        _add_dep_manifest_packages(graph, parent, directory)
+
+
+def _descend_into_plugin(
+    graph: Graph, target: Node, plugin_root: Path, plugin_manifest: Path
+) -> None:
+    """Create the plugin node (child of target) and descend into its subtree.
+
+    Reuses `claude_plugin.parse` only to obtain the plugin self-identity ref;
+    placement (the plugin → target edge, and which children hang off the
+    plugin) is owned here.
+    """
+    self_ref = next(
+        (r for r in claude_plugin.parse(plugin_manifest) if _component_type(r) == "plugin"),
+        None,
+    )
+    if self_ref is None:
+        return
+    plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
+    graph.nodes[plugin_node.key] = plugin_node
+    graph.edges.append(Edge(parent=target.key, child=plugin_node.key))
+    descend(graph, plugin_node, plugin_root)
+
+
+def _add_project_skills(graph: Graph, parent: Node, directory: Path) -> None:
+    """Project skills live at `<directory>/.claude/skills/<name>/SKILL.md`."""
+    skills_dir = directory / ".claude" / "skills"
+    _add_skills_from_dir(graph, parent, skills_dir)
+
+
+def _add_bundled_skills(graph: Graph, parent: Node, directory: Path) -> None:
+    """Plugin-bundled skills live at `<plugin-root>/skills/<name>/SKILL.md`."""
+    skills_dir = directory / "skills"
+    _add_skills_from_dir(graph, parent, skills_dir)
+
+
+def _add_skills_from_dir(graph: Graph, parent: Node, skills_dir: Path) -> None:
+    if not skills_dir.is_dir():
+        return
+    for skill_subdir in sorted(skills_dir.iterdir()):
+        skill_md = skill_subdir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        for ref in claude_skill.parse(skill_md):
+            skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
+            graph.nodes[skill_node.key] = skill_node
+            graph.edges.append(Edge(parent=parent.key, child=skill_node.key))
+            descend(graph, skill_node, skill_subdir)
+
+
+def _component_type(ref: ComponentRef) -> object:
+    return (ref.extra or {}).get("component_type")
 
 
 def _add_dep_manifest_packages(graph: Graph, parent: Node, directory: Path) -> None:

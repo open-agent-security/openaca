@@ -1009,3 +1009,37 @@ def test_endpoint_enabled_plugin_missing_from_map_emits_warning(tmp_path):
     warnings: list[str] = []
     build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
     assert "plugin ghost@mp enabled but missing from installed_plugins.json" in warnings
+
+
+def test_endpoint_ambiguous_install_entries_emit_scope_warning(tmp_path):
+    """When installed_plugins.json has multiple valid entries and none matches
+    the enabling scope, _select_install_entry returns a fallback warning that
+    build_graph must surface (parity with parse_install)."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")
+    # Enabled at user scope (settings.json is the user layer); both install
+    # entries carry non-user scopes, so neither matches → fallback warning.
+    (install_root / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@mp": True}}))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "project", "version": "1.0.0", "installPath": str(install_path)},
+                        {"scope": "local", "version": "2.0.0", "installPath": str(install_path)},
+                    ]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
+    assert any("no scope match" in w for w in warnings), warnings

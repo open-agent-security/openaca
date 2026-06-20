@@ -1478,6 +1478,7 @@ def test_endpoint_project_skill_carries_skills_lock_provenance(tmp_path):
 
     g = build_graph(install_root, mode="endpoint", project_root=project_root)
     skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert skill.ref is not None
     provenance = (skill.ref.extra or {}).get("source_provenance")
     assert provenance is not None, "project skill should carry skills-lock provenance"
     assert provenance["source"] == "vercel-labs/agent-skills"
@@ -1496,4 +1497,5 @@ def test_plugin_bundled_skill_does_not_look_up_skills_lock(tmp_path):
 
     g = build_graph(tmp_path, mode="repo")
     skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert skill.ref is not None
     assert (skill.ref.extra or {}).get("source_provenance") is None

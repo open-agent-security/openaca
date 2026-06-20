@@ -685,9 +685,19 @@ def _add_repo_standalone_components(
                 refs = claude_command_agent.parse_file(path, kind=kind)
             except Exception:
                 refs = []
-            for ref in refs:
-                node = Node(key=occurrence_key(ref), kind=kind, ref=ref)
-                _add_child(graph, parent, node)
+            if not refs:
+                continue
+            self_node = Node(key=occurrence_key(refs[0]), kind=kind, ref=refs[0])
+            _add_child(graph, parent, self_node)
+            # Agents may declare frontmatter mcpServers/hooks; parse_file returns
+            # them as subsequent refs. Attach them under the agent node (not the
+            # target) with their own kinds so scope_of / lineage see the agent ancestor.
+            for child_ref in refs[1:]:
+                child_kind = _component_type(child_ref)
+                if not isinstance(child_kind, str):
+                    continue
+                child_node = Node(key=occurrence_key(child_ref), kind=child_kind, ref=child_ref)
+                _add_child(graph, self_node, child_node)
 
 
 def _is_claude_settings_json(path: Path, root: Path) -> bool:

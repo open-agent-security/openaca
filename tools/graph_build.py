@@ -227,7 +227,9 @@ def _seed_active_plugins(
                 warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
             continue
         scope = claude_install._enabling_scope(plugin_key, layers, "endpoint")
-        entry, index, _ = claude_install._select_install_entry(entries, scope)
+        entry, index, warning = claude_install._select_install_entry(entries, scope)
+        if warning is not None and warnings is not None:
+            warnings.append(f"{plugin_key}: {warning}")
 
         plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
         version = entry.get("version")

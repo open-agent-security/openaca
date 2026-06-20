@@ -1089,3 +1089,66 @@ def test_endpoint_non_string_version_entry_emits_warning(tmp_path):
     warnings: list[str] = []
     build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
     assert any("non-string version" in w for w in warnings), warnings
+
+
+# --- Codex PR #131 review fixes ---
+
+
+def test_endpoint_project_skill_source_provenance_stamped(tmp_path):
+    """Project skills under <project>/.claude/skills must carry source_provenance
+    when a skills-lock records their install source (parity with the old
+    _walk_project_skill_dirs -> _parse_direct_skill path). Finding 1: the graph
+    project-skill walk skipped this stamping; only direct endpoint skills had it.
+    """
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    skill_dir = project_root / ".claude" / "skills" / "aws-api"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    # skills-lock candidate: <project>/.claude/skills/../.skill-lock.json
+    (project_root / ".claude" / "skills" / ".skill-lock.json").write_text(
+        json.dumps(
+            {
+                "skills": {
+                    "aws-api": {
+                        "source": "https://github.com/user/aws-api-skill",
+                        "sourceType": "github",
+                        "ref": "abc123",
+                    }
+                }
+            }
+        )
+    )
+
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1
+    assert skill_nodes[0].ref is not None
+    provenance = skill_nodes[0].ref.extra.get("source_provenance")
+    assert isinstance(provenance, dict), "project skill ref must carry source_provenance"
+    assert provenance.get("source") == "https://github.com/user/aws-api-skill"
+    assert provenance.get("ref") == "abc123"
+
+
+def test_repo_dot_claude_skill_has_no_source_provenance(tmp_path):
+    """Repo-mode .claude/skills must NOT stamp provenance: the old REGISTRY path
+    called claude_skill.parse directly (no _parse_direct_skill), so repo skills
+    never carried source_provenance even with a skills-lock present. Provenance
+    stamping is scoped to the endpoint project-skill walk only."""
+    skill_dir = tmp_path / ".claude" / "skills" / "aws-api"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    (tmp_path / ".claude" / "skills" / ".skill-lock.json").write_text(
+        json.dumps({"skills": {"aws-api": {"source": "https://example/x", "ref": "abc"}}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert skill.ref is not None
+    assert skill.ref.extra.get("source_provenance") is None
+

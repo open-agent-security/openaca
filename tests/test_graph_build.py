@@ -383,6 +383,51 @@ def test_repo_standalone_mcp_manifest_is_target_child(tmp_path):
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
 
 
+def test_malformed_plugin_manifest_does_not_suppress_sibling_mcp(tmp_path):
+    # A plugin.json that parses but yields no self-ref (no `name`) must NOT
+    # cause its directory to be treated as an owned plugin subtree, or it would
+    # silently hide an otherwise-valid sibling `.mcp.json`.
+    base = tmp_path / "packages" / "broken"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"version":"1"}')  # no name
+    (base / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    # No plugin node was created for the broken manifest.
+    assert not any(n.kind == "plugin" for n in g.nodes.values())
+    # The sibling MCP server is still discovered, parented to the target.
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_malformed_plugin_manifest_does_not_suppress_project_skill(tmp_path):
+    base = tmp_path / "packages" / "broken"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text("{not json")  # invalid JSON
+    skill = base / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    assert not any(n.kind == "plugin" for n in g.nodes.values())
+    sk = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert g.lineage(sk)[-1].kind == "target"
+
+
+def test_valid_plugin_still_owns_sibling_mcp(tmp_path):
+    # Regression guard: a well-formed plugin still owns its subtree, so a
+    # sibling `.mcp.json` parents to the plugin, not the target.
+    base = tmp_path / "packages" / "good"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"name":"good","version":"1"}')
+    (base / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
+
+
 def test_repo_claude_desktop_config_is_target_child(tmp_path):
     (tmp_path / "claude_desktop_config.json").write_text(
         json.dumps({"mcpServers": {"fs": {"command": "npx", "args": ["@mcp/fs"]}}})

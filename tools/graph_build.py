@@ -533,8 +533,14 @@ def descend(
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
         plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
+        # Only directories that actually produced a plugin node own their
+        # subtree. A malformed/empty `plugin.json` yields no node, so its dir
+        # must NOT be excluded from sibling discovery — otherwise one bad
+        # manifest would silently hide an otherwise-valid `.mcp.json`, project
+        # skill, or dep manifest in the same/under that directory.
+        realized_roots: list[Path] = []
         for plugin_root in plugin_roots:
-            _descend_into_plugin(
+            plugin_node = _descend_into_plugin(
                 graph,
                 parent,
                 plugin_root,
@@ -542,11 +548,13 @@ def descend(
                 root_dir=root_dir,
                 root_spec=root_spec,
             )
+            if plugin_node is not None:
+                realized_roots.append(plugin_root)
         _add_project_skills(
             graph,
             parent,
             directory,
-            exclude_under=plugin_roots,
+            exclude_under=realized_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -555,8 +563,8 @@ def descend(
         # the plugin-branch descent); emitting them again under target would
         # double-parent the same occurrence and trip validate(). The target's
         # bare-dep walk is non-recursive (only `directory/`), so it only needs to
-        # skip when `directory` itself is a plugin root.
-        if not any(_same_path(directory, root) for root in plugin_roots):
+        # skip when `directory` itself is a realized plugin root.
+        if not any(_same_path(directory, root) for root in realized_roots):
             _add_dep_manifest_packages(
                 graph,
                 parent,
@@ -569,7 +577,7 @@ def descend(
             graph,
             parent,
             directory,
-            exclude_under=plugin_roots,
+            exclude_under=realized_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -632,20 +640,25 @@ def _descend_into_plugin(
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
-) -> None:
+) -> Node | None:
     """Create the plugin node (child of target) and descend into its subtree.
 
     Reuses `claude_plugin.parse` only to obtain the plugin self-identity ref;
     placement (the plugin → target edge, and which children hang off the
     plugin) is owned here.
+
+    Returns the created plugin node, or `None` when the manifest is malformed
+    or yields no self-ref. A `None` return means the directory is NOT an owned
+    plugin subtree, so the caller must not exclude it from sibling discovery.
     """
     parsed = _safe_parse(claude_plugin.parse, plugin_manifest)
     self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
-        return
+        return None
     plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
     _add_child(graph, target, plugin_node)
     descend(graph, plugin_node, plugin_root, root_dir=root_dir, root_spec=root_spec)
+    return plugin_node
 
 
 def _add_project_skills(

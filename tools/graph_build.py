@@ -23,14 +23,24 @@ from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
 from tools.parsers import (
+    bun_lock,
+    claude_command_agent,
     claude_install,
     claude_plugin,
     claude_skill,
     mcp_json,
     package_json,
+    package_lock_json,
     pyproject_toml,
+    uv_lock,
 )
-from tools.parsers.claude_plugin_root import resolve_within
+from tools.parsers.claude_command_agent import Kind
+from tools.parsers.claude_plugin_root import (
+    _parse_bundled_command_agents,
+    _parse_bundled_hooks,
+    _parse_default_mcp,
+    resolve_within,
+)
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import SCOPE_PRECEDENCE
 from tools.parsers.settings_layers import load as load_settings
@@ -41,6 +51,13 @@ from tools.parsers.settings_layers import load as load_settings
 _DEP_MANIFEST_PARSERS = {
     "package.json": package_json.parse,
     "pyproject.toml": pyproject_toml.parse,
+    # Lockfiles fold into dep-manifest discovery: they emit transitive `package`
+    # refs (`extra["transitive"]=True`) that dedup against manifest deps by
+    # occurrence key. The endpoint plugin-own-deps path suppresses these via
+    # `emit_own_root_deps=False` (the tier-2 lockfile walk owns them there).
+    "package-lock.json": package_lock_json.parse,
+    "uv.lock": uv_lock.parse,
+    "bun.lock": bun_lock.parse,
 }
 
 _TARGET_KEY = "openaca:target"
@@ -87,7 +104,13 @@ def occurrence_key(ref: ComponentRef) -> str:
     return f"{ref.source_manifest}#{ref.source_locator}#{what}"
 
 
-def build_graph(target: Path, mode: str, project_root: Path | None = None) -> Graph:
+def build_graph(
+    target: Path,
+    mode: str,
+    project_root: Path | None = None,
+    *,
+    include_gitignored: bool = False,
+) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
 
@@ -96,7 +119,7 @@ def build_graph(target: Path, mode: str, project_root: Path | None = None) -> Gr
     if mode == "endpoint":
         _seed_endpoint(graph, root, Path(target), project_root)
     else:
-        descend(graph, root, Path(target))
+        descend(graph, root, Path(target), include_gitignored=include_gitignored)
     graph.validate()
     return graph
 
@@ -162,13 +185,25 @@ def _seed_active_plugins(
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
         attributed_id = f"{component_identity}@{version}" if version else component_identity
 
+        # Carry the same plugin metadata `parse_install` emitted so endpoint
+        # renderers (gitCommitSha display, per-plugin tier-2 coverage) and
+        # posture rules (mutable-install-reference) keep working off the ref.
         self_ref = ComponentRef(
             name=plugin_name,
             version=version,
             component_identity=component_identity,
             source_manifest=str(lockfile_path),
             source_locator=f"$.plugins.{plugin_key}[{index}]",
-            extra={"component_type": "plugin"},
+            extra={
+                "component_type": "plugin",
+                "runtime_hosts": ["claude-code"],
+                "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
+                "component_path": [{"type": "plugin", "name": plugin_name}],
+                "gitCommitSha": entry.get("gitCommitSha"),
+                "installPath": entry.get("installPath"),
+                "marketplace": marketplace,
+                "scope": entry.get("scope"),
+            },
         )
         plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
         _add_child(graph, target, plugin_node)
@@ -228,7 +263,12 @@ def _seed_remote_mcps(
 
 
 def descend(
-    graph: Graph, parent: Node, directory: Path, *, emit_own_root_deps: bool = True
+    graph: Graph,
+    parent: Node,
+    directory: Path,
+    *,
+    emit_own_root_deps: bool = True,
+    include_gitignored: bool = False,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -266,12 +306,18 @@ def descend(
         # root is a boundary handoff: the plugin owns its entire subtree, so its
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
-        plugin_roots = _find_plugin_roots(directory)
+        plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
         for plugin_root in plugin_roots:
             _descend_into_plugin(
                 graph, parent, plugin_root, plugin_root / ".claude-plugin" / "plugin.json"
             )
-        _add_project_skills(graph, parent, directory, exclude_under=plugin_roots)
+        _add_project_skills(
+            graph,
+            parent,
+            directory,
+            exclude_under=plugin_roots,
+            include_gitignored=include_gitignored,
+        )
         # A plugin root owns its own dep manifests (emitted under the plugin via
         # the plugin-branch descent); emitting them again under target would
         # double-parent the same occurrence and trip validate(). The target's
@@ -279,8 +325,16 @@ def descend(
         # skip when `directory` itself is a plugin root.
         if not any(_same_path(directory, root) for root in plugin_roots):
             _add_dep_manifest_packages(graph, parent, directory)
+        _add_repo_standalone_components(
+            graph,
+            parent,
+            directory,
+            exclude_under=plugin_roots,
+            include_gitignored=include_gitignored,
+        )
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory)
+        _add_bundled_plugin_surfaces(graph, parent, directory)
         if emit_own_root_deps:
             _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "skill":
@@ -291,13 +345,13 @@ def _same_path(a: Path, b: Path) -> bool:
     return a.resolve() == b.resolve()
 
 
-def _find_plugin_roots(directory: Path) -> list[Path]:
+def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> list[Path]:
     """Plugin roots are dirs containing `.claude-plugin/plugin.json`, at ANY
     depth (parity with parse_repo). Discovery uses the same gitignore-aware walk
     as project-skill discovery so we skip `node_modules/`, `.git/`, gitignored
     dirs. Returns each plugin root sorted for determinism.
     """
-    spec = load_gitignore_spec(directory)
+    spec = None if include_gitignored else load_gitignore_spec(directory)
     roots: list[Path] = []
     seen: set[Path] = set()
     for path in iter_unignored_files(directory, spec):
@@ -321,10 +375,8 @@ def _descend_into_plugin(
     placement (the plugin → target edge, and which children hang off the
     plugin) is owned here.
     """
-    self_ref = next(
-        (r for r in claude_plugin.parse(plugin_manifest) if _component_type(r) == "plugin"),
-        None,
-    )
+    parsed = _safe_parse(claude_plugin.parse, plugin_manifest)
+    self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
         return
     plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
@@ -333,7 +385,12 @@ def _descend_into_plugin(
 
 
 def _add_project_skills(
-    graph: Graph, parent: Node, directory: Path, exclude_under: list[Path] | None = None
+    graph: Graph,
+    parent: Node,
+    directory: Path,
+    exclude_under: list[Path] | None = None,
+    *,
+    include_gitignored: bool = False,
 ) -> None:
     """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
 
@@ -346,7 +403,7 @@ def _add_project_skills(
     skills inside any of those subtrees belong to the plugin branch
     (single-parent invariant), so they are skipped here to avoid double-discovery.
     """
-    spec = load_gitignore_spec(directory)
+    spec = None if include_gitignored else load_gitignore_spec(directory)
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
     for path in iter_unignored_files(directory, spec):
         if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
@@ -423,7 +480,7 @@ def _add_skills_from_dir(graph: Graph, parent: Node, skills_dir: Path) -> None:
 
 def _add_skill_node(graph: Graph, parent: Node, skill_subdir: Path) -> None:
     skill_md = skill_subdir / "SKILL.md"
-    for ref in claude_skill.parse(skill_md):
+    for ref in _safe_parse(claude_skill.parse, skill_md):
         skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
         _add_child(graph, parent, skill_node)
         descend(graph, skill_node, skill_subdir)
@@ -433,11 +490,140 @@ def _component_type(ref: ComponentRef) -> object:
     return (ref.extra or {}).get("component_type")
 
 
+def _safe_parse(parse, manifest: Path) -> list[ComponentRef]:
+    """Run a leaf parser, swallowing per-manifest parse failures.
+
+    These parsers run against arbitrary user repos; one malformed file (bad
+    JSON, unreadable bytes) must not abort the whole graph build. This mirrors
+    `parse_repo_grouped`'s per-path try/except — descent skips the bad file and
+    continues.
+    """
+    try:
+        return parse(manifest)
+    except Exception:
+        return []
+
+
 def _add_dep_manifest_packages(graph: Graph, parent: Node, directory: Path) -> None:
     for filename, parse in _DEP_MANIFEST_PARSERS.items():
         manifest = directory / filename
         if not manifest.is_file():
             continue
-        for ref in parse(manifest):
+        for ref in _safe_parse(parse, manifest):
             node = Node(key=occurrence_key(ref), kind="package", ref=ref)
             _add_child(graph, parent, node)
+
+
+# Standalone MCP manifest filenames discovered at any depth in repo mode
+# (parity with the REGISTRY `mcp.json` / `.mcp.json` / `claude_desktop_config.json`
+# patterns, which match by bare name anywhere in the tree).
+_STANDALONE_MCP_FILENAMES = ("mcp.json", ".mcp.json", "claude_desktop_config.json")
+
+# `.claude/<subdir>/**/*.md` agent-component surfaces discovered at any depth in
+# repo mode, mirroring the REGISTRY command/agent patterns.
+_COMMAND_AGENT_SURFACES: tuple[tuple[str, Kind], ...] = (
+    ("commands", "command"),
+    ("agents", "agent"),
+)
+
+
+def _add_repo_standalone_components(
+    graph: Graph,
+    parent: Node,
+    directory: Path,
+    *,
+    exclude_under: list[Path] | None = None,
+    include_gitignored: bool = False,
+) -> None:
+    """Repo target-level standalone surfaces: MCP manifests and `.claude`
+    commands/agents discovered at any depth (parity with the parser REGISTRY),
+    each a child of the target.
+
+    Files inside a plugin subtree are skipped (`exclude_under` = the plugin
+    roots already descended from the target) so a plugin's bundled MCP/command
+    surfaces stay under the plugin node (single-parent).
+    """
+    spec = None if include_gitignored else load_gitignore_spec(directory)
+    exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
+    for path in iter_unignored_files(directory, spec):
+        resolved = path.resolve()
+        if any(resolved.is_relative_to(root) for root in exclude_resolved):
+            continue
+        if path.name in _STANDALONE_MCP_FILENAMES:
+            for ref in _safe_parse(mcp_json.parse, path):
+                if _component_type(ref) != "mcp_server":
+                    continue
+                node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+                _add_child(graph, parent, node)
+            continue
+        if path.suffix == ".md":
+            kind = _command_agent_kind(path, directory)
+            if kind is None:
+                continue
+            try:
+                refs = claude_command_agent.parse_file(path, kind=kind)
+            except Exception:
+                refs = []
+            for ref in refs:
+                node = Node(key=occurrence_key(ref), kind=kind, ref=ref)
+                _add_child(graph, parent, node)
+
+
+def _command_agent_kind(path: Path, root: Path) -> Kind | None:
+    """Return `"command"`/`"agent"` if `path` is a `.md` under a
+    `.claude/commands/` or `.claude/agents/` dir at any depth, else None."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return None
+    for subdir, kind in _COMMAND_AGENT_SURFACES:
+        for i in range(len(parts) - 2):
+            if parts[i] == ".claude" and parts[i + 1] == subdir:
+                return kind
+    return None
+
+
+def _add_bundled_plugin_surfaces(graph: Graph, plugin_node: Node, plugin_root: Path) -> None:
+    """A plugin's bundled non-skill surfaces (MCPs, hooks, commands, agents) →
+    children of the plugin node. Reuses the shared `claude_plugin_root` helpers
+    for content; placement is owned here (parent-by-construction).
+
+    Bundled skills are NOT added here — the `_add_bundled_skills` descent already
+    creates them and their dep chains; re-emitting via the surface walker would
+    double-create. The hook helper requires a non-None `attributed_to` to emit;
+    we pass the plugin's own identity (the parent we descended from), which the
+    scan-derived attribution will reconcile later — it is not a content read.
+    """
+    plugin_ref = plugin_node.ref
+    if plugin_ref is None:
+        return
+    plugin_name = plugin_ref.name or ""
+    attributed_to = plugin_ref.component_identity
+    plugin_data = _plugin_manifest_data(plugin_root)
+
+    refs: list[ComponentRef] = []
+    refs.extend(_parse_default_mcp(plugin_root, [], attributed_to))
+    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name, attributed_to))
+    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name, attributed_to))
+    refs = [r for r in refs if _component_type(r) != "skill"]
+    # Stamp plugin-container context (declared_by.kind=plugin + a
+    # plugin-prefixed component_path) onto each bundled ref. This is placement
+    # metadata the descent owns — parity with the pre-graph `_with_plugin_context`
+    # that the endpoint walker applied — not a content read.
+    plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
+    refs = claude_install._with_plugin_context(refs, plugin_name, plugin_manifest_path)
+    for ref in refs:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
+            continue
+        node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
+        _add_child(graph, plugin_node, node)
+
+
+def _plugin_manifest_data(plugin_root: Path) -> dict:
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text())
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}

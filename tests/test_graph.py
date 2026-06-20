@@ -37,7 +37,8 @@ def test_scope_software_dependency_when_no_agent_ancestor():
 
 def test_nearest_plugin_ancestor():
     g = _build()
-    assert g.nearest_plugin_ancestor(g.nodes["pkg"]).key == "p"
+    nearest = g.nearest_plugin_ancestor(g.nodes["pkg"])
+    assert nearest is not None and nearest.key == "p"
     assert g.nearest_plugin_ancestor(g.nodes["bare"]) is None
 
 
@@ -158,4 +159,5 @@ def test_nearest_plugin_ancestor_returns_nearest_of_several():
     }
     edges = [Edge("t", "po"), Edge("po", "s"), Edge("s", "pi"), Edge("pi", "pkg")]
     g = Graph(nodes, edges)
-    assert g.nearest_plugin_ancestor(g.nodes["pkg"]).key == "pi"  # nearest, not "po"
+    nearest = g.nearest_plugin_ancestor(g.nodes["pkg"])
+    assert nearest is not None and nearest.key == "pi"  # nearest, not "po"

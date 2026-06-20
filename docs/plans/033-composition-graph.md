@@ -113,7 +113,8 @@ NodeKind = str  # "target" | "plugin" | "skill" | "mcp_server" | "hook" | "comma
 
 @dataclass(frozen=True)
 class Node:
-    key: str                       # occurrence identity (ADR-0031); never the purl
+    key: str                       # occurrence identity (ADR-0031); never the purl.
+                                   # V1 invariant: this IS the CycloneDX bom-ref (Stage 4).
     kind: NodeKind
     ref: Optional[ComponentRef]    # None only for the synthetic target root
 
@@ -288,6 +289,16 @@ def test_validate_rejects_zero_or_many_targets():
     g = Graph(nodes={"a": Node("a", "skill", None)}, edges=[])
     with pytest.raises(GraphInvariantError):
         g.validate()
+
+
+def test_validate_rejects_disconnected_node():
+    # target + a package with no path to it → not "one tree rooted at target"
+    g = Graph(
+        nodes={"t": Node("t", "target", None), "orphan": Node("orphan", "package", None)},
+        edges=[],
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
 ```
 
 - [ ] **Step 2: Run; expect FAIL** (`GraphInvariantError`/`validate` undefined).
@@ -303,6 +314,7 @@ class GraphInvariantError(Exception):
         targets = [n for n in self.nodes.values() if n.kind == "target"]
         if len(targets) != 1:
             raise GraphInvariantError(f"expected exactly one target, found {len(targets)}")
+        target_key = targets[0].key
         parents: dict[str, str] = {}
         for e in self.edges:
             if e.parent not in self.nodes or e.child not in self.nodes:
@@ -310,7 +322,8 @@ class GraphInvariantError(Exception):
             if e.child in parents:
                 raise GraphInvariantError(f"node {e.child} has multiple parents")
             parents[e.child] = e.parent
-        # acyclic: every node reaches the target without revisiting
+        # every node's parent-walk is acyclic AND terminates at the single target
+        # (no cycles, no disconnected nodes) — i.e. exactly one tree rooted at target
         for key in self.nodes:
             seen, cur = set(), key
             while cur in parents:
@@ -318,11 +331,13 @@ class GraphInvariantError(Exception):
                     raise GraphInvariantError(f"cycle detected through {cur}")
                 seen.add(cur)
                 cur = parents[cur]
+            if cur != target_key:
+                raise GraphInvariantError(f"node {key} is not connected to the target root")
 ```
 
 Make `lineage()` cycle-safe (guard with a `seen` set and raise `GraphInvariantError`
 on revisit) so a malformed graph fails loudly instead of hanging. `build_graph`
-(Stage 2) calls `validate()` before returning.
+(Stage 2) and `graph_from_cyclonedx` (Stage 4) call `validate()` before returning.
 
 - [ ] **Step 4: Run; expect PASS.** `uv run pytest tests/test_graph.py -v`
 
@@ -514,7 +529,26 @@ def test_scan_repo_scope_and_attribution_from_graph(tmp_path, monkeypatch):
 ```
 
 - [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3:** In `scan.py` `repo`/`endpoint`, replace `parse_repo_grouped`+`flatten_grouped` (repo) and `parse_install` (endpoint) with `build_graph(target, mode=...)`. Derive the flat ref list as `[n.ref for n in graph.nodes.values() if n.ref]`, stamping `ref.scope = graph.scope_of(node)` and `ref.attributed_to = (id of graph.nearest_plugin_ancestor(node))` on each. Delete `_classify_dep_manifest` and its scope stamping; remove the `attributed_to=` assignments from the parsers (scan now owns it via the graph). Keep `_filter_agent_scope_refs` (it reads `ref.scope`, now graph-derived). Add a `graph` parameter to the `_emit`/`match`/`build_agent_bom`/`render_*` call sites (accepted but unused downstream until later stages).
+- [ ] **Step 3:** In `scan.py` `repo`/`endpoint`, replace `parse_repo_grouped`+`flatten_grouped` (repo) and `parse_install` (endpoint) with `build_graph(target, mode=...)`. Project the flat ref list from the graph's non-root nodes — **`ComponentRef` is `@dataclass(frozen=True)`, so use `dataclasses.replace`, not attribute assignment**:
+
+```python
+from dataclasses import replace
+
+def _refs_from_graph(graph):
+    refs = []
+    for node in graph.nodes.values():
+        if node.ref is None:  # the synthetic target root has no ref
+            continue
+        plugin = graph.nearest_plugin_ancestor(node)
+        refs.append(replace(
+            node.ref,
+            scope=graph.scope_of(node),
+            attributed_to=(plugin.ref.component_identity if plugin and plugin.ref else None),
+        ))
+    return refs
+```
+
+  Delete `_classify_dep_manifest` and its scope stamping; remove the `attributed_to=` assignments from the parsers (scan now owns it via the graph). Keep `_filter_agent_scope_refs` (it reads `ref.scope`, now graph-derived). Add a `graph` parameter to the `_emit`/`match`/`build_agent_bom`/`render_*` call sites (accepted but unused downstream until later stages).
 
 > Why stamp instead of migrate consumers now: this keeps Stages 3's commit green
 > with **identical output** to today (attribution = nearest plugin, same as the old
@@ -543,7 +577,11 @@ and `scan_bom` uses it.
 
 - [ ] **Step 1: Failing tests**: (a) the target root appears as `metadata.component` with the **stable logical bom-ref** (not an absolute path) and is **not** in `components[]`; (b) `dependencies[]` reproduces the graph edges, including edges whose parent is the target's bom-ref; (c) no component carries an `openaca:attributed_to` property.
 - [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3:** Change `build_agent_bom` to accept a `Graph`; emit `metadata.component` from `graph.root` (stable bom-ref); build `dependencies[]` from `graph.edges` (drop the `attributed_to`→edge derivation in `_build_edges`); delete the `openaca:attributed_to` property in `_component_properties` and its read in `_component_ref_from_cyclonedx`.
+- [ ] **Step 3:** Change `build_agent_bom` to accept a `Graph`.
+  - **Invariant (V1): `node.key` *is* the CycloneDX bom-ref.** Every `components[]` entry's `bom-ref` and every `dependencies[]` `ref`/`dependsOn` value is the corresponding node's `key` (the occurrence identity). Edge serialization does not invent a separate mapping. State this in the BOM module docstring.
+  - **Synthesize the target component.** `graph.root.ref` is `None` (the target is synthetic), so `build_agent_bom` builds `metadata.component` from the root's `key` (its stable bom-ref) and `kind` (`"target"`) — implementers must not expect `root.ref` to exist. The resolved scan path is **not** part of identity (finding: reproducibility); if recorded at all it is a non-identity property sourced from `build_agent_bom`'s existing `target`/`target_type` parameters, not the node key.
+  - Build `dependencies[]` from `graph.edges` (drop the `attributed_to`→edge derivation in `_build_edges`); the target's bom-ref appears as a `dependencies[]` parent but is **not** added to `components[]`.
+  - Delete the `openaca:attributed_to` property in `_component_properties` and its read in `_component_ref_from_cyclonedx`.
 - [ ] **Step 4: Run; expect PASS.**
 - [ ] **Step 5: Commit.** `git commit -m "bom: build from graph; target=metadata.component (stable ref); drop openaca:attributed_to"`
 

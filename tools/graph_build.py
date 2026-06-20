@@ -234,6 +234,11 @@ def _seed_active_plugins(
         plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
         version = entry.get("version")
         if version is not None and not isinstance(version, str):
+            if warnings is not None:
+                warnings.append(
+                    f"{plugin_key}: non-string version {version!r} in "
+                    "installed_plugins.json; skipping"
+                )
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
         attributed_id = f"{component_identity}@{version}" if version else component_identity

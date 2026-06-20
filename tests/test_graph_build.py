@@ -954,3 +954,58 @@ def test_plugin_skill_inside_plugin_root_accepted(tmp_path):
     g = build_graph(tmp_path, mode="repo")
     skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
     assert len(skill_nodes) == 1, "plugin skill symlink within the plugin root must be accepted"
+
+
+def _bundled_skill(plugin_root, rel, *, skill_name, dep_name):
+    d = plugin_root / rel
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(f"---\nname: {skill_name}\ndescription: d\n---\nrun\n")
+    (d / "package.json").write_text(
+        f'{{"name":"{skill_name}","version":"1","dependencies":{{"{dep_name}":"1.0.0"}}}}'
+    )
+    return d
+
+
+def test_repo_bundled_skill_under_gitignored_path_excluded_by_default(tmp_path):
+    """A plugin's bundled skill at a scan-root-gitignored path must NOT produce a
+    skill node by default; a non-ignored sibling skill is still fully discovered
+    (skill + its dep). With include_gitignored=True the ignored one appears too."""
+    (tmp_path / ".gitignore").write_text("skills/private/\n")
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    _bundled_skill(tmp_path, "skills/public", skill_name="public-skill", dep_name="lodash")
+    _bundled_skill(tmp_path, "skills/private", skill_name="private-skill", dep_name="left-pad")
+
+    g = build_graph(tmp_path, mode="repo")
+    skill_keys = [n.key for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_keys) == 1, "gitignored bundled skill must be excluded by default"
+    pkg_keys = [n.key or "" for n in g.nodes.values() if n.kind == "package"]
+    assert any("lodash" in k for k in pkg_keys), "non-ignored skill's dep must still be discovered"
+    assert not any("left-pad" in k for k in pkg_keys), "gitignored skill's dep must not be reached"
+
+    g_all = build_graph(tmp_path, mode="repo", include_gitignored=True)
+    skill_keys_all = [n.key for n in g_all.nodes.values() if n.kind == "skill"]
+    assert len(skill_keys_all) == 2, "include_gitignored=True must include the ignored skill"
+    pkg_keys_all = [n.key or "" for n in g_all.nodes.values() if n.kind == "package"]
+    assert any("left-pad" in k for k in pkg_keys_all), (
+        "include_gitignored=True must reach the ignored skill's dep"
+    )
+
+
+def test_endpoint_enabled_plugin_missing_from_map_emits_warning(tmp_path):
+    """An enabled plugin key absent from installed_plugins.json must append the
+    parse_install-parity warning to the build_graph warnings channel."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    settings = {"enabledPlugins": {"ghost@mp": True}}
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
+    assert "plugin ghost@mp enabled but missing from installed_plugins.json" in warnings

@@ -10,9 +10,9 @@ import click
 
 from tools.bom import build_agent_bom
 from tools.bom_lint import main as lint_cmd
-from tools.parsers import flatten_grouped, parse_repo_grouped
-from tools.parsers.claude_install import parse_install
-from tools.scan import _filter_agent_scope_refs
+from tools.graph_build import build_graph
+from tools.parsers import parse_repo_grouped
+from tools.scan import _filter_agent_scope_refs, _is_plugin_ref, _refs_from_graph
 
 
 @click.group()
@@ -60,21 +60,25 @@ def _emit_bom_json(document: dict, output_path: Path | None) -> None:
 @_output_option
 def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> None:
     """Generate an Agent BOM from repository manifests."""
-    grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
-    n_parsed = len(grouped)
+    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored)
+    # Manifest-visited count and parse-failure reporting are properties of the
+    # filesystem walk, not the graph; source them from the walk so the warning
+    # is unchanged. Composition (nodes/edges/scope) comes from the graph.
+    parse_groups, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
+    n_parsed = len(parse_groups)
     if n_found > n_parsed:
         click.echo(
             f"warning: {n_found - n_parsed} of {n_found} matched manifest(s) failed to parse"
             " and were skipped",
             err=True,
         )
-    refs = _filter_agent_scope_refs(flatten_grouped(grouped))
     bom = build_agent_bom(
-        refs,
+        _filter_agent_scope_refs(_refs_from_graph(graph)),
         target_type="repo",
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
+        graph=graph,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
@@ -96,21 +100,15 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
 def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
     """Generate an Agent BOM from active endpoint composition."""
     config_dir = _resolve_endpoint_config_dir(config_dir)
-    refs, warnings = parse_install(
-        install_root=config_dir,
-        project_root=project,
-        mode="endpoint",
-        include_transitive=True,
-    )
-    for warning in warnings:
-        click.echo(f"warning: {warning}", err=True)
-    plugin_count = sum(1 for ref in refs if (ref.extra or {}).get("component_type") == "plugin")
+    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    refs = _refs_from_graph(graph)
     bom = build_agent_bom(
-        refs,
+        _filter_agent_scope_refs(refs),
         target_type="endpoint",
         target=str(config_dir),
-        source_unit_count=plugin_count,
+        source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
         source_unit_label="active plugin",
+        graph=graph,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 

@@ -4,6 +4,7 @@ from tools.bom import (
     bom_components_from_cyclonedx,
     build_agent_bom,
     component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
 )
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
@@ -113,6 +114,35 @@ def test_graph_bom_excludes_software_dependency_nodes_from_components():
     deps_by_ref = {d["ref"]: set(d["dependsOn"]) for d in doc["dependencies"]}
     assert "deps/npm/left-pad" not in deps_by_ref
     assert "deps/npm/left-pad" not in deps_by_ref["openaca:target"]
+
+
+def test_graph_from_cyclonedx_round_trips_nodes_and_edges():
+    # [correct-new-behavior] A BOM produced by build_agent_bom reconstructs the
+    # graph's agent-scope projection: same node keys + kinds and the same edge
+    # set. The software-dependency package is excluded from components[] at emit
+    # time, so it does not round-trip — assert against the included set.
+    g = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom([], target_type="endpoint", target="~/.claude", graph=g).to_cyclonedx()
+    g2 = graph_from_cyclonedx(doc)
+
+    g2.validate()
+    assert g2.root.key == "openaca:target"
+
+    included = {
+        k: n
+        for k, n in g.nodes.items()
+        if n.ref is None or g.scope_of(n) in {"agent-component", "agent-dependency"}
+    }
+    assert {n.key: n.kind for n in g2.nodes.values()} == {
+        k: n.kind for k, n in included.items()
+    }
+    included_edges = {
+        (e.parent, e.child)
+        for e in g.edges
+        if e.parent in included and e.child in included
+    }
+    assert {(e.parent, e.child) for e in g2.edges} == included_edges
 
 
 def test_graph_bom_drops_openaca_attributed_to_property():

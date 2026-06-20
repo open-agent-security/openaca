@@ -45,7 +45,7 @@ from click.core import ParameterSource
 
 from tools.bom import (
     build_agent_bom,
-    component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
     source_unit_from_cyclonedx,
     target_info_from_cyclonedx,
 )
@@ -474,14 +474,17 @@ def _render_bom_inventory_tree(
     input_path: Path,
     use_color: bool,
     use_unicode: bool,
+    graph: Graph | None = None,
 ) -> str:
     if target_type == "repo":
         root = Path(target) if target else input_path.parent
         grouped = _group_refs_for_repo_tree(refs)
         return render_repo_inventory_tree(
-            root, grouped, findings, use_color=use_color, use_unicode=use_unicode
+            root, grouped, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
         )
-    return render_inventory_tree(refs, findings, use_color=use_color, use_unicode=use_unicode)
+    return render_inventory_tree(
+        refs, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
+    )
 
 
 def _group_refs_for_repo_tree(refs: list[ComponentRef]) -> list[tuple[Path, list[ComponentRef]]]:
@@ -956,16 +959,23 @@ def scan_bom(
         )
     target_type, target = target_info_from_cyclonedx(doc)
     source_unit_count, source_unit_label = source_unit_from_cyclonedx(doc)
+    # The BOM encodes the composition graph (dependencies[] edges); reconstruct
+    # it so scope + attribution come from graph structure, not the (removed)
+    # openaca:attributed_to property. The reconstructed graph is already the
+    # agent-scope projection (software-deps were excluded at emit), but keep the
+    # filter so an externally-produced BOM with software-deps stays consistent.
+    graph = graph_from_cyclonedx(doc)
     refs = build_agent_bom(
-        _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
+        _filter_agent_scope_refs(_refs_from_graph(graph)),
         target_type="bom",
         target=str(input_path),
+        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations = []
     advisory_index = {a["id"]: a for a in corpus}
 
@@ -986,6 +996,7 @@ def scan_bom(
             input_path=input_path,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
 
     if verbose:
@@ -1003,6 +1014,7 @@ def scan_bom(
                 input_path=input_path,
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
+                graph=graph,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -1034,6 +1046,7 @@ def scan_bom(
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,
+        graph=graph,
     )
     unit_count = source_unit_count if source_unit_count is not None else 1
     unit_label = source_unit_label or "agent BOM"

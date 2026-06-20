@@ -16,12 +16,15 @@ reproducible across machines — the resolved scan path is evidence, not identit
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
 from tools.parsers import claude_plugin, claude_skill, package_json, pyproject_toml
+from tools.parsers.claude_plugin_root import resolve_within
+from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -83,15 +86,17 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
     - `skill`: dependency manifests in the skill dir become `package`
       children (agent-dependency).
 
-    Task 2.2 covers the three layouts above. Nested project skills, custom
-    plugin skill-dir paths, and endpoint mode are Tasks 2.3/2.4.
+    Nested project skills (`.claude/skills/<name>/SKILL.md` at any depth) and
+    plugin custom skill-dir paths (the manifest's `"skills"` field) are handled
+    here (Task 2.3). Endpoint mode is Task 2.4.
     """
     if parent.kind == "target":
         plugin_manifest = directory / ".claude-plugin" / "plugin.json"
+        plugin_root: Path | None = None
         if plugin_manifest.is_file():
             _descend_into_plugin(graph, parent, directory, plugin_manifest)
-        else:
-            _add_project_skills(graph, parent, directory)
+            plugin_root = directory
+        _add_project_skills(graph, parent, directory, exclude_under=plugin_root)
         _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory)
@@ -121,30 +126,98 @@ def _descend_into_plugin(
     descend(graph, plugin_node, plugin_root)
 
 
-def _add_project_skills(graph: Graph, parent: Node, directory: Path) -> None:
-    """Project skills live at `<directory>/.claude/skills/<name>/SKILL.md`."""
-    skills_dir = directory / ".claude" / "skills"
-    _add_skills_from_dir(graph, parent, skills_dir)
+def _add_project_skills(
+    graph: Graph, parent: Node, directory: Path, exclude_under: Path | None = None
+) -> None:
+    """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
+
+    Discovery uses the same gitignore-aware tree walk as `parse_repo_grouped`
+    so we skip `node_modules/`, `.git/`, and gitignored dirs. Each skill dir
+    becomes a `skill` child of `parent` (the target).
+
+    `exclude_under` is the root of a plugin already descended from `parent`:
+    skills inside that subtree belong to the plugin branch (single-parent
+    invariant), so they are skipped here to avoid double-discovery.
+    """
+    spec = load_gitignore_spec(directory)
+    exclude_resolved = exclude_under.resolve() if exclude_under is not None else None
+    for path in iter_unignored_files(directory, spec):
+        if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
+            continue
+        if exclude_resolved is not None and path.resolve().is_relative_to(exclude_resolved):
+            continue
+        _add_skill_node(graph, parent, path.parent)
+
+
+def _is_project_skill_md(path: Path, root: Path) -> bool:
+    """True iff `path` is `.../.claude/skills/<name>/SKILL.md` relative to root."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    # parts == (..., ".claude", "skills", "<name>", "SKILL.md")
+    return (
+        len(parts) >= 4
+        and parts[-1] == "SKILL.md"
+        and parts[-3] == "skills"
+        and parts[-4] == ".claude"
+    )
 
 
 def _add_bundled_skills(graph: Graph, parent: Node, directory: Path) -> None:
-    """Plugin-bundled skills live at `<plugin-root>/skills/<name>/SKILL.md`."""
-    skills_dir = directory / "skills"
-    _add_skills_from_dir(graph, parent, skills_dir)
+    """Plugin-bundled skills live at `<plugin-root>/skills/<name>/SKILL.md`,
+    or at a custom directory named by the manifest's `"skills"` field.
+
+    Path resolution mirrors `claude_plugin_root._parse_bundled_skills`:
+    `resolve_within` rejects traversal outside the plugin root, the default
+    `skills/` is always tried, and a custom dir equal to the default is
+    deduped.
+    """
+    skill_dirs: list[Path] = []
+    default_skills = resolve_within(directory, "skills")
+    if default_skills is not None and default_skills.is_dir():
+        skill_dirs.append(default_skills)
+    custom_skills = _plugin_custom_skills_field(directory)
+    if isinstance(custom_skills, str):
+        custom_dir = resolve_within(directory, custom_skills)
+        if custom_dir is not None and custom_dir.is_dir():
+            skill_dirs.append(custom_dir)
+
+    seen_dirs: set[Path] = set()
+    for skills_dir in skill_dirs:
+        resolved = skills_dir.resolve()
+        if resolved in seen_dirs:
+            continue
+        seen_dirs.add(resolved)
+        _add_skills_from_dir(graph, parent, skills_dir)
+
+
+def _plugin_custom_skills_field(plugin_root: Path) -> object:
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text())
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data.get("skills")
 
 
 def _add_skills_from_dir(graph: Graph, parent: Node, skills_dir: Path) -> None:
     if not skills_dir.is_dir():
         return
     for skill_subdir in sorted(skills_dir.iterdir()):
-        skill_md = skill_subdir / "SKILL.md"
-        if not skill_md.is_file():
-            continue
-        for ref in claude_skill.parse(skill_md):
-            skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
-            graph.nodes[skill_node.key] = skill_node
-            graph.edges.append(Edge(parent=parent.key, child=skill_node.key))
-            descend(graph, skill_node, skill_subdir)
+        if (skill_subdir / "SKILL.md").is_file():
+            _add_skill_node(graph, parent, skill_subdir)
+
+
+def _add_skill_node(graph: Graph, parent: Node, skill_subdir: Path) -> None:
+    skill_md = skill_subdir / "SKILL.md"
+    for ref in claude_skill.parse(skill_md):
+        skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
+        graph.nodes[skill_node.key] = skill_node
+        graph.edges.append(Edge(parent=parent.key, child=skill_node.key))
+        descend(graph, skill_node, skill_subdir)
 
 
 def _component_type(ref: ComponentRef) -> object:

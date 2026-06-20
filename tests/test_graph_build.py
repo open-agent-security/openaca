@@ -295,3 +295,201 @@ def test_nested_plugin_dot_claude_skills_not_project_skill_of_target(tmp_path):
     target = g.root
     assert all(g.nearest_plugin_ancestor(s) is not None for s in skills)
     assert target.key not in {e.parent for e in g.edges if g.nodes[e.child].kind == "skill"}
+
+
+# --- Task 2.5: lockfiles + bundled non-skill plugin surfaces + repo standalone ---
+
+
+def test_repo_package_lock_emits_transitive_packages(tmp_path):
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "host", "version": "1.0.0"},
+                    "node_modules/left-pad": {"version": "1.0.0"},
+                    "node_modules/dep-transitive": {"version": "2.0.0"},
+                },
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkgs = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkgs) == 2
+    for p in pkgs:
+        assert (p.ref.extra or {}).get("transitive") is True
+        assert [n.kind for n in g.lineage(p)] == ["package", "target"]
+
+
+def test_repo_uv_lock_emits_transitive_packages(tmp_path):
+    (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "requests"\nversion = "2.0.0"\n'
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkgs = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkgs) == 1
+    assert (pkgs[0].ref.extra or {}).get("transitive") is True
+
+
+def test_repo_lockfile_in_skill_dir_nests_under_skill(tmp_path):
+    skill = tmp_path / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (skill / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "deploy", "version": "1"},
+                    "node_modules/lodash": {"version": "4.17.20"},
+                },
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]
+
+
+def test_repo_plugin_lockfile_nests_under_plugin(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1"},
+                    "node_modules/left-pad": {"version": "1.0.0"},
+                },
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "plugin", "target"]
+
+
+def test_repo_standalone_mcp_manifest_is_target_child(tmp_path):
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_repo_claude_desktop_config_is_target_child(tmp_path):
+    (tmp_path / "claude_desktop_config.json").write_text(
+        json.dumps({"mcpServers": {"fs": {"command": "npx", "args": ["@mcp/fs"]}}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_repo_commands_and_agents_are_target_children(tmp_path):
+    cmd = tmp_path / ".claude" / "commands"
+    cmd.mkdir(parents=True)
+    (cmd / "deploy.md").write_text("---\nname: deploy\n---\nrun\n")
+    agt = tmp_path / ".claude" / "agents"
+    agt.mkdir(parents=True)
+    (agt / "reviewer.md").write_text("---\nname: reviewer\n---\nreview\n")
+    g = build_graph(tmp_path, mode="repo")
+    command = next(n for n in g.nodes.values() if n.kind == "command")
+    agent = next(n for n in g.nodes.values() if n.kind == "agent")
+    assert [n.kind for n in g.lineage(command)] == ["command", "target"]
+    assert [n.kind for n in g.lineage(agent)] == ["agent", "target"]
+
+
+def test_repo_command_inside_plugin_not_double_discovered_by_target(tmp_path):
+    base = tmp_path / "packages" / "myplugin"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"name":"nested","version":"1"}')
+    cmd = base / ".claude" / "commands"
+    cmd.mkdir(parents=True)
+    (cmd / "deploy.md").write_text("---\nname: deploy\n---\nrun\n")
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    # The `.claude/commands` dir lives inside the plugin subtree; it must not be
+    # emitted as a target-level command (single-parent / exclude_under).
+    commands = [n for n in g.nodes.values() if n.kind == "command"]
+    target = g.root
+    assert target.key not in {e.parent for e in g.edges if g.nodes[e.child].kind == "command"}
+    assert all(n.kind == "command" for n in commands) or not commands
+
+
+def test_repo_plugin_bundled_mcp_and_hooks_are_plugin_children(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    (tmp_path / "hooks").mkdir()
+    (tmp_path / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [{"type": "command", "command": "echo hi"}],
+                }
+            }
+        )
+    )
+    cmd = tmp_path / "commands"
+    cmd.mkdir()
+    (cmd / "build.md").write_text("---\nname: build\n---\nbuild\n")
+    g = build_graph(tmp_path, mode="repo")
+    plugin = next(n for n in g.nodes.values() if n.kind == "plugin")
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    hook = next(n for n in g.nodes.values() if n.kind == "hook")
+    command = next(n for n in g.nodes.values() if n.kind == "command")
+    assert g.lineage(mcp)[1].key == plugin.key
+    assert g.lineage(hook)[1].key == plugin.key
+    assert g.lineage(command)[1].key == plugin.key
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
+
+
+def test_endpoint_plugin_bundled_mcp_is_plugin_child(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    (install_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "@evil/mcp@0.9.0"]}}})
+    )
+    settings = {"enabledPlugins": {"demo@mp": True}}
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                    ]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
+
+
+def test_repo_plugin_bundled_skill_not_double_created_by_surface_walk(tmp_path):
+    # The plugin bundles a skill (created by descent) AND non-skill surfaces.
+    # Adding the non-skill surfaces must not duplicate the skill node.
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    _skill_with_dep(tmp_path, "skills/deploy")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    skills = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skills) == 1
+    # skill→package dep chain preserved
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]

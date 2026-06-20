@@ -228,6 +228,21 @@ def test_scan_bom_rejects_include_posture(tmp_path):
     assert "--include-posture is not supported for scan bom" in result.output
 
 
+def test_bom_repo_excludes_bare_package_json_as_software_dependency(tmp_path):
+    """bom repo must not include bare package.json deps (software-dependency scope)."""
+    (tmp_path / "package.json").write_text(
+        '{"name":"app","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}',
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(openaca_main, ["bom", "repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    purls = {c.get("purl") for c in doc.get("components", [])}
+    assert not any("lodash" in (p or "") for p in purls), (
+        "bare package.json deps are software-dependency and must not appear in the agent BOM"
+    )
+
+
 def test_bom_repo_warns_on_parse_failures(tmp_path):
     """bom repo emits a stderr warning when manifests fail to parse."""
     (tmp_path / ".mcp.json").write_text("not valid json{{{", encoding="utf-8")

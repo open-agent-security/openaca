@@ -627,3 +627,26 @@ def test_repo_settings_json_enabled_plugins_are_plugin_nodes(tmp_path):
     plugins = [n for n in g.nodes.values() if n.kind == "plugin"]
     assert len(plugins) == 1
     assert [n.kind for n in g.lineage(plugins[0])] == ["plugin", "target"]
+
+
+def test_repo_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_path):
+    """Agent frontmatter mcpServers must become mcp_server children of the agent node,
+    not agent-kind siblings under the target."""
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "my-agent.md").write_text(
+        "---\nmcpServers:\n  git:\n    command: npx\n    args: ['@org/git-mcp@1.0.0']\n---\n# Agent\n"
+    )
+    g = build_graph(tmp_path, mode="repo")
+    g.validate()
+
+    agent_nodes = [n for n in g.nodes.values() if n.kind == "agent"]
+    assert len(agent_nodes) == 1
+    mcp_nodes = [n for n in g.nodes.values() if n.kind == "mcp_server"]
+    assert len(mcp_nodes) == 1
+
+    children_of_agent = g.children_of(agent_nodes[0])
+    assert any(n.kind == "mcp_server" for n in children_of_agent), (
+        "mcp_server should be a child of the agent node, not the target"
+    )
+    assert [n.kind for n in g.lineage(mcp_nodes[0])] == ["mcp_server", "agent", "target"]

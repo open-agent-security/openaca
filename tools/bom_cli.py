@@ -10,9 +10,10 @@ import click
 
 from tools.bom import build_agent_bom
 from tools.bom_lint import main as lint_cmd
-from tools.parsers import flatten_grouped, parse_repo_grouped
+from tools.graph_build import build_graph
+from tools.parsers import parse_repo_grouped
 from tools.parsers.claude_install import parse_install
-from tools.scan import _filter_agent_scope_refs
+from tools.scan import _filter_agent_scope_refs, _refs_from_graph
 
 
 @click.group()
@@ -60,6 +61,9 @@ def _emit_bom_json(document: dict, output_path: Path | None) -> None:
 @_output_option
 def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> None:
     """Generate an Agent BOM from repository manifests."""
+    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored)
+    all_refs = _refs_from_graph(graph)
+    # parse_repo_grouped is kept for n_found (manifest count / parse-failure warning).
     grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
     n_parsed = len(grouped)
     if n_found > n_parsed:
@@ -68,13 +72,14 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
             " and were skipped",
             err=True,
         )
-    refs = _filter_agent_scope_refs(flatten_grouped(grouped))
+    refs = _filter_agent_scope_refs(all_refs)
     bom = build_agent_bom(
         refs,
         target_type="repo",
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
+        graph=graph,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 

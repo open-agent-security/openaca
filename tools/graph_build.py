@@ -175,8 +175,12 @@ def _seed_active_plugins(
 
         install_path = entry.get("installPath")
         if isinstance(install_path, str) and install_path:
-            # Reuse the repo-mode plugin descent for bundled skills + their deps.
-            descend(graph, plugin_node, Path(install_path))
+            # Reuse the repo-mode plugin descent for bundled skills + their deps,
+            # but suppress the plugin's OWN root dep manifests: those come from
+            # the tier-2 lockfile walk below (lockfile-preferred). Emitting both
+            # would double-count a direct dep present in package.json AND
+            # package-lock.json. Bundled skills and their own deps still descend.
+            descend(graph, plugin_node, Path(install_path), emit_own_root_deps=False)
             # Plugin tier-2 lockfile deps: parity with parse_install — attach as
             # package children of the plugin node (NOT a skill).
             for ref in claude_install._walk_plugin_implementation_deps(
@@ -223,7 +227,9 @@ def _seed_remote_mcps(
             _add_child(graph, target, node)
 
 
-def descend(graph: Graph, parent: Node, directory: Path) -> None:
+def descend(
+    graph: Graph, parent: Node, directory: Path, *, emit_own_root_deps: bool = True
+) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
     Parentage is by construction: a child's parent is `parent` because we
@@ -240,6 +246,15 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
       (its implementation deps).
     - `skill`: dependency manifests in the skill dir become `package`
       children (agent-dependency).
+
+    `emit_own_root_deps` gates ONLY the plugin branch's emission of the
+    plugin's OWN root dep manifests (`_add_dep_manifest_packages` at
+    `directory`). Endpoint seeding sets it `False` because the plugin's own
+    deps come from the tier-2 lockfile walk (`_walk_plugin_implementation_deps`,
+    lockfile-preferred) instead; emitting them here too would double-count a
+    direct dep that appears in both `package.json` and `package-lock.json`.
+    The flag does NOT affect bundled-skill discovery or nested skills' own
+    deps — those descend through the `skill` branch, which always emits.
 
     Nested project skills (`.claude/skills/<name>/SKILL.md` at any depth) and
     plugin custom skill-dir paths (the manifest's `"skills"` field) are handled
@@ -266,7 +281,8 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
             _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory)
-        _add_dep_manifest_packages(graph, parent, directory)
+        if emit_own_root_deps:
+            _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "skill":
         _add_dep_manifest_packages(graph, parent, directory)
 

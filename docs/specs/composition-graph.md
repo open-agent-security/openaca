@@ -32,7 +32,8 @@ replacing path heuristics and the single-level `attributed_to`.
 One node **per discovered occurrence** of a component or package. Types:
 
 - `target` (root): the scan subject (repo, or endpoint/host). Exactly one; the tree root.
-- Agent components: `plugin`, `skill`, `mcp-server`, `hook`, `command`, `agent`.
+- Agent components: `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`
+  (node `kind` matches the existing `openaca:component_type` spelling).
 - `package`: a package declared in a dependency manifest (npm/PyPI/…).
 
 "Dependency" is **not** a node type — it is a *role* (agent-dependency,
@@ -112,7 +113,7 @@ Component-type parsers (V1):
 - `plugin`: the plugin subtree's bundled `skills/`, `hooks/`, `commands/`, `agents/`,
   MCPs, and the plugin's own package manifests.
 - `skill`: package manifests in the skill dir (→ `package` under skill = agent-dependency).
-- mcp-server/hook/command/agent are typically leaves in V1.
+- mcp_server/hook/command/agent are typically leaves in V1.
 
 ## BOM encoding (CycloneDX)
 

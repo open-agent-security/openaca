@@ -17,6 +17,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
@@ -34,6 +35,7 @@ from tools.parsers import (
     package_json,
     package_lock_json,
     pyproject_toml,
+    skill_lock,
     uv_lock,
 )
 from tools.parsers.claude_command_agent import Kind
@@ -113,6 +115,7 @@ def build_graph(
     project_root: Path | None = None,
     *,
     include_gitignored: bool = False,
+    warnings: list[str] | None = None,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -120,7 +123,7 @@ def build_graph(
     root = Node(key=_TARGET_KEY, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
     if mode == "endpoint":
-        _seed_endpoint(graph, root, Path(target), project_root)
+        _seed_endpoint(graph, root, Path(target), project_root, warnings=warnings)
     else:
         descend(graph, root, Path(target), include_gitignored=include_gitignored)
     graph.validate()
@@ -128,7 +131,12 @@ def build_graph(
 
 
 def _seed_endpoint(
-    graph: Graph, target: Node, install_root: Path, project_root: Path | None
+    graph: Graph,
+    target: Node,
+    install_root: Path,
+    project_root: Path | None,
+    *,
+    warnings: list[str] | None = None,
 ) -> None:
     """Endpoint mode: the target's children are seeded from resolved Claude
     config, not a filesystem glob. Recursive descent (the SAME `descend` used
@@ -155,7 +163,9 @@ def _seed_endpoint(
     effective = layers.merged("endpoint")
     by_scope = layers.by_scope()
 
-    plugins_map, lockfile_path, _ = claude_install._load_plugins_map(install_root)
+    plugins_map, lockfile_path, plugin_warnings = claude_install._load_plugins_map(install_root)
+    if warnings is not None:
+        warnings.extend(plugin_warnings)
     enabled = effective.get("enabledPlugins") or {}
     if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
         _seed_active_plugins(graph, target, enabled, plugins_map, lockfile_path, layers)
@@ -312,7 +322,7 @@ def _seed_direct_components(
     # Install-root direct skills: descend into each skill dir so its dep
     # manifests become package children of the skill node (parity with
     # `_add_skill_node` used for project skills and plugin-bundled skills).
-    _add_direct_endpoint_skills(graph, target, install_root / "skills")
+    _add_direct_endpoint_skills(graph, target, install_root / "skills", project_root)
 
     # Personal commands/agents: per-file parse so agent frontmatter
     # mcpServers/hooks attach under the agent node, not the target (parity with
@@ -357,17 +367,36 @@ def _seed_direct_components(
             _add_child(graph, target, node)
 
 
-def _add_direct_endpoint_skills(graph: Graph, parent: Node, skills_dir: Path) -> None:
+def _add_direct_endpoint_skills(
+    graph: Graph, parent: Node, skills_dir: Path, project_root: Path | None = None
+) -> None:
     """Endpoint install-root direct skills: one skill node per `<skills_dir>/<name>/`
     subdir with descent so the skill's dep manifests become package children
-    (parity with `_add_skill_node` used for project skills and plugin skills)."""
+    (parity with `_add_skill_node` used for project skills and plugin skills).
+
+    Provenance is stamped here (parity with `_parse_direct_skill`) because
+    direct endpoint skills may have a `.skill-lock.json` alongside them that
+    records their install source. Project skills and plugin-bundled skills do
+    not go through this path.
+    """
     if not skills_dir.is_dir():
         return
     for skill_subdir in sorted(skills_dir.iterdir()):
         if skill_subdir.name.startswith("."):
             continue
-        if (skill_subdir / "SKILL.md").is_file():
-            _add_skill_node(graph, parent, skill_subdir)
+        skill_md = skill_subdir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        for ref in _safe_parse(claude_skill.parse, skill_md):
+            if ref.name:
+                provenance = skill_lock.provenance_for_skill(
+                    skill_md, ref.name, project_root=project_root
+                )
+                if provenance is not None:
+                    ref = replace(ref, extra={**ref.extra, "source_provenance": provenance})
+            skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
+            _add_child(graph, parent, skill_node)
+            descend(graph, skill_node, skill_subdir)
 
 
 def _add_endpoint_command_agents(graph: Graph, target: Node, dir_path: Path, kind: Kind) -> None:

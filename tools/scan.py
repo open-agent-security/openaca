@@ -795,9 +795,9 @@ def endpoint(
             err=True,
         )
 
-    graph = build_graph(config_dir, mode="endpoint", project_root=project)
-    refs = _refs_from_graph(graph)
     warnings: list[str] = []
+    graph = build_graph(config_dir, mode="endpoint", project_root=project, warnings=warnings)
+    refs = _refs_from_graph(graph)
     refs = build_agent_bom(
         _filter_agent_scope_refs(refs),
         target_type="endpoint",

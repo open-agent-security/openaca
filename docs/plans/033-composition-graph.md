@@ -498,6 +498,36 @@ def test_endpoint_active_plugin_chain(tmp_path):
 
 - [ ] **Step 5: Commit.** `git commit -m "graph_build: config-seeded endpoint traversal (active plugins, settings, project skills, remote MCPs)"`
 
+### Task 2.5: FULL component-surface coverage (plan correction)
+
+**Why this exists:** Tasks 2.1–2.4 covered the skill/plugin/dep chain (the ADR-0036
+marquee case), but the spec's Construction section requires `build_graph` to emit
+**every** surface the current scanner detects. Wiring the graph in as the source of
+truth (Stage 3) surfaced that the following are missing and cause parity failures.
+The descent must emit them too (reusing the existing leaf parsers for content; the
+descent owns placement — parent-by-construction, no `attributed_to` reads in repo
+mode), under the same single-parent + occurrence-dedup invariants.
+
+Surfaces to add (each a `Node` of the right `kind`, placed under its container):
+
+- **Repo mode:**
+  - Standalone MCP manifests (`.mcp.json`, `mcp.json`, `claude_desktop_config.json`) → `mcp_server` children of `target` (reuse `mcp_json.parse`).
+  - `.claude/settings.json` MCP servers / declared components (reuse `claude_settings`); settings drive posture inputs that key off refs.
+  - `.claude/commands/**` → `command`, `.claude/agents/**` → `agent` (reuse `claude_command_agent.parse_file`).
+  - **Lockfiles** (`package-lock.json`, `uv.lock`, `bun.lock`) → transitive `package` nodes (reuse the lockfile parsers); fold into the dep-manifest discovery so they dedup against manifest deps by occurrence key.
+  - **Bundled non-skill plugin surfaces:** a plugin's bundled MCPs / hooks / commands / agents → children of the **plugin** node.
+- **Endpoint mode:** the full `_walk_direct_components` surface — personal skills/commands/agents under `install_root`, direct settings MCP servers, hooks, project `.mcp.json` → children of `target`; plus bundled plugin MCPs/hooks (children of the plugin).
+
+**TDD:** add construction tests in `tests/test_graph_build.py` for each surface
+(graph-shape assertions: the node exists with the right `kind` and parent lineage).
+The Stage-3 parity failures (`tests/test_scan.py`, `tests/test_e2e.py`,
+`tests/test_posture_integration.py`, `tests/test_bom_cli.py`) are the integration
+target — they must pass without weakening. Maintain single-parent (a bundled
+component must not also be discovered as a direct/project component) and dedup.
+
+Commit (may be split by surface group):
+`git commit -m "graph_build: full component-surface coverage (MCPs, commands, agents, hooks, settings, lockfiles, bundled non-skill)"`
+
 ---
 
 ## Stage 3 — Graph becomes the source of truth (scan builds it; scope + attribution derived from it)

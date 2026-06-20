@@ -762,7 +762,8 @@ def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):
     g = build_graph(install_root, mode="endpoint")
     skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
     assert len(skill_nodes) == 1
-    provenance = (skill_nodes[0].ref.extra or {}).get("source_provenance")
+    assert skill_nodes[0].ref is not None
+    provenance = skill_nodes[0].ref.extra.get("source_provenance")
     assert isinstance(provenance, dict), "source_provenance must be a dict stamped on the skill ref"
     assert provenance.get("status") == "known"
     assert provenance.get("source") == "https://github.com/user/aws-api-skill"

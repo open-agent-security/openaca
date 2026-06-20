@@ -1063,6 +1063,46 @@ def test_repo_bundled_plugin_mcp_under_gitignore_excluded_by_default(tmp_path):
     assert [n for n in g_all.nodes.values() if n.kind == "mcp_server"]
 
 
+def test_endpoint_installed_plugin_gitignore_does_not_filter_bundled_mcp(tmp_path):
+    """An active installed plugin whose install dir has a `.gitignore` ignoring
+    `.mcp.json` must STILL emit its bundled MCP in endpoint mode. Installed
+    plugins are artifacts, not repo source — the old `walk_plugin_root` path never
+    filtered them by a `.gitignore`. Regression guard for the per-directory
+    `_ignore_context` fallback that loaded the installed plugin's own `.gitignore`."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    (install_path / ".gitignore").write_text(".mcp.json\n")
+    (install_path / ".claude-plugin").mkdir()
+    (install_path / ".claude-plugin" / "plugin.json").write_text(
+        '{"name":"demo","version":"1.0.0"}'
+    )
+    (install_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@scope/git-mcp@1.2.3"]}}})
+    )
+    (install_root / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@mp": True}}))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                    ]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    mcp_nodes = [n for n in g.nodes.values() if n.kind == "mcp_server"]
+    assert mcp_nodes, "endpoint must not gitignore-filter an installed plugin's bundled MCP"
+    assert [n.kind for n in g.lineage(mcp_nodes[0])] == ["mcp_server", "plugin", "target"]
+
+
 def test_endpoint_non_string_version_entry_emits_warning(tmp_path):
     """A plugin install entry with a non-string `version` is skipped; build_graph
     must surface the parse_install-parity warning rather than dropping the plugin

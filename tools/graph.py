@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import ClassVar, Optional
 
 from tools.component_ref import ComponentRef
 
@@ -40,3 +40,34 @@ class Graph:
 
     def children_of(self, node: Node) -> list[Node]:
         return [self.nodes[e.child] for e in self.edges if e.parent == node.key]
+
+    def lineage(self, node: Node) -> list[Node]:
+        """node → ... → target root, inclusive."""
+        parent_of = self._parent_of()
+        chain, cur = [node], node.key
+        while cur in parent_of:
+            cur = parent_of[cur]
+            chain.append(self.nodes[cur])
+        return chain
+
+    _AGENT_KINDS: ClassVar[frozenset[str]] = frozenset(
+        {"plugin", "skill", "mcp_server", "hook", "command", "agent"}
+    )
+
+    def scope_of(self, node: Node) -> str:
+        """package nodes only: agent-dependency iff an agent component is an
+        ancestor before the target root; else software-dependency."""
+        if node.kind != "package":
+            return "agent-component"
+        for anc in self.lineage(node)[1:]:  # exclude self
+            if anc.kind == "target":
+                break
+            if anc.kind in self._AGENT_KINDS:
+                return "agent-dependency"
+        return "software-dependency"
+
+    def nearest_plugin_ancestor(self, node: Node) -> Optional[Node]:
+        for anc in self.lineage(node)[1:]:
+            if anc.kind == "plugin":
+                return anc
+        return None

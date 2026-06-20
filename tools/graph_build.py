@@ -189,13 +189,23 @@ def _seed_endpoint(
         )
 
     if project_root is not None:
-        _add_project_skills(graph, target, project_root)
+        _add_project_skills(
+            graph, target, project_root, project_root=project_root, stamp_provenance=True
+        )
         # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
         # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
         # <project>/.claude/skills/ are discovered — parity with the old
         # _walk_project_skill_dirs path that called _walk_skill_dir (iterdir-based)
         # before iter_unignored_files. _add_child dedup collapses non-symlink dupes.
-        _add_skills_from_dir(graph, target, project_root / ".claude" / "skills")
+        # stamp_provenance matches _parse_direct_skill, which both old project-skill
+        # walks shared.
+        _add_skills_from_dir(
+            graph,
+            target,
+            project_root / ".claude" / "skills",
+            project_root=project_root,
+            stamp_provenance=True,
+        )
 
     _seed_remote_mcps(graph, target, install_root, project_root, by_scope)
     _seed_direct_components(graph, target, install_root, project_root, by_scope)
@@ -633,6 +643,8 @@ def _add_project_skills(
     directory: Path,
     exclude_under: list[Path] | None = None,
     *,
+    project_root: Path | None = None,
+    stamp_provenance: bool = False,
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -662,7 +674,15 @@ def _add_project_skills(
         resolved = path.resolve()
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
-        _add_skill_node(graph, parent, path.parent, root_dir=root_dir, root_spec=root_spec)
+        _add_skill_node(
+            graph,
+            parent,
+            path.parent,
+            project_root=project_root,
+            stamp_provenance=stamp_provenance,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
 
 
 def _is_project_skill_md(path: Path, root: Path) -> bool:
@@ -734,6 +754,8 @@ def _add_skills_from_dir(
     skills_dir: Path,
     *,
     plugin_root: Path | None = None,
+    project_root: Path | None = None,
+    stamp_provenance: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
@@ -766,7 +788,15 @@ def _add_skills_from_dir(
                 continue
         if _is_ignored_under(skill_md, eval_root, spec):
             continue
-        _add_skill_node(graph, parent, skill_subdir, root_dir=root_dir, root_spec=root_spec)
+        _add_skill_node(
+            graph,
+            parent,
+            skill_subdir,
+            project_root=project_root,
+            stamp_provenance=stamp_provenance,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
 
 
 def _add_skill_node(
@@ -774,11 +804,28 @@ def _add_skill_node(
     parent: Node,
     skill_subdir: Path,
     *,
+    project_root: Path | None = None,
+    stamp_provenance: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
+    """Create a skill node (child of `parent`) and descend into its dep manifests.
+
+    `stamp_provenance` is set ONLY by the endpoint project-skill walk
+    (`_add_project_skills` invoked from `_seed_endpoint`), matching the old
+    `_walk_project_skill_dirs` → `_parse_direct_skill` path that stamped
+    `extra["source_provenance"]` from a `skills-lock.json` / symlink target.
+    Repo-mode `.claude/skills` (old REGISTRY `claude_skill.parse`, no stamp) and
+    plugin-bundled skills (old `walk_plugin_root`, no stamp) leave it False.
+    """
     skill_md = skill_subdir / "SKILL.md"
     for ref in _safe_parse(claude_skill.parse, skill_md):
+        if stamp_provenance and ref.name:
+            provenance = skill_lock.provenance_for_skill(
+                skill_md, ref.name, project_root=project_root
+            )
+            if provenance is not None:
+                ref = replace(ref, extra={**ref.extra, "source_provenance": provenance})
         skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
         _add_child(graph, parent, skill_node)
         descend(graph, skill_node, skill_subdir, root_dir=root_dir, root_spec=root_spec)

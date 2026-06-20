@@ -651,3 +651,58 @@ def test_repo_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_path):
         "mcp_server should be a child of the agent node, not the target"
     )
     assert [n.kind for n in g.lineage(mcp_nodes[0])] == ["mcp_server", "agent", "target"]
+
+
+# --- Stage 4 Codex review fixes ---
+
+
+def test_endpoint_direct_skill_packages_are_children_of_skill(tmp_path):
+    """A direct endpoint skill's dep packages must have skill→target lineage,
+    not be missing entirely (bug: _walk_skill_dir returned leaf refs only,
+    no descend() into the skill dir)."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    skill_dir = install_root / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (skill_dir / "package.json").write_text(
+        '{"name":"deploy","version":"1","dependencies":{"lodash":"4.17.20"}}'
+    )
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    g = build_graph(install_root, mode="endpoint")
+    pkg = next((n for n in g.nodes.values() if n.kind == "package"), None)
+    assert pkg is not None, "skill dep package must appear in the graph"
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]
+    assert g.scope_of(pkg) == "agent-dependency"
+
+
+def test_endpoint_direct_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_path):
+    """Agent frontmatter mcpServers in endpoint direct agents must become
+    mcp_server children of the agent node, not siblings under the target
+    (bug: enumerate_dir returned flat refs; all were attached to target)."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    agents_dir = install_root / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "my-agent.md").write_text(
+        "---\nmcpServers:\n  git:\n    command: npx\n"
+        "    args: ['@org/git-mcp@1.0.0']\n---\n# Agent\n"
+    )
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    g = build_graph(install_root, mode="endpoint")
+    g.validate()
+    agent_nodes = [n for n in g.nodes.values() if n.kind == "agent"]
+    assert len(agent_nodes) == 1
+    mcp_nodes = [n for n in g.nodes.values() if n.kind == "mcp_server"]
+    assert len(mcp_nodes) == 1
+    assert [n.kind for n in g.lineage(mcp_nodes[0])] == ["mcp_server", "agent", "target"]
+    children_of_agent = g.children_of(agent_nodes[0])
+    assert any(n.kind == "mcp_server" for n in children_of_agent)

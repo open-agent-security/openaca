@@ -858,14 +858,52 @@ def _add_dep_manifest_packages(
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
+    """Emit package children from `directory`'s dep manifests, lockfile-preferred
+    per ecosystem (ADR-0008; parity with `_walk_plugin_implementation_deps`).
+
+    For each ecosystem (npm: `package.json` ↔ `package-lock.json`/`bun.lock`;
+    PyPI: `pyproject.toml` ↔ `uv.lock`), if a lockfile is present we emit ONLY
+    the lockfile's deps (full transitive tree) and skip the manifest. The
+    manifest is a fallback used only when no lockfile exists for that ecosystem.
+    Without this, a dir with BOTH `package.json` and `package-lock.json` emits
+    two nodes for the same direct dep (their occurrence keys differ by
+    `source_manifest`, so they never dedup), double-reporting one package.
+
+    Unlike `_walk_plugin_implementation_deps`, the refs are emitted as the leaf
+    parsers produce them (repo declarations are `attributed_to=None`,
+    `transitive=True` on lockfile refs) — only the file-selection logic is shared.
+    """
     eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
-    for filename, parse in _DEP_MANIFEST_PARSERS.items():
+
+    def _present(filename: str) -> Path | None:
         manifest = directory / filename
         if not manifest.is_file():
-            continue
+            return None
         if _is_ignored_under(manifest, eval_root, spec):
+            return None
+        return manifest
+
+    covered: set[str] = set()
+    for ecosystem, filename in claude_install._LOCKFILE_DISPATCH_FILES:
+        if ecosystem in covered:
             continue
-        for ref in _safe_parse(parse, manifest):
+        manifest = _present(filename)
+        if manifest is None:
+            continue
+        emitted = False
+        for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
+            node = Node(key=occurrence_key(ref), kind="package", ref=ref)
+            _add_child(graph, parent, node)
+            emitted = True
+        if emitted:
+            covered.add(ecosystem)
+    for ecosystem, filename in claude_install._MANIFEST_FALLBACK_FILES:
+        if ecosystem in covered:
+            continue
+        manifest = _present(filename)
+        if manifest is None:
+            continue
+        for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
             node = Node(key=occurrence_key(ref), kind="package", ref=ref)
             _add_child(graph, parent, node)
 

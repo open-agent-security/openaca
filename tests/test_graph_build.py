@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 from tools.graph_build import build_graph
 
@@ -1152,3 +1153,83 @@ def test_repo_dot_claude_skill_has_no_source_provenance(tmp_path):
     assert skill.ref is not None
     assert skill.ref.extra.get("source_provenance") is None
 
+
+def test_repo_manifest_and_lockfile_same_dir_emits_one_node_per_dep(tmp_path):
+    """[correct-new-behavior] A dir with BOTH package.json and package-lock.json
+    must emit the dependency ONCE (lockfile-preferred, ADR-0008), not twice.
+
+    Before the fix _add_dep_manifest_packages iterated every present manifest, so
+    a direct dep declared in package.json AND pinned in package-lock.json yielded
+    two package nodes (occurrence keys differ by source_manifest, so no dedup) —
+    the same vulnerable package reported twice. Now the lockfile is the sole npm
+    source when present; the manifest is a fallback only when no lockfile exists.
+    """
+    (tmp_path / "package.json").write_text(
+        '{"name":"app","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "app", "version": "1.0.0"},
+                    "node_modules/left-pad": {"version": "1.0.0"},
+                    "node_modules/dep-transitive": {"version": "2.0.0"},
+                },
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkgs = [n for n in g.nodes.values() if n.kind == "package"]
+    # left-pad (direct) + dep-transitive (transitive), both from the lockfile;
+    # the package.json left-pad is suppressed.
+    assert len(pkgs) == 2
+    left_pad = [n for n in pkgs if "left-pad" in (n.key or "")]
+    assert len(left_pad) == 1
+    assert left_pad[0].ref is not None
+    assert (left_pad[0].ref.extra or {}).get("transitive") is True
+    assert "package-lock.json" in (left_pad[0].ref.source_manifest or "")
+
+
+def test_repo_manifest_only_falls_back_when_no_lockfile(tmp_path):
+    """No lockfile present -> the manifest is the fallback source (parity with
+    _walk_plugin_implementation_deps' _MANIFEST_FALLBACK)."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "app"\nversion = "1.0.0"\ndependencies = ["requests==2.0.0"]\n'
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkgs = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkgs) == 1
+    assert pkgs[0].ref is not None
+    assert "pyproject.toml" in (pkgs[0].ref.source_manifest or "")
+
+
+def test_repo_npm_and_pypi_lockfiles_coexist(tmp_path):
+    """Multi-ecosystem dir: npm lockfile + PyPI manifest (no uv.lock) both emit;
+    lockfile-preferred is per-ecosystem, not global."""
+    (tmp_path / "package.json").write_text(
+        '{"name":"app","version":"1","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "app", "version": "1"},
+                    "node_modules/left-pad": {"version": "1.0.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "app"\nversion = "1"\ndependencies = ["requests==2.0.0"]\n'
+    )
+    g = build_graph(tmp_path, mode="repo")
+    srcs = {
+        Path(n.ref.source_manifest).name
+        for n in g.nodes.values()
+        if n.kind == "package" and n.ref is not None and n.ref.source_manifest
+    }
+    assert "package-lock.json" in srcs  # npm from lockfile
+    assert "pyproject.toml" in srcs  # PyPI from manifest fallback
+    assert "package.json" not in srcs  # npm manifest suppressed

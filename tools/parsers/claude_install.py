@@ -499,6 +499,13 @@ _MANIFEST_FALLBACK: list[tuple[str, str, object]] = [
     ("PyPI", "pyproject.toml", pyproject_toml.parse),
 ]
 
+# (ecosystem, filename) projections of the dispatch tables, for callers that
+# share the ecosystem ordering/precedence but supply their own parsers (e.g.
+# repo-mode `_add_dep_manifest_packages`, whose refs carry a different emission
+# contract — attributed_to=None, transitive=True — than the tier-2 walk).
+_LOCKFILE_DISPATCH_FILES: list[tuple[str, str]] = [(e, f) for e, f, _ in _LOCKFILE_DISPATCH]
+_MANIFEST_FALLBACK_FILES: list[tuple[str, str]] = [(e, f) for e, f, _ in _MANIFEST_FALLBACK]
+
 # Restrict manifest fallback to runtime-only source_locators per ecosystem.
 # Absent from this dict → no filtering (all locators accepted).
 _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {

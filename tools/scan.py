@@ -453,7 +453,6 @@ def _emit(
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
-    graph: Graph | None = None,
 ) -> None:
     """Dispatch to the chosen renderer and write to stdout.
 
@@ -632,13 +631,12 @@ def repo(
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
-        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus, graph=graph)
+    findings = match(refs, corpus)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -671,7 +669,6 @@ def repo(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
-            graph=graph,
         )
     card_target = RenderTarget(host_surface="repository", rows=[("path", str(target))])
     card_next = [
@@ -693,7 +690,6 @@ def repo(
                     findings,
                     use_color=_use_color(no_color, output_format),
                     use_unicode=_use_unicode(no_color),
-                    graph=graph,
                 )
                 if tree:
                     click.echo(tree, err=True)
@@ -738,7 +734,6 @@ def repo(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
-        graph=graph,
     )
 
     # For machine formats (github, json), keep the existing one-line stderr
@@ -811,13 +806,12 @@ def endpoint(
         target=str(config_dir),
         source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
         source_unit_label="active plugin",
-        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus, graph=graph)
+    findings = match(refs, corpus)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -852,7 +846,6 @@ def endpoint(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
-            graph=graph,
         )
     card_next: list[str] = []
     if project is None:
@@ -871,7 +864,6 @@ def endpoint(
                 findings,
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
-                graph=graph,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -911,7 +903,6 @@ def endpoint(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
-        graph=graph,
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 

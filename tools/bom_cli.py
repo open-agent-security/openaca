@@ -79,7 +79,6 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
-        graph=graph,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 

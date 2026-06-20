@@ -236,8 +236,15 @@ def graph_from_cyclonedx(doc: dict[str, Any]) -> Graph:
     - any component with no parent in `dependencies[]` is attached as a direct
       child of the target. This is a no-op for a graph-backed BOM (its
       top-level components already carry an explicit target→child edge) and
-      makes a flat BOM (no edges) reconstruct as `target → each component`,
-      preserving the per-component scope the old flat reader produced.
+      makes a flat BOM (no edges) reconstruct as `target → each component`.
+
+    The synthesized flat graph (no `metadata.component`) is structural only: a
+    top-level `package` node attached directly under the target has no agent
+    ancestor, so `scope_of` re-derives it as `software-dependency` regardless of
+    the stored `openaca:scope`. Flat BOMs therefore do NOT round-trip scope
+    through this function; `scan_bom` preserves their classification by reading
+    the stored `openaca:scope` (via `component_refs_from_cyclonedx`) and only
+    uses this graph for the genuinely graph-backed case.
 
     `validate()` runs before returning. Software-dependency nodes were excluded
     from `components[]` at emit time, so the reconstructed graph is the
@@ -273,6 +280,10 @@ def graph_from_cyclonedx(doc: dict[str, Any]) -> Graph:
             continue
         parent = dependency.get("ref")
         if not isinstance(parent, str):
+            continue
+        if parent not in nodes:
+            # A foreign/unknown parent ref can't anchor an edge (it would dangle
+            # and crash validate()). Skip it so the child falls back to target.
             continue
         for child in dependency.get("dependsOn") or []:
             if isinstance(child, str) and child and child != parent and child in nodes:

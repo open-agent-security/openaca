@@ -134,15 +134,47 @@ def test_graph_from_cyclonedx_round_trips_nodes_and_edges():
         for k, n in g.nodes.items()
         if n.ref is None or g.scope_of(n) in {"agent-component", "agent-dependency"}
     }
-    assert {n.key: n.kind for n in g2.nodes.values()} == {
-        k: n.kind for k, n in included.items()
-    }
+    assert {n.key: n.kind for n in g2.nodes.values()} == {k: n.kind for k, n in included.items()}
     included_edges = {
-        (e.parent, e.child)
-        for e in g.edges
-        if e.parent in included and e.child in included
+        (e.parent, e.child) for e in g.edges if e.parent in included and e.child in included
     }
     assert {(e.parent, e.child) for e in g2.edges} == included_edges
+
+
+def test_graph_from_cyclonedx_tolerates_foreign_dependson_parent():
+    # [bug-fixed] A dependencies[] entry whose `ref` is not any component's
+    # bom-ref (a foreign parent) must be a no-op, not a dangling edge that
+    # crashes validate(). The children fall back to direct target children.
+    doc = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "component": {"bom-ref": "openaca:target", "type": "application", "name": "t"}
+        },
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/lodash@4.17.20",
+                "name": "lodash",
+                "version": "4.17.20",
+                "purl": "pkg:npm/lodash@4.17.20",
+                "properties": [{"name": "openaca:component_type", "value": "package"}],
+            }
+        ],
+        "dependencies": [
+            {"ref": "pkg:npm/not-a-real-component", "dependsOn": ["pkg:npm/lodash@4.17.20"]}
+        ],
+    }
+
+    graph = graph_from_cyclonedx(doc)
+
+    graph.validate()
+    child = graph.nodes["pkg:npm/lodash@4.17.20"]
+    assert {(e.parent, e.child) for e in graph.edges} == {
+        ("openaca:target", "pkg:npm/lodash@4.17.20")
+    }
+    assert graph.lineage(child)[-1].key == "openaca:target"
 
 
 def test_graph_bom_drops_openaca_attributed_to_property():

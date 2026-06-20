@@ -45,6 +45,7 @@ from click.core import ParameterSource
 
 from tools.bom import (
     build_agent_bom,
+    component_refs_from_cyclonedx,
     graph_from_cyclonedx,
     source_unit_from_cyclonedx,
     target_info_from_cyclonedx,
@@ -959,18 +960,30 @@ def scan_bom(
         )
     target_type, target = target_info_from_cyclonedx(doc)
     source_unit_count, source_unit_label = source_unit_from_cyclonedx(doc)
-    # The BOM encodes the composition graph (dependencies[] edges); reconstruct
-    # it so scope + attribution come from graph structure, not the (removed)
-    # openaca:attributed_to property. The reconstructed graph is already the
-    # agent-scope projection (software-deps were excluded at emit), but keep the
-    # filter so an externally-produced BOM with software-deps stays consistent.
-    graph = graph_from_cyclonedx(doc)
-    refs = build_agent_bom(
-        _filter_agent_scope_refs(_refs_from_graph(graph)),
-        target_type="bom",
-        target=str(input_path),
-        graph=graph,
-    ).component_refs()
+    # A graph-backed BOM (this branch's emitter) carries metadata.component plus
+    # real dependencies[] edges, so the reconstructed graph round-trips scope +
+    # attribution from structure (the openaca:attributed_to property is gone).
+    # A flat/external or pre-Stage-4 BOM has no metadata.component;
+    # graph_from_cyclonedx would synthesize a target and attach every component
+    # directly under it, re-deriving package scope as software-dependency and
+    # silently dropping agent-dependency findings. For those, read the stored
+    # openaca:scope off each component instead and thread graph=None.
+    graph: Graph | None
+    if isinstance(doc.get("metadata"), dict) and doc["metadata"].get("component"):
+        graph = graph_from_cyclonedx(doc)
+        refs = build_agent_bom(
+            _filter_agent_scope_refs(_refs_from_graph(graph)),
+            target_type="bom",
+            target=str(input_path),
+            graph=graph,
+        ).component_refs()
+    else:
+        graph = None
+        refs = build_agent_bom(
+            _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
+            target_type="bom",
+            target=str(input_path),
+        ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:

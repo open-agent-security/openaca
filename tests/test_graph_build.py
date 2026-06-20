@@ -1440,3 +1440,60 @@ def test_endpoint_symlinked_project_skill_key_reproducible_across_roots(tmp_path
     keys_b = sorted(k for k, n in g_b.nodes.items() if n.kind != "target")
     assert keys_a == keys_b
     assert keys_a  # non-empty: the symlinked skill + its dep were discovered
+
+
+# --- Skill lock source provenance propagated through graph ---
+
+
+def _skills_lock_entry(source: str = "vercel-labs/agent-skills") -> str:
+    return json.dumps(
+        {
+            "version": 1,
+            "skills": {
+                "bootstrap": {
+                    "source": source,
+                    "sourceType": "github",
+                    "ref": "main",
+                    "skillPath": "skills/bootstrap/SKILL.md",
+                    "computedHash": "abcdef1234567890",
+                }
+            },
+        }
+    )
+
+
+def test_endpoint_project_skill_carries_skills_lock_provenance(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    skill_dir = project_root / ".claude" / "skills" / "bootstrap"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: bootstrap\ndescription: d\n---\nrun\n")
+    (project_root / "skills-lock.json").write_text(_skills_lock_entry())
+
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    provenance = (skill.ref.extra or {}).get("source_provenance")
+    assert provenance is not None, "project skill should carry skills-lock provenance"
+    assert provenance["source"] == "vercel-labs/agent-skills"
+    assert provenance["source_type"] == "github"
+
+
+def test_plugin_bundled_skill_does_not_look_up_skills_lock(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    skill_dir = tmp_path / "skills" / "bootstrap"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: bootstrap\ndescription: d\n---\nrun\n")
+    # Place a skills-lock.json at the repo root — must NOT be picked up for
+    # plugin-bundled skills (those are not project skills and have no lockfile).
+    (tmp_path / "skills-lock.json").write_text(_skills_lock_entry())
+
+    g = build_graph(tmp_path, mode="repo")
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert (skill.ref.extra or {}).get("source_provenance") is None

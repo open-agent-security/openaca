@@ -4,7 +4,7 @@
 
 **Goal:** Make the agent composition graph (nodes + edges) the scanner's first-class IR — built by recursive descent, keyed by occurrence identity, encoded in the CycloneDX Agent BOM via `dependencies[]` — and derive scope and attribution from it, removing `_classify_dep_manifest` path heuristics and the `attributed_to` string.
 
-**Architecture:** A new `tools/graph.py` defines `Node`/`Edge`/`Graph` with pure derivations (lineage, scope, nearest-plugin-ancestor). `tools/graph_build.py` constructs the graph by recursive descent over component-type-specific parsers, reusing today's per-manifest parsers as leaf emitters. `bom.py`, `render.py`, `matcher.py`, `sarif.py`, and `scan.py` move off `attributed_to`/`_classify_dep_manifest` to consume the graph. The change is staged so each stage is independently green: model → construction → scope → BOM → render → findings/SARIF → cleanup.
+**Architecture:** A new `tools/graph.py` defines `Node`/`Edge`/`Graph` with pure derivations (lineage, scope, nearest-plugin-ancestor). `tools/graph_build.py` constructs the graph by recursive descent over component-type-specific parsers, reusing today's per-manifest parsers as leaf emitters. `bom.py`, `render.py`, `matcher.py`, `sarif.py`, and `scan.py` move off `attributed_to`/`_classify_dep_manifest` to consume the graph. The change is staged strangler-fig so each commit is green: model → construction → graph-as-source-of-truth (scope + attribution derived) → BOM → render → findings/SARIF → delete the old field last.
 
 **Tech Stack:** Python 3.10+, `uv`, `pytest`, `ruff`, `pyright`. CycloneDX 1.7 BOM. Design contract: `docs/specs/composition-graph.md` and ADR-0037 (and ADR-0031 for occurrence identity vs match coordinate).
 
@@ -40,9 +40,27 @@
 ## Conventions for every task
 
 - `uv run` prefixes all Python. Full local gate: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest -q`.
-- TDD: write the failing test, see it fail, implement, see it pass, commit. One logical change per commit.
-- Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-- Pre-V0, no back-compat shims (ADR / `feedback_asve_no_back_compat`): change contracts directly.
+- TDD: write the failing test, see it fail, implement, see it pass, commit. One logical change per commit. Follow the repo's commit conventions.
+- Pre-V0, no back-compat shims for *external* consumers (ADR / `feedback_asve_no_back_compat`): change the BOM/CLI contracts directly.
+
+## Sequencing principle: strangler-fig, delete the old model last
+
+Every commit must be green; no stage may leave the tree red or relying on *both*
+the old (`attributed_to` / `_classify_dep_manifest`) and new (graph) attribution
+models at once. The order below builds the graph alongside the existing flat-ref
+path, makes the graph the **single source of truth** as soon as it exists (Stage 3
+derives `scope` and `attributed_to` *from the graph* and stamps them onto the refs
+so today's consumers keep working unchanged), then migrates each consumer
+(BOM → render → findings/SARIF) to read the graph directly, and only **deletes the
+`attributed_to` field and its stamping last** (Stage 7). The transient stamping in
+Stages 3–6 is migration scaffolding, not a second model: the value always comes
+from the graph. This is distinct from a "back-compat shim" — there is no external
+consumer being preserved; we are keeping *intermediate commits* green.
+
+> Note on `scope`: unlike `attributed_to` (deleted at the end), `scope` stays a
+> field on `ComponentRef`, but from Stage 3 on it is **always** set by the graph
+> builder (`graph.scope_of`), never by a path heuristic. A graph-derived value
+> cached on the ref is single-source; only `attributed_to` is removed outright.
 
 ---
 
@@ -224,6 +242,97 @@ git add tools/graph.py tests/test_graph.py
 git commit -m "graph: derive lineage, scope, nearest-plugin-ancestor from edges"
 ```
 
+### Task 1.3: validate the tree invariants (single target, single parent, acyclic, endpoints exist)
+
+The model assumes "one tree rooted at target." Enforce it so a construction bug
+surfaces as a clear error, not a silent overwrite or an infinite `lineage()` loop.
+
+**Files:**
+- Modify: `tools/graph.py` (add `validate()`; make `lineage()` cycle-safe)
+- Test: `tests/test_graph.py`
+
+- [ ] **Step 1: Write the failing tests.**
+
+```python
+import pytest
+from tools.graph import Node, Edge, Graph, GraphInvariantError
+
+
+def test_validate_rejects_two_parents():
+    g = Graph(
+        nodes={k: Node(k, "package", None) for k in ("t", "a", "b", "c")}
+        | {"t": Node("t", "target", None)},
+        edges=[Edge("a", "c"), Edge("b", "c")],  # c has two parents
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_cycle():
+    g = Graph(
+        nodes={"t": Node("t", "target", None), "a": Node("a", "skill", None),
+               "b": Node("b", "package", None)},
+        edges=[Edge("t", "a"), Edge("a", "b"), Edge("b", "a")],  # a↔b cycle
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_dangling_edge_endpoint():
+    g = Graph(nodes={"t": Node("t", "target", None)}, edges=[Edge("t", "ghost")])
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_zero_or_many_targets():
+    g = Graph(nodes={"a": Node("a", "skill", None)}, edges=[])
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+```
+
+- [ ] **Step 2: Run; expect FAIL** (`GraphInvariantError`/`validate` undefined).
+
+- [ ] **Step 3: Implement** `class GraphInvariantError(Exception)` and `Graph.validate()`:
+
+```python
+class GraphInvariantError(Exception):
+    pass
+
+    # --- inside Graph ---
+    def validate(self) -> None:
+        targets = [n for n in self.nodes.values() if n.kind == "target"]
+        if len(targets) != 1:
+            raise GraphInvariantError(f"expected exactly one target, found {len(targets)}")
+        parents: dict[str, str] = {}
+        for e in self.edges:
+            if e.parent not in self.nodes or e.child not in self.nodes:
+                raise GraphInvariantError(f"edge endpoint missing: {e}")
+            if e.child in parents:
+                raise GraphInvariantError(f"node {e.child} has multiple parents")
+            parents[e.child] = e.parent
+        # acyclic: every node reaches the target without revisiting
+        for key in self.nodes:
+            seen, cur = set(), key
+            while cur in parents:
+                if cur in seen:
+                    raise GraphInvariantError(f"cycle detected through {cur}")
+                seen.add(cur)
+                cur = parents[cur]
+```
+
+Make `lineage()` cycle-safe (guard with a `seen` set and raise `GraphInvariantError`
+on revisit) so a malformed graph fails loudly instead of hanging. `build_graph`
+(Stage 2) calls `validate()` before returning.
+
+- [ ] **Step 4: Run; expect PASS.** `uv run pytest tests/test_graph.py -v`
+
+- [ ] **Step 5: Commit.**
+
+```bash
+git add tools/graph.py tests/test_graph.py
+git commit -m "graph: validate tree invariants; cycle-safe lineage"
+```
+
 ---
 
 ## Stage 2 — Recursive-descent construction
@@ -255,7 +364,15 @@ def test_bare_repo_package_is_software_dependency(tmp_path):
 
 - [ ] **Step 2: Run; expect FAIL** (`tools.graph_build` missing).
 
-- [ ] **Step 3: Implement `build_graph` skeleton + occurrence key.** Define `occurrence_key(ref) -> str` reusing `canonical_component_identity` for components and `source_manifest + source_locator + purl` for packages (per ADR-0031, the occurrence key, not the purl alone). Create the `target` root node (`key="target:<resolved path>"`), then `descend(target_node, target_dir)` which for the repo root locates `.claude-plugin/plugin.json`, `**/.claude/skills/*/SKILL.md`, MCP/settings manifests, and bare dep manifests, emitting child nodes (parent = current node) and recursing.
+- [ ] **Step 3: Implement `build_graph` skeleton + occurrence key + stable target key.** Define `occurrence_key(ref) -> str` reusing `canonical_component_identity` for components and `source_manifest + source_locator + purl` for packages (per ADR-0031, the occurrence key, not the purl alone). Create the `target` root node, then `descend(target_node, target_dir)` which for the repo root locates `.claude-plugin/plugin.json`, `**/.claude/skills/*/SKILL.md`, MCP/settings manifests, and bare dep manifests, emitting child nodes (parent = current node) and recursing. Call `graph.validate()` before returning.
+
+> **Stable target node key (do NOT use the absolute path).** The target's node
+> key / bom-ref must be a stable logical value so repo BOMs are reproducible across
+> machines — an absolute filesystem path would leak into BOM identity and break
+> dedup. Use a fixed logical key per mode (e.g. `"openaca:target"`, or
+> `f"target/{mode}"`), and carry the resolved scan path as **source evidence only**
+> (a `source_manifest`/property on the target node), never as the key. This mirrors
+> ADR-0031: identity is logical, the path is evidence.
 
 > Implementation note for the executor: reuse the existing leaf parsers (`package_json.parse`, `mcp_json.parse`, `claude_plugin.parse`, `claude_skill.parse`, `claude_command_agent.parse_file`, the lockfile parsers) to produce `ComponentRef`s; `graph_build` owns *placement* (which parent), the leaf parsers own *content*. Do not re-stamp `scope` on the ref — scope is derived from the graph.
 
@@ -313,13 +430,13 @@ def test_two_skills_same_purl_are_two_nodes(tmp_path):
 
 - [ ] **Step 5: Commit.** `git commit -m "graph_build: boundary-aware skill/plugin descent; per-occurrence package nodes"`
 
-### Task 2.3: nested project skills + custom skill paths + endpoint mode
+### Task 2.3: nested project skills + custom skill paths (repo mode)
 
 **Files:**
 - Modify: `tools/graph_build.py`
 - Test: `tests/test_graph_build.py`
 
-- [ ] **Step 1: Failing tests** for: a nested project skill `packages/frontend/.claude/skills/ui/…` found and attributed; a plugin custom `"skills": "./extras/skills/"` path; endpoint mode (`build_graph(install_root, mode="endpoint")` against a fixture endpoint with an active plugin) producing the same shapes as `parse_install` does today.
+- [ ] **Step 1: Failing tests** for: a nested project skill `packages/frontend/.claude/skills/ui/…` found and attributed; a plugin custom `"skills": "./extras/skills/"` path resolved to its skill children.
 
 ```python
 def test_nested_project_skill_found(tmp_path):
@@ -329,49 +446,121 @@ def test_nested_project_skill_found(tmp_path):
     assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]
 ```
 
-(Endpoint-mode test mirrors an existing `tests/test_parsers/test_claude_install.py` fixture; assert the resulting graph has the plugin→skill→package chain.)
+- [ ] **Step 2–4:** Extend the repo descent for nested `.claude/skills` and plugin custom skill-dir paths. Run; expect PASS.
 
-- [ ] **Step 2–4:** Implement endpoint descent by folding the `claude_install.py` walk logic into `graph_build` descent (active-plugins → bundled components → tier-2 deps), with parent edges by construction. Run; expect PASS.
+- [ ] **Step 5: Commit.** `git commit -m "graph_build: nested/custom skill paths in repo descent"`
 
-- [ ] **Step 5: Commit.** `git commit -m "graph_build: nested/custom skill paths + endpoint-mode descent"`
+### Task 2.4: endpoint mode — config-seeded traversal
 
----
-
-## Stage 3 — Scope derives from lineage; remove `_classify_dep_manifest`
-
-**Goal:** Scope is read from the graph everywhere; the path heuristic is gone.
-
-### Task 3.1: remove `_classify_dep_manifest`, stop stamping scope
+**Endpoint construction is NOT a filesystem descent of one directory.** Unlike repo
+mode (glob the tree), the endpoint graph's roots are **seeded from resolved Claude
+config**: `installed_plugins.json` (active plugins + their install/cache paths), the
+settings layer stack (`enabledPlugins`, direct `mcpServers`), the project root's
+`.claude/` (project skills/commands/agents), and remote MCP declarations. Recursive
+descent still applies *under each seeded root* (a plugin install path descends into
+its bundled components + tier-2 deps), but the **target's children come from config
+resolution, not a glob**. Fold the existing `claude_install.parse_install` seed
+logic (`_load_plugins_map`, `_walk_active_plugins`, settings layers, project skills,
+remote MCPs) into the descent's "what are the target's children" step.
 
 **Files:**
-- Modify: `tools/parsers/__init__.py:113-130` (`_classify_dep_manifest`), `:211-213` (scope stamping)
-- Test: `tests/test_parsers/test_registry.py`, `tests/test_graph_build.py`
+- Modify: `tools/graph_build.py`
+- Test: `tests/test_graph_build.py`
 
-- [ ] **Step 1: Changed test** — assert `scope_of` from the graph for the plugin-marker case (replaces `test_dep_manifest_co_located_with_plugin_classified_as_agent_dep`), and that `parse_repo` no longer assigns scope on refs (scope now lives on graph nodes).
-- [ ] **Step 2: Run; expect FAIL** where old code still stamps scope.
-- [ ] **Step 3: Delete `_classify_dep_manifest`** and the `replace(r, scope=...)` stamping; update `parse_repo_grouped` to return refs without scope.
-- [ ] **Step 4: Run; expect PASS.**
-- [ ] **Step 5: Commit.** `git commit -m "parsers: remove _classify_dep_manifest; scope derives from the graph"`
+- [ ] **Step 1: Failing test** — `build_graph(install_root, mode="endpoint", project_root=...)` against an existing `tests/test_parsers/test_claude_install.py` fixture (active plugin with a bundled skill + deps) yields the `target → plugin → skill → package` chain, and a remote MCP declared in settings appears as a direct child of `target`.
 
-> Note: `scan.py:_filter_agent_scope_refs` (drops `software-dependency`) moves to filtering on `graph.scope_of(node)` — handled in Stage 6 when scan.py is rewired.
+```python
+def test_endpoint_active_plugin_chain(tmp_path):
+    # reuse the claude_install fixture builder (installed_plugins.json + plugin
+    # install path with a bundled skill bundling a dep)
+    install_root, project_root = _seed_endpoint_fixture(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]
+```
+
+- [ ] **Step 2–4:** Implement endpoint seeding by reusing `claude_install`'s config-resolution helpers to enumerate the target's children, then descend into each seeded root with the same boundary-aware logic as repo mode. Parent edges by construction. Run; expect PASS.
+
+- [ ] **Step 5: Commit.** `git commit -m "graph_build: config-seeded endpoint traversal (active plugins, settings, project skills, remote MCPs)"`
 
 ---
 
-## Stage 4 — BOM encoding off the graph
+## Stage 3 — Graph becomes the source of truth (scan builds it; scope + attribution derived from it)
 
-**Goal:** `build_agent_bom` consumes a `Graph`; `metadata.component` is the target with a stable bom-ref; `dependencies[]` are the graph edges; `openaca:attributed_to` is gone. Round-trips through `to_cyclonedx`/`from_cyclonedx`.
+**Goal:** `scan.py` (repo + endpoint) builds the graph and derives the flat ref
+list, `scope`, and — transitionally — `attributed_to` **from the graph**, so
+`_classify_dep_manifest` and parser-set `attributed_to` disappear while every
+existing consumer (BOM/render/matcher) keeps working unchanged off the
+graph-derived stamped values. The graph object is threaded alongside the refs
+(unused by downstream until Stages 4–6). Green throughout. `scan_bom` is untouched
+here (still reads the BOM property until Stage 4 removes it).
 
-### Task 4.1: build BOM from graph; target as metadata.component
+### Task 3.1: scan builds the graph; derive scope + attribution from it; delete `_classify_dep_manifest`
+
+**Files:**
+- Modify: `tools/scan.py` (`repo`, `endpoint`: build graph, thread it), `tools/parsers/__init__.py:113-130` (delete `_classify_dep_manifest`) + `:211-213` (delete scope stamping), `tools/parsers/claude_install.py`/`claude_plugin.py`/`claude_skill.py`/`claude_command_agent.py`/`hooks_json.py` (stop *setting* `attributed_to`; the field still exists and is now set by scan from the graph)
+- Test: `tests/test_scan.py`, `tests/test_parsers/test_registry.py`
+
+- [ ] **Step 1: Failing tests** — repo/endpoint scan builds a graph; the flat refs it produces carry **graph-derived** scope: a skill-bundled `package.json` dep is now `agent-dependency` (the ADR-0036 gap, closed by the graph) and a bare-repo dep is `software-dependency`. A skill-bundled dep's `attributed_to` equals its nearest plugin ancestor's identity (reproducing today's plugin-or-None semantics, now computed from the graph), and a standalone-skill dep's `attributed_to` is `None`.
+
+```python
+def test_scan_repo_scope_and_attribution_from_graph(tmp_path, monkeypatch):
+    # plugin bundling a skill bundling a vulnerable npm dep
+    _seed_plugin_skill_dep(tmp_path)  # helper builds the layout
+    refs, graph = _scan_refs_and_graph(tmp_path, mode="repo")  # thin test wrapper over scan internals
+    dep = next(r for r in refs if r.ecosystem == "npm")
+    assert dep.scope == "agent-dependency"          # was filtered before the graph
+    assert dep.attributed_to == "plugin/mp/demo@1"   # nearest plugin ancestor, from the graph
+```
+
+- [ ] **Step 2: Run; expect FAIL.**
+- [ ] **Step 3:** In `scan.py` `repo`/`endpoint`, replace `parse_repo_grouped`+`flatten_grouped` (repo) and `parse_install` (endpoint) with `build_graph(target, mode=...)`. Derive the flat ref list as `[n.ref for n in graph.nodes.values() if n.ref]`, stamping `ref.scope = graph.scope_of(node)` and `ref.attributed_to = (id of graph.nearest_plugin_ancestor(node))` on each. Delete `_classify_dep_manifest` and its scope stamping; remove the `attributed_to=` assignments from the parsers (scan now owns it via the graph). Keep `_filter_agent_scope_refs` (it reads `ref.scope`, now graph-derived). Add a `graph` parameter to the `_emit`/`match`/`build_agent_bom`/`render_*` call sites (accepted but unused downstream until later stages).
+
+> Why stamp instead of migrate consumers now: this keeps Stages 3's commit green
+> with **identical output** to today (attribution = nearest plugin, same as the old
+> `attributed_to`). The *richer* skill-aware nesting arrives in Stage 5 when render
+> walks edges. The only intended behavior change here is detection: skill-bundled
+> deps are no longer filtered (scope is now correct), closing the ADR-0036 gap.
+
+- [ ] **Step 4: Run; expect PASS.** Full suite green.
+- [ ] **Step 5: Commit.** `git commit -m "scan: build graph as source of truth; derive scope+attribution; remove _classify_dep_manifest"`
+
+---
+
+## Stage 4 — BOM encoding off the graph (+ graph round-trip; rewire scan_bom)
+
+**Goal:** `build_agent_bom` consumes the `Graph`; `metadata.component` is the target
+with a **stable logical bom-ref**; `dependencies[]` are the graph edges;
+`openaca:attributed_to` is gone. A new `graph_from_cyclonedx(doc) -> Graph`
+reconstructs the graph from an ingested BOM (a flat ref list cannot carry edges),
+and `scan_bom` uses it.
+
+### Task 4.1: build BOM from graph; target as metadata.component; drop the property
 
 **Files:**
 - Modify: `tools/bom.py` (`build_agent_bom`, `_build_edges`, `to_cyclonedx`, `_component_properties`, `_component_ref_from_cyclonedx`)
 - Test: `tests/test_bom.py`
 
-- [ ] **Step 1: Failing tests**: (a) the target root appears as `metadata.component` with a stable bom-ref and is **not** in `components[]`; (b) `dependencies[]` reproduces the graph edges; (c) no component carries an `openaca:attributed_to` property; (d) `component_refs_from_cyclonedx(doc)` round-trips node/edge structure.
+- [ ] **Step 1: Failing tests**: (a) the target root appears as `metadata.component` with the **stable logical bom-ref** (not an absolute path) and is **not** in `components[]`; (b) `dependencies[]` reproduces the graph edges, including edges whose parent is the target's bom-ref; (c) no component carries an `openaca:attributed_to` property.
 - [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3:** Change `build_agent_bom` to accept a `Graph`; emit `metadata.component` from `graph.root`; build `dependencies[]` from `graph.edges` (drop the `attributed_to`→edge derivation in `_build_edges`); delete the `openaca:attributed_to` property in `_component_properties` and its read in `_component_ref_from_cyclonedx`.
+- [ ] **Step 3:** Change `build_agent_bom` to accept a `Graph`; emit `metadata.component` from `graph.root` (stable bom-ref); build `dependencies[]` from `graph.edges` (drop the `attributed_to`→edge derivation in `_build_edges`); delete the `openaca:attributed_to` property in `_component_properties` and its read in `_component_ref_from_cyclonedx`.
 - [ ] **Step 4: Run; expect PASS.**
-- [ ] **Step 5: Commit.** `git commit -m "bom: build from graph; target=metadata.component; drop openaca:attributed_to"`
+- [ ] **Step 5: Commit.** `git commit -m "bom: build from graph; target=metadata.component (stable ref); drop openaca:attributed_to"`
+
+### Task 4.2: `graph_from_cyclonedx` round-trip; rewire `scan_bom`
+
+A flat `component_refs_from_cyclonedx` list cannot round-trip edges. Add a
+graph-aware reader and use it where a BOM is the input (`scan_bom`).
+
+**Files:**
+- Modify: `tools/bom.py` (add `graph_from_cyclonedx(doc) -> Graph`), `tools/scan.py` (`scan_bom`)
+- Test: `tests/test_bom.py`, `tests/test_scan.py`
+
+- [ ] **Step 1: Failing tests** — `graph_from_cyclonedx(build_agent_bom(g).to_cyclonedx())` reconstructs the same nodes + edges (including the `metadata.component` target as the root) and passes `validate()`; `scan_bom` of a BOM with a `plugin→skill→package` chain derives `agent-dependency` scope and "via plugin" attribution from the reconstructed graph (not from a now-absent property).
+- [ ] **Step 2: Run; expect FAIL.**
+- [ ] **Step 3:** Implement `graph_from_cyclonedx`: read `metadata.component` as the target node, `components[]` as nodes (kind from `component_type`), `dependencies[]` as edges; `validate()`. Rewire `scan_bom` to build the graph via `graph_from_cyclonedx` and derive scope/attribution from it (replacing the dropped property read).
+- [ ] **Step 4: Run; expect PASS.**
+- [ ] **Step 5: Commit.** `git commit -m "bom: add graph_from_cyclonedx round-trip; scan_bom reconstructs the graph"`
 
 ---
 
@@ -393,21 +582,12 @@ def test_nested_project_skill_found(tmp_path):
 
 ---
 
-## Stage 6 — Findings & SARIF off the graph; rewire scan.py
+## Stage 6 — Findings & SARIF off the graph
 
-**Goal:** `Finding` no longer stores `attributed_to`; attribution is derived from the graph at output. `scan.py` builds the graph once and threads it.
+**Goal:** `Finding` no longer stores `attributed_to`; attribution is derived from the
+graph at output. (Scan already builds + threads the graph from Stages 3–4.)
 
-### Task 6.1: scan.py builds the graph and threads it
-
-**Files:**
-- Modify: `tools/scan.py` (`repo`, `endpoint`, `scan_bom`; `_filter_agent_scope_refs`)
-- Test: `tests/test_scan.py`
-
-- [ ] **Step 1: Failing test** — repo/endpoint scan builds a graph, filters `software-dependency` via `graph.scope_of`, and passes the graph to `match`, `render_*`, and `build_agent_bom`. For `scan_bom`, reconstruct the graph from the ingested BOM edges.
-- [ ] **Step 2–4:** Implement: replace `parse_repo_grouped`+`flatten_grouped`+`_filter_agent_scope_refs` with `build_graph` + graph-derived scope filtering; thread the graph. Run; expect PASS.
-- [ ] **Step 5: Commit.** `git commit -m "scan: build composition graph once and thread it through match/render/bom"`
-
-### Task 6.2: drop `Finding.attributed_to`; derive in matcher/sarif/finding_output
+### Task 6.1: drop `Finding.attributed_to`; derive in matcher/sarif/finding_output
 
 **Files:**
 - Modify: `tools/matcher.py:53-59` (`Finding`), `tools/sarif.py:48-75`, `tools/finding_output.py`, `tools/render.py` (finding "via plugin" line)
@@ -415,7 +595,7 @@ def test_nested_project_skill_found(tmp_path):
 
 - [ ] **Step 1: Failing tests** — a finding on a skill-bundled package reports "via plugin X" derived from the graph (SARIF `attributed_to` / `component_path` and the text "path:" line); a standalone-skill finding reports the skill as the introducer (not `None`).
 - [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3:** Remove `attributed_to` from `Finding`; add a helper `attribution_for(graph, node)` used by `sarif`/`finding_output`/`render` to compute the introducer path from lineage.
+- [ ] **Step 3:** Remove `attributed_to` from `Finding`; add a helper `attribution_for(graph, node)` used by `sarif`/`finding_output`/`render` to compute the introducer path from lineage. The matcher receives the graph so a finding's component maps back to its node.
 - [ ] **Step 4: Run; expect PASS.**
 - [ ] **Step 5: Commit.** `git commit -m "findings/sarif: derive attribution from graph lineage; drop Finding.attributed_to"`
 
@@ -425,14 +605,19 @@ def test_nested_project_skill_found(tmp_path):
 
 **Goal:** The `attributed_to` field is gone from the model and every parser; nothing references it.
 
-### Task 7.1: delete the field and all assignments
+### Task 7.1: delete the `attributed_to` field and the transitional stamping
+
+By now every consumer (BOM Stage 4, render Stage 5, findings/SARIF Stage 6) reads
+attribution from the graph; the `ComponentRef.attributed_to` field and the
+Stage-3 scan stamping that fed it are dead scaffolding. Delete them. (Parsers
+already stopped *setting* `attributed_to` in Stage 3.)
 
 **Files:**
-- Modify: `tools/component_ref.py` (drop `attributed_to`), `tools/parsers/claude_install.py`, `claude_plugin.py`, `claude_skill.py`, `claude_command_agent.py`, `hooks_json.py` (drop `attributed_to=` assignments)
+- Modify: `tools/component_ref.py` (drop the `attributed_to` field), `tools/scan.py` (drop the `ref.attributed_to = …` stamping added in Stage 3), and any parser signature that still carries an `attributed_to` parameter purely as a pass-through (drop the param)
 - Test: full suite
 
-- [ ] **Step 1:** `grep -rn "attributed_to" tools/ tests/` → expect only the soon-to-be-removed sites.
-- [ ] **Step 2:** Delete the field + all assignments + the parser params that only carried it (where the graph now sets parentage). Where a parser took `attributed_to` purely to stamp it, drop the param.
+- [ ] **Step 1:** `grep -rn "attributed_to" tools/ tests/` → expect only the field definition, the scan stamping, and dead params/tests.
+- [ ] **Step 2:** Delete the field, the scan stamping, the leftover pass-through params, and any test references.
 - [ ] **Step 3:** `grep -rn "attributed_to" tools/ tests/` → expect **(none)**.
 - [ ] **Step 4: Full gate green.** `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest -q`
 - [ ] **Step 5: Commit.** `git commit -m "model: remove attributed_to entirely (graph is the source of parentage)"`
@@ -465,6 +650,10 @@ The BOM contract change (Stage 4 drops `openaca:attributed_to`; Stage 5/7 finali
 
 ## Self-review checklist (run before handing off)
 
-- **Spec coverage:** every spec section maps to a stage — model+identity (S1), recursive descent + boundary traversal + occurrence dedup (S2), scope-from-lineage / remove `_classify_dep_manifest` (S3), BOM encoding + metadata.component + drop property (S4), render off edges (S5), findings/SARIF + scan rewire (S6), `attributed_to` removal (S7), Fleet (S8). Out-of-scope items (transitive package DAG, typed edges, declaration-based attribution) are explicitly deferred in ADR-0037 and not in any task.
+- **Spec coverage:** every spec section maps to a stage — model + identity + tree invariants (S1), recursive descent + boundary traversal + occurrence dedup + stable target key + config-seeded endpoint (S2), graph-as-source-of-truth / scope+attribution derived / remove `_classify_dep_manifest` (S3), BOM encoding + `metadata.component` + drop property + graph round-trip + `scan_bom` (S4), render off edges (S5), findings/SARIF (S6), `attributed_to` removal + e2e (S7), Fleet (S8). Out-of-scope items (transitive package DAG, typed edges, declaration-based attribution) are explicitly deferred in ADR-0037 and not in any task.
+- **Green at every stage (strangler-fig):** no stage deletes the old attribution model before its consumers migrate. S3 makes the graph the single source of truth (deriving scope + `attributed_to` onto refs); S4–S6 migrate consumers; S7 deletes the scaffold last. No commit relies on both models or is red.
+- **Tree invariants enforced:** S1 Task 1.3 validates single-target / single-parent / acyclic / endpoints-exist and makes `lineage()` cycle-safe; `build_graph` and `graph_from_cyclonedx` both call `validate()`.
 - **Occurrence vs purl:** Task 1.2 + Task 2.2 (`test_two_skills_same_purl_are_two_nodes`) pin the most important invariant — node key is the occurrence, dedup never collapses two occurrences of one purl.
+- **Reproducible BOM identity:** the target node uses a stable logical bom-ref (Task 2.1 / 4.1), never an absolute path; the path is source evidence only.
+- **Round-trip is graph-aware:** `graph_from_cyclonedx` (Task 4.2) reconstructs nodes + edges (the flat ref list cannot); `scan_bom` uses it.
 - **No silent caps:** none introduced.

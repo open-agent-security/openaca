@@ -22,9 +22,18 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
-from tools.parsers import claude_plugin, claude_skill, package_json, pyproject_toml
+from tools.parsers import (
+    claude_install,
+    claude_plugin,
+    claude_skill,
+    mcp_json,
+    package_json,
+    pyproject_toml,
+)
 from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
+from tools.parsers.settings_layers import SCOPE_PRECEDENCE
+from tools.parsers.settings_layers import load as load_settings
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -56,17 +65,143 @@ def occurrence_key(ref: ComponentRef) -> str:
     return f"{ref.source_manifest}#{ref.source_locator}#{what}"
 
 
-def build_graph(target: Path, mode: str) -> Graph:
-    if mode == "endpoint":
-        raise NotImplementedError("endpoint mode lands in Task 2.4")
-    if mode != "repo":
+def build_graph(target: Path, mode: str, project_root: Path | None = None) -> Graph:
+    if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
 
     root = Node(key=_TARGET_KEY, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
-    descend(graph, root, Path(target))
+    if mode == "endpoint":
+        _seed_endpoint(graph, root, Path(target), project_root)
+    else:
+        descend(graph, root, Path(target))
     graph.validate()
     return graph
+
+
+def _seed_endpoint(
+    graph: Graph, target: Node, install_root: Path, project_root: Path | None
+) -> None:
+    """Endpoint mode: the target's children are seeded from resolved Claude
+    config, not a filesystem glob. Recursive descent (the SAME `descend` used
+    in repo mode) still applies under each seeded root.
+
+    Three seed surfaces:
+
+    - **Active plugins** (`installed_plugins.json` ∩ settings `enabledPlugins`):
+      each becomes a `plugin` child of the target. We then `descend` into the
+      plugin's on-disk install path (reusing the repo-mode plugin branch, which
+      walks bundled `skills/<name>/` and their dep manifests), and attach the
+      plugin's own tier-2 lockfile deps as `package` children of the plugin.
+    - **Project skills** under `<project_root>/.claude/skills/...`: reuse the
+      repo-mode project-skill discovery as `skill` children of the target.
+    - **Remote MCPs** declared in settings `mcpServers` (URLs/commands, nothing
+      on disk): `mcp_server` leaf children of the target, no descent.
+    """
+    layers = load_settings(install_root, project_root=project_root)
+    effective = layers.merged("endpoint")
+    by_scope = layers.by_scope()
+
+    plugins_map, lockfile_path, _ = claude_install._load_plugins_map(install_root)
+    enabled = effective.get("enabledPlugins") or {}
+    if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
+        _seed_active_plugins(graph, target, enabled, plugins_map, lockfile_path, layers)
+
+    if project_root is not None:
+        _add_project_skills(graph, target, project_root)
+
+    _seed_remote_mcps(graph, target, install_root, project_root, by_scope)
+
+
+def _seed_active_plugins(
+    graph: Graph,
+    target: Node,
+    enabled: dict,
+    plugins_map: dict,
+    lockfile_path: Path,
+    layers,
+) -> None:
+    for plugin_key, is_enabled in enabled.items():
+        if is_enabled is not True:
+            continue
+        raw_entries = plugins_map.get(plugin_key)
+        if not isinstance(raw_entries, list) or not raw_entries:
+            continue
+        entries = [(i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)]
+        if not entries:
+            continue
+        scope = claude_install._enabling_scope(plugin_key, layers, "endpoint")
+        entry, index, _ = claude_install._select_install_entry(entries, scope)
+
+        plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
+        version = entry.get("version")
+        if version is not None and not isinstance(version, str):
+            continue
+        component_identity = claude_install._plugin_identity(plugin_name, marketplace)
+        attributed_id = f"{component_identity}@{version}" if version else component_identity
+
+        self_ref = ComponentRef(
+            name=plugin_name,
+            version=version,
+            component_identity=component_identity,
+            source_manifest=str(lockfile_path),
+            source_locator=f"$.plugins.{plugin_key}[{index}]",
+            extra={"component_type": "plugin"},
+        )
+        plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
+        graph.nodes[plugin_node.key] = plugin_node
+        graph.edges.append(Edge(parent=target.key, child=plugin_node.key))
+
+        install_path = entry.get("installPath")
+        if isinstance(install_path, str) and install_path:
+            # Reuse the repo-mode plugin descent for bundled skills + their deps.
+            descend(graph, plugin_node, Path(install_path))
+            # Plugin tier-2 lockfile deps: parity with parse_install — attach as
+            # package children of the plugin node (NOT a skill).
+            for ref in claude_install._walk_plugin_implementation_deps(
+                Path(install_path), attributed_to=attributed_id
+            ):
+                node = Node(key=occurrence_key(ref), kind="package", ref=ref)
+                graph.nodes[node.key] = node
+                graph.edges.append(Edge(parent=plugin_node.key, child=node.key))
+
+
+def _seed_remote_mcps(
+    graph: Graph,
+    target: Node,
+    install_root: Path,
+    project_root: Path | None,
+    by_scope: dict,
+) -> None:
+    scope_to_settings_path = {
+        "user": install_root / "settings.json",
+        "project": (project_root / ".claude" / "settings.json")
+        if project_root is not None
+        else None,
+        "local": (project_root / ".claude" / "settings.local.json")
+        if project_root is not None
+        else None,
+    }
+    for scope in SCOPE_PRECEDENCE:
+        if scope == "managed":
+            continue
+        settings_path = scope_to_settings_path.get(scope)
+        if settings_path is None:
+            continue
+        scope_data = by_scope.get(scope) or {}
+        mcp_servers = scope_data.get("mcpServers")
+        if not isinstance(mcp_servers, dict):
+            continue
+        for ref in mcp_json.parse_mcp_servers(
+            mcp_servers,
+            source_manifest=str(settings_path),
+            locator_prefix="$.mcpServers (inlined)",
+        ):
+            if _component_type(ref) != "mcp_server":
+                continue
+            node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+            graph.nodes[node.key] = node
+            graph.edges.append(Edge(parent=target.key, child=node.key))
 
 
 def descend(graph: Graph, parent: Node, directory: Path) -> None:

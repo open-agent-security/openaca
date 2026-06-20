@@ -368,6 +368,83 @@ def _redact_property_value_for_remote(
     return value
 
 
+def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None) -> str:
+    """Relativize the source-manifest path portion of an occurrence-key bom-ref.
+
+    Graph occurrence keys have the form `{source_manifest}#{locator}#{what}`.
+    When the path normalizer falls back to an absolute path (e.g. a plugin
+    installed outside config_dir/project), the bom-ref embeds that absolute path
+    and must be relativized before remote upload. Non-absolute bom-refs pass through
+    unchanged.
+    """
+    parts = bom_ref.split("#", 1)
+    path_part = parts[0]
+    if not _is_absolute_path(path_part):
+        return bom_ref
+    redacted = _relativize_path_for_remote(path_part, config_dir=config_dir, project=project)
+    return f"{redacted}#{parts[1]}" if len(parts) > 1 else redacted
+
+
+def _redact_bom_refs_in_bom(bom: JsonObject, *, config_dir: Path, project: Path | None) -> None:
+    """In-place redaction of absolute-path bom-refs across the CycloneDX BOM.
+
+    Graph-backed BOMs use node occurrence keys as bom-refs; when the path
+    normalizer falls back to an absolute path for an out-of-root plugin
+    installPath, that absolute path appears in components[*].bom-ref,
+    metadata.component.bom-ref, dependencies[*].ref, and dependencies[*].dependsOn.
+    Build a consistent rewrite map and apply it everywhere to preserve graph integrity.
+    """
+    ref_map: dict[str, str] = {}
+
+    metadata = bom.get("metadata")
+    if isinstance(metadata, dict):
+        mc = metadata.get("component")
+        if isinstance(mc, dict):
+            old = mc.get("bom-ref")
+            if isinstance(old, str):
+                new = _redact_bom_ref_path(old, config_dir=config_dir, project=project)
+                if new != old:
+                    ref_map[old] = new
+
+    for component in bom.get("components", []) or []:
+        if not isinstance(component, dict):
+            continue
+        old = component.get("bom-ref")
+        if isinstance(old, str):
+            new = _redact_bom_ref_path(old, config_dir=config_dir, project=project)
+            if new != old:
+                ref_map[old] = new
+
+    if not ref_map:
+        return
+
+    if isinstance(metadata, dict):
+        mc = metadata.get("component")
+        if isinstance(mc, dict):
+            old = mc.get("bom-ref")
+            if isinstance(old, str) and old in ref_map:
+                mc["bom-ref"] = ref_map[old]
+
+    for component in bom.get("components", []) or []:
+        if not isinstance(component, dict):
+            continue
+        old = component.get("bom-ref")
+        if isinstance(old, str) and old in ref_map:
+            component["bom-ref"] = ref_map[old]
+
+    for dependency in bom.get("dependencies", []) or []:
+        if not isinstance(dependency, dict):
+            continue
+        old_ref = dependency.get("ref")
+        if isinstance(old_ref, str) and old_ref in ref_map:
+            dependency["ref"] = ref_map[old_ref]
+        depends_on = dependency.get("dependsOn")
+        if isinstance(depends_on, list):
+            dependency["dependsOn"] = [
+                ref_map.get(item, item) if isinstance(item, str) else item for item in depends_on
+            ]
+
+
 def _redact_payload_for_remote(
     payload: JsonObject,
     *,
@@ -383,9 +460,15 @@ def _redact_payload_for_remote(
     Handles both plain-string values (e.g. `openaca:source_manifest`) and
     JSON-encoded values (e.g. `openaca:declared_by`, `openaca:source_provenance`)
     that may embed absolute paths inside their fields.
+
+    Also redacts bom-refs: graph-backed BOMs use occurrence keys (which embed
+    the source_manifest path) as bom-refs. The path normalizer falls back to
+    the absolute path for plugin installPaths outside config_dir/project, so
+    those absolute paths appear in bom-ref, dependencies[].ref, and dependsOn[].
     """
     bom = payload.get("bom")
     if isinstance(bom, dict):
+        _redact_bom_refs_in_bom(bom, config_dir=config_dir, project=project)
         for component in bom.get("components", []) or []:
             if not isinstance(component, dict):
                 continue

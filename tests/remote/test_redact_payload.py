@@ -4,6 +4,8 @@ import pytest
 
 from tools.remote.collector import (
     _is_absolute_path,
+    _redact_bom_ref_path,
+    _redact_bom_refs_in_bom,
     _redact_payload_for_remote,
     _redact_url_for_remote,
     _relativize_path_for_remote,
@@ -462,3 +464,125 @@ def test_contract_accepts_payload_after_json_path_redaction() -> None:
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
     _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     enforce_remote_upload_contract(payload)  # must not raise
+
+
+# --- bom-ref redaction -------------------------------------------------------
+
+
+def test_redact_bom_ref_path_absolute_outside_roots() -> None:
+    """An out-of-root absolute path in a bom-ref is relativized to its basename."""
+    cfg = Path("/home/u/.claude")
+    bom_ref = "/opt/plugins/my-plugin/.claude-plugin/plugin.json#$.plugin#plugin/my-plugin"
+    result = _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None)
+    assert result == "plugin.json#$.plugin#plugin/my-plugin"
+
+
+def test_redact_bom_ref_path_under_config_dir() -> None:
+    """A bom-ref whose path is under config_dir is relativized correctly."""
+    cfg = Path("/home/u/.claude")
+    bom_ref = "/home/u/.claude/installed_plugins.json#$.plugins.my-plugin[0]#plugin/my-plugin"
+    result = _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None)
+    assert result == "installed_plugins.json#$.plugins.my-plugin[0]#plugin/my-plugin"
+
+
+def test_redact_bom_ref_path_already_relative() -> None:
+    """A bom-ref without an absolute path prefix passes through unchanged."""
+    cfg = Path("/home/u/.claude")
+    bom_ref = "endpoint/installed_plugins.json#$.plugins.x[0]#plugin/x"
+    assert _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None) == bom_ref
+
+
+def test_redact_bom_refs_in_bom_consistent_rewrite() -> None:
+    """Absolute-path bom-refs are rewritten consistently across components and dependencies."""
+    cfg = Path("/home/u/.claude")
+    out_of_root = "/opt/plugins/bad-plugin/.claude-plugin/plugin.json#$.plugin#plugin/bad-plugin"
+    child_ref = "/opt/plugins/bad-plugin/skills/s/SKILL.md#$.skill#skill/my-skill"
+    bom = {
+        "metadata": {
+            "component": {
+                "type": "application",
+                "bom-ref": "openaca:target",
+                "name": "endpoint:user-scope",
+            }
+        },
+        "components": [
+            {"type": "application", "bom-ref": out_of_root, "name": "bad-plugin"},
+            {"type": "application", "bom-ref": child_ref, "name": "my-skill"},
+        ],
+        "dependencies": [
+            {"ref": "openaca:target", "dependsOn": [out_of_root]},
+            {"ref": out_of_root, "dependsOn": [child_ref]},
+            {"ref": child_ref, "dependsOn": []},
+        ],
+    }
+    _redact_bom_refs_in_bom(bom, config_dir=cfg, project=None)
+
+    # Both components' bom-refs are relativized to basename
+    assert bom["components"][0]["bom-ref"] == "plugin.json#$.plugin#plugin/bad-plugin"
+    assert bom["components"][1]["bom-ref"] == "SKILL.md#$.skill#skill/my-skill"
+    # target root bom-ref is already logical — unchanged
+    assert bom["metadata"]["component"]["bom-ref"] == "openaca:target"
+    # dependencies refs are rewritten consistently
+    deps = {d["ref"]: d["dependsOn"] for d in bom["dependencies"]}
+    assert "plugin.json#$.plugin#plugin/bad-plugin" in deps
+    assert deps["plugin.json#$.plugin#plugin/bad-plugin"] == ["SKILL.md#$.skill#skill/my-skill"]
+    assert deps["openaca:target"] == ["plugin.json#$.plugin#plugin/bad-plugin"]
+
+
+def test_redact_payload_for_remote_redacts_bom_refs() -> None:
+    """_redact_payload_for_remote also relativizes absolute-path bom-refs."""
+    cfg = Path("/home/u/.claude")
+    out_of_root = "/opt/plugins/bad-plugin/.claude-plugin/plugin.json#$.plugin#plugin/bad-plugin"
+    payload = {
+        "asset_id": "ast_T",
+        "source": "endpoint",
+        "openaca_version": "0.1.0",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.7",
+            "metadata": {
+                "component": {
+                    "type": "application",
+                    "bom-ref": "openaca:target",
+                    "name": "endpoint:user-scope",
+                    "properties": [],
+                }
+            },
+            "components": [
+                {
+                    "type": "application",
+                    "bom-ref": out_of_root,
+                    "name": "bad-plugin",
+                    "properties": [
+                        {
+                            "name": "openaca:source_manifest",
+                            "value": "/opt/plugins/bad-plugin/.claude-plugin/plugin.json",
+                        },
+                        {"name": "openaca:component_type", "value": "plugin"},
+                    ],
+                }
+            ],
+            "dependencies": [
+                {"ref": "openaca:target", "dependsOn": [out_of_root]},
+                {"ref": out_of_root, "dependsOn": []},
+            ],
+        },
+        "posture_findings": [],
+        "observations": [],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    comp = payload["bom"]["components"][0]
+    # bom-ref is relativized (basename fallback for out-of-root)
+    assert comp["bom-ref"] == "plugin.json#$.plugin#plugin/bad-plugin"
+    # openaca: property value is also relativized
+    source_manifest = next(
+        p["value"] for p in comp["properties"] if p["name"] == "openaca:source_manifest"
+    )
+    assert source_manifest == "plugin.json"
+    # dependencies are consistently rewritten
+    deps = {d["ref"]: d["dependsOn"] for d in payload["bom"]["dependencies"]}
+    assert "plugin.json#$.plugin#plugin/bad-plugin" in deps
+    assert "openaca:target" in deps
+    assert deps["openaca:target"] == ["plugin.json#$.plugin#plugin/bad-plugin"]

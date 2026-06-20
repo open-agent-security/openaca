@@ -25,7 +25,6 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner="superpowers",
-        attributed_to="plugin/superpowers@5.1.0",
     )
     assert len(refs) == 2
     identities = sorted(r.component_identity or "" for r in refs)
@@ -35,7 +34,6 @@ def test_enumerate_emits_one_ref_per_markdown_file(tmp_path):
     ]
     assert all(r.ecosystem is None for r in refs)
     assert all(r.extra["component_type"] == "command" for r in refs)
-    assert all(r.attributed_to == "plugin/superpowers@5.1.0" for r in refs)
     assert all(r.extra["scope_owner"] == "superpowers" for r in refs)
 
 
@@ -50,7 +48,6 @@ def test_enumerate_discovers_nested_command_files_without_namespacing_identity(t
         tmp_path / "commands",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
 
     assert [r.component_identity for r in refs] == [
@@ -69,7 +66,6 @@ def test_enumerate_discovers_nested_agent_files(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
 
     assert len(refs) == 1
@@ -82,13 +78,11 @@ def test_enumerate_uses_filename_when_no_frontmatter(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
     assert len(refs) == 1
     assert refs[0].name == "reviewer"
     assert refs[0].component_identity == "claude-agent/reviewer"
     assert refs[0].source_manifest == str(path)
-    assert refs[0].attributed_to is None
     assert refs[0].extra["scope_owner"] is None
 
 
@@ -102,7 +96,6 @@ def test_enumerate_frontmatter_name_overrides_filename(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
     assert len(refs) == 1
     assert refs[0].name == "declared-cmd"
@@ -119,7 +112,6 @@ def test_enumerate_invalid_frontmatter_falls_back_to_filename(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
     assert len(refs) == 1
     assert refs[0].name == "robust"
@@ -132,7 +124,6 @@ def test_enumerate_skips_non_markdown_files(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
     assert len(refs) == 1
     assert refs[0].name == "real"
@@ -144,7 +135,6 @@ def test_enumerate_returns_empty_for_missing_dir(tmp_path):
         tmp_path / "no-such-dir",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
     assert refs == []
 
@@ -155,7 +145,6 @@ def test_enumerate_returns_empty_for_empty_dir(tmp_path):
         tmp_path / "empty",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
     assert refs == []
 
@@ -168,7 +157,6 @@ def test_enumerate_skips_subdirectories_with_md_suffix(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
     assert refs == []
 
@@ -180,7 +168,6 @@ def test_enumerate_plugin_named_repo_includes_owner_in_identity(tmp_path):
         tmp_path / "commands",
         kind="command",
         scope_owner="repo",
-        attributed_to="plugin/repo@1.0.0",
     )
     assert len(refs) == 1
     assert refs[0].component_identity == "claude-command/repo/deploy"
@@ -192,11 +179,9 @@ def test_enumerate_propagates_scope_owner_for_plugin_bundled_agents(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner="superpowers",
-        attributed_to="plugin/superpowers@5.1.0",
     )
     assert len(refs) == 1
     assert refs[0].component_identity == "claude-agent/superpowers/code-reviewer"
-    assert refs[0].attributed_to == "plugin/superpowers@5.1.0"
 
 
 def test_enumerate_frontmatter_without_name_field_falls_back_to_filename(tmp_path):
@@ -209,13 +194,12 @@ def test_enumerate_frontmatter_without_name_field_falls_back_to_filename(tmp_pat
         tmp_path / "commands",
         kind="command",
         scope_owner=None,
-        attributed_to=None,
     )
     assert len(refs) == 1
     assert refs[0].name == "fallback"
 
 
-def test_user_project_agent_frontmatter_inline_mcp_is_attributed_to_agent(tmp_path):
+def test_user_project_agent_frontmatter_inline_mcp_is_emitted(tmp_path):
     _write(
         tmp_path / "agents" / "browser.md",
         "---\n"
@@ -233,7 +217,6 @@ def test_user_project_agent_frontmatter_inline_mcp_is_attributed_to_agent(tmp_pa
         tmp_path / "agents",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
 
     agent = next(r for r in refs if r.extra.get("component_type") == "agent")
@@ -241,10 +224,9 @@ def test_user_project_agent_frontmatter_inline_mcp_is_attributed_to_agent(tmp_pa
     assert agent.component_identity == "claude-agent/browser-tester"
     assert npm.name == "@playwright/mcp"
     assert npm.version == "1.2.3"
-    assert npm.attributed_to == "claude-agent/browser-tester"
 
 
-def test_user_project_agent_frontmatter_hooks_are_attributed_to_agent(tmp_path):
+def test_user_project_agent_frontmatter_hooks_are_emitted(tmp_path):
     _write(
         tmp_path / "agents" / "guard.md",
         "---\n"
@@ -261,9 +243,7 @@ def test_user_project_agent_frontmatter_hooks_are_attributed_to_agent(tmp_path):
         tmp_path / "agents",
         kind="agent",
         scope_owner=None,
-        attributed_to=None,
     )
 
     hook = next(r for r in refs if r.extra.get("component_type") == "hook")
-    assert hook.attributed_to == "claude-agent/guarded-agent"
     assert hook.extra["event"] == "PreToolUse"

@@ -154,9 +154,10 @@ def _build_agent_bom_from_graph(
 
     Components are the graph's non-root nodes restricted to agent scope (matching
     today's BOM, which excludes software-dependency). Each component's content
-    comes from `node.ref` with the graph-derived `scope`/`attributed_to` stamped
-    on (so `component_refs()` keeps feeding render/matcher correctly), and its
-    bom-ref is `node.key` — never `_preferred_bom_ref`. The target is
+    comes from `node.ref` with the graph-derived `scope` stamped on (so
+    `component_refs()` keeps feeding render/matcher correctly), and its bom-ref
+    is `node.key` — never `_preferred_bom_ref`. Attribution lives in
+    `dependencies[]` (the graph edges), not on the component. The target is
     `metadata.component`, not a `components[]` entry; `dependencies[]` are the
     graph's edges restricted to included endpoints.
     """
@@ -167,11 +168,7 @@ def _build_agent_bom_from_graph(
             continue
         if graph.scope_of(node) not in _AGENT_SCOPES:
             continue
-        ref = replace(
-            node.ref,
-            scope=graph.scope_of(node),
-            attributed_to=graph.attribution_for(node),
-        )
+        ref = replace(node.ref, scope=graph.scope_of(node))
         included[node.key] = BOMComponent(ref=ref, bom_ref=node.key)
 
     included_keys = set(included) | {root.key}
@@ -389,26 +386,10 @@ def _short_hash(value: str) -> str:
 
 
 def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
-    # Index by both versionless identity and versioned identity so that
-    # attributed_to values like "plugin/mktplace/name@1.0.0" resolve
-    # even when the plugin's component_identity is stored without version.
-    identity_to_bom_ref: dict[str, str] = {}
-    for component in components:
-        ci = canonical_component_identity(component.ref)
-        if not ci:
-            continue
-        identity_to_bom_ref[ci] = component.bom_ref
-        if component.ref.version:
-            identity_to_bom_ref[f"{ci}@{component.ref.version}"] = component.bom_ref
-    edges: list[BOMEdge] = []
-    for component in components:
-        parent_identity = component.ref.attributed_to
-        if not parent_identity:
-            continue
-        parent_bom_ref = identity_to_bom_ref.get(parent_identity)
-        if parent_bom_ref is not None:
-            edges.append(BOMEdge(parent_bom_ref=parent_bom_ref, child_bom_ref=component.bom_ref))
-    return edges
+    # Composition edges come from the graph. A flat ref list (the `graph is None`
+    # path) carries no composition information now that `attributed_to` is gone,
+    # so a graphless BOM has no edges. Callers that need edges pass a `Graph`.
+    return []
 
 
 def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:

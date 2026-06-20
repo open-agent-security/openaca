@@ -94,7 +94,6 @@ def test_repo_mode_walks_default_bundled_skills(tmp_path):
     skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
     assert len(skill_refs) == 1
     assert skill_refs[0].component_identity == "skill/scan"
-    assert skill_refs[0].attributed_to == "plugin/openaca@0.1.0"
 
 
 def test_default_skills_dir_symlink_outside_plugin_root_is_rejected(tmp_path):
@@ -241,7 +240,7 @@ def test_mcp_servers_string_path_missing_target_does_not_raise(tmp_path):
 
 def test_parse_at_install_root_returns_empty_when_plugin_json_absent(tmp_path):
     """No plugin.json at <install_root>/.claude-plugin/ — return []."""
-    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path) == []
 
 
 def test_parse_at_install_root_emits_dependencies_with_attribution(tmp_path):
@@ -256,9 +255,8 @@ def test_parse_at_install_root_emits_dependencies_with_attribution(tmp_path):
             }
         )
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path)
     assert len(refs) == 2
-    assert all(r.attributed_to == "plugin/p@1.0" for r in refs)
     identities = sorted(r.component_identity or "" for r in refs)
     assert identities == ["plugin-dep/helper-lib", "plugin-dep/secrets-vault@2.1.0"]
 
@@ -275,10 +273,9 @@ def test_parse_at_install_root_emits_inline_mcp_servers_with_attribution(tmp_pat
             }
         )
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path)
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
     assert len(npm_refs) == 1
-    assert npm_refs[0].attributed_to == "plugin/p@1.0"
 
 
 def test_parse_at_install_root_string_path_resolves_from_install_root(tmp_path):
@@ -296,11 +293,10 @@ def test_parse_at_install_root_string_path_resolves_from_install_root(tmp_path):
     (tmp_path / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"foo": {"command": "npx", "args": ["-y", "@x/y@1.0"]}}})
     )
-    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path)
     npm_refs = [r for r in refs if r.ecosystem == "npm"]
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "@x/y"
-    assert npm_refs[0].attributed_to == "plugin/p@1.0"
 
 
 def test_parse_at_install_root_rejects_path_traversal(tmp_path):
@@ -315,7 +311,7 @@ def test_parse_at_install_root_rejects_path_traversal(tmp_path):
     (plugin_dir / "plugin.json").write_text(
         json.dumps({"name": "trav", "version": "1.0", "mcpServers": "../outside.mcp.json"})
     )
-    refs = parse_at_install_root(install_root, attributed_to="plugin/trav@1.0")
+    refs = parse_at_install_root(install_root)
     assert all(r.ecosystem != "npm" for r in refs)
 
 
@@ -326,7 +322,7 @@ def test_parse_at_install_root_does_not_emit_plugin_self_identity(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text(json.dumps({"name": "p", "version": "1.0"}))
-    refs = parse_at_install_root(tmp_path, attributed_to="plugin/p@1.0")
+    refs = parse_at_install_root(tmp_path)
     assert all(r.ecosystem != "claude-plugin" for r in refs)
     assert refs == []  # no deps, no mcpServers → empty
 
@@ -335,14 +331,14 @@ def test_parse_at_install_root_skips_malformed_plugin_json(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text("{not json")
-    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path) == []
 
 
 def test_parse_at_install_root_skips_non_object_plugin_json(tmp_path):
     plugin_dir = tmp_path / ".claude-plugin"
     plugin_dir.mkdir()
     (plugin_dir / "plugin.json").write_text("[]")
-    assert parse_at_install_root(tmp_path, attributed_to="plugin/x@1.0") == []
+    assert parse_at_install_root(tmp_path) == []
 
 
 def test_unreadable_skills_dir_does_not_drop_plugin_parse(tmp_path):

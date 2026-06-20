@@ -22,8 +22,6 @@ def test_repo_mode_emits_declared_skill():
     assert skill_refs[0].name == "bootstrap"
     assert skill_refs[0].version == "1.0.0"
     assert skill_refs[0].component_identity == "skill/bootstrap@1.0.0"
-    # Repo declarations are not attributed to any plugin.
-    assert skill_refs[0].attributed_to is None
 
 
 def test_repo_mode_emits_declared_command():
@@ -31,7 +29,6 @@ def test_repo_mode_emits_declared_command():
     cmd_refs = [r for r in refs if r.extra.get("component_type") == "command"]
     assert len(cmd_refs) == 1
     assert cmd_refs[0].component_identity == "claude-command/deploy"
-    assert cmd_refs[0].attributed_to is None
 
 
 def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
@@ -41,7 +38,6 @@ def test_repo_mode_emits_declared_agent_with_frontmatter_name_override():
     agent_refs = [r for r in refs if r.extra.get("component_type") == "agent"]
     assert len(agent_refs) == 1
     assert agent_refs[0].component_identity == "claude-agent/code-reviewer"
-    assert agent_refs[0].attributed_to is None
 
 
 def test_repo_mode_emits_nested_declared_skill(tmp_path):
@@ -102,11 +98,11 @@ def test_repo_mode_dedupes_mcp_with_relative_target(monkeypatch):
     assert len(npm_refs) == 1
 
 
-def test_flatten_grouped_prefers_attributed_ref_over_unattributed_dup(tmp_path):
-    """When the same MCP component is discovered twice — once directly (no
-    attributed_to) and once via a plugin.json string-path mcpServers (with
-    attributed_to) — flatten_grouped must keep the attributed ref so that
-    "via <plugin>" attribution is preserved in scan output."""
+def test_flatten_grouped_collapses_duplicate_discovery_paths(tmp_path):
+    """When the same MCP component is discovered twice — once directly and once
+    via a plugin.json string-path mcpServers — flatten_grouped must collapse the
+    two discovery paths to a single ref. Attribution is no longer a ref field
+    (it is derived from the graph), so first-seen wins on the dedup key."""
     mcp_file = tmp_path / ".mcp.json"
     mcp_file.write_text(
         json.dumps({"mcpServers": {"svc": {"command": "npx", "args": ["-y", "@example/svc@2.0"]}}})
@@ -122,6 +118,3 @@ def test_flatten_grouped_prefers_attributed_ref_over_unattributed_dup(tmp_path):
 
     npm_refs = [r for r in refs if r.ecosystem == "npm" and r.name == "@example/svc"]
     assert len(npm_refs) == 1, "dedup must collapse both discovery paths to one ref"
-    assert npm_refs[0].attributed_to == "plugin/my-plugin@1.0.0", (
-        "attributed ref must win over the unattributed direct-walk duplicate"
-    )

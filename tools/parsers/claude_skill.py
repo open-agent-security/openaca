@@ -12,8 +12,7 @@ Identity: `skill/<name>` or `skill/<name>@<metadata.version>`.
 
 Used for both direct skills (`~/.claude/skills/<name>/SKILL.md`, no parent
 plugin) and bundled skills (`<plugin>/skills/<name>/SKILL.md`, parented
-to a plugin). Bundled skills carry `attributed_to`; direct skills don't —
-the caller decides which by passing or omitting the kwarg.
+to a plugin). Parentage is set by the graph edge, not stored on the ref.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ import yaml
 from tools.component_ref import ComponentRef
 
 
-def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[ComponentRef]:
+def parse(skill_md_path: Path) -> list[ComponentRef]:
     try:
         text = skill_md_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -62,7 +61,6 @@ def parse(skill_md_path: Path, attributed_to: Optional[str] = None) -> list[Comp
             component_identity=identity,
             source_manifest=str(skill_md_path),
             source_locator="$.frontmatter",
-            attributed_to=attributed_to,
             extra=extra,
         )
     ]

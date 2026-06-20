@@ -40,6 +40,7 @@ from urllib.parse import urlparse
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
+from tools.graph import Graph
 from tools.identity import match_coordinates
 
 # Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
@@ -56,7 +57,6 @@ class Finding:
     component: ComponentRef
     confidence: str  # "high" | "low" | "unknown"
     reason: str = ""
-    attributed_to: Optional[str] = None  # mirrored from component.attributed_to
 
 
 def _parse_version(value: Optional[str]) -> Optional[Version]:
@@ -151,7 +151,6 @@ def _match_external_coordinate(
                     component=ref,
                     confidence="high",
                     reason=f"{target} matches {advisory['id']} (match-coordinate)",
-                    attributed_to=ref.attributed_to,
                 )
             )
     return findings
@@ -185,7 +184,6 @@ def _match_git_ref(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[
                     component=ref,
                     confidence="high",
                     reason=f"{repo}@{ref.version} matches {advisory['id']} (GIT commit)",
-                    attributed_to=ref.attributed_to,
                 )
             )
             continue
@@ -199,7 +197,6 @@ def _match_git_ref(ref: ComponentRef, advisories: list[dict[str, Any]]) -> list[
                     component=ref,
                     confidence="high",
                     reason=f"{repo}@{git_ref} matches {advisory['id']} (GIT version)",
-                    attributed_to=ref.attributed_to,
                 )
             )
     return findings
@@ -284,7 +281,6 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict[str, Any]]) -> lis
                             f"{ref.name}@{ref.version!r} is a range/spec, not a "
                             f"concrete version — pin to verify against {advisory['id']}"
                         ),
-                        attributed_to=ref.attributed_to,
                     )
                 )
                 break
@@ -295,7 +291,6 @@ def _match_versioned(ref: ComponentRef, advisories: list[dict[str, Any]]) -> lis
                         component=ref,
                         confidence="high",
                         reason=f"{ref.name}@{ref.version} matches {advisory['id']}",
-                        attributed_to=ref.attributed_to,
                     )
                 )
                 break
@@ -321,7 +316,6 @@ def _match_unpinned(
                             f"{ref.source_locator} matches {advisory['id']} — "
                             "pin the version to verify"
                         ),
-                        attributed_to=ref.attributed_to,
                     )
                 )
                 break
@@ -331,7 +325,13 @@ def _match_unpinned(
 def match(
     refs: list[ComponentRef],
     advisories: list[dict[str, Any]],
+    *,
+    graph: Graph | None = None,
 ) -> list[Finding]:
+    # `graph` is threaded by scan as the source of truth for attribution; it is
+    # consumed at output time (sarif/finding_output/render map a finding's
+    # component back to its node), not during matching. Accepted here so scan
+    # threads one graph object through the whole pipeline.
     findings: list[Finding] = []
     for ref in refs:
         findings.extend(_match_one(ref, advisories))

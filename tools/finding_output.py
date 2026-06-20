@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools.component_ref import ComponentRef
+from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -103,7 +104,9 @@ def _matched_advisory_for(advisory_id: str, advisory: dict | None) -> dict[str, 
     return matched
 
 
-def finding_to_output(finding: Finding, advisory: dict | None) -> dict[str, Any]:
+def finding_to_output(
+    finding: Finding, advisory: dict | None, *, graph: Graph | None = None
+) -> dict[str, Any]:
     ref = finding.component
     out: dict[str, Any] = {
         "finding_type": "vulnerability",
@@ -119,6 +122,9 @@ def finding_to_output(finding: Finding, advisory: dict | None) -> dict[str, Any]
         "component_path": component_path_for(ref),
         "matched_advisory": _matched_advisory_for(finding.advisory_id, advisory),
     }
+    attributed_to = graph.attribution_for_ref(ref) if graph is not None else None
+    if attributed_to:
+        out["attributed_to"] = attributed_to
     declared_by = declared_by_for(ref)
     if declared_by is not None:
         out["declared_by"] = declared_by

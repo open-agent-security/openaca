@@ -202,12 +202,6 @@ def canonical_component_identity(ref: Any) -> Optional[str]:
         if ref.name:
             return f"mcp-server/{ref.name}"
 
-    if is_package_source_ref(ref) and ref.attributed_to:
-        parent = _without_observed_version(ref.attributed_to)
-        ecosystem = canonical_ecosystem(ref.ecosystem)
-        if parent and ecosystem and ref.name:
-            return f"{parent}/deps/{ecosystem}/{ref.name}"
-
     if ref.component_identity:
         return ref.component_identity
 
@@ -329,12 +323,6 @@ def _component_path_leaf(ref: Any, component_type: str) -> Optional[str]:
         if isinstance(name, str) and name:
             return name
     return None
-
-
-def _without_observed_version(identity: str) -> str:
-    if identity.startswith("plugin/") and "@" in identity.rsplit("/", 1)[-1]:
-        return identity.rsplit("@", 1)[0]
-    return identity
 
 
 def _extract_arg_value(args: list[str], flag: str) -> Optional[str]:

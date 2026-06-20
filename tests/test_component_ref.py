@@ -81,20 +81,17 @@ def test_canonical_identity_prefers_stored_mcp_server_identity_when_no_component
     assert canonical_component_identity(ref) == "mcp-server/playwright"
 
 
-def test_canonical_identity_for_plugin_dependency_uses_parent_occurrence():
+def test_canonical_identity_for_package_dependency_is_graph_native():
     ref = ComponentRef(
         ecosystem="npm",
         name="hono",
         version="4.12.5",
         source_manifest="external_plugins/discord/bun.lock",
         source_locator="$.packages.hono",
-        attributed_to="plugin/claude-plugins-official/discord@0.0.4",
         scope="agent-dependency",
     )
 
-    assert (
-        canonical_component_identity(ref) == "plugin/claude-plugins-official/discord/deps/npm/hono"
-    )
+    assert canonical_component_identity(ref) == "package/npm/hono"
 
 
 def test_canonical_identity_preserves_explicit_source_less_identity():

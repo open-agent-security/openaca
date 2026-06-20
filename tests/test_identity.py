@@ -31,17 +31,16 @@ def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():
     ]
 
 
-def test_plugin_dependency_graph_identity_uses_parent_without_observed_version():
+def test_package_source_ref_identity_is_graph_native():
+    # Option B: a package-source ref's identity is `package/{eco}/{name}`;
+    # parentage lives on the graph edge, not in the identity string.
     ref = ComponentRef(
         ecosystem="npm",
         name="hono",
         version="4.12.5",
-        attributed_to="plugin/claude-plugins-official/discord@0.0.4",
     )
 
-    assert (
-        canonical_component_identity(ref) == "plugin/claude-plugins-official/discord/deps/npm/hono"
-    )
+    assert canonical_component_identity(ref) == "package/npm/hono"
     assert match_coordinate_for_bom(ref) is None
 
 

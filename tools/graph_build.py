@@ -20,6 +20,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from pathspec import GitIgnoreSpec
+
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
@@ -125,7 +127,21 @@ def build_graph(
     if mode == "endpoint":
         _seed_endpoint(graph, root, Path(target), project_root, warnings=warnings)
     else:
-        descend(graph, root, Path(target), include_gitignored=include_gitignored)
+        # Repo mode honors the SCAN-ROOT `.gitignore` everywhere, matching
+        # parse_repo_grouped: load the root spec ONCE and evaluate every
+        # candidate path relative to the scan root, even inside nested
+        # plugin/skill descents. Endpoint mode has no single repo root, so it
+        # passes root_dir=None and helpers keep their per-directory behavior.
+        root_dir = Path(target)
+        root_spec = None if include_gitignored else load_gitignore_spec(root_dir)
+        descend(
+            graph,
+            root,
+            root_dir,
+            include_gitignored=include_gitignored,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
     graph.validate()
     return graph
 
@@ -439,6 +455,8 @@ def descend(
     *,
     emit_own_root_deps: bool = True,
     include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -479,7 +497,12 @@ def descend(
         plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
         for plugin_root in plugin_roots:
             _descend_into_plugin(
-                graph, parent, plugin_root, plugin_root / ".claude-plugin" / "plugin.json"
+                graph,
+                parent,
+                plugin_root,
+                plugin_root / ".claude-plugin" / "plugin.json",
+                root_dir=root_dir,
+                root_spec=root_spec,
             )
         _add_project_skills(
             graph,
@@ -487,6 +510,8 @@ def descend(
             directory,
             exclude_under=plugin_roots,
             include_gitignored=include_gitignored,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
         # A plugin root owns its own dep manifests (emitted under the plugin via
         # the plugin-branch descent); emitting them again under target would
@@ -495,7 +520,12 @@ def descend(
         # skip when `directory` itself is a plugin root.
         if not any(_same_path(directory, root) for root in plugin_roots):
             _add_dep_manifest_packages(
-                graph, parent, directory, include_gitignored=include_gitignored
+                graph,
+                parent,
+                directory,
+                include_gitignored=include_gitignored,
+                root_dir=root_dir,
+                root_spec=root_spec,
             )
         _add_repo_standalone_components(
             graph,
@@ -503,16 +533,30 @@ def descend(
             directory,
             exclude_under=plugin_roots,
             include_gitignored=include_gitignored,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
     elif parent.kind == "plugin":
-        _add_bundled_skills(graph, parent, directory)
+        _add_bundled_skills(graph, parent, directory, root_dir=root_dir, root_spec=root_spec)
         _add_bundled_plugin_surfaces(graph, parent, directory)
         if emit_own_root_deps:
             _add_dep_manifest_packages(
-                graph, parent, directory, include_gitignored=include_gitignored
+                graph,
+                parent,
+                directory,
+                include_gitignored=include_gitignored,
+                root_dir=root_dir,
+                root_spec=root_spec,
             )
     elif parent.kind == "skill":
-        _add_dep_manifest_packages(graph, parent, directory, include_gitignored=include_gitignored)
+        _add_dep_manifest_packages(
+            graph,
+            parent,
+            directory,
+            include_gitignored=include_gitignored,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
 
 
 def _same_path(a: Path, b: Path) -> bool:
@@ -541,7 +585,13 @@ def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> 
 
 
 def _descend_into_plugin(
-    graph: Graph, target: Node, plugin_root: Path, plugin_manifest: Path
+    graph: Graph,
+    target: Node,
+    plugin_root: Path,
+    plugin_manifest: Path,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     """Create the plugin node (child of target) and descend into its subtree.
 
@@ -555,7 +605,7 @@ def _descend_into_plugin(
         return
     plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
     _add_child(graph, target, plugin_node)
-    descend(graph, plugin_node, plugin_root)
+    descend(graph, plugin_node, plugin_root, root_dir=root_dir, root_spec=root_spec)
 
 
 def _add_project_skills(
@@ -565,6 +615,8 @@ def _add_project_skills(
     exclude_under: list[Path] | None = None,
     *,
     include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
 
@@ -577,15 +629,21 @@ def _add_project_skills(
     skills inside any of those subtrees belong to the plugin branch
     (single-parent invariant), so they are skipped here to avoid double-discovery.
     """
-    spec = None if include_gitignored else load_gitignore_spec(directory)
+    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
+    # The walk yields paths relative to `directory`; ignore checks evaluate
+    # relative to `eval_root` (the scan root in repo mode). When the walk root and
+    # eval root differ, evaluate the absolute path against eval_root.
+    walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
-    for path in iter_unignored_files(directory, spec):
+    for path in iter_unignored_files(directory, walk_spec):
         if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
+            continue
+        if _is_ignored_under(path, eval_root, spec):
             continue
         resolved = path.resolve()
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
-        _add_skill_node(graph, parent, path.parent)
+        _add_skill_node(graph, parent, path.parent, root_dir=root_dir, root_spec=root_spec)
 
 
 def _is_project_skill_md(path: Path, root: Path) -> bool:
@@ -603,7 +661,14 @@ def _is_project_skill_md(path: Path, root: Path) -> bool:
     )
 
 
-def _add_bundled_skills(graph: Graph, parent: Node, directory: Path) -> None:
+def _add_bundled_skills(
+    graph: Graph,
+    parent: Node,
+    directory: Path,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
     """Plugin-bundled skills live at `<plugin-root>/skills/<name>/SKILL.md`,
     or at a custom directory named by the manifest's `"skills"` field.
 
@@ -628,7 +693,7 @@ def _add_bundled_skills(graph: Graph, parent: Node, directory: Path) -> None:
         if resolved in seen_dirs:
             continue
         seen_dirs.add(resolved)
-        _add_skills_from_dir(graph, parent, skills_dir)
+        _add_skills_from_dir(graph, parent, skills_dir, root_dir=root_dir, root_spec=root_spec)
 
 
 def _plugin_custom_skills_field(plugin_root: Path) -> object:
@@ -642,22 +707,36 @@ def _plugin_custom_skills_field(plugin_root: Path) -> object:
     return data.get("skills")
 
 
-def _add_skills_from_dir(graph: Graph, parent: Node, skills_dir: Path) -> None:
+def _add_skills_from_dir(
+    graph: Graph,
+    parent: Node,
+    skills_dir: Path,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
     if not skills_dir.is_dir():
         return
     for skill_subdir in sorted(skills_dir.iterdir()):
         if skill_subdir.name.startswith("."):  # skip .DS_Store, .git, etc.
             continue
         if (skill_subdir / "SKILL.md").is_file():
-            _add_skill_node(graph, parent, skill_subdir)
+            _add_skill_node(graph, parent, skill_subdir, root_dir=root_dir, root_spec=root_spec)
 
 
-def _add_skill_node(graph: Graph, parent: Node, skill_subdir: Path) -> None:
+def _add_skill_node(
+    graph: Graph,
+    parent: Node,
+    skill_subdir: Path,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
     skill_md = skill_subdir / "SKILL.md"
     for ref in _safe_parse(claude_skill.parse, skill_md):
         skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
         _add_child(graph, parent, skill_node)
-        descend(graph, skill_node, skill_subdir)
+        descend(graph, skill_node, skill_subdir, root_dir=root_dir, root_spec=root_spec)
 
 
 def _component_type(ref: ComponentRef) -> object:
@@ -679,18 +758,56 @@ def _safe_parse(parse, manifest: Path) -> list[ComponentRef]:
 
 
 def _add_dep_manifest_packages(
-    graph: Graph, parent: Node, directory: Path, *, include_gitignored: bool = False
+    graph: Graph,
+    parent: Node,
+    directory: Path,
+    *,
+    include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
-    spec = None if include_gitignored else load_gitignore_spec(directory)
+    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
     for filename, parse in _DEP_MANIFEST_PARSERS.items():
         manifest = directory / filename
         if not manifest.is_file():
             continue
-        if spec is not None and is_ignored(manifest.relative_to(directory), spec):
+        if _is_ignored_under(manifest, eval_root, spec):
             continue
         for ref in _safe_parse(parse, manifest):
             node = Node(key=occurrence_key(ref), kind="package", ref=ref)
             _add_child(graph, parent, node)
+
+
+def _ignore_context(
+    directory: Path,
+    include_gitignored: bool,
+    root_dir: Path | None,
+    root_spec: GitIgnoreSpec | None,
+) -> tuple[Path, GitIgnoreSpec | None]:
+    """Resolve which (root, spec) a gitignore check should evaluate against.
+
+    Repo mode threads the SCAN ROOT and its spec down through every nested
+    descent so a root `.gitignore` rule is honored even inside plugin/skill
+    subtrees (parity with parse_repo_grouped, which loads the root spec once and
+    evaluates root-relative). When no root is threaded (endpoint mode, which has
+    no single repo root), fall back to the per-directory spec — preserving the
+    historical endpoint behavior.
+    """
+    if root_dir is not None:
+        return root_dir, root_spec
+    spec = None if include_gitignored else load_gitignore_spec(directory)
+    return directory, spec
+
+
+def _is_ignored_under(path: Path, eval_root: Path, spec: GitIgnoreSpec | None) -> bool:
+    """Evaluate `is_ignored(path relative-to eval_root)`, guarding paths that
+    are not under `eval_root` (skip the ignore check for those, matching the
+    per-directory fallback's reach)."""
+    try:
+        rel = path.relative_to(eval_root)
+    except ValueError:
+        return False
+    return spec is not None and is_ignored(rel, spec)  # type: ignore[arg-type]
 
 
 # Standalone MCP manifest filenames discovered at any depth in repo mode
@@ -713,6 +830,8 @@ def _add_repo_standalone_components(
     *,
     exclude_under: list[Path] | None = None,
     include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     """Repo target-level standalone surfaces: MCP manifests and `.claude`
     commands/agents discovered at any depth (parity with the parser REGISTRY),
@@ -722,9 +841,12 @@ def _add_repo_standalone_components(
     roots already descended from the target) so a plugin's bundled MCP/command
     surfaces stay under the plugin node (single-parent).
     """
-    spec = None if include_gitignored else load_gitignore_spec(directory)
+    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
+    walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
-    for path in iter_unignored_files(directory, spec):
+    for path in iter_unignored_files(directory, walk_spec):
+        if _is_ignored_under(path, eval_root, spec):
+            continue
         resolved = path.resolve()
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue

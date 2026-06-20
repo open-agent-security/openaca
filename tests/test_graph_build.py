@@ -493,3 +493,65 @@ def test_repo_plugin_bundled_skill_not_double_created_by_surface_walk(tmp_path):
     # skill→package dep chain preserved
     pkg = next(n for n in g.nodes.values() if n.kind == "package")
     assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]
+
+
+# --- Task 2.5d: endpoint direct components (skills/commands/agents/hooks) ---
+
+
+def test_endpoint_direct_skill_under_install_root_is_target_child(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    skill_dir = install_root / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    g = build_graph(install_root, mode="endpoint")
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert [n.kind for n in g.lineage(skill)] == ["skill", "target"]
+    # direct: no plugin ancestor
+    assert g.nearest_plugin_ancestor(skill) is None
+
+
+def test_endpoint_direct_command_under_install_root_is_target_child(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    commands_dir = install_root / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "review.md").write_text("---\ndescription: review\n---\nbody\n")
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    g = build_graph(install_root, mode="endpoint")
+    command = next(n for n in g.nodes.values() if n.kind == "command")
+    assert [n.kind for n in g.lineage(command)] == ["command", "target"]
+    assert g.nearest_plugin_ancestor(command) is None
+
+
+def test_endpoint_direct_skill_and_project_skill_not_double_created(tmp_path):
+    # An install-root direct skill AND a project skill with the same name must
+    # produce two distinct skill nodes (different occurrences), not collapse or
+    # trip the single-parent invariant.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    direct_skill = install_root / "skills" / "deploy"
+    direct_skill.mkdir(parents=True)
+    (direct_skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_skill = project_root / ".claude" / "skills" / "deploy"
+    project_skill.mkdir(parents=True)
+    (project_skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    skills = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skills) == 2
+    assert all([n.kind for n in g.lineage(s)] == ["skill", "target"] for s in skills)

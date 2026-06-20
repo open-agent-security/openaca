@@ -1060,3 +1060,32 @@ def test_repo_bundled_plugin_mcp_under_gitignore_excluded_by_default(tmp_path):
 
     g_all = build_graph(tmp_path, mode="repo", include_gitignored=True)
     assert [n for n in g_all.nodes.values() if n.kind == "mcp_server"]
+
+
+def test_endpoint_non_string_version_entry_emits_warning(tmp_path):
+    """A plugin install entry with a non-string `version` is skipped; build_graph
+    must surface the parse_install-parity warning rather than dropping the plugin
+    (and all its components) silently."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")
+    (install_root / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@mp": True}}))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [{"scope": "user", "version": 123, "installPath": str(install_path)}]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
+    assert any("non-string version" in w for w in warnings), warnings

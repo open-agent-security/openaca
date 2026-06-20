@@ -953,6 +953,4 @@ def test_plugin_skill_inside_plugin_root_accepted(tmp_path):
 
     g = build_graph(tmp_path, mode="repo")
     skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
-    assert len(skill_nodes) == 1, (
-        "plugin skill symlink within the plugin root must be accepted"
-    )
+    assert len(skill_nodes) == 1, "plugin skill symlink within the plugin root must be accepted"

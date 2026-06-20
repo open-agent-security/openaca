@@ -699,8 +699,11 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
 
 
 def test_repo_lockfile_finds_corpus_advisory(tmp_path):
-    """Repo mode + package-lock.json at root: lockfile findings emit with
-    attributed_to=None and coverage=transitive."""
+    """Repo mode + package-lock.json at a plugin root: lockfile findings emit with
+    coverage=transitive and are attributed to the enclosing plugin. Per ADR-0037,
+    attribution is the nearest plugin ancestor in the composition graph; the repo
+    root IS the `host` plugin, so its own transitive deps attribute to it (the
+    pre-graph behavior of attributed_to=None in repo mode is superseded)."""
     from tools.scan import main as scan_main
 
     target = tmp_path / "host-repo"
@@ -735,7 +738,7 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     assert matching
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
-    assert properties.get("attributed_to") is None or "attributed_to" not in properties
+    assert properties.get("attributed_to") == "plugin/host@1.0.0"
 
 
 # Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and remote upload.

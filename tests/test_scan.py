@@ -550,6 +550,7 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
     """gitCommitSha from installed_plugins.json is user-editable; a non-string
     value (e.g. integer) must not crash verbose endpoint output."""
     from tools.component_ref import ComponentRef
+    from tools.graph import Edge, Graph, Node
 
     fake_ref = ComponentRef(
         name="bad-sha-plugin",
@@ -566,7 +567,17 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
             "marketplace": "test",
         },
     )
-    monkeypatch.setattr("tools.scan.parse_install", lambda **_kwargs: ([fake_ref], []))
+    # Stage 3: scan builds the graph as source of truth, so inject the scenario
+    # through that seam — a Graph whose only non-root node is the plugin carrying
+    # the non-string gitCommitSha.
+    root = Node(key="openaca:target", kind="target", ref=None)
+    plugin = Node(key="installed_plugins.json#bad", kind="plugin", ref=fake_ref)
+    graph = Graph(
+        nodes={root.key: root, plugin.key: plugin},
+        edges=[Edge(parent=root.key, child=plugin.key)],
+    )
+    graph.validate()
+    monkeypatch.setattr("tools.scan.build_graph", lambda *_args, **_kwargs: graph)
 
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()
@@ -1795,6 +1806,33 @@ def test_repo_dep_co_located_with_plugin_json_surfaces_as_agent_dep(tmp_path):
             str(tmp_path),
         ],
     )
+    assert result.exit_code == 1, result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
+
+
+def test_repo_skill_bundled_dep_surfaces_as_agent_dep(tmp_path):
+    """A vulnerable npm dep bundled inside a `.claude/skills/<name>/` skill is
+    now classified `agent-dependency` (it has a skill ancestor in the graph)
+    and fires a finding. Before the composition graph this dep was filtered as
+    software-dependency (ADR-0036 gap); the graph closes it."""
+    skill_dir = tmp_path / ".claude" / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: deploy skill\n---\nbody\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "deploy",
+                "version": "1.0.0",
+                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path)])
     assert result.exit_code == 1, result.output
     assert "GHSA-3q26-f695-pp76" in result.output
 

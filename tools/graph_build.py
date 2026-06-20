@@ -28,6 +28,7 @@ from tools.parsers import (
     claude_install,
     claude_plugin,
     claude_skill,
+    hooks_json,
     mcp_json,
     package_json,
     package_lock_json,
@@ -142,6 +143,11 @@ def _seed_endpoint(
       repo-mode project-skill discovery as `skill` children of the target.
     - **Remote MCPs** declared in settings `mcpServers` (URLs/commands, nothing
       on disk): `mcp_server` leaf children of the target, no descent.
+    - **Other direct components**: install-root direct skills
+      (`<install_root>/skills/<name>/`), personal+project commands/agents
+      (`commands/`, `agents/`, `.claude/commands|agents/`), and settings-scoped
+      hooks. All children of the target (attribution None — direct, not
+      plugin-bundled). See `_seed_direct_components`.
     """
     layers = load_settings(install_root, project_root=project_root)
     effective = layers.merged("endpoint")
@@ -156,6 +162,7 @@ def _seed_endpoint(
         _add_project_skills(graph, target, project_root)
 
     _seed_remote_mcps(graph, target, install_root, project_root, by_scope)
+    _seed_direct_components(graph, target, install_root, project_root, by_scope)
 
 
 def _seed_active_plugins(
@@ -260,6 +267,96 @@ def _seed_remote_mcps(
                 continue
             node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
+
+
+def _seed_direct_components(
+    graph: Graph,
+    target: Node,
+    install_root: Path,
+    project_root: Path | None,
+    by_scope: dict,
+) -> None:
+    """Seed the remaining `_walk_direct_components` surfaces as target children.
+
+    These are direct components — declared outside any plugin — so their parent
+    is the target (attribution None, by construction). Discovery reuses the
+    `claude_install` sub-helpers so the occurrence content matches what
+    `parse_install` produced.
+
+    What is NOT seeded here (already owned by `_seed_endpoint`):
+    - Project skills under `<project_root>/.claude/skills/` (`_add_project_skills`).
+    - Remote MCPs from settings `mcpServers` and `.mcp.json` (`_seed_remote_mcps`).
+
+    Seeding only the non-overlapping surfaces (rather than calling
+    `_walk_direct_components` wholesale and relying on edge-dedup) keeps the two
+    project-skill discovery paths from racing to own the node: their occurrence
+    keys collide, so whichever ran first would silently win the ref content.
+    """
+    refs: list[ComponentRef] = []
+
+    # Install-root direct skills (`<install_root>/skills/<name>/`). Distinct from
+    # project skills under `.claude/skills/` (those are `_add_project_skills`'s).
+    refs.extend(claude_install._walk_skill_dir(install_root / "skills", project_root=project_root))
+
+    # Personal commands/agents at the install root.
+    refs.extend(
+        claude_command_agent.enumerate_dir(
+            install_root / "commands", kind="command", scope_owner=None, attributed_to=None
+        )
+    )
+    refs.extend(
+        claude_command_agent.enumerate_dir(
+            install_root / "agents", kind="agent", scope_owner=None, attributed_to=None
+        )
+    )
+
+    # Project commands/agents under `.claude/`.
+    if project_root is not None:
+        refs.extend(
+            claude_command_agent.enumerate_dir(
+                project_root / ".claude" / "commands",
+                kind="command",
+                scope_owner=None,
+                attributed_to=None,
+            )
+        )
+        refs.extend(
+            claude_command_agent.enumerate_dir(
+                project_root / ".claude" / "agents",
+                kind="agent",
+                scope_owner=None,
+                attributed_to=None,
+            )
+        )
+
+    # Settings-scoped hooks, per scope (no cross-scope merging — parity with
+    # `_walk_direct_components`).
+    scope_to_settings_path = {
+        "user": install_root / "settings.json",
+        "project": (project_root / ".claude" / "settings.json")
+        if project_root is not None
+        else None,
+        "local": (project_root / ".claude" / "settings.local.json")
+        if project_root is not None
+        else None,
+    }
+    for scope in SCOPE_PRECEDENCE:
+        if scope == "managed":
+            continue
+        settings_path = scope_to_settings_path.get(scope)
+        if settings_path is None:
+            continue
+        scope_data = by_scope.get(scope) or {}
+        refs.extend(
+            hooks_json.parse_settings_hooks(settings_path, scope_data.get("hooks"), scope=scope)
+        )
+
+    for ref in refs:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
+            continue
+        node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
+        _add_child(graph, target, node)
 
 
 def descend(

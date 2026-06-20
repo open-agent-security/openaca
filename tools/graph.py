@@ -102,3 +102,19 @@ class Graph:
             if anc.kind == "plugin":
                 return anc
         return None
+
+    def attribution_for(self, node: Node) -> Optional[str]:
+        """The "via plugin X" attribution string for a node, or None.
+
+        The nearest plugin ancestor's component_identity, versioned
+        (`<identity>@<version>`) when the plugin carries a version — reproducing
+        the pre-graph `attributed_to` value. A plugin attributes to None (it has
+        no plugin ancestor). Pure derivation over the edges; the single source
+        for both scan (ref projection) and bom."""
+        plugin = self.nearest_plugin_ancestor(node)
+        if plugin is None or plugin.ref is None:
+            return None
+        identity = plugin.ref.component_identity
+        if not identity:
+            return None
+        return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity

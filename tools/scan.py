@@ -113,27 +113,10 @@ def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
             replace(
                 node.ref,
                 scope=graph.scope_of(node),
-                attributed_to=_attribution_for(graph, node),
+                attributed_to=graph.attribution_for(node),
             )
         )
     return refs
-
-
-def _attribution_for(graph: Graph, node) -> str | None:
-    """The nearest plugin ancestor's attribution string, or None.
-
-    Reproduces the pre-graph `attributed_to` value exactly: the plugin's
-    component_identity, versioned (`<identity>@<version>`) when the plugin
-    carries a version — matching `claude_plugin.parse` and `claude_install`'s
-    `attributed_id`. A component is its own plugin only via ancestry, so a
-    plugin node itself attributes to None (no plugin ancestor)."""
-    plugin = graph.nearest_plugin_ancestor(node)
-    if plugin is None or plugin.ref is None:
-        return None
-    identity = plugin.ref.component_identity
-    if not identity:
-        return None
-    return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
 
 
 def default_overlays_dir() -> Path:

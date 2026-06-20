@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from tools.component_ref import ComponentRef, canonical_component_identity
-from tools.graph import Graph, Node
+from tools.graph import Graph
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
@@ -170,7 +170,7 @@ def _build_agent_bom_from_graph(
         ref = replace(
             node.ref,
             scope=graph.scope_of(node),
-            attributed_to=_attribution_for(graph, node),
+            attributed_to=graph.attribution_for(node),
         )
         included[node.key] = BOMComponent(ref=ref, bom_ref=node.key)
 
@@ -189,20 +189,6 @@ def _build_agent_bom_from_graph(
         source_unit_label=source_unit_label,
         target_bom_ref=root.key,
     )
-
-
-def _attribution_for(graph: Graph, node: Node) -> str | None:
-    """Nearest plugin ancestor's identity (versioned when the plugin has a
-    version), or None — the "via plugin" attribution render/matcher still read
-    off `ComponentRef.attributed_to` until later stages migrate them to the
-    graph. A plugin attributes to None (it has no plugin ancestor)."""
-    plugin = graph.nearest_plugin_ancestor(node)
-    if plugin is None or plugin.ref is None:
-        return None
-    identity = plugin.ref.component_identity
-    if not identity:
-        return None
-    return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
 
 
 def bom_components_from_cyclonedx(doc: dict[str, Any]) -> list[BOMComponent]:

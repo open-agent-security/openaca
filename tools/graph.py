@@ -9,6 +9,10 @@ from tools.component_ref import ComponentRef
 NodeKind = str
 
 
+class GraphInvariantError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class Node:
     key: str  # occurrence identity (ADR-0031); never the purl.
@@ -38,15 +42,40 @@ class Graph:
     def _parent_of(self) -> dict[str, str]:
         return {e.child: e.parent for e in self.edges}
 
+    def validate(self) -> None:
+        targets = [n for n in self.nodes.values() if n.kind == "target"]
+        if len(targets) != 1:
+            raise GraphInvariantError(f"expected exactly one target, found {len(targets)}")
+        target_key = targets[0].key
+        parents: dict[str, str] = {}
+        for e in self.edges:
+            if e.parent not in self.nodes or e.child not in self.nodes:
+                raise GraphInvariantError(f"edge endpoint missing: {e}")
+            if e.child in parents:
+                raise GraphInvariantError(f"node {e.child} has multiple parents")
+            parents[e.child] = e.parent
+        for key in self.nodes:
+            seen, cur = set(), key
+            while cur in parents:
+                if cur in seen:
+                    raise GraphInvariantError(f"cycle detected through {cur}")
+                seen.add(cur)
+                cur = parents[cur]
+            if cur != target_key:
+                raise GraphInvariantError(f"node {key} is not connected to the target root")
+
     def children_of(self, node: Node) -> list[Node]:
         return [self.nodes[e.child] for e in self.edges if e.parent == node.key]
 
     def lineage(self, node: Node) -> list[Node]:
         """node → ... → target root, inclusive."""
         parent_of = self._parent_of()
-        chain, cur = [node], node.key
+        chain, seen, cur = [node], {node.key}, node.key
         while cur in parent_of:
             cur = parent_of[cur]
+            if cur in seen:
+                raise GraphInvariantError(f"cycle detected through {cur}")
+            seen.add(cur)
             chain.append(self.nodes[cur])
         return chain
 

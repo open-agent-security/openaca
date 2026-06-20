@@ -184,7 +184,9 @@ def _seed_endpoint(
         warnings.extend(plugin_warnings)
     enabled = effective.get("enabledPlugins") or {}
     if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
-        _seed_active_plugins(graph, target, enabled, plugins_map, lockfile_path, layers)
+        _seed_active_plugins(
+            graph, target, enabled, plugins_map, lockfile_path, layers, warnings=warnings
+        )
 
     if project_root is not None:
         _add_project_skills(graph, target, project_root)
@@ -206,15 +208,23 @@ def _seed_active_plugins(
     plugins_map: dict,
     lockfile_path: Path,
     layers,
+    *,
+    warnings: list[str] | None = None,
 ) -> None:
     for plugin_key, is_enabled in enabled.items():
         if is_enabled is not True:
             continue
         raw_entries = plugins_map.get(plugin_key)
         if not isinstance(raw_entries, list) or not raw_entries:
+            if warnings is not None:
+                warnings.append(
+                    f"plugin {plugin_key} enabled but missing from installed_plugins.json"
+                )
             continue
         entries = [(i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)]
         if not entries:
+            if warnings is not None:
+                warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
             continue
         scope = claude_install._enabling_scope(plugin_key, layers, "endpoint")
         entry, index, _ = claude_install._select_install_entry(entries, scope)
@@ -724,6 +734,7 @@ def _add_skills_from_dir(
         plugin_root_resolved = plugin_root.resolve() if plugin_root is not None else None
     except (OSError, RuntimeError):
         return
+    eval_root, spec = _ignore_context(skills_dir, False, root_dir, root_spec)
     for skill_subdir in sorted(skills_dir.iterdir()):
         if skill_subdir.name.startswith("."):  # skip .DS_Store, .git, etc.
             continue
@@ -744,6 +755,8 @@ def _add_skills_from_dir(
                 continue
             if not skill_md_resolved.is_relative_to(plugin_root_resolved):
                 continue
+        if _is_ignored_under(skill_md, eval_root, spec):
+            continue
         _add_skill_node(graph, parent, skill_subdir, root_dir=root_dir, root_spec=root_spec)
 
 

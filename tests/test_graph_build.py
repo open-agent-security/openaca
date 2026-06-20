@@ -174,6 +174,74 @@ def test_endpoint_plugin_own_dep_manifest_no_double_emit(tmp_path):
     assert [n.kind for n in g.lineage(plugin_deps[0])] == ["package", "plugin", "target"]
 
 
+def _seed_endpoint_fixture_with_manifest_and_lockfile(tmp_path):
+    """Endpoint layout where the plugin install path has BOTH a package.json
+    (direct dep left-pad@1.0.0) AND a package-lock.json pinning that dep plus a
+    transitive dep, alongside a bundled skill. Without the fix, descend()'s
+    plugin branch emits a manifest-keyed left-pad node and
+    _walk_plugin_implementation_deps emits a lockfile-keyed one — two nodes for
+    one direct dep."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")  # bundled skill (lodash dep)
+    (install_path / "package.json").write_text(
+        '{"name":"demo","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    (install_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/left-pad": {"version": "1.0.0"},
+                    "node_modules/dep-transitive": {"version": "2.0.0"},
+                },
+            }
+        )
+    )
+
+    settings = {"enabledPlugins": {"demo@mp": True}}
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                    ]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    return install_root, project_root
+
+
+def test_endpoint_plugin_manifest_and_lockfile_dep_is_single_node(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture_with_manifest_and_lockfile(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)  # must not raise
+    left_pad = [n for n in g.nodes.values() if n.kind == "package" and "left-pad" in (n.key or "")]
+    # exactly one node: the lockfile walk is the sole source of the plugin's own
+    # deps; no manifest-keyed duplicate.
+    assert len(left_pad) == 1
+    assert [n.kind for n in g.lineage(left_pad[0])] == ["package", "plugin", "target"]
+
+
+def test_endpoint_manifest_and_lockfile_bundled_skill_chain_still_works(tmp_path):
+    # Same fixture: suppressing the plugin's OWN root deps must NOT suppress a
+    # bundled skill's own deps — the skill chain stays intact.
+    install_root, project_root = _seed_endpoint_fixture_with_manifest_and_lockfile(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    lodash = next(n for n in g.nodes.values() if n.kind == "package" and "lodash" in (n.key or ""))
+    assert [n.kind for n in g.lineage(lodash)] == ["package", "skill", "plugin", "target"]
+
+
 def test_endpoint_malformed_installed_plugins_does_not_crash(tmp_path):
     install_root = tmp_path / "claude"
     install_root.mkdir()

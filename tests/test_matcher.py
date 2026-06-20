@@ -723,9 +723,11 @@ def test_repo_mode_ref_does_not_match_marketplace_specific_advisory():
     assert match(refs=[ref], advisories=[advisory]) == []
 
 
-def test_finding_mirrors_component_attribution():
-    """Per ADR-0006: Finding.attributed_to mirrors ComponentRef.attributed_to.
-    Test both attribution-set and attribution-None cases."""
+def test_finding_carries_no_attribution_field():
+    """The matcher no longer mirrors attribution onto findings (Stage 6 of the
+    composition-graph plan): attribution is derived at output time from the
+    graph lineage, so `Finding` has no `attributed_to` field. Matching itself is
+    unaffected — both refs still produce findings."""
     advisory = make_advisory("CVE-2026-9998", "npm", "lodash", "5.0.0")
 
     via_plugin = ComponentRef(
@@ -749,11 +751,8 @@ def test_finding_mirrors_component_attribution():
     via_finding = next(f for f in findings if f.component is via_plugin)
     direct_finding = next(f for f in findings if f.component is direct)
 
-    assert via_finding.attributed_to == "plugin/supabase@0.1.6"
-    assert via_finding.attributed_to == via_finding.component.attributed_to
-
-    assert direct_finding.attributed_to is None
-    assert direct_finding.component.attributed_to is None
+    assert not hasattr(via_finding, "attributed_to")
+    assert not hasattr(direct_finding, "attributed_to")
 
 
 def test_github_ref_matches_advisory_regardless_of_repo_name_casing():

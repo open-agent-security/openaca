@@ -1,4 +1,5 @@
 from tools.component_ref import ComponentRef
+from tools.graph import Edge, Graph, Node
 from tools.matcher import Finding
 from tools.observations import ObservationFinding
 from tools.sarif import to_sarif
@@ -12,6 +13,29 @@ def _ref() -> ComponentRef:
         source_manifest="package.json",
         source_locator="dependencies",
     )
+
+
+def _graph_attributing(package_ref: ComponentRef, plugin_identity: str, plugin_version: str):
+    """A minimal `target → plugin → package` graph so attribution for the
+    package ref derives to `<plugin_identity>@<plugin_version>` from the graph
+    (the only path attribution now flows through; `Finding` no longer stores
+    it)."""
+    plugin_ref = ComponentRef(
+        component_identity=plugin_identity,
+        version=plugin_version,
+        source_manifest=".claude-plugin/plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+    nodes = {
+        "t": Node("t", "target", None),
+        "p": Node("p", "plugin", plugin_ref),
+        "pkg": Node("pkg", "package", package_ref),
+    }
+    edges = [Edge("t", "p"), Edge("p", "pkg")]
+    g = Graph(nodes, edges)
+    g.validate()
+    return g
 
 
 def test_sarif_envelope_shape():
@@ -117,22 +141,24 @@ def test_sarif_empty_findings_produces_valid_envelope():
 
 
 def test_sarif_result_carries_attributed_to_when_set():
-    """Plan 007 plumbing: when a finding has attribution, the SARIF result
-    surfaces it as `properties.attributed_to`. Plans 008/009 will rely on
-    this field for downstream tooling."""
+    """When a finding's component maps to a graph node with a plugin ancestor,
+    the SARIF result surfaces the graph-derived attribution as
+    `properties.attributed_to`."""
+    ref = _ref()
     finding = Finding(
         advisory_id="CVE-2026-0001",
-        component=_ref(),
+        component=ref,
         confidence="high",
-        attributed_to="plugin/supabase@0.1.6",
     )
-    sarif = to_sarif([finding], {})
+    graph = _graph_attributing(ref, "plugin/supabase", "0.1.6")
+    sarif = to_sarif([finding], {}, graph=graph)
     result = sarif["runs"][0]["results"][0]
     assert result["properties"]["attributed_to"] == "plugin/supabase@0.1.6"
 
 
 def test_sarif_omits_attributed_to_when_none():
-    """Direct findings should omit attributed_to even when identity properties exist."""
+    """Direct findings (no plugin ancestor in the graph) omit attributed_to even
+    when identity properties exist."""
     finding = Finding(
         advisory_id="CVE-2026-0001",
         component=_ref(),
@@ -141,6 +167,78 @@ def test_sarif_omits_attributed_to_when_none():
     sarif = to_sarif([finding], {})
     result = sarif["runs"][0]["results"][0]
     assert "attributed_to" not in result["properties"]
+
+
+def test_sarif_attribution_for_skill_bundled_package_is_the_plugin():
+    """A package bundled inside a skill inside a plugin attributes to the
+    nearest plugin ancestor, derived from the graph lineage
+    (target → plugin → skill → package)."""
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest="skills/deploy/package.json",
+        source_locator="dependencies",
+    )
+    plugin_ref = ComponentRef(
+        component_identity="plugin/mp/demo",
+        version="1.0.0",
+        source_manifest=".claude-plugin/plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+    skill_ref = ComponentRef(
+        component_identity="skill/deploy",
+        source_manifest="skills/deploy/SKILL.md",
+        source_locator="$",
+        extra={"component_type": "skill"},
+    )
+    nodes = {
+        "t": Node("t", "target", None),
+        "p": Node("p", "plugin", plugin_ref),
+        "s": Node("s", "skill", skill_ref),
+        "pkg": Node("pkg", "package", pkg_ref),
+    }
+    edges = [Edge("t", "p"), Edge("p", "s"), Edge("s", "pkg")]
+    graph = Graph(nodes, edges)
+    graph.validate()
+    finding = Finding(advisory_id="GHSA-1", component=pkg_ref, confidence="high")
+
+    sarif = to_sarif([finding], {}, graph=graph)
+    props = sarif["runs"][0]["results"][0]["properties"]
+    assert props["attributed_to"] == "plugin/mp/demo@1.0.0"
+
+
+def test_sarif_attribution_for_standalone_skill_package_is_omitted():
+    """A package bundled in a standalone skill (no plugin ancestor:
+    target → skill → package) has no plugin to attribute to, so the SARIF
+    result omits `attributed_to`."""
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest=".claude/skills/deploy/package.json",
+        source_locator="dependencies",
+    )
+    skill_ref = ComponentRef(
+        component_identity="skill/deploy",
+        source_manifest=".claude/skills/deploy/SKILL.md",
+        source_locator="$",
+        extra={"component_type": "skill"},
+    )
+    nodes = {
+        "t": Node("t", "target", None),
+        "s": Node("s", "skill", skill_ref),
+        "pkg": Node("pkg", "package", pkg_ref),
+    }
+    edges = [Edge("t", "s"), Edge("s", "pkg")]
+    graph = Graph(nodes, edges)
+    graph.validate()
+    finding = Finding(advisory_id="GHSA-1", component=pkg_ref, confidence="high")
+
+    sarif = to_sarif([finding], {}, graph=graph)
+    props = sarif["runs"][0]["results"][0].get("properties", {})
+    assert "attributed_to" not in props
 
 
 def test_sarif_result_carries_component_identity_properties():
@@ -177,7 +275,6 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         ecosystem="npm",
         name="lodash",
         version="4.17.20",
-        attributed_to="plugin/demo@1.0.0",
         extra={"transitive": True},
     )
     finding = Finding(
@@ -185,7 +282,6 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="plugin/demo@1.0.0",
     )
     advisory = {
         "id": "GHSA-1",
@@ -193,7 +289,8 @@ def test_sarif_emits_coverage_and_transitive_for_lockfile_findings():
         "details": "test",
         "database_specific": {"openaca": {"source": "osv.dev"}},
     }
-    doc = to_sarif([finding], {"GHSA-1": advisory})
+    graph = _graph_attributing(ref, "plugin/demo", "1.0.0")
+    doc = to_sarif([finding], {"GHSA-1": advisory}, graph=graph)
     result = doc["runs"][0]["results"][0]
     properties = result.get("properties", {})
     assert properties.get("coverage") == "transitive"
@@ -207,7 +304,6 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         ecosystem="npm",
         name="lodash",
         version="4.17.20",
-        attributed_to="plugin/demo@1.0.0",
         extra={"transitive": False, "fallback_reason": "no npm lockfile present"},
     )
     finding = Finding(
@@ -215,7 +311,6 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="plugin/demo@1.0.0",
     )
     advisory = {
         "id": "GHSA-1",
@@ -223,7 +318,8 @@ def test_sarif_emits_direct_only_for_manifest_fallback_findings():
         "details": "test",
         "database_specific": {"openaca": {"source": "openaca.dev"}},
     }
-    doc = to_sarif([finding], {"GHSA-1": advisory})
+    graph = _graph_attributing(ref, "plugin/demo", "1.0.0")
+    doc = to_sarif([finding], {"GHSA-1": advisory}, graph=graph)
     properties = doc["runs"][0]["results"][0]["properties"]
     assert properties.get("coverage") == "direct-only"
     assert properties.get("transitive") is False

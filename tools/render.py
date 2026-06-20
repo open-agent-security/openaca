@@ -32,7 +32,7 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
-from tools.graph import Graph, Node
+from tools.graph import Graph, Node, ref_occurrence_key
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -266,6 +266,7 @@ def render_text(
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
+    graph: Graph | None = None,
 ) -> str:
     """Human-readable scan output.
 
@@ -286,6 +287,7 @@ def render_text(
             verbose=verbose,
             posture_findings=posture_findings,
             observations=observations,
+            graph=graph,
         )
     return _render_text_card(
         findings,
@@ -298,6 +300,7 @@ def render_text(
         target=target,
         inventory_tree=inventory_tree,
         next_actions=next_actions,
+        graph=graph,
     )
 
 
@@ -310,6 +313,7 @@ def _render_text_legacy(
     verbose: bool,
     posture_findings: list[PostureFinding] | None,
     observations: list[ObservationFinding] | None,
+    graph: Graph | None = None,
 ) -> str:
     """Findings-grouped body without the inventory card (legacy default)."""
     posture_findings = posture_findings or []
@@ -345,7 +349,9 @@ def _render_text_legacy(
     )
     out.append("")
     out.extend(
-        _render_finding_groups(findings, advisory_index, use_color=use_color, verbose=verbose)
+        _render_finding_groups(
+            findings, advisory_index, use_color=use_color, verbose=verbose, graph=graph
+        )
     )
 
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
@@ -366,6 +372,7 @@ def _render_finding_groups(
     *,
     use_color: bool,
     verbose: bool,
+    graph: Graph | None = None,
 ) -> list[str]:
     """The per-component finding blocks, shared by the legacy and card paths.
 
@@ -394,11 +401,11 @@ def _render_finding_groups(
 
         # Risk Attribution: show how the component entered the stack, by default
         # (the full containment path was previously verbose-only).
-        intro_path = _introduction_path(first)
+        intro_path = _introduction_path(first, graph)
         if intro_path:
             out.append(f"  path:     {intro_path}")
 
-        attributed = first.attributed_to
+        attributed = graph.attribution_for_ref(first.component) if graph is not None else None
         if attributed:
             out.append(f"  via:      {attributed}")
             out.append(f"  fix:      upgrade or remove {attributed}")
@@ -457,6 +464,7 @@ def _render_text_card(
     target: RenderTarget | None,
     inventory_tree: str | None,
     next_actions: list[str] | None,
+    graph: Graph | None = None,
 ) -> str:
     """Inventory-first first-run card: Target -> Inventory -> Findings ->
     Posture -> Summary -> Next. `posture_findings is None` means posture was not
@@ -489,7 +497,7 @@ def _render_text_card(
             "",
         ]
         finding_lines += _render_finding_groups(
-            findings, advisory_index, use_color=use_color, verbose=verbose
+            findings, advisory_index, use_color=use_color, verbose=verbose, graph=graph
         )
         sections.append("\n".join(finding_lines).rstrip("\n"))
     else:
@@ -603,18 +611,20 @@ def _render_observation_section(
     return "\n".join(lines).rstrip()
 
 
-def _introduction_path(finding: Finding) -> str:
+def _introduction_path(finding: Finding, graph: Graph | None = None) -> str:
     """How the vulnerable component entered the agent stack, for the Findings
     `path:` line. Prefers the full containment path from `component_path`
-    (`plugin X -> mcp_server Y`); falls back to single-level `attributed_to`
-    (`<parent> -> <component>`). Empty when the component is direct (no parent)."""
-    out = finding_to_output(finding, None)
+    (`plugin X -> mcp_server Y`); falls back to the single-level graph-derived
+    attribution (`<parent> -> <component>`). Empty when the component is direct
+    (no parent) or no graph is supplied."""
+    out = finding_to_output(finding, None, graph=graph)
     component_path = out.get("component_path") or []
     if len(component_path) > 1:
         return _component_path_label(component_path)
-    if finding.attributed_to:
+    attributed_to = out.get("attributed_to")
+    if isinstance(attributed_to, str) and attributed_to:
         name, _ = _component_label(finding.component)
-        return f"{finding.attributed_to} -> {name}"
+        return f"{attributed_to} -> {name}"
     return ""
 
 
@@ -705,6 +715,8 @@ def render_github(
     findings: list[Finding],
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
+    *,
+    graph: Graph | None = None,
 ) -> str:
     """Emit one workflow-annotation line per finding. Matcher `confidence`
     maps to `::error` (high) or `::warning` (low/unknown). Posture findings
@@ -717,8 +729,9 @@ def render_github(
         file_param = _esc_param(str(f.component.source_manifest))
         title_param = _esc_param(f.advisory_id)
         message = f.reason or f.advisory_id
-        if f.attributed_to:
-            message = f"{message} (via {f.attributed_to})"
+        attributed_to = graph.attribution_for_ref(f.component) if graph is not None else None
+        if attributed_to:
+            message = f"{message} (via {attributed_to})"
         lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
     if posture_findings:
         posture_level = {"high": "error", "medium": "warning", "low": "notice"}
@@ -756,6 +769,7 @@ def render_json(
     *,
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
+    graph: Graph | None = None,
 ) -> str:
     """Structured per-finding records + scan-level stats. The schema is
     documented in README; consumers should treat unknown keys as forward-
@@ -763,7 +777,7 @@ def render_json(
     out_findings = []
     for f in findings:
         adv = advisory_index.get(f.advisory_id) or {}
-        entry = finding_to_output(f, adv)
+        entry = finding_to_output(f, adv, graph=graph)
         entry["severity"] = derive_severity_label(adv)
         entry["score"] = derive_severity_score(adv)
         entry["fixed_in"] = _fixed_in_for_finding(f, adv)
@@ -1088,22 +1102,10 @@ def _mcp_transport_label(value: object) -> Optional[str]:
 
 
 def _node_ref_key(ref: ComponentRef) -> tuple:
-    """Content key mapping a rendered ref back to its graph `Node`.
-
-    The refs render receives are `dataclasses.replace(node.ref, scope=...,
-    attributed_to=...)` copies (scan projects them from the graph), so the
-    occurrence-identifying fields are untouched. Keying on those fields
-    (manifest + locator + identity coordinates) lets the renderer recover a
-    ref's node without recomputing the build-time occurrence key (which needs
-    the source normalizer render does not have)."""
-    return (
-        str(ref.source_manifest or ""),
-        ref.source_locator or "",
-        ref.ecosystem or "",
-        ref.name or "",
-        ref.version or "",
-        ref.component_identity or "",
-    )
+    """Content key mapping a rendered ref back to its graph `Node`. Delegates to
+    the shared `ref_occurrence_key` so render, sarif, and finding_output all map
+    a `ComponentRef` to its `Node` identically."""
+    return ref_occurrence_key(ref)
 
 
 def _graph_node_index(graph: Graph) -> dict[tuple, Node]:

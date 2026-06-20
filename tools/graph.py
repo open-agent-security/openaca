@@ -27,6 +27,27 @@ class Edge:
     child: str  # child node key
 
 
+def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
+    """Content key mapping a (possibly `dataclasses.replace`d) ref back to its
+    graph `Node`.
+
+    Scan projects the flat ref list as `dataclasses.replace(node.ref,
+    scope=..., attributed_to=...)` copies, so the occurrence-identifying fields
+    are untouched. Keying on those fields (manifest + locator + identity
+    coordinates) lets any output site (render, sarif, finding_output) recover a
+    ref's node without recomputing the build-time occurrence key (which needs
+    the source normalizer those sites do not have). Shared so every consumer
+    maps a `ComponentRef` to its `Node` identically."""
+    return (
+        str(ref.source_manifest or ""),
+        ref.source_locator or "",
+        ref.ecosystem or "",
+        ref.name or "",
+        ref.version or "",
+        ref.component_identity or "",
+    )
+
+
 @dataclass
 class Graph:
     nodes: dict[str, Node]
@@ -118,3 +139,18 @@ class Graph:
         if not identity:
             return None
         return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
+
+    def _node_by_ref_key(self) -> dict[tuple[str, ...], Node]:
+        return {ref_occurrence_key(n.ref): n for n in self.nodes.values() if n.ref is not None}
+
+    def node_for_ref(self, ref: ComponentRef) -> Optional[Node]:
+        """Map an output-time `ComponentRef` (a finding's component) back to its
+        graph `Node` by occurrence key. None when the ref has no matching node
+        (e.g. a flat-BOM ref scanned without a reconstructable graph)."""
+        return self._node_by_ref_key().get(ref_occurrence_key(ref))
+
+    def attribution_for_ref(self, ref: ComponentRef) -> Optional[str]:
+        """`attribution_for` keyed by a ref rather than a node; None when the ref
+        does not map to a node in this graph."""
+        node = self.node_for_ref(ref)
+        return self.attribution_for(node) if node is not None else None

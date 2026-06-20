@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
+from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -45,17 +46,21 @@ LEVEL_BY_OBSERVATION_SEVERITY: dict[str, str] = {
 }
 
 
-def _properties_for(finding: Finding, advisory: dict | None) -> dict:
+def _properties_for(finding: Finding, advisory: dict | None, graph: Graph | None) -> dict:
     """Compute the SARIF `properties` block for a single finding.
 
-    - attributed_to: from finding (plan 007).
+    - attributed_to: derived from the composition graph (the finding's component
+      mapped back to its node, then nearest-plugin-ancestor); omitted when no
+      graph is supplied or the component has no plugin ancestor.
     - coverage / transitive: from finding.component.extra (plan 009).
     - source: from advisory.database_specific.openaca.source (plan 009).
     Returns empty dict when no metadata is present.
     """
-    props: dict = _identity_properties(finding_to_output(finding, advisory))
-    if finding.attributed_to:
-        props["attributed_to"] = finding.attributed_to
+    output = finding_to_output(finding, advisory, graph=graph)
+    props: dict = _identity_properties(output)
+    attributed_to = output.get("attributed_to")
+    if isinstance(attributed_to, str) and attributed_to:
+        props["attributed_to"] = attributed_to
     extra = finding.component.extra or {}
     if "transitive" in extra:
         transitive = bool(extra["transitive"])
@@ -109,6 +114,7 @@ def to_sarif(
     *,
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
+    graph: Graph | None = None,
 ) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
@@ -153,7 +159,7 @@ def to_sarif(
                 }
             ],
         }
-        props = _properties_for(f, advisory_index.get(f.advisory_id))
+        props = _properties_for(f, advisory_index.get(f.advisory_id), graph)
         if props:
             result["properties"] = props
         results.append(result)

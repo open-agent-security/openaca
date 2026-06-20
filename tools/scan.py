@@ -26,10 +26,11 @@ subcommand name; the group forwards them either way:
     openaca scan -v repo --target X
     openaca scan repo --target X -v   # equivalent
 
-Findings carry an optional `attributed_to` field (e.g.,
-"plugin/<marketplace>/<name>@<version>") set by parsers when a component was
-discovered via an active plugin. Output prefixes the finding with `via <X>`
-when present; SARIF surfaces it in `properties.attributed_to`.
+Finding attribution (e.g. "plugin/<marketplace>/<name>@<version>") is derived
+at output time from the composition graph — a finding's component is mapped
+back to its graph node, then to its nearest plugin ancestor. Output prefixes
+the finding with `via <X>` when present; SARIF surfaces it in
+`properties.attributed_to`.
 """
 
 from __future__ import annotations
@@ -165,11 +166,12 @@ def _component_label(ref: ComponentRef) -> str:
     return "<unidentified>"
 
 
-def _finding_line(f: Finding) -> str:
+def _finding_line(f: Finding, graph: Graph | None = None) -> str:
     """Render a finding line for verbose output, including attribution suffix."""
     base = f"{_component_label(f.component)} → {f.advisory_id} ({f.confidence})"
-    if f.attributed_to:
-        return f"{base} via {f.attributed_to}"
+    attributed_to = graph.attribution_for_ref(f.component) if graph is not None else None
+    if attributed_to:
+        return f"{base} via {attributed_to}"
     return base
 
 
@@ -430,6 +432,7 @@ def _emit(
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
+    graph: Graph | None = None,
 ) -> None:
     """Dispatch to the chosen renderer and write to stdout.
 
@@ -438,7 +441,7 @@ def _emit(
     """
     if output_format == "github":
         rendered = render_github(
-            findings, posture_findings=posture_findings, observations=observations
+            findings, posture_findings=posture_findings, observations=observations, graph=graph
         )
     elif output_format == "json":
         rendered = render_json(
@@ -447,6 +450,7 @@ def _emit(
             stats,
             posture_findings=posture_findings,
             observations=observations,
+            graph=graph,
         )
     else:
         rendered = render_text(
@@ -460,6 +464,7 @@ def _emit(
             target=target,
             inventory_tree=inventory_tree,
             next_actions=next_actions,
+            graph=graph,
         )
     if rendered:
         click.echo(rendered)
@@ -474,14 +479,17 @@ def _render_bom_inventory_tree(
     input_path: Path,
     use_color: bool,
     use_unicode: bool,
+    graph: Graph | None = None,
 ) -> str:
     if target_type == "repo":
         root = Path(target) if target else input_path.parent
         grouped = _group_refs_for_repo_tree(refs)
         return render_repo_inventory_tree(
-            root, grouped, findings, use_color=use_color, use_unicode=use_unicode
+            root, grouped, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
         )
-    return render_inventory_tree(refs, findings, use_color=use_color, use_unicode=use_unicode)
+    return render_inventory_tree(
+        refs, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
+    )
 
 
 def _group_refs_for_repo_tree(refs: list[ComponentRef]) -> list[tuple[Path, list[ComponentRef]]]:
@@ -614,7 +622,7 @@ def repo(
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -647,6 +655,7 @@ def repo(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
     card_target = RenderTarget(host_surface="repository", rows=[("path", str(target))])
     card_next = [
@@ -668,6 +677,7 @@ def repo(
                     findings,
                     use_color=_use_color(no_color, output_format),
                     use_unicode=_use_unicode(no_color),
+                    graph=graph,
                 )
                 if tree:
                     click.echo(tree, err=True)
@@ -689,7 +699,7 @@ def repo(
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:
-                click.echo(f"  {_finding_line(f)}", err=True)
+                click.echo(f"  {_finding_line(f, graph)}", err=True)
 
     if sarif is not None:
         sarif_doc = to_sarif(
@@ -698,6 +708,7 @@ def repo(
             overlay_id_map,
             posture_findings=posture_output,
             observations=observations or None,
+            graph=graph,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
@@ -721,6 +732,7 @@ def repo(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
+        graph=graph,
     )
 
     # For machine formats (github, json), keep the existing one-line stderr
@@ -802,7 +814,7 @@ def endpoint(
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -837,6 +849,7 @@ def endpoint(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
     card_next: list[str] = []
     if project is None:
@@ -855,6 +868,7 @@ def endpoint(
                 findings,
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
+                graph=graph,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -863,7 +877,7 @@ def endpoint(
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:
-                click.echo(f"  {_finding_line(f)}", err=True)
+                click.echo(f"  {_finding_line(f, graph)}", err=True)
 
     if sarif is not None:
         sarif_doc = to_sarif(
@@ -872,6 +886,7 @@ def endpoint(
             overlay_id_map,
             posture_findings=posture_output,
             observations=observations or None,
+            graph=graph,
         )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
@@ -894,6 +909,7 @@ def endpoint(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
+        graph=graph,
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 
@@ -1013,7 +1029,7 @@ def scan_bom(
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations = []
     advisory_index = {a["id"]: a for a in corpus}
 
@@ -1034,6 +1050,7 @@ def scan_bom(
             input_path=input_path,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
 
     if verbose:
@@ -1051,6 +1068,7 @@ def scan_bom(
                 input_path=input_path,
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
+                graph=graph,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -1059,10 +1077,12 @@ def scan_bom(
         if findings:
             click.echo(f"matched {len(findings)} finding(s):", err=True)
             for f in findings:
-                click.echo(f"  {_finding_line(f)}", err=True)
+                click.echo(f"  {_finding_line(f, graph)}", err=True)
 
     if sarif is not None:
-        sarif_doc = to_sarif(findings, advisory_index, overlay_id_map, observations=None)
+        sarif_doc = to_sarif(
+            findings, advisory_index, overlay_id_map, observations=None, graph=graph
+        )
         sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
         click.echo(f"sarif: wrote {sarif}", err=True)
 
@@ -1082,6 +1102,7 @@ def scan_bom(
         observations=observations,
         target=card_target,
         inventory_tree=card_tree,
+        graph=graph,
     )
     unit_count = source_unit_count if source_unit_count is not None else 1
     unit_label = source_unit_label or "agent BOM"

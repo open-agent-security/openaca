@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from tools.component_ref import ComponentRef
+from tools.graph import Edge, Graph, Node
 from tools.matcher import Finding
 from tools.observations import ObservationFinding
 from tools.render import (
@@ -90,8 +91,45 @@ def _finding(
         component=_ref(name, version, manifest, ecosystem=ecosystem, attributed_to=attributed_to),
         confidence=confidence,
         reason=f"{name}@{version} matches {advisory_id}",
-        attributed_to=attributed_to,
     )
+
+
+def _graph_for(findings: list[Finding]) -> Graph:
+    """Synthesize a `target → plugin → component` graph from a list of findings,
+    using each finding component's stored `attributed_to` to recreate the plugin
+    ancestor. Attribution is now graph-derived at output time, so render/sarif
+    tests that assert a "via"/path label must supply a graph; this helper keeps
+    the fixtures' single-level attribution intent without hand-building graphs in
+    every test. A component with no `attributed_to` is a direct child of the
+    target (no plugin ancestor → no attribution)."""
+    nodes: dict[str, Node] = {"t": Node("t", "target", None)}
+    edges: list[Edge] = []
+    plugin_keys: dict[str, str] = {}
+    for i, f in enumerate(findings):
+        attributed = f.component.attributed_to
+        parent = "t"
+        if attributed:
+            if attributed not in plugin_keys:
+                pkey = f"plugin:{attributed}"
+                identity, _, version = attributed.partition("@")
+                plugin_ref = ComponentRef(
+                    component_identity=identity,
+                    version=version or None,
+                    source_manifest=f"{pkey}/.claude-plugin/plugin.json",
+                    source_locator="$",
+                    extra={"component_type": "plugin"},
+                )
+                nodes[pkey] = Node(pkey, "plugin", plugin_ref)
+                edges.append(Edge("t", pkey))
+                plugin_keys[attributed] = pkey
+            parent = plugin_keys[attributed]
+        ckey = f"c{i}"
+        kind = (f.component.extra or {}).get("component_type") or "package"
+        nodes[ckey] = Node(ckey, kind, f.component)
+        edges.append(Edge(parent, ckey))
+    g = Graph(nodes, edges)
+    g.validate()
+    return g
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -334,7 +372,7 @@ def test_text_attributed_finding_shows_via_and_remove_fix():
             severity_label="CRITICAL",
         )
     }
-    out = render_text(findings, index, _stats())
+    out = render_text(findings, index, _stats(), graph=_graph_for(findings))
     assert "via:      plugin/supabase@0.1.6" in out
     assert "fix:      upgrade or remove plugin/supabase@0.1.6" in out
     assert "CRITICAL" in out
@@ -417,7 +455,7 @@ def test_text_verbose_adds_plugin_bundled_component_path():
             ],
         },
     )
-    finding = Finding("GHSA-X", ref, "high", attributed_to=ref.attributed_to)
+    finding = Finding("GHSA-X", ref, "high")
     advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
 
     out = render_text([finding], {"GHSA-X": advisory}, _stats(), verbose=True)
@@ -456,7 +494,7 @@ def test_github_empty_findings_returns_empty_string():
 
 def test_github_attributed_finding_includes_via_in_message():
     findings = [_finding("A", "p", "1", attributed_to="plugin/x@1")]
-    out = render_github(findings)
+    out = render_github(findings, graph=_graph_for(findings))
     assert "(via plugin/x@1)" in out
 
 
@@ -1176,7 +1214,6 @@ def test_tree_tier2_aggregate_carries_finding_marker():
         component=tier2_ref,
         confidence="high",
         reason="lodash@4.17.20 matches CVE-2026-0001",
-        attributed_to="plugin/demo@1.0.0",
     )
     out = render_inventory_tree(refs, [finding], use_unicode=True, use_color=False)
     assert "[! CVE-2026-0001]" in out
@@ -1252,7 +1289,6 @@ def test_tree_marks_affected_leaves_with_finding_id():
         component=ref,
         confidence="high",
         reason="match",
-        attributed_to="plugin/playwright@1.0.0",
     )
     out = render_inventory_tree([plugin, ref], [finding], use_unicode=True)
     assert "[! GHSA-X]" in out
@@ -1885,7 +1921,6 @@ def _f(advisory_id: str, component: ComponentRef) -> Finding:
         component=component,
         confidence="high",
         reason=f"{advisory_id} match",
-        attributed_to=component.attributed_to,
     )
 
 
@@ -1940,7 +1975,7 @@ def test_findings_section_shows_introduction_path_by_default():
             ],
         },
     )
-    finding = Finding("GHSA-X", ref, "high", attributed_to=ref.attributed_to)
+    finding = Finding("GHSA-X", ref, "high")
     advisory = _advisory("GHSA-X", "npm", "@modelcontextprotocol/server-filesystem")
     out = render_text([finding], {"GHSA-X": advisory}, _stats())
     assert "path:     plugin acme-devtools -> mcp_server filesystem" in out

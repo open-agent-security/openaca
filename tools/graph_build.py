@@ -46,7 +46,7 @@ from tools.parsers.claude_plugin_root import (
     _parse_manifest_refs,
     resolve_within,
 )
-from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
+from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import SCOPE_PRECEDENCE
 from tools.parsers.settings_layers import load as load_settings
 
@@ -172,6 +172,12 @@ def _seed_endpoint(
 
     if project_root is not None:
         _add_project_skills(graph, target, project_root)
+        # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
+        # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
+        # <project>/.claude/skills/ are discovered — parity with the old
+        # _walk_project_skill_dirs path that called _walk_skill_dir (iterdir-based)
+        # before iter_unignored_files. _add_child dedup collapses non-symlink dupes.
+        _add_skills_from_dir(graph, target, project_root / ".claude" / "skills")
 
     _seed_remote_mcps(graph, target, install_root, project_root, by_scope)
     _seed_direct_components(graph, target, install_root, project_root, by_scope)
@@ -488,7 +494,9 @@ def descend(
         # bare-dep walk is non-recursive (only `directory/`), so it only needs to
         # skip when `directory` itself is a plugin root.
         if not any(_same_path(directory, root) for root in plugin_roots):
-            _add_dep_manifest_packages(graph, parent, directory)
+            _add_dep_manifest_packages(
+                graph, parent, directory, include_gitignored=include_gitignored
+            )
         _add_repo_standalone_components(
             graph,
             parent,
@@ -500,9 +508,11 @@ def descend(
         _add_bundled_skills(graph, parent, directory)
         _add_bundled_plugin_surfaces(graph, parent, directory)
         if emit_own_root_deps:
-            _add_dep_manifest_packages(graph, parent, directory)
+            _add_dep_manifest_packages(
+                graph, parent, directory, include_gitignored=include_gitignored
+            )
     elif parent.kind == "skill":
-        _add_dep_manifest_packages(graph, parent, directory)
+        _add_dep_manifest_packages(graph, parent, directory, include_gitignored=include_gitignored)
 
 
 def _same_path(a: Path, b: Path) -> bool:
@@ -668,10 +678,15 @@ def _safe_parse(parse, manifest: Path) -> list[ComponentRef]:
         return []
 
 
-def _add_dep_manifest_packages(graph: Graph, parent: Node, directory: Path) -> None:
+def _add_dep_manifest_packages(
+    graph: Graph, parent: Node, directory: Path, *, include_gitignored: bool = False
+) -> None:
+    spec = None if include_gitignored else load_gitignore_spec(directory)
     for filename, parse in _DEP_MANIFEST_PARSERS.items():
         manifest = directory / filename
         if not manifest.is_file():
+            continue
+        if spec is not None and is_ignored(manifest.relative_to(directory), spec):
             continue
         for ref in _safe_parse(parse, manifest):
             node = Node(key=occurrence_key(ref), kind="package", ref=ref)

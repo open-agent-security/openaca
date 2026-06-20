@@ -1,4 +1,5 @@
 import json
+import os
 
 from tools.graph_build import build_graph
 
@@ -768,3 +769,84 @@ def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):
     assert provenance.get("status") == "known"
     assert provenance.get("source") == "https://github.com/user/aws-api-skill"
     assert provenance.get("ref") == "abc123"
+
+
+# --- Stage 5 Codex review fixes ---
+
+
+def test_endpoint_project_skill_symlink_followed(tmp_path):
+    """Project skills at <project>/.claude/skills/<name> that are symlinks to
+    another directory must be discovered in endpoint mode.
+
+    Old path: _walk_project_skill_dirs called _walk_skill_dir (Path.iterdir,
+    follows symlinks) before the iter_unignored_files walk. New path: must also
+    call _add_skills_from_dir (iterdir-based) so symlinked skill dirs are found.
+    """
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    real_skill_dir = tmp_path / "skills-store" / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    (real_skill_dir / "package.json").write_text(
+        '{"name":"aws-api","version":"1","dependencies":{"boto3":"1.34.0"}}'
+    )
+
+    skills_dir = project_root / ".claude" / "skills"
+    skills_dir.mkdir(parents=True)
+    os.symlink(real_skill_dir, skills_dir / "aws-api")
+
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1, (
+        f"Expected 1 skill node for symlinked skill dir, got {len(skill_nodes)}"
+    )
+    assert [n.kind for n in g.lineage(skill_nodes[0])] == ["skill", "target"]
+    pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes) == 1, (
+        "package.json inside symlinked skill dir must produce a package node"
+    )
+
+
+def test_repo_bundled_plugin_dep_refs_are_component_nodes(tmp_path):
+    """plugin.json 'dependencies' refs pass through _with_plugin_context (which
+    stamps component_type='component') before the kind-guard, so they end up as
+    'component' kind nodes — not silently dropped.
+
+    Codex review claimed these are skipped; this test proves they are not.
+    """
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        '{"name":"demo","version":"1","dependencies":["helper-lib"]}'
+    )
+    g = build_graph(tmp_path, mode="repo")
+    component_nodes = [n for n in g.nodes.values() if n.kind == "component"]
+    assert len(component_nodes) == 1, (
+        f"Expected 1 'component' node for plugin-dep/helper-lib, got {len(component_nodes)}"
+    )
+    assert component_nodes[0].ref is not None
+    assert component_nodes[0].ref.component_identity == "plugin-dep/helper-lib"
+    assert [n.kind for n in g.lineage(component_nodes[0])] == ["component", "plugin", "target"]
+
+
+def test_repo_gitignored_root_dep_manifest_skipped(tmp_path):
+    """A dep manifest at the repo root that is gitignored must not surface
+    packages in the graph (parity with parse_repo_grouped which uses
+    iter_unignored_files).
+    """
+    (tmp_path / ".gitignore").write_text("package.json\n")
+    (tmp_path / "package.json").write_text(
+        '{"name":"app","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    g = build_graph(tmp_path, mode="repo")
+    pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes) == 0, (
+        "gitignored package.json at repo root must not surface package nodes"
+    )

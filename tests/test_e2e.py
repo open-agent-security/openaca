@@ -287,6 +287,85 @@ def test_openaca_scan_bun_lock_surfaces_bundled_finding():
     assert "from bun.lock" in out
 
 
+def test_skill_bundled_dependency_detected_and_nested(tmp_path):
+    """Plan 033 marquee (closes the ADR-0036 gap): a skill bundling a vulnerable
+    `package.json` dep is detected, nested under the skill (graph-native: the
+    package's identity is `package/{eco}/{name}` and its parentage is purely the
+    graph edge), scoped `agent-dependency`, and attributed to the skill's plugin.
+
+    This is the product promise the composition graph unlocks once `attributed_to`
+    is gone: the package node is `target → plugin → skill → package`, so the dep
+    surfaces (it is no longer filtered as software-dependency) and attribution is
+    derived from the graph lineage rather than a stored string.
+    """
+    from tools.scan import main as scan_main
+
+    target = tmp_path / "repo"
+    (target / ".claude-plugin").mkdir(parents=True)
+    (target / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "vuln-bundle", "version": "1.0.0"}), encoding="utf-8"
+    )
+    skill_dir = target / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: deploy skill\n---\nrun\n", encoding="utf-8"
+    )
+    # @cyanheads/git-mcp-server@1.1.0 is vulnerable (< 1.2.3, GHSA-3q26-f695-pp76)
+    # and lives in conftest's offline-OSV fixture map, so the scan stays hermetic.
+    (skill_dir / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "deploy",
+                "version": "1.0.0",
+                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    sarif_path = tmp_path / "out.sarif"
+    bom_path = tmp_path / "out.bom.json"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        ["repo", "--target", str(target), "--no-color", "--sarif", str(sarif_path)],
+    )
+
+    # The advisory fires: a vulnerable agent component was found.
+    assert result.exit_code == 1, result.output
+    out = result.output
+
+    # Inventory tree nests the package under the skill, which nests under the
+    # plugin (graph edges, not a stored attribution string).
+    plugin_idx = out.index("plugin/vuln-bundle@1.0.0")
+    skill_idx = out.index("deploy (from skills/deploy/SKILL.md)")
+    pkg_idx = out.index("@cyanheads/git-mcp-server@1.1.0")
+    assert plugin_idx < skill_idx < pkg_idx
+    assert "package deps/ (1)" in out
+    # The dep keeps its own finding marker; the plugin gets the containment marker.
+    assert "@cyanheads/git-mcp-server@1.1.0 (from skills/deploy/package.json)" in out
+    assert "[! bundles: GHSA-3q26-f695-pp76]" in out
+
+    # SARIF attributes the finding "via" the skill's plugin, derived from lineage.
+    sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
+    (sarif_result,) = sarif["runs"][0]["results"]
+    assert sarif_result["properties"]["attributed_to"] == "plugin/vuln-bundle@1.0.0"
+
+    # The Agent BOM scopes the package agent-dependency (not suppressed software-
+    # dependency) and uses the graph-native identity `package/{eco}/{name}`.
+    from tools.bom_cli import main as bom_main
+
+    bom_result = runner.invoke(
+        bom_main, ["repo", "--target", str(target), "--output", str(bom_path)]
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+    doc = json.loads(bom_path.read_text(encoding="utf-8"))
+    pkg_component = next(c for c in doc["components"] if "git-mcp-server" in (c.get("name") or ""))
+    pkg_props = {p["name"]: p["value"] for p in pkg_component.get("properties", [])}
+    assert pkg_props["openaca:scope"] == "agent-dependency"
+    assert pkg_props["openaca:identity"] == "package/npm/@cyanheads/git-mcp-server"
+
+
 def test_pyproject_toml_detection_against_real_corpus(tmp_path):
     """Python-side cross-layer wiring: a pyproject.toml that pins a known-
     vulnerable PyPI package surfaces an GHSA-m4qw-j7mx-qv6h (aws-mcp-server)

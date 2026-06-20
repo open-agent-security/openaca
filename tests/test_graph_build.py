@@ -1,3 +1,5 @@
+import json
+
 from tools.graph_build import build_graph
 
 
@@ -62,3 +64,50 @@ def test_plugin_custom_skill_dir_path(tmp_path):
     g = build_graph(tmp_path, mode="repo")
     pkg = next(n for n in g.nodes.values() if n.kind == "package")
     assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]
+
+
+def _seed_endpoint_fixture(tmp_path):
+    """Endpoint layout: an active plugin whose install path bundles a skill that
+    bundles a `lodash` dep, plus a remote MCP declared in settings."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")  # skill bundling lodash
+
+    settings = {
+        "enabledPlugins": {"demo@mp": True},
+        "mcpServers": {"weather": {"url": "https://mcp.example.com/sse"}},
+    }
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                    ]
+                },
+            }
+        )
+    )
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    return install_root, project_root
+
+
+def test_endpoint_active_plugin_chain(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    pkg = next(n for n in g.nodes.values() if n.kind == "package" and "lodash" in (n.key or ""))
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]
+
+
+def test_endpoint_remote_mcp_is_direct_child_of_target(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]

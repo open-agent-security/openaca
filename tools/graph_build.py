@@ -550,7 +550,9 @@ def descend(
         )
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory, root_dir=root_dir, root_spec=root_spec)
-        _add_bundled_plugin_surfaces(graph, parent, directory)
+        _add_bundled_plugin_surfaces(
+            graph, parent, directory, root_dir=root_dir, root_spec=root_spec
+        )
         if emit_own_root_deps:
             _add_dep_manifest_packages(
                 graph,
@@ -948,7 +950,14 @@ def _command_agent_kind(path: Path, root: Path) -> Kind | None:
     return None
 
 
-def _add_bundled_plugin_surfaces(graph: Graph, plugin_node: Node, plugin_root: Path) -> None:
+def _add_bundled_plugin_surfaces(
+    graph: Graph,
+    plugin_node: Node,
+    plugin_root: Path,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
     """A plugin's bundled non-skill surfaces (MCPs, hooks, commands, agents) →
     children of the plugin node. Reuses the shared `claude_plugin_root` helpers
     for content; placement is owned here (parent-by-construction).
@@ -984,9 +993,16 @@ def _add_bundled_plugin_surfaces(graph: Graph, plugin_node: Node, plugin_root: P
     # metadata the descent owns — parity with the pre-graph `_with_plugin_context`
     # that the endpoint walker applied — not a content read.
     refs = claude_install._with_plugin_context(refs, plugin_name, plugin_manifest_path)
+    # Honor the scan-root .gitignore in repo mode (parity with parse_repo_grouped,
+    # which filters secondary refs): a bundled surface declared in a file the root
+    # ignores (e.g. a plugin repo with `.mcp.json` gitignored) must not be emitted.
+    # Endpoint mode passes root_dir=None → _ignore_context is a no-op, unchanged.
+    eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
     for ref in refs:
         component_type = _component_type(ref)
         if not isinstance(component_type, str):
+            continue
+        if ref.source_manifest and _is_ignored_under(Path(ref.source_manifest), eval_root, spec):
             continue
         node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
         _add_child(graph, plugin_node, node)

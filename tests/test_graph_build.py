@@ -317,6 +317,7 @@ def test_repo_package_lock_emits_transitive_packages(tmp_path):
     pkgs = [n for n in g.nodes.values() if n.kind == "package"]
     assert len(pkgs) == 2
     for p in pkgs:
+        assert p.ref is not None
         assert (p.ref.extra or {}).get("transitive") is True
         assert [n.kind for n in g.lineage(p)] == ["package", "target"]
 
@@ -328,6 +329,7 @@ def test_repo_uv_lock_emits_transitive_packages(tmp_path):
     g = build_graph(tmp_path, mode="repo")
     pkgs = [n for n in g.nodes.values() if n.kind == "package"]
     assert len(pkgs) == 1
+    assert pkgs[0].ref is not None
     assert (pkgs[0].ref.extra or {}).get("transitive") is True
 
 

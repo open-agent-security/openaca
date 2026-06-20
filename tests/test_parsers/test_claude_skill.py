@@ -37,7 +37,6 @@ def test_parse_emits_ref_with_name_and_metadata_version(tmp_path):
     assert ref.component_identity == "skill/bootstrap-project@1.2.3"
     assert ref.source_manifest == str(path)
     assert ref.source_locator == "$.frontmatter"
-    assert ref.attributed_to is None
     coordinates = ref.extra["artifact_coordinates"]
     assert coordinates[0]["kind"] == "skill-content-hash"
     assert coordinates[0]["algorithm"] == "sha256"
@@ -141,18 +140,6 @@ def test_parse_emits_when_name_differs_from_directory(tmp_path):
     refs = parse(path)
     assert len(refs) == 1
     assert refs[0].name == "declared-name"  # frontmatter wins
-
-
-def test_parse_propagates_attributed_to(tmp_path):
-    """Bundled skills are attributed to their parent plugin."""
-    path = _write_skill(
-        tmp_path,
-        "bundled",
-        "name: bundled\ndescription: ships inside a plugin\n",
-    )
-    refs = parse(path, attributed_to="plugin/superpowers@5.1.0")
-    assert len(refs) == 1
-    assert refs[0].attributed_to == "plugin/superpowers@5.1.0"
 
 
 def test_parse_skips_non_string_metadata_version(tmp_path):

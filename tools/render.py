@@ -1115,59 +1115,11 @@ def _graph_node_index(graph: Graph) -> dict[tuple, Node]:
 def _tier2_from_refs(
     refs: list[ComponentRef],
 ) -> list[tuple[str, str, int, str, list[ComponentRef]]]:
-    """Aggregate package refs per ecosystem (graph-based path). Same shape and
-    coverage-kind/source rules as `_tier2_summary`, but the caller supplies the
-    package-child refs directly (from graph edges) instead of filtering by
-    `attributed_to` + `transitive`."""
+    """Aggregate package refs per ecosystem. The caller supplies the
+    package-child refs directly (from graph edges); refs flagged
+    `extra["transitive"]` set the coverage kind/source."""
     by_eco: dict[str, list[ComponentRef]] = {}
     for r in refs:
-        by_eco.setdefault(r.ecosystem or "", []).append(r)
-    out: list[tuple[str, str, int, str, list[ComponentRef]]] = []
-    for eco in sorted(by_eco):
-        ecorefs = by_eco[eco]
-        transitive = any(r.extra.get("transitive") is True for r in ecorefs)
-        if transitive:
-            kind = "transitive"
-            source = "package-lock.json" if eco == "npm" else "uv.lock"
-        else:
-            kind = "direct only"
-            source = "package.json" if eco == "npm" else "pyproject.toml"
-        out.append((eco, kind, len(ecorefs), source, ecorefs))
-    return out
-
-
-def _bundled_categories(
-    refs: list[ComponentRef], plugin_identity: str
-) -> dict[str, list[ComponentRef]]:
-    """Group a plugin's bundled refs by category. Tier-2 lockfile/manifest
-    refs (those with `extra["transitive"]` set) are excluded — they aggregate
-    into a separate deps line, not the bundled category leaves."""
-    by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
-    for r in refs:
-        if r.attributed_to != plugin_identity:
-            continue
-        if r.extra.get("transitive") is not None:
-            continue
-        for label, types in _TREE_CATEGORIES:
-            if _component_type_for_tree(r) in types:
-                by_cat[label].append(r)
-                break
-    return {k: v for k, v in by_cat.items() if v}
-
-
-def _tier2_summary(
-    refs: list[ComponentRef], plugin_identity: str
-) -> list[tuple[str, str, int, str, list[ComponentRef]]]:
-    """Aggregate Tier-2 refs per ecosystem. Returns a list of
-    (ecosystem, coverage_kind, count, source_file, ecorefs) so the tree can
-    render one node per ecosystem instead of hundreds of transitive leaves.
-    `ecorefs` lets callers check findings against the individual refs."""
-    by_eco: dict[str, list[ComponentRef]] = {}
-    for r in refs:
-        if r.attributed_to != plugin_identity:
-            continue
-        if r.extra.get("transitive") is None:
-            continue
         by_eco.setdefault(r.ecosystem or "", []).append(r)
     out: list[tuple[str, str, int, str, list[ComponentRef]]] = []
     for eco in sorted(by_eco):
@@ -1184,11 +1136,14 @@ def _tier2_summary(
 
 
 def _direct_categories(refs: list[ComponentRef]) -> dict[str, list[ComponentRef]]:
-    """Group refs with `attributed_to is None` by category (no plugin parent)."""
+    """Group non-plugin refs by category.
+
+    Used for the `direct components/` block. With a graph the caller passes the
+    target's direct-component refs; without one (the flat-BOM fallback) every
+    non-plugin ref renders here, since composition edges are unavailable and
+    plugins have no derivable bundled set."""
     by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
     for r in refs:
-        if r.attributed_to is not None:
-            continue
         if _is_plugin_ref(r):
             continue
         for label, types in _TREE_CATEGORIES:
@@ -1220,7 +1175,7 @@ def _plugin_name_from_identity(plugin_identity: str, marketplace: object = None)
 @dataclass
 class _GraphView:
     """Render-side adapter over a `Graph`: maps the flat refs render receives
-    back to graph nodes so nesting comes from edges, not `attributed_to`."""
+    back to graph nodes so nesting comes from edges."""
 
     graph: Graph
     node_by_key: dict[tuple, Node]
@@ -1298,8 +1253,7 @@ def _build_graph_component_subtree(
     source_note_root: Path | None = None,
 ) -> _TreeNode:
     """A component leaf that may nest its own graph children (e.g. a skill that
-    bundles package deps / sub-components). The richer composition the graph
-    enables over the old single-level `attributed_to` flattening."""
+    bundles package deps / sub-components), driven by the graph edges."""
     leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
     source_note = _repo_source_note(ref, source_note_root) if source_note_root else ""
     node = _TreeNode(label=f"{_leaf_label(ref, parent_plugin)}{source_note}{leaf_marker}")
@@ -1394,9 +1348,11 @@ def _build_plugin_node(
         categories, packages = _split_children(view, plugin_node)
         tier2 = _tier2_from_refs(packages)
     else:
-        # `attributed_to`-based fallback (no graph supplied).
-        categories = _bundled_categories(all_refs, display_id)
-        tier2 = _tier2_summary(all_refs, display_id)
+        # Flat-BOM fallback (no graph supplied): composition edges are
+        # unavailable, so a plugin has no derivable bundled set — everything
+        # renders flat under `direct components/`.
+        categories = {}
+        tier2 = []
 
     # Risk Attribution: flag the plugin header when a bundled component matched a
     # finding (distinct from a direct hit on the plugin itself), so the parent
@@ -1612,10 +1568,8 @@ def render_repo_inventory_tree(
     root_node = _TreeNode(label=f"repo {root}")
     assigned_keys: set[tuple] = set()
     for plugin_ref in plugin_refs:
-        plugin_dir = _repo_plugin_dir(plugin_ref)
         node, assigned = _build_repo_plugin_node(
             plugin_ref,
-            plugin_dir,
             all_refs,
             findings_by_ref,
             use_color,
@@ -1658,15 +1612,12 @@ def render_repo_inventory_tree(
 
 def _dedupe_repo_tree_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
     out: list[ComponentRef] = []
-    seen: dict[tuple, int] = {}
+    seen: set[tuple] = set()
     for ref in refs:
         key = _repo_tree_ref_key(ref)
         if key in seen:
-            existing = out[seen[key]]
-            if existing.attributed_to is None and ref.attributed_to is not None:
-                out[seen[key]] = ref
             continue
-        seen[key] = len(out)
+        seen.add(key)
         out.append(ref)
     return out
 
@@ -1688,16 +1639,8 @@ def _repo_tree_ref_key(ref: ComponentRef) -> tuple:
     )
 
 
-def _repo_plugin_dir(plugin_ref: ComponentRef) -> Path:
-    manifest = Path(plugin_ref.source_manifest)
-    if manifest.name == "plugin.json" and manifest.parent.name == ".claude-plugin":
-        return manifest.parent.parent
-    return manifest.parent
-
-
 def _build_repo_plugin_node(
     plugin_ref: ComponentRef,
-    plugin_dir: Path,
     all_refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
@@ -1714,76 +1657,15 @@ def _build_repo_plugin_node(
         return _build_repo_plugin_node_from_graph(
             plugin_ref, plugin_node, view, findings_by_ref, use_color, source_note_root, display_id
         )
-    assigned: set[tuple] = set()
 
-    other_plugin_dirs = {
-        _repo_plugin_dir(r).resolve() for r in all_refs if _is_plugin_ref(r) and r is not plugin_ref
-    }
-
-    deps: list[ComponentRef] = []
-    categories: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
-    for ref in all_refs:
-        if ref is plugin_ref or _is_plugin_ref(ref):
-            continue
-        if ref.attributed_to == display_id and _ref_owned_by_plugin(
-            ref, plugin_dir, other_plugin_dirs
-        ):
-            if ref.scope == "agent-dependency":
-                deps.append(ref)
-                assigned.add(_ref_key(ref))
-                continue
-            if ref.scope != "agent-component":
-                continue
-            for label, types in _TREE_CATEGORIES:
-                if _component_type_for_tree(ref) in types:
-                    categories[label].append(ref)
-                    assigned.add(_ref_key(ref))
-                    break
-            continue
-        if not _repo_ref_in_dir(ref, plugin_dir):
-            continue
-        if ref.scope == "agent-dependency":
-            deps.append(ref)
-            assigned.add(_ref_key(ref))
-            continue
-        if ref.scope != "agent-component":
-            continue
-        for label, types in _TREE_CATEGORIES:
-            if _component_type_for_tree(ref) in types:
-                categories[label].append(ref)
-                assigned.add(_ref_key(ref))
-                break
-
-    # Risk Attribution: flag the plugin header when a bundled component (deps or
-    # category items) matched a finding, distinct from a direct hit on the plugin.
+    # Flat-BOM fallback (no graph supplied): composition edges are unavailable,
+    # so a plugin has no derivable bundled set — everything renders flat under
+    # `direct components/`. Emit the plugin header with no children and claim no
+    # refs (empty `assigned`).
     marker = _finding_marker(direct_ids, use_color)
-    bundled_ids = _bundled_finding_ids(
-        categories, [("", "", 0, "", deps)], findings_by_ref, exclude=set(direct_ids)
-    )
-    root = _TreeNode(label=f"{display_id}{marker}{_containment_marker(bundled_ids, use_color)}")
-
-    if deps:
-        dep_node = _TreeNode(label=f"package deps/ ({len(deps)})")
-        for ref in sorted(deps, key=lambda x: _leaf_label(x).lower()):
-            marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
-            label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
-            dep_node.children.append(_TreeNode(label=label))
-        root.children.append(dep_node)
-
-    for label, _ in _TREE_CATEGORIES:
-        items = categories.get(label) or []
-        if not items:
-            continue
-        cat = _TreeNode(label=f"{label}/ ({len(items)})")
-        for ref in sorted(items, key=lambda x: _leaf_label(x).lower()):
-            marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
-            label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
-            cat.children.append(_TreeNode(label=label))
-        root.children.append(cat)
-
-    if not root.children:
-        root.children.append(_TreeNode(label="(no declared components)"))
-    return root, assigned
+    root = _TreeNode(label=f"{display_id}{marker}")
+    root.children.append(_TreeNode(label="(no declared components)"))
+    return root, set()
 
 
 def _repo_package_deps_node(
@@ -1852,9 +1734,9 @@ def _build_repo_plugin_node_from_graph(
     source_note_root: Path | None,
     display_id: str,
 ) -> tuple[_TreeNode, set[tuple]]:
-    """Graph-based repo plugin node: children come from graph edges, so the
-    directory-ownership scoping the `attributed_to` path needed (same-named /
-    nested plugins) is unnecessary — edges are unambiguous."""
+    """Graph-based repo plugin node: children come from graph edges, which are
+    unambiguous even for same-named / nested plugins (each occurrence is a
+    distinct node), so no directory-ownership scoping is needed."""
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
     categories, packages = _split_children(view, plugin_node)
 
@@ -1889,15 +1771,6 @@ def _build_repo_plugin_node_from_graph(
     return root, assigned
 
 
-def _repo_ref_in_dir(ref: ComponentRef, directory: Path) -> bool:
-    if not ref.source_manifest:
-        return False
-    try:
-        return Path(ref.source_manifest).resolve().parent == directory.resolve()
-    except OSError:
-        return False
-
-
 def _ref_under_dir(ref: ComponentRef, directory: Path) -> bool:
     """True when ref.source_manifest lives anywhere under `directory` (including subdirectories)."""
     if not ref.source_manifest:
@@ -1906,27 +1779,6 @@ def _ref_under_dir(ref: ComponentRef, directory: Path) -> bool:
         return Path(ref.source_manifest).resolve().is_relative_to(directory.resolve())
     except OSError:
         return False
-
-
-def _ref_owned_by_plugin(ref: ComponentRef, plugin_dir: Path, other_plugin_dirs: set[Path]) -> bool:
-    """True when ref is under plugin_dir and no nested plugin dir is a closer ancestor.
-
-    Prevents a parent plugin from claiming attributed refs that belong to a
-    child plugin when both share the same name/version (identical display_id).
-    """
-    if not ref.source_manifest:
-        return False
-    try:
-        ref_path = Path(ref.source_manifest).resolve()
-        dir_resolved = plugin_dir.resolve()
-    except OSError:
-        return False
-    if not ref_path.is_relative_to(dir_resolved):
-        return False
-    for other_resolved in other_plugin_dirs:
-        if other_resolved.is_relative_to(dir_resolved) and ref_path.is_relative_to(other_resolved):
-            return False
-    return True
 
 
 def _repo_rel(path: Path, root: Path) -> str:

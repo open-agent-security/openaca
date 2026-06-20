@@ -37,7 +37,6 @@ def test_bom_lint_accepts_generated_package_dependency(tmp_path):
                 ecosystem="npm",
                 name="hono",
                 version="4.12.5",
-                attributed_to="plugin/claude-plugins-official/discord@0.0.4",
                 scope="agent-dependency",
             )
         ],

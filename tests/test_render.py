@@ -34,13 +34,19 @@ from tools.render import (
 
 
 def _ref(name: str, version: str, manifest: str = "pkg.json", **kw) -> ComponentRef:
+    # `attributed_to` is no longer a ref field — parentage is a graph edge. The
+    # render tests still express intended parentage via this kwarg; stash it in a
+    # test-only `extra` key so `_graph_for` can rebuild the plugin ancestor.
+    extra = dict(kw.get("extra", {}))
+    attributed_to = kw.get("attributed_to")
+    if attributed_to is not None:
+        extra["_test_attributed_to"] = attributed_to
     return ComponentRef(
         ecosystem=kw.get("ecosystem", "npm"),
         name=name,
         version=version,
         source_manifest=manifest,
-        attributed_to=kw.get("attributed_to"),
-        extra=kw.get("extra", {}),
+        extra=extra,
     )
 
 
@@ -106,7 +112,7 @@ def _graph_for(findings: list[Finding]) -> Graph:
     edges: list[Edge] = []
     plugin_keys: dict[str, str] = {}
     for i, f in enumerate(findings):
-        attributed = f.component.attributed_to
+        attributed = (f.component.extra or {}).get("_test_attributed_to")
         parent = "t"
         if attributed:
             if attributed not in plugin_keys:
@@ -440,8 +446,8 @@ def test_text_verbose_adds_plugin_bundled_component_path():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".claude/cache/acme/.mcp.json",
-        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
+            "_test_attributed_to": "plugin/acme-devtools@1.0.0",
             "component_type": "mcp_server",
             "runtime_hosts": ["claude-code"],
             "declared_by": {
@@ -629,8 +635,8 @@ def test_json_plugin_bundled_finding_contains_component_path():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".claude/cache/acme/.mcp.json",
-        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
+            "_test_attributed_to": "plugin/acme-devtools@1.0.0",
             "component_type": "mcp_server",
             "runtime_hosts": ["claude-code"],
             "declared_by": {
@@ -726,15 +732,54 @@ def _bundled(
     extra = dict(kw.get("extra", {}))
     if component_type:
         extra.setdefault("component_type", component_type)
+    if attributed_to is not None:
+        extra["_test_attributed_to"] = attributed_to
     return ComponentRef(
         ecosystem=None if component_type else eco,
         name=name,
         version=version,
         component_identity=ident,
         source_manifest=kw.get("source_manifest", "fake"),
-        attributed_to=attributed_to,
         extra=extra,
     )
+
+
+def _plugin_versioned_identity(ref: ComponentRef) -> str:
+    identity = ref.component_identity or ""
+    return f"{identity}@{ref.version}" if ref.version else identity
+
+
+def _graph_from_refs(refs: list[ComponentRef]) -> Graph:
+    """Build a `target → plugin → component` graph from a flat ref list, using
+    the test-only `_test_attributed_to` extra to recreate plugin parentage.
+
+    Render nests by graph edges (the `attributed_to` ref field is gone). The
+    inventory-tree tests express intended parentage via `_bundled(...,
+    attributed_to=...)`; this helper turns that into the graph render consumes,
+    so the tests keep asserting nesting without hand-building graphs each time.
+    """
+    nodes: dict[str, Node] = {"t": Node("t", "target", None)}
+    edges: list[Edge] = []
+    plugin_key_by_identity: dict[str, str] = {}
+    component_refs: list[tuple[int, ComponentRef]] = []
+    for i, ref in enumerate(refs):
+        if (ref.extra or {}).get("component_type") == "plugin":
+            key = f"p{i}"
+            nodes[key] = Node(key, "plugin", ref)
+            edges.append(Edge("t", key))
+            plugin_key_by_identity[_plugin_versioned_identity(ref)] = key
+        else:
+            component_refs.append((i, ref))
+    for i, ref in component_refs:
+        attributed = (ref.extra or {}).get("_test_attributed_to")
+        parent = plugin_key_by_identity.get(attributed, "t") if attributed else "t"
+        key = f"c{i}"
+        kind = (ref.extra or {}).get("component_type") or "package"
+        nodes[key] = Node(key, kind, ref)
+        edges.append(Edge(parent, key))
+    g = Graph(nodes, edges)
+    g.validate()
+    return g
 
 
 def test_tree_header_counts_plugins_direct_total():
@@ -749,7 +794,7 @@ def test_tree_header_counts_plugins_direct_total():
             component_identity="skill/direct-skill",
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     # Header: 1 plugin, 1 direct component, 2 total components (skill + bundled MCP).
     assert "1 active plugin, 1 direct component, 2 total components" in out
 
@@ -769,9 +814,10 @@ def test_tree_groups_bundled_components_by_category():
             "@supabase/mcp",
             "1.0.0",
             attributed_to="plugin/supabase@0.1.6",
+            extra={"component_type": "mcp_server"},
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     assert "plugin/supabase@0.1.6" in out
     # Both categories appear with counts.
     assert "MCPs/ (1)" in out
@@ -785,8 +831,8 @@ def test_tree_remote_mcp_leaf_shows_url_and_transport():
         _plugin_ref("github", "unknown", marketplace="official"),
         ComponentRef(
             component_identity="mcp-remote/api.githubcopilot.com/mcp/",
-            attributed_to="plugin/official/github@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/github@unknown",
                 "component_type": "mcp_server",
                 "url": "https://api.githubcopilot.com/mcp/",
                 "transport": "http",
@@ -794,7 +840,7 @@ def test_tree_remote_mcp_leaf_shows_url_and_transport():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "https://api.githubcopilot.com/mcp/ (HTTP)" in out
     assert "mcp-remote/api.githubcopilot.com/mcp/" not in out
@@ -812,7 +858,7 @@ def test_tree_remote_mcp_leaf_redacts_url_credentials():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "user:secret" not in out
     assert "api.example.com/mcp (HTTP)" in out
@@ -830,7 +876,7 @@ def test_tree_remote_mcp_leaf_redacts_url_query_secrets():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "api_key" not in out
     assert "sk-secret123" not in out
@@ -850,7 +896,7 @@ def test_tree_remote_mcp_leaf_redacts_malformed_port_url():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "user:secret" not in out
     assert "token=sk-secret" not in out
@@ -864,8 +910,8 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
             ecosystem="npm",
             name="@playwright/mcp",
             version="latest",
-            attributed_to="plugin/official/playwright@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/playwright@unknown",
                 "component_type": "mcp_server",
                 "install_source": "npx @playwright/mcp@latest",
                 "transport": "stdio",
@@ -873,7 +919,7 @@ def test_tree_stdio_mcp_leaf_uses_structured_package_identity():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "@playwright/mcp@latest (stdio via npx)" in out
     assert "npx @playwright/mcp@latest" not in out
@@ -885,8 +931,8 @@ def test_tree_stdio_mcp_leaf_uses_github_match_coordinate():
         ComponentRef(
             ecosystem="github",
             name="oraios/serena",
-            attributed_to="plugin/official/serena@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/serena@unknown",
                 "component_type": "mcp_server",
                 "install_source": (
                     "uvx --from git+https://github.com/oraios/serena serena start-mcp-server"
@@ -895,7 +941,7 @@ def test_tree_stdio_mcp_leaf_uses_github_match_coordinate():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "oraios/serena (stdio via uvx)" in out
     assert "git+https://github.com/oraios/serena" not in out
@@ -908,8 +954,8 @@ def test_tree_stdio_mcp_leaf_uses_docker_match_coordinate():
             ecosystem="docker",
             name="hashicorp/terraform-mcp-server",
             version="0.4.0",
-            attributed_to="plugin/official/terraform@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/terraform@unknown",
                 "component_type": "mcp_server",
                 "install_source": "docker run -e TFE_TOKEN=${TFE_TOKEN} "
                 "hashicorp/terraform-mcp-server:0.4.0",
@@ -917,7 +963,7 @@ def test_tree_stdio_mcp_leaf_uses_docker_match_coordinate():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in out
     assert "TFE_TOKEN" not in out
@@ -929,8 +975,8 @@ def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_match_coordinate():
         ComponentRef(
             ecosystem="GitHub",
             name="oraios/serena",
-            attributed_to="plugin/official/sources@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/sources@unknown",
                 "component_type": "mcp_server",
                 "install_source": "uvx --from git+https://github.com/oraios/serena serena",
             },
@@ -939,15 +985,15 @@ def test_tree_stdio_mcp_leaf_uses_bom_canonicalized_match_coordinate():
             ecosystem="Docker",
             name="hashicorp/terraform-mcp-server",
             version="0.4.0",
-            attributed_to="plugin/official/sources@unknown",
             extra={
+                "_test_attributed_to": "plugin/official/sources@unknown",
                 "component_type": "mcp_server",
                 "install_source": "docker run hashicorp/terraform-mcp-server:0.4.0",
             },
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "oraios/serena (stdio via uvx)" in out
     assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in out
@@ -969,7 +1015,7 @@ def test_tree_local_stdio_mcp_leaf_uses_server_identity():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "discord (stdio via bun, local)" in out
     assert "${CLAUDE_PLUGIN_ROOT}" not in out
@@ -986,7 +1032,7 @@ def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
         )
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "sk-secret123" not in out
     assert "secret" not in out
@@ -1016,7 +1062,7 @@ def test_tree_source_less_unpinned_stdio_mcp_leaf_shows_safe_package_name():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "@modelcontextprotocol/server-filesystem (stdio via npx, unpinned)" in out
     assert "some-mcp-server (stdio via uvx, unpinned)" in out
@@ -1037,7 +1083,7 @@ def test_tree_source_less_unpinned_stdio_mcp_url_spec_falls_back_to_args_hidden(
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "token=abc123" not in out
     assert "https://" not in out
@@ -1062,7 +1108,7 @@ def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "deploy" in out
     assert "@acme/tool/deploy" not in out
@@ -1071,7 +1117,7 @@ def test_tree_plugin_name_parser_keeps_scoped_plugin_names_without_version():
 def test_tree_plugin_header_shows_marketplace_context():
     refs = [_plugin_ref("superpowers", "5.1.0", sha="917e5f53abcdef", marketplace="official")]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "plugin/official/superpowers@5.1.0" in out
     assert "(sha: 917e5f53)" in out
@@ -1080,7 +1126,7 @@ def test_tree_plugin_header_shows_marketplace_context():
 
 def test_tree_empty_plugin_shows_no_bundled_components():
     refs = [_plugin_ref("github", "unknown")]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     assert "plugin/github@unknown" in out
     assert "(no bundled components)" in out
 
@@ -1103,7 +1149,7 @@ def test_tree_direct_skill_renders_known_source_provenance():
         },
     )
 
-    out = render_inventory_tree([ref], [], use_unicode=True)
+    out = render_inventory_tree([ref], [], use_unicode=True, graph=_graph_from_refs([ref]))
 
     assert (
         "aws-api (source: github:awslabs/agent-toolkit-for-aws#main, "
@@ -1125,7 +1171,7 @@ def test_tree_direct_skill_renders_symlink_target_source_provenance():
         },
     )
 
-    out = render_inventory_tree([ref], [], use_unicode=True)
+    out = render_inventory_tree([ref], [], use_unicode=True, graph=_graph_from_refs([ref]))
 
     assert "loose-skill (source: symlink -> /Users/test/.agents/skills/loose-skill/SKILL.md)" in out
 
@@ -1151,7 +1197,7 @@ def test_tree_renders_logical_identities_without_location_prefix():
             extra={"event": "PreToolUse", "index": 0, "command": "echo pre"},
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     assert "deploy" in out
     assert "supabase/deploy" not in out
     assert "PreToolUse[0]: echo pre" in out
@@ -1176,7 +1222,7 @@ def test_tree_aggregates_tier2_deps_into_single_line():
             extra={"transitive": True},
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     # No individual lodash/underscore leaves — they aggregate.
     assert "lodash" not in out
     assert "underscore" not in out
@@ -1194,7 +1240,7 @@ def test_tree_tier2_direct_only_when_no_lockfile():
             extra={"transitive": False},
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     assert "npm/ deps (1 direct only via package.json)" in out
 
 
@@ -1215,7 +1261,9 @@ def test_tree_tier2_aggregate_carries_finding_marker():
         confidence="high",
         reason="lodash@4.17.20 matches CVE-2026-0001",
     )
-    out = render_inventory_tree(refs, [finding], use_unicode=True, use_color=False)
+    out = render_inventory_tree(
+        refs, [finding], use_unicode=True, use_color=False, graph=_graph_from_refs(refs)
+    )
     assert "[! CVE-2026-0001]" in out
     assert "npm/ deps" in out
 
@@ -1237,7 +1285,7 @@ def test_tree_direct_components_render_as_separate_root():
             component_identity="skill/bar",
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     assert "direct components/" in out
     assert "foo" in out
     assert "from fake" not in out
@@ -1266,7 +1314,7 @@ def test_tree_disambiguates_duplicate_direct_component_labels_with_source():
         ),
     ]
 
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
 
     assert "bootstrap@1.0.0 (from project/.claude/skills/bootstrap/SKILL.md)" in out
     assert (
@@ -1283,6 +1331,7 @@ def test_tree_marks_affected_leaves_with_finding_id():
         "@playwright/mcp",
         "latest",
         attributed_to="plugin/playwright@1.0.0",
+        extra={"component_type": "mcp_server"},
     )
     finding = Finding(
         advisory_id="GHSA-X",
@@ -1290,7 +1339,9 @@ def test_tree_marks_affected_leaves_with_finding_id():
         confidence="high",
         reason="match",
     )
-    out = render_inventory_tree([plugin, ref], [finding], use_unicode=True)
+    out = render_inventory_tree(
+        [plugin, ref], [finding], use_unicode=True, graph=_graph_from_refs([plugin, ref])
+    )
     assert "[! GHSA-X]" in out
     # The marker sits adjacent to the affected leaf, not on the plugin header.
     assert "@playwright/mcp@latest  [! GHSA-X]" in out
@@ -1304,7 +1355,9 @@ def test_tree_marks_plugin_header_when_plugin_advisory_matches():
         confidence="high",
         reason="match",
     )
-    out = render_inventory_tree([plugin], [finding], use_unicode=True)
+    out = render_inventory_tree(
+        [plugin], [finding], use_unicode=True, graph=_graph_from_refs([plugin])
+    )
     # Header line carries the marker; the empty-plugin "(no bundled)" line
     # is separate.
     plugin_line = [line for line in out.splitlines() if "plugin/supabase@0.1.0" in line][0]
@@ -1322,7 +1375,7 @@ def test_tree_ascii_fallback_uses_ascii_chars():
             component_identity="skill/x",
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=False)
+    out = render_inventory_tree(refs, [], use_unicode=False, graph=_graph_from_refs(refs))
     # ASCII connector chars present; Unicode absent.
     assert "├──" not in out
     assert "└──" not in out
@@ -1340,7 +1393,7 @@ def test_tree_unicode_default():
             component_identity="skill/x",
         ),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     # Unicode connectors present.
     assert ("├──" in out) or ("└──" in out)
 
@@ -1351,7 +1404,7 @@ def test_tree_plugins_sorted_alphabetically():
         _plugin_ref("alpha", "1.0.0"),
         _plugin_ref("mu", "1.0.0"),
     ]
-    out = render_inventory_tree(refs, [], use_unicode=True)
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
     alpha_idx = out.index("plugin/alpha")
     mu_idx = out.index("plugin/mu")
     zeta_idx = out.index("plugin/zeta")
@@ -1362,8 +1415,20 @@ def test_tree_finding_marker_color_when_enabled():
     plugin = _plugin_ref("a", "1.0.0")
     ref = _bundled("npm", "x", "1.0.0", attributed_to="plugin/a@1.0.0")
     finding = Finding(advisory_id="X", component=ref, confidence="high")
-    colored = render_inventory_tree([plugin, ref], [finding], use_color=True, use_unicode=True)
-    plain = render_inventory_tree([plugin, ref], [finding], use_color=False, use_unicode=True)
+    colored = render_inventory_tree(
+        [plugin, ref],
+        [finding],
+        use_color=True,
+        use_unicode=True,
+        graph=_graph_from_refs([plugin, ref]),
+    )
+    plain = render_inventory_tree(
+        [plugin, ref],
+        [finding],
+        use_color=False,
+        use_unicode=True,
+        graph=_graph_from_refs([plugin, ref]),
+    )
     assert "\x1b[31m" in colored
     assert "\x1b[" not in plain
 
@@ -1399,11 +1464,23 @@ def test_repo_tree_groups_plugin_root_deps_and_mcp_under_plugin(tmp_path):
     )
     finding = Finding(advisory_id="GHSA-L", component=dep, confidence="high")
 
+    graph = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "p": Node("p", "plugin", plugin),
+            "d": Node("d", "package", dep),
+            "m": Node("m", "mcp_server", mcp),
+        },
+        edges=[Edge("t", "p"), Edge("p", "d"), Edge("p", "m")],
+    )
+    graph.validate()
+
     out = render_repo_inventory_tree(
         tmp_path,
         [(package_json, [dep]), (mcp_json, [mcp]), (plugin_json, [plugin])],
         [finding],
         use_unicode=True,
+        graph=graph,
     )
 
     assert f"repo {tmp_path}" in out
@@ -1449,9 +1526,10 @@ def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
 def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
     """Two plugins with the same name and version must not cross-contaminate.
 
-    Both emit attributed_to = "plugin/foo@1.0", so matching solely on
-    attributed_to would assign skill-A under plugin-B and vice-versa.  The fix
-    scopes the attributed_to match to the ref's plugin root directory.
+    Both have identity "plugin/foo", so attribution by identity alone would be
+    ambiguous. The graph keys each occurrence distinctly (by source path), so the
+    edges place each skill under its own plugin node — render honors the edges,
+    not any name match.
     """
     plugin_a_root = tmp_path / "plugin-a"
     plugin_b_root = tmp_path / "plugin-b"
@@ -1487,16 +1565,26 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
         component_identity="skill/skill-a",
         source_manifest=str(skill_a_md),
         scope="agent-component",
-        attributed_to="plugin/foo@1.0",
-        extra={"component_type": "skill"},
+        extra={"_test_attributed_to": "plugin/foo@1.0", "component_type": "skill"},
     )
     skill_b = ComponentRef(
         component_identity="skill/skill-b",
         source_manifest=str(skill_b_md),
         scope="agent-component",
-        attributed_to="plugin/foo@1.0",
-        extra={"component_type": "skill"},
+        extra={"_test_attributed_to": "plugin/foo@1.0", "component_type": "skill"},
     )
+
+    graph = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "pa": Node("pa", "plugin", plugin_a),
+            "pb": Node("pb", "plugin", plugin_b),
+            "sa": Node("sa", "skill", skill_a),
+            "sb": Node("sb", "skill", skill_b),
+        },
+        edges=[Edge("t", "pa"), Edge("t", "pb"), Edge("pa", "sa"), Edge("pb", "sb")],
+    )
+    graph.validate()
 
     out = render_repo_inventory_tree(
         tmp_path,
@@ -1506,6 +1594,7 @@ def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
         ],
         [],
         use_unicode=True,
+        graph=graph,
     )
 
     # skill-a must appear exactly once as a leaf; skill-b likewise. Their
@@ -1520,8 +1609,9 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
     """Plugin B nested inside plugin A's directory must not have its skills
     claimed by plugin A's tree node, even when both share the same name/version.
 
-    _ref_owned_by_plugin must detect that inner plugin dir is a closer ancestor
-    of inner skill refs and exclude them from the outer plugin's node.
+    The graph edges place each skill under its own plugin occurrence node, so the
+    inner skill nests under the inner plugin — render follows the edges, not any
+    directory- or name-based heuristic.
     """
     outer_root = tmp_path / "outer"
     inner_root = outer_root / "nested" / "inner"
@@ -1556,16 +1646,26 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
         component_identity="skill/outer-skill",
         source_manifest=str(outer_skill_md),
         scope="agent-component",
-        attributed_to="plugin/foo@1.0",
-        extra={"component_type": "skill"},
+        extra={"_test_attributed_to": "plugin/foo@1.0", "component_type": "skill"},
     )
     inner_skill = ComponentRef(
         component_identity="skill/inner-skill",
         source_manifest=str(inner_skill_md),
         scope="agent-component",
-        attributed_to="plugin/foo@1.0",
-        extra={"component_type": "skill"},
+        extra={"_test_attributed_to": "plugin/foo@1.0", "component_type": "skill"},
     )
+
+    graph = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "po": Node("po", "plugin", outer_plugin),
+            "pi": Node("pi", "plugin", inner_plugin),
+            "so": Node("so", "skill", outer_skill),
+            "si": Node("si", "skill", inner_skill),
+        },
+        edges=[Edge("t", "po"), Edge("po", "pi"), Edge("po", "so"), Edge("pi", "si")],
+    )
+    graph.validate()
 
     out = render_repo_inventory_tree(
         tmp_path,
@@ -1575,6 +1675,7 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
         ],
         [],
         use_unicode=True,
+        graph=graph,
     )
 
     # Each skill must appear exactly once as a leaf; source paths also contain
@@ -1630,14 +1731,15 @@ def _graph_target_plugin_skill_package():
         ],
     )
     graph.validate()
-    # The refs the renderer receives mirror scan: scope/attribution are graph-
-    # derived and stamped (here they match what scan would produce).
+    # The refs the renderer receives mirror scan: scope is graph-derived and
+    # stamped. Attribution is no longer a ref field — render derives "via plugin
+    # X" from the graph at output time.
     from dataclasses import replace
 
     refs = [
-        replace(plugin_ref, scope="agent-component", attributed_to=graph.attribution_for(plugin)),
-        replace(skill_ref, scope="agent-component", attributed_to=graph.attribution_for(skill)),
-        replace(pkg_ref, scope="agent-dependency", attributed_to=graph.attribution_for(pkg)),
+        replace(plugin_ref, scope="agent-component"),
+        replace(skill_ref, scope="agent-component"),
+        replace(pkg_ref, scope="agent-dependency"),
     ]
     return graph, refs
 
@@ -1928,8 +2030,19 @@ def test_endpoint_tree_flags_plugin_for_bundled_finding():
     """A clean plugin that bundles a vulnerable MCP gets `[! bundles: …]` on its
     header; the bundled leaf keeps its own direct `[! …]`."""
     plugin = _plugin_ref("a", "1.0.0")
-    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="plugin/a@1.0.0")
-    out = render_inventory_tree([plugin, mcp], [_f("GHSA-CHILD", mcp)], use_unicode=True)
+    mcp = _bundled(
+        "npm",
+        "@x/mcp",
+        "1.0.0",
+        attributed_to="plugin/a@1.0.0",
+        extra={"component_type": "mcp_server"},
+    )
+    out = render_inventory_tree(
+        [plugin, mcp],
+        [_f("GHSA-CHILD", mcp)],
+        use_unicode=True,
+        graph=_graph_from_refs([plugin, mcp]),
+    )
     header = [ln for ln in out.splitlines() if "plugin/a@1.0.0" in ln][0]
     assert "[! bundles: GHSA-CHILD]" in header
     leaf = [ln for ln in out.splitlines() if "@x/mcp" in ln][0]
@@ -1939,7 +2052,9 @@ def test_endpoint_tree_flags_plugin_for_bundled_finding():
 def test_endpoint_tree_direct_plugin_hit_is_not_bundles():
     """A finding on the plugin itself uses the direct marker, not `bundles:`."""
     plugin = _plugin_ref("a", "1.0.0")
-    out = render_inventory_tree([plugin], [_f("GHSA-PLUGIN", plugin)], use_unicode=True)
+    out = render_inventory_tree(
+        [plugin], [_f("GHSA-PLUGIN", plugin)], use_unicode=True, graph=_graph_from_refs([plugin])
+    )
     assert "[! GHSA-PLUGIN]" in out
     assert "bundles:" not in out
 
@@ -1948,9 +2063,18 @@ def test_endpoint_tree_direct_and_bundled_both_shown_no_dup():
     """Direct hit + vulnerable bundled child → both markers; the direct id is
     not duplicated into the bundles list."""
     plugin = _plugin_ref("a", "1.0.0")
-    mcp = _bundled("npm", "@x/mcp", "1.0.0", attributed_to="plugin/a@1.0.0")
+    mcp = _bundled(
+        "npm",
+        "@x/mcp",
+        "1.0.0",
+        attributed_to="plugin/a@1.0.0",
+        extra={"component_type": "mcp_server"},
+    )
     out = render_inventory_tree(
-        [plugin, mcp], [_f("GHSA-PLUGIN", plugin), _f("GHSA-CHILD", mcp)], use_unicode=True
+        [plugin, mcp],
+        [_f("GHSA-PLUGIN", plugin), _f("GHSA-CHILD", mcp)],
+        use_unicode=True,
+        graph=_graph_from_refs([plugin, mcp]),
     )
     header = [ln for ln in out.splitlines() if "plugin/a@1.0.0" in ln][0]
     assert "[! GHSA-PLUGIN]" in header
@@ -1966,8 +2090,8 @@ def test_findings_section_shows_introduction_path_by_default():
         name="@modelcontextprotocol/server-filesystem",
         version="1.0.2",
         source_manifest=".mcp.json",
-        attributed_to="plugin/acme-devtools@1.0.0",
         extra={
+            "_test_attributed_to": "plugin/acme-devtools@1.0.0",
             "component_type": "mcp_server",
             "component_path": [
                 {"type": "plugin", "name": "acme-devtools"},

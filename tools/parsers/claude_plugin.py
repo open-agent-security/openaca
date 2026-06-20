@@ -6,13 +6,13 @@ Two entry points:
   relative paths in `mcpServers` resolved from the plugin root
   (`path.parent.parent`). Emits plugin self-identity, dependencies, MCPs,
   and bundled skills/hooks/commands/agents.
-- `parse_at_install_root(install_root, attributed_to)` — endpoint mode:
+- `parse_at_install_root(install_root)` — endpoint mode:
   resolves the same plugin.json from `<install_root>/.claude-plugin/plugin.json`
   with relative paths anchored at `install_root` (CLAUDE_PLUGIN_ROOT
   semantics). Does NOT re-emit the plugin self-identity — caller already
   emits that from `installed_plugins.json` with lockfile-accurate version
-  and gitCommitSha — but does emit dependencies and bundled MCPs, all
-  tagged with the passed `attributed_to`.
+  and gitCommitSha — but does emit dependencies and bundled MCPs. Parentage
+  is set by the graph edge from the plugin node, not stored on the refs.
 """
 
 from __future__ import annotations
@@ -35,10 +35,8 @@ def parse(path: Path) -> list[ComponentRef]:
     version = data.get("version")
     if not isinstance(version, (str, type(None))):
         version = None
-    attributed_to = None
     if name:
         component_identity = f"plugin/{name}"
-        attributed_to = f"{component_identity}@{version}" if version else component_identity
         refs.append(
             ComponentRef(
                 name=name,
@@ -56,13 +54,12 @@ def parse(path: Path) -> list[ComponentRef]:
             plugin_name=name or "",
             plugin_data=data,
             plugin_json_path=path,
-            attributed_to=attributed_to,
         )
     )
     return refs
 
 
-def parse_at_install_root(install_root: Path, attributed_to: str) -> list[ComponentRef]:
+def parse_at_install_root(install_root: Path) -> list[ComponentRef]:
     """Read `<install_root>/.claude-plugin/plugin.json` and emit refs anchored
     at the install root (CLAUDE_PLUGIN_ROOT semantics).
 
@@ -76,9 +73,8 @@ def parse_at_install_root(install_root: Path, attributed_to: str) -> list[Compon
     - Refs from the referenced `.mcp.json` (string form), with path
       resolution anchored at `install_root` — not the manifest's parent.
 
-    All refs are tagged with the caller-supplied `attributed_to`. Returns
-    [] on any read/parse/shape failure so a single bad plugin.json doesn't
-    abort the wider scan.
+    Returns [] on any read/parse/shape failure so a single bad plugin.json
+    doesn't abort the wider scan.
     """
     plugin_json = install_root / ".claude-plugin" / "plugin.json"
     if not plugin_json.exists():
@@ -96,5 +92,4 @@ def parse_at_install_root(install_root: Path, attributed_to: str) -> list[Compon
         plugin_name=plugin_name,
         plugin_data=data,
         plugin_json_path=plugin_json,
-        attributed_to=attributed_to,
     )

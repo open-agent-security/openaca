@@ -28,9 +28,7 @@ from typing import Optional
 from tools.component_ref import ComponentRef
 
 
-def parse_plugin_hooks(
-    hooks_json_path: Path, plugin_name: str, attributed_to: str
-) -> list[ComponentRef]:
+def parse_plugin_hooks(hooks_json_path: Path, plugin_name: str) -> list[ComponentRef]:
     """Walk a plugin's `hooks/hooks.json` file.
 
     Returns [] for any read/parse error or shape violation (non-object root,
@@ -52,13 +50,12 @@ def parse_plugin_hooks(
     return _walk_events(
         hooks_block,
         source_manifest=str(hooks_json_path),
-        attributed_to=attributed_to,
         scope=None,
     )
 
 
 def parse_plugin_hooks_inline(
-    hooks_block: dict, plugin_name: str, source_manifest: str, attributed_to: str
+    hooks_block: dict, plugin_name: str, source_manifest: str
 ) -> list[ComponentRef]:
     """Walk a plugin.json's inline `hooks` key.
 
@@ -71,7 +68,6 @@ def parse_plugin_hooks_inline(
     return _walk_events(
         hooks_block,
         source_manifest=source_manifest,
-        attributed_to=attributed_to,
         scope=None,
     )
 
@@ -81,16 +77,15 @@ def parse_settings_hooks(
 ) -> list[ComponentRef]:
     """Walk a settings.json's `hooks` block for a specific scope.
 
-    Settings hooks are NOT attributed to any plugin — they're declared
-    directly by the user/project/local config. The scope is observation
-    metadata, not part of the logical component identity.
+    Settings hooks are declared directly by the user/project/local config.
+    The scope is observation metadata, not part of the logical component
+    identity; parentage is set by the graph edge.
     """
     if not isinstance(hooks_block, dict):
         return []
     return _walk_events(
         hooks_block,
         source_manifest=str(settings_path),
-        attributed_to=None,
         scope=scope,
     )
 
@@ -98,7 +93,6 @@ def parse_settings_hooks(
 def _walk_events(
     hooks_block: dict,
     source_manifest: str,
-    attributed_to: Optional[str],
     scope: Optional[str],
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
@@ -123,7 +117,6 @@ def _walk_events(
                     component_identity=_hook_identity(entry),
                     source_manifest=source_manifest,
                     source_locator=f"$.hooks.{event}[{index}]",
-                    attributed_to=attributed_to,
                     extra=extra,
                 )
             )

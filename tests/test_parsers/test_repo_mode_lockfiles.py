@@ -1,6 +1,6 @@
 """Plan 009 Task 3: lockfile patterns fire in repo mode via parse_repo.
 
-Refs emitted from host-repo lockfiles have attributed_to=None — the
+Refs emitted from host-repo lockfiles have no plugin parent — the
 host repo declares these deps directly, not via a plugin.
 """
 
@@ -17,7 +17,6 @@ def test_repo_mode_emits_npm_lockfile_refs():
     assert len(npm_refs) == 1
     assert npm_refs[0].name == "lodash"
     assert npm_refs[0].version == "4.17.20"
-    assert npm_refs[0].attributed_to is None
 
 
 def test_repo_mode_emits_uv_lock_refs():
@@ -25,4 +24,3 @@ def test_repo_mode_emits_uv_lock_refs():
     pypi_refs = [r for r in refs if r.ecosystem == "PyPI" and r.extra.get("transitive") is True]
     assert len(pypi_refs) == 1
     assert pypi_refs[0].name == "requests"
-    assert pypi_refs[0].attributed_to is None

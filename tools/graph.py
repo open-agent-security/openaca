@@ -32,8 +32,8 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
     graph `Node`.
 
     Scan projects the flat ref list as `dataclasses.replace(node.ref,
-    scope=..., attributed_to=...)` copies, so the occurrence-identifying fields
-    are untouched. Keying on those fields (manifest + locator + identity
+    scope=...)` copies, so the occurrence-identifying fields are untouched.
+    Keying on those fields (manifest + locator + identity
     coordinates) lets any output site (render, sarif, finding_output) recover a
     ref's node without recomputing the build-time occurrence key (which needs
     the source normalizer those sites do not have). Shared so every consumer
@@ -128,10 +128,10 @@ class Graph:
         """The "via plugin X" attribution string for a node, or None.
 
         The nearest plugin ancestor's component_identity, versioned
-        (`<identity>@<version>`) when the plugin carries a version — reproducing
-        the pre-graph `attributed_to` value. A plugin attributes to None (it has
-        no plugin ancestor). Pure derivation over the edges; the single source
-        for both scan (ref projection) and bom."""
+        (`<identity>@<version>`) when the plugin carries a version. A node with
+        no plugin ancestor attributes to None. Pure derivation over the edges;
+        the single source consumers (render, sarif, finding_output) use to
+        compute "via plugin X" at output time."""
         plugin = self.nearest_plugin_ancestor(node)
         if plugin is None or plugin.ref is None:
             return None

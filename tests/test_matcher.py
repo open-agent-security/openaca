@@ -734,7 +734,6 @@ def test_finding_carries_no_attribution_field():
         ecosystem="npm",
         name="lodash",
         version="4.17.0",
-        attributed_to="plugin/supabase@0.1.6",
         source_manifest="package-lock.json",
         source_locator="$.packages",
     )

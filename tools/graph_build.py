@@ -361,7 +361,6 @@ def _seed_active_plugins(
                 )
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
-        attributed_id = f"{component_identity}@{version}" if version else component_identity
 
         # Carry the same plugin metadata `parse_install` emitted so endpoint
         # renderers (gitCommitSha display, per-plugin tier-2 coverage) and
@@ -396,9 +395,7 @@ def _seed_active_plugins(
             descend(graph, plugin_node, Path(install_path), normalize, emit_own_root_deps=False)
             # Plugin tier-2 lockfile deps: parity with parse_install — attach as
             # package children of the plugin node (NOT a skill).
-            for ref in claude_install._walk_plugin_implementation_deps(
-                Path(install_path), attributed_to=attributed_id
-            ):
+            for ref in claude_install._walk_plugin_implementation_deps(Path(install_path)):
                 node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
                 _add_child(graph, plugin_node, node)
 
@@ -578,9 +575,7 @@ def _add_endpoint_command_agents(
         if not md_path.is_file():
             continue
         try:
-            refs = claude_command_agent.parse_file(
-                md_path, kind=kind, scope_owner=None, attributed_to=None
-            )
+            refs = claude_command_agent.parse_file(md_path, kind=kind, scope_owner=None)
         except Exception:
             refs = []
         if not refs:
@@ -1028,8 +1023,8 @@ def _add_dep_manifest_packages(
     `source_manifest`, so they never dedup), double-reporting one package.
 
     Unlike `_walk_plugin_implementation_deps`, the refs are emitted as the leaf
-    parsers produce them (repo declarations are `attributed_to=None`,
-    `transitive=True` on lockfile refs) — only the file-selection logic is shared.
+    parsers produce them (`transitive=True` on lockfile refs) — only the
+    file-selection logic is shared.
     """
     eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
 
@@ -1219,15 +1214,13 @@ def _add_bundled_plugin_surfaces(
 
     Bundled skills are NOT added here — the `_add_bundled_skills` descent already
     creates them and their dep chains; re-emitting via the surface walker would
-    double-create. The hook helper requires a non-None `attributed_to` to emit;
-    we pass the plugin's own identity (the parent we descended from), which the
-    scan-derived attribution will reconcile later — it is not a content read.
+    double-create. Parentage of every bundled surface is set by the graph edge
+    from the plugin node below, not stored on the refs.
     """
     plugin_ref = plugin_node.ref
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    attributed_to = plugin_ref.component_identity
     plugin_data = _plugin_manifest_data(plugin_root)
     plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
 
@@ -1236,12 +1229,11 @@ def _add_bundled_plugin_surfaces(
         plugin_data,
         plugin_json_path=plugin_manifest_path,
         plugin_root=plugin_root,
-        attributed_to=attributed_to,
     )
     refs.extend(manifest_refs)
-    refs.extend(_parse_default_mcp(plugin_root, manifest_refs, attributed_to))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name, attributed_to))
-    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name, attributed_to))
+    refs.extend(_parse_default_mcp(plugin_root, manifest_refs))
+    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
+    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
     refs = [r for r in refs if _component_type(r) != "skill"]
     # Stamp plugin-container context (declared_by.kind=plugin + a
     # plugin-prefixed component_path) onto each bundled ref. This is placement

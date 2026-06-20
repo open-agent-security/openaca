@@ -48,6 +48,10 @@ def test_two_skills_same_purl_are_two_nodes(tmp_path):
     g = build_graph(tmp_path, mode="repo")
     pkgs = [n for n in g.nodes.values() if n.kind == "package"]
     assert len(pkgs) == 2  # same purl, two occurrences, two nodes
+    # Option B: both packages share identity `package/npm/lodash`; the node keys
+    # stay distinct via source_manifest#locator (occurrence identity), so dropping
+    # parent-qualification from canonical_component_identity does NOT collide them.
+    assert pkgs[0].key != pkgs[1].key
 
 
 def test_nested_project_skill_found(tmp_path):

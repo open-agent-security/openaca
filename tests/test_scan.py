@@ -1880,3 +1880,55 @@ def test_repo_rejects_removed_db_option(tmp_path):
     )
     assert result.exit_code != 0
     assert "No such option" in result.output
+
+
+def test_refs_from_graph_agent_child_mcp_gets_agent_attribution():
+    """_refs_from_graph must set attributed_to=agent_identity for frontmatter
+    MCP/hook children of a direct agent, preserving the pre-graph path where
+    _agent_frontmatter_child_refs stamps attributed_to=agent_identity.
+
+    Without this, BOM _build_edges loses the agent→MCP edge for repos/endpoints
+    with subagent-scoped MCPs."""
+    from tools.component_ref import ComponentRef
+    from tools.graph import Edge, Graph, Node
+    from tools.scan import _refs_from_graph
+
+    agent_ref = ComponentRef(
+        name="my-agent",
+        version=None,
+        component_identity="claude-agent/my-agent",
+        source_manifest=".claude/agents/my-agent.md",
+        source_locator="$.agent",
+        attributed_to=None,
+        extra={"component_type": "agent"},
+    )
+    mcp_ref = ComponentRef(
+        name="my-mcp",
+        version=None,
+        component_identity="mcp/my-mcp",
+        source_manifest=".claude/agents/my-agent.md",
+        source_locator="$.mcpServers.my-mcp",
+        attributed_to="claude-agent/my-agent",
+        extra={"component_type": "mcp_server"},
+    )
+    root = Node(key="openaca:target", kind="target", ref=None)
+    agent_node = Node(key="agent#0", kind="agent", ref=agent_ref)
+    mcp_node = Node(key="mcp#0", kind="mcp_server", ref=mcp_ref)
+    graph = Graph(
+        nodes={root.key: root, agent_node.key: agent_node, mcp_node.key: mcp_node},
+        edges=[
+            Edge(parent=root.key, child=agent_node.key),
+            Edge(parent=agent_node.key, child=mcp_node.key),
+        ],
+    )
+    graph.validate()
+
+    refs = _refs_from_graph(graph)
+    mcp_projected = next(r for r in refs if r.component_identity == "mcp/my-mcp")
+    assert mcp_projected.attributed_to == "claude-agent/my-agent", (
+        "agent-child MCP must carry attributed_to = agent component_identity"
+    )
+    agent_projected = next(r for r in refs if r.component_identity == "claude-agent/my-agent")
+    assert agent_projected.attributed_to is None, (
+        "the agent itself has no plugin/agent ancestor so attributed_to must be None"
+    )

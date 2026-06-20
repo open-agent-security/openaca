@@ -693,7 +693,9 @@ def _add_bundled_skills(
         if resolved in seen_dirs:
             continue
         seen_dirs.add(resolved)
-        _add_skills_from_dir(graph, parent, skills_dir, root_dir=root_dir, root_spec=root_spec)
+        _add_skills_from_dir(
+            graph, parent, skills_dir, plugin_root=directory, root_dir=root_dir, root_spec=root_spec
+        )
 
 
 def _plugin_custom_skills_field(plugin_root: Path) -> object:
@@ -712,16 +714,37 @@ def _add_skills_from_dir(
     parent: Node,
     skills_dir: Path,
     *,
+    plugin_root: Path | None = None,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     if not skills_dir.is_dir():
         return
+    try:
+        plugin_root_resolved = plugin_root.resolve() if plugin_root is not None else None
+    except (OSError, RuntimeError):
+        return
     for skill_subdir in sorted(skills_dir.iterdir()):
         if skill_subdir.name.startswith("."):  # skip .DS_Store, .git, etc.
             continue
-        if (skill_subdir / "SKILL.md").is_file():
-            _add_skill_node(graph, parent, skill_subdir, root_dir=root_dir, root_spec=root_spec)
+        if plugin_root_resolved is not None:
+            try:
+                subdir_resolved = skill_subdir.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not subdir_resolved.is_relative_to(plugin_root_resolved):
+                continue
+        skill_md = skill_subdir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        if plugin_root_resolved is not None:
+            try:
+                skill_md_resolved = skill_md.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not skill_md_resolved.is_relative_to(plugin_root_resolved):
+                continue
+        _add_skill_node(graph, parent, skill_subdir, root_dir=root_dir, root_spec=root_spec)
 
 
 def _add_skill_node(

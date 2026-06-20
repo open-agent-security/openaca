@@ -46,6 +46,28 @@ _DEP_MANIFEST_PARSERS = {
 _TARGET_KEY = "openaca:target"
 
 
+def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:
+    """Insert `child_node` under `parent_node`, deduping both node and edge.
+
+    Spec construction step 5 (the safety net): the `nodes` dict already dedups
+    by key, but `edges` is a list that never dedups. When two discovery paths
+    reach the SAME occurrence (same key) from the SAME parent, appending the
+    edge unconditionally leaves a duplicate that trips `Graph.validate()`'s
+    multiple-parents check. Route every node+edge creation through here so the
+    edge is added at most once. A same occurrence reaching two DIFFERENT
+    parents still (correctly) trips validate — that's a real placement bug.
+
+    Returns the canonical node for the key (the pre-existing one if present).
+    """
+    existing = graph.nodes.get(child_node.key)
+    if existing is None:
+        graph.nodes[child_node.key] = child_node
+    edge = Edge(parent=parent_node.key, child=child_node.key)
+    if edge not in graph.edges:
+        graph.edges.append(edge)
+    return graph.nodes[child_node.key]
+
+
 def occurrence_key(ref: ComponentRef) -> str:
     """The node key for a ref: its occurrence identity, never the bare purl.
 
@@ -149,8 +171,7 @@ def _seed_active_plugins(
             extra={"component_type": "plugin"},
         )
         plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
-        graph.nodes[plugin_node.key] = plugin_node
-        graph.edges.append(Edge(parent=target.key, child=plugin_node.key))
+        _add_child(graph, target, plugin_node)
 
         install_path = entry.get("installPath")
         if isinstance(install_path, str) and install_path:
@@ -162,8 +183,7 @@ def _seed_active_plugins(
                 Path(install_path), attributed_to=attributed_id
             ):
                 node = Node(key=occurrence_key(ref), kind="package", ref=ref)
-                graph.nodes[node.key] = node
-                graph.edges.append(Edge(parent=plugin_node.key, child=node.key))
+                _add_child(graph, plugin_node, node)
 
 
 def _seed_remote_mcps(
@@ -200,8 +220,7 @@ def _seed_remote_mcps(
             if _component_type(ref) != "mcp_server":
                 continue
             node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
-            graph.nodes[node.key] = node
-            graph.edges.append(Edge(parent=target.key, child=node.key))
+            _add_child(graph, target, node)
 
 
 def descend(graph: Graph, parent: Node, directory: Path) -> None:
@@ -232,7 +251,12 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
             _descend_into_plugin(graph, parent, directory, plugin_manifest)
             plugin_root = directory
         _add_project_skills(graph, parent, directory, exclude_under=plugin_root)
-        _add_dep_manifest_packages(graph, parent, directory)
+        # A plugin root owns its own dep manifests (emitted under the plugin via
+        # the plugin-branch descent); emitting them again under target would
+        # double-parent the same occurrence and trip validate(). Bare-dep-under-
+        # target emission only applies when this directory is NOT a plugin root.
+        if plugin_root is None:
+            _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory)
         _add_dep_manifest_packages(graph, parent, directory)
@@ -256,8 +280,7 @@ def _descend_into_plugin(
     if self_ref is None:
         return
     plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
-    graph.nodes[plugin_node.key] = plugin_node
-    graph.edges.append(Edge(parent=target.key, child=plugin_node.key))
+    _add_child(graph, target, plugin_node)
     descend(graph, plugin_node, plugin_root)
 
 
@@ -342,6 +365,8 @@ def _add_skills_from_dir(graph: Graph, parent: Node, skills_dir: Path) -> None:
     if not skills_dir.is_dir():
         return
     for skill_subdir in sorted(skills_dir.iterdir()):
+        if skill_subdir.name.startswith("."):  # skip .DS_Store, .git, etc.
+            continue
         if (skill_subdir / "SKILL.md").is_file():
             _add_skill_node(graph, parent, skill_subdir)
 
@@ -350,8 +375,7 @@ def _add_skill_node(graph: Graph, parent: Node, skill_subdir: Path) -> None:
     skill_md = skill_subdir / "SKILL.md"
     for ref in claude_skill.parse(skill_md):
         skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
-        graph.nodes[skill_node.key] = skill_node
-        graph.edges.append(Edge(parent=parent.key, child=skill_node.key))
+        _add_child(graph, parent, skill_node)
         descend(graph, skill_node, skill_subdir)
 
 
@@ -366,5 +390,4 @@ def _add_dep_manifest_packages(graph: Graph, parent: Node, directory: Path) -> N
             continue
         for ref in parse(manifest):
             node = Node(key=occurrence_key(ref), kind="package", ref=ref)
-            graph.nodes[node.key] = node
-            graph.edges.append(Edge(parent=parent.key, child=node.key))
+            _add_child(graph, parent, node)

@@ -111,3 +111,76 @@ def test_endpoint_remote_mcp_is_direct_child_of_target(tmp_path):
     g = build_graph(install_root, mode="endpoint", project_root=project_root)
     mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
+    # repo root IS a plugin AND has its own package.json — must not double-parent
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    (tmp_path / "package.json").write_text(
+        '{"name":"demo","version":"1","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "plugin", "target"]
+
+
+def test_empty_repo_is_just_target(tmp_path):
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    assert [n.kind for n in g.nodes.values()] == ["target"]
+
+
+def _seed_endpoint_fixture_with_plugin_dep(tmp_path):
+    """Endpoint layout where the plugin install path has its OWN package.json
+    (a plugin implementation dep) in addition to a bundled skill. Reproduces
+    Gap 2: both descend()'s plugin branch and _walk_plugin_implementation_deps
+    parse the same package.json."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")  # bundled skill (lodash dep)
+    (install_path / "package.json").write_text(
+        '{"name":"demo","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}'
+    )
+
+    settings = {"enabledPlugins": {"demo@mp": True}}
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
+                    ]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    return install_root, project_root
+
+
+def test_endpoint_plugin_own_dep_manifest_no_double_emit(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture_with_plugin_dep(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)  # must not raise
+    plugin_deps = [
+        n for n in g.nodes.values() if n.kind == "package" and "left-pad" in (n.key or "")
+    ]
+    assert len(plugin_deps) == 1
+    assert [n.kind for n in g.lineage(plugin_deps[0])] == ["package", "plugin", "target"]
+
+
+def test_endpoint_malformed_installed_plugins_does_not_crash(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@mp": True}}))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text("{not valid json")
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)  # must not raise
+    assert any(n.kind == "target" for n in g.nodes.values())

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from tools.graph_build import build_graph
 from tools.parsers import parse_repo
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
@@ -32,21 +33,21 @@ def test_one_malformed_manifest_does_not_abort_scan(tmp_path):
 
 def test_dep_manifest_without_plugin_marker_classified_as_software(tmp_path):
     """A bare package.json (no .claude-plugin/plugin.json sibling) → its deps
-    are classified as software-dependency, surfacing the V0 scope split that
-    the CLI uses to suppress noise from general software in repos that
-    happen to also be Claude users."""
+    are software-dependency. Scope now comes from the composition graph
+    (`Graph.scope_of`), not a path heuristic in the parser — `parse_repo`
+    itself no longer classifies scope."""
     (tmp_path / "package.json").write_text(
         '{"name":"app","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}'
     )
-    refs = parse_repo(tmp_path)
-    scopes = {r.scope for r in refs if r.ecosystem == "npm"}
+    graph = build_graph(tmp_path, mode="repo")
+    scopes = {graph.scope_of(n) for n in graph.nodes.values() if n.ref and n.ref.ecosystem == "npm"}
     assert scopes == {"software-dependency"}
 
 
 def test_dep_manifest_co_located_with_plugin_classified_as_agent_dep(tmp_path):
     """The same package.json but with a sibling .claude-plugin/plugin.json
-    becomes agent-dependency — these deps power a plugin's implementation
-    and are in scope for V0."""
+    becomes agent-dependency — its deps hang off the plugin node in the graph,
+    so `scope_of` sees a plugin ancestor."""
     (tmp_path / ".claude-plugin").mkdir()
     (tmp_path / ".claude-plugin" / "plugin.json").write_text(
         '{"name":"my-plugin","version":"1.0.0"}'
@@ -54,9 +55,15 @@ def test_dep_manifest_co_located_with_plugin_classified_as_agent_dep(tmp_path):
     (tmp_path / "package.json").write_text(
         '{"name":"my-plugin","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}'
     )
-    refs = parse_repo(tmp_path)
-    npm_scopes = {r.scope for r in refs if r.ecosystem == "npm"}
+    graph = build_graph(tmp_path, mode="repo")
+    npm_scopes = {
+        graph.scope_of(n) for n in graph.nodes.values() if n.ref and n.ref.ecosystem == "npm"
+    }
     assert npm_scopes == {"agent-dependency"}
-    # The plugin self-identity ref stays agent-component (unchanged path).
-    cp_scopes = {r.scope for r in refs if r.extra.get("component_type") == "plugin"}
+    # The plugin self-identity node stays agent-component.
+    cp_scopes = {
+        graph.scope_of(n)
+        for n in graph.nodes.values()
+        if n.ref and (n.ref.extra or {}).get("component_type") == "plugin"
+    }
     assert cp_scopes == {"agent-component"}

@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -49,6 +50,8 @@ from tools.bom import (
     target_info_from_cyclonedx,
 )
 from tools.component_ref import ComponentRef
+from tools.graph import Graph
+from tools.graph_build import build_graph
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
@@ -57,8 +60,7 @@ from tools.observations import (
 )
 from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
-from tools.parsers import flatten_grouped, parse_repo_grouped
-from tools.parsers.claude_install import parse_install
+from tools.parsers import parse_repo_grouped
 from tools.posture import (
     PostureFinding,
     collect_endpoint_mcp_manifests,
@@ -89,6 +91,49 @@ _AGENT_SCOPES: frozenset[str] = frozenset({"agent-component", "agent-dependency"
 def _filter_agent_scope_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
     """Drop software-dependency refs before they reach matching/federation/rendering."""
     return [r for r in refs if r.scope in _AGENT_SCOPES]
+
+
+def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
+    """Project the graph's non-root nodes into the flat ref list scan consumes.
+
+    The graph is the single source of truth (Stage 3): `scope` and
+    `attributed_to` are derived from graph structure — `scope_of` (agent- vs
+    software-dependency from the lineage) and `nearest_plugin_ancestor`
+    (reproducing the old "via plugin" semantics: nearest plugin identity, or
+    None). `ComponentRef` is frozen, so use `dataclasses.replace` to stamp the
+    derived values rather than mutating in place. Downstream consumers
+    (BOM/render/matcher) keep working unchanged off these stamped refs;
+    later stages migrate them to read the graph directly.
+    """
+    refs: list[ComponentRef] = []
+    for node in graph.nodes.values():
+        if node.ref is None:  # the synthetic target root has no ref
+            continue
+        refs.append(
+            replace(
+                node.ref,
+                scope=graph.scope_of(node),
+                attributed_to=_attribution_for(graph, node),
+            )
+        )
+    return refs
+
+
+def _attribution_for(graph: Graph, node) -> str | None:
+    """The nearest plugin ancestor's attribution string, or None.
+
+    Reproduces the pre-graph `attributed_to` value exactly: the plugin's
+    component_identity, versioned (`<identity>@<version>`) when the plugin
+    carries a version — matching `claude_plugin.parse` and `claude_install`'s
+    `attributed_id`. A component is its own plugin only via ancestry, so a
+    plugin node itself attributes to None (no plugin ancestor)."""
+    plugin = graph.nearest_plugin_ancestor(node)
+    if plugin is None or plugin.ref is None:
+        return None
+    identity = plugin.ref.component_identity
+    if not identity:
+        return None
+    return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
 
 
 def default_overlays_dir() -> Path:
@@ -401,6 +446,7 @@ def _emit(
     target: RenderTarget | None = None,
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
+    graph: Graph | None = None,
 ) -> None:
     """Dispatch to the chosen renderer and write to stdout.
 
@@ -555,12 +601,20 @@ def repo(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
     )
 
-    grouped, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
-    # Dedup across discovery paths — the same logical component can appear in
-    # multiple groups (e.g., a plugin's .mcp.json walked both directly and
-    # indirectly via plugin.json's string-path mcpServers). Verbose output
-    # still shows raw `grouped` so users see what each manifest declared.
-    all_refs = flatten_grouped(grouped)
+    # The composition graph is the single source of truth (Stage 3): scope and
+    # attribution are derived from graph structure, not path heuristics.
+    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored)
+    all_refs = _refs_from_graph(graph)
+    # Reconstruct the per-manifest `grouped` list the repo renderer expects by
+    # grouping the projected refs by their source_manifest Path; the renderer is
+    # unchanged and reads graph-derived scope/attribution off each ref.
+    grouped = _group_refs_for_repo_tree(all_refs)
+    # Manifest-visited count and parse-failure reporting are properties of the
+    # filesystem walk, not the graph; source them from the walk so the scanned/
+    # failed-to-parse summary is unchanged. (No scope/attribution comes from
+    # here — that is graph-derived.)
+    parse_groups, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
+    n_failed = n_found - len(parse_groups)
     # V0: drop software-dependency refs (deps from non-plugin manifests).
     # OpenACA is agent-composition analysis; deps belonging to general
     # software in the repo are out of scope and would mislead users into
@@ -571,13 +625,13 @@ def repo(
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
+        graph=graph,
     ).component_refs()
-    n_failed = n_found - len(grouped)
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -610,6 +664,7 @@ def repo(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
     card_target = RenderTarget(host_surface="repository", rows=[("path", str(target))])
     card_next = [
@@ -631,6 +686,7 @@ def repo(
                     findings,
                     use_color=_use_color(no_color, output_format),
                     use_unicode=_use_unicode(no_color),
+                    graph=graph,
                 )
                 if tree:
                     click.echo(tree, err=True)
@@ -675,6 +731,7 @@ def repo(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
+        graph=graph,
     )
 
     # For machine formats (github, json), keep the existing one-line stderr
@@ -738,24 +795,22 @@ def endpoint(
             err=True,
         )
 
-    refs, warnings = parse_install(
-        install_root=config_dir,
-        project_root=project,
-        mode="endpoint",
-        include_transitive=True,
-    )
+    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    refs = _refs_from_graph(graph)
+    warnings: list[str] = []
     refs = build_agent_bom(
-        refs,
+        _filter_agent_scope_refs(refs),
         target_type="endpoint",
         target=str(config_dir),
         source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
         source_unit_label="active plugin",
+        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
-    findings = match(refs, corpus)
+    findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
@@ -790,6 +845,7 @@ def endpoint(
             findings,
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
+            graph=graph,
         )
     card_next: list[str] = []
     if project is None:
@@ -808,6 +864,7 @@ def endpoint(
                 findings,
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
+                graph=graph,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -847,6 +904,7 @@ def endpoint(
         target=card_target,
         inventory_tree=card_tree,
         next_actions=card_next,
+        graph=graph,
     )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 

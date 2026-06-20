@@ -75,6 +75,8 @@ class Graph:
             cur = parent_of[cur]
             if cur in seen:
                 raise GraphInvariantError(f"cycle detected through {cur}")
+            if cur not in self.nodes:
+                raise GraphInvariantError(f"dangling parent reference to {cur!r}")
             seen.add(cur)
             chain.append(self.nodes[cur])
         return chain

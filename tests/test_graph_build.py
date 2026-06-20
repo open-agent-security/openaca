@@ -635,7 +635,8 @@ def test_repo_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_path):
     agents_dir = tmp_path / ".claude" / "agents"
     agents_dir.mkdir(parents=True)
     (agents_dir / "my-agent.md").write_text(
-        "---\nmcpServers:\n  git:\n    command: npx\n    args: ['@org/git-mcp@1.0.0']\n---\n# Agent\n"
+        "---\nmcpServers:\n  git:\n    command: npx\n"
+        "    args: ['@org/git-mcp@1.0.0']\n---\n# Agent\n"
     )
     g = build_graph(tmp_path, mode="repo")
     g.validate()

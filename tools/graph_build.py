@@ -189,8 +189,19 @@ def _seed_endpoint(
         )
 
     if project_root is not None:
+        # Project skills are the one endpoint surface the old _walk_project_skill_dirs
+        # filtered by the project root's .gitignore (e.g. skills under an ignored
+        # .worktrees/). Thread the project root as root_dir so that filtering is
+        # preserved; installed-plugin/install-root surfaces stay unfiltered.
+        project_skill_spec = load_gitignore_spec(project_root)
         _add_project_skills(
-            graph, target, project_root, project_root=project_root, stamp_provenance=True
+            graph,
+            target,
+            project_root,
+            project_root=project_root,
+            stamp_provenance=True,
+            root_dir=project_root,
+            root_spec=project_skill_spec,
         )
         # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
         # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
@@ -919,14 +930,17 @@ def _ignore_context(
     Repo mode threads the SCAN ROOT and its spec down through every nested
     descent so a root `.gitignore` rule is honored even inside plugin/skill
     subtrees (parity with parse_repo_grouped, which loads the root spec once and
-    evaluates root-relative). When no root is threaded (endpoint mode, which has
-    no single repo root), fall back to the per-directory spec — preserving the
-    historical endpoint behavior.
+    evaluates root-relative). When no root is threaded (endpoint mode for
+    installed-plugin / install-root surfaces), apply NO gitignore filtering:
+    installed artifacts are not repo source, and the old `parse_install` /
+    `walk_plugin_root` paths never filtered them by a `.gitignore`. The one
+    endpoint surface that DID filter (project skills, via the project root's
+    `.gitignore`) threads `root_dir=project_root` explicitly, so it takes the
+    `root_dir is not None` branch.
     """
     if root_dir is not None:
         return root_dir, root_spec
-    spec = None if include_gitignored else load_gitignore_spec(directory)
-    return directory, spec
+    return directory, None
 
 
 def _is_ignored_under(path: Path, eval_root: Path, spec: GitIgnoreSpec | None) -> bool:
@@ -1086,7 +1100,9 @@ def _add_bundled_plugin_surfaces(
     # Honor the scan-root .gitignore in repo mode (parity with parse_repo_grouped,
     # which filters secondary refs): a bundled surface declared in a file the root
     # ignores (e.g. a plugin repo with `.mcp.json` gitignored) must not be emitted.
-    # Endpoint mode passes root_dir=None → _ignore_context is a no-op, unchanged.
+    # Endpoint mode passes root_dir=None → _ignore_context returns spec=None so the
+    # installed plugin's OWN .gitignore is never applied (parity with the old
+    # walk_plugin_root, which did not filter installed-plugin surfaces).
     eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
     for ref in refs:
         component_type = _component_type(ref)

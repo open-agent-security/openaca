@@ -470,11 +470,27 @@ def test_contract_accepts_payload_after_json_path_redaction() -> None:
 
 
 def test_redact_bom_ref_path_absolute_outside_roots() -> None:
-    """An out-of-root absolute path in a bom-ref is relativized to its basename."""
+    """An out-of-root absolute path in a bom-ref is relativized to basename + stable hash suffix."""
+    import hashlib
+
     cfg = Path("/home/u/.claude")
-    bom_ref = "/opt/plugins/my-plugin/.claude-plugin/plugin.json#$.plugin#plugin/my-plugin"
+    path_part = "/opt/plugins/my-plugin/.claude-plugin/plugin.json"
+    bom_ref = f"{path_part}#$.plugin#plugin/my-plugin"
     result = _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None)
-    assert result == "plugin.json#$.plugin#plugin/my-plugin"
+    digest = hashlib.sha256(path_part.encode()).hexdigest()[:8]
+    assert result == f"plugin.json.{digest}#$.plugin#plugin/my-plugin"
+
+
+def test_redact_bom_ref_path_two_out_of_root_plugins_stay_distinct() -> None:
+    """Two external-root plugins with the same basename produce different bom-refs."""
+    cfg = Path("/home/u/.claude")
+    ref_a = "/rootA/package.json#$.dependencies.left-pad#pkg:npm/left-pad@1.0.0"
+    ref_b = "/rootB/package.json#$.dependencies.left-pad#pkg:npm/left-pad@1.0.0"
+    result_a = _redact_bom_ref_path(ref_a, config_dir=cfg, project=None)
+    result_b = _redact_bom_ref_path(ref_b, config_dir=cfg, project=None)
+    assert result_a != result_b
+    assert result_a.startswith("package.json.")
+    assert result_b.startswith("package.json.")
 
 
 def test_redact_bom_ref_path_under_config_dir() -> None:
@@ -517,16 +533,20 @@ def test_redact_bom_refs_in_bom_consistent_rewrite() -> None:
     }
     _redact_bom_refs_in_bom(bom, config_dir=cfg, project=None)
 
-    # Both components' bom-refs are relativized to basename
-    assert bom["components"][0]["bom-ref"] == "plugin.json#$.plugin#plugin/bad-plugin"
-    assert bom["components"][1]["bom-ref"] == "SKILL.md#$.skill#skill/my-skill"
+    # Compute what the expected redacted refs are (avoids hardcoding hash values).
+    expected_plugin = _redact_bom_ref_path(out_of_root, config_dir=cfg, project=None)
+    expected_skill = _redact_bom_ref_path(child_ref, config_dir=cfg, project=None)
+
+    # Both components' bom-refs are relativized (basename + hash suffix for out-of-root)
+    assert bom["components"][0]["bom-ref"] == expected_plugin
+    assert bom["components"][1]["bom-ref"] == expected_skill
     # target root bom-ref is already logical — unchanged
     assert bom["metadata"]["component"]["bom-ref"] == "openaca:target"
     # dependencies refs are rewritten consistently
     deps = {d["ref"]: d["dependsOn"] for d in bom["dependencies"]}
-    assert "plugin.json#$.plugin#plugin/bad-plugin" in deps
-    assert deps["plugin.json#$.plugin#plugin/bad-plugin"] == ["SKILL.md#$.skill#skill/my-skill"]
-    assert deps["openaca:target"] == ["plugin.json#$.plugin#plugin/bad-plugin"]
+    assert expected_plugin in deps
+    assert deps[expected_plugin] == [expected_skill]
+    assert deps["openaca:target"] == [expected_plugin]
 
 
 def test_redact_payload_for_remote_redacts_bom_refs() -> None:
@@ -572,17 +592,19 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
         "posture_findings": [],
         "observations": [],
     }
+    expected_ref = _redact_bom_ref_path(out_of_root, config_dir=cfg, project=None)
     _redact_payload_for_remote(payload, config_dir=cfg, project=None)
     comp = payload["bom"]["components"][0]
-    # bom-ref is relativized (basename fallback for out-of-root)
-    assert comp["bom-ref"] == "plugin.json#$.plugin#plugin/bad-plugin"
-    # openaca: property value is also relativized
+    # bom-ref is relativized (basename + hash suffix for out-of-root)
+    assert comp["bom-ref"] == expected_ref
+    assert comp["bom-ref"].startswith("plugin.json.")
+    # openaca: property value is also relativized (basename only — no hash, it's a plain path)
     source_manifest = next(
         p["value"] for p in comp["properties"] if p["name"] == "openaca:source_manifest"
     )
     assert source_manifest == "plugin.json"
     # dependencies are consistently rewritten
     deps = {d["ref"]: d["dependsOn"] for d in payload["bom"]["dependencies"]}
-    assert "plugin.json#$.plugin#plugin/bad-plugin" in deps
+    assert expected_ref in deps
     assert "openaca:target" in deps
-    assert deps["openaca:target"] == ["plugin.json#$.plugin#plugin/bad-plugin"]
+    assert deps["openaca:target"] == [expected_ref]

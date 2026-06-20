@@ -40,9 +40,9 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     )
     calls: list[tuple[str, object]] = []
 
-    def fake_parse_install(**kwargs):
-        calls.append(("parse_install", kwargs))
-        return [ref], []
+    def fake_collect_endpoint_components(*args):
+        calls.append(("_collect_endpoint_components", args))
+        return None, [ref]
 
     def fake_run_posture_rules(refs, manifests, settings_manifests):
         calls.append(("run_posture_rules", refs))
@@ -50,7 +50,9 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         assert settings_manifests == [("settings", {})]
         return [_posture("openaca-posture-mutable-install-reference")]
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", fake_parse_install)
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", fake_collect_endpoint_components
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [("mcp", {})],
@@ -63,7 +65,7 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
-    assert calls[0][0] == "parse_install"
+    assert calls[0][0] == "_collect_endpoint_components"
     assert calls[1] == ("run_posture_rules", [ref])
     assert collection.bom["metadata"]["properties"][1] == {
         "name": "openaca:target_type",
@@ -100,7 +102,9 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -130,7 +134,9 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -160,7 +166,9 @@ def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monke
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -190,7 +198,9 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -222,7 +232,9 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -259,7 +271,9 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [(manifest_path, manifest)],
@@ -290,7 +304,9 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -324,7 +340,9 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -364,7 +382,9 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -411,7 +431,9 @@ def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -443,7 +465,9 @@ def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_p
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -476,7 +500,9 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -504,7 +530,9 @@ def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -536,7 +564,9 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_pre
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -568,7 +598,9 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -600,7 +632,9 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -631,7 +665,9 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -669,7 +705,9 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -703,7 +741,9 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -736,7 +776,9 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -767,7 +809,9 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],
@@ -826,7 +870,9 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
         },
     )
 
-    monkeypatch.setattr("tools.remote.collector.parse_install", lambda **kwargs: ([ref], []))
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
     monkeypatch.setattr(
         "tools.remote.collector.collect_endpoint_mcp_manifests",
         lambda config_dir, project, refs: [],

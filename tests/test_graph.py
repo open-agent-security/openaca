@@ -1,5 +1,7 @@
+import pytest
+
 from tools.component_ref import ComponentRef
-from tools.graph import Edge, Graph, Node
+from tools.graph import Edge, Graph, GraphInvariantError, Node
 
 
 def _ref(identity, ctype):
@@ -53,3 +55,64 @@ def test_graph_roots_and_children():
     assert g.root.key == "target:/repo"
     assert [c.key for c in g.children_of(target)] == ["plugin/mp/demo@1"]
     assert [c.key for c in g.children_of(plugin)] == ["skill/deploy@1"]
+
+
+def test_validate_rejects_two_parents():
+    g = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "a": Node("a", "skill", None),
+            "b": Node("b", "skill", None),
+            "c": Node("c", "package", None),
+        },
+        edges=[Edge("t", "a"), Edge("t", "b"), Edge("a", "c"), Edge("b", "c")],  # c has two parents
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_cycle():
+    g = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "a": Node("a", "skill", None),
+            "b": Node("b", "package", None),
+        },
+        edges=[Edge("t", "a"), Edge("a", "b"), Edge("b", "a")],  # a↔b cycle
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_dangling_edge_endpoint():
+    g = Graph(nodes={"t": Node("t", "target", None)}, edges=[Edge("t", "ghost")])
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_zero_or_many_targets():
+    g = Graph(nodes={"a": Node("a", "skill", None)}, edges=[])
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_rejects_disconnected_node():
+    # target + a package with no path to it → not "one tree rooted at target"
+    g = Graph(
+        nodes={"t": Node("t", "target", None), "orphan": Node("orphan", "package", None)},
+        edges=[],
+    )
+    with pytest.raises(GraphInvariantError):
+        g.validate()
+
+
+def test_validate_accepts_well_formed_tree():
+    g = Graph(
+        nodes={
+            "t": Node("t", "target", None),
+            "p": Node("p", "plugin", None),
+            "s": Node("s", "skill", None),
+        },
+        edges=[Edge("t", "p"), Edge("p", "s")],
+    )
+    g.validate()  # must not raise

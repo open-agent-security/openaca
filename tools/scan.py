@@ -120,20 +120,27 @@ def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
 
 
 def _attribution_for(graph: Graph, node) -> str | None:
-    """The nearest plugin ancestor's attribution string, or None.
+    """Nearest plugin ancestor's attribution string, or nearest agent ancestor's
+    identity, or None.
 
-    Reproduces the pre-graph `attributed_to` value exactly: the plugin's
-    component_identity, versioned (`<identity>@<version>`) when the plugin
-    carries a version — matching `claude_plugin.parse` and `claude_install`'s
-    `attributed_id`. A component is its own plugin only via ancestry, so a
-    plugin node itself attributes to None (no plugin ancestor)."""
+    Plugin ancestor takes priority: component_identity, versioned
+    (`<identity>@<version>`) when the plugin carries a version — matching
+    `claude_plugin.parse` and `claude_install`'s `attributed_id`. A component is
+    its own plugin only via ancestry, so a plugin node itself attributes to None.
+
+    When there is no plugin ancestor, falls back to the nearest agent ancestor's
+    component_identity, preserving the pre-graph `attributed_to='claude-agent/...'`
+    that `_agent_frontmatter_child_refs` stamps on frontmatter MCP/hook children.
+    BOM uses this to build agent→MCP edges in the transitional flat-ref path."""
     plugin = graph.nearest_plugin_ancestor(node)
-    if plugin is None or plugin.ref is None:
-        return None
-    identity = plugin.ref.component_identity
-    if not identity:
-        return None
-    return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
+    if plugin is not None and plugin.ref is not None:
+        identity = plugin.ref.component_identity
+        if identity:
+            return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
+    for anc in graph.lineage(node)[1:]:
+        if anc.kind == "agent" and anc.ref is not None and anc.ref.component_identity:
+            return anc.ref.component_identity
+    return None
 
 
 def default_overlays_dir() -> Path:

@@ -909,3 +909,50 @@ def test_repo_non_ignored_nested_dep_still_discovered(tmp_path):
     g = build_graph(tmp_path, mode="repo")
     pkg = next(n for n in g.nodes.values() if n.kind == "package")
     assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]
+
+
+def test_plugin_skill_symlink_escape_rejected(tmp_path):
+    """A plugin's skills/ entry that symlinks outside the plugin root must be
+    rejected, mirroring the escape check in claude_plugin_root._parse_bundled_skills
+    (subdir_resolved.is_relative_to(plugin_root_resolved))."""
+    plugin_root = tmp_path / "plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "demo", "version": "1.0.0"}'
+    )
+    (plugin_root / "skills").mkdir()
+
+    outside_skill = tmp_path / "outside-skills" / "bad-skill"
+    outside_skill.mkdir(parents=True)
+    (outside_skill / "SKILL.md").write_text("---\nname: bad-skill\ndescription: d\n---\nrun\n")
+
+    os.symlink(outside_skill, plugin_root / "skills" / "bad-skill")
+
+    g = build_graph(tmp_path, mode="repo")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 0, (
+        "plugin skill entry symlinking outside the plugin root must be rejected"
+    )
+    assert len([n for n in g.nodes.values() if n.kind == "plugin"]) == 1
+
+
+def test_plugin_skill_inside_plugin_root_accepted(tmp_path):
+    """A plugin's skills/ entry that is a legitimate symlink within the plugin
+    root (e.g. a relative symlink) is accepted — the bounds check is not too strict."""
+    plugin_root = tmp_path / "plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "demo", "version": "1.0.0"}'
+    )
+    real_skill = plugin_root / "bundled-skills" / "good-skill"
+    real_skill.mkdir(parents=True)
+    (real_skill / "SKILL.md").write_text("---\nname: good-skill\ndescription: d\n---\nrun\n")
+    skills_dir = plugin_root / "skills"
+    skills_dir.mkdir()
+    os.symlink(real_skill, skills_dir / "good-skill")
+
+    g = build_graph(tmp_path, mode="repo")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1, (
+        "plugin skill symlink within the plugin root must be accepted"
+    )

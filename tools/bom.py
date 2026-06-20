@@ -9,7 +9,6 @@ from typing import Any
 from urllib.parse import unquote
 
 from tools.component_ref import ComponentRef, canonical_component_identity
-from tools.graph import Graph
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
@@ -91,7 +90,6 @@ def build_agent_bom(
     target: str | None = None,
     source_unit_count: int | None = None,
     source_unit_label: str | None = None,
-    graph: Graph | None = None,
 ) -> AgentBOM:
     components = [
         BOMComponent(ref=ref, bom_ref=bom_ref)

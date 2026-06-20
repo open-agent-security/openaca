@@ -40,7 +40,6 @@ from urllib.parse import urlparse
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef
-from tools.graph import Graph
 from tools.identity import match_coordinates
 
 # Source forge ecosystems use GIT ranges (commit SHAs), not ECOSYSTEM/SEMVER
@@ -332,11 +331,7 @@ def _match_unpinned(
 def match(
     refs: list[ComponentRef],
     advisories: list[dict[str, Any]],
-    *,
-    graph: Graph | None = None,
 ) -> list[Finding]:
-    # `graph` is threaded by scan as the source of truth for attribution
-    # (Stage 3); consumed by matcher/sarif in a later stage. Unused here.
     findings: list[Finding] = []
     for ref in refs:
         findings.extend(_match_one(ref, advisories))

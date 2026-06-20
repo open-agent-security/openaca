@@ -32,7 +32,6 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
-from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -1293,7 +1292,6 @@ def render_inventory_tree(
     *,
     use_color: bool = False,
     use_unicode: bool = True,
-    graph: Graph | None = None,
 ) -> str:
     """Render the active-plugin and direct-component inventory as a tree.
 
@@ -1349,7 +1347,6 @@ def render_repo_inventory_tree(
     *,
     use_color: bool = False,
     use_unicode: bool = True,
-    graph: Graph | None = None,
 ) -> str:
     """Render repo-mode inventory as a composition tree.
 

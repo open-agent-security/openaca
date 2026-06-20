@@ -557,3 +557,73 @@ def test_endpoint_direct_skill_and_project_skill_not_double_created(tmp_path):
     skills = [n for n in g.nodes.values() if n.kind == "skill"]
     assert len(skills) == 2
     assert all([n.kind for n in g.lineage(s)] == ["skill", "target"] for s in skills)
+
+
+# --- Codex review fixes ---
+
+
+def test_repo_plugin_inline_mcp_servers_in_plugin_json(tmp_path):
+    """plugin.json with inline mcpServers must add mcp_server children of the plugin."""
+    (tmp_path / ".claude-plugin").mkdir()
+    plugin_json = {
+        "name": "demo",
+        "version": "1",
+        "mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}},
+    }
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(json.dumps(plugin_json))
+    g = build_graph(tmp_path, mode="repo")
+    plugin = next(n for n in g.nodes.values() if n.kind == "plugin")
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
+    assert g.lineage(mcp)[1].key == plugin.key
+
+
+def test_endpoint_standalone_mcp_json_at_project_root(tmp_path):
+    """<project>/.mcp.json must produce mcp_server children of the target in endpoint mode."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"git": {"command": "npx", "args": ["@org/git-mcp@1.0.0"]}}})
+    )
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_endpoint_standalone_mcp_json_at_install_root(tmp_path):
+    """<install_root>/.mcp.json must produce mcp_server children of the target in endpoint mode."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    (install_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"fs": {"command": "npx", "args": ["@mcp/fs@0.1.0"]}}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
+
+
+def test_repo_settings_json_enabled_plugins_are_plugin_nodes(tmp_path):
+    """.claude/settings.json enabledPlugins in repo mode must produce plugin children of target."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"myplugin@marketplace": True}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    plugins = [n for n in g.nodes.values() if n.kind == "plugin"]
+    assert len(plugins) == 1
+    assert [n.kind for n in g.lineage(plugins[0])] == ["plugin", "target"]

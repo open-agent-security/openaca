@@ -27,6 +27,7 @@ from tools.parsers import (
     claude_command_agent,
     claude_install,
     claude_plugin,
+    claude_settings,
     claude_skill,
     hooks_json,
     mcp_json,
@@ -40,6 +41,7 @@ from tools.parsers.claude_plugin_root import (
     _parse_bundled_command_agents,
     _parse_bundled_hooks,
     _parse_default_mcp,
+    _parse_manifest_refs,
     resolve_within,
 )
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -263,6 +265,21 @@ def _seed_remote_mcps(
             source_manifest=str(settings_path),
             locator_prefix="$.mcpServers (inlined)",
         ):
+            if _component_type(ref) != "mcp_server":
+                continue
+            node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+            _add_child(graph, target, node)
+
+    # Standalone .mcp.json: user-scoped (<install_root>/.mcp.json) and
+    # project-scoped (<project_root>/.mcp.json) — parity with
+    # _walk_direct_components in claude_install.
+    mcp_paths: list[Path] = [install_root / ".mcp.json"]
+    if project_root is not None:
+        mcp_paths.append(project_root / ".mcp.json")
+    for mcp_path in mcp_paths:
+        if not mcp_path.is_file():
+            continue
+        for ref in _safe_parse(mcp_json.parse, mcp_path):
             if _component_type(ref) != "mcp_server":
                 continue
             node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
@@ -653,6 +670,13 @@ def _add_repo_standalone_components(
                 node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
+        if path.name == "settings.json" and _is_claude_settings_json(path, directory):
+            for ref in _safe_parse(claude_settings.parse, path):
+                if _component_type(ref) != "plugin":
+                    continue
+                node = Node(key=occurrence_key(ref), kind="plugin", ref=ref)
+                _add_child(graph, parent, node)
+            continue
         if path.suffix == ".md":
             kind = _command_agent_kind(path, directory)
             if kind is None:
@@ -664,6 +688,15 @@ def _add_repo_standalone_components(
             for ref in refs:
                 node = Node(key=occurrence_key(ref), kind=kind, ref=ref)
                 _add_child(graph, parent, node)
+
+
+def _is_claude_settings_json(path: Path, root: Path) -> bool:
+    """True iff `path` is `.claude/settings.json` at any depth relative to root."""
+    try:
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    return rel == ".claude/settings.json" or rel.endswith("/.claude/settings.json")
 
 
 def _command_agent_kind(path: Path, root: Path) -> Kind | None:
@@ -697,9 +730,17 @@ def _add_bundled_plugin_surfaces(graph: Graph, plugin_node: Node, plugin_root: P
     plugin_name = plugin_ref.name or ""
     attributed_to = plugin_ref.component_identity
     plugin_data = _plugin_manifest_data(plugin_root)
+    plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
 
     refs: list[ComponentRef] = []
-    refs.extend(_parse_default_mcp(plugin_root, [], attributed_to))
+    manifest_refs = _parse_manifest_refs(
+        plugin_data,
+        plugin_json_path=plugin_manifest_path,
+        plugin_root=plugin_root,
+        attributed_to=attributed_to,
+    )
+    refs.extend(manifest_refs)
+    refs.extend(_parse_default_mcp(plugin_root, manifest_refs, attributed_to))
     refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name, attributed_to))
     refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name, attributed_to))
     refs = [r for r in refs if _component_type(r) != "skill"]
@@ -707,7 +748,6 @@ def _add_bundled_plugin_surfaces(graph: Graph, plugin_node: Node, plugin_root: P
     # plugin-prefixed component_path) onto each bundled ref. This is placement
     # metadata the descent owns — parity with the pre-graph `_with_plugin_context`
     # that the endpoint walker applied — not a content read.
-    plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
     refs = claude_install._with_plugin_context(refs, plugin_name, plugin_manifest_path)
     for ref in refs:
         component_type = _component_type(ref)

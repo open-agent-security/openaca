@@ -684,11 +684,11 @@ already stopped *setting* `attributed_to` in Stage 3.)
 - Modify: `tools/component_ref.py` (drop the `attributed_to` field), `tools/scan.py` (drop the `ref.attributed_to = …` stamping added in Stage 3), and any parser signature that still carries an `attributed_to` parameter purely as a pass-through (drop the param)
 - Test: full suite
 
-- [ ] **Step 1:** `grep -rn "attributed_to" tools/ tests/` → expect only the field definition, the scan stamping, and dead params/tests.
-- [ ] **Step 2:** Delete the field, the scan stamping, the leftover pass-through params, and any test references.
-- [ ] **Step 3:** `grep -rn "attributed_to" tools/ tests/` → expect **(none)**.
-- [ ] **Step 4: Full gate green.** `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest -q`
-- [ ] **Step 5: Commit.** `git commit -m "model: remove attributed_to entirely (graph is the source of parentage)"`
+- [x] **Step 1:** `grep -rn "attributed_to" tools/ tests/` → expect only the field definition, the scan stamping, and dead params/tests.
+- [x] **Step 2:** Delete the field, the scan stamping, the leftover pass-through params, and any test references.
+- [x] **Step 3:** `grep -rn "attributed_to" tools/ tests/` → expect **(none)**.
+- [x] **Step 4: Full gate green.** `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest -q`
+- [x] **Step 5: Commit.** `git commit -m "model: remove attributed_to entirely (graph is the source of parentage)"`
 
 ### Task 7.2: e2e — vulnerable skill-bundled dep is detected and nested
 
@@ -696,9 +696,9 @@ already stopped *setting* `attributed_to` in Stage 3.)
 - Modify: `tests/test_e2e.py`
 - Test: same
 
-- [ ] **Step 1: Failing test** — a fixture repo with a skill bundling a known-vulnerable `package.json` dep: scan finds the advisory, the inventory tree nests the package under the skill, scope is `agent-dependency`, and SARIF attributes it "via" the skill/plugin. (This is the product promise the graph unlocks vs ADR-0036's deferred gap.)
-- [ ] **Step 2–4:** Implement against the real corpus + parser/exporter; run; expect PASS.
-- [ ] **Step 5: Commit.** `git commit -m "e2e: vulnerable skill-bundled dependency is detected and correctly nested"`
+- [x] **Step 1: Failing test** — a fixture repo with a skill bundling a known-vulnerable `package.json` dep: scan finds the advisory, the inventory tree nests the package under the skill, scope is `agent-dependency`, and SARIF attributes it "via" the skill/plugin. (This is the product promise the graph unlocks vs ADR-0036's deferred gap.)
+- [x] **Step 2–4:** Implement against the real corpus + parser/exporter; run; expect PASS.
+- [x] **Step 5: Commit.** `git commit -m "e2e: vulnerable skill-bundled dependency is detected and correctly nested"`
 
 ---
 

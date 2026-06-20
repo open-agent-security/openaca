@@ -706,3 +706,64 @@ def test_endpoint_direct_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_
     assert [n.kind for n in g.lineage(mcp_nodes[0])] == ["mcp_server", "agent", "target"]
     children_of_agent = g.children_of(agent_nodes[0])
     assert any(n.kind == "mcp_server" for n in children_of_agent)
+
+
+# --- Stage 4 second Codex review fixes ---
+
+
+def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
+    """_load_plugins_map warnings (e.g. malformed installed_plugins.json) must
+    surface via the warnings= accumulator passed to build_graph, not be
+    silently dropped by the graph builder."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    plugins_dir = install_root / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "installed_plugins.json").write_text("this is not valid json{{{{")
+
+    warnings: list[str] = []
+    g = build_graph(install_root, mode="endpoint", warnings=warnings)
+    g.validate()
+    assert any("installed_plugins.json" in w for w in warnings), (
+        f"expected a warning about malformed installed_plugins.json, got: {warnings}"
+    )
+
+
+def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):
+    """Direct endpoint skills whose SKILL.md appears in a .skill-lock.json
+    must carry source_provenance in their ref's extra dict (parity with the
+    old _parse_direct_skill path in claude_install)."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    skill_dir = install_root / "skills" / "aws-api"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    # .skill-lock.json at install_root (candidate: skills_root.parent/.skill-lock.json)
+    (install_root / ".skill-lock.json").write_text(
+        json.dumps(
+            {
+                "skills": {
+                    "aws-api": {
+                        "source": "https://github.com/user/aws-api-skill",
+                        "sourceType": "github",
+                        "ref": "abc123",
+                    }
+                }
+            }
+        )
+    )
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    g = build_graph(install_root, mode="endpoint")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1
+    provenance = (skill_nodes[0].ref.extra or {}).get("source_provenance")
+    assert isinstance(provenance, dict), "source_provenance must be a dict stamped on the skill ref"
+    assert provenance.get("status") == "known"
+    assert provenance.get("source") == "https://github.com/user/aws-api-skill"
+    assert provenance.get("ref") == "abc123"

@@ -98,26 +98,18 @@ def _filter_agent_scope_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
 def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
     """Project the graph's non-root nodes into the flat ref list scan consumes.
 
-    The graph is the single source of truth (Stage 3): `scope` and
-    `attributed_to` are derived from graph structure — `scope_of` (agent- vs
-    software-dependency from the lineage) and `nearest_plugin_ancestor`
-    (reproducing the old "via plugin" semantics: nearest plugin identity, or
-    None). `ComponentRef` is frozen, so use `dataclasses.replace` to stamp the
-    derived values rather than mutating in place. Downstream consumers
-    (BOM/render/matcher) keep working unchanged off these stamped refs;
-    later stages migrate them to read the graph directly.
+    The graph is the single source of truth: `scope` is derived from graph
+    structure (`scope_of` — agent- vs software-dependency from the lineage)
+    and stamped onto each ref. Attribution ("via plugin X") is no longer a ref
+    field; consumers derive it from the graph at output time via
+    `attribution_for`. `ComponentRef` is frozen, so use `dataclasses.replace`
+    to stamp the derived scope rather than mutating in place.
     """
     refs: list[ComponentRef] = []
     for node in graph.nodes.values():
         if node.ref is None:  # the synthetic target root has no ref
             continue
-        refs.append(
-            replace(
-                node.ref,
-                scope=graph.scope_of(node),
-                attributed_to=graph.attribution_for(node),
-            )
-        )
+        refs.append(replace(node.ref, scope=graph.scope_of(node)))
     return refs
 
 

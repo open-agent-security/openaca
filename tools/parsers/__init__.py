@@ -43,13 +43,12 @@ REGISTRY: list[tuple[str, ParserFn]] = [
     (".claude-plugin/plugin.json", claude_plugin.parse),
     (".claude/settings.json", claude_settings.parse),
     # Plan 008: agent-component inventory in repo mode. These
-    # surfaces emit the same ecosystems as endpoint mode but with `attributed_to=None`
-    # (repo declarations are not "via a plugin"; the repo declares them).
+    # surfaces emit the same ecosystems as endpoint mode; parentage is set by
+    # the graph edge, not stored on the refs.
     ("**/.claude/skills/*/SKILL.md", claude_skill.parse),
     ("**/.claude/commands/**/*.md", _parse_repo_command),
     ("**/.claude/agents/**/*.md", _parse_repo_agent),
     # Plan 009: lockfile parsers for repo-mode transitive coverage.
-    # Refs from these patterns have attributed_to=None (host repo is direct);
     # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
     ("package-lock.json", package_lock_json.parse),
     ("uv.lock", uv_lock.parse),
@@ -191,17 +190,15 @@ def flatten_grouped(
     findings and SARIF emits duplicate results.
 
     Dedup key intentionally excludes `extra` (a dict, so unhashable; also
-    discovery-path-dependent in some cases) and `attributed_to`. What identifies
-    a logical component for matching is the (where, what) tuple:
+    discovery-path-dependent in some cases). What identifies a logical component
+    for matching is the (where, what) tuple:
     (source_manifest, source_locator, ecosystem, name, version, component_identity).
-
-    When the same key is seen twice and one route has `attributed_to` set (e.g.
-    bundled MCP discovered via plugin.json) and the other does not (e.g. the
-    same .mcp.json walked directly), the attributed ref is preferred so that
-    "via <plugin>" tags are preserved in scan output.
+    The first route to discover a key wins; attribution is no longer a ref field
+    (it is derived from the graph), so there is no attributed-vs-unattributed
+    preference to apply.
     """
     refs: list[ComponentRef] = []
-    seen: dict[tuple, int] = {}  # key -> index in refs
+    seen: set[tuple] = set()
     for _, group in grouped:
         for r in group:
             # Resolve source_manifest to an absolute path so that relative
@@ -220,13 +217,8 @@ def flatten_grouped(
                 r.component_identity,
             )
             if key in seen:
-                # Prefer an attributed ref over an unattributed duplicate so
-                # that plugin-bundled MCPs keep their "via <plugin>" tag even
-                # when the direct-file walker also discovers the same manifest.
-                if refs[seen[key]].attributed_to is None and r.attributed_to is not None:
-                    refs[seen[key]] = r
                 continue
-            seen[key] = len(refs)
+            seen.add(key)
             refs.append(r)
     return refs
 

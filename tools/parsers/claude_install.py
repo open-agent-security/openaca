@@ -19,8 +19,8 @@ plugin; fall back to `[0]` with a warning.
 Plan 008 adds:
 - Bundled component walking: for each active plugin's installPath, emit
   refs for `.mcp.json`, `skills/<name>/SKILL.md`, `hooks/hooks.json`,
-  `commands/*.md`, `agents/*.md`. All bundled refs carry
-  `attributed_to = "plugin/<marketplace>/<name>@<version>"` when marketplace is known.
+  `commands/*.md`, `agents/*.md`. Parentage of bundled refs is set by the
+  graph edge from the plugin node, not stored on the refs.
 
 Settings layering is mode-specific:
 - `endpoint` mode reads user + project + local.
@@ -186,9 +186,7 @@ def _walk_active_plugins(
         # Canonical component_identity is version-less so advisory matching is
         # consistent whether the plugin was discovered in repo mode (settings.json,
         # no version) or endpoint mode (installed_plugins.json, version known).
-        # The versioned attributed_id is used only for bundled-component attribution.
         component_identity = _plugin_identity(plugin_name, marketplace)
-        attributed_id = f"{component_identity}@{version}" if version else component_identity
 
         refs.append(
             ComponentRef(
@@ -197,7 +195,6 @@ def _walk_active_plugins(
                 component_identity=component_identity,
                 source_manifest=str(lockfile_path),
                 source_locator=f"$.plugins.{plugin_key}[{index}]",
-                attributed_to=None,  # plugin itself is direct
                 extra={
                     "component_type": "plugin",
                     "runtime_hosts": ["claude-code"],
@@ -214,16 +211,14 @@ def _walk_active_plugins(
         install_path = entry.get("installPath")
         if isinstance(install_path, str) and install_path:
             bundled_refs, bundled_warnings = _walk_plugin_install_root(
-                Path(install_path), plugin_name=plugin_name, attributed_to=attributed_id
+                Path(install_path), plugin_name=plugin_name
             )
             refs.extend(bundled_refs)
             for w in bundled_warnings:
                 warnings.append(f"{plugin_key}: {w}")
 
             if include_transitive:
-                tier2_refs = _walk_plugin_implementation_deps(
-                    Path(install_path), attributed_to=attributed_id
-                )
+                tier2_refs = _walk_plugin_implementation_deps(Path(install_path))
                 refs.extend(tier2_refs)
 
     return refs, warnings
@@ -318,7 +313,6 @@ def _walk_direct_components(
             install_root / "commands",
             kind="command",
             scope_owner=None,
-            attributed_to=None,
         )
     )
     refs.extend(
@@ -326,7 +320,6 @@ def _walk_direct_components(
             install_root / "agents",
             kind="agent",
             scope_owner=None,
-            attributed_to=None,
         )
     )
 
@@ -337,7 +330,6 @@ def _walk_direct_components(
                 project_root / ".claude" / "commands",
                 kind="command",
                 scope_owner=None,
-                attributed_to=None,
             )
         )
         refs.extend(
@@ -345,7 +337,6 @@ def _walk_direct_components(
                 project_root / ".claude" / "agents",
                 kind="agent",
                 scope_owner=None,
-                attributed_to=None,
             )
         )
 
@@ -364,7 +355,7 @@ def _walk_skill_dir(skills_dir: Path, project_root: Optional[Path] = None) -> li
 
 
 def _parse_direct_skill(skill_md: Path, project_root: Optional[Path]) -> list[ComponentRef]:
-    refs = claude_skill.parse(skill_md, attributed_to=None)
+    refs = claude_skill.parse(skill_md)
     out: list[ComponentRef] = []
     for ref in refs:
         if not ref.name:
@@ -416,7 +407,7 @@ def _walk_project_skill_dirs(project_root: Path) -> list[ComponentRef]:
 
 
 def _walk_plugin_install_root(
-    install_path: Path, plugin_name: str, attributed_to: str
+    install_path: Path, plugin_name: str
 ) -> tuple[list[ComponentRef], list[str]]:
     """Enumerate all bundled components inside an active plugin's installPath.
 
@@ -438,7 +429,7 @@ def _walk_plugin_install_root(
     - `<install_path>/commands/*.md` plus `plugin.json["commands"]` string-path.
     - `<install_path>/agents/*.md` plus `plugin.json["agents"]` string-path.
 
-    All emitted refs carry the caller-supplied `attributed_to`. Missing
+    Parentage is set by the graph edge, not stored on the refs. Missing
     surfaces are not warnings — most plugins have only a subset. Returns
     `(refs, warnings)` so the caller can surface non-fatal anomalies
     (e.g., installPath doesn't exist) in verbose output.
@@ -468,7 +459,6 @@ def _walk_plugin_install_root(
             plugin_name=plugin_name,
             plugin_data=plugin_data,
             plugin_json_path=plugin_json_path,
-            attributed_to=attributed_to,
         )
     )
 
@@ -502,7 +492,7 @@ _MANIFEST_FALLBACK: list[tuple[str, str, object]] = [
 # (ecosystem, filename) projections of the dispatch tables, for callers that
 # share the ecosystem ordering/precedence but supply their own parsers (e.g.
 # repo-mode `_add_dep_manifest_packages`, whose refs carry a different emission
-# contract — attributed_to=None, transitive=True — than the tier-2 walk).
+# contract — transitive=True — than the tier-2 walk).
 _LOCKFILE_DISPATCH_FILES: list[tuple[str, str]] = [(e, f) for e, f, _ in _LOCKFILE_DISPATCH]
 _MANIFEST_FALLBACK_FILES: list[tuple[str, str]] = [(e, f) for e, f, _ in _MANIFEST_FALLBACK]
 
@@ -514,7 +504,7 @@ _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
 }
 
 
-def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> list[ComponentRef]:
+def _walk_plugin_implementation_deps(install_path: Path) -> list[ComponentRef]:
     """Tier-2 walk: parse every supported lockfile at the installPath, then
     manifest-fall-back for ecosystems not covered by a lockfile.
 
@@ -522,8 +512,8 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
     only with extra["transitive"]=False. For each ecosystem, only the first
     matching lockfile in _LOCKFILE_DISPATCH is used — same-ecosystem lockfiles
     (e.g. bun.lock + package-lock.json) are not double-parsed. Multi-language
-    plugins still emit refs for every ecosystem they cover.
-    All emissions tagged with the caller-supplied attributed_to.
+    plugins still emit refs for every ecosystem they cover. Parentage is set by
+    the graph edge from the plugin node, not stored on the refs.
     """
     if not install_path.is_dir():
         return []
@@ -540,7 +530,7 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
         except Exception:
             continue
         for r in lock_refs:
-            refs.append(replace(r, attributed_to=attributed_to, scope="agent-dependency"))
+            refs.append(replace(r, scope="agent-dependency"))
         if lock_refs:
             covered.add(ecosystem)
     for ecosystem, filename, parser in _MANIFEST_FALLBACK:
@@ -560,9 +550,7 @@ def _walk_plugin_implementation_deps(install_path: Path, attributed_to: str) -> 
             extra = dict(r.extra)
             extra["transitive"] = False
             extra["fallback_reason"] = f"no {ecosystem} lockfile present"
-            refs.append(
-                replace(r, attributed_to=attributed_to, extra=extra, scope="agent-dependency")
-            )
+            refs.append(replace(r, extra=extra, scope="agent-dependency"))
     return refs
 
 

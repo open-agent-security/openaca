@@ -23,7 +23,6 @@ content-hash advisories would refine if needed in V1.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -39,7 +38,6 @@ def parse_file(
     md_path: Path,
     kind: Kind,
     scope_owner: Optional[str] = None,
-    attributed_to: Optional[str] = None,
 ) -> list[ComponentRef]:
     """Emit one ref for a single `*.md` file. Used by the repo-mode
     registry where `rglob` discovers paths individually."""
@@ -56,12 +54,11 @@ def parse_file(
         component_identity=identity,
         source_manifest=str(md_path),
         source_locator="$",
-        attributed_to=attributed_to,
         extra={"scope_owner": scope_owner, "component_type": kind},
     )
     refs = [parent]
     if kind == "agent" and scope_owner is None:
-        refs.extend(_agent_frontmatter_child_refs(md_path, identity, frontmatter))
+        refs.extend(_agent_frontmatter_child_refs(md_path, frontmatter))
     return refs
 
 
@@ -69,14 +66,12 @@ def enumerate_dir(
     dir_path: Path,
     kind: Kind,
     scope_owner: Optional[str],
-    attributed_to: Optional[str],
 ) -> list[ComponentRef]:
     """Walk `dir_path/*.md`, emit one ComponentRef per file.
 
     `scope_owner` is the plugin name for bundled components, or None for
     repo-declared ones. It is retained in `extra` as observation metadata.
-    `attributed_to` is the parent plugin's identity for bundled components,
-    or None for repo-declared.
+    Parentage is set by the graph edge, not stored on the refs.
     """
     if not dir_path.is_dir():
         return []
@@ -86,9 +81,7 @@ def enumerate_dir(
     for child in sorted(dir_path.rglob("*.md")):
         if not child.is_file() or child.suffix != ".md":
             continue
-        refs.extend(
-            parse_file(child, kind=kind, scope_owner=scope_owner, attributed_to=attributed_to)
-        )
+        refs.extend(parse_file(child, kind=kind, scope_owner=scope_owner))
     return refs
 
 
@@ -125,18 +118,18 @@ def _read_frontmatter(md_path: Path) -> dict:
 
 def _agent_frontmatter_child_refs(
     md_path: Path,
-    agent_identity: str,
     frontmatter: dict,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
 
     mcp_servers = _inline_mcp_servers(frontmatter.get("mcpServers"))
-    for ref in mcp_json.parse_mcp_servers(
-        mcp_servers,
-        source_manifest=str(md_path),
-        locator_prefix="$.mcpServers",
-    ):
-        refs.append(replace(ref, attributed_to=agent_identity))
+    refs.extend(
+        mcp_json.parse_mcp_servers(
+            mcp_servers,
+            source_manifest=str(md_path),
+            locator_prefix="$.mcpServers",
+        )
+    )
 
     hooks_block = frontmatter.get("hooks")
     if isinstance(hooks_block, dict):
@@ -145,7 +138,6 @@ def _agent_frontmatter_child_refs(
                 hooks_block=hooks_block,
                 plugin_name="",
                 source_manifest=str(md_path),
-                attributed_to=agent_identity,
             )
         )
 

@@ -396,19 +396,15 @@ def test_plugin_dependency_bom_keeps_purl_as_match_coordinate_only():
         version="4.12.5",
         source_manifest="external_plugins/discord/bun.lock",
         source_locator="$.packages.hono",
-        attributed_to="plugin/claude-plugins-official/discord@0.0.4",
         scope="agent-dependency",
     )
 
     doc = build_agent_bom([ref], target_type="repo", target=".").to_cyclonedx()
 
-    component = _component(doc, "plugin/claude-plugins-official/discord/deps/npm/hono")
+    component = _component(doc, "package/npm/hono")
     assert component["type"] == "library"
     assert component["purl"] == "pkg:npm/hono@4.12.5"
-    assert (
-        _property(component, "openaca:identity")
-        == "plugin/claude-plugins-official/discord/deps/npm/hono"
-    )
+    assert _property(component, "openaca:identity") == "package/npm/hono"
     assert _property(component, "openaca:component_type") == "package"
     assert _property(component, "openaca:scope") == "agent-dependency"
     refs = component_refs_from_cyclonedx(doc)
@@ -449,59 +445,6 @@ def test_skill_artifact_coordinates_round_trip_through_bom():
     ]
 
 
-def test_cyclonedx_build_edges_resolves_versioned_attributed_to():
-    """Bundled components with attributed_to='<identity>@<version>' resolve correctly.
-
-    In real endpoint scans, a plugin is stored with versionless component_identity
-    (e.g., 'plugin/mktplace/name') but bundled refs receive
-    attributed_to='plugin/mktplace/name@1.2.3'. Without indexing the versioned
-    form, _build_edges silently emits no edge and the CycloneDX graph is incomplete.
-    """
-    plugin = ComponentRef(
-        component_identity="plugin/claude-plugins-official/github",
-        version="2.0.0",
-        source_manifest="installed_plugins.json",
-        extra={"component_type": "plugin"},
-    )
-    bundled_mcp = ComponentRef(
-        component_identity="mcp-remote/api.githubcopilot.com/mcp/",
-        source_manifest="plugin.json",
-        attributed_to="plugin/claude-plugins-official/github@2.0.0",
-        extra={"component_type": "mcp_server"},
-    )
-
-    doc = build_agent_bom(
-        [plugin, bundled_mcp], target_type="endpoint", target="~/.claude"
-    ).to_cyclonedx()
-
-    deps_by_ref = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
-    plugin_bom_ref = "plugin/claude-plugins-official/github"
-    assert plugin_bom_ref in deps_by_ref
-    assert "mcp-remote/api.githubcopilot.com/mcp/" in deps_by_ref[plugin_bom_ref]
-
-
-def test_cyclonedx_dependencies_capture_plugin_attribution_edges():
-    plugin = ComponentRef(
-        component_identity="plugin/claude-plugins-official/github@unknown",
-        version="unknown",
-        source_manifest="installed_plugins.json",
-        extra={"component_type": "plugin"},
-    )
-    mcp = ComponentRef(
-        component_identity="mcp-remote/api.githubcopilot.com/mcp/",
-        source_manifest="plugin.json",
-        attributed_to="plugin/claude-plugins-official/github@unknown",
-        extra={"component_type": "mcp_server"},
-    )
-
-    doc = build_agent_bom([plugin, mcp], target_type="endpoint", target="~/.claude").to_cyclonedx()
-
-    assert {
-        "ref": "plugin/claude-plugins-official/github@unknown",
-        "dependsOn": ["mcp-remote/api.githubcopilot.com/mcp/"],
-    } in doc["dependencies"]
-
-
 def test_duplicate_preferred_bom_refs_get_stable_suffixes():
     refs = [
         ComponentRef(
@@ -533,7 +476,6 @@ def test_cyclonedx_dependencies_includes_all_components_including_leaves():
         ComponentRef(
             component_identity="mcp-stdio/some-server",
             source_manifest="plugin.json",
-            attributed_to="plugin/my-plugin",
             extra={"component_type": "mcp_server"},
         ),
         ComponentRef(
@@ -547,8 +489,12 @@ def test_cyclonedx_dependencies_includes_all_components_including_leaves():
 
     doc = build_agent_bom(refs, target_type="endpoint", target="~/.claude").to_cyclonedx()
 
+    # A flat ref list (no Graph) carries no composition edges, so every component
+    # is a leaf in dependencies[] with an empty dependsOn. Edges come from the
+    # graph-backed path (see graph_from_cyclonedx round-trip tests).
     deps_by_ref = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
     assert "plugin/my-plugin" in deps_by_ref
+    assert deps_by_ref["plugin/my-plugin"] == []
     assert "mcp-stdio/some-server" in deps_by_ref
     assert deps_by_ref["mcp-stdio/some-server"] == []
     assert "mcp-server/standalone-tool" in deps_by_ref

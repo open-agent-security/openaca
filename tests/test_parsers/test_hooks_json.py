@@ -40,15 +40,11 @@ def test_parse_plugin_hooks_emits_one_ref_per_event_index(tmp_path):
             },
         },
     )
-    refs = parse_plugin_hooks(
-        path, plugin_name="superpowers", attributed_to="plugin/superpowers@5.1.0"
-    )
+    refs = parse_plugin_hooks(path, plugin_name="superpowers")
     assert len(refs) == 3
     identities = sorted(r.component_identity or "" for r in refs)
     assert len(set(identities)) == 3
     assert all(identity.startswith("claude-hook/command:") for identity in identities)
-    # Every ref is attributed to the parent plugin.
-    assert all(r.attributed_to == "plugin/superpowers@5.1.0" for r in refs)
     # Type, command, and matcher land in extra (not identity).
     pre1 = next(r for r in refs if r.source_locator == "$.hooks.PreToolUse[1]")
     assert pre1.extra["event"] == "PreToolUse"
@@ -68,7 +64,7 @@ def test_parse_plugin_hooks_handles_missing_matcher(tmp_path):
         tmp_path / "hooks.json",
         {"hooks": {"PreToolUse": [{"type": "command", "command": "echo x"}]}},
     )
-    refs = parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0")
+    refs = parse_plugin_hooks(path, plugin_name="p")
     assert len(refs) == 1
     assert refs[0].extra.get("matcher") is None
 
@@ -77,26 +73,26 @@ def test_parse_plugin_hooks_skips_when_not_object(tmp_path):
     """If the top-level JSON isn't an object, return []."""
     path = tmp_path / "hooks.json"
     path.write_text("[]")
-    assert parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0") == []
+    assert parse_plugin_hooks(path, plugin_name="p") == []
 
 
 def test_parse_plugin_hooks_skips_when_hooks_key_missing(tmp_path):
     """Wrapper without a `hooks` key (or non-dict value) → empty."""
     path = _write_hooks_json(tmp_path / "hooks.json", {"description": "no hooks here"})
-    assert parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0") == []
+    assert parse_plugin_hooks(path, plugin_name="p") == []
 
 
 def test_parse_plugin_hooks_skips_malformed_json(tmp_path):
     path = tmp_path / "hooks.json"
     path.write_text("{not json")
-    assert parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0") == []
+    assert parse_plugin_hooks(path, plugin_name="p") == []
 
 
 def test_parse_plugin_hooks_skips_unreadable_file(tmp_path):
     """OS-level read failure (e.g. directory at the path) degrades to []."""
     bad = tmp_path / "hooks.json"
     bad.mkdir()
-    assert parse_plugin_hooks(bad, plugin_name="p", attributed_to="plugin/p@1.0") == []
+    assert parse_plugin_hooks(bad, plugin_name="p") == []
 
 
 def test_parse_plugin_hooks_skips_non_dict_entries(tmp_path):
@@ -113,7 +109,7 @@ def test_parse_plugin_hooks_skips_non_dict_entries(tmp_path):
             }
         },
     )
-    refs = parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0")
+    refs = parse_plugin_hooks(path, plugin_name="p")
     assert len(refs) == 1
     assert (refs[0].component_identity or "").startswith("claude-hook/command:")
     assert refs[0].source_locator == "$.hooks.PreToolUse[1]"
@@ -125,7 +121,7 @@ def test_parse_plugin_hooks_skips_non_list_event_value(tmp_path):
         tmp_path / "hooks.json",
         {"hooks": {"PreToolUse": "not-a-list", "PostToolUse": [{"command": "x"}]}},
     )
-    refs = parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0")
+    refs = parse_plugin_hooks(path, plugin_name="p")
     assert len(refs) == 1
     assert (refs[0].component_identity or "").startswith("claude-hook/hook:")
     assert refs[0].source_locator == "$.hooks.PostToolUse[0]"
@@ -145,8 +141,6 @@ def test_parse_settings_hooks_keeps_scope_out_of_identity():
     assert all(identity.startswith("claude-hook/command:") for identity in identities)
     assert {r.extra["scope"] for r in refs} == {"user"}
     assert {r.extra["event"] for r in refs} == {"PreToolUse", "Stop"}
-    # Direct hooks are NOT attributed to any plugin.
-    assert all(r.attributed_to is None for r in refs)
     assert all(r.source_manifest == str(settings_path) for r in refs)
 
 
@@ -177,7 +171,7 @@ def test_parse_settings_hooks_empty_block_returns_empty():
 
 def test_parse_plugin_hooks_empty_hooks_block_returns_empty(tmp_path):
     path = _write_hooks_json(tmp_path / "hooks.json", {"hooks": {}})
-    assert parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0") == []
+    assert parse_plugin_hooks(path, plugin_name="p") == []
 
 
 # parse_plugin_hooks_inline — inline hooks declared in plugin.json["hooks"]
@@ -193,13 +187,11 @@ def test_parse_plugin_hooks_inline_emits_refs_with_plugin_identity():
         hooks_block=hooks_block,
         plugin_name="superpowers",
         source_manifest="/fake/plugin.json",
-        attributed_to="plugin/superpowers@5.1.0",
     )
     assert len(refs) == 2
     identities = sorted(r.component_identity or "" for r in refs)
     assert len(set(identities)) == 2
     assert all(identity.startswith("claude-hook/command:") for identity in identities)
-    assert all(r.attributed_to == "plugin/superpowers@5.1.0" for r in refs)
     assert all(r.source_manifest == "/fake/plugin.json" for r in refs)
     assert all(r.extra.get("component_type") == "hook" for r in refs)
 
@@ -209,7 +201,7 @@ def test_same_hook_payload_has_same_identity_across_locations(tmp_path):
         tmp_path / "hooks.json",
         {"hooks": {"PreToolUse": [{"type": "command", "command": "echo same"}]}},
     )
-    plugin_ref = parse_plugin_hooks(path, plugin_name="p", attributed_to="plugin/p@1.0")[0]
+    plugin_ref = parse_plugin_hooks(path, plugin_name="p")[0]
     settings_ref = parse_settings_hooks(
         Path("/fake/settings.json"),
         {"PostToolUse": [{"type": "command", "command": "echo same"}]},
@@ -226,7 +218,6 @@ def test_parse_plugin_hooks_inline_source_locator_uses_hooks_jsonpath():
         hooks_block={"PreToolUse": [{"type": "command", "command": "x"}]},
         plugin_name="p",
         source_manifest="/fake/plugin.json",
-        attributed_to="plugin/p@1.0",
     )
     assert refs[0].source_locator == "$.hooks.PreToolUse[0]"
 
@@ -238,7 +229,6 @@ def test_parse_plugin_hooks_inline_returns_empty_for_non_dict():
             hooks_block=[],  # type: ignore[arg-type]
             plugin_name="p",
             source_manifest="/fake/plugin.json",
-            attributed_to="plugin/p@1.0",
         )
         == []
     )
@@ -250,7 +240,6 @@ def test_parse_plugin_hooks_inline_returns_empty_for_empty_block():
             hooks_block={},
             plugin_name="p",
             source_manifest="/fake/plugin.json",
-            attributed_to="plugin/p@1.0",
         )
         == []
     )

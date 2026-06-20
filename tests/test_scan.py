@@ -579,7 +579,6 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
         component_identity="plugin/bad-sha-plugin",
         source_manifest="installed_plugins.json",
         source_locator="$.plugins.bad-sha-plugin@test[0]",
-        attributed_to=None,
         extra={
             "component_type": "plugin",
             "gitCommitSha": 123,
@@ -1908,14 +1907,12 @@ def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
     must survive into the Agent BOM.
 
     Stage 4 encodes the BOM from the graph: the agent→MCP edge comes directly
-    from graph structure (a `dependencies[]` entry), so it no longer depends on
-    `attributed_to` projection. `Graph.attribution_for` is plugin-only — an
-    agent-child MCP with no plugin ancestor projects `attributed_to=None` — and
-    the edge is still preserved because the BOM is graph-backed."""
+    from graph structure (a `dependencies[]` entry). Parentage lives purely on
+    the graph edge now that `attributed_to` is removed, so the edge is preserved
+    because the BOM is graph-backed."""
     from tools.bom import build_agent_bom
     from tools.component_ref import ComponentRef
     from tools.graph import Edge, Graph, Node
-    from tools.scan import _refs_from_graph
 
     agent_ref = ComponentRef(
         name="my-agent",
@@ -1923,7 +1920,6 @@ def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
         component_identity="claude-agent/my-agent",
         source_manifest=".claude/agents/my-agent.md",
         source_locator="$.agent",
-        attributed_to=None,
         extra={"component_type": "agent"},
     )
     mcp_ref = ComponentRef(
@@ -1932,7 +1928,6 @@ def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
         component_identity="mcp/my-mcp",
         source_manifest=".claude/agents/my-agent.md",
         source_locator="$.mcpServers.my-mcp",
-        attributed_to="claude-agent/my-agent",
         extra={"component_type": "mcp_server"},
     )
     root = Node(key="openaca:target", kind="target", ref=None)
@@ -1946,14 +1941,6 @@ def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
         ],
     )
     graph.validate()
-
-    # Plugin-only attribution: an agent-child MCP has no plugin ancestor, so the
-    # projected attributed_to is None (the agent fallback is gone in Stage 4).
-    refs = _refs_from_graph(graph)
-    mcp_projected = next(r for r in refs if r.component_identity == "mcp/my-mcp")
-    assert mcp_projected.attributed_to is None
-    agent_projected = next(r for r in refs if r.component_identity == "claude-agent/my-agent")
-    assert agent_projected.attributed_to is None
 
     # The agent→MCP edge survives via the graph-backed BOM's dependencies[].
     doc = build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()

@@ -198,29 +198,3 @@ def test_native_identity_for_unknown_ecosystem():
     )
     assert ref.purl is None
     assert ref.component_identity == "mcp-stdio/uvx-launch:some-package@unpinned"
-
-
-def test_attributed_to_defaults_to_none():
-    ref = ComponentRef(ecosystem="npm", name="x", version="1.0")
-    assert ref.attributed_to is None
-
-
-def test_attributed_to_round_trips():
-    ref = ComponentRef(
-        ecosystem="npm",
-        name="x",
-        version="1.0",
-        attributed_to="plugin/foo@1.0.0",
-    )
-    assert ref.attributed_to == "plugin/foo@1.0.0"
-
-
-def test_attributed_to_participates_in_equality():
-    a = ComponentRef(ecosystem="npm", name="x", version="1.0")
-    b = ComponentRef(
-        ecosystem="npm",
-        name="x",
-        version="1.0",
-        attributed_to="plugin/foo@1.0.0",
-    )
-    assert a != b

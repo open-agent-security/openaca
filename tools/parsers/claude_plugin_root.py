@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 
@@ -17,14 +16,13 @@ def walk_plugin_root(
     *,
     plugin_name: str,
     plugin_data: dict,
-    attributed_to: Optional[str],
     plugin_json_path: Optional[Path] = None,
 ) -> list[ComponentRef]:
     """Enumerate plugin-bundled components under a Claude Code plugin root.
 
     This is used by both repo mode (`<repo>/.claude-plugin/plugin.json`) and
-    endpoint mode (`installed_plugins.json[*].installPath`). All emitted refs
-    are attributed to the caller-supplied plugin identity when present.
+    endpoint mode (`installed_plugins.json[*].installPath`). Parentage is set by
+    the graph edge from the plugin node, not stored on the refs.
     """
     if plugin_json_path is None:
         plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
@@ -35,13 +33,12 @@ def walk_plugin_root(
             plugin_data,
             plugin_json_path=plugin_json_path,
             plugin_root=plugin_root,
-            attributed_to=attributed_to,
         )
     )
-    refs.extend(_parse_default_mcp(plugin_root, refs, attributed_to))
-    refs.extend(_parse_bundled_skills(plugin_root, plugin_data, attributed_to))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name, attributed_to))
-    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name, attributed_to))
+    refs.extend(_parse_default_mcp(plugin_root, refs))
+    refs.extend(_parse_bundled_skills(plugin_root, plugin_data))
+    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
+    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
     return refs
 
 
@@ -63,7 +60,6 @@ def _parse_manifest_refs(
     *,
     plugin_json_path: Path,
     plugin_root: Path,
-    attributed_to: Optional[str],
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     deps = data.get("dependencies")
@@ -76,7 +72,6 @@ def _parse_manifest_refs(
                         component_identity=f"plugin-dep/{dep}",
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
-                        attributed_to=attributed_to,
                     )
                 )
             elif isinstance(dep, dict) and dep.get("name"):
@@ -88,18 +83,18 @@ def _parse_manifest_refs(
                         component_identity=ident,
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
-                        attributed_to=attributed_to,
                     )
                 )
 
     servers = data.get("mcpServers")
     if isinstance(servers, dict):
-        inline_refs = parse_mcp_servers(
-            servers,
-            source_manifest=str(plugin_json_path),
-            locator_prefix="$.mcpServers (inlined)",
+        refs.extend(
+            parse_mcp_servers(
+                servers,
+                source_manifest=str(plugin_json_path),
+                locator_prefix="$.mcpServers (inlined)",
+            )
         )
-        refs.extend(_with_attribution(inline_refs, attributed_to))
     elif isinstance(servers, str):
         referenced = resolve_within(plugin_root, servers)
         if referenced is not None and referenced.exists():
@@ -107,13 +102,11 @@ def _parse_manifest_refs(
                 file_refs = mcp_json.parse(referenced)
             except Exception:
                 file_refs = []
-            refs.extend(_with_attribution(file_refs, attributed_to))
+            refs.extend(file_refs)
     return refs
 
 
-def _parse_default_mcp(
-    plugin_root: Path, existing_refs: list[ComponentRef], attributed_to: Optional[str]
-) -> list[ComponentRef]:
+def _parse_default_mcp(plugin_root: Path, existing_refs: list[ComponentRef]) -> list[ComponentRef]:
     default_mcp = resolve_within(plugin_root, ".mcp.json")
     if default_mcp is None or not default_mcp.is_file():
         return []
@@ -124,9 +117,8 @@ def _parse_default_mcp(
         return []
     out: list[ComponentRef] = []
     for ref in mcp_refs:
-        attributed = replace(ref, attributed_to=attributed_to)
-        if (_source_manifest_key(attributed), attributed.component_identity) not in already_seen:
-            out.append(attributed)
+        if (_source_manifest_key(ref), ref.component_identity) not in already_seen:
+            out.append(ref)
     return out
 
 
@@ -139,9 +131,7 @@ def _source_manifest_key(ref: ComponentRef) -> str:
         return ref.source_manifest
 
 
-def _parse_bundled_skills(
-    plugin_root: Path, data: dict, attributed_to: Optional[str]
-) -> list[ComponentRef]:
+def _parse_bundled_skills(plugin_root: Path, data: dict) -> list[ComponentRef]:
     try:
         plugin_root_resolved = plugin_root.resolve()
     except (OSError, RuntimeError):
@@ -186,15 +176,11 @@ def _parse_bundled_skills(
                 continue
             if not skill_md_resolved.is_relative_to(plugin_root_resolved):
                 continue
-            refs.extend(claude_skill.parse(skill_md, attributed_to=attributed_to))
+            refs.extend(claude_skill.parse(skill_md))
     return refs
 
 
-def _parse_bundled_hooks(
-    plugin_root: Path, data: dict, plugin_name: str, attributed_to: Optional[str]
-) -> list[ComponentRef]:
-    if attributed_to is None:
-        return []
+def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
     default_hooks = resolve_within(plugin_root, "hooks/hooks.json")
@@ -204,7 +190,6 @@ def _parse_bundled_hooks(
             hooks_json.parse_plugin_hooks(
                 default_hooks,
                 plugin_name=plugin_name,
-                attributed_to=attributed_to,
             )
         )
     inline_hooks = data.get("hooks")
@@ -215,7 +200,6 @@ def _parse_bundled_hooks(
                 hooks_block=inline_hooks,
                 plugin_name=plugin_name,
                 source_manifest=str(plugin_json_path),
-                attributed_to=attributed_to,
             )
         )
     elif isinstance(inline_hooks, str):
@@ -227,14 +211,13 @@ def _parse_bundled_hooks(
                     hooks_json.parse_plugin_hooks(
                         custom_hooks_file,
                         plugin_name=plugin_name,
-                        attributed_to=attributed_to,
                     )
                 )
     return refs
 
 
 def _parse_bundled_command_agents(
-    plugin_root: Path, data: dict, plugin_name: str, attributed_to: Optional[str]
+    plugin_root: Path, data: dict, plugin_name: str
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -266,7 +249,6 @@ def _parse_bundled_command_agents(
                     directory,
                     kind=kind,
                     plugin_name=plugin_name,
-                    attributed_to=attributed_to,
                     plugin_root_resolved=plugin_root_resolved,
                 )
             )
@@ -278,7 +260,6 @@ def _enumerate_bundled_command_agent_dir(
     *,
     kind: Kind,
     plugin_name: str,
-    attributed_to: Optional[str],
     plugin_root_resolved: Path,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
@@ -298,13 +279,6 @@ def _enumerate_bundled_command_agent_dir(
                 child,
                 kind=kind,
                 scope_owner=plugin_name,
-                attributed_to=attributed_to,
             )
         )
     return refs
-
-
-def _with_attribution(refs: list[ComponentRef], attributed_to: Optional[str]) -> list[ComponentRef]:
-    if attributed_to is None:
-        return refs
-    return [replace(ref, attributed_to=attributed_to) for ref in refs]

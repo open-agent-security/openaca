@@ -43,7 +43,6 @@ class ComponentRef:
     source_manifest: str = ""
     source_locator: str = ""
     component_identity: Optional[str] = None
-    attributed_to: Optional[str] = None
     extra: dict[str, Any] = field(default_factory=dict)
     # Composition classification, set by the repo walker post-parse:
     #   "agent-component"     — first-class agent surface (plugins, MCP

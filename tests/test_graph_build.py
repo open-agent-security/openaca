@@ -184,3 +184,46 @@ def test_endpoint_malformed_installed_plugins_does_not_crash(tmp_path):
     project_root.mkdir()
     g = build_graph(install_root, mode="endpoint", project_root=project_root)  # must not raise
     assert any(n.kind == "target" for n in g.nodes.values())
+
+
+def test_nested_plugin_at_depth(tmp_path):
+    base = tmp_path / "packages" / "myplugin"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"name":"nested","version":"1"}')
+    skill = base / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (skill / "package.json").write_text(
+        '{"name":"deploy","version":"1","dependencies":{"lodash":"4.17.20"}}'
+    )
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "plugin", "target"]
+    # the skill is under the plugin, not a project skill of target:
+    skill_node = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert g.nearest_plugin_ancestor(skill_node) is not None
+
+
+def test_nested_plugin_dot_claude_skills_not_project_skill_of_target(tmp_path):
+    # A `.claude/skills/` dir INSIDE a plugin subtree must NOT be emitted as a
+    # project skill of target — exclude_under covers nested plugin roots, so the
+    # target's project-skill walk skips everything beneath the plugin. (Plugins
+    # bundle skills under `skills/`, so this `.claude/skills/` form is not a
+    # plugin-bundled surface either: the invariant is purely "not a target
+    # child", preserving single-parent.)
+    base = tmp_path / "packages" / "myplugin"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"name":"nested","version":"1"}')
+    _skill_with_dep(base, ".claude/skills/deploy")
+    # also give the plugin a real bundled skill so the plugin node has children
+    _skill_with_dep(base, "skills/build")
+    g = build_graph(tmp_path, mode="repo")  # must not raise
+    skills = [n for n in g.nodes.values() if n.kind == "skill"]
+    # only the plugin-bundled `skills/build` skill is discovered; the
+    # `.claude/skills/deploy` under the plugin is excluded from the target walk.
+    assert len(skills) == 1
+    assert g.nearest_plugin_ancestor(skills[0]) is not None
+    # no skill is a direct project skill of target
+    target = g.root
+    assert all(g.nearest_plugin_ancestor(s) is not None for s in skills)
+    assert target.key not in {e.parent for e in g.edges if g.nodes[e.child].kind == "skill"}

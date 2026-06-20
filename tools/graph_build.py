@@ -230,10 +230,11 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
     descended into it from `parent`. The discovery surface depends on the
     parent's kind:
 
-    - `target`: a `.claude-plugin/plugin.json` here makes `directory` a
+    - `target`: a `.claude-plugin/plugin.json` at ANY depth makes its dir a
       plugin root (→ plugin child, descended *as a plugin*); project skills
       (`.claude/skills/<name>/SKILL.md`) become skill children; bare
       dependency manifests become `package` children (software-dependency).
+      Plugin subtrees are excluded from the project-skill walk (single-parent).
     - `plugin`: bundled `skills/<name>/SKILL.md` become skill children, and
       the plugin's own dependency manifests become `package` children
       (its implementation deps).
@@ -245,23 +246,54 @@ def descend(graph: Graph, parent: Node, directory: Path) -> None:
     here (Task 2.3). Endpoint mode is Task 2.4.
     """
     if parent.kind == "target":
-        plugin_manifest = directory / ".claude-plugin" / "plugin.json"
-        plugin_root: Path | None = None
-        if plugin_manifest.is_file():
-            _descend_into_plugin(graph, parent, directory, plugin_manifest)
-            plugin_root = directory
-        _add_project_skills(graph, parent, directory, exclude_under=plugin_root)
+        # Plugins are discovered at ANY depth (parity with parse_repo, which
+        # matches `.claude-plugin/plugin.json` anywhere in the tree). Each plugin
+        # root is a boundary handoff: the plugin owns its entire subtree, so its
+        # bundled skills/deps hang off the plugin node, never off the target
+        # (single-parent invariant).
+        plugin_roots = _find_plugin_roots(directory)
+        for plugin_root in plugin_roots:
+            _descend_into_plugin(
+                graph, parent, plugin_root, plugin_root / ".claude-plugin" / "plugin.json"
+            )
+        _add_project_skills(graph, parent, directory, exclude_under=plugin_roots)
         # A plugin root owns its own dep manifests (emitted under the plugin via
         # the plugin-branch descent); emitting them again under target would
-        # double-parent the same occurrence and trip validate(). Bare-dep-under-
-        # target emission only applies when this directory is NOT a plugin root.
-        if plugin_root is None:
+        # double-parent the same occurrence and trip validate(). The target's
+        # bare-dep walk is non-recursive (only `directory/`), so it only needs to
+        # skip when `directory` itself is a plugin root.
+        if not any(_same_path(directory, root) for root in plugin_roots):
             _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "plugin":
         _add_bundled_skills(graph, parent, directory)
         _add_dep_manifest_packages(graph, parent, directory)
     elif parent.kind == "skill":
         _add_dep_manifest_packages(graph, parent, directory)
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    return a.resolve() == b.resolve()
+
+
+def _find_plugin_roots(directory: Path) -> list[Path]:
+    """Plugin roots are dirs containing `.claude-plugin/plugin.json`, at ANY
+    depth (parity with parse_repo). Discovery uses the same gitignore-aware walk
+    as project-skill discovery so we skip `node_modules/`, `.git/`, gitignored
+    dirs. Returns each plugin root sorted for determinism.
+    """
+    spec = load_gitignore_spec(directory)
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for path in iter_unignored_files(directory, spec):
+        if path.name != "plugin.json" or path.parent.name != ".claude-plugin":
+            continue
+        root = path.parent.parent
+        resolved = root.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(root)
+    return sorted(roots)
 
 
 def _descend_into_plugin(
@@ -285,24 +317,26 @@ def _descend_into_plugin(
 
 
 def _add_project_skills(
-    graph: Graph, parent: Node, directory: Path, exclude_under: Path | None = None
+    graph: Graph, parent: Node, directory: Path, exclude_under: list[Path] | None = None
 ) -> None:
     """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
 
     Discovery uses the same gitignore-aware tree walk as `parse_repo_grouped`
     so we skip `node_modules/`, `.git/`, and gitignored dirs. Each skill dir
-    becomes a `skill` child of `parent` (the target).
+    becomes a `skill` child of `parent` (the target). Symlinked directories are
+    not followed (matches the current scanner; tracked separately).
 
-    `exclude_under` is the root of a plugin already descended from `parent`:
-    skills inside that subtree belong to the plugin branch (single-parent
-    invariant), so they are skipped here to avoid double-discovery.
+    `exclude_under` is the set of plugin roots already descended from `parent`:
+    skills inside any of those subtrees belong to the plugin branch
+    (single-parent invariant), so they are skipped here to avoid double-discovery.
     """
     spec = load_gitignore_spec(directory)
-    exclude_resolved = exclude_under.resolve() if exclude_under is not None else None
+    exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
     for path in iter_unignored_files(directory, spec):
         if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
             continue
-        if exclude_resolved is not None and path.resolve().is_relative_to(exclude_resolved):
+        resolved = path.resolve()
+        if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
         _add_skill_node(graph, parent, path.parent)
 

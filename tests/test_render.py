@@ -1548,6 +1548,96 @@ def test_repo_tree_nested_plugin_attributed_refs_not_claimed_by_ancestor(tmp_pat
     assert out.count("skills/ (2)") == 0
 
 
+# ── Graph-based nesting (plan 033, Stage 5) ──────────────────────────────────
+
+
+def _gnode(key: str, kind: str, ref: ComponentRef | None):
+    from tools.graph import Node
+
+    return Node(key=key, kind=kind, ref=ref)
+
+
+def _graph_target_plugin_skill_package():
+    """target → plugin → skill → package(lodash) hand-built graph.
+
+    The plugin and skill carry refs whose component_type/identity match what
+    the renderer expects; the package is a skill-bundled npm dep.
+    """
+    from tools.graph import Edge, Graph
+
+    plugin_ref = _plugin_ref("demo", "1.0.0")
+    skill_ref = _bundled(
+        "skill",
+        "deploy",
+        None,
+        attributed_to=None,
+        component_identity="skill/deploy",
+        source_manifest="skills/deploy/SKILL.md",
+    )
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest="skills/deploy/package.json",
+        source_locator="$.dependencies.lodash",
+    )
+    target = _gnode("openaca:target", "target", None)
+    plugin = _gnode("k:plugin", "plugin", plugin_ref)
+    skill = _gnode("k:skill", "skill", skill_ref)
+    pkg = _gnode("k:pkg", "package", pkg_ref)
+    graph = Graph(
+        nodes={n.key: n for n in (target, plugin, skill, pkg)},
+        edges=[
+            Edge("openaca:target", "k:plugin"),
+            Edge("k:plugin", "k:skill"),
+            Edge("k:skill", "k:pkg"),
+        ],
+    )
+    graph.validate()
+    # The refs the renderer receives mirror scan: scope/attribution are graph-
+    # derived and stamped (here they match what scan would produce).
+    from dataclasses import replace
+
+    refs = [
+        replace(plugin_ref, scope="agent-component", attributed_to=graph.attribution_for(plugin)),
+        replace(skill_ref, scope="agent-component", attributed_to=graph.attribution_for(skill)),
+        replace(pkg_ref, scope="agent-dependency", attributed_to=graph.attribution_for(pkg)),
+    ]
+    return graph, refs
+
+
+def test_endpoint_tree_nests_package_under_skill_under_plugin():
+    """Graph edges drive nesting: a skill-bundled package nests under the skill,
+    which nests under the plugin — the richer composition the graph enables
+    (the old attributed_to path could only flatten the dep onto the plugin)."""
+    graph, refs = _graph_target_plugin_skill_package()
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=graph)
+    lines = out.splitlines()
+
+    plugin_idx = next(i for i, ln in enumerate(lines) if "plugin/demo@1.0.0" in ln)
+    skill_idx = next(i for i, ln in enumerate(lines) if ln.strip().endswith("deploy"))
+    # The skill's bundled npm dep nests under the skill (endpoint tier-2
+    # aggregate line), not flattened onto the plugin's own deps line.
+    pkg_idx = next(i for i, ln in enumerate(lines) if "npm/ deps" in ln)
+    assert any("skills/ (1)" in ln for ln in lines)
+    assert plugin_idx < skill_idx < pkg_idx
+    # The deps line is indented deeper than the skill leaf (it is its child).
+    skill_indent = len(lines[skill_idx]) - len(lines[skill_idx].lstrip(" │├└─"))
+    pkg_indent = len(lines[pkg_idx]) - len(lines[pkg_idx].lstrip(" │├└─"))
+    assert pkg_indent > skill_indent
+
+
+def test_endpoint_tree_via_plugin_derived_from_graph_lineage():
+    """The plugin attribution (`via plugin X`) on a nested node comes from the
+    graph's nearest_plugin_ancestor, not a stored attributed_to string."""
+    graph, refs = _graph_target_plugin_skill_package()
+    pkg_node = graph.nodes["k:pkg"]
+    plugin_ancestor = graph.nearest_plugin_ancestor(pkg_node)
+    assert plugin_ancestor is not None
+    assert plugin_ancestor.key == "k:plugin"
+    assert graph.attribution_for(pkg_node) == "plugin/demo@1.0.0"
+
+
 # ── Posture findings section ─────────────────────────────────────────────────
 
 

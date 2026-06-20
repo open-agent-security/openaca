@@ -32,6 +32,7 @@ from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
+from tools.graph import Graph, Node
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -1086,6 +1087,53 @@ def _mcp_transport_label(value: object) -> Optional[str]:
     return value
 
 
+def _node_ref_key(ref: ComponentRef) -> tuple:
+    """Content key mapping a rendered ref back to its graph `Node`.
+
+    The refs render receives are `dataclasses.replace(node.ref, scope=...,
+    attributed_to=...)` copies (scan projects them from the graph), so the
+    occurrence-identifying fields are untouched. Keying on those fields
+    (manifest + locator + identity coordinates) lets the renderer recover a
+    ref's node without recomputing the build-time occurrence key (which needs
+    the source normalizer render does not have)."""
+    return (
+        str(ref.source_manifest or ""),
+        ref.source_locator or "",
+        ref.ecosystem or "",
+        ref.name or "",
+        ref.version or "",
+        ref.component_identity or "",
+    )
+
+
+def _graph_node_index(graph: Graph) -> dict[tuple, Node]:
+    return {_node_ref_key(n.ref): n for n in graph.nodes.values() if n.ref is not None}
+
+
+def _tier2_from_refs(
+    refs: list[ComponentRef],
+) -> list[tuple[str, str, int, str, list[ComponentRef]]]:
+    """Aggregate package refs per ecosystem (graph-based path). Same shape and
+    coverage-kind/source rules as `_tier2_summary`, but the caller supplies the
+    package-child refs directly (from graph edges) instead of filtering by
+    `attributed_to` + `transitive`."""
+    by_eco: dict[str, list[ComponentRef]] = {}
+    for r in refs:
+        by_eco.setdefault(r.ecosystem or "", []).append(r)
+    out: list[tuple[str, str, int, str, list[ComponentRef]]] = []
+    for eco in sorted(by_eco):
+        ecorefs = by_eco[eco]
+        transitive = any(r.extra.get("transitive") is True for r in ecorefs)
+        if transitive:
+            kind = "transitive"
+            source = "package-lock.json" if eco == "npm" else "uv.lock"
+        else:
+            kind = "direct only"
+            source = "package.json" if eco == "npm" else "pyproject.toml"
+        out.append((eco, kind, len(ecorefs), source, ecorefs))
+    return out
+
+
 def _bundled_categories(
     refs: list[ComponentRef], plugin_identity: str
 ) -> dict[str, list[ComponentRef]]:
@@ -1167,11 +1215,157 @@ def _plugin_name_from_identity(plugin_identity: str, marketplace: object = None)
     return rest
 
 
+@dataclass
+class _GraphView:
+    """Render-side adapter over a `Graph`: maps the flat refs render receives
+    back to graph nodes so nesting comes from edges, not `attributed_to`."""
+
+    graph: Graph
+    node_by_key: dict[tuple, Node]
+    ref_by_key: dict[tuple, ComponentRef]
+
+    @classmethod
+    def build(cls, graph: Graph, refs: list[ComponentRef]) -> "_GraphView":
+        return cls(
+            graph=graph,
+            node_by_key=_graph_node_index(graph),
+            ref_by_key={_node_ref_key(r): r for r in refs},
+        )
+
+    def node_for(self, ref: ComponentRef) -> Optional[Node]:
+        return self.node_by_key.get(_node_ref_key(ref))
+
+    def rendered_ref(self, node: Node) -> Optional[ComponentRef]:
+        """The rendered (scope/attribution-stamped) ref for a child node, or the
+        node's own ref when it was filtered out of the rendered set (e.g. a
+        software-dependency dropped before render)."""
+        if node.ref is None:
+            return None
+        return self.ref_by_key.get(_node_ref_key(node.ref)) or node.ref
+
+    def child_nodes(self, node: Node) -> list[Node]:
+        return [c for c in self.graph.children_of(node) if c.ref is not None]
+
+    def direct_component_refs(self) -> list[ComponentRef]:
+        """Rendered refs for the target root's direct component children —
+        excluding plugins (their own root blocks) and bare package nodes (tier-2
+        software at top level, suppressed)."""
+        out: list[ComponentRef] = []
+        for child in self.child_nodes(self.graph.root):
+            if child.kind == _PACKAGE_KIND:
+                continue
+            ref = self.rendered_ref(child)
+            if ref is not None and not _is_plugin_ref(ref):
+                out.append(ref)
+        return out
+
+
+_PACKAGE_KIND = "package"
+
+
+def _split_children(
+    view: "_GraphView", node: Node
+) -> tuple[dict[str, list[ComponentRef]], list[ComponentRef]]:
+    """Partition a node's graph children into (component categories, package
+    refs), keyed by the child's graph *node kind* — not `_component_type_for_tree`,
+    which maps a bare npm tier-2 dep to `mcp_server`. Package-kind children are
+    tier-2 deps (aggregated); everything else maps into its tree category."""
+    by_cat: dict[str, list[ComponentRef]] = {label: [] for label, _ in _TREE_CATEGORIES}
+    packages: list[ComponentRef] = []
+    kind_to_label = {kind: label for label, types in _TREE_CATEGORIES for kind in types}
+    for child in view.child_nodes(node):
+        ref = view.rendered_ref(child)
+        if ref is None or _is_plugin_ref(ref):
+            continue
+        if child.kind == _PACKAGE_KIND:
+            packages.append(ref)
+            continue
+        label = kind_to_label.get(child.kind)
+        if label is not None:
+            by_cat[label].append(ref)
+    return {k: v for k, v in by_cat.items() if v}, packages
+
+
+def _build_graph_component_subtree(
+    ref: ComponentRef,
+    view: _GraphView,
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    parent_plugin: Optional[str],
+    *,
+    source_note_root: Path | None = None,
+) -> _TreeNode:
+    """A component leaf that may nest its own graph children (e.g. a skill that
+    bundles package deps / sub-components). The richer composition the graph
+    enables over the old single-level `attributed_to` flattening."""
+    leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
+    source_note = _repo_source_note(ref, source_note_root) if source_note_root else ""
+    node = _TreeNode(label=f"{_leaf_label(ref, parent_plugin)}{source_note}{leaf_marker}")
+    gnode = view.node_for(ref)
+    if gnode is None:
+        return node
+    categories, packages = _split_children(view, gnode)
+    _append_category_nodes(
+        node, categories, view, findings_by_ref, use_color, None, source_note_root
+    )
+    _append_tier2_nodes(node, _tier2_from_refs(packages), findings_by_ref, use_color)
+    return node
+
+
+def _append_category_nodes(
+    parent: _TreeNode,
+    categories: dict[str, list[ComponentRef]],
+    view: Optional["_GraphView"],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    parent_plugin: Optional[str],
+    source_note_root: Path | None,
+) -> None:
+    for label, _ in _TREE_CATEGORIES:
+        items = categories.get(label)
+        if not items:
+            continue
+        cat_node = _TreeNode(label=f"{label}/ ({len(items)})")
+        for r in sorted(items, key=lambda x: _leaf_label(x, parent_plugin).lower()):
+            if view is not None:
+                cat_node.children.append(
+                    _build_graph_component_subtree(
+                        r,
+                        view,
+                        findings_by_ref,
+                        use_color,
+                        parent_plugin,
+                        source_note_root=source_note_root,
+                    )
+                )
+            else:
+                leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
+                cat_node.children.append(
+                    _TreeNode(label=f"{_leaf_label(r, parent_plugin)}{leaf_marker}")
+                )
+        parent.children.append(cat_node)
+
+
+def _append_tier2_nodes(
+    parent: _TreeNode,
+    tier2: list[tuple[str, str, int, str, list[ComponentRef]]],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+) -> None:
+    for eco, kind, count, source, ecorefs in tier2:
+        eco_ids = [id for r in ecorefs for id in findings_by_ref.get(_ref_key(r), [])]
+        eco_marker = _finding_marker(eco_ids, use_color)
+        parent.children.append(
+            _TreeNode(label=f"{eco}/ deps ({count} {kind} via {source}){eco_marker}")
+        )
+
+
 def _build_plugin_node(
     plugin_ref: ComponentRef,
     all_refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
+    view: Optional["_GraphView"] = None,
 ) -> _TreeNode:
     sha = plugin_ref.extra.get("gitCommitSha")
     context: list[str] = []
@@ -1191,40 +1385,68 @@ def _build_plugin_node(
     # from bundled command/agent/hook leaf labels so the leaf reads as `<name>`
     # not `<plugin>/<name>`.
     parent_plugin = _plugin_name_from_identity(plugin_identity, plugin_ref.extra.get("marketplace"))
-    # Bundled refs carry attributed_to = versioned identity; use display_id to match.
-    categories = _bundled_categories(all_refs, display_id)
-    tier2 = _tier2_summary(all_refs, display_id)
+
+    plugin_node = view.node_for(plugin_ref) if view is not None else None
+    if view is not None and plugin_node is not None:
+        # Graph-based: the plugin's bundled set is its graph children.
+        categories, packages = _split_children(view, plugin_node)
+        tier2 = _tier2_from_refs(packages)
+    else:
+        # `attributed_to`-based fallback (no graph supplied).
+        categories = _bundled_categories(all_refs, display_id)
+        tier2 = _tier2_summary(all_refs, display_id)
 
     # Risk Attribution: flag the plugin header when a bundled component matched a
     # finding (distinct from a direct hit on the plugin itself), so the parent
-    # that introduced the vulnerable component is visible at a glance.
-    bundled_ids = _bundled_finding_ids(categories, tier2, findings_by_ref, exclude=set(direct_ids))
+    # that introduced the vulnerable component is visible at a glance. In graph
+    # mode this also covers deeper descendants (a skill's bundled dep).
+    if view is not None and plugin_node is not None:
+        bundled_ids = _descendant_finding_ids(
+            plugin_node, view, findings_by_ref, exclude=set(direct_ids)
+        )
+    else:
+        bundled_ids = _bundled_finding_ids(
+            categories, tier2, findings_by_ref, exclude=set(direct_ids)
+        )
     containment = _containment_marker(bundled_ids, use_color)
     header = f"{display_id}{context_note} [scope={scope}]{marker}{containment}"
     root = _TreeNode(label=header)
 
-    for label, _ in _TREE_CATEGORIES:
-        items = categories.get(label)
-        if not items:
-            continue
-        cat_node = _TreeNode(label=f"{label}/ ({len(items)})")
-        for r in sorted(items, key=lambda x: _leaf_label(x, parent_plugin).lower()):
-            leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
-            cat_node.children.append(
-                _TreeNode(label=f"{_leaf_label(r, parent_plugin)}{leaf_marker}")
-            )
-        root.children.append(cat_node)
-
-    for eco, kind, count, source, ecorefs in tier2:
-        eco_ids = [id for r in ecorefs for id in findings_by_ref.get(_ref_key(r), [])]
-        eco_marker = _finding_marker(eco_ids, use_color)
-        root.children.append(
-            _TreeNode(label=f"{eco}/ deps ({count} {kind} via {source}){eco_marker}")
-        )
+    _append_category_nodes(
+        root,
+        categories,
+        view if (view is not None and plugin_node is not None) else None,
+        findings_by_ref,
+        use_color,
+        parent_plugin,
+        None,
+    )
+    _append_tier2_nodes(root, tier2, findings_by_ref, use_color)
 
     if not root.children:
         root.children.append(_TreeNode(label="(no bundled components)"))
     return root
+
+
+def _descendant_finding_ids(
+    node: Node,
+    view: _GraphView,
+    findings_by_ref: dict[tuple, list[str]],
+    *,
+    exclude: set[str],
+) -> list[str]:
+    """Advisory ids from every descendant of `node` (graph subtree), excluding
+    ids already attributed directly to `node`. Drives the plugin containment
+    marker so a finding nested under a bundled skill still flags the plugin."""
+    ids: list[str] = []
+    for child in view.graph.children_of(node):
+        if child.ref is not None:
+            rendered = view.ref_by_key.get(_node_ref_key(child.ref)) or child.ref
+            ids += [
+                fid for fid in findings_by_ref.get(_ref_key(rendered), []) if fid not in exclude
+            ]
+        ids += _descendant_finding_ids(child, view, findings_by_ref, exclude=exclude)
+    return ids
 
 
 def _build_direct_node(
@@ -1232,6 +1454,7 @@ def _build_direct_node(
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
     source_note_root: Path | None = None,
+    view: Optional["_GraphView"] = None,
 ) -> _TreeNode | None:
     cats = _direct_categories(refs)
     if not cats:
@@ -1251,7 +1474,17 @@ def _build_direct_node(
                 leaf_label = f"{leaf_label} (from {r.source_manifest})"
             leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
-            cat.children.append(_TreeNode(label=f"{leaf_label}{leaf_marker}"))
+            leaf = _TreeNode(label=f"{leaf_label}{leaf_marker}")
+            # Graph mode: a direct component may bundle its own deps/sub-components
+            # (e.g. a standalone skill bundling a package). Nest them under it.
+            gnode = view.node_for(r) if view is not None else None
+            if view is not None and gnode is not None:
+                child_categories, packages = _split_children(view, gnode)
+                _append_category_nodes(
+                    leaf, child_categories, view, findings_by_ref, use_color, None, source_note_root
+                )
+                _append_tier2_nodes(leaf, _tier2_from_refs(packages), findings_by_ref, use_color)
+            cat.children.append(leaf)
         root.children.append(cat)
     return root
 
@@ -1292,6 +1525,7 @@ def render_inventory_tree(
     *,
     use_color: bool = False,
     use_unicode: bool = True,
+    graph: Graph | None = None,
 ) -> str:
     """Render the active-plugin and direct-component inventory as a tree.
 
@@ -1312,14 +1546,21 @@ def render_inventory_tree(
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
+    view = _GraphView.build(graph, refs) if graph is not None else None
 
     plugins = sorted(
         (r for r in refs if _is_plugin_ref(r)),
         key=lambda r: (r.component_identity or "").lower(),
     )
-    direct_node = _build_direct_node(refs, findings_by_ref, use_color)
+    if view is not None:
+        # Graph-based: direct components are the target root's category-kind
+        # children; their own deps/sub-components nest under them.
+        direct_refs = view.direct_component_refs()
+    else:
+        direct_refs = refs
+    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, view=view)
     n_plugins = len(plugins)
-    n_direct = sum(len(v) for v in _direct_categories(refs).values())
+    n_direct = sum(len(v) for v in _direct_categories(direct_refs).values())
     # Total components = everything minus the plugin self-identity refs.
     n_total = sum(1 for r in refs if not _is_plugin_ref(r))
 
@@ -1331,7 +1572,7 @@ def render_inventory_tree(
     )
     out.append("")
     for plugin_ref in plugins:
-        node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color)
+        node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color, view=view)
         out.extend(_format_tree_lines(node, chars))
         out.append("")
     if direct_node is not None:
@@ -1347,6 +1588,7 @@ def render_repo_inventory_tree(
     *,
     use_color: bool = False,
     use_unicode: bool = True,
+    graph: Graph | None = None,
 ) -> str:
     """Render repo-mode inventory as a composition tree.
 
@@ -1359,6 +1601,7 @@ def render_repo_inventory_tree(
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
     all_refs = _dedupe_repo_tree_refs([r for _, refs in grouped for r in refs])
+    view = _GraphView.build(graph, all_refs) if graph is not None else None
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
         key=lambda r: (r.component_identity or "").lower(),
@@ -1375,18 +1618,24 @@ def render_repo_inventory_tree(
             findings_by_ref,
             use_color,
             root,
+            view=view,
         )
         assigned_keys.update(assigned)
         root_node.children.append(node)
 
-    direct_refs = [
-        r
-        for r in all_refs
-        if not _is_plugin_ref(r)
-        and r.scope == "agent-component"
-        and _ref_key(r) not in assigned_keys
-    ]
-    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, root)
+    if view is not None:
+        # Graph-based: direct components are the target root's children not under
+        # any plugin (agent-component kind); their deps nest under them.
+        direct_refs = [r for r in view.direct_component_refs() if r.scope == "agent-component"]
+    else:
+        direct_refs = [
+            r
+            for r in all_refs
+            if not _is_plugin_ref(r)
+            and r.scope == "agent-component"
+            and _ref_key(r) not in assigned_keys
+        ]
+    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, root, view=view)
     if direct_node is not None:
         root_node.children.append(direct_node)
 
@@ -1451,12 +1700,18 @@ def _build_repo_plugin_node(
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
     source_note_root: Path | None = None,
+    view: Optional["_GraphView"] = None,
 ) -> tuple[_TreeNode, set[tuple]]:
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
     plugin_identity = plugin_ref.component_identity or ""
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
+    plugin_node = view.node_for(plugin_ref) if view is not None else None
+    if view is not None and plugin_node is not None:
+        return _build_repo_plugin_node_from_graph(
+            plugin_ref, plugin_node, view, findings_by_ref, use_color, source_note_root, display_id
+        )
     assigned: set[tuple] = set()
 
     other_plugin_dirs = {
@@ -1522,6 +1777,109 @@ def _build_repo_plugin_node(
             marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
             label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
             cat.children.append(_TreeNode(label=label))
+        root.children.append(cat)
+
+    if not root.children:
+        root.children.append(_TreeNode(label="(no declared components)"))
+    return root, assigned
+
+
+def _repo_package_deps_node(
+    deps: list[ComponentRef],
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    source_note_root: Path | None,
+) -> _TreeNode:
+    """Repo-style individual `package deps/ (N)` node (vs the endpoint
+    per-ecosystem aggregate)."""
+    dep_node = _TreeNode(label=f"package deps/ ({len(deps)})")
+    for ref in sorted(deps, key=lambda x: _leaf_label(x).lower()):
+        marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
+        label = f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}"
+        dep_node.children.append(_TreeNode(label=label))
+    return dep_node
+
+
+def _build_repo_component_subtree(
+    ref: ComponentRef,
+    view: _GraphView,
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    source_note_root: Path | None,
+) -> _TreeNode:
+    """Repo-mode component leaf that nests its own graph children (e.g. a skill
+    bundling package deps), using repo-style `package deps/` for the deps."""
+    marker = _finding_marker(findings_by_ref.get(_ref_key(ref), []), use_color)
+    leaf = _TreeNode(label=f"{_leaf_label(ref)}{_repo_source_note(ref, source_note_root)}{marker}")
+    gnode = view.node_for(ref)
+    if gnode is None:
+        return leaf
+    categories, packages = _split_children(view, gnode)
+    if packages:
+        leaf.children.append(
+            _repo_package_deps_node(packages, findings_by_ref, use_color, source_note_root)
+        )
+    for label, _ in _TREE_CATEGORIES:
+        items = categories.get(label)
+        if not items:
+            continue
+        cat = _TreeNode(label=f"{label}/ ({len(items)})")
+        for child in sorted(items, key=lambda x: _leaf_label(x).lower()):
+            cat.children.append(
+                _build_repo_component_subtree(
+                    child, view, findings_by_ref, use_color, source_note_root
+                )
+            )
+        leaf.children.append(cat)
+    return leaf
+
+
+def _collect_subtree_keys(node: Node, view: _GraphView, out: set[tuple]) -> None:
+    for child in view.graph.children_of(node):
+        if child.ref is not None:
+            out.add(_ref_key(child.ref))
+        _collect_subtree_keys(child, view, out)
+
+
+def _build_repo_plugin_node_from_graph(
+    plugin_ref: ComponentRef,
+    plugin_node: Node,
+    view: _GraphView,
+    findings_by_ref: dict[tuple, list[str]],
+    use_color: bool,
+    source_note_root: Path | None,
+    display_id: str,
+) -> tuple[_TreeNode, set[tuple]]:
+    """Graph-based repo plugin node: children come from graph edges, so the
+    directory-ownership scoping the `attributed_to` path needed (same-named /
+    nested plugins) is unnecessary — edges are unambiguous."""
+    direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
+    categories, packages = _split_children(view, plugin_node)
+
+    assigned: set[tuple] = set()
+    _collect_subtree_keys(plugin_node, view, assigned)
+
+    bundled_ids = _descendant_finding_ids(
+        plugin_node, view, findings_by_ref, exclude=set(direct_ids)
+    )
+    marker = _finding_marker(direct_ids, use_color)
+    root = _TreeNode(label=f"{display_id}{marker}{_containment_marker(bundled_ids, use_color)}")
+
+    if packages:
+        root.children.append(
+            _repo_package_deps_node(packages, findings_by_ref, use_color, source_note_root)
+        )
+    for label, _ in _TREE_CATEGORIES:
+        items = categories.get(label)
+        if not items:
+            continue
+        cat = _TreeNode(label=f"{label}/ ({len(items)})")
+        for ref in sorted(items, key=lambda x: _leaf_label(x).lower()):
+            cat.children.append(
+                _build_repo_component_subtree(
+                    ref, view, findings_by_ref, use_color, source_note_root
+                )
+            )
         root.children.append(cat)
 
     if not root.children:

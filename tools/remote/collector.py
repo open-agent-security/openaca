@@ -6,7 +6,7 @@ import os
 import re
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -15,9 +15,10 @@ import httpx
 
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
+from tools.graph import Graph
+from tools.graph_build import build_graph
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 from tools.observations import ObservationFinding, collect_skill_observations
-from tools.parsers.claude_install import parse_install
 from tools.posture import (
     PostureFinding,
     collect_endpoint_mcp_manifests,
@@ -38,6 +39,7 @@ from tools.remote.upload_contract import (
 
 JsonObject = dict[str, Any]
 TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
+_AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
 
 
 @dataclass(frozen=True)
@@ -58,13 +60,25 @@ def get_pending_dir() -> Path:
     return Path.home() / ".local" / "state" / "openaca"
 
 
+def _collect_endpoint_components(
+    config_dir: Path, project: Path | None
+) -> tuple[Graph, list[ComponentRef]]:
+    """Build the endpoint composition graph and return agent-scope refs.
+
+    Isolated as a helper so tests can monkeypatch this single boundary
+    rather than every graph-build internal.
+    """
+    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    all_refs = [
+        replace(node.ref, scope=graph.scope_of(node))
+        for node in graph.nodes.values()
+        if node.ref is not None
+    ]
+    return graph, [r for r in all_refs if r.scope in _AGENT_SCOPES]
+
+
 def build_endpoint_collection(config_dir: Path, project: Path | None) -> EndpointCollection:
-    refs, _warnings = parse_install(
-        install_root=config_dir,
-        project_root=project,
-        mode="endpoint",
-        include_transitive=True,
-    )
+    graph, refs = _collect_endpoint_components(config_dir, project)
     bom = _prepare_remote_bom(
         build_agent_bom(
             refs,
@@ -72,6 +86,7 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
             target=TARGET_LOCATOR_ENDPOINT,
             source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
             source_unit_label="active plugin",
+            graph=graph,
         ).to_cyclonedx()
     )
     mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)

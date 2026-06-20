@@ -82,6 +82,29 @@ def component_path_for(ref: ComponentRef) -> list[dict[str, str]]:
     return [{"type": component_type_for(ref), "name": component_name_for(ref)}]
 
 
+def _component_path_from_graph(ref: ComponentRef, graph: Graph) -> list[dict[str, str]] | None:
+    """Derive the component path from graph lineage.
+
+    Walks from the ref's node up to (but not including) the target root and
+    returns ancestors in root-to-leaf order. Returns None when the ref has no
+    matching node in the graph (flat-BOM / graphless path).
+    """
+    node = graph.node_for_ref(ref)
+    if node is None:
+        return None
+    lineage = graph.lineage(node)
+    # lineage is [node, ..., target_root]; reverse so root ancestors come first,
+    # then exclude the target root (ref=None) and any node without a ref.
+    path = []
+    for ancestor in reversed(lineage):
+        if ancestor.ref is None:
+            continue
+        # component_name_for reads the MCP server's logical name from
+        # extra.component_path[-1]["name"] rather than the npm package name.
+        path.append({"type": ancestor.kind, "name": component_name_for(ancestor.ref)})
+    return path if path else None
+
+
 def _active_in_for(ref: ComponentRef) -> list[str]:
     active_in = (ref.extra or {}).get("runtime_hosts")
     if isinstance(active_in, list):
@@ -108,6 +131,7 @@ def finding_to_output(
     finding: Finding, advisory: dict | None, *, graph: Graph | None = None
 ) -> dict[str, Any]:
     ref = finding.component
+    graph_path = _component_path_from_graph(ref, graph) if graph is not None else None
     out: dict[str, Any] = {
         "finding_type": "vulnerability",
         "id": finding.advisory_id,
@@ -119,7 +143,7 @@ def finding_to_output(
             "source": source_for(ref),
         },
         "active_in": _active_in_for(ref),
-        "component_path": component_path_for(ref),
+        "component_path": graph_path if graph_path is not None else component_path_for(ref),
         "matched_advisory": _matched_advisory_for(finding.advisory_id, advisory),
     }
     attributed_to = graph.attribution_for_ref(ref) if graph is not None else None

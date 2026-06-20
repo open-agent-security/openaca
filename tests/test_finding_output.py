@@ -1,5 +1,6 @@
 from tools.component_ref import ComponentRef
 from tools.finding_output import finding_to_output
+from tools.graph import Edge, Graph, Node
 from tools.matcher import Finding
 
 
@@ -82,6 +83,54 @@ def test_finding_to_output_includes_match_coordinate_alongside_source_metadata()
         "registry": "skills.sh",
         "match_coordinate": "skills.sh:anthropics/skills/frontend-design",
     }
+
+
+def test_finding_to_output_derives_component_path_from_graph_lineage():
+    """Graph-derived component_path should reflect the full lineage (plugin → skill → package)
+    rather than the package-only fallback from component_path_for(ref)."""
+    plugin_ref = ComponentRef(
+        name="acme-devtools",
+        component_identity="plugin/m/acme-devtools",
+        source_manifest="installed_plugins.json",
+        source_locator="$.plugins.acme[0]",
+        extra={"component_type": "plugin"},
+    )
+    skill_ref = ComponentRef(
+        name="deploy",
+        component_identity="skill/deploy",
+        source_manifest="skills/deploy/SKILL.md",
+        source_locator="$.frontmatter",
+        extra={"component_type": "skill"},
+    )
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        source_manifest="skills/deploy/package.json",
+        source_locator="$.dependencies.lodash",
+        extra={"component_type": "package"},
+    )
+    target = Node(key="openaca:target", kind="target", ref=None)
+    plugin_node = Node(key="plugin-node", kind="plugin", ref=plugin_ref)
+    skill_node = Node(key="skill-node", kind="skill", ref=skill_ref)
+    pkg_node = Node(key="pkg-node", kind="package", ref=pkg_ref)
+    graph = Graph(
+        nodes={n.key: n for n in (target, plugin_node, skill_node, pkg_node)},
+        edges=[
+            Edge(parent=target.key, child=plugin_node.key),
+            Edge(parent=plugin_node.key, child=skill_node.key),
+            Edge(parent=skill_node.key, child=pkg_node.key),
+        ],
+    )
+    finding = Finding("GHSA-test", pkg_ref, "high")
+
+    out = finding_to_output(finding, None, graph=graph)
+
+    assert out["component_path"] == [
+        {"type": "plugin", "name": "acme-devtools"},
+        {"type": "skill", "name": "deploy"},
+        {"type": "package", "name": "lodash"},
+    ]
 
 
 def test_finding_to_output_marks_source_unknown_for_source_less_skill():

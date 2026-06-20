@@ -205,6 +205,27 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
     assert "1 failed to parse" in result.output
 
 
+def test_scan_parsed_but_empty_manifest_not_reported_as_parse_failure(tmp_path):
+    """A manifest that parses cleanly but emits zero refs (an empty
+    `package.json`) contributes no graph-projected refs, but it parsed fine.
+    The machine-format stderr summary must not claim a parse failure."""
+    (tmp_path / "package.json").write_text("{}")
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--format",
+            "github",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "none parsed successfully" not in result.output
+    assert "scanned 1 manifest(s), 0 component(s)" in result.output
+
+
 def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

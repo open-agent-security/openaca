@@ -693,6 +693,15 @@ def repo(
                 )
                 if tree:
                     click.echo(tree, err=True)
+        # No graph-projected refs to render: report parse status from the actual
+        # filesystem walk (`parse_groups`), not from `grouped`. A manifest that
+        # parses cleanly but emits zero refs (empty settings, dep manifest with
+        # no deps) contributes no refs yet parsed fine — don't call that a failure.
+        elif parse_groups:
+            click.echo(
+                f"scanned {n_found} manifest(s), 0 component(s){parse_note}",
+                err=True,
+            )
         elif n_found:
             click.echo(f"found {n_found} manifest file(s) but none parsed successfully", err=True)
         else:
@@ -738,8 +747,11 @@ def repo(
 
     # For machine formats (github, json), keep the existing one-line stderr
     # summary so consumers parsing only stdout still get totals on stderr.
-    # text format's footer already includes them.
-    if not grouped and output_format != "text":
+    # text format's footer already includes them. Parse status comes from the
+    # filesystem walk (`parse_groups`), not from the graph-projected `grouped`:
+    # a manifest that parses but emits zero refs parsed fine and must not be
+    # reported as a parse failure.
+    if not parse_groups and output_format != "text":
         if n_found:
             click.echo(
                 f"found {n_found} manifest file(s) but none parsed successfully",

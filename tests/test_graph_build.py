@@ -1043,3 +1043,20 @@ def test_endpoint_ambiguous_install_entries_emit_scope_warning(tmp_path):
     warnings: list[str] = []
     build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
     assert any("no scope match" in w for w in warnings), warnings
+
+
+def test_repo_bundled_plugin_mcp_under_gitignore_excluded_by_default(tmp_path):
+    """A plugin's bundled `.mcp.json` that the scan-root `.gitignore` excludes
+    must not be emitted by default (parity with parse_repo_grouped's secondary-ref
+    filtering); `--include-gitignored` restores it."""
+    (tmp_path / ".gitignore").write_text(".mcp.json\n")
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers":{"git":{"command":"npx","args":["@scope/git-mcp@1.2.3"]}}}'
+    )
+    g_default = build_graph(tmp_path, mode="repo")
+    assert not [n for n in g_default.nodes.values() if n.kind == "mcp_server"]
+
+    g_all = build_graph(tmp_path, mode="repo", include_gitignored=True)
+    assert [n for n in g_all.nodes.values() if n.kind == "mcp_server"]

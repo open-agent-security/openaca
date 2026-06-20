@@ -850,3 +850,62 @@ def test_repo_gitignored_root_dep_manifest_skipped(tmp_path):
     assert len(pkg_nodes) == 0, (
         "gitignored package.json at repo root must not surface package nodes"
     )
+
+
+def test_repo_root_gitignore_skips_nested_skill_dep_manifest(tmp_path):
+    """A nested skill's dep manifest ignored by the SCAN-ROOT .gitignore must not
+    surface a package node, while the skill (tracked component) still does.
+
+    Reproduces the Codex P2: descent into the nested skill dir previously loaded
+    the SKILL dir's own (absent) .gitignore and evaluated a dir-relative path, so
+    a scan-root ignore rule for `.claude/skills/deploy/package.json` was never
+    honored. parse_repo_grouped loads the root spec once and evaluates
+    root-relative, so it would skip the manifest.
+    """
+    _skill_with_dep(tmp_path, ".claude/skills/deploy")
+    (tmp_path / ".gitignore").write_text(".claude/skills/deploy/package.json\n")
+
+    g = build_graph(tmp_path, mode="repo")
+    pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes) == 0, "scan-root gitignore must skip the nested skill's package.json"
+    # the skill itself (tracked component manifest) is still discovered
+    assert len([n for n in g.nodes.values() if n.kind == "skill"]) == 1
+
+    # include_gitignored=True bypasses all ignore filtering: the dep reappears
+    g2 = build_graph(tmp_path, mode="repo", include_gitignored=True)
+    pkg_nodes2 = [n for n in g2.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes2) == 1
+    assert [n.kind for n in g2.lineage(pkg_nodes2[0])] == ["package", "skill", "target"]
+
+
+def test_repo_root_gitignore_skips_nested_plugin_dep_manifest(tmp_path):
+    """A nested plugin's own dep manifest ignored by the SCAN-ROOT .gitignore
+    must not surface a package node, while the plugin (tracked) still does."""
+    base = tmp_path / "packages" / "plugin"
+    (base / ".claude-plugin").mkdir(parents=True)
+    (base / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')
+    (base / "package.json").write_text(
+        '{"name":"demo","version":"1","dependencies":{"left-pad":"1.0.0"}}'
+    )
+    (tmp_path / ".gitignore").write_text("packages/plugin/package.json\n")
+
+    g = build_graph(tmp_path, mode="repo")
+    assert len([n for n in g.nodes.values() if n.kind == "package"]) == 0, (
+        "scan-root gitignore must skip the nested plugin's package.json"
+    )
+    assert len([n for n in g.nodes.values() if n.kind == "plugin"]) == 1
+
+    g2 = build_graph(tmp_path, mode="repo", include_gitignored=True)
+    pkg_nodes2 = [n for n in g2.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes2) == 1
+    assert [n.kind for n in g2.lineage(pkg_nodes2[0])] == ["package", "plugin", "target"]
+
+
+def test_repo_non_ignored_nested_dep_still_discovered(tmp_path):
+    """No over-filtering: a scan-root .gitignore that ignores something else must
+    NOT suppress a nested skill's dep manifest."""
+    _skill_with_dep(tmp_path, ".claude/skills/deploy")
+    (tmp_path / ".gitignore").write_text("dist/\nnode_modules/\n")
+    g = build_graph(tmp_path, mode="repo")
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]

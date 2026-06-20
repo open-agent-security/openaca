@@ -368,6 +368,35 @@ def _redact_property_value_for_remote(
     return value
 
 
+def _is_in_known_root(path: str, *, config_dir: Path, project: Path | None) -> bool:
+    """Return True when path falls under config_dir or project.
+
+    Mirrors the root-detection logic in _relativize_path_for_remote so callers
+    can detect whether the basename fallback was taken without duplicating the
+    try/except chain.
+    """
+    if not _is_absolute_path(path):
+        return True
+    if path.startswith("\\\\") or (len(path) >= 3 and path[1] == ":" and path[2] in ("\\", "/")):
+        return False
+    try:
+        candidate = Path(path)
+    except (TypeError, ValueError):
+        return False
+    try:
+        candidate.relative_to(config_dir)
+        return True
+    except ValueError:
+        pass
+    if project is not None:
+        try:
+            candidate.relative_to(project)
+            return True
+        except ValueError:
+            pass
+    return False
+
+
 def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None) -> str:
     """Relativize the source-manifest path portion of an occurrence-key bom-ref.
 
@@ -376,12 +405,20 @@ def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None
     installed outside config_dir/project), the bom-ref embeds that absolute path
     and must be relativized before remote upload. Non-absolute bom-refs pass through
     unchanged.
+
+    For out-of-root paths (basename fallback), a stable 8-char SHA-256 digest of
+    the original absolute path is appended to keep distinct install locations
+    distinct: two plugins at `/rootA/package.json` and `/rootB/package.json` would
+    otherwise both reduce to `package.json`, corrupting the dependency graph.
     """
     parts = bom_ref.split("#", 1)
     path_part = parts[0]
     if not _is_absolute_path(path_part):
         return bom_ref
     redacted = _relativize_path_for_remote(path_part, config_dir=config_dir, project=project)
+    if not _is_in_known_root(path_part, config_dir=config_dir, project=project):
+        digest = hashlib.sha256(path_part.encode()).hexdigest()[:8]
+        redacted = f"{redacted}.{digest}"
     return f"{redacted}#{parts[1]}" if len(parts) > 1 else redacted
 
 

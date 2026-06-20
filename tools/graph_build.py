@@ -309,45 +309,28 @@ def _seed_direct_components(
     project-skill discovery paths from racing to own the node: their occurrence
     keys collide, so whichever ran first would silently win the ref content.
     """
-    refs: list[ComponentRef] = []
+    # Install-root direct skills: descend into each skill dir so its dep
+    # manifests become package children of the skill node (parity with
+    # `_add_skill_node` used for project skills and plugin-bundled skills).
+    _add_direct_endpoint_skills(graph, target, install_root / "skills")
 
-    # Install-root direct skills (`<install_root>/skills/<name>/`). Distinct from
-    # project skills under `.claude/skills/` (those are `_add_project_skills`'s).
-    refs.extend(claude_install._walk_skill_dir(install_root / "skills", project_root=project_root))
-
-    # Personal commands/agents at the install root.
-    refs.extend(
-        claude_command_agent.enumerate_dir(
-            install_root / "commands", kind="command", scope_owner=None, attributed_to=None
-        )
-    )
-    refs.extend(
-        claude_command_agent.enumerate_dir(
-            install_root / "agents", kind="agent", scope_owner=None, attributed_to=None
-        )
-    )
+    # Personal commands/agents: per-file parse so agent frontmatter
+    # mcpServers/hooks attach under the agent node, not the target (parity with
+    # the `.md` branch of `_add_repo_standalone_components`).
+    _add_endpoint_command_agents(graph, target, install_root / "commands", kind="command")
+    _add_endpoint_command_agents(graph, target, install_root / "agents", kind="agent")
 
     # Project commands/agents under `.claude/`.
     if project_root is not None:
-        refs.extend(
-            claude_command_agent.enumerate_dir(
-                project_root / ".claude" / "commands",
-                kind="command",
-                scope_owner=None,
-                attributed_to=None,
-            )
+        _add_endpoint_command_agents(
+            graph, target, project_root / ".claude" / "commands", kind="command"
         )
-        refs.extend(
-            claude_command_agent.enumerate_dir(
-                project_root / ".claude" / "agents",
-                kind="agent",
-                scope_owner=None,
-                attributed_to=None,
-            )
+        _add_endpoint_command_agents(
+            graph, target, project_root / ".claude" / "agents", kind="agent"
         )
 
     # Settings-scoped hooks, per scope (no cross-scope merging — parity with
-    # `_walk_direct_components`).
+    # `_walk_direct_components`). Hooks are leaf children of the target.
     scope_to_settings_path = {
         "user": install_root / "settings.json",
         "project": (project_root / ".claude" / "settings.json")
@@ -364,16 +347,54 @@ def _seed_direct_components(
         if settings_path is None:
             continue
         scope_data = by_scope.get(scope) or {}
-        refs.extend(
-            hooks_json.parse_settings_hooks(settings_path, scope_data.get("hooks"), scope=scope)
-        )
+        for ref in hooks_json.parse_settings_hooks(
+            settings_path, scope_data.get("hooks"), scope=scope
+        ):
+            component_type = _component_type(ref)
+            if not isinstance(component_type, str):
+                continue
+            node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
+            _add_child(graph, target, node)
 
-    for ref in refs:
-        component_type = _component_type(ref)
-        if not isinstance(component_type, str):
+
+def _add_direct_endpoint_skills(graph: Graph, parent: Node, skills_dir: Path) -> None:
+    """Endpoint install-root direct skills: one skill node per `<skills_dir>/<name>/`
+    subdir with descent so the skill's dep manifests become package children
+    (parity with `_add_skill_node` used for project skills and plugin skills)."""
+    if not skills_dir.is_dir():
+        return
+    for skill_subdir in sorted(skills_dir.iterdir()):
+        if skill_subdir.name.startswith("."):
             continue
-        node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
-        _add_child(graph, target, node)
+        if (skill_subdir / "SKILL.md").is_file():
+            _add_skill_node(graph, parent, skill_subdir)
+
+
+def _add_endpoint_command_agents(graph: Graph, target: Node, dir_path: Path, kind: Kind) -> None:
+    """Walk `dir_path/**/*.md` per-file so agent frontmatter mcpServers/hooks
+    attach under their agent node rather than the target (parity with the `.md`
+    branch of `_add_repo_standalone_components`)."""
+    if not dir_path.is_dir():
+        return
+    for md_path in sorted(dir_path.rglob("*.md")):
+        if not md_path.is_file():
+            continue
+        try:
+            refs = claude_command_agent.parse_file(
+                md_path, kind=kind, scope_owner=None, attributed_to=None
+            )
+        except Exception:
+            refs = []
+        if not refs:
+            continue
+        self_node = Node(key=occurrence_key(refs[0]), kind=kind, ref=refs[0])
+        _add_child(graph, target, self_node)
+        for child_ref in refs[1:]:
+            child_kind = _component_type(child_ref)
+            if not isinstance(child_kind, str):
+                continue
+            child_node = Node(key=occurrence_key(child_ref), kind=child_kind, ref=child_ref)
+            _add_child(graph, self_node, child_node)
 
 
 def descend(

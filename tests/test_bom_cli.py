@@ -251,6 +251,122 @@ def test_scan_bom_flat_package_keeps_stored_agent_dependency_scope(tmp_path):
     assert any(f["id"] == "GHSA-6xpm-ggf7-wc3p" for f in payload["findings"])
 
 
+def test_scan_bom_nontarget_metadata_component_keeps_stored_scope(tmp_path):
+    # [bug-fixed] metadata.component is a standard CycloneDX field; a flat or
+    # externally-produced BOM can carry one with a bom-ref that is NOT the
+    # OpenACA graph target key. Gating the graph-backed path on mere presence of
+    # metadata.component sent such BOMs through graph_from_cyclonedx, which
+    # synthesizes a target, re-derives the top-level agent-dependency package as
+    # software-dependency, and drops it (0 components, 0 findings). scan_bom now
+    # gates on metadata.component bom-ref == "openaca:target", so this flat BOM
+    # takes the stored-scope path and the finding survives.
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application",
+                "bom-ref": "my-app@2.0.0",
+                "name": "my-app",
+                "version": "2.0.0",
+            },
+            "properties": [
+                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:target_type", "value": "bom"},
+            ],
+        },
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/mcp-remote@0.1.0",
+                "name": "mcp-remote",
+                "version": "0.1.0",
+                "purl": "pkg:npm/mcp-remote@0.1.0",
+                "properties": [
+                    {"name": "openaca:component_type", "value": "package"},
+                    {"name": "openaca:scope", "value": "agent-dependency"},
+                ],
+            }
+        ],
+        "dependencies": [],
+    }
+    bom_path = tmp_path / "flat-with-component.bom.json"
+    bom_path.write_text(json.dumps(bom), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path), "--format", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["stats"]["components"] == 1
+    assert any(f["id"] == "GHSA-6xpm-ggf7-wc3p" for f in payload["findings"])
+
+
+def test_scan_bom_graph_backed_uses_graph_path(tmp_path):
+    # A genuinely graph-backed BOM (metadata.component bom-ref == "openaca:target"
+    # plus dependencies[] edges) must still reconstruct via the graph path: a
+    # top-level agent-dependency package reached through an agent ancestor keeps
+    # agent scope and produces its finding.
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application",
+                "bom-ref": "openaca:target",
+                "name": "endpoint",
+                "properties": [{"name": "openaca:component_type", "value": "target"}],
+            },
+            "properties": [
+                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:target_type", "value": "bom"},
+            ],
+        },
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": "endpoint/mcp/server",
+                "name": "server",
+                "properties": [
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:scope", "value": "agent-component"},
+                    {"name": "openaca:identity", "value": "endpoint/mcp/server"},
+                ],
+            },
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/mcp-remote@0.1.0",
+                "name": "mcp-remote",
+                "version": "0.1.0",
+                "purl": "pkg:npm/mcp-remote@0.1.0",
+                "properties": [
+                    {"name": "openaca:component_type", "value": "package"},
+                    {"name": "openaca:scope", "value": "agent-dependency"},
+                ],
+            },
+        ],
+        "dependencies": [
+            {"ref": "openaca:target", "dependsOn": ["endpoint/mcp/server"]},
+            {"ref": "endpoint/mcp/server", "dependsOn": ["pkg:npm/mcp-remote@0.1.0"]},
+        ],
+    }
+    bom_path = tmp_path / "graph.bom.json"
+    bom_path.write_text(json.dumps(bom), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path), "--format", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert any(f["id"] == "GHSA-6xpm-ggf7-wc3p" for f in payload["findings"])
+
+
 def test_scan_bom_rejects_include_posture(tmp_path):
     bom_path = tmp_path / "agent.bom.json"
     bom_path.write_text(

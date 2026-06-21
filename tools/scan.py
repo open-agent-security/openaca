@@ -57,6 +57,7 @@ from tools.graph_build import _TARGET_KEY, build_graph
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
+    SkillSpectorCommandNotFound,
     collect_skill_observations,
     collect_skillspector_findings,
 )
@@ -136,7 +137,10 @@ def _collect_scanner_findings(
     observations = collect_skill_observations(refs)
     posture_findings: list[PostureFinding] = []
     if "nvidia-skillspector" in external_scanners:
-        skillspector_findings = collect_skillspector_findings(refs)
+        try:
+            skillspector_findings = collect_skillspector_findings(refs)
+        except SkillSpectorCommandNotFound as exc:
+            raise click.ClickException(str(exc)) from exc
         observations.extend(skillspector_findings.observations)
         posture_findings.extend(skillspector_findings.posture_findings)
         for warning in skillspector_findings.warnings:

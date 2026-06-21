@@ -160,6 +160,10 @@ class SkillSpectorFindings:
     warnings: list[str] = field(default_factory=list)
 
 
+class SkillSpectorCommandNotFound(RuntimeError):
+    """Raised when the explicitly requested SkillSpector CLI is unavailable."""
+
+
 def collect_skillspector_findings(
     refs: list[ComponentRef],
     *,
@@ -190,12 +194,10 @@ def collect_skillspector_findings(
             ]
             try:
                 result = runner(args, timeout_seconds)
-            except FileNotFoundError:
-                return SkillSpectorFindings(
-                    observations=observations,
-                    posture_findings=posture_findings,
-                    warnings=[f"SkillSpector command not found: {command}"],
-                )
+            except FileNotFoundError as exc:
+                raise SkillSpectorCommandNotFound(
+                    f"SkillSpector command not found: {command}"
+                ) from exc
             except subprocess.TimeoutExpired:
                 warnings.append(f"SkillSpector timed out for {scan_path}")
                 continue

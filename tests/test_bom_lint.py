@@ -146,3 +146,39 @@ def _valid_bom_doc() -> dict:
         ],
         "dependencies": [{"ref": "pkg:npm/%40mcpjam/inspector@1.4.2", "dependsOn": []}],
     }
+
+
+def test_bom_lint_accepts_graph_backed_bom_with_target_dependency(tmp_path):
+    """Graph-backed BOMs encode the scan target as metadata.component (bom-ref
+    `openaca:target`) and emit dependencies[] edges whose parent is that target
+    ref. The linter must accept the metadata.component bom-ref as a valid
+    dependency endpoint, not reject it as 'does not match any component bom-ref'."""
+    from tools.graph import Edge, Graph, Node
+
+    target = Node(key="openaca:target", kind="target", ref=None)
+    plugin = Node(
+        key="plugin/mp/demo@1",
+        kind="plugin",
+        ref=ComponentRef(
+            name="demo",
+            version="1",
+            component_identity="plugin/mp/demo",
+            extra={"component_type": "plugin"},
+        ),
+    )
+    pkg = Node(
+        key="skills/x/package.json#dependencies#pkg:npm/lodash@4.17.20",
+        kind="package",
+        ref=ComponentRef(ecosystem="npm", name="lodash", version="4.17.20"),
+    )
+    graph = Graph(
+        nodes={n.key: n for n in (target, plugin, pkg)},
+        edges=[Edge("openaca:target", "plugin/mp/demo@1"), Edge("plugin/mp/demo@1", pkg.key)],
+    )
+    bom = build_agent_bom([], target_type="repo", target=".", graph=graph)
+    path = tmp_path / "agent.bom.json"
+    path.write_text(json.dumps(bom.to_cyclonedx()), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+    assert result.exit_code == 0, result.output
+    assert f"{path}: ok" in result.output

@@ -52,7 +52,7 @@ from tools.bom import (
 )
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
-from tools.graph_build import build_graph
+from tools.graph_build import _TARGET_KEY, build_graph
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
@@ -912,6 +912,24 @@ def endpoint(
     _exit_for_findings(fail_on, findings)
 
 
+def _is_graph_backed_bom(doc: dict[str, object]) -> bool:
+    """Does this BOM encode the OpenACA composition graph (vs. a flat BOM)?
+
+    True iff metadata.component's bom-ref is the stable logical target key
+    (_TARGET_KEY) that build_agent_bom(graph=...) emits. A plain CycloneDX
+    metadata.component with any other bom-ref is NOT graph-backed: rebuilding
+    its graph would re-derive top-level packages as software-dependency and
+    drop them. Such BOMs take the flat path (stored openaca:scope).
+    """
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    component = metadata.get("component")
+    if not isinstance(component, dict):
+        return False
+    return component.get("bom-ref") == _TARGET_KEY
+
+
 @main.command(name="bom")
 @click.pass_context
 @_bom_input_option
@@ -965,13 +983,18 @@ def scan_bom(
     # A graph-backed BOM (this branch's emitter) carries metadata.component plus
     # real dependencies[] edges, so the reconstructed graph round-trips scope +
     # attribution from structure (the openaca:attributed_to property is gone).
-    # A flat/external or pre-Stage-4 BOM has no metadata.component;
+    # The robust signal is the metadata.component bom-ref: a graph-backed BOM
+    # sets it to the stable logical target key (_TARGET_KEY == "openaca:target",
+    # emitted as target_bom_ref=graph.root.key by _build_agent_bom_from_graph).
+    # A flat/external or pre-Stage-4 BOM has no metadata.component OR has one
+    # whose bom-ref is some other component (a plain CycloneDX metadata.component
+    # is a standard field unrelated to OpenACA's graph encoding). For those,
     # graph_from_cyclonedx would synthesize a target and attach every component
     # directly under it, re-deriving package scope as software-dependency and
-    # silently dropping agent-dependency findings. For those, read the stored
+    # silently dropping agent-dependency findings. So read the stored
     # openaca:scope off each component instead and thread graph=None.
     graph: Graph | None
-    if isinstance(doc.get("metadata"), dict) and doc["metadata"].get("component"):
+    if _is_graph_backed_bom(doc):
         graph = graph_from_cyclonedx(doc)
         refs = build_agent_bom(
             _filter_agent_scope_refs(_refs_from_graph(graph)),

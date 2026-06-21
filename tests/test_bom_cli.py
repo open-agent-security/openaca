@@ -476,3 +476,25 @@ def test_scan_bom_rejects_non_utf8_input(tmp_path):
     assert result.exit_code != 0
     assert "not valid UTF-8" in result.output
     assert isinstance(result.exception, SystemExit)
+
+
+def test_bom_endpoint_surfaces_resolver_warnings(tmp_path):
+    """`bom endpoint` must surface endpoint resolver warnings (parity with the
+    old parse_install path). An enabled plugin absent from installed_plugins.json
+    produces an 'enabled but missing' warning that must reach stderr."""
+    config_dir = tmp_path / "claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"ghost@mp": True}}), encoding="utf-8"
+    )
+    (config_dir / "plugins").mkdir()
+    (config_dir / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}}), encoding="utf-8"
+    )
+    output = tmp_path / "endpoint.bom.json"
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--config-dir", str(config_dir), "-o", str(output)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "ghost@mp enabled but missing from installed_plugins.json" in result.output

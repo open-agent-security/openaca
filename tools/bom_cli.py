@@ -100,7 +100,10 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
 def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
     """Generate an Agent BOM from active endpoint composition."""
     config_dir = _resolve_endpoint_config_dir(config_dir)
-    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    warnings: list[str] = []
+    graph = build_graph(config_dir, mode="endpoint", project_root=project, warnings=warnings)
+    for w in warnings:
+        click.echo(f"warning: {w}", err=True)
     refs = _refs_from_graph(graph)
     bom = build_agent_bom(
         _filter_agent_scope_refs(refs),

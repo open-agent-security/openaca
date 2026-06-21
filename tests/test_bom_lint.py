@@ -182,3 +182,15 @@ def test_bom_lint_accepts_graph_backed_bom_with_target_dependency(tmp_path):
     result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
     assert result.exit_code == 0, result.output
     assert f"{path}: ok" in result.output
+
+
+def test_bom_lint_handles_non_dict_metadata_without_crashing():
+    """A schema-invalid BOM whose `metadata` is not an object (e.g. a list or
+    string) must not raise AttributeError in check_semantics — it should return
+    error strings, letting `bom lint` report validation errors instead of a
+    traceback."""
+    from tools.bom_lint import check_semantics
+
+    for bad_metadata in ([], "bad", 42):
+        doc = {"metadata": bad_metadata, "components": [], "dependencies": []}
+        assert isinstance(check_semantics(doc), list)  # no raise

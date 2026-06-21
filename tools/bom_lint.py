@@ -72,11 +72,13 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
     # The scan target is encoded as `metadata.component` (not a `components[]`
     # entry) and is a valid dependency endpoint: graph-backed BOMs emit edges
     # whose parent is the target's bom-ref (e.g. `openaca:target`). Accept it.
-    metadata_component = (doc.get("metadata") or {}).get("component")
-    if isinstance(metadata_component, dict):
-        metadata_ref = metadata_component.get("bom-ref")
-        if isinstance(metadata_ref, str):
-            bom_refs.add(metadata_ref)
+    metadata = doc.get("metadata")
+    if isinstance(metadata, dict):
+        metadata_component = metadata.get("component")
+        if isinstance(metadata_component, dict):
+            metadata_ref = metadata_component.get("bom-ref")
+            if isinstance(metadata_ref, str):
+                bom_refs.add(metadata_ref)
 
     for index, component in enumerate(components):
         errors.extend(_check_component(component, index))

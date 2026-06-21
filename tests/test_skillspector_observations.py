@@ -3,7 +3,12 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from tools.observations.skillspector import collect_skillspector_findings
+import pytest
+
+from tools.observations.skillspector import (
+    SkillSpectorCommandNotFound,
+    collect_skillspector_findings,
+)
 from tools.parsers.claude_skill import parse
 
 
@@ -459,15 +464,11 @@ def test_skillspector_excludes_sc4_dependency_cve_findings(tmp_path: Path) -> No
     assert "P1" in {o.observation_id for o in result.observations}
 
 
-def test_skillspector_missing_binary_warns_and_skips(tmp_path: Path) -> None:
+def test_skillspector_missing_binary_raises(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
 
     def missing_run(_args: Sequence[str], _timeout: float) -> subprocess.CompletedProcess[str]:
         raise FileNotFoundError("skillspector")
 
-    result = collect_skillspector_findings([ref], run_command=missing_run)
-    observations = result.observations
-    warnings = result.warnings
-
-    assert observations == []
-    assert warnings == ["SkillSpector command not found: skillspector"]
+    with pytest.raises(SkillSpectorCommandNotFound, match="skillspector"):
+        collect_skillspector_findings([ref], run_command=missing_run)

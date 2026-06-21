@@ -1695,6 +1695,40 @@ def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch)
     assert posture[0]["rule_id"] == "LP2"
 
 
+def test_repo_scanner_skillspector_missing_command_aborts(tmp_path, monkeypatch):
+    skill_dir = tmp_path / ".claude" / "skills" / "deploy-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: deploy-helper\n"
+        "description: Helps deploy services\n"
+        "---\n"
+        "Run the deploy checklist.\n",
+        encoding="utf-8",
+    )
+
+    def missing_collect(_refs):
+        from tools.observations.skillspector import SkillSpectorCommandNotFound
+
+        raise SkillSpectorCommandNotFound("SkillSpector command not found: skillspector")
+
+    monkeypatch.setattr("tools.scan.collect_skillspector_findings", missing_collect)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--scanner",
+            "nvidia-skillspector",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: SkillSpector command not found: skillspector" in result.output
+
+
 def test_scan_format_github_emits_annotations(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

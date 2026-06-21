@@ -17,6 +17,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -92,7 +93,71 @@ def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:
     return graph.nodes[child_node.key]
 
 
-def occurrence_key(ref: ComponentRef) -> str:
+# The path-normalizer threaded into every node-key construction. Takes a ref's
+# absolute `source_manifest` and returns a machine-independent logical path.
+SourceNormalizer = Callable[[str], str]
+
+
+def _identity_normalizer(abs_path: str) -> str:
+    return abs_path
+
+
+def _make_normalizer(
+    mode: str, target: Path, install_root: Path, project_root: Path | None
+) -> SourceNormalizer:
+    """Build the `source_manifest`-path normalizer for a scan.
+
+    The node key's path portion must be a *stable logical path* (machine-specific
+    root prefix stripped) so node keys — which become CycloneDX bom-refs — are
+    reproducible across machines and dedup across them.
+
+    - **repo mode**: the single scan `target` is the only root; the key path is
+      `source_manifest` relative to `target` (POSIX), e.g.
+      `.claude/skills/deploy/package.json`.
+    - **endpoint mode**: paths span `install_root` (the scan target, e.g.
+      `~/.claude`, incl. plugin install/cache dirs under it) and `project_root`
+      (the project dir). Strip the matching known root and prefix a logical label
+      so paths under different roots can't collide: `project/<rel>` under
+      `project_root`, `endpoint/<rel>` under `install_root`. A path under neither
+      falls back to the absolute path (last resort).
+    """
+    # Resolve roots once so prefix-matching is symlink-stable (matches the
+    # `.resolve()` used elsewhere in descent for path comparisons).
+    target_r = target.resolve()
+    install_r = install_root.resolve()
+    project_r = project_root.resolve() if project_root is not None else None
+
+    def _rel(abs_path: str, root: Path) -> str | None:
+        try:
+            return Path(abs_path).resolve().relative_to(root).as_posix()
+        except ValueError:
+            return None
+
+    if mode == "repo":
+
+        def normalize(abs_path: str) -> str:
+            rel = _rel(abs_path, target_r)
+            return rel if rel is not None else abs_path
+
+        return normalize
+
+    def normalize(abs_path: str) -> str:
+        # project_root first: when project_root is nested under install_root,
+        # project files must keep their `project/` label rather than being
+        # swallowed by the install-root branch.
+        if project_r is not None:
+            rel = _rel(abs_path, project_r)
+            if rel is not None:
+                return f"project/{rel}"
+        rel = _rel(abs_path, install_r)
+        if rel is not None:
+            return f"endpoint/{rel}"
+        return abs_path
+
+    return normalize
+
+
+def occurrence_key(ref: ComponentRef, normalize: SourceNormalizer = _identity_normalizer) -> str:
     """The node key for a ref: its occurrence identity, never the bare purl.
 
     The key is the occurrence — where the ref was declared
@@ -102,13 +167,18 @@ def occurrence_key(ref: ComponentRef) -> str:
     manifests declaring the same purl, yield distinct nodes; a single
     occurrence reached by two discovery paths collapses (same manifest +
     locator + what).
+
+    `normalize` maps the ref's absolute `source_manifest` to a stable logical
+    path (machine root prefix stripped) so node keys are reproducible across
+    machines. `ref.source_manifest` itself is left untouched (render still
+    relativizes it for display); only the KEY is normalized.
     """
     component_type = (ref.extra or {}).get("component_type")
     if component_type and component_type != "package":
         what = canonical_component_identity(ref) or ref.name or ""
     else:
         what = ref.purl or ref.name or ""
-    return f"{ref.source_manifest}#{ref.source_locator}#{what}"
+    return f"{normalize(ref.source_manifest)}#{ref.source_locator}#{what}"
 
 
 def build_graph(
@@ -124,8 +194,13 @@ def build_graph(
 
     root = Node(key=_TARGET_KEY, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
+    # The node-key path normalizer (Stage 4): strips the machine-specific scan
+    # root so node keys — which become CycloneDX bom-refs — are reproducible.
+    # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
+    # from the same scan root; they're separate concerns threaded in parallel.
+    normalize = _make_normalizer(mode, Path(target), Path(target), project_root)
     if mode == "endpoint":
-        _seed_endpoint(graph, root, Path(target), project_root, warnings=warnings)
+        _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=warnings)
     else:
         # Repo mode honors the SCAN-ROOT `.gitignore` everywhere, matching
         # parse_repo_grouped: load the root spec ONCE and evaluate every
@@ -138,6 +213,7 @@ def build_graph(
             graph,
             root,
             root_dir,
+            normalize,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -151,6 +227,7 @@ def _seed_endpoint(
     target: Node,
     install_root: Path,
     project_root: Path | None,
+    normalize: SourceNormalizer,
     *,
     warnings: list[str] | None = None,
 ) -> None:
@@ -185,7 +262,14 @@ def _seed_endpoint(
     enabled = effective.get("enabledPlugins") or {}
     if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
         _seed_active_plugins(
-            graph, target, enabled, plugins_map, lockfile_path, layers, warnings=warnings
+            graph,
+            target,
+            enabled,
+            plugins_map,
+            lockfile_path,
+            layers,
+            normalize,
+            warnings=warnings,
         )
 
     if project_root is not None:
@@ -198,6 +282,7 @@ def _seed_endpoint(
             graph,
             target,
             project_root,
+            normalize=normalize,
             project_root=project_root,
             stamp_provenance=True,
             root_dir=project_root,
@@ -214,12 +299,13 @@ def _seed_endpoint(
             graph,
             target,
             project_root / ".claude" / "skills",
+            normalize=normalize,
             project_root=project_root,
             stamp_provenance=True,
         )
 
-    _seed_remote_mcps(graph, target, install_root, project_root, by_scope)
-    _seed_direct_components(graph, target, install_root, project_root, by_scope)
+    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
+    _seed_direct_components(graph, target, install_root, project_root, by_scope, normalize)
 
 
 def _seed_active_plugins(
@@ -229,6 +315,7 @@ def _seed_active_plugins(
     plugins_map: dict,
     lockfile_path: Path,
     layers,
+    normalize: SourceNormalizer,
     *,
     warnings: list[str] | None = None,
 ) -> None:
@@ -284,7 +371,7 @@ def _seed_active_plugins(
                 "scope": entry.get("scope"),
             },
         )
-        plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
+        plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
         _add_child(graph, target, plugin_node)
 
         install_path = entry.get("installPath")
@@ -294,13 +381,13 @@ def _seed_active_plugins(
             # the tier-2 lockfile walk below (lockfile-preferred). Emitting both
             # would double-count a direct dep present in package.json AND
             # package-lock.json. Bundled skills and their own deps still descend.
-            descend(graph, plugin_node, Path(install_path), emit_own_root_deps=False)
+            descend(graph, plugin_node, Path(install_path), normalize, emit_own_root_deps=False)
             # Plugin tier-2 lockfile deps: parity with parse_install — attach as
             # package children of the plugin node (NOT a skill).
             for ref in claude_install._walk_plugin_implementation_deps(
                 Path(install_path), attributed_to=attributed_id
             ):
-                node = Node(key=occurrence_key(ref), kind="package", ref=ref)
+                node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
                 _add_child(graph, plugin_node, node)
 
 
@@ -310,6 +397,7 @@ def _seed_remote_mcps(
     install_root: Path,
     project_root: Path | None,
     by_scope: dict,
+    normalize: SourceNormalizer,
 ) -> None:
     scope_to_settings_path = {
         "user": install_root / "settings.json",
@@ -337,7 +425,7 @@ def _seed_remote_mcps(
         ):
             if _component_type(ref) != "mcp_server":
                 continue
-            node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+            node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
     # Standalone .mcp.json: user-scoped (<install_root>/.mcp.json) and
@@ -352,7 +440,7 @@ def _seed_remote_mcps(
         for ref in _safe_parse(mcp_json.parse, mcp_path):
             if _component_type(ref) != "mcp_server":
                 continue
-            node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+            node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
 
@@ -362,6 +450,7 @@ def _seed_direct_components(
     install_root: Path,
     project_root: Path | None,
     by_scope: dict,
+    normalize: SourceNormalizer,
 ) -> None:
     """Seed the remaining `_walk_direct_components` surfaces as target children.
 
@@ -382,21 +471,23 @@ def _seed_direct_components(
     # Install-root direct skills: descend into each skill dir so its dep
     # manifests become package children of the skill node (parity with
     # `_add_skill_node` used for project skills and plugin-bundled skills).
-    _add_direct_endpoint_skills(graph, target, install_root / "skills", project_root)
+    _add_direct_endpoint_skills(graph, target, install_root / "skills", normalize, project_root)
 
     # Personal commands/agents: per-file parse so agent frontmatter
     # mcpServers/hooks attach under the agent node, not the target (parity with
     # the `.md` branch of `_add_repo_standalone_components`).
-    _add_endpoint_command_agents(graph, target, install_root / "commands", kind="command")
-    _add_endpoint_command_agents(graph, target, install_root / "agents", kind="agent")
+    _add_endpoint_command_agents(
+        graph, target, install_root / "commands", normalize, kind="command"
+    )
+    _add_endpoint_command_agents(graph, target, install_root / "agents", normalize, kind="agent")
 
     # Project commands/agents under `.claude/`.
     if project_root is not None:
         _add_endpoint_command_agents(
-            graph, target, project_root / ".claude" / "commands", kind="command"
+            graph, target, project_root / ".claude" / "commands", normalize, kind="command"
         )
         _add_endpoint_command_agents(
-            graph, target, project_root / ".claude" / "agents", kind="agent"
+            graph, target, project_root / ".claude" / "agents", normalize, kind="agent"
         )
 
     # Settings-scoped hooks, per scope (no cross-scope merging — parity with
@@ -423,12 +514,16 @@ def _seed_direct_components(
             component_type = _component_type(ref)
             if not isinstance(component_type, str):
                 continue
-            node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
+            node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
             _add_child(graph, target, node)
 
 
 def _add_direct_endpoint_skills(
-    graph: Graph, parent: Node, skills_dir: Path, project_root: Path | None = None
+    graph: Graph,
+    parent: Node,
+    skills_dir: Path,
+    normalize: SourceNormalizer,
+    project_root: Path | None = None,
 ) -> None:
     """Endpoint install-root direct skills: one skill node per `<skills_dir>/<name>/`
     subdir with descent so the skill's dep manifests become package children
@@ -454,12 +549,14 @@ def _add_direct_endpoint_skills(
                 )
                 if provenance is not None:
                     ref = replace(ref, extra={**ref.extra, "source_provenance": provenance})
-            skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
+            skill_node = Node(key=occurrence_key(ref, normalize), kind="skill", ref=ref)
             _add_child(graph, parent, skill_node)
-            descend(graph, skill_node, skill_subdir)
+            descend(graph, skill_node, skill_subdir, normalize)
 
 
-def _add_endpoint_command_agents(graph: Graph, target: Node, dir_path: Path, kind: Kind) -> None:
+def _add_endpoint_command_agents(
+    graph: Graph, target: Node, dir_path: Path, normalize: SourceNormalizer, kind: Kind
+) -> None:
     """Walk `dir_path/**/*.md` per-file so agent frontmatter mcpServers/hooks
     attach under their agent node rather than the target (parity with the `.md`
     branch of `_add_repo_standalone_components`)."""
@@ -476,13 +573,15 @@ def _add_endpoint_command_agents(graph: Graph, target: Node, dir_path: Path, kin
             refs = []
         if not refs:
             continue
-        self_node = Node(key=occurrence_key(refs[0]), kind=kind, ref=refs[0])
+        self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])
         _add_child(graph, target, self_node)
         for child_ref in refs[1:]:
             child_kind = _component_type(child_ref)
             if not isinstance(child_kind, str):
                 continue
-            child_node = Node(key=occurrence_key(child_ref), kind=child_kind, ref=child_ref)
+            child_node = Node(
+                key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref
+            )
             _add_child(graph, self_node, child_node)
 
 
@@ -490,6 +589,7 @@ def descend(
     graph: Graph,
     parent: Node,
     directory: Path,
+    normalize: SourceNormalizer,
     *,
     emit_own_root_deps: bool = True,
     include_gitignored: bool = False,
@@ -545,6 +645,7 @@ def descend(
                 parent,
                 plugin_root,
                 plugin_root / ".claude-plugin" / "plugin.json",
+                normalize,
                 root_dir=root_dir,
                 root_spec=root_spec,
             )
@@ -554,6 +655,7 @@ def descend(
             graph,
             parent,
             directory,
+            normalize=normalize,
             exclude_under=realized_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
@@ -569,6 +671,7 @@ def descend(
                 graph,
                 parent,
                 directory,
+                normalize,
                 include_gitignored=include_gitignored,
                 root_dir=root_dir,
                 root_spec=root_spec,
@@ -577,21 +680,25 @@ def descend(
             graph,
             parent,
             directory,
+            normalize,
             exclude_under=realized_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
         )
     elif parent.kind == "plugin":
-        _add_bundled_skills(graph, parent, directory, root_dir=root_dir, root_spec=root_spec)
+        _add_bundled_skills(
+            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
+        )
         _add_bundled_plugin_surfaces(
-            graph, parent, directory, root_dir=root_dir, root_spec=root_spec
+            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
         )
         if emit_own_root_deps:
             _add_dep_manifest_packages(
                 graph,
                 parent,
                 directory,
+                normalize,
                 include_gitignored=include_gitignored,
                 root_dir=root_dir,
                 root_spec=root_spec,
@@ -601,6 +708,7 @@ def descend(
             graph,
             parent,
             directory,
+            normalize,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -637,6 +745,7 @@ def _descend_into_plugin(
     target: Node,
     plugin_root: Path,
     plugin_manifest: Path,
+    normalize: SourceNormalizer,
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -655,9 +764,9 @@ def _descend_into_plugin(
     self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
         return None
-    plugin_node = Node(key=occurrence_key(self_ref), kind="plugin", ref=self_ref)
+    plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
     _add_child(graph, target, plugin_node)
-    descend(graph, plugin_node, plugin_root, root_dir=root_dir, root_spec=root_spec)
+    descend(graph, plugin_node, plugin_root, normalize, root_dir=root_dir, root_spec=root_spec)
     return plugin_node
 
 
@@ -667,6 +776,7 @@ def _add_project_skills(
     directory: Path,
     exclude_under: list[Path] | None = None,
     *,
+    normalize: SourceNormalizer,
     project_root: Path | None = None,
     stamp_provenance: bool = False,
     include_gitignored: bool = False,
@@ -702,6 +812,7 @@ def _add_project_skills(
             graph,
             parent,
             path.parent,
+            normalize=normalize,
             project_root=project_root,
             stamp_provenance=stamp_provenance,
             root_dir=root_dir,
@@ -728,6 +839,7 @@ def _add_bundled_skills(
     graph: Graph,
     parent: Node,
     directory: Path,
+    normalize: SourceNormalizer,
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -757,7 +869,13 @@ def _add_bundled_skills(
             continue
         seen_dirs.add(resolved)
         _add_skills_from_dir(
-            graph, parent, skills_dir, plugin_root=directory, root_dir=root_dir, root_spec=root_spec
+            graph,
+            parent,
+            skills_dir,
+            normalize=normalize,
+            plugin_root=directory,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
 
 
@@ -777,6 +895,7 @@ def _add_skills_from_dir(
     parent: Node,
     skills_dir: Path,
     *,
+    normalize: SourceNormalizer,
     plugin_root: Path | None = None,
     project_root: Path | None = None,
     stamp_provenance: bool = False,
@@ -816,6 +935,7 @@ def _add_skills_from_dir(
             graph,
             parent,
             skill_subdir,
+            normalize=normalize,
             project_root=project_root,
             stamp_provenance=stamp_provenance,
             root_dir=root_dir,
@@ -828,6 +948,7 @@ def _add_skill_node(
     parent: Node,
     skill_subdir: Path,
     *,
+    normalize: SourceNormalizer,
     project_root: Path | None = None,
     stamp_provenance: bool = False,
     root_dir: Path | None = None,
@@ -850,9 +971,9 @@ def _add_skill_node(
             )
             if provenance is not None:
                 ref = replace(ref, extra={**ref.extra, "source_provenance": provenance})
-        skill_node = Node(key=occurrence_key(ref), kind="skill", ref=ref)
+        skill_node = Node(key=occurrence_key(ref, normalize), kind="skill", ref=ref)
         _add_child(graph, parent, skill_node)
-        descend(graph, skill_node, skill_subdir, root_dir=root_dir, root_spec=root_spec)
+        descend(graph, skill_node, skill_subdir, normalize, root_dir=root_dir, root_spec=root_spec)
 
 
 def _component_type(ref: ComponentRef) -> object:
@@ -877,6 +998,7 @@ def _add_dep_manifest_packages(
     graph: Graph,
     parent: Node,
     directory: Path,
+    normalize: SourceNormalizer,
     *,
     include_gitignored: bool = False,
     root_dir: Path | None = None,
@@ -916,7 +1038,7 @@ def _add_dep_manifest_packages(
             continue
         emitted = False
         for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
-            node = Node(key=occurrence_key(ref), kind="package", ref=ref)
+            node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, parent, node)
             emitted = True
         if emitted:
@@ -928,7 +1050,7 @@ def _add_dep_manifest_packages(
         if manifest is None:
             continue
         for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
-            node = Node(key=occurrence_key(ref), kind="package", ref=ref)
+            node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, parent, node)
 
 
@@ -984,6 +1106,7 @@ def _add_repo_standalone_components(
     graph: Graph,
     parent: Node,
     directory: Path,
+    normalize: SourceNormalizer,
     *,
     exclude_under: list[Path] | None = None,
     include_gitignored: bool = False,
@@ -1011,14 +1134,14 @@ def _add_repo_standalone_components(
             for ref in _safe_parse(mcp_json.parse, path):
                 if _component_type(ref) != "mcp_server":
                     continue
-                node = Node(key=occurrence_key(ref), kind="mcp_server", ref=ref)
+                node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
         if path.name == "settings.json" and _is_claude_settings_json(path, directory):
             for ref in _safe_parse(claude_settings.parse, path):
                 if _component_type(ref) != "plugin":
                     continue
-                node = Node(key=occurrence_key(ref), kind="plugin", ref=ref)
+                node = Node(key=occurrence_key(ref, normalize), kind="plugin", ref=ref)
                 _add_child(graph, parent, node)
             continue
         if path.suffix == ".md":
@@ -1031,7 +1154,7 @@ def _add_repo_standalone_components(
                 refs = []
             if not refs:
                 continue
-            self_node = Node(key=occurrence_key(refs[0]), kind=kind, ref=refs[0])
+            self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])
             _add_child(graph, parent, self_node)
             # Agents may declare frontmatter mcpServers/hooks; parse_file returns
             # them as subsequent refs. Attach them under the agent node (not the
@@ -1040,7 +1163,9 @@ def _add_repo_standalone_components(
                 child_kind = _component_type(child_ref)
                 if not isinstance(child_kind, str):
                     continue
-                child_node = Node(key=occurrence_key(child_ref), kind=child_kind, ref=child_ref)
+                child_node = Node(
+                    key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref
+                )
                 _add_child(graph, self_node, child_node)
 
 
@@ -1071,6 +1196,7 @@ def _add_bundled_plugin_surfaces(
     graph: Graph,
     plugin_node: Node,
     plugin_root: Path,
+    normalize: SourceNormalizer,
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -1123,7 +1249,7 @@ def _add_bundled_plugin_surfaces(
             continue
         if ref.source_manifest and _is_ignored_under(Path(ref.source_manifest), eval_root, spec):
             continue
-        node = Node(key=occurrence_key(ref), kind=component_type, ref=ref)
+        node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
         _add_child(graph, plugin_node, node)
 
 

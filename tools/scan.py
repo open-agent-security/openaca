@@ -46,6 +46,7 @@ from click.core import ParameterSource
 from tools.bom import (
     build_agent_bom,
     component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
     source_unit_from_cyclonedx,
     target_info_from_cyclonedx,
 )
@@ -113,34 +114,10 @@ def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
             replace(
                 node.ref,
                 scope=graph.scope_of(node),
-                attributed_to=_attribution_for(graph, node),
+                attributed_to=graph.attribution_for(node),
             )
         )
     return refs
-
-
-def _attribution_for(graph: Graph, node) -> str | None:
-    """Nearest plugin ancestor's attribution string, or nearest agent ancestor's
-    identity, or None.
-
-    Plugin ancestor takes priority: component_identity, versioned
-    (`<identity>@<version>`) when the plugin carries a version — matching
-    `claude_plugin.parse` and `claude_install`'s `attributed_id`. A component is
-    its own plugin only via ancestry, so a plugin node itself attributes to None.
-
-    When there is no plugin ancestor, falls back to the nearest agent ancestor's
-    component_identity, preserving the pre-graph `attributed_to='claude-agent/...'`
-    that `_agent_frontmatter_child_refs` stamps on frontmatter MCP/hook children.
-    BOM uses this to build agent→MCP edges in the transitional flat-ref path."""
-    plugin = graph.nearest_plugin_ancestor(node)
-    if plugin is not None and plugin.ref is not None:
-        identity = plugin.ref.component_identity
-        if identity:
-            return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity
-    for anc in graph.lineage(node)[1:]:
-        if anc.kind == "agent" and anc.ref is not None and anc.ref.component_identity:
-            return anc.ref.component_identity
-    return None
 
 
 def default_overlays_dir() -> Path:
@@ -631,6 +608,7 @@ def repo(
         target=str(target),
         source_unit_count=n_found,
         source_unit_label="manifest",
+        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -818,6 +796,7 @@ def endpoint(
         target=str(config_dir),
         source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
         source_unit_label="active plugin",
+        graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
@@ -983,11 +962,30 @@ def scan_bom(
         )
     target_type, target = target_info_from_cyclonedx(doc)
     source_unit_count, source_unit_label = source_unit_from_cyclonedx(doc)
-    refs = build_agent_bom(
-        _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
-        target_type="bom",
-        target=str(input_path),
-    ).component_refs()
+    # A graph-backed BOM (this branch's emitter) carries metadata.component plus
+    # real dependencies[] edges, so the reconstructed graph round-trips scope +
+    # attribution from structure (the openaca:attributed_to property is gone).
+    # A flat/external or pre-Stage-4 BOM has no metadata.component;
+    # graph_from_cyclonedx would synthesize a target and attach every component
+    # directly under it, re-deriving package scope as software-dependency and
+    # silently dropping agent-dependency findings. For those, read the stored
+    # openaca:scope off each component instead and thread graph=None.
+    graph: Graph | None
+    if isinstance(doc.get("metadata"), dict) and doc["metadata"].get("component"):
+        graph = graph_from_cyclonedx(doc)
+        refs = build_agent_bom(
+            _filter_agent_scope_refs(_refs_from_graph(graph)),
+            target_type="bom",
+            target=str(input_path),
+            graph=graph,
+        ).component_refs()
+    else:
+        graph = None
+        refs = build_agent_bom(
+            _filter_agent_scope_refs(component_refs_from_cyclonedx(doc)),
+            target_type="bom",
+            target=str(input_path),
+        ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:

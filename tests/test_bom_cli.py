@@ -204,6 +204,53 @@ def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
     assert any(f["id"] == "GHSA-3q26-f695-pp76" for f in payload["findings"])
 
 
+def test_scan_bom_flat_package_keeps_stored_agent_dependency_scope(tmp_path):
+    # [bug-fixed] A flat BOM (no metadata.component, no edges) carrying a
+    # package-kind component stored as agent-dependency must still produce its
+    # finding. graph_from_cyclonedx would synthesize a target and attach the
+    # package directly under it, so scope_of re-derives software-dependency and
+    # _filter_agent_scope_refs drops the ref — silently losing the finding.
+    # scan_bom now reads the stored openaca:scope for flat BOMs instead. Before
+    # the fix this BOM matched 0 findings (exit 0); after, the finding is present.
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "properties": [
+                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:target_type", "value": "bom"},
+            ]
+        },
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/mcp-remote@0.1.0",
+                "name": "mcp-remote",
+                "version": "0.1.0",
+                "purl": "pkg:npm/mcp-remote@0.1.0",
+                "properties": [
+                    {"name": "openaca:component_type", "value": "package"},
+                    {"name": "openaca:scope", "value": "agent-dependency"},
+                ],
+            }
+        ],
+        "dependencies": [],
+    }
+    bom_path = tmp_path / "flat.bom.json"
+    bom_path.write_text(json.dumps(bom), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["bom", "--input", str(bom_path), "--format", "json"],
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["stats"]["components"] == 1
+    assert any(f["id"] == "GHSA-6xpm-ggf7-wc3p" for f in payload["findings"])
+
+
 def test_scan_bom_rejects_include_posture(tmp_path):
     bom_path = tmp_path / "agent.bom.json"
     bom_path.write_text(

@@ -582,6 +582,60 @@ def test_endpoint_direct_command_under_install_root_is_target_child(tmp_path):
     assert g.nearest_plugin_ancestor(command) is None
 
 
+# --- Reproducible node keys: paths normalized relative to scan root ---
+
+
+def test_repo_node_keys_contain_no_absolute_path(tmp_path):
+    _skill_with_dep(tmp_path, ".claude/skills/deploy")
+    g = build_graph(tmp_path, mode="repo")
+    for n in g.nodes.values():
+        if n.kind in ("package", "skill"):
+            assert str(tmp_path) not in (n.key or ""), n.key
+
+
+def test_repo_node_keys_reproducible_across_roots(tmp_path):
+    def layout(root):
+        root.mkdir()
+        _skill_with_dep(root, ".claude/skills/deploy")
+        (root / "package.json").write_text(
+            '{"name":"app","version":"1.0.0","dependencies":{"left-pad":"1.0.0"}}'
+        )
+        return root
+
+    root_a = layout(tmp_path / "a")
+    root_b = layout(tmp_path / "b")
+    g_a = build_graph(root_a, mode="repo")
+    g_b = build_graph(root_b, mode="repo")
+    keys_a = {n.key for n in g_a.nodes.values() if n.kind != "target"}
+    keys_b = {n.key for n in g_b.nodes.values() if n.kind != "target"}
+    assert keys_a == keys_b
+    assert keys_a  # non-empty: actually exercised some nodes
+
+
+def test_endpoint_node_keys_are_root_relative_and_labeled(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture(tmp_path)
+    # project skill so a `project/` key exists too
+    project_skill = project_root / ".claude" / "skills" / "ui"
+    project_skill.mkdir(parents=True)
+    (project_skill / "SKILL.md").write_text("---\nname: ui\ndescription: d\n---\nrun\n")
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+
+    project_skill_node = next(
+        n for n in g.nodes.values() if n.kind == "skill" and "ui" in (n.key or "")
+    )
+    assert (project_skill_node.key or "").startswith("project/"), project_skill_node.key
+
+    # the plugin (under install_root) and its bundled nodes are endpoint-labeled
+    plugin_node = next(n for n in g.nodes.values() if n.kind == "plugin")
+    assert (plugin_node.key or "").startswith("endpoint/"), plugin_node.key
+
+    for n in g.nodes.values():
+        if n.kind == "target":
+            continue
+        assert str(install_root) not in (n.key or ""), n.key
+        assert str(project_root) not in (n.key or ""), n.key
+
+
 def test_endpoint_direct_skill_and_project_skill_not_double_created(tmp_path):
     # An install-root direct skill AND a project skill with the same name must
     # produce two distinct skill nodes (different occurrences), not collapse or

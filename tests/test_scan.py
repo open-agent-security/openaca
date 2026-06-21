@@ -1903,13 +1903,16 @@ def test_repo_rejects_removed_db_option(tmp_path):
     assert "No such option" in result.output
 
 
-def test_refs_from_graph_agent_child_mcp_gets_agent_attribution():
-    """_refs_from_graph must set attributed_to=agent_identity for frontmatter
-    MCP/hook children of a direct agent, preserving the pre-graph path where
-    _agent_frontmatter_child_refs stamps attributed_to=agent_identity.
+def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
+    """The agent→MCP relationship for a frontmatter MCP child of a direct agent
+    must survive into the Agent BOM.
 
-    Without this, BOM _build_edges loses the agent→MCP edge for repos/endpoints
-    with subagent-scoped MCPs."""
+    Stage 4 encodes the BOM from the graph: the agent→MCP edge comes directly
+    from graph structure (a `dependencies[]` entry), so it no longer depends on
+    `attributed_to` projection. `Graph.attribution_for` is plugin-only — an
+    agent-child MCP with no plugin ancestor projects `attributed_to=None` — and
+    the edge is still preserved because the BOM is graph-backed."""
+    from tools.bom import build_agent_bom
     from tools.component_ref import ComponentRef
     from tools.graph import Edge, Graph, Node
     from tools.scan import _refs_from_graph
@@ -1944,12 +1947,15 @@ def test_refs_from_graph_agent_child_mcp_gets_agent_attribution():
     )
     graph.validate()
 
+    # Plugin-only attribution: an agent-child MCP has no plugin ancestor, so the
+    # projected attributed_to is None (the agent fallback is gone in Stage 4).
     refs = _refs_from_graph(graph)
     mcp_projected = next(r for r in refs if r.component_identity == "mcp/my-mcp")
-    assert mcp_projected.attributed_to == "claude-agent/my-agent", (
-        "agent-child MCP must carry attributed_to = agent component_identity"
-    )
+    assert mcp_projected.attributed_to is None
     agent_projected = next(r for r in refs if r.component_identity == "claude-agent/my-agent")
-    assert agent_projected.attributed_to is None, (
-        "the agent itself has no plugin/agent ancestor so attributed_to must be None"
-    )
+    assert agent_projected.attributed_to is None
+
+    # The agent→MCP edge survives via the graph-backed BOM's dependencies[].
+    doc = build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()
+    deps = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
+    assert deps[agent_node.key] == [mcp_node.key]

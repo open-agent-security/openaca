@@ -1,14 +1,25 @@
-"""Agent BOM model and CycloneDX serialization."""
+"""Agent BOM model and CycloneDX serialization.
+
+V1 invariant: a graph node's `key` IS the CycloneDX `bom-ref`. When a `Graph`
+is supplied, every `components[]` entry's `bom-ref` and every `dependencies[]`
+`ref`/`dependsOn` value is the corresponding node's `key` (the normalized
+occurrence identity from `graph_build`). `bom.py` cannot recompute occurrence
+keys — it lacks the source normalizer — so the key must come from the node;
+graph-backed components never go through `_preferred_bom_ref`. The synthetic
+target root (`graph.root`, `ref is None`) becomes `metadata.component` with its
+stable logical bom-ref (`openaca:target`) and is not added to `components[]`.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import unquote
 
 from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
 OPENACA_BOM_SCHEMA_VERSION = "0.1"
@@ -42,6 +53,7 @@ class AgentBOM:
     target: str | None = None
     source_unit_count: int | None = None
     source_unit_label: str | None = None
+    target_bom_ref: str | None = None
 
     def component_refs(self) -> list[ComponentRef]:
         return [component.ref for component in self.components]
@@ -62,20 +74,33 @@ class AgentBOM:
                 {"name": "openaca:source_unit_label", "value": self.source_unit_label}
             )
 
+        # dependencies[] keys: every component, plus the target root (when graph-
+        # backed) so edges whose parent is the target have a node to hang from.
         dependencies: dict[str, list[str]] = {
             component.bom_ref: [] for component in self.components
         }
+        if self.target_bom_ref is not None:
+            dependencies.setdefault(self.target_bom_ref, [])
         for edge in self.edges:
-            dependencies[edge.parent_bom_ref].append(edge.child_bom_ref)
+            dependencies.setdefault(edge.parent_bom_ref, []).append(edge.child_bom_ref)
+
+        metadata: dict[str, Any] = {
+            "tools": [{"vendor": "OpenACA", "name": "openaca"}],
+            "properties": metadata_properties,
+        }
+        if self.target_bom_ref is not None:
+            metadata["component"] = {
+                "type": "application",
+                "bom-ref": self.target_bom_ref,
+                "name": self.target or self.target_bom_ref,
+                "properties": [{"name": "openaca:component_type", "value": "target"}],
+            }
 
         return {
             "bomFormat": "CycloneDX",
             "specVersion": CYCLONEDX_SPEC_VERSION,
             "version": 1,
-            "metadata": {
-                "tools": [{"vendor": "OpenACA", "name": "openaca"}],
-                "properties": metadata_properties,
-            },
+            "metadata": metadata,
             "components": [_component_to_cyclonedx(component) for component in self.components],
             "dependencies": [
                 {"ref": ref, "dependsOn": depends_on} for ref, depends_on in dependencies.items()
@@ -90,7 +115,16 @@ def build_agent_bom(
     target: str | None = None,
     source_unit_count: int | None = None,
     source_unit_label: str | None = None,
+    graph: Graph | None = None,
 ) -> AgentBOM:
+    if graph is not None:
+        return _build_agent_bom_from_graph(
+            graph,
+            target_type=target_type,
+            target=target,
+            source_unit_count=source_unit_count,
+            source_unit_label=source_unit_label,
+        )
     components = [
         BOMComponent(ref=ref, bom_ref=bom_ref)
         for ref, bom_ref in zip(refs, _stable_bom_refs(refs), strict=True)
@@ -102,6 +136,58 @@ def build_agent_bom(
         target=target,
         source_unit_count=source_unit_count,
         source_unit_label=source_unit_label,
+    )
+
+
+_AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
+
+
+def _build_agent_bom_from_graph(
+    graph: Graph,
+    *,
+    target_type: str,
+    target: str | None,
+    source_unit_count: int | None,
+    source_unit_label: str | None,
+) -> AgentBOM:
+    """Encode the composition graph: node.key == bom-ref (the V1 invariant).
+
+    Components are the graph's non-root nodes restricted to agent scope (matching
+    today's BOM, which excludes software-dependency). Each component's content
+    comes from `node.ref` with the graph-derived `scope`/`attributed_to` stamped
+    on (so `component_refs()` keeps feeding render/matcher correctly), and its
+    bom-ref is `node.key` — never `_preferred_bom_ref`. The target is
+    `metadata.component`, not a `components[]` entry; `dependencies[]` are the
+    graph's edges restricted to included endpoints.
+    """
+    root = graph.root
+    included: dict[str, BOMComponent] = {}
+    for node in graph.nodes.values():
+        if node.ref is None:  # synthetic target root: never a components[] entry
+            continue
+        if graph.scope_of(node) not in _AGENT_SCOPES:
+            continue
+        ref = replace(
+            node.ref,
+            scope=graph.scope_of(node),
+            attributed_to=graph.attribution_for(node),
+        )
+        included[node.key] = BOMComponent(ref=ref, bom_ref=node.key)
+
+    included_keys = set(included) | {root.key}
+    edges = [
+        BOMEdge(parent_bom_ref=e.parent, child_bom_ref=e.child)
+        for e in graph.edges
+        if e.parent in included_keys and e.child in included_keys
+    ]
+    return AgentBOM(
+        components=list(included.values()),
+        edges=edges,
+        target_type=target_type,
+        target=target,
+        source_unit_count=source_unit_count,
+        source_unit_label=source_unit_label,
+        target_bom_ref=root.key,
     )
 
 
@@ -129,6 +215,90 @@ def component_refs_from_cyclonedx(doc: dict[str, Any]) -> list[ComponentRef]:
     return [component.ref for component in bom_components_from_cyclonedx(doc)]
 
 
+_SYNTHETIC_TARGET_KEY = "openaca:target"
+
+
+def graph_from_cyclonedx(doc: dict[str, Any]) -> Graph:
+    """Reconstruct the composition graph from a CycloneDX Agent BOM.
+
+    The flat ref list cannot carry edges, so a BOM consumer that needs scope or
+    attribution (which are graph-derived) must rebuild the graph. The V1
+    invariant (`node.key == bom-ref`) makes this lossless for the agent-scope
+    subtree a graph-backed BOM encodes:
+
+    - `metadata.component` → the target root node (`kind="target"`, `ref=None`).
+      A BOM without one (a flat/externally-produced BOM with no edges) gets a
+      synthetic `openaca:target` root so the graph still validates.
+    - each `components[]` entry → a node keyed by its `bom-ref`, `kind` from the
+      `openaca:component_type` property (packages omit a distinct type, so
+      default to `"package"`), `ref` reconstructed from the component.
+    - `dependencies[]` → an `Edge(parent, child)` per `dependsOn` entry.
+    - any component with no parent in `dependencies[]` is attached as a direct
+      child of the target. This is a no-op for a graph-backed BOM (its
+      top-level components already carry an explicit target→child edge) and
+      makes a flat BOM (no edges) reconstruct as `target → each component`.
+
+    The synthesized flat graph (no `metadata.component`) is structural only: a
+    top-level `package` node attached directly under the target has no agent
+    ancestor, so `scope_of` re-derives it as `software-dependency` regardless of
+    the stored `openaca:scope`. Flat BOMs therefore do NOT round-trip scope
+    through this function; `scan_bom` preserves their classification by reading
+    the stored `openaca:scope` (via `component_refs_from_cyclonedx`) and only
+    uses this graph for the genuinely graph-backed case.
+
+    `validate()` runs before returning. Software-dependency nodes were excluded
+    from `components[]` at emit time, so the reconstructed graph is the
+    agent-scope projection; every remaining node still has a path to the target.
+    """
+    metadata = doc.get("metadata")
+    target_component = metadata.get("component") if isinstance(metadata, dict) else None
+    target_ref: str | None = None
+    if isinstance(target_component, dict):
+        ref = target_component.get("bom-ref")
+        if isinstance(ref, str) and ref:
+            target_ref = ref
+    if target_ref is None:
+        target_ref = _SYNTHETIC_TARGET_KEY
+
+    nodes: dict[str, Node] = {target_ref: Node(key=target_ref, kind="target", ref=None)}
+    for component in doc.get("components") or []:
+        if not isinstance(component, dict):
+            continue
+        bom_ref = component.get("bom-ref")
+        if not (isinstance(bom_ref, str) and bom_ref):
+            continue
+        if bom_ref == target_ref:
+            continue
+        props = _properties_by_name(component)
+        kind = props.get("openaca:component_type") or "package"
+        nodes[bom_ref] = Node(key=bom_ref, kind=kind, ref=_component_ref_from_cyclonedx(component))
+
+    edges: list[Edge] = []
+    has_parent: set[str] = set()
+    for dependency in doc.get("dependencies") or []:
+        if not isinstance(dependency, dict):
+            continue
+        parent = dependency.get("ref")
+        if not isinstance(parent, str):
+            continue
+        if parent not in nodes:
+            # A foreign/unknown parent ref can't anchor an edge (it would dangle
+            # and crash validate()). Skip it so the child falls back to target.
+            continue
+        for child in dependency.get("dependsOn") or []:
+            if isinstance(child, str) and child and child != parent and child in nodes:
+                edges.append(Edge(parent=parent, child=child))
+                has_parent.add(child)
+
+    for key in nodes:
+        if key != target_ref and key not in has_parent:
+            edges.append(Edge(parent=target_ref, child=key))
+
+    graph = Graph(nodes=nodes, edges=edges)
+    graph.validate()
+    return graph
+
+
 def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
     props = _properties_by_name(component)
     purl = component.get("purl")
@@ -151,7 +321,6 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
         source_manifest=props.get("openaca:source_manifest") or "",
         source_locator=props.get("openaca:source_locator") or "",
         component_identity=component_identity,
-        attributed_to=props.get("openaca:attributed_to"),
         extra=extra,
         scope=props.get("openaca:scope") or "agent-component",
     )
@@ -269,7 +438,6 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
-    _append_prop(props, "openaca:attributed_to", ref.attributed_to)
     _append_prop(props, "openaca:agent_host", _agent_host(ref))
     _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
     _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))

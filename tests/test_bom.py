@@ -4,9 +4,188 @@ from tools.bom import (
     bom_components_from_cyclonedx,
     build_agent_bom,
     component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
 )
 from tools.component_ref import ComponentRef
+from tools.graph import Edge, Graph, Node
 from tools.matcher import match
+
+
+def _graph_target_plugin_skill_package() -> Graph:
+    """target → plugin → skill → package, plus a bare software-dep package
+    hung directly off the target (no agent-component ancestor)."""
+    plugin = Node(
+        key="plugin/mktplace/demo",
+        kind="plugin",
+        ref=ComponentRef(
+            component_identity="plugin/mktplace/demo",
+            version="1.0.0",
+            source_manifest="installed_plugins.json",
+            extra={"component_type": "plugin"},
+        ),
+    )
+    skill = Node(
+        key="skill/deploy",
+        kind="skill",
+        ref=ComponentRef(
+            component_identity="skill/deploy",
+            source_manifest=".claude/skills/deploy/SKILL.md",
+            extra={"component_type": "skill"},
+        ),
+    )
+    agent_pkg = Node(
+        key="plugin/mktplace/demo/skill/deploy/deps/npm/lodash",
+        kind="package",
+        ref=ComponentRef(
+            ecosystem="npm",
+            name="lodash",
+            version="4.17.20",
+            source_manifest=".claude/skills/deploy/package.json",
+            source_locator="$.dependencies.lodash",
+        ),
+    )
+    software_pkg = Node(
+        key="deps/npm/left-pad",
+        kind="package",
+        ref=ComponentRef(
+            ecosystem="npm",
+            name="left-pad",
+            version="1.3.0",
+            source_manifest="package.json",
+            source_locator="$.dependencies.left-pad",
+        ),
+    )
+    root = Node(key="openaca:target", kind="target", ref=None)
+    graph = Graph(
+        nodes={n.key: n for n in (root, plugin, skill, agent_pkg, software_pkg)},
+        edges=[
+            Edge(parent=root.key, child=plugin.key),
+            Edge(parent=plugin.key, child=skill.key),
+            Edge(parent=skill.key, child=agent_pkg.key),
+            Edge(parent=root.key, child=software_pkg.key),
+        ],
+    )
+    graph.validate()
+    return graph
+
+
+def test_graph_bom_target_is_metadata_component_not_in_components():
+    graph = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom(
+        [], target_type="endpoint", target="~/.claude", graph=graph
+    ).to_cyclonedx()
+
+    assert doc["metadata"]["component"]["bom-ref"] == "openaca:target"
+    assert _property(doc["metadata"]["component"], "openaca:component_type") == "target"
+    assert "openaca:target" not in {c["bom-ref"] for c in doc["components"]}
+
+
+def test_graph_bom_component_bom_ref_equals_node_key_and_edges_match_graph():
+    graph = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom(
+        [], target_type="endpoint", target="~/.claude", graph=graph
+    ).to_cyclonedx()
+
+    bom_refs = {c["bom-ref"] for c in doc["components"]}
+    assert bom_refs == {
+        "plugin/mktplace/demo",
+        "skill/deploy",
+        "plugin/mktplace/demo/skill/deploy/deps/npm/lodash",
+    }
+    deps_by_ref = {d["ref"]: set(d["dependsOn"]) for d in doc["dependencies"]}
+    # Edge whose parent is the target's bom-ref.
+    assert "plugin/mktplace/demo" in deps_by_ref["openaca:target"]
+    assert deps_by_ref["plugin/mktplace/demo"] == {"skill/deploy"}
+    assert deps_by_ref["skill/deploy"] == {"plugin/mktplace/demo/skill/deploy/deps/npm/lodash"}
+
+
+def test_graph_bom_excludes_software_dependency_nodes_from_components():
+    graph = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom(
+        [], target_type="endpoint", target="~/.claude", graph=graph
+    ).to_cyclonedx()
+
+    bom_refs = {c["bom-ref"] for c in doc["components"]}
+    assert "deps/npm/left-pad" not in bom_refs
+    # The software-dep node is not an included endpoint, so no edge references it.
+    deps_by_ref = {d["ref"]: set(d["dependsOn"]) for d in doc["dependencies"]}
+    assert "deps/npm/left-pad" not in deps_by_ref
+    assert "deps/npm/left-pad" not in deps_by_ref["openaca:target"]
+
+
+def test_graph_from_cyclonedx_round_trips_nodes_and_edges():
+    # [correct-new-behavior] A BOM produced by build_agent_bom reconstructs the
+    # graph's agent-scope projection: same node keys + kinds and the same edge
+    # set. The software-dependency package is excluded from components[] at emit
+    # time, so it does not round-trip — assert against the included set.
+    g = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom([], target_type="endpoint", target="~/.claude", graph=g).to_cyclonedx()
+    g2 = graph_from_cyclonedx(doc)
+
+    g2.validate()
+    assert g2.root.key == "openaca:target"
+
+    included = {
+        k: n
+        for k, n in g.nodes.items()
+        if n.ref is None or g.scope_of(n) in {"agent-component", "agent-dependency"}
+    }
+    assert {n.key: n.kind for n in g2.nodes.values()} == {k: n.kind for k, n in included.items()}
+    included_edges = {
+        (e.parent, e.child) for e in g.edges if e.parent in included and e.child in included
+    }
+    assert {(e.parent, e.child) for e in g2.edges} == included_edges
+
+
+def test_graph_from_cyclonedx_tolerates_foreign_dependson_parent():
+    # [bug-fixed] A dependencies[] entry whose `ref` is not any component's
+    # bom-ref (a foreign parent) must be a no-op, not a dangling edge that
+    # crashes validate(). The children fall back to direct target children.
+    doc = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "component": {"bom-ref": "openaca:target", "type": "application", "name": "t"}
+        },
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "pkg:npm/lodash@4.17.20",
+                "name": "lodash",
+                "version": "4.17.20",
+                "purl": "pkg:npm/lodash@4.17.20",
+                "properties": [{"name": "openaca:component_type", "value": "package"}],
+            }
+        ],
+        "dependencies": [
+            {"ref": "pkg:npm/not-a-real-component", "dependsOn": ["pkg:npm/lodash@4.17.20"]}
+        ],
+    }
+
+    graph = graph_from_cyclonedx(doc)
+
+    graph.validate()
+    child = graph.nodes["pkg:npm/lodash@4.17.20"]
+    assert {(e.parent, e.child) for e in graph.edges} == {
+        ("openaca:target", "pkg:npm/lodash@4.17.20")
+    }
+    assert graph.lineage(child)[-1].key == "openaca:target"
+
+
+def test_graph_bom_drops_openaca_attributed_to_property():
+    graph = _graph_target_plugin_skill_package()
+
+    doc = build_agent_bom(
+        [], target_type="endpoint", target="~/.claude", graph=graph
+    ).to_cyclonedx()
+
+    for component in doc["components"]:
+        assert _property(component, "openaca:attributed_to") is None
 
 
 def test_bom_components_from_cyclonedx_pairs_refs_with_bom_refs():

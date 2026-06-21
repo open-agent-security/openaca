@@ -155,10 +155,16 @@ def test_redact_replaces_absolute_path_under_config_dir() -> None:
 
 
 def test_redact_uses_basename_for_unknown_root() -> None:
+    import hashlib
+
     cfg = Path("/home/u/.claude")
-    payload = _payload_with_property("/var/lib/openaca/cache/manifest.json")
+    abspath = "/var/lib/openaca/cache/manifest.json"
+    payload = _payload_with_property(abspath)
     _redact_payload_for_remote(payload, config_dir=cfg, project=None)
-    assert payload["bom"]["components"][0]["properties"][0]["value"] == "manifest.json"
+    # openaca:source_manifest out-of-root → basename + stable digest, keeping
+    # distinct out-of-root manifests distinct so graph occurrence keys don't collide.
+    digest = hashlib.sha256(abspath.encode()).hexdigest()[:8]
+    assert payload["bom"]["components"][0]["properties"][0]["value"] == f"manifest.json.{digest}"
 
 
 def test_redact_leaves_relative_paths_alone() -> None:
@@ -598,13 +604,54 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
     # bom-ref is relativized (basename + hash suffix for out-of-root)
     assert comp["bom-ref"] == expected_ref
     assert comp["bom-ref"].startswith("plugin.json.")
-    # openaca: property value is also relativized (basename only — no hash, it's a plain path)
+    # openaca:source_manifest is redacted identically to the bom-ref path portion
+    # (basename + out-of-root digest) so the graph occurrence key stays unique.
     source_manifest = next(
         p["value"] for p in comp["properties"] if p["name"] == "openaca:source_manifest"
     )
-    assert source_manifest == "plugin.json"
+    assert source_manifest == expected_ref.split("#", 1)[0]
+    assert source_manifest.startswith("plugin.json.")
     # dependencies are consistently rewritten
     deps = {d["ref"]: d["dependsOn"] for d in payload["bom"]["dependencies"]}
     assert expected_ref in deps
     assert "openaca:target" in deps
     assert deps["openaca:target"] == [expected_ref]
+
+
+def test_redact_payload_source_manifest_property_matches_bom_ref_disambiguation() -> None:
+    """Two out-of-root plugins with the same-basename source manifest must keep
+    DISTINCT redacted `openaca:source_manifest` values (not both collapse to
+    `package.json`), consistent with the bom-ref disambiguation — otherwise
+    graph consumers' `ref_occurrence_key` (source_manifest + locator + identity)
+    collides and findings misattribute."""
+    cfg = Path("/home/u/.claude")
+
+    def _component(root: str) -> dict:
+        src = f"{root}/package.json"
+        return {
+            "bom-ref": f"{src}#$.dependencies.left-pad#pkg:npm/left-pad@1.0.0",
+            "properties": [
+                {"name": "openaca:source_manifest", "value": src},
+                {"name": "openaca:source_locator", "value": "$.dependencies.left-pad"},
+            ],
+        }
+
+    payload = {
+        "bom": {"components": [_component("/rootA"), _component("/rootB")]},
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+
+    comps = payload["bom"]["components"]
+
+    def _prop(c, name):
+        return next(p["value"] for p in c["properties"] if p["name"] == name)
+
+    sm_a = _prop(comps[0], "openaca:source_manifest")
+    sm_b = _prop(comps[1], "openaca:source_manifest")
+    # distinct (disambiguated), both basename + digest, no absolute path leaked
+    assert sm_a != sm_b
+    assert sm_a.startswith("package.json.") and sm_b.startswith("package.json.")
+    assert "/rootA" not in sm_a and "/rootB" not in sm_b
+    # source_manifest property's redaction matches the bom-ref's path portion
+    assert comps[0]["bom-ref"].split("#", 1)[0] == sm_a
+    assert comps[1]["bom-ref"].split("#", 1)[0] == sm_b

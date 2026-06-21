@@ -1372,3 +1372,67 @@ def test_repo_npm_and_pypi_lockfiles_coexist(tmp_path):
     assert "package-lock.json" in srcs  # npm from lockfile
     assert "pyproject.toml" in srcs  # PyPI from manifest fallback
     assert "package.json" not in srcs  # npm manifest suppressed
+
+
+def _endpoint_with_symlinked_project_skill(root):
+    """Endpoint layout whose project skill is a SYMLINK pointing OUTSIDE the
+    project (a real-world setup: a shared skills repo linked into a project)."""
+    install_root = root / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    project_root = root / "project"
+    (project_root / ".claude" / "skills").mkdir(parents=True)
+
+    # The real skill dir lives outside project_root; the project links to it.
+    external = root / "external-skills" / "deploy"
+    external.mkdir(parents=True)
+    (external / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\nrun\n")
+    (external / "package.json").write_text(
+        '{"name":"deploy","version":"1","dependencies":{"lodash":"4.17.20"}}'
+    )
+    (project_root / ".claude" / "skills" / "deploy").symlink_to(external, target_is_directory=True)
+
+    return install_root, project_root
+
+
+def test_endpoint_symlinked_project_skill_key_uses_logical_project_path(tmp_path):
+    # [bug-fixed] A project skill that is a symlink pointing outside project_root
+    # carries a LOGICAL source_manifest under project_root. The normalizer used to
+    # .resolve() it first, following the link out of the root, so relative_to()
+    # failed and the node key fell back to the machine-specific absolute path.
+    # Relativizing the logical path keeps the stable `project/` label.
+    install_root, project_root = _endpoint_with_symlinked_project_skill(tmp_path)
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    pkg = next(n for n in g.nodes.values() if n.kind == "package")
+    assert skill.key.startswith("project/.claude/skills/deploy/"), skill.key
+    assert pkg.key.startswith("project/.claude/skills/deploy/"), pkg.key
+    # no absolute machine path leaked into the keys
+    assert str(tmp_path) not in skill.key
+    assert str(tmp_path) not in pkg.key
+
+
+def test_endpoint_symlinked_project_skill_key_reproducible_across_roots(tmp_path):
+    # The non-target keys must be identical when the SAME layout is built under two
+    # different temp roots — the property the logical relativization guarantees.
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+
+    install_a, project_a = _endpoint_with_symlinked_project_skill(root_a)
+    install_b, project_b = _endpoint_with_symlinked_project_skill(root_b)
+
+    g_a = build_graph(install_a, mode="endpoint", project_root=project_a)
+    g_b = build_graph(install_b, mode="endpoint", project_root=project_b)
+
+    keys_a = sorted(k for k, n in g_a.nodes.items() if n.kind != "target")
+    keys_b = sorted(k for k, n in g_b.nodes.items() if n.kind != "target")
+    assert keys_a == keys_b
+    assert keys_a  # non-empty: the symlinked skill + its dep were discovered

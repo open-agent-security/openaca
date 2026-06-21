@@ -121,22 +121,34 @@ def _make_normalizer(
       `project_root`, `endpoint/<rel>` under `install_root`. A path under neither
       falls back to the absolute path (last resort).
     """
-    # Resolve roots once so prefix-matching is symlink-stable (matches the
-    # `.resolve()` used elsewhere in descent for path comparisons).
+    # Keep BOTH the logical (un-resolved) and resolved forms of each root.
+    # Resolved roots make prefix-matching symlink-stable for genuinely-nested
+    # paths (matches the `.resolve()` used elsewhere in descent). But a
+    # project-local endpoint (e.g. a `.claude/skills/<name>` that is a SYMLINK
+    # pointing OUTSIDE the project) carries a LOGICAL `source_manifest` under
+    # `project_root`; resolving it follows the link out of the root and breaks
+    # `relative_to`, falling back to a machine-specific absolute key. So
+    # relativize the logical path against the logical root FIRST, and only fall
+    # back to the resolved/resolved match.
     target_r = target.resolve()
     install_r = install_root.resolve()
     project_r = project_root.resolve() if project_root is not None else None
 
-    def _rel(abs_path: str, root: Path) -> str | None:
+    def _rel(abs_path: str, root_logical: Path, root_resolved: Path) -> str | None:
+        path = Path(abs_path)
         try:
-            return Path(abs_path).resolve().relative_to(root).as_posix()
+            return path.relative_to(root_logical).as_posix()
+        except ValueError:
+            pass
+        try:
+            return path.resolve().relative_to(root_resolved).as_posix()
         except ValueError:
             return None
 
     if mode == "repo":
 
         def normalize(abs_path: str) -> str:
-            rel = _rel(abs_path, target_r)
+            rel = _rel(abs_path, target, target_r)
             return rel if rel is not None else abs_path
 
         return normalize
@@ -145,11 +157,11 @@ def _make_normalizer(
         # project_root first: when project_root is nested under install_root,
         # project files must keep their `project/` label rather than being
         # swallowed by the install-root branch.
-        if project_r is not None:
-            rel = _rel(abs_path, project_r)
+        if project_root is not None and project_r is not None:
+            rel = _rel(abs_path, project_root, project_r)
             if rel is not None:
                 return f"project/{rel}"
-        rel = _rel(abs_path, install_r)
+        rel = _rel(abs_path, install_root, install_r)
         if rel is not None:
             return f"endpoint/{rel}"
         return abs_path

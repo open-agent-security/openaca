@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -1240,9 +1241,11 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     collect_endpoint(config_dir=tmp_path, project=None)
 
     props = uploads[0]["bom"]["components"][0]["properties"]
-    # Inside config_dir → relativized; outside config_dir → basename fallback.
+    # Inside config_dir → relativized; outside config_dir → basename + stable digest
+    # (openaca:source_manifest disambiguator, parity with the bom-ref redaction).
+    outside_digest = hashlib.sha256(outside.encode()).hexdigest()[:8]
     assert props[0]["value"] == "skills/x/SKILL.md"
-    assert props[1]["value"] == "settings.json"
+    assert props[1]["value"] == f"settings.json.{outside_digest}"
 
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):

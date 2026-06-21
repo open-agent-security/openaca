@@ -415,11 +415,27 @@ def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None
     path_part = parts[0]
     if not _is_absolute_path(path_part):
         return bom_ref
-    redacted = _relativize_path_for_remote(path_part, config_dir=config_dir, project=project)
-    if not _is_in_known_root(path_part, config_dir=config_dir, project=project):
-        digest = hashlib.sha256(path_part.encode()).hexdigest()[:8]
-        redacted = f"{redacted}.{digest}"
+    redacted = _redact_source_path(path_part, config_dir=config_dir, project=project)
     return f"{redacted}#{parts[1]}" if len(parts) > 1 else redacted
+
+
+def _redact_source_path(path: str, *, config_dir: Path, project: Path | None) -> str:
+    """Relativize an absolute source-manifest path, appending a stable 8-char
+    digest of the original path for out-of-root locations (basename fallback).
+
+    Shared by the bom-ref path-portion redaction and the `openaca:source_manifest`
+    property redaction so they stay byte-identical: graph consumers map findings
+    back to nodes by `ref_occurrence_key` (source_manifest + locator + identity),
+    NOT the bom-ref, so a redacted `source_manifest` that collapsed two out-of-root
+    same-basename manifests to `package.json` would make their occurrence keys
+    collide and misattribute findings. Non-absolute paths pass through unchanged."""
+    if not _is_absolute_path(path):
+        return path
+    redacted = _relativize_path_for_remote(path, config_dir=config_dir, project=project)
+    if not _is_in_known_root(path, config_dir=config_dir, project=project):
+        digest = hashlib.sha256(path.encode()).hexdigest()[:8]
+        redacted = f"{redacted}.{digest}"
+    return redacted
 
 
 def _redact_bom_refs_in_bom(bom: JsonObject, *, config_dir: Path, project: Path | None) -> None:
@@ -518,9 +534,17 @@ def _redact_payload_for_remote(
                 value = prop.get("value")
                 if not isinstance(value, str):
                     continue
-                prop["value"] = _redact_property_value_for_remote(
-                    value, config_dir=config_dir, project=project
-                )
+                # openaca:source_manifest feeds the graph occurrence key, so redact
+                # it identically to the bom-ref path portion (relativize + out-of-root
+                # digest) — keeping two out-of-root same-basename manifests distinct.
+                if prop_name == "openaca:source_manifest":
+                    prop["value"] = _redact_source_path(
+                        value, config_dir=config_dir, project=project
+                    )
+                else:
+                    prop["value"] = _redact_property_value_for_remote(
+                        value, config_dir=config_dir, project=project
+                    )
 
     for finding in payload.get("posture_findings", []) or []:
         if not isinstance(finding, dict):

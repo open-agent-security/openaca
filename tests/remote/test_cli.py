@@ -362,6 +362,32 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
     assert calls[0]["config_dir"] == tmp_path
 
 
+def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
+    calls: list[dict] = []
+
+    def fake_collect_endpoint(**kwargs):
+        calls.append(kwargs)
+        return _upload_result(asset_id="asset-123")
+
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--config-dir",
+            str(tmp_path),
+            "--scanner",
+            "nvidia-skillspector",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["external_scanners"] == ("nvidia-skillspector",)
+
+
 def _upload_result(*, asset_id: str) -> BomUploadResult:
     return BomUploadResult(
         bom_id="bom-123",

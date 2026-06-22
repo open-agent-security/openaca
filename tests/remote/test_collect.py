@@ -13,6 +13,8 @@ from click.testing import CliRunner
 
 from tools.cli import main as openaca_main
 from tools.component_ref import ComponentRef
+from tools.observations.finding import ObservationFinding
+from tools.observations.skillspector import SkillSpectorFindings
 from tools.posture.finding import PostureFinding, Standards
 from tools.remote.client import (
     BomUploadResult,
@@ -90,6 +92,157 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
             "evidence": {"install_ref": "@example/mcp", "manifest_path": ".mcp.json"},
         }
     ]
+
+
+def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="skill/deploy-helper",
+        source_manifest="skills/deploy-helper/SKILL.md",
+        source_locator="$.frontmatter",
+        extra={"component_type": "skill", "name": "deploy-helper"},
+    )
+
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+
+    def fake_collect_skillspector_findings(refs):
+        assert refs == [ref]
+        return SkillSpectorFindings(
+            observations=[
+                ObservationFinding(
+                    source="skillspector",
+                    source_version="0.4.0",
+                    observation_id="P1",
+                    title="Instruction override",
+                    severity="high",
+                    confidence="medium",
+                    component={
+                        "identity": "skill/deploy-helper",
+                        "name": "deploy-helper",
+                        "type": "skill",
+                    },
+                    subject_coordinate="sha256:test",
+                    evidence={"sarif_rule_id": "P1"},
+                    categories=["prompt-injection"],
+                    remediation="Review the instruction.",
+                    declared_by={"kind": "sarif", "path": "skills/deploy-helper/SKILL.md"},
+                )
+            ],
+            posture_findings=[
+                PostureFinding(
+                    source="skillspector",
+                    source_version="0.4.0",
+                    rule_id="LP2",
+                    title="Wildcard permission",
+                    severity="medium",
+                    confidence="medium",
+                    component={
+                        "identity": "skill/deploy-helper",
+                        "name": "deploy-helper",
+                        "type": "skill",
+                    },
+                    active_in=[],
+                    declared_by={"kind": "sarif", "path": "skills/deploy-helper/SKILL.md"},
+                    component_path=[{"type": "skill", "name": "skill/deploy-helper"}],
+                    standards=Standards(),
+                    remediation="Review the declared permission.",
+                    evidence={"sarif_rule_id": "LP2"},
+                )
+            ],
+            warnings=[],
+        )
+
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_skillspector_findings",
+        fake_collect_skillspector_findings,
+    )
+
+    collection = build_endpoint_collection(
+        config_dir=tmp_path,
+        project=None,
+        external_scanners=("nvidia-skillspector",),
+    )
+
+    assert collection.observations == [
+        {
+            "source": "skillspector",
+            "source_version": "0.4.0",
+            "observation_id": "P1",
+            "severity": "HIGH",
+            "confidence": "medium",
+            "component_identity": "skill/deploy-helper",
+            "subject_coordinate": "sha256:test",
+            "summary": "Instruction override",
+            "fix": "Review the instruction.",
+            "evidence": {"sarif_rule_id": "P1"},
+            "categories": ["prompt-injection"],
+            "declared_by": {"kind": "sarif", "path": "skills/deploy-helper/SKILL.md"},
+        }
+    ]
+    assert collection.posture_findings == [
+        {
+            "source": "skillspector",
+            "source_version": "0.4.0",
+            "rule_id": "LP2",
+            "rule_version": "1",
+            "severity": "MEDIUM",
+            "confidence": "medium",
+            "scope": "component",
+            "component_identity": "skill/deploy-helper",
+            "summary": "Wildcard permission",
+            "fix": "Review the declared permission.",
+            "evidence": {
+                "manifest_path": "skills/deploy-helper/SKILL.md",
+                "sarif_rule_id": "LP2",
+            },
+        }
+    ]
+
+
+def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, monkeypatch):
+    ref = ComponentRef(
+        component_identity="skill/deploy-helper",
+        source_manifest="skills/deploy-helper/SKILL.md",
+        source_locator="$.frontmatter",
+        extra={"component_type": "skill", "name": "deploy-helper"},
+    )
+
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+
+    def missing_collect(_refs):
+        from tools.observations.skillspector import SkillSpectorCommandNotFound
+
+        raise SkillSpectorCommandNotFound("SkillSpector command not found: skillspector")
+
+    monkeypatch.setattr("tools.remote.collector.collect_skillspector_findings", missing_collect)
+
+    with pytest.raises(CollectError, match="SkillSpector command not found: skillspector"):
+        build_endpoint_collection(
+            config_dir=tmp_path,
+            project=None,
+            external_scanners=("nvidia-skillspector",),
+        )
 
 
 def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, monkeypatch):
@@ -932,6 +1085,48 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
     assert load_remote_config(config_path).asset_id == "asset-123"
 
 
+def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    calls: list[tuple[str, Any]] = []
+
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+
+    def fake_build_endpoint_collection(**kwargs):
+        calls.append(("build_endpoint_collection", kwargs))
+        return _collection()
+
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collection", fake_build_endpoint_collection
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            calls.append(("upload_bom", payload))
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    collect_endpoint(
+        config_dir=tmp_path,
+        project=None,
+        external_scanners=("nvidia-skillspector",),
+    )
+
+    assert calls[0] == (
+        "build_endpoint_collection",
+        {
+            "config_dir": tmp_path,
+            "project": None,
+            "external_scanners": ("nvidia-skillspector",),
+        },
+    )
+    assert calls[1][0] == "upload_bom"
+
+
 def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeypatch):
     """Remote's contract defines `content_hash = sha256(raw_bom)`. Before this
     fix, `_upload_payload` computed the hash, then `_redact_payload_for_remote`
@@ -1494,6 +1689,7 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
             "project": None,
             "quiet": True,
             "allow_offline_cache": False,
+            "external_scanners": (),
         }
     ]
     assert "bom-123" in result.output

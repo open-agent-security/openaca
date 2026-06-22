@@ -112,11 +112,19 @@ def sync() -> None:
     default=False,
     help="Exit zero when upload fails after writing a pending cache file.",
 )
+@click.option(
+    "--scanner",
+    "external_scanners",
+    type=click.Choice(["nvidia-skillspector"]),
+    multiple=True,
+    help="Run an optional external scanner before upload. May be repeated.",
+)
 def endpoint(
     config_dir: Path | None,
     project: Path | None,
     quiet: bool,
     allow_offline_cache: bool,
+    external_scanners: tuple[str, ...],
 ) -> None:
     """Sync endpoint composition to the configured remote."""
     try:
@@ -125,6 +133,7 @@ def endpoint(
             project=project,
             quiet=quiet,
             allow_offline_cache=allow_offline_cache,
+            external_scanners=external_scanners,
         )
     except CollectError as exc:
         if not quiet:

@@ -18,7 +18,12 @@ from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
 from tools.graph import Graph
 from tools.graph_build import build_graph
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
-from tools.observations import ObservationFinding, collect_skill_observations
+from tools.observations import (
+    ObservationFinding,
+    SkillSpectorCommandNotFound,
+    collect_skill_observations,
+    collect_skillspector_findings,
+)
 from tools.posture import (
     PostureFinding,
     collect_endpoint_mcp_manifests,
@@ -77,7 +82,12 @@ def _collect_endpoint_components(
     return graph, [r for r in all_refs if r.scope in _AGENT_SCOPES]
 
 
-def build_endpoint_collection(config_dir: Path, project: Path | None) -> EndpointCollection:
+def build_endpoint_collection(
+    config_dir: Path,
+    project: Path | None,
+    *,
+    external_scanners: tuple[str, ...] = (),
+) -> EndpointCollection:
     graph, refs = _collect_endpoint_components(config_dir, project)
     bom = _prepare_remote_bom(
         build_agent_bom(
@@ -95,15 +105,35 @@ def build_endpoint_collection(config_dir: Path, project: Path | None) -> Endpoin
         _posture_finding_to_payload(finding)
         for finding in run_posture_rules(refs, mcp_manifests, settings_manifests)
     ]
-    observations = [
-        _observation_to_payload(finding) for finding in collect_skill_observations(refs)
-    ]
+    observations, scanner_posture_findings = _collect_scanner_findings(
+        refs, external_scanners=external_scanners
+    )
+    posture_findings.extend(
+        _posture_finding_to_payload(finding) for finding in scanner_posture_findings
+    )
     return EndpointCollection(
         bom=bom,
         posture_findings=posture_findings,
-        observations=observations,
+        observations=[_observation_to_payload(finding) for finding in observations],
         component_count=len(bom.get("components") or []),
     )
+
+
+def _collect_scanner_findings(
+    refs: list[ComponentRef],
+    *,
+    external_scanners: tuple[str, ...],
+) -> tuple[list[ObservationFinding], list[PostureFinding]]:
+    observations = collect_skill_observations(refs)
+    posture_findings: list[PostureFinding] = []
+    if "nvidia-skillspector" in external_scanners:
+        try:
+            skillspector_findings = collect_skillspector_findings(refs)
+        except SkillSpectorCommandNotFound as exc:
+            raise CollectError(str(exc)) from exc
+        observations.extend(skillspector_findings.observations)
+        posture_findings.extend(skillspector_findings.posture_findings)
+    return observations, posture_findings
 
 
 def collect_endpoint(
@@ -112,6 +142,7 @@ def collect_endpoint(
     project: Path | None,
     quiet: bool = False,
     allow_offline_cache: bool = False,
+    external_scanners: tuple[str, ...] = (),
 ) -> BomUploadResult:
     config_path = get_config_path()
     config = load_remote_config(config_path)
@@ -122,7 +153,14 @@ def collect_endpoint(
     if config.asset_id is not None:
         _replay_pending_uploads(client, config.asset_id)
 
-    collection = build_endpoint_collection(config_dir=config_dir, project=project)
+    if external_scanners:
+        collection = build_endpoint_collection(
+            config_dir=config_dir,
+            project=project,
+            external_scanners=external_scanners,
+        )
+    else:
+        collection = build_endpoint_collection(config_dir=config_dir, project=project)
     asset_id = config.asset_id
     if asset_id is None:
         try:
@@ -741,7 +779,7 @@ def _posture_evidence(finding: PostureFinding) -> JsonObject:
         return {"override_present": True, "manifest_path": manifest_path}
     if finding.rule_id == "openaca-posture-mcp-auto-approve":
         return {"auto_approve": True, "manifest_path": manifest_path}
-    return {"manifest_path": manifest_path}
+    return {**finding.evidence, "manifest_path": manifest_path}
 
 
 def _manifest_path(finding: PostureFinding) -> str:

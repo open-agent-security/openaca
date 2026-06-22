@@ -245,6 +245,46 @@ def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, mon
         )
 
 
+def test_build_endpoint_collection_surfaces_scanner_warnings(tmp_path, monkeypatch, capsys):
+    ref = ComponentRef(
+        component_identity="skill/deploy-helper",
+        source_manifest="skills/deploy-helper/SKILL.md",
+        source_locator="$.frontmatter",
+        extra={"component_type": "skill", "name": "deploy-helper"},
+    )
+
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_mcp_manifests",
+        lambda config_dir, project, refs: [],
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_settings_manifests",
+        lambda config_dir, project: [],
+    )
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_skillspector_findings",
+        lambda _refs: SkillSpectorFindings(
+            observations=[],
+            posture_findings=[],
+            warnings=["SkillSpector timed out for skills/deploy-helper"],
+        ),
+    )
+
+    build_endpoint_collection(
+        config_dir=tmp_path,
+        project=None,
+        external_scanners=("nvidia-skillspector",),
+    )
+
+    captured = capsys.readouterr()
+    assert "warning: SkillSpector timed out for skills/deploy-helper" in captured.err
+
+
 def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, monkeypatch):
     ref = ComponentRef(
         component_identity="mcp-stdio/binary:python",

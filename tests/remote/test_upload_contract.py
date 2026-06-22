@@ -668,6 +668,61 @@ def test_rejects_absolute_observation_evidence_path():
     assert "observations[0].evidence.source_manifest" in str(exc.value)
 
 
+def test_rejects_file_uri_in_observation_evidence():
+    """file:// URIs in observation evidence must be rejected as defense-in-depth.
+    _redact_payload_for_remote normalizes them before the enforcer runs, but the
+    enforcer must also reject them so that stale offline-cache payloads replayed
+    via _replay_pending_uploads cannot slip through unredacted.
+    """
+    payload = _payload(
+        observations=[
+            {
+                "source": "skillspector",
+                "source_version": "0.4.0",
+                "observation_id": "P1",
+                "severity": "HIGH",
+                "confidence": "medium",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "sha256:abc",
+                "summary": "Instruction override",
+                "evidence": {
+                    "location_uri": "file:///Users/alice/.claude/skills/deploy-helper/SKILL.md"
+                },
+                "declared_by": {},
+            }
+        ]
+    )
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
+    assert "file://" in str(exc.value)
+
+
+def test_rejects_file_uri_in_observation_declared_by():
+    """file:// URIs in declared_by must be rejected — same gap as evidence."""
+    payload = _payload(
+        observations=[
+            {
+                "source": "skillspector",
+                "source_version": "0.4.0",
+                "observation_id": "P1",
+                "severity": "HIGH",
+                "confidence": "medium",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "sha256:abc",
+                "summary": "Instruction override",
+                "evidence": {},
+                "declared_by": {
+                    "kind": "sarif",
+                    "path": "file:///Users/alice/.claude/skills/deploy-helper/SKILL.md",
+                },
+            }
+        ]
+    )
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
+    assert "file://" in str(exc.value)
+
+
 def _payload(**overrides):
     payload = {
         "asset_id": "asset-123",

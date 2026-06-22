@@ -1330,6 +1330,48 @@ def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
     assert evidence["matched_text"][1] == "Read"
 
 
+def test_redact_payload_redacts_file_uri_in_scanner_evidence(tmp_path):
+    """file:// URIs produced by SARIF-based scanners (e.g. SkillSpector) must be
+    relativized before upload. A URI like 'file:///Users/alice/.claude/skills/SKILL.md'
+    is not caught by _is_absolute_path (doesn't start with '/') and would otherwise
+    pass through both the redactor and the enforcer unchanged.
+    """
+    from tools.remote.collector import _redact_payload_for_remote
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    skill_uri = f"file://{config_dir}/skills/deploy-helper/SKILL.md"
+
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [
+            {
+                "evidence": {
+                    "location_uri": skill_uri,
+                    "manifest_path": skill_uri,
+                }
+            }
+        ],
+        "observations": [
+            {
+                "evidence": {"location_uri": skill_uri},
+                "declared_by": {"kind": "sarif", "path": skill_uri},
+            }
+        ],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    obs = payload["observations"][0]
+    assert obs["evidence"]["location_uri"] == "skills/deploy-helper/SKILL.md"
+    assert obs["declared_by"]["path"] == "skills/deploy-helper/SKILL.md"
+    assert obs["declared_by"]["kind"] == "sarif"
+
+    pf = payload["posture_findings"][0]
+    assert pf["evidence"]["location_uri"] == "skills/deploy-helper/SKILL.md"
+    assert pf["evidence"]["manifest_path"] == "skills/deploy-helper/SKILL.md"
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

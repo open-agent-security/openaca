@@ -112,6 +112,10 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
                 location = f"$.bom.components[{c_idx}].properties[{p_idx}].value"
                 if _is_absolute_path(value):
                     raise RemoteUploadContractError(f"{location} is an absolute path ({name!r})")
+                if value.lower().startswith("file://"):
+                    raise RemoteUploadContractError(
+                        f"{location} is a file:// URI (local path) ({name!r})"
+                    )
                 if _is_url_with_path_or_query(value):
                     raise RemoteUploadContractError(
                         f"{location} is a URL with a path or query ({name!r})"
@@ -155,6 +159,8 @@ def _check_nested_value_at(value: object, location: str) -> None:
 def _check_evidence_string_at(value: str, location: str) -> None:
     if _is_absolute_path(value):
         raise RemoteUploadContractError(f"{location} is an absolute path")
+    if value.lower().startswith("file://"):
+        raise RemoteUploadContractError(f"{location} is a file:// URI (local path)")
     if _is_url_with_path_or_query(value):
         raise RemoteUploadContractError(f"{location} is a URL with a path or query")
     if _is_url_with_userinfo(value):

@@ -11,6 +11,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+import click
 import httpx
 
 from tools.bom import build_agent_bom
@@ -133,6 +134,8 @@ def _collect_scanner_findings(
             raise CollectError(str(exc)) from exc
         observations.extend(skillspector_findings.observations)
         posture_findings.extend(skillspector_findings.posture_findings)
+        for warning in skillspector_findings.warnings:
+            click.echo(f"warning: {warning}", err=True)
     return observations, posture_findings
 
 

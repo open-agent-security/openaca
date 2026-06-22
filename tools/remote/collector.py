@@ -261,6 +261,19 @@ def _redact_url_for_remote(value: str) -> str:
     return f"{scheme}://{rest}" if rest else value
 
 
+def _extract_file_uri_path(uri: str) -> str:
+    """Extract the filesystem path from a file:// URI.
+
+    file:///path → /path  (empty authority, typical POSIX SARIF output)
+    file://host/path → /path  (authority stripped)
+    """
+    rest = uri[len("file://") :]
+    if rest.startswith("/"):
+        return rest
+    slash = rest.find("/")
+    return rest[slash:] if slash >= 0 else "/"
+
+
 def _relativize_path_for_remote(
     value: str,
     *,
@@ -391,6 +404,10 @@ def _redact_property_value_for_remote(
     """
     if _is_absolute_path(value):
         return _relativize_path_for_remote(value, config_dir=config_dir, project=project)
+    if value.lower().startswith("file://"):
+        return _relativize_path_for_remote(
+            _extract_file_uri_path(value), config_dir=config_dir, project=project
+        )
     if value.lower().startswith(("http://", "https://")):
         return _redact_url_for_remote(value)
     if value.startswith("{") or value.startswith("["):

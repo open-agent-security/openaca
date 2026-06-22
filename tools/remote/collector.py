@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import Any, Mapping
 
 import click
 import httpx
@@ -711,8 +711,8 @@ def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
     return {
         "source": finding.source,
         "source_version": finding.source_version,
-        "rule_id": finding.rule_id,
-        "rule_version": "1",
+        "finding_id": _source_finding_id(finding.source, finding.rule_id),
+        "finding_version": "1",
         "severity": finding.severity.upper(),
         "confidence": finding.confidence,
         "scope": _posture_scope(finding),
@@ -720,6 +720,8 @@ def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
         "summary": finding.title,
         "fix": finding.remediation,
         "evidence": _posture_evidence(finding),
+        "taxonomies": _finding_taxonomies(finding.evidence),
+        "source_specific": _source_specific(finding.source, finding.rule_id, finding.evidence),
     }
 
 
@@ -727,16 +729,49 @@ def _observation_to_payload(finding: ObservationFinding) -> JsonObject:
     return {
         "source": finding.source,
         "source_version": finding.source_version,
-        "observation_id": finding.observation_id,
+        "finding_id": _source_finding_id(finding.source, finding.observation_id),
+        "finding_version": "1",
         "severity": finding.severity.upper(),
         "confidence": finding.confidence,
         "component_identity": _observation_component_identity(finding),
         "subject_coordinate": finding.subject_coordinate,
         "summary": finding.title,
         "fix": finding.remediation,
-        "evidence": finding.evidence,
-        "categories": finding.categories,
+        "evidence": _normalized_evidence(finding.evidence),
+        "taxonomies": _observation_taxonomies(finding),
+        "source_specific": _source_specific(
+            finding.source, finding.observation_id, finding.evidence
+        ),
         "declared_by": finding.declared_by or {},
+    }
+
+
+def _source_finding_id(source: str, native_id: str) -> str:
+    return native_id if native_id.startswith("openaca-") else f"{source}:{native_id}"
+
+
+def _source_specific(source: str, native_id: str, evidence: Mapping[str, Any]) -> JsonObject:
+    raw: JsonObject = {"rule_id": evidence.get("sarif_rule_id", native_id)}
+    sarif_level = evidence.get("sarif_level")
+    if isinstance(sarif_level, str):
+        raw["sarif_level"] = sarif_level
+    return {source: raw}
+
+
+def _observation_taxonomies(finding: ObservationFinding) -> JsonObject:
+    return {"openaca_categories": list(finding.categories)} if finding.categories else {}
+
+
+def _finding_taxonomies(evidence: Mapping[str, Any]) -> JsonObject:
+    categories = evidence.get("categories")
+    return {"openaca_categories": categories} if isinstance(categories, list) else {}
+
+
+def _normalized_evidence(evidence: Mapping[str, Any]) -> JsonObject:
+    return {
+        key: value
+        for key, value in evidence.items()
+        if key not in {"sarif_rule_id", "sarif_level", "categories"}
     }
 
 
@@ -782,7 +817,7 @@ def _posture_evidence(finding: PostureFinding) -> JsonObject:
         return {"override_present": True, "manifest_path": manifest_path}
     if finding.rule_id == "openaca-posture-mcp-auto-approve":
         return {"auto_approve": True, "manifest_path": manifest_path}
-    return {**finding.evidence, "manifest_path": manifest_path}
+    return {**_normalized_evidence(finding.evidence), "manifest_path": manifest_path}
 
 
 def _manifest_path(finding: PostureFinding) -> str:

@@ -129,18 +129,27 @@ def _validate_evidence_strings(payload: dict[str, Any], key: str) -> None:
     for f_idx, finding in enumerate(payload.get(key, []) or []):
         if not isinstance(finding, dict):
             continue
-        for object_key in ("evidence", "declared_by"):
+        for object_key in ("evidence", "declared_by", "source_specific", "taxonomies"):
             evidence = finding.get(object_key)
             if not isinstance(evidence, dict):
                 continue
             for evidence_key, value in evidence.items():
                 location = f"$.{key}[{f_idx}].{object_key}.{evidence_key}"
-                if isinstance(value, str):
-                    _check_evidence_string_at(value, location)
-                elif isinstance(value, list):
-                    for v_idx, item in enumerate(value):
-                        if isinstance(item, str):
-                            _check_evidence_string_at(item, f"{location}[{v_idx}]")
+                _check_nested_value_at(value, location)
+
+
+def _check_nested_value_at(value: object, location: str) -> None:
+    if isinstance(value, str):
+        _check_evidence_string_at(value, location)
+        return
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            _check_nested_value_at(str(key), f"{location}.{key}")
+            _check_nested_value_at(nested, f"{location}.{key}")
+        return
+    if isinstance(value, list):
+        for idx, item in enumerate(value):
+            _check_nested_value_at(item, f"{location}[{idx}]")
 
 
 def _check_evidence_string_at(value: str, location: str) -> None:

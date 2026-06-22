@@ -81,8 +81,8 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         {
             "source": "openaca",
             "source_version": "unknown",
-            "rule_id": "openaca-posture-mutable-install-reference",
-            "rule_version": "1",
+            "finding_id": "openaca-posture-mutable-install-reference",
+            "finding_version": "1",
             "severity": "LOW",
             "confidence": "high",
             "scope": "component",
@@ -90,6 +90,10 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
             "summary": "Mutable install",
             "fix": "Pin the install reference.",
             "evidence": {"install_ref": "@example/mcp", "manifest_path": ".mcp.json"},
+            "taxonomies": {},
+            "source_specific": {
+                "openaca": {"rule_id": "openaca-posture-mutable-install-reference"}
+            },
         }
     ]
 
@@ -156,7 +160,10 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
                     component_path=[{"type": "skill", "name": "skill/deploy-helper"}],
                     standards=Standards(),
                     remediation="Review the declared permission.",
-                    evidence={"sarif_rule_id": "LP2"},
+                    evidence={
+                        "sarif_rule_id": "LP2",
+                        "categories": ["privilege-escalation"],
+                    },
                 )
             ],
             warnings=[],
@@ -177,15 +184,17 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
         {
             "source": "skillspector",
             "source_version": "0.4.0",
-            "observation_id": "P1",
+            "finding_id": "skillspector:P1",
+            "finding_version": "1",
             "severity": "HIGH",
             "confidence": "medium",
             "component_identity": "skill/deploy-helper",
             "subject_coordinate": "sha256:test",
             "summary": "Instruction override",
             "fix": "Review the instruction.",
-            "evidence": {"sarif_rule_id": "P1"},
-            "categories": ["prompt-injection"],
+            "evidence": {},
+            "taxonomies": {"openaca_categories": ["prompt-injection"]},
+            "source_specific": {"skillspector": {"rule_id": "P1"}},
             "declared_by": {"kind": "sarif", "path": "skills/deploy-helper/SKILL.md"},
         }
     ]
@@ -193,8 +202,8 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
         {
             "source": "skillspector",
             "source_version": "0.4.0",
-            "rule_id": "LP2",
-            "rule_version": "1",
+            "finding_id": "skillspector:LP2",
+            "finding_version": "1",
             "severity": "MEDIUM",
             "confidence": "medium",
             "scope": "component",
@@ -203,8 +212,9 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
             "fix": "Review the declared permission.",
             "evidence": {
                 "manifest_path": "skills/deploy-helper/SKILL.md",
-                "sarif_rule_id": "LP2",
             },
+            "taxonomies": {"openaca_categories": ["privilege-escalation"]},
+            "source_specific": {"skillspector": {"rule_id": "LP2"}},
         }
     ]
 

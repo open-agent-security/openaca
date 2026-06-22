@@ -1729,6 +1729,31 @@ def test_repo_scanner_skillspector_missing_command_aborts(tmp_path, monkeypatch)
     assert "Error: SkillSpector command not found: skillspector" in result.output
 
 
+def test_repo_scanner_skillspector_missing_command_aborts_no_skills(tmp_path, monkeypatch):
+    """--scanner nvidia-skillspector aborts even when the target has no skill refs.
+
+    Previously the binary was only probed inside the per-skill loop, so a repo
+    without skills silently succeeded despite an explicit --scanner request.
+    """
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda _cmd: None)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--scanner",
+            "nvidia-skillspector",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: SkillSpector command not found: skillspector" in result.output
+
+
 def test_scan_format_github_emits_annotations(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

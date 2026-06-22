@@ -8,6 +8,7 @@ source attribution while classifying each scanner rule by claim type.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
@@ -171,6 +172,8 @@ def collect_skillspector_findings(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     run_command: RunCommand | None = None,
 ) -> SkillSpectorFindings:
+    if run_command is None and shutil.which(command) is None:
+        raise SkillSpectorCommandNotFound(f"SkillSpector command not found: {command}")
     observations: list[ObservationFinding] = []
     posture_findings: list[PostureFinding] = []
     warnings: list[str] = []

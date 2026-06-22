@@ -472,3 +472,17 @@ def test_skillspector_missing_binary_raises(tmp_path: Path) -> None:
 
     with pytest.raises(SkillSpectorCommandNotFound, match="skillspector"):
         collect_skillspector_findings([ref], run_command=missing_run)
+
+
+def test_skillspector_missing_binary_raises_without_skill_refs(monkeypatch) -> None:
+    """Preflight fires even when refs has no skill components.
+
+    Without a preflight, collect_skillspector_findings returns an empty
+    SkillSpectorFindings silently because the per-skill loop never runs.
+    """
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda _cmd: None)
+
+    with pytest.raises(SkillSpectorCommandNotFound, match="skillspector"):
+        collect_skillspector_findings([])

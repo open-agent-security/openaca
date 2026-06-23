@@ -12,8 +12,9 @@ superseded-by: null
 ADR-0031 and ADR-0037 both label `openaca:identity` "the agent graph occurrence
 key." The composition-graph implementation (ADR-0037) makes that label
 imprecise. A graph node's `key` *is* the CycloneDX `bom-ref`
-(`{source_manifest}#{source_locator}#{identity}`), and that node key — not
-`openaca:identity` — is what is unique per occurrence. `openaca:identity` is the
+(`{source_manifest}#{source_locator}#{coordinate}`, where `{coordinate}` is the
+canonical identity for agent components and the package PURL for package nodes),
+and that node key — not `openaca:identity` — is what is unique per occurrence. `openaca:identity` is the
 canonical, type-prefixed component name (`plugin/discord`,
 `mcp-server/filesystem`, `package/npm/hono`) and is intentionally **shared
 across occurrences**: the same `package/npm/hono` is emitted for hono bundled
@@ -36,8 +37,12 @@ drift, policy, inventory, and Fleet rows (the purpose ADR-0031 assigned it).
 
 `bom-ref` (the graph node key, per ADR-0037's "node.key IS the bom-ref"
 invariant) is the **per-occurrence key**, unique within a single BOM:
-`{source_manifest}#{source_locator}#{identity}`. It exists to wire CycloneDX
-`dependencies[]` composition edges; it is not a cross-scan join key.
+`{source_manifest}#{source_locator}#{coordinate}`, where `{coordinate}` is the
+canonical identity for agent components and the package PURL (falling back to
+name) for package nodes — so a package node's key ends in its PURL (e.g.
+`…#pkg:npm/hono@4.12.5`), not its `package/<ecosystem>/<name>` identity. It
+exists to wire CycloneDX `dependencies[]` composition edges; it is not a
+cross-scan join key.
 
 In flat (non-graph-backed) BOMs where an identity has a single occurrence, the
 preferred `bom-ref` equals `openaca:identity`. In graph-backed BOMs they differ

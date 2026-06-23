@@ -54,9 +54,13 @@ components (MCP servers, skills, plugins, hooks, commands) this is the canonical
 type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`); for package
 nodes it is the stable `package/<ecosystem>/<name>` coordinate shared across all
 occurrences. In graph-backed BOMs, each component's `bom-ref` is the
-per-occurrence node key (`{manifest}#{locator}#{identity}`), which is distinct
-from `openaca:identity` for both agent components and package nodes. In flat
-(non-graph-backed) BOMs, agent components derive `bom-ref` from the same
+per-occurrence node key `{source_manifest}#{source_locator}#{coordinate}`, where
+`{coordinate}` is the canonical identity for agent components (e.g.
+`plugin/demo`) and the package PURL for package nodes (e.g.
+`pkg:npm/hono@4.12.5`, falling back to the package name). It is therefore
+distinct from `openaca:identity` for both — most visibly for package nodes,
+whose key ends in the PURL, not the `package/<ecosystem>/<name>` identity. In
+flat (non-graph-backed) BOMs, agent components derive `bom-ref` from the same
 canonical identity, so it equals `openaca:identity`.
 
 Package-backed components also carry their external package coordinate as `purl`:

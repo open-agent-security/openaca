@@ -1,5 +1,5 @@
 name: OpenACA Scan
-description: Scan agent-installation manifests with OpenACA overlays.
+description: Scan your repo's AI-agent stack (MCP servers, plugins, skills, dependencies) for known vulnerabilities — SARIF + PR annotations.
 author: open-agent-security
 branding:
   icon: shield

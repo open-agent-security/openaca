@@ -1,5 +1,5 @@
 name: OpenACA Scan
-description: Scan your repo's AI-agent stack (MCP servers, plugins, skills, dependencies) for known vulnerabilities — SARIF + PR annotations.
+description: Scan your repo's AI-agent stack (MCP servers, plugins, skills) for known vulnerabilities.
 author: open-agent-security
 branding:
   icon: shield

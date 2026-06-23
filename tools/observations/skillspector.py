@@ -31,6 +31,7 @@ DEFAULT_COMMAND = "skillspector"
 DEFAULT_TIMEOUT_SECONDS = 120.0
 
 RunCommand = Callable[[Sequence[str], float], subprocess.CompletedProcess[str]]
+ProgressCallback = Callable[[int, int], None]
 
 _CATEGORY_MAP: dict[str, list[str]] = {
     # Prompt Injection (P1-P5). Source: NVIDIA/SkillSpector README.
@@ -171,6 +172,7 @@ def collect_skillspector_findings(
     command: str = DEFAULT_COMMAND,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     run_command: RunCommand | None = None,
+    progress: ProgressCallback | None = None,
 ) -> SkillSpectorFindings:
     if run_command is None and shutil.which(command) is None:
         raise SkillSpectorCommandNotFound(f"SkillSpector command not found: {command}")
@@ -178,11 +180,12 @@ def collect_skillspector_findings(
     posture_findings: list[PostureFinding] = []
     warnings: list[str] = []
     runner = run_command or _run_command
+    targets = [(ref, scan_path) for ref in refs if (scan_path := _skill_scan_path(ref)) is not None]
+    total = len(targets)
 
-    for ref in refs:
-        scan_path = _skill_scan_path(ref)
-        if scan_path is None:
-            continue
+    for index, (ref, scan_path) in enumerate(targets, start=1):
+        if progress is not None:
+            progress(index, total)
         with tempfile.TemporaryDirectory(prefix="openaca-skillspector-") as tmp:
             sarif_path = Path(tmp) / "skillspector.sarif"
             args = [
@@ -230,12 +233,14 @@ def collect_skillspector_observations(
     command: str = DEFAULT_COMMAND,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     run_command: RunCommand | None = None,
+    progress: ProgressCallback | None = None,
 ) -> tuple[list[ObservationFinding], list[str]]:
     result = collect_skillspector_findings(
         refs,
         command=command,
         timeout_seconds=timeout_seconds,
         run_command=run_command,
+        progress=progress,
     )
     return result.observations, result.warnings
 

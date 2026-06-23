@@ -89,6 +89,42 @@ def test_skillspector_collects_sarif_observations_even_when_cli_exits_nonzero(
     assert observation.categories == ["prompt-injection"]
 
 
+def test_skillspector_reports_progress_per_skill(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_ref = _skill_ref(first_root)
+    second_ref = _skill_ref(second_root)
+    progress: list[tuple[int, int]] = []
+
+    def fake_run(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        output = Path(args[list(args).index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "version": "2.1.0",
+                    "runs": [
+                        {
+                            "tool": {"driver": {"name": "skillspector"}},
+                            "results": [],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
+
+    collect_skillspector_findings(
+        [first_ref, second_ref],
+        run_command=fake_run,
+        progress=lambda current, total: progress.append((current, total)),
+    )
+
+    assert progress == [(1, 2), (2, 2)]
+
+
 def test_skillspector_prefixes_relative_artifact_uris(tmp_path: Path) -> None:
     ref = _skill_ref(tmp_path)
     skill_dir = tmp_path / "deploy-helper"

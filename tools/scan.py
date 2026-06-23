@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -89,6 +90,8 @@ _FORMAT_CHOICES = ("text", "github", "json")
 # else (software-dependency) is suppressed from matching, federation, and
 # rendering — OpenACA V0 is agent-composition analysis.
 _AGENT_SCOPES: frozenset[str] = frozenset({"agent-component", "agent-dependency"})
+OsvProgressCallback = Callable[[str, int, int], None]
+SkillSpectorProgressCallback = Callable[[int, int], None]
 
 
 def _filter_agent_scope_refs(refs: list[ComponentRef]) -> list[ComponentRef]:
@@ -129,16 +132,52 @@ def _is_plugin_ref(ref: ComponentRef) -> bool:
     )
 
 
+def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
+    if output_format != "text":
+        return None
+
+    def report(stage: str, current: int, total: int) -> None:
+        if stage == "query":
+            click.echo(f"osv.dev: querying {total} target(s)...", err=True)
+            return
+        if stage != "fetch":
+            return
+        if current == 1:
+            click.echo(f"osv.dev: fetching {total} advisory record(s)...", err=True)
+        if current == total or current % 10 == 0:
+            click.echo(f"osv.dev: fetched {current}/{total} advisory record(s)", err=True)
+
+    return report
+
+
+def _skillspector_progress_reporter(
+    output_format: str,
+) -> SkillSpectorProgressCallback | None:
+    if output_format != "text":
+        return None
+
+    def report(current: int, total: int) -> None:
+        if current == 1:
+            click.echo(f"skillspector: scanning {total} skill(s)...", err=True)
+        if current == total or current % 10 == 0:
+            click.echo(f"skillspector: scanning skill {current}/{total}", err=True)
+
+    return report
+
+
 def _collect_scanner_findings(
     refs: list[ComponentRef],
     *,
     external_scanners: tuple[str, ...],
+    skillspector_progress: SkillSpectorProgressCallback | None = None,
 ) -> tuple[list[ObservationFinding], list[PostureFinding]]:
     observations = collect_skill_observations(refs)
     posture_findings: list[PostureFinding] = []
     if "nvidia-skillspector" in external_scanners:
         try:
-            skillspector_findings = collect_skillspector_findings(refs)
+            skillspector_findings = collect_skillspector_findings(
+                refs, progress=skillspector_progress
+            )
         except SkillSpectorCommandNotFound as exc:
             raise click.ClickException(str(exc)) from exc
         observations.extend(skillspector_findings.observations)
@@ -516,10 +555,15 @@ def _collect_corpus_sources(corpus: list[dict]) -> set[str]:
 
 def _load_osv_with_overlays(
     refs: list[ComponentRef],
+    *,
+    progress: OsvProgressCallback | None = None,
 ) -> tuple[list[dict], list[str], int, dict[str, str]]:
     """Query OSV for refs and merge OpenACA overlays into returned records."""
     overlays = load_overlays(default_overlays_dir())
-    corpus, warnings = augment_corpus(refs, [])
+    if progress is None:
+        corpus, warnings = augment_corpus(refs, [])
+    else:
+        corpus, warnings = augment_corpus(refs, [], progress=progress)
     alias_map = build_alias_to_overlay_id_map(overlays)
     return apply_overlays(corpus, overlays), warnings, len(overlays), alias_map
 
@@ -614,13 +658,17 @@ def repo(
         source_unit_label="manifest",
         graph=graph,
     ).component_refs()
-    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(
+        refs, progress=_osv_progress_reporter(output_format)
+    )
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
-        refs, external_scanners=external_scanners
+        refs,
+        external_scanners=external_scanners,
+        skillspector_progress=_skillspector_progress_reporter(output_format),
     )
 
     posture_findings: list[PostureFinding] = []
@@ -806,13 +854,17 @@ def endpoint(
         source_unit_label="active plugin",
         graph=graph,
     ).component_refs()
-    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(
+        refs, progress=_osv_progress_reporter(output_format)
+    )
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)
     findings = match(refs, corpus, graph=graph)
     observations, scanner_posture_findings = _collect_scanner_findings(
-        refs, external_scanners=external_scanners
+        refs,
+        external_scanners=external_scanners,
+        skillspector_progress=_skillspector_progress_reporter(output_format),
     )
 
     posture_findings: list[PostureFinding] = []
@@ -1021,7 +1073,9 @@ def scan_bom(
             target_type="bom",
             target=str(input_path),
         ).component_refs()
-    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(refs)
+    corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(
+        refs, progress=_osv_progress_reporter(output_format)
+    )
     _stamp_source(corpus, "osv.dev")
     for fw in fed_warnings:
         click.echo(f"warning: {fw}", err=True)

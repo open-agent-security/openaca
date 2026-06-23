@@ -47,7 +47,9 @@ openaca bom lint agent.bom.json
 Each detected agent component or agent dependency is serialized as one
 CycloneDX component.
 
-`openaca:identity` holds the stable logical identity of a component: for agent
+`openaca:identity` holds the stable logical identity of a component — the
+cross-occurrence join key consumers join on for posture/drift/policy/Fleet rows
+(ADR-0038): for agent
 components (MCP servers, skills, plugins, hooks, commands) this is the canonical
 type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`); for package
 nodes it is the stable `package/<ecosystem>/<name>` coordinate shared across all
@@ -129,7 +131,7 @@ suffix derived from the component observation fields.
 | `openaca:schema_version` | OpenACA Agent BOM schema version. Stored on BOM metadata. |
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
-| `openaca:identity` | Stable logical identity. For agent components: canonical type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`). For package nodes: stable `package/<ecosystem>/<name>` coordinate (shared across occurrences). In graph-backed BOMs, the per-occurrence identity is in `bom-ref`. |
+| `openaca:identity` | Stable logical identity and cross-occurrence join key (ADR-0038). For agent components: canonical type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`). For package nodes: stable `package/<ecosystem>/<name>` coordinate (shared across occurrences). In graph-backed BOMs, the per-occurrence key is `bom-ref`. |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |

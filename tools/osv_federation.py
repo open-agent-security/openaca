@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -44,6 +45,8 @@ _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 _VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
 _BATCH_SIZE = 1000
 _TIMEOUT_SECONDS = 30
+
+OsvProgressCallback = Callable[[str, int, int], None]
 
 
 @dataclass(frozen=True)
@@ -64,13 +67,18 @@ def is_queryable(ref: ComponentRef) -> bool:
 
 
 def augment_corpus(
-    refs: list[ComponentRef], base_corpus: list[dict[str, Any]]
+    refs: list[ComponentRef],
+    base_corpus: list[dict[str, Any]],
+    *,
+    progress: OsvProgressCallback | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Return `(merged_corpus, warnings)`. Fail-soft on any network issue."""
     queries = collect_osv_queries(refs)
     if not queries:
         return list(base_corpus), []
     try:
+        if progress is not None:
+            progress("query", len(queries), len(queries))
         matches_by_id = _query_batch(queries)
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
         return list(base_corpus), [f"osv.dev federation failed: {exc}"]
@@ -78,7 +86,10 @@ def augment_corpus(
         return list(base_corpus), []
     new_records: list[dict[str, Any]] = []
     fetch_warnings: list[str] = []
-    for vid, matching_queries in matches_by_id.items():
+    total_matches = len(matches_by_id)
+    for index, (vid, matching_queries) in enumerate(matches_by_id.items(), start=1):
+        if progress is not None:
+            progress("fetch", index, total_matches)
         try:
             record = _get_vuln(vid)
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:

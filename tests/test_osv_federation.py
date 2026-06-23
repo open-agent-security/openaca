@@ -259,6 +259,46 @@ def test_augment_batches_purls_and_merges_results():
     assert ids == {"CVE-2026-0001", "GHSA-1111", "GHSA-2222"}
 
 
+def test_augment_reports_query_and_fetch_progress():
+    refs = [_ref("npm", "lodash", "4.17.20"), _ref("PyPI", "requests", "2.31.0")]
+    progress: list[tuple[str, int, int]] = []
+    querybatch_response = {
+        "results": [
+            {"vulns": [{"id": "GHSA-1111"}]},
+            {"vulns": [{"id": "GHSA-2222"}]},
+        ]
+    }
+    vuln_records = {
+        "GHSA-1111": {
+            "id": "GHSA-1111",
+            "affected": [{"package": {"ecosystem": "npm", "name": "lodash"}}],
+        },
+        "GHSA-2222": {
+            "id": "GHSA-2222",
+            "affected": [{"package": {"ecosystem": "PyPI", "name": "requests"}}],
+        },
+    }
+
+    def fake_post(_url, _payload):
+        return querybatch_response
+
+    def fake_get(url):
+        vuln_id = url.rsplit("/", 1)[-1]
+        return vuln_records[vuln_id]
+
+    with (
+        patch("tools.osv_federation._post_json", fake_post),
+        patch("tools.osv_federation._get_json", fake_get),
+    ):
+        augment_corpus(
+            refs=refs,
+            base_corpus=[],
+            progress=lambda stage, current, total: progress.append((stage, current, total)),
+        )
+
+    assert progress == [("query", 2, 2), ("fetch", 1, 2), ("fetch", 2, 2)]
+
+
 def test_augment_batches_mixed_osv_queries_and_filters_git_repo():
     sha = "0123456789abcdef0123456789abcdef01234567"
     refs = [

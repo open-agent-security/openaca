@@ -29,7 +29,7 @@ def _isolate_github_actions_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _offline_osv_for_scan_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep CLI tests offline while preserving OSV-backed scan semantics."""
 
-    def fake_augment(refs, base_corpus):
+    def fake_augment(refs, base_corpus, *, progress=None):
         records = list(base_corpus)
         seen = {record.get("id") for record in records if isinstance(record, dict)}
         for ref in refs:

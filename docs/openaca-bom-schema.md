@@ -63,6 +63,13 @@ whose key ends in the PURL, not the `package/<ecosystem>/<name>` identity. In
 flat (non-graph-backed) BOMs, agent components derive `bom-ref` from the same
 canonical identity, so it equals `openaca:identity`.
 
+**Which key to join on.** For joins *within* a BOM — following `dependencies[]`
+edges, or resolving a finding's `bom-ref` to its component — use `bom-ref` (the
+occurrence/node key). For grouping the *same logical component across*
+occurrences, scans, or time (posture, drift, policy, Fleet rows) — use
+`openaca:identity`. Do not join occurrence-level rows on `openaca:identity`: it
+is shared whenever a component appears more than once.
+
 Package-backed components also carry their external package coordinate as `purl`:
 
 ```json

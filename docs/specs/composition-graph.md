@@ -49,6 +49,16 @@ direct and once bundled is two nodes. Purl is carried for matching/display but i
 **never** the node key. Deduplication (see Construction) collapses only the *same
 occurrence* reached by two discovery paths — never two occurrences of the same purl.
 
+> **Refined by ADR-0038 (as built).** This section uses "`openaca:identity`" for
+> the occurrence-key *concept*. In the emitted BOM the occurrence/node key is the
+> **`bom-ref`** (`{source_manifest}#{source_locator}#{coordinate}`, where
+> `{coordinate}` is the canonical identity for agent components and the package
+> PURL for package nodes; this `bom-ref` IS `node.key`). The `openaca:identity`
+> *property* holds the canonical, cross-occurrence identity (the short
+> type-prefixed name, shared when a component appears more than once). Read
+> "node key / `bom-ref`" wherever this spec says "`openaca:identity` is the
+> occurrence key."
+
 ### Edges
 
 V1 has **one edge role: composition** (`parent dependsOn child`), forming a **tree**:

@@ -44,6 +44,12 @@ name) for package nodes — so a package node's key ends in its PURL (e.g.
 exists to wire CycloneDX `dependencies[]` composition edges; it is not a
 cross-scan join key.
 
+Rule of thumb for consumers: join *within* a BOM (`dependencies[]` edges,
+finding → component) on `bom-ref`; group the same logical component *across*
+occurrences, scans, or time (posture, drift, policy, Fleet) on
+`openaca:identity`. Never join occurrence-level rows on `openaca:identity` — it
+is shared whenever a component appears more than once.
+
 In flat (non-graph-backed) BOMs where an identity has a single occurrence, the
 preferred `bom-ref` equals `openaca:identity`. In graph-backed BOMs they differ
 whenever an identity occurs more than once or carries manifest/locator context.

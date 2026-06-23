@@ -3,7 +3,7 @@ id: 0037
 title: Composition graph as the scanner's first-class IR, encoded in the Agent BOM
 status: accepted
 date: 2026-06-19
-supersedes: "0006"
+supersedes: null
 superseded-by: null
 ---
 

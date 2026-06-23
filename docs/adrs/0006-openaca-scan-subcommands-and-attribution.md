@@ -4,7 +4,7 @@ title: openaca scan subcommands; claude-plugin ecosystem; attributed_to fields
 status: accepted
 date: 2026-05-10
 supersedes: null
-superseded-by: null
+superseded-by: "0037"
 ---
 
 ## Context

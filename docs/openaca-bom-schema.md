@@ -88,21 +88,24 @@ OpenACA can also emit `openaca:match_coordinate`:
 ```
 
 Plugin-bundled package dependencies use CycloneDX `type: "library"` and
-`openaca:component_type: "package"` while keeping their agent graph occurrence
-under the parent plugin:
+`openaca:component_type: "package"`. The package identity is **not**
+parent-qualified — its relationship to the parent plugin is expressed by a
+`dependencies[]` edge (see Composition Edges), while the per-occurrence
+`bom-ref` keys this specific appearance under the plugin's lockfile:
 
 ```json
 {
   "type": "library",
-  "bom-ref": "plugin/claude-plugins-official/discord/deps/npm/hono",
+  "bom-ref": "external_plugins/discord/bun.lock#$.packages['hono']#pkg:npm/hono@4.12.5",
   "name": "hono",
   "version": "4.12.5",
   "purl": "pkg:npm/hono@4.12.5",
   "properties": [
-    {"name": "openaca:identity", "value": "plugin/claude-plugins-official/discord/deps/npm/hono"},
+    {"name": "openaca:identity", "value": "package/npm/hono"},
     {"name": "openaca:component_type", "value": "package"},
     {"name": "openaca:scope", "value": "agent-dependency"},
-    {"name": "openaca:attributed_to", "value": "plugin/claude-plugins-official/discord@0.0.4"}
+    {"name": "openaca:source_manifest", "value": "external_plugins/discord/bun.lock"},
+    {"name": "openaca:source_locator", "value": "$.packages['hono']"}
   ]
 }
 ```
@@ -123,20 +126,22 @@ suffix derived from the component observation fields.
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |
 | `openaca:source_locator` | Locator inside the source manifest. |
-| `openaca:attributed_to` | Parent plugin identity when a component was discovered through an active plugin. |
 | `openaca:agent_host` | Agent host surface that loads, exposes, or executes the component. |
 | `openaca:source_provenance` | JSON-encoded source provenance recovered from lockfiles or symlink targets. |
 
 ## Composition Edges
 
-CycloneDX `dependencies[]` stores composition edges. When a component has
-`attributed_to` set to a plugin identity present in the BOM, OpenACA emits a
-dependency edge from the plugin's `bom-ref` to the child component's `bom-ref`.
+CycloneDX `dependencies[]` stores the composition edges. Each edge runs from a
+parent component's `bom-ref` to the `bom-ref` of a component it contains or
+declares — a plugin to its bundled skills, MCP servers, hooks, and package
+dependencies; a skill to its own bundled deps. This edge set, not a stored
+`attributed_to` field, is the source of truth for parentage and attribution
+(attribution is the nearest plugin ancestor along these edges).
 
 ```json
 {
-  "ref": "plugin/claude-plugins-official/github@unknown",
-  "dependsOn": ["mcp-remote/api.githubcopilot.com/mcp/"]
+  "ref": "external_plugins/discord/.claude-plugin/plugin.json#$#plugin/discord",
+  "dependsOn": ["external_plugins/discord/bun.lock#$.packages['hono']#pkg:npm/hono@4.12.5"]
 }
 ```
 

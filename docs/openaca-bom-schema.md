@@ -47,10 +47,13 @@ openaca bom lint agent.bom.json
 Each detected agent component or agent dependency is serialized as one
 CycloneDX component.
 
-OpenACA-generated components use their agent graph occurrence identity as the
-preferred `bom-ref` when it is unique in the BOM, and carry the same value as
-`openaca:identity`. Package-backed components also carry their external package
-coordinate as `purl`:
+OpenACA-generated components carry the graph occurrence identity as their
+`bom-ref`. `openaca:identity` holds the component's logical identity: for agent
+components (MCP servers, skills, plugins, hooks, commands) this is the same
+value as the preferred `bom-ref`; for package nodes it is the stable package
+coordinate (`package/<ecosystem>/<name>`), which is shared across all
+occurrences of the same package and is distinct from the per-occurrence `bom-ref`.
+Package-backed components also carry their external package coordinate as `purl`:
 
 ```json
 {
@@ -69,7 +72,9 @@ coordinate as `purl`:
 }
 ```
 
-Components use the graph occurrence identity as `openaca:identity`. Package and
+Agent components use their graph occurrence identity as `openaca:identity`.
+Package nodes use the stable `package/<ecosystem>/<name>` coordinate as
+`openaca:identity`; per-occurrence identity lives in the `bom-ref`. Package and
 Git-backed components use their standard PURL/Git metadata for matching. When a
 parser has an explicit non-PURL/non-Git external audit or registry handle,
 OpenACA can also emit `openaca:match_coordinate`:
@@ -120,7 +125,7 @@ suffix derived from the component observation fields.
 | `openaca:schema_version` | OpenACA Agent BOM schema version. Stored on BOM metadata. |
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
-| `openaca:identity` | OpenACA agent graph occurrence identity. |
+| `openaca:identity` | For agent components: graph occurrence identity (e.g. `mcp-server/filesystem`). For package nodes: stable `package/<ecosystem>/<name>` coordinate (shared across occurrences; per-occurrence identity is in `bom-ref`). |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |

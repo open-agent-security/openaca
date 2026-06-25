@@ -168,7 +168,11 @@ def resolve_mcp_launch_dir(
         candidate = Path(tok) if tok.startswith("/") else (manifest_dir / tok)
         try:
             if candidate.exists():
-                return _nearest_dep_manifest_dir(candidate, scan_root)
+                result = _nearest_dep_manifest_dir(candidate, scan_root)
+                if result is not None:
+                    return result
+                # candidate exists but is outside scan_root (e.g. /usr/bin/node)
+                # or has no dep manifest above it — continue to later tokens.
         except OSError:
             continue
     return None

@@ -1622,3 +1622,18 @@ def test_plugin_bundled_skill_does_not_look_up_skills_lock(tmp_path):
     skill = next(n for n in g.nodes.values() if n.kind == "skill")
     assert skill.ref is not None
     assert (skill.ref.extra or {}).get("source_provenance") is None
+
+
+def test_manifest_name_index_skips_node_modules(tmp_path):
+    # Finding 1: in endpoint mode include_gitignored=True causes the walk to
+    # descend into node_modules/. The index must never return those entries so
+    # an external `npx <pkg>` cannot resolve to an installed copy and be
+    # mis-attributed as a local self-launch.
+    node_mod = tmp_path / "node_modules" / "some-dep"
+    node_mod.mkdir(parents=True)
+    (node_mod / "package.json").write_text('{"name": "some-dep"}')
+    # Also add a legitimate first-party package to confirm it IS indexed.
+    (tmp_path / "package.json").write_text('{"name": "my-app"}')
+    idx = build_manifest_name_index(tmp_path, include_gitignored=True)
+    assert "some-dep" not in idx, "node_modules entry must be excluded from name index"
+    assert "my-app" in idx, "first-party root manifest must still be indexed"

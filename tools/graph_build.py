@@ -72,6 +72,21 @@ _DEP_MANIFEST_PARSERS = {
 
 _TARGET_KEY = "openaca:target"
 
+# Directories that contain installed package closures rather than first-party
+# source. `build_manifest_name_index` excludes manifests under these regardless
+# of `include_gitignored`, preventing external `npx <pkg>` from matching an
+# installed copy inside e.g. `node_modules/` and being mis-attributed as a
+# local self-launch in endpoint mode (where the gitignore walk is disabled).
+_NAME_INDEX_DEP_DIRS = frozenset({
+    "node_modules",
+    ".venv",
+    "venv",
+    ".virtualenv",
+    ".tox",
+    "site-packages",
+    "__pycache__",
+})
+
 
 def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:
     """Insert `child_node` under `parent_node`, deduping both node and edge.
@@ -863,10 +878,19 @@ def build_manifest_name_index(
     (the repo *is* the package). npm `package.json` and PyPI `pyproject.toml`
     `[project].name` are indexed; first occurrence of a name wins. The walk is
     gitignore-aware (skips `node_modules/`, `.git/`, etc.) like the others.
+    Manifests under dependency/vendor directories (see `_NAME_INDEX_DEP_DIRS`)
+    are always excluded regardless of `include_gitignored`, so that external
+    `npx <pkg>` cannot resolve to an installed copy in `node_modules/`.
     """
     spec = None if include_gitignored else load_gitignore_spec(scan_root)
     index: dict[str, Path] = {}
     for path in iter_unignored_files(scan_root, spec):
+        try:
+            rel_dir_parts = path.relative_to(scan_root).parts[:-1]
+        except ValueError:
+            rel_dir_parts = path.parts[:-1]
+        if any(p in _NAME_INDEX_DEP_DIRS for p in rel_dir_parts):
+            continue
         name: object = None
         if path.name == "package.json":
             try:

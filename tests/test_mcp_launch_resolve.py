@@ -150,3 +150,22 @@ def test_resolve_name_match_relative_scan_root(tmp_path):
     rel_scan_root = Path(os.path.relpath(tmp_path))
     resolved = resolve_mcp_launch_dir(ref, scan_root=rel_scan_root, name_index=idx)
     assert resolved == tmp_path.resolve()
+
+
+def test_resolve_absolute_launcher_continues_to_server_path(tmp_path):
+    # Finding 2: `{"command":"/usr/bin/env","args":["node","./dist/server.js"]}`
+    # The absolute launcher /usr/bin/env exists but is outside scan_root.
+    # Previously the resolver returned None immediately after _nearest_dep_manifest_dir
+    # returned None for /usr/bin/env; the ./dist/server.js arg was never inspected.
+    (tmp_path / "package.json").write_text('{"name":"x"}')
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "server.js").write_text("//")
+    # /usr/bin/env is a universally available absolute path on POSIX; it exists
+    # on the runner but is outside scan_root (tmp_path), so it triggers the bug.
+    abs_launcher = "/usr/bin/env"
+    ref = _mcp_ref(
+        f"{abs_launcher} node ./dist/server.js",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path

@@ -237,6 +237,10 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         lines.append(f"    git_ref: {component.before.git_ref} -> {component.after.git_ref}")
     if component.before.transport != component.after.transport:
         lines.append(f"    transport: {component.before.transport} -> {component.after.transport}")
+    if component.before.source_provenance != component.after.source_provenance:
+        before_prov = _extract_provenance_label(component.before.source_provenance)
+        after_prov = _extract_provenance_label(component.after.source_provenance)
+        lines.append(f"    source_provenance: {before_prov} -> {after_prov}")
     return lines
 
 
@@ -252,3 +256,22 @@ def _extract_skill_hash(coords_json: str | None) -> str | None:
             if isinstance(coord, dict) and coord.get("kind") == "skill-content-hash":
                 return coord.get("value")
     return coords_json
+
+
+def _extract_provenance_label(provenance_json: str | None) -> str | None:
+    if provenance_json is None:
+        return None
+    try:
+        prov = json.loads(provenance_json)
+    except (json.JSONDecodeError, TypeError):
+        return provenance_json
+    if not isinstance(prov, dict):
+        return provenance_json
+    source = prov.get("source")
+    ref = prov.get("ref")
+    if source and ref:
+        return f"{source}@{ref}"
+    if source:
+        return source
+    status = prov.get("status")
+    return status or provenance_json

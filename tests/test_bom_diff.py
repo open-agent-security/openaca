@@ -62,6 +62,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "install_source": None,
                 "git_ref": None,
                 "transport": None,
+                "source_provenance": None,
             }
         ],
         "removed_components": [
@@ -78,6 +79,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "install_source": None,
                 "git_ref": None,
                 "transport": None,
+                "source_provenance": None,
             }
         ],
         "changed_components": [
@@ -95,6 +97,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "install_source": None,
                     "git_ref": None,
                     "transport": None,
+                    "source_provenance": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -105,6 +108,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "install_source": None,
                     "git_ref": None,
                     "transport": None,
+                    "source_provenance": None,
                 },
             }
         ],
@@ -151,6 +155,7 @@ def _component(
     install_source: str | None = None,
     git_ref: str | None = None,
     transport: str | None = None,
+    source_provenance: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -179,6 +184,10 @@ def _component(
         component["properties"].append({"name": "openaca:git_ref", "value": git_ref})
     if transport is not None:
         component["properties"].append({"name": "openaca:transport", "value": transport})
+    if source_provenance is not None:
+        component["properties"].append(
+            {"name": "openaca:source_provenance", "value": source_provenance}
+        )
     return component
 
 
@@ -358,3 +367,35 @@ def test_diff_boms_detects_transport_change():
     assert changed.after.transport == "streamableHttp"
     assert changed.to_json()["before"]["transport"] == "sse"
     assert changed.to_json()["after"]["transport"] == "streamableHttp"
+
+
+def test_diff_boms_detects_source_provenance_change():
+    old_prov = json.dumps(
+        {"source": "awslabs/agent-toolkit-for-aws", "ref": "abc123", "status": "known"},
+        sort_keys=True,
+    )
+    new_prov = json.dumps(
+        {"source": "awslabs/agent-toolkit-for-aws", "ref": "def456", "status": "known"},
+        sort_keys=True,
+    )
+    before = _bom(
+        components=[
+            _component("skill/aws-api", "skill/aws-api", "skill", source_provenance=old_prov)
+        ],
+    )
+    after = _bom(
+        components=[
+            _component("skill/aws-api", "skill/aws-api", "skill", source_provenance=new_prov)
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.source_provenance == old_prov
+    assert changed.after.source_provenance == new_prov
+    assert changed.to_json()["before"]["source_provenance"] == old_prov
+    assert changed.to_json()["after"]["source_provenance"] == new_prov

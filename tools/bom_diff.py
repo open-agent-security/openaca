@@ -21,6 +21,7 @@ class BomDiffComponent:
     url: str | None
     install_source: str | None
     git_ref: str | None
+    transport: str | None
 
     def comparable(self) -> tuple[str | None, ...]:
         return (
@@ -34,6 +35,7 @@ class BomDiffComponent:
             self.url,
             self.install_source,
             self.git_ref,
+            self.transport,
         )
 
     def to_json(self) -> JsonObject:
@@ -49,6 +51,7 @@ class BomDiffComponent:
             "url": self.url,
             "install_source": self.install_source,
             "git_ref": self.git_ref,
+            "transport": self.transport,
         }
 
 
@@ -71,6 +74,7 @@ class ChangedBomDiffComponent:
                 "url": self.before.url,
                 "install_source": self.before.install_source,
                 "git_ref": self.before.git_ref,
+                "transport": self.before.transport,
             },
             "after": {
                 "version": self.after.version,
@@ -80,6 +84,7 @@ class ChangedBomDiffComponent:
                 "url": self.after.url,
                 "install_source": self.after.install_source,
                 "git_ref": self.after.git_ref,
+                "transport": self.after.transport,
             },
         }
 
@@ -159,6 +164,7 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             url=_property(item, "openaca:url"),
             install_source=_property(item, "openaca:install_source"),
             git_ref=_property(item, "openaca:git_ref"),
+            transport=_property(item, "openaca:transport"),
         )
     return result
 

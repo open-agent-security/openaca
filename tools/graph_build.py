@@ -77,15 +77,17 @@ _TARGET_KEY = "openaca:target"
 # of `include_gitignored`, preventing external `npx <pkg>` from matching an
 # installed copy inside e.g. `node_modules/` and being mis-attributed as a
 # local self-launch in endpoint mode (where the gitignore walk is disabled).
-_NAME_INDEX_DEP_DIRS = frozenset({
-    "node_modules",
-    ".venv",
-    "venv",
-    ".virtualenv",
-    ".tox",
-    "site-packages",
-    "__pycache__",
-})
+_NAME_INDEX_DEP_DIRS = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        ".virtualenv",
+        ".tox",
+        "site-packages",
+        "__pycache__",
+    }
+)
 
 
 def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:

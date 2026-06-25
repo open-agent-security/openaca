@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from tools.bom_diff import diff_boms
 
 
@@ -55,6 +57,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "version": None,
                 "purl": None,
                 "git_commit_sha": None,
+                "artifact_coordinates": None,
             }
         ],
         "removed_components": [
@@ -66,6 +69,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "version": None,
                 "purl": None,
                 "git_commit_sha": None,
+                "artifact_coordinates": None,
             }
         ],
         "changed_components": [
@@ -74,8 +78,18 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "identity": "plugin/demo",
                 "component_type": "plugin",
                 "name": "plugin/demo",
-                "before": {"version": "1.0.0", "purl": None, "git_commit_sha": None},
-                "after": {"version": "1.1.0", "purl": None, "git_commit_sha": None},
+                "before": {
+                    "version": "1.0.0",
+                    "purl": None,
+                    "git_commit_sha": None,
+                    "artifact_coordinates": None,
+                },
+                "after": {
+                    "version": "1.1.0",
+                    "purl": None,
+                    "git_commit_sha": None,
+                    "artifact_coordinates": None,
+                },
             }
         ],
         "added_edges": [
@@ -116,6 +130,7 @@ def _component(
     version: str | None = None,
     purl: str | None = None,
     git_commit_sha: str | None = None,
+    artifact_coordinates: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -132,7 +147,43 @@ def _component(
         component["purl"] = purl
     if git_commit_sha is not None:
         component["properties"].append({"name": "openaca:git_commit_sha", "value": git_commit_sha})
+    if artifact_coordinates is not None:
+        component["properties"].append(
+            {"name": "openaca:artifact_coordinates", "value": artifact_coordinates}
+        )
     return component
+
+
+def test_diff_boms_detects_artifact_coordinates_change():
+    old_coords = json.dumps(
+        [{"algorithm": "sha256", "kind": "skill-content-hash", "value": "sha256:aabbcc"}],
+        sort_keys=True,
+    )
+    new_coords = json.dumps(
+        [{"algorithm": "sha256", "kind": "skill-content-hash", "value": "sha256:ddeeff"}],
+        sort_keys=True,
+    )
+    before = _bom(
+        components=[
+            _component("skill/helper", "skill/helper", "skill", artifact_coordinates=old_coords)
+        ],
+    )
+    after = _bom(
+        components=[
+            _component("skill/helper", "skill/helper", "skill", artifact_coordinates=new_coords)
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.artifact_coordinates == old_coords
+    assert changed.after.artifact_coordinates == new_coords
+    assert changed.to_json()["before"]["artifact_coordinates"] == old_coords
+    assert changed.to_json()["after"]["artifact_coordinates"] == new_coords
 
 
 def test_diff_boms_detects_git_commit_sha_change():

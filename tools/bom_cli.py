@@ -222,4 +222,22 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
             f"    git_commit_sha: {component.before.git_commit_sha}"
             f" -> {component.after.git_commit_sha}"
         )
+    if component.before.artifact_coordinates != component.after.artifact_coordinates:
+        before_hash = _extract_skill_hash(component.before.artifact_coordinates)
+        after_hash = _extract_skill_hash(component.after.artifact_coordinates)
+        lines.append(f"    artifact_coordinates: {before_hash} -> {after_hash}")
     return lines
+
+
+def _extract_skill_hash(coords_json: str | None) -> str | None:
+    if coords_json is None:
+        return None
+    try:
+        coords = json.loads(coords_json)
+    except (json.JSONDecodeError, TypeError):
+        return coords_json
+    if isinstance(coords, list):
+        for coord in coords:
+            if isinstance(coord, dict) and coord.get("kind") == "skill-content-hash":
+                return coord.get("value")
+    return coords_json

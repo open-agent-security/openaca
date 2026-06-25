@@ -194,6 +194,4 @@ def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
 
     # uvx shared-name → PyPI ecosystem → must resolve to pypi_dir, NOT npm_dir.
     ref_uvx = _mcp_ref("uvx shared-name")
-    assert (
-        resolve_mcp_launch_dir(ref_uvx, scan_root=tmp_path, name_index=idx) == pypi_dir.resolve()
-    )
+    assert resolve_mcp_launch_dir(ref_uvx, scan_root=tmp_path, name_index=idx) == pypi_dir.resolve()

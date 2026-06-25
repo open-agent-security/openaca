@@ -139,7 +139,6 @@ def resolve_mcp_launch_dir(
         # (e.g. `npx tsx ./src/server.ts` where tsx is the transpiler, not the
         # package, and ./src/server.ts is the real server entrypoint).
 
-
     # Strategy 2: a local path argument → nearest dep manifest at/above it.
     # Anchor relative launch paths at the right directory: for an MCP declared
     # inline in `.claude-plugin/plugin.json`, `source_manifest` is the plugin.json,

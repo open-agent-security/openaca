@@ -802,7 +802,7 @@ def _attach_mcp_launch_deps(
     graph: Graph,
     scan_root: Path,
     normalize: SourceNormalizer,
-    name_index: dict[str, Path],
+    name_index: dict[tuple[str, str], Path],
     *,
     project_root: Path | None = None,
     include_gitignored: bool = False,
@@ -872,20 +872,23 @@ def _attach_mcp_launch_deps(
 
 def build_manifest_name_index(
     scan_root: Path, *, include_gitignored: bool = False
-) -> dict[str, Path]:
-    """Map each local package manifest's declared `name` → its directory.
+) -> dict[tuple[str, str], Path]:
+    """Map `(ecosystem, name)` → directory for each local package manifest.
 
     Used by ADR-0039 MCP launch resolution (strategy 1): an `npx`/`uvx <pkg>`
     launch resolves to a local dir when `<pkg>` matches a manifest `name` here
-    (the repo *is* the package). npm `package.json` and PyPI `pyproject.toml`
-    `[project].name` are indexed; first occurrence of a name wins. The walk is
-    gitignore-aware (skips `node_modules/`, `.git/`, etc.) like the others.
-    Manifests under dependency/vendor directories (see `_NAME_INDEX_DEP_DIRS`)
-    are always excluded regardless of `include_gitignored`, so that external
-    `npx <pkg>` cannot resolve to an installed copy in `node_modules/`.
+    (the repo *is* the package). npm `package.json` entries are keyed as
+    `("npm", name)` and PyPI `pyproject.toml` entries as `("PyPI", name)`.
+    Keying by ecosystem prevents `uvx foo` from resolving to a `package.json`
+    named `foo`, or `npx foo` from resolving to a `pyproject.toml` named `foo`.
+    The walk is gitignore-aware (skips `node_modules/`, `.git/`, etc.) like the
+    others. Manifests under dependency/vendor directories (see
+    `_NAME_INDEX_DEP_DIRS`) are always excluded regardless of
+    `include_gitignored`, so that external `npx <pkg>` cannot resolve to an
+    installed copy in `node_modules/`.
     """
     spec = None if include_gitignored else load_gitignore_spec(scan_root)
-    index: dict[str, Path] = {}
+    index: dict[tuple[str, str], Path] = {}
     for path in iter_unignored_files(scan_root, spec):
         try:
             rel_dir_parts = path.relative_to(scan_root).parts[:-1]
@@ -894,20 +897,24 @@ def build_manifest_name_index(
         if any(p in _NAME_INDEX_DEP_DIRS for p in rel_dir_parts):
             continue
         name: object = None
+        ecosystem_key: str = ""
         if path.name == "package.json":
             try:
                 name = json.loads(path.read_text()).get("name")
+                ecosystem_key = "npm"
             except (json.JSONDecodeError, OSError, UnicodeDecodeError, AttributeError):
                 continue
         elif path.name == "pyproject.toml":
             try:
                 name = tomllib.loads(path.read_text()).get("project", {}).get("name")
+                ecosystem_key = "PyPI"
             except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError, AttributeError):
                 continue
         else:
             continue
-        if isinstance(name, str) and name and name not in index:
-            index[name] = path.parent.resolve()
+        key = (ecosystem_key, name)
+        if isinstance(name, str) and name and key not in index:
+            index[key] = path.parent.resolve()
     return index
 
 

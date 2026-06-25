@@ -25,13 +25,13 @@ def test_strip_launch_version():
 
 
 def test_resolve_npx_name_match(tmp_path):
-    idx = {"@wonderwhy-er/desktop-commander": tmp_path}
+    idx = {("npm", "@wonderwhy-er/desktop-commander"): tmp_path}
     ref = _mcp_ref("npx -y @wonderwhy-er/desktop-commander@latest")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
 
 def test_resolve_uvx_name_match(tmp_path):
-    idx = {"mcp-search-console": tmp_path}
+    idx = {("PyPI", "mcp-search-console"): tmp_path}
     ref = _mcp_ref("uvx mcp-search-console")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
@@ -63,7 +63,7 @@ def test_resolve_python_module_is_none(tmp_path):
 
 def test_resolve_npx_full_path_launcher_name_match(tmp_path):
     # Fix 1: a full-path launcher (`/usr/local/bin/npx`) still matches.
-    idx = {"@acme/dc": tmp_path}
+    idx = {("npm", "@acme/dc"): tmp_path}
     ref = _mcp_ref("/usr/local/bin/npx -y @acme/dc@latest")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
@@ -100,7 +100,7 @@ def test_resolve_command_is_local_path(tmp_path):
 def test_resolve_uvx_pypi_pin_name_match(tmp_path):
     # Finding 2: `uvx my-mcp==1.2.3` should strip the == pin and match.
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "my-mcp"\n')
-    idx = {"my-mcp": tmp_path}
+    idx = {("PyPI", "my-mcp"): tmp_path}
     ref = _mcp_ref("uvx my-mcp==1.2.3")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
@@ -111,7 +111,7 @@ def test_resolve_name_match_outside_scan_root_is_none(tmp_path):
     # returned (it would attach install-root deps to a project-scoped MCP).
     outside = tmp_path.parent / "install_outside"
     outside.mkdir(exist_ok=True)
-    idx = {"@acme/server": outside.resolve()}  # path NOT under scan_root
+    idx = {("npm", "@acme/server"): outside.resolve()}  # path NOT under scan_root
     ref = _mcp_ref("npx @acme/server")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) is None
 
@@ -135,7 +135,7 @@ def test_resolve_node_preload_flag_skips_to_server(tmp_path):
 def test_resolve_uv_global_flag_dispatches_as_uvx(tmp_path):
     # Codex Finding 3: `uv --offline tool run my-mcp` must dispatch as uvx and
     # match by name, not fall back to Strategy 2 or return None.
-    idx = {"my-mcp": tmp_path.resolve()}
+    idx = {("PyPI", "my-mcp"): tmp_path.resolve()}
     ref = _mcp_ref("uv --offline tool run my-mcp")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
 
@@ -145,7 +145,7 @@ def test_resolve_name_match_relative_scan_root(tmp_path):
     # the name_index stores resolved absolute dirs. _within() must compare resolved
     # paths; without scan_root.resolve() the containment check always fails and valid
     # self-launch matches are silently dropped.
-    idx = {"@acme/pkg": tmp_path.resolve()}
+    idx = {("npm", "@acme/pkg"): tmp_path.resolve()}
     ref = _mcp_ref("npx @acme/pkg")
     rel_scan_root = Path(os.path.relpath(tmp_path))
     resolved = resolve_mcp_launch_dir(ref, scan_root=rel_scan_root, name_index=idx)
@@ -169,3 +169,31 @@ def test_resolve_absolute_launcher_continues_to_server_path(tmp_path):
         source_manifest=str(tmp_path / ".mcp.json"),
     )
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+
+
+def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
+    # P2 (ecosystem key): `npx foo` must not match a PyPI `pyproject.toml` named
+    # `foo`, and `uvx foo` must not match an npm `package.json` named `foo`.
+    # Both scenarios previously resolved incorrectly because the index was keyed
+    # by bare name with no ecosystem discrimination.
+    npm_dir = tmp_path / "npm-pkg"
+    npm_dir.mkdir()
+    (npm_dir / "package.json").write_text('{"name": "shared-name"}')
+    pypi_dir = tmp_path / "pypi-pkg"
+    pypi_dir.mkdir()
+    (pypi_dir / "pyproject.toml").write_text('[project]\nname = "shared-name"\n')
+
+    # Index built by build_manifest_name_index (keyed by ecosystem).
+    from tools.graph_build import build_manifest_name_index
+
+    idx = build_manifest_name_index(tmp_path)
+
+    # npx shared-name → npm ecosystem → must resolve to npm_dir, NOT pypi_dir.
+    ref_npx = _mcp_ref("npx shared-name")
+    assert resolve_mcp_launch_dir(ref_npx, scan_root=tmp_path, name_index=idx) == npm_dir.resolve()
+
+    # uvx shared-name → PyPI ecosystem → must resolve to pypi_dir, NOT npm_dir.
+    ref_uvx = _mcp_ref("uvx shared-name")
+    assert (
+        resolve_mcp_launch_dir(ref_uvx, scan_root=tmp_path, name_index=idx) == pypi_dir.resolve()
+    )

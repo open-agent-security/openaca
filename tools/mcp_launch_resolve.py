@@ -87,13 +87,16 @@ def _nearest_dep_manifest_dir(start: Path, scan_root: Path) -> Path | None:
 
 
 def resolve_mcp_launch_dir(
-    ref: Any, *, scan_root: Path, name_index: dict[str, Path]
+    ref: Any, *, scan_root: Path, name_index: dict[tuple[str, str], Path]
 ) -> Path | None:
     """Resolve an MCP server ref's launch target to a dependency-manifest dir.
 
-    `name_index` maps a local manifest `name` → its directory (see
-    `graph_build.build_manifest_name_index`). Returns a directory at/under
-    `scan_root`, or `None` when the target is remote, external, or unresolvable.
+    `name_index` maps `(ecosystem, name)` → directory (see
+    `graph_build.build_manifest_name_index`). The ecosystem key (`"npm"` or
+    `"PyPI"`) is matched against the launcher so that `npx foo` cannot resolve
+    to a `pyproject.toml` named `foo`, and `uvx foo` cannot resolve to a
+    `package.json` named `foo`. Returns a directory at/under `scan_root`, or
+    `None` when the target is remote, external, or unresolvable.
     """
     install_source = (ref.extra or {}).get("install_source")
     if not isinstance(install_source, str) or not install_source.strip():
@@ -125,7 +128,7 @@ def resolve_mcp_launch_dir(
     pkg_source = identity.mcp_package_source(normalized)
     if pkg_source is not None:
         _launcher, _ecosystem, package = pkg_source
-        matched = name_index.get(strip_launch_version(package))
+        matched = name_index.get((_ecosystem, strip_launch_version(package)))
         # Guard: in endpoint mode the name_index merges install_root and
         # project_root entries. When scan_root=project_root (a project-scoped
         # MCP), a match from install_root must not be returned.

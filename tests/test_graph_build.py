@@ -11,8 +11,8 @@ def test_manifest_name_index(tmp_path):
     (tmp_path / "pkg-a" / "package.json").write_text('{"name": "@x/a"}')
     (tmp_path / "pkg-b" / "pyproject.toml").write_text('[project]\nname = "b-tool"\n')
     idx = build_manifest_name_index(tmp_path)
-    assert idx["@x/a"] == (tmp_path / "pkg-a").resolve()
-    assert idx["b-tool"] == (tmp_path / "pkg-b").resolve()
+    assert idx[("npm", "@x/a")] == (tmp_path / "pkg-a").resolve()
+    assert idx[("PyPI", "b-tool")] == (tmp_path / "pkg-b").resolve()
 
 
 def _find_packages(g):
@@ -1635,5 +1635,5 @@ def test_manifest_name_index_skips_node_modules(tmp_path):
     # Also add a legitimate first-party package to confirm it IS indexed.
     (tmp_path / "package.json").write_text('{"name": "my-app"}')
     idx = build_manifest_name_index(tmp_path, include_gitignored=True)
-    assert "some-dep" not in idx, "node_modules entry must be excluded from name index"
-    assert "my-app" in idx, "first-party root manifest must still be indexed"
+    assert ("npm", "some-dep") not in idx, "node_modules entry must be excluded from name index"
+    assert ("npm", "my-app") in idx, "first-party root manifest must still be indexed"

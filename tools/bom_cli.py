@@ -226,6 +226,15 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         before_hash = _extract_skill_hash(component.before.artifact_coordinates)
         after_hash = _extract_skill_hash(component.after.artifact_coordinates)
         lines.append(f"    artifact_coordinates: {before_hash} -> {after_hash}")
+    if component.before.url != component.after.url:
+        lines.append(f"    url: {component.before.url} -> {component.after.url}")
+    if component.before.install_source != component.after.install_source:
+        lines.append(
+            f"    install_source: {component.before.install_source}"
+            f" -> {component.after.install_source}"
+        )
+    if component.before.git_ref != component.after.git_ref:
+        lines.append(f"    git_ref: {component.before.git_ref} -> {component.after.git_ref}")
     return lines
 
 

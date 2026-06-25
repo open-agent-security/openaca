@@ -249,6 +249,7 @@ def build_graph(
         Path(target),
         normalize,
         name_index,
+        project_root=project_root,
         include_gitignored=attach_include_gitignored,
         root_dir=attach_root_dir,
         root_spec=attach_root_spec,
@@ -776,6 +777,7 @@ def _attach_mcp_launch_deps(
     normalize: SourceNormalizer,
     name_index: dict[str, Path],
     *,
+    project_root: Path | None = None,
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -798,7 +800,19 @@ def _attach_mcp_launch_deps(
     for mcp in mcp_nodes:
         if mcp.ref is None:
             continue
-        resolved = resolve_mcp_launch_dir(mcp.ref, scan_root=scan_root, name_index=name_index)
+        # Endpoint mode spans install_root and a separate project_root; a local
+        # launch path declared in a project manifest resolves under project_root,
+        # so use it as the scan_root when this MCP was declared there.
+        effective_scan_root = scan_root
+        if project_root is not None and mcp.ref.source_manifest:
+            try:
+                if Path(mcp.ref.source_manifest).resolve().is_relative_to(project_root.resolve()):
+                    effective_scan_root = project_root
+            except (ValueError, OSError):
+                pass
+        resolved = resolve_mcp_launch_dir(
+            mcp.ref, scan_root=effective_scan_root, name_index=name_index
+        )
         if resolved is None:
             continue
         before = {e.child for e in graph.edges if e.parent == mcp.key}

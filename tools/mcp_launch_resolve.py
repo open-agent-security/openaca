@@ -90,15 +90,30 @@ def resolve_mcp_launch_dir(
     if src.startswith(("http://", "https://")):
         return None
 
+    tokens = src.split()
+
     # Strategy 1: npx/uvx named package → local manifest of the same name.
-    pkg_source = identity.mcp_package_source(src)
+    # Normalize a full-path launcher (`/usr/local/bin/npx`, `/usr/local/bin/uv`)
+    # to its basename so `mcp_package_source` recognizes it — it matches the
+    # launcher token exactly, and the basename preserves the `uv tool run`
+    # dispatch in `launcher_and_args`.
+    normalized = " ".join([Path(tokens[0]).name, *tokens[1:]]) if tokens else src
+    pkg_source = identity.mcp_package_source(normalized)
     if pkg_source is not None:
         _launcher, _ecosystem, package = pkg_source
         return name_index.get(strip_launch_version(package))
 
     # Strategy 2: a local path argument → nearest dep manifest at/above it.
-    manifest_dir = Path(ref.source_manifest).parent if ref.source_manifest else scan_root
-    tokens = src.split()
+    # Anchor relative launch paths at the right directory: for an MCP declared
+    # inline in `.claude-plugin/plugin.json`, `source_manifest` is the plugin.json,
+    # so the path is relative to the plugin ROOT (one level above `.claude-plugin/`),
+    # not the manifest's own directory.
+    manifest_dir = scan_root
+    src_path = Path(ref.source_manifest) if ref.source_manifest else None
+    if src_path is not None:
+        manifest_dir = src_path.parent
+        if src_path.name == "plugin.json" and src_path.parent.name == ".claude-plugin":
+            manifest_dir = src_path.parent.parent
     for tok in tokens[1:]:
         if tok.startswith("-"):
             continue

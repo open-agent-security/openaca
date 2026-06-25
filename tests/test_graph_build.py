@@ -192,6 +192,32 @@ def test_endpoint_remote_mcp_is_direct_child_of_target(tmp_path):
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
 
 
+def test_endpoint_project_mcp_local_path_attaches_deps(tmp_path):
+    # Fix 3 (ADR-0039): a project-scope MCP with a local-path launch resolves
+    # under project_root, not install_root, so its deps attach under the MCP node.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    project_root = tmp_path / "project"
+    cdir = project_root / ".claude"
+    cdir.mkdir(parents=True)
+    (cdir / "settings.json").write_text(
+        json.dumps(
+            {"mcpServers": {"local-mcp": {"command": "node", "args": ["./server/index.js"]}}}
+        )
+    )
+    (cdir / "server").mkdir()
+    (cdir / "server" / "index.js").write_text("//")
+    (cdir / "package.json").write_text(
+        json.dumps({"name": "proj", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
+    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

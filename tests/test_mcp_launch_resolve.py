@@ -54,6 +54,27 @@ def test_resolve_python_module_is_none(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
 
 
+def test_resolve_npx_full_path_launcher_name_match(tmp_path):
+    # Fix 1: a full-path launcher (`/usr/local/bin/npx`) still matches.
+    idx = {"@acme/dc": tmp_path}
+    ref = _mcp_ref("/usr/local/bin/npx -y @acme/dc@latest")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
+def test_resolve_plugin_json_local_path_uses_plugin_root(tmp_path):
+    # Fix 2: an inline-plugin MCP local path anchors at the plugin root, not
+    # `.claude-plugin/`.
+    (tmp_path / "package.json").write_text('{"name":"x"}')
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "index.js").write_text("//")
+    plugin_json = tmp_path / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir()
+    plugin_json.write_text("{}")
+    ref = _mcp_ref("node ./server/index.js", source_manifest=str(plugin_json))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+
+
 def test_resolve_local_path_outside_scan_root_is_none(tmp_path):
     outside = tmp_path.parent / "outside-server.js"
     ref = _mcp_ref(f"node {outside}", source_manifest=str(tmp_path / ".mcp.json"))

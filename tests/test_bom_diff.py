@@ -61,6 +61,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "url": None,
                 "install_source": None,
                 "git_ref": None,
+                "transport": None,
             }
         ],
         "removed_components": [
@@ -76,6 +77,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "url": None,
                 "install_source": None,
                 "git_ref": None,
+                "transport": None,
             }
         ],
         "changed_components": [
@@ -92,6 +94,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "url": None,
                     "install_source": None,
                     "git_ref": None,
+                    "transport": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -101,6 +104,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "url": None,
                     "install_source": None,
                     "git_ref": None,
+                    "transport": None,
                 },
             }
         ],
@@ -146,6 +150,7 @@ def _component(
     url: str | None = None,
     install_source: str | None = None,
     git_ref: str | None = None,
+    transport: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -172,6 +177,8 @@ def _component(
         component["properties"].append({"name": "openaca:install_source", "value": install_source})
     if git_ref is not None:
         component["properties"].append({"name": "openaca:git_ref", "value": git_ref})
+    if transport is not None:
+        component["properties"].append({"name": "openaca:transport", "value": transport})
     return component
 
 
@@ -313,3 +320,41 @@ def test_diff_boms_detects_mcp_install_source_change():
     assert changed.after.git_ref == "v2.0.0"
     assert changed.to_json()["before"]["git_ref"] == "v1.0.0"
     assert changed.to_json()["after"]["git_ref"] == "v2.0.0"
+
+
+def test_diff_boms_detects_transport_change():
+    before = _bom(
+        components=[
+            _component(
+                "mcp/remote",
+                "mcp/remote",
+                "mcp_server",
+                url="https://api.example.com/mcp",
+                install_source="remote",
+                transport="sse",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "mcp/remote",
+                "mcp/remote",
+                "mcp_server",
+                url="https://api.example.com/mcp",
+                install_source="remote",
+                transport="streamableHttp",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.transport == "sse"
+    assert changed.after.transport == "streamableHttp"
+    assert changed.to_json()["before"]["transport"] == "sse"
+    assert changed.to_json()["after"]["transport"] == "streamableHttp"

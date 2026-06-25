@@ -172,6 +172,7 @@ def test_bom_diff_command_can_emit_json(tmp_path):
             "url": None,
             "install_source": None,
             "git_ref": None,
+            "transport": None,
         }
     ]
     assert payload["added_edges"] == [{"parent": "openaca:target", "child": "mcp/new"}]

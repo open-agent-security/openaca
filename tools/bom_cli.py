@@ -235,6 +235,8 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         )
     if component.before.git_ref != component.after.git_ref:
         lines.append(f"    git_ref: {component.before.git_ref} -> {component.after.git_ref}")
+    if component.before.transport != component.after.transport:
+        lines.append(f"    transport: {component.before.transport} -> {component.after.transport}")
     return lines
 
 

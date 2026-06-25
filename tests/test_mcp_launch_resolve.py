@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from tools.component_ref import ComponentRef
 from tools.mcp_launch_resolve import resolve_mcp_launch_dir, strip_launch_version
 
@@ -135,3 +138,15 @@ def test_resolve_uv_global_flag_dispatches_as_uvx(tmp_path):
     idx = {"my-mcp": tmp_path.resolve()}
     ref = _mcp_ref("uv --offline tool run my-mcp")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
+
+
+def test_resolve_name_match_relative_scan_root(tmp_path):
+    # P1: when scan_root is a relative path (e.g. `openaca scan repo --target .`),
+    # the name_index stores resolved absolute dirs. _within() must compare resolved
+    # paths; without scan_root.resolve() the containment check always fails and valid
+    # self-launch matches are silently dropped.
+    idx = {"@acme/pkg": tmp_path.resolve()}
+    ref = _mcp_ref("npx @acme/pkg")
+    rel_scan_root = Path(os.path.relpath(tmp_path))
+    resolved = resolve_mcp_launch_dir(ref, scan_root=rel_scan_root, name_index=idx)
+    assert resolved == tmp_path.resolve()

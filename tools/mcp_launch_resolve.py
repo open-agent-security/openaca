@@ -100,6 +100,16 @@ def resolve_mcp_launch_dir(
         return None
     src = install_source.strip()
 
+    # Resolve scan_root once so the Strategy-1 _within check and _nearest_dep_manifest_dir
+    # (Strategy 2) both compare against an absolute path. Without this, a relative
+    # scan_root such as Path(".") — produced by `openaca scan repo --target .` — is
+    # never found in the parents of a resolved absolute name_index entry, so valid
+    # self-launch name matches are silently dropped for the common relative-target case.
+    try:
+        scan_root = scan_root.resolve()
+    except OSError:
+        return None
+
     # Remote: nothing executes locally.
     if src.startswith(("http://", "https://")):
         return None

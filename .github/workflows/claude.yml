@@ -137,7 +137,7 @@ jobs:
           # local-execution verification is ever needed, run it on a separate
           # sandboxed runner with no write token and no secrets — not here.
           claude_args: |
-            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),WebFetch,WebSearch"
+            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),Bash(git push:*),WebFetch,WebSearch"
 
           # Surface Claude's full SDK conversation in the workflow log.
           # Default is `false` (per claude-code-action upstream) which hides

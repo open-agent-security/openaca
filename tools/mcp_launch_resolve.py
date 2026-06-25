@@ -34,6 +34,15 @@ _DEP_MANIFEST_FILENAMES = (
     "uv.lock",
 )
 
+# Launcher options that consume the NEXT token as a value (not a positional
+# path). Strategy 2's local-path loop skips these values to avoid choosing a
+# preload/eval argument as the server entrypoint.
+_LAUNCHER_VALUE_FLAGS: dict[str, frozenset[str]] = {
+    "node": frozenset({"-r", "--require", "-e", "--eval", "--loader", "--import"}),
+    "python": frozenset({"-c"}),
+    "python3": frozenset({"-c"}),
+}
+
 
 def strip_launch_version(spec: str) -> str:
     """Strip a trailing version pin from an npm or PyPI launch spec.
@@ -106,7 +115,13 @@ def resolve_mcp_launch_dir(
     pkg_source = identity.mcp_package_source(normalized)
     if pkg_source is not None:
         _launcher, _ecosystem, package = pkg_source
-        return name_index.get(strip_launch_version(package))
+        matched = name_index.get(strip_launch_version(package))
+        # Guard: in endpoint mode the name_index merges install_root and
+        # project_root entries. When scan_root=project_root (a project-scoped
+        # MCP), a match from install_root must not be returned.
+        if matched is not None and _within(matched, scan_root):
+            return matched
+        return None
 
     # Strategy 2: a local path argument → nearest dep manifest at/above it.
     # Anchor relative launch paths at the right directory: for an MCP declared
@@ -119,8 +134,19 @@ def resolve_mcp_launch_dir(
         manifest_dir = src_path.parent
         if src_path.name == "plugin.json" and src_path.parent.name == ".claude-plugin":
             manifest_dir = src_path.parent.parent
+    # Flags that consume the next token as a value (rather than a positional
+    # path). Without this, `node -r ./preload.js ./server.js` resolves to the
+    # wrong manifest (the preload's dir, not the server's).
+    launcher_stem = Path(tokens[0]).stem if tokens else ""
+    value_flags = _LAUNCHER_VALUE_FLAGS.get(launcher_stem, frozenset())
+    skip_next = False
     for tok in tokens:
+        if skip_next:
+            skip_next = False
+            continue
         if tok.startswith("-"):
+            if tok in value_flags and "=" not in tok:
+                skip_next = True
             continue
         # Only treat tokens that look like filesystem paths as candidates; a
         # bare module name (`aiteam.mcp.server`), launcher name (`node`,

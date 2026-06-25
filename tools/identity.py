@@ -81,11 +81,49 @@ def match_coordinate_for_bom(ref: Any) -> str | None:
     return candidate if isinstance(candidate, str) and candidate else None
 
 
+# uv global options that consume a separate value token.
+# Best-effort against the uv CLI as of mid-2026; missing entries cause
+# `uv <unknown-flag> <value> tool run X` to fall back instead of dispatching
+# as uvx — false negative, not false positive.  Mirrors _UV_VALUE_FLAGS in
+# mcp_json.py (which handles the separate command+args form at parse time).
+_UV_GLOBAL_VALUE_FLAGS = frozenset(
+    {
+        "--directory",
+        "--project",
+        "--config-file",
+        "--cache-dir",
+        "--python",
+        "--python-preference",
+        "--color",
+        "--default-index",
+        "--index",
+        "--index-url",
+        "--extra-index-url",
+        "--find-links",
+        "--keyring-provider",
+        "--allow-insecure-host",
+        "--trusted-host",
+    }
+)
+
+
 def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
-    if len(tokens) >= 3 and tokens[:3] == ["uv", "tool", "run"]:
-        return "uvx", tokens[3:]
     if not tokens:
         return "", []
+    if tokens[0] == "uv":
+        # Walk past leading uv global options to find the actual subcommand,
+        # so `uv --offline tool run pkg` dispatches as uvx. Inline
+        # `--flag=value` tokens are consumed in one step (value is embedded).
+        i = 1
+        while i < len(tokens) and tokens[i].startswith("-"):
+            if "=" in tokens[i]:
+                i += 1
+            elif tokens[i] in _UV_GLOBAL_VALUE_FLAGS:
+                i += 2
+            else:
+                i += 1
+        if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
+            return "uvx", tokens[i + 2 :]
     return tokens[0], tokens[1:]
 
 

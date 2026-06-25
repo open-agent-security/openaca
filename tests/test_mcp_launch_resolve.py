@@ -100,3 +100,38 @@ def test_resolve_uvx_pypi_pin_name_match(tmp_path):
     idx = {"my-mcp": tmp_path}
     ref = _mcp_ref("uvx my-mcp==1.2.3")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
+def test_resolve_name_match_outside_scan_root_is_none(tmp_path):
+    # Codex Finding 1: in endpoint mode the name_index merges install_root and
+    # project_root. A name hit outside the effective scan_root must not be
+    # returned (it would attach install-root deps to a project-scoped MCP).
+    outside = tmp_path.parent / "install_outside"
+    outside.mkdir(exist_ok=True)
+    idx = {"@acme/server": outside.resolve()}  # path NOT under scan_root
+    ref = _mcp_ref("npx @acme/server")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) is None
+
+
+def test_resolve_node_preload_flag_skips_to_server(tmp_path):
+    # Codex Finding 2: `node -r ./bootstrap.js ./packages/mcp/server.js` must
+    # skip the -r preload argument and resolve to the server's manifest dir.
+    (tmp_path / "package.json").write_text('{"name":"root"}')
+    (tmp_path / "bootstrap.js").write_text("//")
+    mcp_dir = tmp_path / "packages" / "mcp"
+    mcp_dir.mkdir(parents=True)
+    (mcp_dir / "server.js").write_text("//")
+    (mcp_dir / "package.json").write_text('{"name":"mcp-server"}')
+    ref = _mcp_ref(
+        "node -r ./bootstrap.js ./packages/mcp/server.js",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == mcp_dir.resolve()
+
+
+def test_resolve_uv_global_flag_dispatches_as_uvx(tmp_path):
+    # Codex Finding 3: `uv --offline tool run my-mcp` must dispatch as uvx and
+    # match by name, not fall back to Strategy 2 or return None.
+    idx = {"my-mcp": tmp_path.resolve()}
+    ref = _mcp_ref("uv --offline tool run my-mcp")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()

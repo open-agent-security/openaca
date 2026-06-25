@@ -129,12 +129,16 @@ def resolve_mcp_launch_dir(
     if pkg_source is not None:
         _launcher, _ecosystem, package = pkg_source
         matched = name_index.get((_ecosystem, strip_launch_version(package)))
-        # Guard: in endpoint mode the name_index merges install_root and
-        # project_root entries. When scan_root=project_root (a project-scoped
-        # MCP), a match from install_root must not be returned.
-        if matched is not None and _within(matched, scan_root):
-            return matched
-        return None
+        if matched is not None:
+            # Guard: in endpoint mode the name_index merges install_root and
+            # project_root entries. When scan_root=project_root (a project-scoped
+            # MCP), a match from install_root must not be returned.
+            return matched if _within(matched, scan_root) else None
+        # Package not in the local name index (external runner, e.g. `npx tsx`).
+        # Fall through to Strategy 2 — later tokens may be local path arguments
+        # (e.g. `npx tsx ./src/server.ts` where tsx is the transpiler, not the
+        # package, and ./src/server.ts is the real server entrypoint).
+
 
     # Strategy 2: a local path argument → nearest dep manifest at/above it.
     # Anchor relative launch paths at the right directory: for an MCP declared

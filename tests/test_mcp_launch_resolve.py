@@ -171,6 +171,18 @@ def test_resolve_absolute_launcher_continues_to_server_path(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
 
 
+def test_resolve_npx_runner_falls_through_to_local_path(tmp_path):
+    # P2: when an external runner package (tsx) isn't in the name_index,
+    # Strategy 1 must not return None — it must fall through to Strategy 2
+    # so that the local path argument (./src/server.ts) can be resolved.
+    (tmp_path / "package.json").write_text('{"name":"my-mcp"}')
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "server.ts").write_text("//")
+    ref = _mcp_ref("npx tsx ./src/server.ts", source_manifest=str(tmp_path / ".mcp.json"))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+
+
 def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
     # P2 (ecosystem key): `npx foo` must not match a PyPI `pyproject.toml` named
     # `foo`, and `uvx foo` must not match an npm `package.json` named `foo`.

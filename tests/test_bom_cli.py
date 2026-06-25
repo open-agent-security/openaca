@@ -89,6 +89,89 @@ def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
     assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
 
 
+def test_bom_diff_command_renders_text_summary(tmp_path):
+    before_path = tmp_path / "before.json"
+    after_path = tmp_path / "after.json"
+    before_path.write_text(
+        json.dumps(
+            _diff_bom(
+                components=[
+                    _diff_component("plugin/demo", "plugin/demo", "plugin", version="1.0.0")
+                ],
+                dependencies=[],
+            )
+        ),
+        encoding="utf-8",
+    )
+    after_path.write_text(
+        json.dumps(
+            _diff_bom(
+                components=[
+                    _diff_component("plugin/demo", "plugin/demo", "plugin", version="1.1.0"),
+                    _diff_component("mcp/new", "mcp-server/new", "mcp_server"),
+                ],
+                dependencies=[{"ref": "openaca:target", "dependsOn": ["plugin/demo", "mcp/new"]}],
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "diff", "--before", str(before_path), "--after", str(after_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "BOM diff: 1 added, 0 removed, 1 changed" in result.output
+    assert "+ mcp-server/new (mcp_server) [mcp/new]" in result.output
+    assert "~ plugin/demo (plugin) version 1.1.0 [plugin/demo]" in result.output
+    assert "version: 1.0.0 -> 1.1.0" in result.output
+    assert "+ openaca:target -> mcp/new" in result.output
+
+
+def test_bom_diff_command_can_emit_json(tmp_path):
+    before_path = tmp_path / "before.json"
+    after_path = tmp_path / "after.json"
+    before_path.write_text(json.dumps(_diff_bom()), encoding="utf-8")
+    after_path.write_text(
+        json.dumps(
+            _diff_bom(
+                components=[_diff_component("mcp/new", "mcp-server/new", "mcp_server")],
+                dependencies=[{"ref": "openaca:target", "dependsOn": ["mcp/new"]}],
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "bom",
+            "diff",
+            "--before",
+            str(before_path),
+            "--after",
+            str(after_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["added_components"] == [
+        {
+            "bom_ref": "mcp/new",
+            "identity": "mcp-server/new",
+            "component_type": "mcp_server",
+            "name": "mcp-server/new",
+            "version": None,
+            "purl": None,
+        }
+    ]
+    assert payload["added_edges"] == [{"parent": "openaca:target", "child": "mcp/new"}]
+
+
 def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     (tmp_path / ".mcp.json").write_text(
         json.dumps(
@@ -498,3 +581,36 @@ def test_bom_endpoint_surfaces_resolver_warnings(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "ghost@mp enabled but missing from installed_plugins.json" in result.output
+
+
+def _diff_bom(
+    *, components: list[dict] | None = None, dependencies: list[dict] | None = None
+) -> dict:
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "metadata": {"component": {"bom-ref": "openaca:target", "type": "application"}},
+        "components": components or [],
+        "dependencies": dependencies or [],
+    }
+
+
+def _diff_component(
+    bom_ref: str,
+    identity: str,
+    component_type: str,
+    *,
+    version: str | None = None,
+) -> dict:
+    component = {
+        "type": "application",
+        "bom-ref": bom_ref,
+        "name": identity,
+        "properties": [
+            {"name": "openaca:identity", "value": identity},
+            {"name": "openaca:component_type", "value": component_type},
+        ],
+    }
+    if version is not None:
+        component["version"] = version
+    return component

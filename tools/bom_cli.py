@@ -246,6 +246,8 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
             f"    match_coordinate: {component.before.match_coordinate}"
             f" -> {component.after.match_coordinate}"
         )
+    if component.before.scope != component.after.scope:
+        lines.append(f"    scope: {component.before.scope} -> {component.after.scope}")
     return lines
 
 

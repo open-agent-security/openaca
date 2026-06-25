@@ -244,6 +244,16 @@ def build_graph(
     name_index = build_manifest_name_index(
         Path(target), include_gitignored=attach_include_gitignored
     )
+    if project_root is not None:
+        # Endpoint mode: project_root is separate from install_root (target),
+        # so its manifests are absent from the target walk. Merge them in so
+        # that a project-scoped MCP declaring `npx <pkg>` can resolve by name
+        # against the project's own package.json / pyproject.toml.
+        # project_root entries take precedence over install_root entries.
+        name_index = {
+            **name_index,
+            **build_manifest_name_index(project_root, include_gitignored=attach_include_gitignored),
+        }
     _attach_mcp_launch_deps(
         graph,
         Path(target),

@@ -36,16 +36,21 @@ _DEP_MANIFEST_FILENAMES = (
 
 
 def strip_launch_version(spec: str) -> str:
-    """Strip a trailing `@version` from an npm/PyPI launch spec.
+    """Strip a trailing version pin from an npm or PyPI launch spec.
 
-    Handles npm scopes: `@scope/name@1.0.0` → `@scope/name`, `@scope/name` →
-    unchanged, `name@latest` → `name`, `name` → unchanged.
+    npm: `@scope/name@1.0.0` → `@scope/name`, `name@latest` → `name`.
+    PyPI: `name==1.2.3` → `name`, `name[extra]==1.2.3` → `name[extra]`.
+    Unversioned specs are returned unchanged.
     """
     if spec.startswith("@"):
         rest = spec[1:]
         idx = rest.find("@")
         return f"@{rest[:idx]}" if idx != -1 else spec
     idx = spec.find("@")
+    if idx != -1:
+        return spec[:idx]
+    # PyPI == pin (uvx my-mcp==1.2.3)
+    idx = spec.find("==")
     return spec[:idx] if idx != -1 else spec
 
 
@@ -114,11 +119,14 @@ def resolve_mcp_launch_dir(
         manifest_dir = src_path.parent
         if src_path.name == "plugin.json" and src_path.parent.name == ".claude-plugin":
             manifest_dir = src_path.parent.parent
-    for tok in tokens[1:]:
+    for tok in tokens:
         if tok.startswith("-"):
             continue
         # Only treat tokens that look like filesystem paths as candidates; a
-        # bare module name (`aiteam.mcp.server`) or subcommand is not a path.
+        # bare module name (`aiteam.mcp.server`), launcher name (`node`,
+        # `python`), or subcommand is not a path. Launcher names have no `/`
+        # and don't start with `.`, so this filter naturally skips them while
+        # still catching `{"command":"./server.js"}` with no args.
         if "/" not in tok and not tok.startswith("."):
             continue
         candidate = Path(tok) if tok.startswith("/") else (manifest_dir / tok)

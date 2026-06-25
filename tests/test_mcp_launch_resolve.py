@@ -15,6 +15,10 @@ def test_strip_launch_version():
     assert strip_launch_version("@scope/name") == "@scope/name"
     assert strip_launch_version("name@latest") == "name"
     assert strip_launch_version("name") == "name"
+    # PyPI == pins
+    assert strip_launch_version("my-mcp==1.2.3") == "my-mcp"
+    assert strip_launch_version("my-mcp[extra]==1.2.3") == "my-mcp[extra]"
+    assert strip_launch_version("my-mcp") == "my-mcp"
 
 
 def test_resolve_npx_name_match(tmp_path):
@@ -79,3 +83,20 @@ def test_resolve_local_path_outside_scan_root_is_none(tmp_path):
     outside = tmp_path.parent / "outside-server.js"
     ref = _mcp_ref(f"node {outside}", source_manifest=str(tmp_path / ".mcp.json"))
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_command_is_local_path(tmp_path):
+    # Finding 1: `{"command":"./server.js"}` with no args — the executable IS
+    # the path; tokens[0] must be tried, not skipped.
+    (tmp_path / "package.json").write_text('{"name":"x"}')
+    (tmp_path / "server.js").write_text("//")
+    ref = _mcp_ref("./server.js", source_manifest=str(tmp_path / ".mcp.json"))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+
+
+def test_resolve_uvx_pypi_pin_name_match(tmp_path):
+    # Finding 2: `uvx my-mcp==1.2.3` should strip the == pin and match.
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "my-mcp"\n')
+    idx = {"my-mcp": tmp_path}
+    ref = _mcp_ref("uvx my-mcp==1.2.3")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path

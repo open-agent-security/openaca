@@ -218,6 +218,30 @@ def test_endpoint_project_mcp_local_path_attaches_deps(tmp_path):
     assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
 
 
+def test_endpoint_project_mcp_name_match_uses_project_manifest(tmp_path):
+    # Finding 3: project_root package.json name must be in the name index so a
+    # project-scoped MCP declaring `npx @acme/server` resolves to local deps.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "package.json").write_text(
+        json.dumps({"name": "@acme/server", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    cdir = project_root / ".claude"
+    cdir.mkdir()
+    (cdir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"acme": {"command": "npx", "args": ["@acme/server"]}}})
+    )
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
+    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

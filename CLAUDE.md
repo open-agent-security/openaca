@@ -195,7 +195,8 @@ ready PR by default. Do not leave finished work uncommitted or only local unless
 the user explicitly asks. Use a draft PR only when the user asks for draft status
 or the work is intentionally incomplete / blocked and needs review before it can
 be ready. If the request did not clearly include publishing the work, confirm
-before pushing.
+before pushing. Even when pushing is authorized, confirm before opening a PR if
+the user did not explicitly ask for one.
 
 When you encounter an obstacle, don't use destructive actions as a
 shortcut to make it go away. Identify the root cause; fix the

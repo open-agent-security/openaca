@@ -140,3 +140,36 @@ resolved 14 active plugin(s):
 - `1` - scan completed and findings met or exceeded the `--fail-on` threshold.
 
 Use `openaca scan --help` for the complete generated option list.
+
+## Agent BOM commands
+
+Generate an Agent BOM for a repository:
+
+```bash
+openaca bom repo --target . --output openaca-agent-bom.json
+```
+
+Generate an Agent BOM from the local endpoint configuration:
+
+```bash
+openaca bom endpoint --output openaca-agent-bom.json
+```
+
+Compare two Agent BOMs without running advisory lookups:
+
+```bash
+openaca bom diff \
+    --before openaca-agent-bom.previous.json \
+    --after openaca-agent-bom.json
+```
+
+`openaca bom diff` compares component occurrences by `bom-ref` and reports
+added, removed, and changed components plus added and removed composition
+edges. Use JSON output for automation:
+
+```bash
+openaca bom diff \
+    --before openaca-agent-bom.previous.json \
+    --after openaca-agent-bom.json \
+    --format json
+```

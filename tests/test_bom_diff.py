@@ -58,6 +58,9 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "purl": None,
                 "git_commit_sha": None,
                 "artifact_coordinates": None,
+                "url": None,
+                "install_source": None,
+                "git_ref": None,
             }
         ],
         "removed_components": [
@@ -70,6 +73,9 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "purl": None,
                 "git_commit_sha": None,
                 "artifact_coordinates": None,
+                "url": None,
+                "install_source": None,
+                "git_ref": None,
             }
         ],
         "changed_components": [
@@ -83,12 +89,18 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "purl": None,
                     "git_commit_sha": None,
                     "artifact_coordinates": None,
+                    "url": None,
+                    "install_source": None,
+                    "git_ref": None,
                 },
                 "after": {
                     "version": "1.1.0",
                     "purl": None,
                     "git_commit_sha": None,
                     "artifact_coordinates": None,
+                    "url": None,
+                    "install_source": None,
+                    "git_ref": None,
                 },
             }
         ],
@@ -131,6 +143,9 @@ def _component(
     purl: str | None = None,
     git_commit_sha: str | None = None,
     artifact_coordinates: str | None = None,
+    url: str | None = None,
+    install_source: str | None = None,
+    git_ref: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -151,6 +166,12 @@ def _component(
         component["properties"].append(
             {"name": "openaca:artifact_coordinates", "value": artifact_coordinates}
         )
+    if url is not None:
+        component["properties"].append({"name": "openaca:url", "value": url})
+    if install_source is not None:
+        component["properties"].append({"name": "openaca:install_source", "value": install_source})
+    if git_ref is not None:
+        component["properties"].append({"name": "openaca:git_ref", "value": git_ref})
     return component
 
 
@@ -218,3 +239,77 @@ def test_diff_boms_detects_git_commit_sha_change():
     assert changed.after.git_commit_sha == "ddeeff445566"
     assert changed.to_json()["before"]["git_commit_sha"] == "aabbcc112233"
     assert changed.to_json()["after"]["git_commit_sha"] == "ddeeff445566"
+
+
+def test_diff_boms_detects_mcp_endpoint_change():
+    before = _bom(
+        components=[
+            _component(
+                "mcp/api",
+                "mcp/api",
+                "mcp_server",
+                url="https://old-host.example.com/mcp",
+                install_source="remote",
+                git_ref="main",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "mcp/api",
+                "mcp/api",
+                "mcp_server",
+                url="https://new-host.example.com/mcp",
+                install_source="remote",
+                git_ref="main",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.url == "https://old-host.example.com/mcp"
+    assert changed.after.url == "https://new-host.example.com/mcp"
+    assert changed.to_json()["before"]["url"] == "https://old-host.example.com/mcp"
+    assert changed.to_json()["after"]["url"] == "https://new-host.example.com/mcp"
+
+
+def test_diff_boms_detects_mcp_install_source_change():
+    before = _bom(
+        components=[
+            _component(
+                "mcp/local",
+                "mcp/local",
+                "mcp_server",
+                install_source="local",
+                git_ref="v1.0.0",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "mcp/local",
+                "mcp/local",
+                "mcp_server",
+                install_source="local",
+                git_ref="v2.0.0",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.git_ref == "v1.0.0"
+    assert changed.after.git_ref == "v2.0.0"
+    assert changed.to_json()["before"]["git_ref"] == "v1.0.0"
+    assert changed.to_json()["after"]["git_ref"] == "v2.0.0"

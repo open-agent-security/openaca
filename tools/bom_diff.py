@@ -18,6 +18,9 @@ class BomDiffComponent:
     purl: str | None
     git_commit_sha: str | None
     artifact_coordinates: str | None
+    url: str | None
+    install_source: str | None
+    git_ref: str | None
 
     def comparable(self) -> tuple[str | None, ...]:
         return (
@@ -28,6 +31,9 @@ class BomDiffComponent:
             self.purl,
             self.git_commit_sha,
             self.artifact_coordinates,
+            self.url,
+            self.install_source,
+            self.git_ref,
         )
 
     def to_json(self) -> JsonObject:
@@ -40,6 +46,9 @@ class BomDiffComponent:
             "purl": self.purl,
             "git_commit_sha": self.git_commit_sha,
             "artifact_coordinates": self.artifact_coordinates,
+            "url": self.url,
+            "install_source": self.install_source,
+            "git_ref": self.git_ref,
         }
 
 
@@ -59,12 +68,18 @@ class ChangedBomDiffComponent:
                 "purl": self.before.purl,
                 "git_commit_sha": self.before.git_commit_sha,
                 "artifact_coordinates": self.before.artifact_coordinates,
+                "url": self.before.url,
+                "install_source": self.before.install_source,
+                "git_ref": self.before.git_ref,
             },
             "after": {
                 "version": self.after.version,
                 "purl": self.after.purl,
                 "git_commit_sha": self.after.git_commit_sha,
                 "artifact_coordinates": self.after.artifact_coordinates,
+                "url": self.after.url,
+                "install_source": self.after.install_source,
+                "git_ref": self.after.git_ref,
             },
         }
 
@@ -141,6 +156,9 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             purl=_string_or_none(item.get("purl")),
             git_commit_sha=_property(item, "openaca:git_commit_sha"),
             artifact_coordinates=_property(item, "openaca:artifact_coordinates"),
+            url=_property(item, "openaca:url"),
+            install_source=_property(item, "openaca:install_source"),
+            git_ref=_property(item, "openaca:git_ref"),
         )
     return result
 

@@ -337,9 +337,7 @@ def test_mcp_remote_url_does_not_surface_root_deps(tmp_path):
     only to a resolvable launch, not to "the repo has a component"."""
     from tools.scan import main as scan_main
 
-    target = _write_subdir_plugin_with_root_pkg(
-        tmp_path, {"url": "https://mcp.example.com/mcp"}
-    )
+    target = _write_subdir_plugin_with_root_pkg(tmp_path, {"url": "https://mcp.example.com/mcp"})
     result = CliRunner().invoke(scan_main, ["repo", "--target", str(target), "--no-color"])
     assert result.exit_code == 0, result.output
     assert "GHSA-3q26-f695-pp76" not in result.output

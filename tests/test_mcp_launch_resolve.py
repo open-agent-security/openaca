@@ -1,4 +1,3 @@
-
 from tools.component_ref import ComponentRef
 from tools.mcp_launch_resolve import resolve_mcp_launch_dir, strip_launch_version
 

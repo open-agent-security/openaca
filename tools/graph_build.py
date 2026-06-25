@@ -912,9 +912,10 @@ def build_manifest_name_index(
                 continue
         else:
             continue
-        key = (ecosystem_key, name)
-        if isinstance(name, str) and name and key not in index:
-            index[key] = path.parent.resolve()
+        if isinstance(name, str) and name:
+            key = (ecosystem_key, name)
+            if key not in index:
+                index[key] = path.parent.resolve()
     return index
 
 

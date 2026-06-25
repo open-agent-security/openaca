@@ -64,6 +64,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "transport": None,
                 "source_provenance": None,
                 "match_coordinate": None,
+                "scope": None,
             }
         ],
         "removed_components": [
@@ -82,6 +83,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "transport": None,
                 "source_provenance": None,
                 "match_coordinate": None,
+                "scope": None,
             }
         ],
         "changed_components": [
@@ -101,6 +103,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "transport": None,
                     "source_provenance": None,
                     "match_coordinate": None,
+                    "scope": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -113,6 +116,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "transport": None,
                     "source_provenance": None,
                     "match_coordinate": None,
+                    "scope": None,
                 },
             }
         ],
@@ -161,6 +165,7 @@ def _component(
     transport: str | None = None,
     source_provenance: str | None = None,
     match_coordinate: str | None = None,
+    scope: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -197,6 +202,8 @@ def _component(
         component["properties"].append(
             {"name": "openaca:match_coordinate", "value": match_coordinate}
         )
+    if scope is not None:
+        component["properties"].append({"name": "openaca:scope", "value": scope})
     return component
 
 
@@ -442,3 +449,37 @@ def test_diff_boms_detects_match_coordinate_change():
     assert changed.after.match_coordinate == "github:acme/audit-mcp@v2.0.0"
     assert changed.to_json()["before"]["match_coordinate"] == "github:acme/audit-mcp@v1.0.0"
     assert changed.to_json()["after"]["match_coordinate"] == "github:acme/audit-mcp@v2.0.0"
+
+
+def test_diff_boms_detects_scope_change():
+    before = _bom(
+        components=[
+            _component(
+                "pkg/npm/mcp-remote",
+                "pkg/npm/mcp-remote",
+                "package",
+                scope="software-dependency",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "pkg/npm/mcp-remote",
+                "pkg/npm/mcp-remote",
+                "package",
+                scope="agent-dependency",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.scope == "software-dependency"
+    assert changed.after.scope == "agent-dependency"
+    assert changed.to_json()["before"]["scope"] == "software-dependency"
+    assert changed.to_json()["after"]["scope"] == "agent-dependency"

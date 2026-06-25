@@ -190,6 +190,12 @@ shared-state, or visible-to-others — confirm first:
 - Uploading to third-party tools (diagram renderers, pastebins,
   gists) — the content gets indexed/cached even if later deleted.
 
+After making requested repo changes, commit them, push the branch, and open a
+ready PR by default. Do not leave finished work uncommitted or only local unless
+the user explicitly asks. Use a draft PR only when the user asks for draft status
+or the work is intentionally incomplete / blocked and needs review before it can
+be ready.
+
 When you encounter an obstacle, don't use destructive actions as a
 shortcut to make it go away. Identify the root cause; fix the
 underlying issue rather than bypassing safety checks (e.g.,

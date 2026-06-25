@@ -2,7 +2,80 @@ import json
 import os
 from pathlib import Path
 
-from tools.graph_build import build_graph
+from tools.graph_build import build_graph, build_manifest_name_index
+
+
+def test_manifest_name_index(tmp_path):
+    (tmp_path / "pkg-a").mkdir()
+    (tmp_path / "pkg-b").mkdir()
+    (tmp_path / "pkg-a" / "package.json").write_text('{"name": "@x/a"}')
+    (tmp_path / "pkg-b" / "pyproject.toml").write_text('[project]\nname = "b-tool"\n')
+    idx = build_manifest_name_index(tmp_path)
+    assert idx["@x/a"] == (tmp_path / "pkg-a").resolve()
+    assert idx["b-tool"] == (tmp_path / "pkg-b").resolve()
+
+
+def _find_packages(g):
+    return [n for n in g.nodes.values() if n.kind == "package"]
+
+
+def test_mcp_npx_self_launch_reparents_root_deps(tmp_path):
+    # DesktopCommander shape: a subdir plugin declares an MCP server launched via
+    # `npx <root-package-name>`; the root package.json declares the deps. After
+    # ADR-0039 resolution those deps hang off the mcp_server node (re-parented
+    # from target), are agent-dependency, and the single-parent invariant holds.
+    plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    plugin_dir.joinpath("plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "desktop-commander",
+                "mcpServers": {
+                    "desktop-commander": {
+                        "command": "npx",
+                        "args": ["-y", "@acme/desktop-commander@latest"],
+                    }
+                },
+            }
+        )
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "@acme/desktop-commander",
+                "version": "1.0.0",
+                "dependencies": {"left-pad": "1.0.0"},
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    g.validate()  # no double-parent
+    pkgs = [n for n in _find_packages(g) if n.ref and n.ref.name == "left-pad"]
+    assert pkgs, "root dep should be present"
+    parent_of = g._parent_of()
+    for pkg in pkgs:
+        assert g.nodes[parent_of[pkg.key]].kind == "mcp_server"
+        assert g.scope_of(pkg) == "agent-dependency"
+
+
+def test_mcp_remote_url_attaches_no_deps(tmp_path):
+    plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    plugin_dir.joinpath("plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "remote-thing",
+                "mcpServers": {"remote-thing": {"url": "https://mcp.example.com/mcp"}},
+            }
+        )
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps({"name": "@acme/whatever", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    g.validate()
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert g.children_of(mcp) == []
 
 
 def test_bare_repo_package_is_software_dependency(tmp_path):

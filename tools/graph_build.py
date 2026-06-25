@@ -17,6 +17,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
+import tomllib
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -26,6 +27,7 @@ from pathspec import GitIgnoreSpec
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
+from tools.mcp_launch_resolve import resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
     claude_command_agent,
@@ -211,8 +213,15 @@ def build_graph(
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
     normalize = _make_normalizer(mode, Path(target), Path(target), project_root)
+    # ADR-0039 launch resolution context, set per-branch below.
+    attach_root_dir: Path | None = None
+    attach_root_spec: GitIgnoreSpec | None = None
+    attach_include_gitignored = include_gitignored
     if mode == "endpoint":
         _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=warnings)
+        # Endpoint has no single repo root; installed artifacts are not
+        # gitignore-filtered (parity with the descent's root_dir=None behavior).
+        attach_include_gitignored = True
     else:
         # Repo mode honors the SCAN-ROOT `.gitignore` everywhere, matching
         # parse_repo_grouped: load the root spec ONCE and evaluate every
@@ -230,6 +239,20 @@ def build_graph(
             root_dir=root_dir,
             root_spec=root_spec,
         )
+        attach_root_dir = root_dir
+        attach_root_spec = root_spec
+    name_index = build_manifest_name_index(
+        Path(target), include_gitignored=attach_include_gitignored
+    )
+    _attach_mcp_launch_deps(
+        graph,
+        Path(target),
+        normalize,
+        name_index,
+        include_gitignored=attach_include_gitignored,
+        root_dir=attach_root_dir,
+        root_spec=attach_root_spec,
+    )
     graph.validate()
     return graph
 
@@ -745,6 +768,97 @@ def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> 
         seen.add(resolved)
         roots.append(root)
     return sorted(roots)
+
+
+def _attach_mcp_launch_deps(
+    graph: Graph,
+    scan_root: Path,
+    normalize: SourceNormalizer,
+    name_index: dict[str, Path],
+    *,
+    include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
+    """ADR-0039: make `mcp_server` non-leaf. For each MCP node, resolve its
+    launch target to a dependency-manifest dir and attach that dir's deps as
+    `package` children. The resolved deps become `agent-dependency` via the
+    existing `scope_of` (the `mcp_server` is in their lineage).
+
+    Single-parent invariant: the resolved dir's deps may already be parented to
+    `target` (the repo-root walk emitted them as software-dependency). For those,
+    the MCP claims them — the stale `target` edge is dropped. If a dep is already
+    owned by another agent component (e.g. its bundling plugin, or a different MCP
+    that resolved the same dir first), that owner wins and this MCP's just-added
+    edge is dropped instead. Deterministic node order makes "first claim" stable.
+    """
+    mcp_nodes = sorted(
+        (n for n in graph.nodes.values() if n.kind == "mcp_server"), key=lambda n: n.key
+    )
+    for mcp in mcp_nodes:
+        if mcp.ref is None:
+            continue
+        resolved = resolve_mcp_launch_dir(mcp.ref, scan_root=scan_root, name_index=name_index)
+        if resolved is None:
+            continue
+        before = {e.child for e in graph.edges if e.parent == mcp.key}
+        _add_dep_manifest_packages(
+            graph,
+            mcp,
+            resolved,
+            normalize,
+            include_gitignored=include_gitignored,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
+        new_children = {e.child for e in graph.edges if e.parent == mcp.key} - before
+        for child_key in new_children:
+            other_parents = {
+                e.parent for e in graph.edges if e.child == child_key and e.parent != mcp.key
+            }
+            agent_owner = any(graph.nodes[pk].kind in Graph._AGENT_KINDS for pk in other_parents)
+            if agent_owner:
+                # Another agent component already owns this dep: don't steal it.
+                graph.edges = [
+                    e for e in graph.edges if not (e.child == child_key and e.parent == mcp.key)
+                ]
+            else:
+                # MCP claims it from `target` (or it is freshly attached).
+                graph.edges = [
+                    e for e in graph.edges if e.child != child_key or e.parent == mcp.key
+                ]
+
+
+def build_manifest_name_index(
+    scan_root: Path, *, include_gitignored: bool = False
+) -> dict[str, Path]:
+    """Map each local package manifest's declared `name` → its directory.
+
+    Used by ADR-0039 MCP launch resolution (strategy 1): an `npx`/`uvx <pkg>`
+    launch resolves to a local dir when `<pkg>` matches a manifest `name` here
+    (the repo *is* the package). npm `package.json` and PyPI `pyproject.toml`
+    `[project].name` are indexed; first occurrence of a name wins. The walk is
+    gitignore-aware (skips `node_modules/`, `.git/`, etc.) like the others.
+    """
+    spec = None if include_gitignored else load_gitignore_spec(scan_root)
+    index: dict[str, Path] = {}
+    for path in iter_unignored_files(scan_root, spec):
+        name: object = None
+        if path.name == "package.json":
+            try:
+                name = json.loads(path.read_text()).get("name")
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError, AttributeError):
+                continue
+        elif path.name == "pyproject.toml":
+            try:
+                name = tomllib.loads(path.read_text()).get("project", {}).get("name")
+            except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError, AttributeError):
+                continue
+        else:
+            continue
+        if isinstance(name, str) and name and name not in index:
+            index[name] = path.parent.resolve()
+    return index
 
 
 def _descend_into_plugin(

@@ -217,4 +217,9 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         lines.append(f"    version: {component.before.version} -> {component.after.version}")
     if component.before.purl != component.after.purl:
         lines.append(f"    purl: {component.before.purl} -> {component.after.purl}")
+    if component.before.git_commit_sha != component.after.git_commit_sha:
+        lines.append(
+            f"    git_commit_sha: {component.before.git_commit_sha}"
+            f" -> {component.after.git_commit_sha}"
+        )
     return lines

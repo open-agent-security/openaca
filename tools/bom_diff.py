@@ -16,9 +16,17 @@ class BomDiffComponent:
     name: str | None
     version: str | None
     purl: str | None
+    git_commit_sha: str | None
 
-    def comparable(self) -> tuple[str | None, str | None, str | None, str | None, str | None]:
-        return (self.identity, self.component_type, self.name, self.version, self.purl)
+    def comparable(self) -> tuple[str | None, ...]:
+        return (
+            self.identity,
+            self.component_type,
+            self.name,
+            self.version,
+            self.purl,
+            self.git_commit_sha,
+        )
 
     def to_json(self) -> JsonObject:
         return {
@@ -28,6 +36,7 @@ class BomDiffComponent:
             "name": self.name,
             "version": self.version,
             "purl": self.purl,
+            "git_commit_sha": self.git_commit_sha,
         }
 
 
@@ -42,8 +51,16 @@ class ChangedBomDiffComponent:
             "identity": self.after.identity,
             "component_type": self.after.component_type,
             "name": self.after.name,
-            "before": {"version": self.before.version, "purl": self.before.purl},
-            "after": {"version": self.after.version, "purl": self.after.purl},
+            "before": {
+                "version": self.before.version,
+                "purl": self.before.purl,
+                "git_commit_sha": self.before.git_commit_sha,
+            },
+            "after": {
+                "version": self.after.version,
+                "purl": self.after.purl,
+                "git_commit_sha": self.after.git_commit_sha,
+            },
         }
 
 
@@ -117,6 +134,7 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             name=_string_or_none(item.get("name")),
             version=_string_or_none(item.get("version")),
             purl=_string_or_none(item.get("purl")),
+            git_commit_sha=_property(item, "openaca:git_commit_sha"),
         )
     return result
 

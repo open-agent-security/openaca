@@ -54,6 +54,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "name": "mcp-server/new",
                 "version": None,
                 "purl": None,
+                "git_commit_sha": None,
             }
         ],
         "removed_components": [
@@ -64,6 +65,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "name": "mcp-server/old",
                 "version": None,
                 "purl": None,
+                "git_commit_sha": None,
             }
         ],
         "changed_components": [
@@ -72,8 +74,8 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "identity": "plugin/demo",
                 "component_type": "plugin",
                 "name": "plugin/demo",
-                "before": {"version": "1.0.0", "purl": None},
-                "after": {"version": "1.1.0", "purl": None},
+                "before": {"version": "1.0.0", "purl": None, "git_commit_sha": None},
+                "after": {"version": "1.1.0", "purl": None, "git_commit_sha": None},
             }
         ],
         "added_edges": [
@@ -113,8 +115,9 @@ def _component(
     *,
     version: str | None = None,
     purl: str | None = None,
+    git_commit_sha: str | None = None,
 ) -> dict:
-    component = {
+    component: dict = {
         "type": "application",
         "bom-ref": bom_ref,
         "name": identity,
@@ -127,4 +130,40 @@ def _component(
         component["version"] = version
     if purl is not None:
         component["purl"] = purl
+    if git_commit_sha is not None:
+        component["properties"].append({"name": "openaca:git_commit_sha", "value": git_commit_sha})
     return component
+
+
+def test_diff_boms_detects_git_commit_sha_change():
+    before = _bom(
+        components=[
+            _component(
+                "plugin/local",
+                "plugin/local",
+                "plugin",
+                git_commit_sha="aabbcc112233",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "plugin/local",
+                "plugin/local",
+                "plugin",
+                git_commit_sha="ddeeff445566",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.git_commit_sha == "aabbcc112233"
+    assert changed.after.git_commit_sha == "ddeeff445566"
+    assert changed.to_json()["before"]["git_commit_sha"] == "aabbcc112233"
+    assert changed.to_json()["after"]["git_commit_sha"] == "ddeeff445566"

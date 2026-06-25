@@ -63,6 +63,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "git_ref": None,
                 "transport": None,
                 "source_provenance": None,
+                "match_coordinate": None,
             }
         ],
         "removed_components": [
@@ -80,6 +81,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "git_ref": None,
                 "transport": None,
                 "source_provenance": None,
+                "match_coordinate": None,
             }
         ],
         "changed_components": [
@@ -98,6 +100,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "git_ref": None,
                     "transport": None,
                     "source_provenance": None,
+                    "match_coordinate": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -109,6 +112,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "git_ref": None,
                     "transport": None,
                     "source_provenance": None,
+                    "match_coordinate": None,
                 },
             }
         ],
@@ -156,6 +160,7 @@ def _component(
     git_ref: str | None = None,
     transport: str | None = None,
     source_provenance: str | None = None,
+    match_coordinate: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -187,6 +192,10 @@ def _component(
     if source_provenance is not None:
         component["properties"].append(
             {"name": "openaca:source_provenance", "value": source_provenance}
+        )
+    if match_coordinate is not None:
+        component["properties"].append(
+            {"name": "openaca:match_coordinate", "value": match_coordinate}
         )
     return component
 
@@ -399,3 +408,37 @@ def test_diff_boms_detects_source_provenance_change():
     assert changed.after.source_provenance == new_prov
     assert changed.to_json()["before"]["source_provenance"] == old_prov
     assert changed.to_json()["after"]["source_provenance"] == new_prov
+
+
+def test_diff_boms_detects_match_coordinate_change():
+    before = _bom(
+        components=[
+            _component(
+                "mcp/audit",
+                "mcp/audit",
+                "mcp_server",
+                match_coordinate="github:acme/audit-mcp@v1.0.0",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "mcp/audit",
+                "mcp/audit",
+                "mcp_server",
+                match_coordinate="github:acme/audit-mcp@v2.0.0",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.match_coordinate == "github:acme/audit-mcp@v1.0.0"
+    assert changed.after.match_coordinate == "github:acme/audit-mcp@v2.0.0"
+    assert changed.to_json()["before"]["match_coordinate"] == "github:acme/audit-mcp@v1.0.0"
+    assert changed.to_json()["after"]["match_coordinate"] == "github:acme/audit-mcp@v2.0.0"

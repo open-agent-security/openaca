@@ -241,6 +241,11 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         before_prov = _extract_provenance_label(component.before.source_provenance)
         after_prov = _extract_provenance_label(component.after.source_provenance)
         lines.append(f"    source_provenance: {before_prov} -> {after_prov}")
+    if component.before.match_coordinate != component.after.match_coordinate:
+        lines.append(
+            f"    match_coordinate: {component.before.match_coordinate}"
+            f" -> {component.after.match_coordinate}"
+        )
     return lines
 
 

@@ -23,6 +23,7 @@ class BomDiffComponent:
     git_ref: str | None
     transport: str | None
     source_provenance: str | None
+    match_coordinate: str | None
 
     def comparable(self) -> tuple[str | None, ...]:
         return (
@@ -38,6 +39,7 @@ class BomDiffComponent:
             self.git_ref,
             self.transport,
             self.source_provenance,
+            self.match_coordinate,
         )
 
     def to_json(self) -> JsonObject:
@@ -55,6 +57,7 @@ class BomDiffComponent:
             "git_ref": self.git_ref,
             "transport": self.transport,
             "source_provenance": self.source_provenance,
+            "match_coordinate": self.match_coordinate,
         }
 
 
@@ -79,6 +82,7 @@ class ChangedBomDiffComponent:
                 "git_ref": self.before.git_ref,
                 "transport": self.before.transport,
                 "source_provenance": self.before.source_provenance,
+                "match_coordinate": self.before.match_coordinate,
             },
             "after": {
                 "version": self.after.version,
@@ -90,6 +94,7 @@ class ChangedBomDiffComponent:
                 "git_ref": self.after.git_ref,
                 "transport": self.after.transport,
                 "source_provenance": self.after.source_provenance,
+                "match_coordinate": self.after.match_coordinate,
             },
         }
 
@@ -171,6 +176,7 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             git_ref=_property(item, "openaca:git_ref"),
             transport=_property(item, "openaca:transport"),
             source_provenance=_property(item, "openaca:source_provenance"),
+            match_coordinate=_property(item, "openaca:match_coordinate"),
         )
     return result
 

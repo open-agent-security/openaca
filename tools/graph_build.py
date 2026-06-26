@@ -896,15 +896,17 @@ def build_manifest_name_index(
             rel_dir_parts = path.parts[:-1]
         if any(p in _NAME_INDEX_DEP_DIRS for p in rel_dir_parts):
             continue
-        # Skip the installed-plugin cache subtree (endpoint `install_root` holds
-        # `plugins/cache/<plugin>/...`). A direct/external `npx <pkg>` launch must
-        # not name-match an unrelated installed plugin there and attach its deps —
-        # a false-advisory source (ADR-0039 endpoint review). Installed plugins'
-        # own deps are attached via the plugin descent, never this index.
+        # Skip installed-plugin cache subtrees so a direct/external `npx <pkg>`
+        # launch can't name-match an unrelated cached plugin and attach its deps.
+        # Installed plugins' own deps are attributed via the plugin descent path,
+        # never this index (ADR-0039 endpoint review).
+        # Two layouts observed in endpoint installs:
+        #   `plugins/cache/<plugin>/...`  — Claude internal plugin cache dir
+        #   `cache/<plugin>/<version>/...` — actual installPath from installed_plugins.json
         if any(
             rel_dir_parts[i] == "plugins" and rel_dir_parts[i + 1] == "cache"
             for i in range(len(rel_dir_parts) - 1)
-        ):
+        ) or (rel_dir_parts and rel_dir_parts[0] == "cache"):
             continue
         name: object = None
         ecosystem_key: str = ""

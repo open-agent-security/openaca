@@ -134,12 +134,12 @@ def mcp_package_source(install_source: object) -> tuple[str, str, str] | None:
     if len(tokens) < 2:
         return None
     launcher, args = launcher_and_args(tokens)
-    if launcher not in ("npx", "uvx") or not args:
+    if launcher not in ("npx", "uvx", "bunx") or not args:
         return None
     package = _extract_mcp_package_from_args(launcher, args)
     if package is None:
         return None
-    ecosystem = "npm" if launcher == "npx" else "PyPI"
+    ecosystem = "npm" if launcher in ("npx", "bunx") else "PyPI"
     return launcher, ecosystem, package
 
 

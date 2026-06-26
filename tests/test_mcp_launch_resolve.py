@@ -227,6 +227,28 @@ def test_resolve_external_npx_with_config_path_arg_is_none(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
 
 
+def test_resolve_bunx_name_match(tmp_path):
+    # ADR-0039 Phase 1 explicitly lists bunx alongside npx/uvx. A bunx launch
+    # of a locally-present npm package must resolve to that package's dir.
+    idx = {("npm", "@acme/server"): tmp_path.resolve()}
+    ref = _mcp_ref("bunx @acme/server")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
+
+
+def test_resolve_bunx_name_match_with_version(tmp_path):
+    # bunx @acme/server@1.0.0 — strip_launch_version handles npm @ pins.
+    idx = {("npm", "@acme/server"): tmp_path.resolve()}
+    ref = _mcp_ref("bunx @acme/server@1.0.0")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
+
+
+def test_resolve_external_bunx_is_none(tmp_path):
+    # An external bunx package not present locally must resolve to None
+    # (same policy as external npx: only local manifest name-matches resolve).
+    ref = _mcp_ref("bunx @external/server")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
 def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
     # P2 (ecosystem key): `npx foo` must not match a PyPI `pyproject.toml` named
     # `foo`, and `uvx foo` must not match an npm `package.json` named `foo`.

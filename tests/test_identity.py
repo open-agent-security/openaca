@@ -160,6 +160,11 @@ def test_safe_unpinned_install_source_uses_install_source():
     )
 
 
+def test_mcp_package_source_bunx_maps_to_npm():
+    assert mcp_package_source("bunx @acme/server") == ("bunx", "npm", "@acme/server")
+    assert mcp_package_source("bunx @acme/server@1.0.0") == ("bunx", "npm", "@acme/server@1.0.0")
+
+
 def test_binary_or_local_mcp_install_source_is_not_a_package_source():
     assert mcp_package_source("python server.py --token secret") is None
     assert mcp_package_source("/usr/local/bin/server --token secret") is None

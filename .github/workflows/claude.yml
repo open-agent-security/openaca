@@ -113,7 +113,7 @@ jobs:
           additional_permissions: |
             actions: read
 
-          # Tools available to the bot, in two groups:
+          # Tools available to the bot, in three groups:
           #
           # 1. Dev-loop gates (ruff/pyright/pytest) — without these Claude can
           #    commit format-broken code but the wrapped `git push` hook fails
@@ -126,6 +126,16 @@ jobs:
           #    in-repo files; on review disputes about third-party formats/APIs
           #    it would confidently defend self-referential ADRs/tests it cannot
           #    falsify (see PRs #97/#98).
+          #
+          # 3. Push (`Bash(git push:*)`) — the bot's sanctioned push path is
+          #    claude-code-action's git-push.sh wrapper, but it occasionally
+          #    falls back to raw `git push`; without this the fallback is denied
+          #    and the bot commits without pushing (PR #141 stalled this way).
+          #    main is branch-protected (require-PR, no force-push), so this
+          #    reaches only PR branches, never main. The `:*` also matches
+          #    `git push --no-verify` (skips the pre-push gate); accepted because
+          #    ci.yml re-runs the same gate on every PR push, so a bypassed push
+          #    still goes red in CI — a PR-branch quality lapse, not a main risk.
           #
           # DELIBERATELY read-only. We do NOT grant `Bash(python:*)`/`Bash(curl:*)`
           # (arbitrary code execution + network). This job runs with a write

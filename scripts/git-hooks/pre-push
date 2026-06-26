@@ -24,6 +24,17 @@ fail() {
   exit 1
 }
 
+# Block pushes to local-path remotes. git's --receive-pack flag selects the
+# program that receives the pack on the "remote" side; for a local path that
+# program executes on this machine, so --receive-pack='sh -c PAYLOAD' becomes
+# arbitrary local code execution. For genuine remote pushes (e.g. origin →
+# GitHub) the receive-pack runs on the server, which the server controls.
+case "${2:-}" in
+  .|./*|/*|file://*)
+    fail "Pushes to local paths are not permitted. Push to a named remote instead."
+    ;;
+esac
+
 # Read pushed refs from stdin once. Pure deletions (local_sha is zero-SHA)
 # skip the check — there's no code to validate.
 pushed_any=0

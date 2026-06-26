@@ -105,6 +105,15 @@ def test_resolve_uvx_pypi_pin_name_match(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
 
+def test_resolve_uvx_pypi_name_match_normalizes_equivalent_names(tmp_path):
+    # PyPI names compare using normalized names: lowercase and collapse runs of
+    # `.`, `_`, and `-`. A launch spelling with underscores must match a local
+    # pyproject name with hyphens.
+    idx = {("PyPI", "my-mcp"): tmp_path}
+    ref = _mcp_ref("uvx My_MCP")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
 def test_resolve_name_match_outside_scan_root_is_none(tmp_path):
     # Codex Finding 1: in endpoint mode the name_index merges install_root and
     # project_root. A name hit outside the effective scan_root must not be

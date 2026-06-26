@@ -19,6 +19,7 @@ Phase 1 strategies (on-disk package-manager cache resolution is Phase 2):
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,11 @@ _LAUNCHER_VALUE_FLAGS: dict[str, frozenset[str]] = {
     "python": frozenset({"-c"}),
     "python3": frozenset({"-c"}),
 }
+
+
+def normalize_pypi_name(name: str) -> str:
+    """Return the canonical comparison form for Python package names."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def strip_launch_version(spec: str) -> str:
@@ -128,7 +134,10 @@ def resolve_mcp_launch_dir(
     pkg_source = identity.mcp_package_source(normalized)
     if pkg_source is not None:
         _launcher, _ecosystem, package = pkg_source
-        matched = name_index.get((_ecosystem, strip_launch_version(package)))
+        package_name = strip_launch_version(package)
+        if _ecosystem == "PyPI":
+            package_name = normalize_pypi_name(package_name)
+        matched = name_index.get((_ecosystem, package_name))
         if matched is not None:
             # Guard: in endpoint mode the name_index merges install_root and
             # project_root entries. When scan_root=project_root (a project-scoped

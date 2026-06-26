@@ -27,7 +27,7 @@ from pathspec import GitIgnoreSpec
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
-from tools.mcp_launch_resolve import resolve_mcp_launch_dir
+from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
     claude_command_agent,
@@ -913,6 +913,8 @@ def build_manifest_name_index(
         else:
             continue
         if isinstance(name, str) and name:
+            if ecosystem_key == "PyPI":
+                name = normalize_pypi_name(name)
             key = (ecosystem_key, name)
             if key not in index:
                 index[key] = path.parent.resolve()

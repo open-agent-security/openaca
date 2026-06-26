@@ -15,6 +15,13 @@ def test_manifest_name_index(tmp_path):
     assert idx[("PyPI", "b-tool")] == (tmp_path / "pkg-b").resolve()
 
 
+def test_manifest_name_index_normalizes_pypi_names(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "pyproject.toml").write_text('[project]\nname = "My_MCP.tool"\n')
+    idx = build_manifest_name_index(tmp_path)
+    assert idx[("PyPI", "my-mcp-tool")] == (tmp_path / "pkg").resolve()
+
+
 def _find_packages(g):
     return [n for n in g.nodes.values() if n.kind == "package"]
 

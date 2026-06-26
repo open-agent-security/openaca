@@ -2,87 +2,7 @@ import json
 import os
 from pathlib import Path
 
-from tools.graph_build import build_graph, build_manifest_name_index
-
-
-def test_manifest_name_index(tmp_path):
-    (tmp_path / "pkg-a").mkdir()
-    (tmp_path / "pkg-b").mkdir()
-    (tmp_path / "pkg-a" / "package.json").write_text('{"name": "@x/a"}')
-    (tmp_path / "pkg-b" / "pyproject.toml").write_text('[project]\nname = "b-tool"\n')
-    idx = build_manifest_name_index(tmp_path)
-    assert idx[("npm", "@x/a")] == (tmp_path / "pkg-a").resolve()
-    assert idx[("PyPI", "b-tool")] == (tmp_path / "pkg-b").resolve()
-
-
-def test_manifest_name_index_normalizes_pypi_names(tmp_path):
-    (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "pyproject.toml").write_text('[project]\nname = "My_MCP.tool"\n')
-    idx = build_manifest_name_index(tmp_path)
-    assert idx[("PyPI", "my-mcp-tool")] == (tmp_path / "pkg").resolve()
-
-
-def _find_packages(g):
-    return [n for n in g.nodes.values() if n.kind == "package"]
-
-
-def test_mcp_npx_self_launch_reparents_root_deps(tmp_path):
-    # DesktopCommander shape: a subdir plugin declares an MCP server launched via
-    # `npx <root-package-name>`; the root package.json declares the deps. After
-    # ADR-0039 resolution those deps hang off the mcp_server node (re-parented
-    # from target), are agent-dependency, and the single-parent invariant holds.
-    plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
-    plugin_dir.mkdir(parents=True)
-    plugin_dir.joinpath("plugin.json").write_text(
-        json.dumps(
-            {
-                "name": "desktop-commander",
-                "mcpServers": {
-                    "desktop-commander": {
-                        "command": "npx",
-                        "args": ["-y", "@acme/desktop-commander@latest"],
-                    }
-                },
-            }
-        )
-    )
-    (tmp_path / "package.json").write_text(
-        json.dumps(
-            {
-                "name": "@acme/desktop-commander",
-                "version": "1.0.0",
-                "dependencies": {"left-pad": "1.0.0"},
-            }
-        )
-    )
-    g = build_graph(tmp_path, mode="repo")
-    g.validate()  # no double-parent
-    pkgs = [n for n in _find_packages(g) if n.ref and n.ref.name == "left-pad"]
-    assert pkgs, "root dep should be present"
-    parent_of = g._parent_of()
-    for pkg in pkgs:
-        assert g.nodes[parent_of[pkg.key]].kind == "mcp_server"
-        assert g.scope_of(pkg) == "agent-dependency"
-
-
-def test_mcp_remote_url_attaches_no_deps(tmp_path):
-    plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
-    plugin_dir.mkdir(parents=True)
-    plugin_dir.joinpath("plugin.json").write_text(
-        json.dumps(
-            {
-                "name": "remote-thing",
-                "mcpServers": {"remote-thing": {"url": "https://mcp.example.com/mcp"}},
-            }
-        )
-    )
-    (tmp_path / "package.json").write_text(
-        json.dumps({"name": "@acme/whatever", "dependencies": {"left-pad": "1.0.0"}})
-    )
-    g = build_graph(tmp_path, mode="repo")
-    g.validate()
-    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
-    assert g.children_of(mcp) == []
+from tools.graph_build import build_graph
 
 
 def test_bare_repo_package_is_software_dependency(tmp_path):
@@ -197,79 +117,6 @@ def test_endpoint_remote_mcp_is_direct_child_of_target(tmp_path):
     g = build_graph(install_root, mode="endpoint", project_root=project_root)
     mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
-
-
-def test_endpoint_project_mcp_local_path_attaches_deps(tmp_path):
-    # Fix 3 (ADR-0039): a project-scope MCP with a local-path launch resolves
-    # under project_root, not install_root, so its deps attach under the MCP node.
-    install_root = tmp_path / "claude"
-    install_root.mkdir()
-    (install_root / "settings.json").write_text("{}")
-    project_root = tmp_path / "project"
-    cdir = project_root / ".claude"
-    cdir.mkdir(parents=True)
-    (cdir / "settings.json").write_text(
-        json.dumps(
-            {"mcpServers": {"local-mcp": {"command": "node", "args": ["./server/index.js"]}}}
-        )
-    )
-    (cdir / "server").mkdir()
-    (cdir / "server" / "index.js").write_text("//")
-    (cdir / "package.json").write_text(
-        json.dumps({"name": "proj", "dependencies": {"left-pad": "1.0.0"}})
-    )
-    g = build_graph(install_root, mode="endpoint", project_root=project_root)
-    g.validate()
-    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
-    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
-    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
-
-
-def test_endpoint_project_mcp_name_match_uses_project_manifest(tmp_path):
-    # Finding 3: project_root package.json name must be in the name index so a
-    # project-scoped MCP declaring `npx @acme/server` resolves to local deps.
-    install_root = tmp_path / "claude"
-    install_root.mkdir()
-    (install_root / "settings.json").write_text("{}")
-
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    (project_root / "package.json").write_text(
-        json.dumps({"name": "@acme/server", "dependencies": {"left-pad": "1.0.0"}})
-    )
-    cdir = project_root / ".claude"
-    cdir.mkdir()
-    (cdir / "settings.json").write_text(
-        json.dumps({"mcpServers": {"acme": {"command": "npx", "args": ["@acme/server"]}}})
-    )
-    g = build_graph(install_root, mode="endpoint", project_root=project_root)
-    g.validate()
-    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
-    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
-    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
-
-
-def test_endpoint_direct_mcp_does_not_match_cached_plugin_manifest(tmp_path):
-    # ADR-0039 endpoint review: a direct/external settings `npx @external/mcp`
-    # must NOT name-match an unrelated installed plugin under plugins/cache/ with
-    # the same name and attach its deps (false advisories). The cache subtree is
-    # excluded from the name index.
-    install_root = tmp_path / "claude"
-    (install_root / "plugins" / "cache" / "some-plugin" / "1.0.0").mkdir(parents=True)
-    (install_root / "settings.json").write_text(
-        json.dumps(
-            {"mcpServers": {"ext": {"command": "npx", "args": ["-y", "@external/mcp@latest"]}}}
-        )
-    )
-    (install_root / "plugins" / "cache" / "some-plugin" / "1.0.0" / "package.json").write_text(
-        json.dumps({"name": "@external/mcp", "dependencies": {"left-pad": "1.0.0"}})
-    )
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    g = build_graph(install_root, mode="endpoint", project_root=project_root)
-    g.validate()
-    ext = next(n for n in g.nodes.values() if n.kind == "mcp_server")
-    assert [c for c in g.children_of(ext) if c.kind == "package"] == []
 
 
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
@@ -1652,18 +1499,3 @@ def test_plugin_bundled_skill_does_not_look_up_skills_lock(tmp_path):
     skill = next(n for n in g.nodes.values() if n.kind == "skill")
     assert skill.ref is not None
     assert (skill.ref.extra or {}).get("source_provenance") is None
-
-
-def test_manifest_name_index_skips_node_modules(tmp_path):
-    # Finding 1: in endpoint mode include_gitignored=True causes the walk to
-    # descend into node_modules/. The index must never return those entries so
-    # an external `npx <pkg>` cannot resolve to an installed copy and be
-    # mis-attributed as a local self-launch.
-    node_mod = tmp_path / "node_modules" / "some-dep"
-    node_mod.mkdir(parents=True)
-    (node_mod / "package.json").write_text('{"name": "some-dep"}')
-    # Also add a legitimate first-party package to confirm it IS indexed.
-    (tmp_path / "package.json").write_text('{"name": "my-app"}')
-    idx = build_manifest_name_index(tmp_path, include_gitignored=True)
-    assert ("npm", "some-dep") not in idx, "node_modules entry must be excluded from name index"
-    assert ("npm", "my-app") in idx, "first-party root manifest must still be indexed"

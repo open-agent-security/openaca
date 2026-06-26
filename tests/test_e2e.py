@@ -287,62 +287,6 @@ def test_openaca_scan_bun_lock_surfaces_bundled_finding():
     assert "from bun.lock" in out
 
 
-def _write_subdir_plugin_with_root_pkg(tmp_path, mcp_entry, root_name="@acme/dc"):
-    """DesktopCommander shape: a plugin declared in a subdirectory whose MCP
-    server is `mcp_entry`, with the implementation deps in the repo-root
-    package.json (named `root_name`)."""
-    target = tmp_path / "repo"
-    plugin_dir = target / "plugins" / "claude" / ".claude-plugin"
-    plugin_dir.mkdir(parents=True)
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps({"name": "dc", "version": "1.0.0", "mcpServers": {"dc": mcp_entry}}),
-        encoding="utf-8",
-    )
-    (target / "package.json").write_text(
-        json.dumps(
-            {
-                "name": root_name,
-                "version": "1.0.0",
-                "dependencies": {"@cyanheads/git-mcp-server": "1.1.0"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    return target
-
-
-def test_mcp_npx_self_launch_surfaces_root_dep_advisory(tmp_path):
-    """ADR-0039: a subdir plugin whose MCP server launches the repo's own
-    published package via `npx` surfaces the root-level dependency advisory —
-    the launch resolves to the root manifest, the deps are re-parented under the
-    mcp_server (agent-dependency), and the finding fires. Hermetic via the
-    offline-OSV fixture map (@cyanheads/git-mcp-server@1.1.0 → GHSA-3q26-f695-pp76).
-    """
-    from tools.scan import main as scan_main
-
-    target = _write_subdir_plugin_with_root_pkg(
-        tmp_path,
-        {"command": "npx", "args": ["-y", "@acme/dc@latest"]},
-        root_name="@acme/dc",
-    )
-    result = CliRunner().invoke(scan_main, ["repo", "--target", str(target), "--no-color"])
-    assert result.exit_code == 1, result.output
-    assert "GHSA-3q26-f695-pp76" in result.output
-
-
-def test_mcp_remote_url_does_not_surface_root_deps(tmp_path):
-    """Counterpart: the same root dep, but the MCP server is remote (`url`).
-    Nothing executes locally, so the launch resolves to nothing, the root deps
-    stay software-dependency, and the advisory does NOT fire — ADR-0039 attributes
-    only to a resolvable launch, not to "the repo has a component"."""
-    from tools.scan import main as scan_main
-
-    target = _write_subdir_plugin_with_root_pkg(tmp_path, {"url": "https://mcp.example.com/mcp"})
-    result = CliRunner().invoke(scan_main, ["repo", "--target", str(target), "--no-color"])
-    assert result.exit_code == 0, result.output
-    assert "GHSA-3q26-f695-pp76" not in result.output
-
-
 def test_skill_bundled_dependency_detected_and_nested(tmp_path):
     """Plan 033 marquee (closes the ADR-0036 gap): a skill bundling a vulnerable
     `package.json` dep is detected, nested under the skill (graph-native: the

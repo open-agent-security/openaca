@@ -123,15 +123,7 @@ Component-type parsers (V1):
 - `plugin`: the plugin subtree's bundled `skills/`, `hooks/`, `commands/`, `agents/`,
   MCPs, and the plugin's own package manifests.
 - `skill`: package manifests in the skill dir (→ `package` under skill = agent-dependency).
-- `mcp_server`: **not a leaf (ADR-0039).** Its launch target is resolved to a
-  dependency manifest — an `npx`/`uvx <pkg>` whose name matches a local manifest's
-  `name` (the repo *is* the package), or a local-path command — and the resolved
-  deps become `package` children (agent-dependency by lineage). Resolution runs as a
-  post-descent pass; root deps already under `target` are re-parented to the MCP
-  node. Remote (`url`) and external (no local manifest) launches resolve to nothing;
-  external-`npx` transitive closures via the on-disk package-manager cache are
-  Phase 2.
-- hook/command/agent are typically leaves in V1.
+- mcp_server/hook/command/agent are typically leaves in V1.
 
 ## BOM encoding (CycloneDX)
 
@@ -180,10 +172,6 @@ Each layout becomes a graph-shape assertion:
 - two skills each declaring `lodash@4.17.20` → **two** package nodes, two edges.
 - bare `repo/package.json` (no agent component) → `package.parent = target`; scope
   `software-dependency`.
-- subdir plugin + `mcpServers: npx <root-name>` + root `package.json` named
-  `<root-name>` → root deps re-parented to the `mcp_server`, scope `agent-dependency`
-  (ADR-0039); a remote-`url` MCP with the same root dep → deps stay
-  `software-dependency` (not resolved).
 - repo and endpoint modes.
 
 ## Out of scope (deferred)

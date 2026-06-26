@@ -118,7 +118,7 @@ def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
             else:
                 i += 1
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
-            return "uvx", tokens[i + 2:]
+            return "uvx", tokens[i + 2 :]
     return tokens[0], tokens[1:]
 
 

@@ -300,6 +300,34 @@ def test_endpoint_direct_mcp_does_not_match_root_cache_install(tmp_path):
     assert [c for c in g.children_of(ext) if c.kind == "package"] == []
 
 
+def test_endpoint_mcp_does_not_match_gitignored_project_manifest(tmp_path):
+    # P2 fix (Codex): build_manifest_name_index was called with
+    # include_gitignored=True for project_root in endpoint mode, disabling
+    # .gitignore filtering. A direct `npx <pkg>` MCP must NOT resolve to a
+    # project-root package.json that is gitignored.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text(
+        json.dumps({"mcpServers": {"ext": {"command": "npx", "args": ["-y", "my-pkg"]}}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    ignored_dir = project_root / "ignored"
+    ignored_dir.mkdir(parents=True)
+    (ignored_dir / "package.json").write_text(
+        json.dumps({"name": "my-pkg", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    # Gitignore the dir so the manifest must be excluded from the name index.
+    (project_root / ".gitignore").write_text("ignored/\n")
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    ext = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [c for c in g.children_of(ext) if c.kind == "package"] == []
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

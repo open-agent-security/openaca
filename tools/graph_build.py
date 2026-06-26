@@ -269,7 +269,10 @@ def build_graph(
         # project_root entries take precedence over install_root entries.
         name_index = {
             **name_index,
-            **build_manifest_name_index(project_root, include_gitignored=attach_include_gitignored),
+            # project_root is a user project dir — respect its .gitignore (matching
+            # project-skill filtering at _seed_endpoint line ~343). Only install_root
+            # artifacts need the unfiltered walk (attach_include_gitignored=True).
+            **build_manifest_name_index(project_root, include_gitignored=include_gitignored),
         }
     _attach_mcp_launch_deps(
         graph,

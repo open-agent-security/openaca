@@ -149,6 +149,21 @@ def test_mcp_package_source_extracts_launcher_specific_packages():
         "PyPI",
         "weather-mcp",
     )
+    assert mcp_package_source("uv --offline tool run weather-mcp") == (
+        "uvx",
+        "PyPI",
+        "weather-mcp",
+    )
+    assert mcp_package_source("uv --directory /tmp tool run weather-mcp") == (
+        "uvx",
+        "PyPI",
+        "weather-mcp",
+    )
+    assert mcp_package_source("uv --directory=/tmp tool run weather-mcp") == (
+        "uvx",
+        "PyPI",
+        "weather-mcp",
+    )
 
 
 def test_safe_unpinned_install_source_uses_install_source():

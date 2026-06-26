@@ -33,6 +33,30 @@ _NPX_UVX_FLAGS_WITH_VALUE = frozenset(
     }
 )
 
+# uv global options that consume a separate value token. Mirrors the same set
+# in tools/parsers/mcp_json.py — kept separate to avoid coupling. Missing
+# entries cause `uv <unknown-flag> <value> tool run X` to fall to binary
+# fallback (false negative, not false positive).
+_UV_VALUE_FLAGS = frozenset(
+    {
+        "--directory",
+        "--project",
+        "--config-file",
+        "--cache-dir",
+        "--python",
+        "--python-preference",
+        "--color",
+        "--default-index",
+        "--index",
+        "--index-url",
+        "--extra-index-url",
+        "--find-links",
+        "--keyring-provider",
+        "--allow-insecure-host",
+        "--trusted-host",
+    }
+)
+
 
 @dataclass(frozen=True)
 class MatchCoordinate:
@@ -82,10 +106,19 @@ def match_coordinate_for_bom(ref: Any) -> str | None:
 
 
 def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
-    if len(tokens) >= 3 and tokens[:3] == ["uv", "tool", "run"]:
-        return "uvx", tokens[3:]
     if not tokens:
         return "", []
+    if tokens[0] == "uv":
+        i = 1
+        while i < len(tokens) and tokens[i].startswith("-"):
+            if "=" in tokens[i]:
+                i += 1
+            elif tokens[i] in _UV_VALUE_FLAGS:
+                i += 2
+            else:
+                i += 1
+        if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
+            return "uvx", tokens[i + 2:]
     return tokens[0], tokens[1:]
 
 

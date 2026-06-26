@@ -249,6 +249,29 @@ def test_endpoint_project_mcp_name_match_uses_project_manifest(tmp_path):
     assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
 
 
+def test_endpoint_direct_mcp_does_not_match_cached_plugin_manifest(tmp_path):
+    # ADR-0039 endpoint review: a direct/external settings `npx @external/mcp`
+    # must NOT name-match an unrelated installed plugin under plugins/cache/ with
+    # the same name and attach its deps (false advisories). The cache subtree is
+    # excluded from the name index.
+    install_root = tmp_path / "claude"
+    (install_root / "plugins" / "cache" / "some-plugin" / "1.0.0").mkdir(parents=True)
+    (install_root / "settings.json").write_text(
+        json.dumps(
+            {"mcpServers": {"ext": {"command": "npx", "args": ["-y", "@external/mcp@latest"]}}}
+        )
+    )
+    (install_root / "plugins" / "cache" / "some-plugin" / "1.0.0" / "package.json").write_text(
+        json.dumps({"name": "@external/mcp", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    ext = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [c for c in g.children_of(ext) if c.kind == "package"] == []
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

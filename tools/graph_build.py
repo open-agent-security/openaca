@@ -896,6 +896,16 @@ def build_manifest_name_index(
             rel_dir_parts = path.parts[:-1]
         if any(p in _NAME_INDEX_DEP_DIRS for p in rel_dir_parts):
             continue
+        # Skip the installed-plugin cache subtree (endpoint `install_root` holds
+        # `plugins/cache/<plugin>/...`). A direct/external `npx <pkg>` launch must
+        # not name-match an unrelated installed plugin there and attach its deps —
+        # a false-advisory source (ADR-0039 endpoint review). Installed plugins'
+        # own deps are attached via the plugin descent, never this index.
+        if any(
+            rel_dir_parts[i] == "plugins" and rel_dir_parts[i + 1] == "cache"
+            for i in range(len(rel_dir_parts) - 1)
+        ):
+            continue
         name: object = None
         ecosystem_key: str = ""
         if path.name == "package.json":

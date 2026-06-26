@@ -62,7 +62,8 @@ def strip_launch_version(spec: str) -> str:
     """Strip a trailing version pin from an npm or PyPI launch spec.
 
     npm: `@scope/name@1.0.0` → `@scope/name`, `name@latest` → `name`.
-    PyPI: `name==1.2.3` → `name`, `name[extra]==1.2.3` → `name[extra]`.
+    PyPI: `name==1.2.3` → `name`, `name[extra]==1.2.3` → `name`,
+          `name>=1.0` → `name`, `name[extra]>=1,<2` → `name`.
     Unversioned specs are returned unchanged.
     """
     if spec.startswith("@"):
@@ -72,9 +73,11 @@ def strip_launch_version(spec: str) -> str:
     idx = spec.find("@")
     if idx != -1:
         return spec[:idx]
-    # PyPI == pin (uvx my-mcp==1.2.3)
-    idx = spec.find("==")
-    return spec[:idx] if idx != -1 else spec
+    # PyPI requirement spec: strip extras [...] and all PEP 440 version markers
+    # (==, >=, <=, !=, ~=, >, <) so `uvx --from my-mcp[server]==1.2.3 my-mcp`
+    # resolves to `my-mcp` for the name-index lookup.
+    m = re.search(r"[(\[;]|[><=!~]", spec)
+    return spec[: m.start()] if m else spec
 
 
 def _within(path: Path, root: Path) -> bool:

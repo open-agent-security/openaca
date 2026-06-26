@@ -272,6 +272,34 @@ def test_endpoint_direct_mcp_does_not_match_cached_plugin_manifest(tmp_path):
     assert [c for c in g.children_of(ext) if c.kind == "package"] == []
 
 
+def test_endpoint_direct_mcp_does_not_match_root_cache_install(tmp_path):
+    # P2 fix (Codex): the existing filter only excluded `plugins/cache/...`.
+    # Endpoint installs also use `cache/<plugin>/<version>/...` (the installPath
+    # written to installed_plugins.json). A direct `npx <pkg>` MCP must NOT
+    # name-match a cached plugin at that root-level cache path.
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "@external" / "mcp" / "1.0.0"
+    install_path.mkdir(parents=True)
+    (install_path / "package.json").write_text(
+        json.dumps({"name": "@external/mcp", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    (install_root / "settings.json").write_text(
+        json.dumps(
+            {"mcpServers": {"ext": {"command": "npx", "args": ["-y", "@external/mcp@latest"]}}}
+        )
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    ext = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [c for c in g.children_of(ext) if c.kind == "package"] == []
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

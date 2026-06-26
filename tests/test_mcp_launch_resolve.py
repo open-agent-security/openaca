@@ -20,8 +20,12 @@ def test_strip_launch_version():
     assert strip_launch_version("name") == "name"
     # PyPI == pins
     assert strip_launch_version("my-mcp==1.2.3") == "my-mcp"
-    assert strip_launch_version("my-mcp[extra]==1.2.3") == "my-mcp[extra]"
     assert strip_launch_version("my-mcp") == "my-mcp"
+    # PyPI extras and other PEP 440 operators (P2 fix: Codex review)
+    assert strip_launch_version("my-mcp[extra]==1.2.3") == "my-mcp"
+    assert strip_launch_version("my-mcp[extra]>=1,<2") == "my-mcp"
+    assert strip_launch_version("my-mcp>=1") == "my-mcp"
+    assert strip_launch_version("my-mcp[server]") == "my-mcp"
 
 
 def test_resolve_npx_name_match(tmp_path):
@@ -103,6 +107,23 @@ def test_resolve_uvx_pypi_pin_name_match(tmp_path):
     idx = {("PyPI", "my-mcp"): tmp_path}
     ref = _mcp_ref("uvx my-mcp==1.2.3")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
+def test_resolve_uvx_from_with_extras_and_version_matches(tmp_path):
+    # P2 fix (Codex): `uvx --from my-mcp[server]==1.2.3 my-mcp` must strip
+    # the extras bracket AND the == pin from the --from requirement spec so
+    # the name-index lookup resolves to `my-mcp`, not `my-mcp[server]`.
+    idx = {("PyPI", "my-mcp"): tmp_path.resolve()}
+    ref = _mcp_ref("uvx --from my-mcp[server]==1.2.3 my-mcp")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
+
+
+def test_resolve_uvx_from_with_ge_constraint_matches(tmp_path):
+    # P2 fix (Codex): `uvx --from my-mcp>=1 my-mcp` — a >= constraint (not ==)
+    # was not stripped by strip_launch_version; the lookup returned None.
+    idx = {("PyPI", "my-mcp"): tmp_path.resolve()}
+    ref = _mcp_ref("uvx --from my-mcp>=1 my-mcp")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path.resolve()
 
 
 def test_resolve_uvx_pypi_name_match_normalizes_equivalent_names(tmp_path):

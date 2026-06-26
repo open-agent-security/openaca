@@ -192,6 +192,20 @@ def test_resolve_npx_runner_falls_through_to_local_path(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
 
 
+def test_resolve_external_npx_with_config_path_arg_is_none(tmp_path):
+    # ADR-0039 post-merge P2: an external (non-runner) npx package whose launch
+    # carries a local path-like arg (`npx @playwright/mcp --config ./config.json`)
+    # must NOT mistake the config file for the server entrypoint and re-parent
+    # repo deps. The package is the server; external → resolves to nothing.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "config.json").write_text("{}")
+    ref = _mcp_ref(
+        "npx -y @playwright/mcp@latest --config ./config.json",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
 def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
     # P2 (ecosystem key): `npx foo` must not match a PyPI `pyproject.toml` named
     # `foo`, and `uvx foo` must not match an npm `package.json` named `foo`.

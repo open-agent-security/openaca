@@ -25,6 +25,14 @@ from typing import Any
 
 from tools import identity
 
+# npx/uvx "runner" packages that execute a local entrypoint passed as a later
+# arg (e.g. `npx tsx ./server.ts`). For these, an external (not-locally-present)
+# package legitimately delegates to a local path, so Strategy 2 should run. A
+# non-runner external package (e.g. `npx @playwright/mcp --config x.json`) IS the
+# server itself — its other args are config/flags, not entrypoints — so it must
+# resolve to nothing (ADR-0039: external launches resolve to nothing).
+_NPX_RUNNERS = frozenset({"tsx", "ts-node"})
+
 # Dep-manifest filenames the nearest-manifest walk recognizes (mirrors
 # graph_build._DEP_MANIFEST_PARSERS keys).
 _DEP_MANIFEST_FILENAMES = (
@@ -143,10 +151,15 @@ def resolve_mcp_launch_dir(
             # project_root entries. When scan_root=project_root (a project-scoped
             # MCP), a match from install_root must not be returned.
             return matched if _within(matched, scan_root) else None
-        # Package not in the local name index (external runner, e.g. `npx tsx`).
-        # Fall through to Strategy 2 — later tokens may be local path arguments
-        # (e.g. `npx tsx ./src/server.ts` where tsx is the transpiler, not the
-        # package, and ./src/server.ts is the real server entrypoint).
+        # Package not in the local name index — i.e. external. Only a known
+        # runner (e.g. `npx tsx ./src/server.ts`) delegates execution to a local
+        # entrypoint arg; for those, fall through to Strategy 2. A non-runner
+        # external package IS the server itself (`npx @playwright/mcp --config
+        # x.json`) — its other args are config/flags, not entrypoints — so it
+        # resolves to nothing (ADR-0039), and we must NOT mistake `x.json` for an
+        # entrypoint. Gate the fall-through on the runner allowlist.
+        if package_name not in _NPX_RUNNERS:
+            return None
 
     # Strategy 2: a local path argument → nearest dep manifest at/above it.
     # Anchor relative launch paths at the right directory: for an MCP declared

@@ -281,6 +281,7 @@ def build_graph(
         name_index,
         project_root=project_root,
         include_gitignored=attach_include_gitignored,
+        project_root_include_gitignored=include_gitignored,
         root_dir=attach_root_dir,
         root_spec=attach_root_spec,
     )
@@ -809,6 +810,7 @@ def _attach_mcp_launch_deps(
     *,
     project_root: Path | None = None,
     include_gitignored: bool = False,
+    project_root_include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
@@ -827,6 +829,11 @@ def _attach_mcp_launch_deps(
     mcp_nodes = sorted(
         (n for n in graph.nodes.values() if n.kind == "mcp_server"), key=lambda n: n.key
     )
+    # Pre-compute project-root gitignore spec once; used when attaching deps for
+    # project-scoped MCPs to match the project name-index filtering (commit 957d909).
+    project_root_spec: GitIgnoreSpec | None = None
+    if project_root is not None and not project_root_include_gitignored:
+        project_root_spec = load_gitignore_spec(project_root)
     for mcp in mcp_nodes:
         if mcp.ref is None:
             continue
@@ -845,15 +852,27 @@ def _attach_mcp_launch_deps(
         )
         if resolved is None:
             continue
+        # Project-scoped MCPs (effective_scan_root is project_root) use the
+        # project-root gitignore context, matching project-skills and project
+        # name-index filtering. Install-root MCPs use the endpoint-wide context
+        # (include_gitignored=True; installed artifacts are never filtered).
+        if effective_scan_root is not scan_root:
+            eff_include = project_root_include_gitignored
+            eff_root = project_root
+            eff_spec = project_root_spec
+        else:
+            eff_include = include_gitignored
+            eff_root = root_dir
+            eff_spec = root_spec
         before = {e.child for e in graph.edges if e.parent == mcp.key}
         _add_dep_manifest_packages(
             graph,
             mcp,
             resolved,
             normalize,
-            include_gitignored=include_gitignored,
-            root_dir=root_dir,
-            root_spec=root_spec,
+            include_gitignored=eff_include,
+            root_dir=eff_root,
+            root_spec=eff_spec,
         )
         new_children = {e.child for e in graph.edges if e.parent == mcp.key} - before
         for child_key in new_children:

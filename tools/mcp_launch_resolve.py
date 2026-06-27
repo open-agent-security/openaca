@@ -61,6 +61,17 @@ _LAUNCHER_MODULE_FLAGS: dict[str, frozenset[str]] = {
     "python3": frozenset({"-m"}),
 }
 
+# Launcher flags that switch to eval-mode: they consume the NEXT token as inline
+# code, after which ALL remaining tokens are argv for that code, not entrypoints.
+# These are a strict subset of _LAUNCHER_VALUE_FLAGS — the difference is that
+# after consuming the code string, scanning stops (same semantics as module-mode
+# but with one extra token consumed before stopping).
+_LAUNCHER_EVAL_FLAGS: dict[str, frozenset[str]] = {
+    "node": frozenset({"-e", "--eval"}),
+    "python": frozenset({"-c"}),
+    "python3": frozenset({"-c"}),
+}
+
 
 def normalize_pypi_name(name: str) -> str:
     """Return the canonical comparison form for Python package names."""
@@ -199,10 +210,17 @@ def resolve_mcp_launch_dir(
     launcher_stem = Path(tokens[0]).stem if tokens else ""
     value_flags = _LAUNCHER_VALUE_FLAGS.get(launcher_stem, frozenset())
     module_flags = _LAUNCHER_MODULE_FLAGS.get(launcher_stem, frozenset())
+    eval_flags = _LAUNCHER_EVAL_FLAGS.get(launcher_stem, frozenset())
     skip_next = False
+    stop_after_value = False
     for tok in tokens:
         if skip_next:
             skip_next = False
+            if stop_after_value:
+                # Eval-mode (`python -c <code>`, `node -e <code>`): the token
+                # we just consumed is the inline code string; everything after
+                # it is argv for that code, not a local entrypoint.
+                break
             continue
         if tok.startswith("-"):
             if tok in module_flags:
@@ -211,6 +229,8 @@ def resolve_mcp_launch_dir(
                 break
             if tok in value_flags and "=" not in tok:
                 skip_next = True
+                if tok in eval_flags:
+                    stop_after_value = True
             continue
         # Only treat tokens that look like filesystem paths as candidates; a
         # bare module name (`aiteam.mcp.server`), launcher name (`node`,

@@ -179,7 +179,9 @@ def resolve_mcp_launch_dir(
         manifest_dir = src_path.parent
         if src_path.name == "plugin.json" and src_path.parent.name == ".claude-plugin":
             manifest_dir = src_path.parent.parent
-        elif src_path.name in ("settings.json", "settings.local.json") and src_path.parent.name == ".claude":
+        elif src_path.name in ("settings.json", "settings.local.json") and (
+            src_path.parent.name == ".claude"
+        ):
             # Claude Code resolves MCP paths relative to where it was launched (the
             # project root), not relative to .claude/. Mirror the plugin.json treatment.
             manifest_dir = src_path.parent.parent

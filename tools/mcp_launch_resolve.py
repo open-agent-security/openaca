@@ -20,6 +20,7 @@ Phase 1 strategies (on-disk package-manager cache resolution is Phase 2):
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -134,7 +135,10 @@ def resolve_mcp_launch_dir(
     if src.startswith(("http://", "https://")):
         return None
 
-    tokens = src.split()
+    try:
+        tokens = shlex.split(src)
+    except ValueError:
+        tokens = src.split()
 
     # Strategy 1: npx/uvx named package → local manifest of the same name.
     # Normalize a full-path launcher (`/usr/local/bin/npx`, `/usr/local/bin/uv`)

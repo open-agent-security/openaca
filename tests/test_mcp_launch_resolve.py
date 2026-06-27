@@ -101,6 +101,58 @@ def test_resolve_python_local_script_still_works(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
 
 
+def test_resolve_python_c_with_path_arg_is_none(tmp_path):
+    # P2 (Codex): `python -c '...' ./config.json` — the config file is argv to
+    # the inline program, not a server entrypoint. The loop must stop after
+    # consuming the code string that follows -c.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "config.json").write_text("{}")
+    ref = _mcp_ref(
+        "python -c 'import mcp; mcp.run()' ./config.json",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_node_eval_with_path_arg_is_none(tmp_path):
+    # P2 (Codex): `node -e '...' ./config.json` — same semantics; -e/--eval
+    # runs inline code; remaining tokens are argv, not entrypoints.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "config.json").write_text("{}")
+    ref = _mcp_ref(
+        "node -e 'require(\"./server\")()' ./config.json",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_node_eval_long_flag_with_path_arg_is_none(tmp_path):
+    # P2: `node --eval '...' ./config.json` (long form) must also stop scanning.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "config.json").write_text("{}")
+    ref = _mcp_ref(
+        "node --eval 'require(\"./server\")()' ./config.json",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_node_require_continues_to_server(tmp_path):
+    # Regression: `node -r ./preload.js ./server.js` — -r is a value flag but
+    # NOT an eval flag, so scanning continues past the preload to the server.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "preload.js").write_text("// preload")
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "index.js").write_text("// server")
+    (server / "package.json").write_text('{"name": "my-server"}')
+    ref = _mcp_ref(
+        "node -r ./preload.js ./server/index.js",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == server.resolve()
+
+
 def test_resolve_npx_full_path_launcher_name_match(tmp_path):
     # Fix 1: a full-path launcher (`/usr/local/bin/npx`) still matches.
     idx = {("npm", "@acme/dc"): tmp_path}

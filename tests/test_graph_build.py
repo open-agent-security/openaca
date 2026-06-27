@@ -331,6 +331,36 @@ def test_endpoint_mcp_does_not_match_gitignored_project_manifest(tmp_path):
     assert [c for c in g.children_of(ext) if c.kind == "package"] == []
 
 
+def test_endpoint_project_mcp_does_not_attach_gitignored_deps(tmp_path):
+    # P2 fix (Codex): _attach_mcp_launch_deps used include_gitignored=True
+    # (endpoint-wide) even for project-scoped MCPs. A .claude/settings.json MCP
+    # launching a local path in a gitignored dir must NOT attach that dir's deps.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    project_root = tmp_path / "project"
+    ignored_dir = project_root / "ignored"
+    ignored_dir.mkdir(parents=True)
+    (ignored_dir / "server.js").write_text("// server")
+    (ignored_dir / "package.json").write_text(
+        json.dumps({"name": "my-server", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    (project_root / ".gitignore").write_text("ignored/\n")
+    claude_dir = project_root / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"local": {"command": "node", "args": ["./ignored/server.js"]}}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    assert [c for c in g.children_of(mcp) if c.kind == "package"] == []
+
+
 def test_repo_plugin_root_with_own_dep_manifest(tmp_path):
     # repo root IS a plugin AND has its own package.json — must not double-parent
     (tmp_path / ".claude-plugin").mkdir()

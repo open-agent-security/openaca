@@ -276,6 +276,38 @@ def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
     assert resolve_mcp_launch_dir(ref_uvx, scan_root=tmp_path, name_index=idx) == pypi_dir.resolve()
 
 
+def test_resolve_settings_json_local_path_uses_project_root(tmp_path):
+    # MCPs in .claude/settings.json declare paths relative to the project root
+    # (where Claude Code is launched), not to .claude/. A `node ./server/index.js`
+    # must resolve to <project>/server/, not <project>/.claude/server/.
+    (tmp_path / "package.json").write_text('{"name":"root"}')
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "index.js").write_text("//")
+    (server / "package.json").write_text('{"name":"my-mcp-server"}')
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    settings = claude_dir / "settings.json"
+    settings.write_text("{}")
+    ref = _mcp_ref("node ./server/index.js", source_manifest=str(settings))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == server.resolve()
+
+
+def test_resolve_settings_local_json_local_path_uses_project_root(tmp_path):
+    # Same fix applies to settings.local.json (the machine-local scope).
+    (tmp_path / "package.json").write_text('{"name":"root"}')
+    server = tmp_path / "server"
+    server.mkdir()
+    (server / "index.js").write_text("//")
+    (server / "package.json").write_text('{"name":"my-mcp-server"}')
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    settings_local = claude_dir / "settings.local.json"
+    settings_local.write_text("{}")
+    ref = _mcp_ref("node ./server/index.js", source_manifest=str(settings_local))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == server.resolve()
+
+
 def test_resolve_local_path_with_space_in_arg(tmp_path):
     # When an MCP uses {"command":"node","args":["./my server/index.js"]},
     # _format_install_source shell-quotes the spaced path. shlex.split in

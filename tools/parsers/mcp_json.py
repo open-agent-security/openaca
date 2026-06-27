@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -580,6 +581,33 @@ def parse_mcp_servers(
                             ),
                         )
                     )
+        elif cmd_class == "bunx":
+            name, version = _parse_npx_args(args)
+            if name and version:
+                refs.append(
+                    ComponentRef(
+                        ecosystem="npm",
+                        name=name,
+                        version=version,
+                        source_manifest=source_manifest,
+                        source_locator=locator,
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
+                    )
+                )
+            elif name:
+                refs.append(
+                    ComponentRef(
+                        ecosystem="npm",
+                        name=name,
+                        source_manifest=source_manifest,
+                        source_locator=locator,
+                        extra=_mcp_ref_extra(
+                            source_manifest, install_source, server_name, runtime_hosts
+                        ),
+                    )
+                )
         elif cmd_class == "docker":
             name, version = _parse_docker_run_image(args)
             if name:
@@ -732,14 +760,15 @@ def _format_install_source(raw_command: object, raw_args: list[str]) -> str:
     """Reconstruct the user-facing install reference for posture-rule input.
 
     For `command: "uvx", args: ["mcp-bar"]` returns `"uvx mcp-bar"`.
-    For non-string commands or empty args, falls back to whatever string
-    we can produce. Never raises.
+    Uses shlex.join so args containing spaces are shell-quoted, allowing
+    resolve_mcp_launch_dir to recover the original tokens via shlex.split.
+    For non-string commands or empty args, falls back gracefully.
     """
     if not isinstance(raw_command, str):
         return ""
     if not raw_args:
         return raw_command
-    return " ".join([raw_command, *raw_args])
+    return shlex.join([raw_command, *raw_args])
 
 
 def parse(path: Path) -> list[ComponentRef]:

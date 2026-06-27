@@ -1,4 +1,5 @@
 import os
+import shlex
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
@@ -273,3 +274,18 @@ def test_resolve_cross_ecosystem_name_not_matched(tmp_path):
     # uvx shared-name → PyPI ecosystem → must resolve to pypi_dir, NOT npm_dir.
     ref_uvx = _mcp_ref("uvx shared-name")
     assert resolve_mcp_launch_dir(ref_uvx, scan_root=tmp_path, name_index=idx) == pypi_dir.resolve()
+
+
+def test_resolve_local_path_with_space_in_arg(tmp_path):
+    # When an MCP uses {"command":"node","args":["./my server/index.js"]},
+    # _format_install_source shell-quotes the spaced path. shlex.split in
+    # resolve_mcp_launch_dir must recover the single token so Strategy 2
+    # finds the correct dep manifest dir, not split on the space mid-path.
+    server_dir = tmp_path / "my server"
+    server_dir.mkdir()
+    (server_dir / "package.json").write_text('{"name": "spaced-server"}')
+    (server_dir / "index.js").write_text("// entrypoint")
+    install_source = shlex.join(["node", "./my server/index.js"])
+    ref = _mcp_ref(install_source, source_manifest=str(tmp_path / ".mcp.json"))
+    result = resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={})
+    assert result == server_dir.resolve()

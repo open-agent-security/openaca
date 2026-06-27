@@ -66,6 +66,41 @@ def test_resolve_python_module_is_none(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
 
 
+def test_resolve_python_module_with_config_path_arg_is_none(tmp_path):
+    # P2 (Codex): `python -m module --config ./config.json` — the config file is
+    # argv to the module, not a server entrypoint. Resolving it to the nearest
+    # manifest and re-parenting repo deps would be a false advisory.
+    # After `-m`, all remaining tokens are program argv; the loop must stop.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "config.json").write_text("{}")
+    ref = _mcp_ref(
+        "python -m aiteam.mcp.server --config ./config.json",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_python3_module_with_path_arg_is_none(tmp_path):
+    # Same fix applies to `python3 -m module [argv…]`.
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    server_cfg = tmp_path / "server.cfg"
+    server_cfg.write_text("[server]\n")
+    ref = _mcp_ref(
+        "python3 -m uvicorn app:server --config ./server.cfg",
+        source_manifest=str(tmp_path / ".mcp.json"),
+    )
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
+
+
+def test_resolve_python_local_script_still_works(tmp_path):
+    # Regression: `python ./server.py` (no -m flag) must still resolve via
+    # Strategy 2 — the -m gating must not affect direct script launches.
+    (tmp_path / "package.json").write_text('{"name": "x"}')
+    (tmp_path / "server.py").write_text("# server")
+    ref = _mcp_ref("python ./server.py", source_manifest=str(tmp_path / ".mcp.json"))
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+
+
 def test_resolve_npx_full_path_launcher_name_match(tmp_path):
     # Fix 1: a full-path launcher (`/usr/local/bin/npx`) still matches.
     idx = {("npm", "@acme/dc"): tmp_path}

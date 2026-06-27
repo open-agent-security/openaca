@@ -53,6 +53,14 @@ _LAUNCHER_VALUE_FLAGS: dict[str, frozenset[str]] = {
     "python3": frozenset({"-c"}),
 }
 
+# Launcher flags that switch to module-mode: once seen, the next token is the
+# module name and ALL remaining tokens are argv passed to that module, not
+# launch entrypoints. Stop scanning when one of these is encountered.
+_LAUNCHER_MODULE_FLAGS: dict[str, frozenset[str]] = {
+    "python": frozenset({"-m"}),
+    "python3": frozenset({"-m"}),
+}
+
 
 def normalize_pypi_name(name: str) -> str:
     """Return the canonical comparison form for Python package names."""
@@ -190,12 +198,17 @@ def resolve_mcp_launch_dir(
     # wrong manifest (the preload's dir, not the server's).
     launcher_stem = Path(tokens[0]).stem if tokens else ""
     value_flags = _LAUNCHER_VALUE_FLAGS.get(launcher_stem, frozenset())
+    module_flags = _LAUNCHER_MODULE_FLAGS.get(launcher_stem, frozenset())
     skip_next = False
     for tok in tokens:
         if skip_next:
             skip_next = False
             continue
         if tok.startswith("-"):
+            if tok in module_flags:
+                # Module-mode (`python -m <mod> [argv…]`): everything after
+                # this flag is program argv, not a local entrypoint.
+                break
             if tok in value_flags and "=" not in tok:
                 skip_next = True
             continue

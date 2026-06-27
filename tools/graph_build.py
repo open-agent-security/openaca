@@ -17,6 +17,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
+import tomllib
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -26,6 +27,7 @@ from pathspec import GitIgnoreSpec
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity
+from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
     claude_command_agent,
@@ -69,6 +71,23 @@ _DEP_MANIFEST_PARSERS = {
 }
 
 _TARGET_KEY = "openaca:target"
+
+# Directories that contain installed package closures rather than first-party
+# source. `build_manifest_name_index` excludes manifests under these regardless
+# of `include_gitignored`, preventing external `npx <pkg>` from matching an
+# installed copy inside e.g. `node_modules/` and being mis-attributed as a
+# local self-launch in endpoint mode (where the gitignore walk is disabled).
+_NAME_INDEX_DEP_DIRS = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        ".virtualenv",
+        ".tox",
+        "site-packages",
+        "__pycache__",
+    }
+)
 
 
 def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:
@@ -211,8 +230,15 @@ def build_graph(
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
     normalize = _make_normalizer(mode, Path(target), Path(target), project_root)
+    # ADR-0039 launch resolution context, set per-branch below.
+    attach_root_dir: Path | None = None
+    attach_root_spec: GitIgnoreSpec | None = None
+    attach_include_gitignored = include_gitignored
     if mode == "endpoint":
         _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=warnings)
+        # Endpoint has no single repo root; installed artifacts are not
+        # gitignore-filtered (parity with the descent's root_dir=None behavior).
+        attach_include_gitignored = True
     else:
         # Repo mode honors the SCAN-ROOT `.gitignore` everywhere, matching
         # parse_repo_grouped: load the root spec ONCE and evaluate every
@@ -230,6 +256,35 @@ def build_graph(
             root_dir=root_dir,
             root_spec=root_spec,
         )
+        attach_root_dir = root_dir
+        attach_root_spec = root_spec
+    name_index = build_manifest_name_index(
+        Path(target), include_gitignored=attach_include_gitignored
+    )
+    if project_root is not None:
+        # Endpoint mode: project_root is separate from install_root (target),
+        # so its manifests are absent from the target walk. Merge them in so
+        # that a project-scoped MCP declaring `npx <pkg>` can resolve by name
+        # against the project's own package.json / pyproject.toml.
+        # project_root entries take precedence over install_root entries.
+        name_index = {
+            **name_index,
+            # project_root is a user project dir — respect its .gitignore (matching
+            # project-skill filtering at _seed_endpoint line ~343). Only install_root
+            # artifacts need the unfiltered walk (attach_include_gitignored=True).
+            **build_manifest_name_index(project_root, include_gitignored=include_gitignored),
+        }
+    _attach_mcp_launch_deps(
+        graph,
+        Path(target),
+        normalize,
+        name_index,
+        project_root=project_root,
+        include_gitignored=attach_include_gitignored,
+        project_root_include_gitignored=include_gitignored,
+        root_dir=attach_root_dir,
+        root_spec=attach_root_spec,
+    )
     graph.validate()
     return graph
 
@@ -745,6 +800,159 @@ def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> 
         seen.add(resolved)
         roots.append(root)
     return sorted(roots)
+
+
+def _attach_mcp_launch_deps(
+    graph: Graph,
+    scan_root: Path,
+    normalize: SourceNormalizer,
+    name_index: dict[tuple[str, str], Path],
+    *,
+    project_root: Path | None = None,
+    include_gitignored: bool = False,
+    project_root_include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+) -> None:
+    """ADR-0039: make `mcp_server` non-leaf. For each MCP node, resolve its
+    launch target to a dependency-manifest dir and attach that dir's deps as
+    `package` children. The resolved deps become `agent-dependency` via the
+    existing `scope_of` (the `mcp_server` is in their lineage).
+
+    Single-parent invariant: the resolved dir's deps may already be parented to
+    `target` (the repo-root walk emitted them as software-dependency). For those,
+    the MCP claims them — the stale `target` edge is dropped. If a dep is already
+    owned by another agent component (e.g. its bundling plugin, or a different MCP
+    that resolved the same dir first), that owner wins and this MCP's just-added
+    edge is dropped instead. Deterministic node order makes "first claim" stable.
+    """
+    mcp_nodes = sorted(
+        (n for n in graph.nodes.values() if n.kind == "mcp_server"), key=lambda n: n.key
+    )
+    # Pre-compute project-root gitignore spec once; used when attaching deps for
+    # project-scoped MCPs to match the project name-index filtering (commit 957d909).
+    project_root_spec: GitIgnoreSpec | None = None
+    if project_root is not None and not project_root_include_gitignored:
+        project_root_spec = load_gitignore_spec(project_root)
+    for mcp in mcp_nodes:
+        if mcp.ref is None:
+            continue
+        # Endpoint mode spans install_root and a separate project_root; a local
+        # launch path declared in a project manifest resolves under project_root,
+        # so use it as the scan_root when this MCP was declared there.
+        effective_scan_root = scan_root
+        if project_root is not None and mcp.ref.source_manifest:
+            try:
+                if Path(mcp.ref.source_manifest).resolve().is_relative_to(project_root.resolve()):
+                    effective_scan_root = project_root
+            except (ValueError, OSError):
+                pass
+        resolved = resolve_mcp_launch_dir(
+            mcp.ref, scan_root=effective_scan_root, name_index=name_index
+        )
+        if resolved is None:
+            continue
+        # Project-scoped MCPs (effective_scan_root is project_root) use the
+        # project-root gitignore context, matching project-skills and project
+        # name-index filtering. Install-root MCPs use the endpoint-wide context
+        # (include_gitignored=True; installed artifacts are never filtered).
+        if effective_scan_root is not scan_root:
+            eff_include = project_root_include_gitignored
+            eff_root = project_root
+            eff_spec = project_root_spec
+        else:
+            eff_include = include_gitignored
+            eff_root = root_dir
+            eff_spec = root_spec
+        before = {e.child for e in graph.edges if e.parent == mcp.key}
+        _add_dep_manifest_packages(
+            graph,
+            mcp,
+            resolved,
+            normalize,
+            include_gitignored=eff_include,
+            root_dir=eff_root,
+            root_spec=eff_spec,
+        )
+        new_children = {e.child for e in graph.edges if e.parent == mcp.key} - before
+        for child_key in new_children:
+            other_parents = {
+                e.parent for e in graph.edges if e.child == child_key and e.parent != mcp.key
+            }
+            agent_owner = any(graph.nodes[pk].kind in Graph._AGENT_KINDS for pk in other_parents)
+            if agent_owner:
+                # Another agent component already owns this dep: don't steal it.
+                graph.edges = [
+                    e for e in graph.edges if not (e.child == child_key and e.parent == mcp.key)
+                ]
+            else:
+                # MCP claims it from `target` (or it is freshly attached).
+                graph.edges = [
+                    e for e in graph.edges if e.child != child_key or e.parent == mcp.key
+                ]
+
+
+def build_manifest_name_index(
+    scan_root: Path, *, include_gitignored: bool = False
+) -> dict[tuple[str, str], Path]:
+    """Map `(ecosystem, name)` → directory for each local package manifest.
+
+    Used by ADR-0039 MCP launch resolution (strategy 1): an `npx`/`uvx <pkg>`
+    launch resolves to a local dir when `<pkg>` matches a manifest `name` here
+    (the repo *is* the package). npm `package.json` entries are keyed as
+    `("npm", name)` and PyPI `pyproject.toml` entries as `("PyPI", name)`.
+    Keying by ecosystem prevents `uvx foo` from resolving to a `package.json`
+    named `foo`, or `npx foo` from resolving to a `pyproject.toml` named `foo`.
+    The walk is gitignore-aware (skips `node_modules/`, `.git/`, etc.) like the
+    others. Manifests under dependency/vendor directories (see
+    `_NAME_INDEX_DEP_DIRS`) are always excluded regardless of
+    `include_gitignored`, so that external `npx <pkg>` cannot resolve to an
+    installed copy in `node_modules/`.
+    """
+    spec = None if include_gitignored else load_gitignore_spec(scan_root)
+    index: dict[tuple[str, str], Path] = {}
+    for path in iter_unignored_files(scan_root, spec):
+        try:
+            rel_dir_parts = path.relative_to(scan_root).parts[:-1]
+        except ValueError:
+            rel_dir_parts = path.parts[:-1]
+        if any(p in _NAME_INDEX_DEP_DIRS for p in rel_dir_parts):
+            continue
+        # Skip installed-plugin cache subtrees so a direct/external `npx <pkg>`
+        # launch can't name-match an unrelated cached plugin and attach its deps.
+        # Installed plugins' own deps are attributed via the plugin descent path,
+        # never this index (ADR-0039 endpoint review).
+        # Two layouts observed in endpoint installs:
+        #   `plugins/cache/<plugin>/...`  — Claude internal plugin cache dir
+        #   `cache/<plugin>/<version>/...` — actual installPath from installed_plugins.json
+        if any(
+            rel_dir_parts[i] == "plugins" and rel_dir_parts[i + 1] == "cache"
+            for i in range(len(rel_dir_parts) - 1)
+        ) or (rel_dir_parts and rel_dir_parts[0] == "cache"):
+            continue
+        name: object = None
+        ecosystem_key: str = ""
+        if path.name == "package.json":
+            try:
+                name = json.loads(path.read_text()).get("name")
+                ecosystem_key = "npm"
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError, AttributeError):
+                continue
+        elif path.name == "pyproject.toml":
+            try:
+                name = tomllib.loads(path.read_text()).get("project", {}).get("name")
+                ecosystem_key = "PyPI"
+            except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError, AttributeError):
+                continue
+        else:
+            continue
+        if isinstance(name, str) and name:
+            if ecosystem_key == "PyPI":
+                name = normalize_pypi_name(name)
+            key = (ecosystem_key, name)
+            if key not in index:
+                index[key] = path.parent.resolve()
+    return index
 
 
 def _descend_into_plugin(

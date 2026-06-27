@@ -933,3 +933,43 @@ def test_parse_flat_shape_rejects_empty_dict(tmp_path):
     path = tmp_path / ".mcp.json"
     path.write_text(json.dumps({}))
     assert parse(path) == []
+
+
+def test_bunx_pinned_emits_npm_purl():
+    # bunx is npm-equivalent; a pinned bunx launch must produce a versioned
+    # ComponentRef so match_coordinates() emits a purl for OSV lookup, not an
+    # unpinned package coordinate carrying the raw "@acme/server@1.0.0" spec.
+    servers = {"x": {"command": "bunx", "args": ["@acme/server@1.0.0"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "npm"
+    assert ref.name == "@acme/server"
+    assert ref.version == "1.0.0"
+    assert ref.purl == "pkg:npm/%40acme/server@1.0.0"
+
+
+def test_bunx_unpinned_emits_versionless_npm_ref():
+    servers = {"x": {"command": "bunx", "args": ["@acme/server"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.ecosystem == "npm"
+    assert ref.name == "@acme/server"
+    assert ref.version is None
+    assert ref.purl == "pkg:npm/%40acme/server"
+
+
+def test_format_install_source_shell_quotes_spaced_args():
+    """_format_install_source must shell-quote args containing spaces so that
+    resolve_mcp_launch_dir can recover the original tokens via shlex.split."""
+    import shlex
+
+    from tools.parsers.mcp_json import parse_mcp_servers as _parse
+
+    servers = {"x": {"command": "node", "args": ["./my server/index.js"]}}
+    refs = _parse(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    install_source = refs[0].extra["install_source"]
+    # shlex.split must recover the original single-path token, not split on space.
+    assert shlex.split(install_source) == ["node", "./my server/index.js"]

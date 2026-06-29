@@ -111,6 +111,13 @@ def test_resolve_bunx_package_flag_name_match(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
 
+def test_resolve_bun_x_spaced_name_match(tmp_path):
+    # `bun x <pkg>` is the spaced form of `bunx <pkg>`.
+    idx = {("npm", "@acme/dc"): tmp_path}
+    ref = _mcp_ref("bun x @acme/dc@latest")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
 def test_resolve_quoted_launcher_path_name_match(tmp_path):
     # A quoted launcher path with spaces still resolves (shlex tokenization).
     idx = {("npm", "@acme/dc"): tmp_path}

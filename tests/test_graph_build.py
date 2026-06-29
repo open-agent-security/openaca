@@ -199,11 +199,35 @@ def test_endpoint_remote_mcp_is_direct_child_of_target(tmp_path):
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "target"]
 
 
-def test_endpoint_project_mcp_local_path_attaches_deps(tmp_path):
-    # Fix 3 (ADR-0039): a project-scope MCP with a local-path launch resolves
-    # under project_root, not install_root, so its deps attach under the MCP node.
-    # The server lives at project_root/server/ — paths in .claude/settings.json are
-    # relative to the project root (where Claude Code is launched), not to .claude/.
+def test_endpoint_project_mcp_npx_self_match_resolves_under_project_root(tmp_path):
+    # ADR-0039 (name-match, endpoint): a project-scope MCP that npx-launches the
+    # project's own published package resolves to the PROJECT manifest (not
+    # install_root), so its deps attach under the MCP node. Exercises the
+    # project_root scan_root path with the name-match contract.
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    project_root = tmp_path / "project"
+    cdir = project_root / ".claude"
+    cdir.mkdir(parents=True)
+    (cdir / "settings.json").write_text(
+        json.dumps(
+            {"mcpServers": {"proj-mcp": {"command": "npx", "args": ["-y", "@proj/mcp@latest"]}}}
+        )
+    )
+    (project_root / "package.json").write_text(
+        json.dumps({"name": "@proj/mcp", "dependencies": {"left-pad": "1.0.0"}})
+    )
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    g.validate()
+    mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
+    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
+    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
+
+
+def test_endpoint_project_mcp_local_path_attaches_nothing(tmp_path):
+    # Phase-1 boundary: a local-path MCP launch is NOT resolved (deferred to
+    # Phase 2 cache resolution), so no deps attach — declining beats guessing.
     install_root = tmp_path / "claude"
     install_root.mkdir()
     (install_root / "settings.json").write_text("{}")
@@ -224,8 +248,7 @@ def test_endpoint_project_mcp_local_path_attaches_deps(tmp_path):
     g = build_graph(install_root, mode="endpoint", project_root=project_root)
     g.validate()
     mcp = next(n for n in g.nodes.values() if n.kind == "mcp_server")
-    pkgs = [c for c in g.children_of(mcp) if c.kind == "package"]
-    assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
+    assert [c for c in g.children_of(mcp) if c.kind == "package"] == []
 
 
 def test_endpoint_project_mcp_name_match_uses_project_manifest(tmp_path):

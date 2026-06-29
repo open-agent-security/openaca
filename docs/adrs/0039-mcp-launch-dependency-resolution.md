@@ -55,21 +55,34 @@ real but bounded.
 
 **Make `mcp_server` a non-leaf: resolve its launch target to a dependency-manifest
 location and attach the resolved deps as `package` children of the `mcp_server`
-node.** Resolution strategies, tried in order, Phase 1:
+node.** Phase 1 resolves exactly ONE case — **name-match only**:
 
-1. **Local manifest name-match.** Parse the launch with the existing
-   `tools/identity` helpers (`launcher_and_args`, `unpinned_mcp_package` /
-   `_extract_mcp_package_from_args`). If it is `npx`/`uvx`/`bunx <pkg>` and `<pkg>`
-   equals the `name` of a `package.json`/`pyproject.toml` found in the scan tree,
-   emit that manifest's directory deps (lockfile-preferred, via the existing
-   `_add_dep_manifest_packages`).
-2. **Local path.** If the command launches an on-disk path within the scan root
-   (`node ./dist/server.js`, a script path, `python -m <local module>`), emit the
-   nearest dependency manifest at/above that path.
-3. **Remote (`url`/http/sse).** No children — nothing executes locally (correct).
-4. **Unresolved** (external published package not present locally) → no children.
-   The launched package itself is still advisory-matched via its launch coordinate
-   (ADR-0031); its *transitive closure* needs the installed tree, which is Phase 2.
+1. **Local manifest name-match (the only resolution path).** Extract the launched
+   package coordinate via the shared `tools/identity` helper
+   (`mcp_package_source` — the same extraction advisory matching uses). If it is
+   an `npx`/`uvx <pkg>` launch and `<pkg>` (version/pin stripped) equals the
+   `name` of a local `package.json`/`pyproject.toml` (keyed by `(ecosystem,
+   name)`), the repo *is* that package — emit that manifest's directory deps
+   (lockfile-preferred). The matched dir must lie within `scan_root`.
+2. **Everything else → no children:** remote `url`, external packages not present
+   locally, and **all** local-path / `node ./x.js` / `python -m` / env-wrapped /
+   exotic-launcher forms. (The external package itself is still advisory-matched
+   via its launch coordinate per ADR-0031; its *transitive closure* and the
+   local-path/exotic cases are **Phase 2**.)
+
+**Why name-match only — heuristic launch-string parsing is rejected.** An earlier
+iteration tried a "local path" strategy: parse the `command`/`args` to find which
+token is the server entrypoint and walk to its nearest manifest. That input space
+is **open-ended** (`npx`/`uvx`/`bunx`/`node`/`python -m`/`/usr/bin/env`-wrapped/
+`-e`/`-c` eval flags/`-r` preload/quoting/spaces/config-arg-vs-entrypoint), so it
+never converges — every launch shape is a fresh edge case, and a wrong guess
+attaches unrelated repo deps to the MCP as a **false advisory** (worse than a miss
+for a security tool). This is the same failure mode the composition-graph spec
+diagnosed for `_classify_dep_manifest` path heuristics. So Phase 1 does a bounded,
+high-confidence thing only — *extract a package coordinate, look it up* — and
+declines the rest. The hard cases belong to Phase 2, which reads the on-disk
+package-manager cache (what was *actually* installed) and so needs **no**
+launch-string parsing at all.
 
 Consequences of the placement: a resolved dep's parent is the `mcp_server` node, so
 `scope_of` returns `agent-dependency` (an agent component is in its lineage) with
@@ -77,8 +90,10 @@ Consequences of the placement: a resolved dep's parent is the `mcp_server` node,
 still works. The resolver is **mode-agnostic — no repo/endpoint gate**: it
 attributes to a specific MCP node via its launch, so there is no risk of
 mislabeling host-level deps (the reason a blunt "all root deps" rule would have
-needed a gate). Strategies 1–2 resolve whatever is statically present in either
-mode; in repo mode that is repo source, in endpoint mode it is on-disk paths.
+needed a gate). The name-match resolves wherever a local manifest matches the
+launched package — repo source in repo mode, project/install manifests in endpoint
+mode — with the `scan_root` containment check preventing an install-root match
+from attaching to a project-scoped MCP.
 
 ### Out of scope — Phase 2 (separate ADR)
 

@@ -18,6 +18,7 @@ PURL_ECOSYSTEM_MAP = {
 PACKAGE_SOURCE_PURL_TYPES = frozenset({"npm", "pypi", "github", "docker"})
 _PACKAGE_FLAGS_BY_LAUNCHER = {
     "npx": frozenset({"--package", "-p"}),
+    "bunx": frozenset({"--package", "-p"}),
     "uvx": frozenset({"--from"}),
 }
 

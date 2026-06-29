@@ -27,6 +27,7 @@ dictionary lookup — nothing more.
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +85,13 @@ def resolve_mcp_launch_dir(
     # Normalize a full-path launcher (`/usr/local/bin/npx`) to its basename so
     # `identity.mcp_package_source` recognizes it (it matches the launcher token
     # exactly, and the basename preserves the `uv tool run` dispatch).
-    tokens = src.split()
+    # Shell-aware tokenization so a quoted launcher path (e.g.
+    # `"/Program Files/nodejs/npx" -y @scope/pkg`) yields a clean launcher token;
+    # fall back to a naive split if the string isn't valid shell syntax.
+    try:
+        tokens = shlex.split(src)
+    except ValueError:
+        tokens = src.split()
     if not tokens:
         return None
     normalized = " ".join([Path(tokens[0]).name, *tokens[1:]])

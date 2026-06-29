@@ -98,6 +98,26 @@ def test_resolve_name_match_relative_scan_root(tmp_path):
     assert resolve_mcp_launch_dir(ref, scan_root=rel, name_index=idx) == tmp_path.resolve()
 
 
+def test_resolve_bunx_name_match(tmp_path):
+    idx = {("npm", "@acme/dc"): tmp_path}
+    ref = _mcp_ref("bunx @acme/dc@latest")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
+def test_resolve_bunx_package_flag_name_match(tmp_path):
+    # `bunx --package <pkg> <bin>`: the --package flag names the package, not the bin.
+    idx = {("npm", "@acme/dc"): tmp_path}
+    ref = _mcp_ref("bunx --package @acme/dc dc-server")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
+def test_resolve_quoted_launcher_path_name_match(tmp_path):
+    # A quoted launcher path with spaces still resolves (shlex tokenization).
+    idx = {("npm", "@acme/dc"): tmp_path}
+    ref = _mcp_ref('"/Program Files/nodejs/npx" -y @acme/dc@latest')
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
+
+
 # ── Phase-1 boundary: everything else declines to None ────────────────────────
 # (Local-path / module / env-wrapped / exotic launchers are NOT parsed in Phase 1;
 #  their deps are Phase 2, on-disk cache resolution. Declining beats guessing —

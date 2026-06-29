@@ -125,6 +125,9 @@ def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
                 i += 1
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
             return "uvx", tokens[i + 2 :]
+    if len(tokens) >= 2 and tokens[0] == "bun" and tokens[1] == "x":
+        # `bun x <pkg>` is the spaced form of `bunx <pkg>`.
+        return "bunx", tokens[2:]
     return tokens[0], tokens[1:]
 
 

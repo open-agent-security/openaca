@@ -123,14 +123,15 @@ Component-type parsers (V1):
 - `plugin`: the plugin subtree's bundled `skills/`, `hooks/`, `commands/`, `agents/`,
   MCPs, and the plugin's own package manifests.
 - `skill`: package manifests in the skill dir (→ `package` under skill = agent-dependency).
-- `mcp_server`: **not a leaf (ADR-0039).** Its launch target is resolved to a
-  dependency manifest — an `npx`/`uvx <pkg>` whose name matches a local manifest's
-  `name` (the repo *is* the package), or a local-path command — and the resolved
-  deps become `package` children (agent-dependency by lineage). Resolution runs as a
-  post-descent pass; root deps already under `target` are re-parented to the MCP
-  node. Remote (`url`) and external (no local manifest) launches resolve to nothing;
-  external-`npx` transitive closures via the on-disk package-manager cache are
-  Phase 2.
+- `mcp_server`: **not a leaf (ADR-0039) — name-match only.** When its launch is an
+  `npx`/`uvx <pkg>` whose package name matches a local manifest's `name` (the repo
+  *is* the package), the resolved deps become `package` children (agent-dependency
+  by lineage). Resolution runs as a post-descent pass; root deps already under
+  `target` are re-parented to the MCP node. **Everything else resolves to nothing**
+  — remote (`url`), external packages, and all local-path / `python -m` /
+  env-wrapped / exotic-launcher forms. Heuristic launch-string parsing is rejected
+  (open-ended input → endless edge cases / false positives); those cases are
+  Phase 2 (on-disk package-manager cache, which reads what was actually installed).
 - hook/command/agent are typically leaves in V1.
 
 ## BOM encoding (CycloneDX)

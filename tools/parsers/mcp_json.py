@@ -417,15 +417,23 @@ _UV_VALUE_FLAGS = frozenset(
 
 
 def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
-    """Normalize `uv tool run <pkg>` into the equivalent `uvx <pkg>` form.
+    """Normalize `uv tool run <pkg>` and `bun x <pkg>` into the equivalent
+    `uvx <pkg>` / `bunx <pkg>` runner forms.
 
     Walks past leading uv global options to find the actual subcommand,
     so `uv --offline tool run weather-mcp==0.5.0` dispatches but
     `uv --directory tool run python` (directory literally named `tool`,
     then `run python`) does NOT. Returns (effective_command, effective_args).
     """
-    if not command or _classify_command(command) != "uv":
-        return command or "", args
+    if not command:
+        return "", args
+    classified = _classify_command(command)
+    if classified == "bun" and args[:1] == ["x"]:
+        # `bun x <pkg>` is the spaced alias of `bunx <pkg>` (mirrors
+        # identity.launcher_and_args, which normalizes the joined-string form).
+        return "bunx", args[1:]
+    if classified != "uv":
+        return command, args
     i = 0
     while i < len(args) and args[i].startswith("-"):
         if "=" in args[i]:

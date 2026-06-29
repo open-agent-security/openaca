@@ -637,6 +637,15 @@ def test_uv_tool_run_dispatches_as_uvx():
     assert refs[0].purl == "pkg:pypi/weather-mcp@0.5.0"
 
 
+def test_bun_x_dispatches_as_bunx():
+    # `bun x <pkg>` is the spaced alias of `bunx <pkg>` and must yield the same
+    # npm coordinate, not fall through to `mcp-stdio/binary:bun`.
+    servers = {"y": {"command": "bun", "args": ["x", "@scope/server@1.2.3"]}}
+    refs = parse_mcp_servers(servers, source_manifest="fake.json")
+    assert len(refs) == 1
+    assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
+
+
 def test_disabled_server_is_skipped():
     servers = {
         "off": {

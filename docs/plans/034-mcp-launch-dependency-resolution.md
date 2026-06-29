@@ -6,18 +6,23 @@
 > no mode gate. On-disk package-manager cache resolution is **Phase 2 (separate
 > ADR/plan)**.
 
-**Goal:** Close the false negative where an MCP server declared via a launch command
-(`npx`/`uvx`/local path) drops its dependency supply chain because `mcp_server` is a
-leaf. `DesktopCommanderMCP` (plugin declares `npx @wonderwhy-er/desktop-commander`;
-root `package.json` is that package, 688 deps currently dropped) is the canonical
-case.
+**Goal:** Close the false negative where an MCP server declared via a package-runner
+launch command (`npx`/`uvx`/`bunx <pkg>`) drops its dependency supply chain because
+`mcp_server` is a leaf. `DesktopCommanderMCP` (plugin declares
+`npx @wonderwhy-er/desktop-commander`; root `package.json` is that package, 688 deps
+currently dropped) is the canonical case.
 
 **Architecture:** A post-descent pass over every `mcp_server` node resolves its
-launch target to a directory (strategies: local-manifest name-match, local path;
-remote/unresolved → none) and attaches that directory's deps (lockfile-preferred)
-under the MCP node. Because the resolved directory's deps may already be parented to
-`target` (the repo-root case), the pass **re-parents** them to the MCP node to
-preserve the single-parent invariant. Launch parsing reuses `tools/identity`.
+launch target to a directory by a single strategy — match the runner's package
+**name** against a local manifest's `name` (`name_index`); everything else
+(remote/external launches, local-path commands, env-wrapped/exotic launchers) →
+none. It attaches that directory's deps (lockfile-preferred) under the MCP node.
+Because the resolved directory's deps may already be parented to `target` (the
+repo-root case), the pass **re-parents** them to the MCP node to preserve the
+single-parent invariant. Launch parsing reuses `tools/identity`. On-disk
+package-manager cache resolution (which would close the external-`npx` and
+local-path cases) is **Phase 2 — declining beats guessing, because a wrong guess
+attaches unrelated repo deps to the MCP as a false advisory.**
 
 **Tech stack:** Python/uv. Gate: `ruff check`, `ruff format --check`, `pyright`,
 `pytest`, `openaca lint`.
@@ -70,12 +75,13 @@ def test_resolve_npx_name_match(tmp_path):
     ref = _mcp_ref(install_source="npx -y @wonderwhy-er/desktop-commander@latest")
     assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index=idx) == tmp_path
 
-def test_resolve_local_path(tmp_path):
+def test_resolve_local_path_node_is_none(tmp_path):
+    # `node ./dist/server.js` is NOT resolved in Phase 1, even if the path exists —
+    # local-path dep resolution is Phase 2 (on-disk cache reads).
     (tmp_path / "dist").mkdir(); (tmp_path / "dist" / "server.js").write_text("//")
-    ref = _mcp_ref(install_source=f"node {tmp_path/'dist'/'server.js'}")
-    # nearest dep manifest at/above dist/ → tmp_path (where package.json lives)
     (tmp_path / "package.json").write_text('{"name":"x"}')
-    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) == tmp_path
+    ref = _mcp_ref(install_source="node ./dist/server.js")
+    assert resolve_mcp_launch_dir(ref, scan_root=tmp_path, name_index={}) is None
 
 def test_resolve_remote_url_is_none(tmp_path):
     ref = _mcp_ref(install_source="https://mcp.example.com/mcp")
@@ -88,15 +94,13 @@ def test_resolve_external_npx_is_none(tmp_path):
 
 - [ ] **Step 2 — run, confirm fail.**
 - [ ] **Step 3 — implement** `resolve_mcp_launch_dir(ref, *, scan_root, name_index)`:
-  - Read `install_source` from `ref.extra`. Use `identity.mcp_package_source` /
-    `unpinned_mcp_package` / `launcher_and_args` to classify.
-  - Remote (`http(s)://`, no `command`) → `None`.
-  - `npx`/`uvx`/`bunx <pkg>` → strip version (`@latest`/`@x.y.z`), look up the bare
-    name in `name_index`; return the dir or `None`.
-  - Local path (`node <path>`, a script path, `python -m`): resolve the path under
-    `scan_root`; walk up to the nearest dir containing a dep manifest within
-    `scan_root`; return it or `None`.
-  - Else → `None`.
+  - Read `install_source` from `ref.extra`. Use `identity.mcp_package_source` to
+    classify the runner + package.
+  - `npx`/`uvx`/`bunx <pkg>` → strip version (`@latest`/`@x.y.z`), normalize the
+    bare name, look up `(ecosystem, name)` in `name_index`; return the dir or `None`.
+  - Everything else → `None`: remote (`http(s)://`), external runner packages not in
+    the index, local-path commands (`node <path>`, `python -m`), env-wrapped or
+    exotic launchers. These are Phase 2 (on-disk cache resolution).
   - Never return a path outside `scan_root`.
 - [ ] **Step 4 — run, confirm PASS.**
 - [ ] **Step 5 — commit.** `feat(graph): MCP launch target → dependency dir resolver`
@@ -193,7 +197,7 @@ def test_mcp_remote_attaches_no_deps(tmp_path):
 
 - [ ] **Step 1 — composition-graph.md:** update the component-parsers list — `mcp_server`
   is no longer a flat leaf; its launch target is resolved to a dependency manifest
-  (name-match / local-path) and the resolved deps are `package` children
+  (runner-package name-match only) and the resolved deps are `package` children
   (agent-dependency by lineage). Add a graph-shape line to Testing: "subdir plugin +
   `mcpServers: npx <root-name>` + root `package.json` → root deps parented to the
   `mcp_server`, `agent-dependency` (ADR-0039)." Note Phase 2 (cache resolution) as

@@ -248,7 +248,7 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.1"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.2"
     package = _component(doc, "mcp-server/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"

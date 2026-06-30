@@ -183,6 +183,22 @@ def test_bom_lint_accepts_graph_backed_bom_with_target_dependency(tmp_path):
     assert f"{path}: ok" in result.output
 
 
+def test_bom_lint_accepts_schema_version_0_1(tmp_path):
+    """BOMs produced by OpenACA 0.2.0 carry openaca:schema_version 0.1 (mislabeled
+    at the time) and cannot be relabeled. The linter must accept them."""
+    doc = _valid_bom_doc()
+    for prop in doc["metadata"]["properties"]:
+        if prop["name"] == "openaca:schema_version":
+            prop["value"] = "0.1"
+    path = tmp_path / "v0.1.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+    assert f"{path}: ok" in result.output
+
+
 def test_bom_lint_handles_non_dict_metadata_without_crashing():
     """A schema-invalid BOM whose `metadata` is not an object (e.g. a list or
     string) must not raise AttributeError in check_semantics — it should return

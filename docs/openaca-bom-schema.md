@@ -13,7 +13,9 @@ OpenACA-owned metadata in `properties[]` entries whose names start with
 
 The current OpenACA Agent BOM schema version is `0.2` — the graph-encoded
 format introduced in 0.2.0, which shipped mislabeled as `0.1` and is correctly
-labeled from 0.3.0 onward (see `docs/releases/v0.3.0.md`).
+labeled from 0.3.0 onward (see `docs/releases/v0.3.0.md`). `openaca bom lint`
+accepts both `0.1` (0.2.0 artifacts, cannot be relabeled) and `0.2`; the emitter
+always produces `0.2`.
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:

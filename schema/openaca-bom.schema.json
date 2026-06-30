@@ -23,7 +23,7 @@
                 "required": ["name", "value"],
                 "properties": {
                   "name": {"const": "openaca:schema_version"},
-                  "value": {"const": "0.2"}
+                  "value": {"enum": ["0.1", "0.2"]}
                 }
               }
             },

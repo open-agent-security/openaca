@@ -263,7 +263,7 @@ def test_scan_bom_reuses_matching_without_posture_replay(tmp_path):
         "version": 1,
         "metadata": {
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:schema_version", "value": "0.2"},
                 {"name": "openaca:target_type", "value": "bom"},
             ]
         },
@@ -310,7 +310,7 @@ def test_scan_bom_flat_package_keeps_stored_agent_dependency_scope(tmp_path):
         "version": 1,
         "metadata": {
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:schema_version", "value": "0.2"},
                 {"name": "openaca:target_type", "value": "bom"},
             ]
         },
@@ -364,7 +364,7 @@ def test_scan_bom_nontarget_metadata_component_keeps_stored_scope(tmp_path):
                 "version": "2.0.0",
             },
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:schema_version", "value": "0.2"},
                 {"name": "openaca:target_type", "value": "bom"},
             ],
         },
@@ -414,7 +414,7 @@ def test_scan_bom_graph_backed_uses_graph_path(tmp_path):
                 "properties": [{"name": "openaca:component_type", "value": "target"}],
             },
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.1"},
+                {"name": "openaca:schema_version", "value": "0.2"},
                 {"name": "openaca:target_type", "value": "bom"},
             ],
         },

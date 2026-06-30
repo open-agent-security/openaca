@@ -22,7 +22,7 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
-OPENACA_BOM_SCHEMA_VERSION = "0.1"
+OPENACA_BOM_SCHEMA_VERSION = "0.2"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 _PURL_TO_ECOSYSTEM = {

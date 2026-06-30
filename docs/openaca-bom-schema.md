@@ -11,7 +11,9 @@ The external interchange format is CycloneDX JSON. OpenACA emits CycloneDX with
 OpenACA-owned metadata in `properties[]` entries whose names start with
 `openaca:`.
 
-The initial OpenACA Agent BOM schema version is `0.1`.
+The current OpenACA Agent BOM schema version is `0.2` — the graph-encoded
+format introduced in 0.2.0, which shipped mislabeled as `0.1` and is correctly
+labeled from 0.3.0 onward (see `docs/releases/v0.3.0.md`).
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:
@@ -33,7 +35,7 @@ openaca bom lint agent.bom.json
       }
     ],
     "properties": [
-      {"name": "openaca:schema_version", "value": "0.1"},
+      {"name": "openaca:schema_version", "value": "0.2"},
       {"name": "openaca:target_type", "value": "repo"}
     ]
   },

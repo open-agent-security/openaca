@@ -220,7 +220,8 @@ def _component_id(raw: dict[str, Any], component_type: str, label: str) -> str:
     attributed_to = _as_str(raw.get("attributed_to"))
     if component_type == "plugin" and attributed_to:
         return attributed_to
-    source = _component(raw).get("source")
+    component = _component(raw)
+    source = component.get("source")
     if isinstance(source, dict):
         purl = _as_str(source.get("purl"))
         if component_type == "package" and purl:
@@ -228,6 +229,9 @@ def _component_id(raw: dict[str, Any], component_type: str, label: str) -> str:
         match_coordinate = _as_str(source.get("match_coordinate"))
         if match_coordinate:
             return match_coordinate
+    identity = _as_str(component.get("identity"))
+    if identity:
+        return identity
     return f"{component_type}/{label}"
 
 

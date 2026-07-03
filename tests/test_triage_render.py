@@ -55,6 +55,39 @@ def test_markdown_report_has_forwardable_sections():
     assert "`upgrade`" in rendered
 
 
+def test_markdown_report_escapes_untrusted_component_label_and_path():
+    scan_doc = {
+        "target": {"host_surface": "repository", "rows": []},
+        "stats": {"components": 1},
+        "findings": [
+            {
+                "finding_type": "posture",
+                "rule_id": "openaca-posture-mutable-install-reference",
+                "title": "Mutable install source",
+                "severity": "high",
+                "confidence": "high",
+                "component": {"type": "plugin", "name": "evil"},
+                "component_path": [
+                    {
+                        "type": "plugin",
+                        "name": "evil\n## Fake heading\n\n- [click me](javascript:alert(1))",
+                    },
+                    {"type": "mcp_server", "name": "weird`name` with\nnewline"},
+                ],
+                "remediation": "Pin mutable install source.",
+            }
+        ],
+    }
+
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\n## Fake heading" not in rendered
+    assert "weird`name`" not in rendered
+    assert "\\#\\# Fake heading" in rendered
+
+
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
     rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")

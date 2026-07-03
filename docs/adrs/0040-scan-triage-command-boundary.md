@@ -24,8 +24,8 @@ consumers will reimplement the same logic differently.
 
 The plausible alternative is to add more flags to `scan` and treat reports as
 just another output format. That gives a convenient one-command path, but it
-does not name the decision layer that the Claude Code plugin, concierge
-assessments, and other downstream consumers all need to share.
+does not name the decision layer that the Claude Code plugin, manual reviews,
+and other downstream consumers all need to share.
 
 ## Decision
 
@@ -38,7 +38,7 @@ explain, and recommend action.
 The user-friendly path may remain a single command:
 
 ```bash
-openaca scan endpoint --report exposure --output openaca-exposure-report.md
+openaca scan endpoint --report exposure --format markdown --output openaca-exposure-report.md
 ```
 
 That form is syntactic sugar for "scan, then triage this scan result." The
@@ -46,7 +46,7 @@ composable path is explicit:
 
 ```bash
 openaca scan endpoint --format json > openaca-scan.json
-openaca triage openaca-scan.json --report exposure --output openaca-exposure-report.md
+openaca triage openaca-scan.json --report exposure --format markdown --output openaca-exposure-report.md
 ```
 
 Both paths use the same triage engine. The Claude Code plugin and any other

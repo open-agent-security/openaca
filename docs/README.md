@@ -27,7 +27,8 @@ specific architecture decision or implementation plan.
 - [ADRs](adrs/INDEX.md) - accepted architecture decisions and rejected
   alternatives.
 - [Plans](plans/README.md) - implementation plans and current project state.
-- [Specs](specs/openaca-thesis.md) - thesis, roadmap, and design notes.
+- [Specs](specs/openaca-thesis.md) - thesis, roadmap, and design notes,
+  including [triage reports](specs/triage-reports.md).
 - [Framework mappings](frameworks/README.md) - taxonomy source material.
 - [Release notes](releases/) - release-specific notes.
 

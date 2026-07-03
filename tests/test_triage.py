@@ -118,6 +118,41 @@ def test_posture_finding_groups_by_component_identity_not_display_label():
     }
 
 
+def test_malware_finding_takes_priority_over_mutable_posture_action():
+    scan_doc = {
+        "findings": [
+            {
+                "finding_type": "vulnerability",
+                "id": "MAL-2024-1234",
+                "title": "Known malicious package",
+                "severity": "critical",
+                "confidence": "high",
+                "source": "osv.dev",
+                "component": {"type": "package", "name": "evil-pkg"},
+                "component_path": [
+                    {"type": "plugin", "name": "demo"},
+                    {"type": "package", "name": "evil-pkg"},
+                ],
+            },
+            {
+                "finding_type": "posture",
+                "rule_id": "openaca-posture-mutable-install-reference",
+                "title": "Mutable install source",
+                "severity": "high",
+                "confidence": "medium",
+                "component": {"type": "plugin", "name": "demo"},
+                "component_path": [{"type": "plugin", "name": "demo"}],
+                "remediation": "Pin mutable install source.",
+            },
+        ]
+    }
+
+    cards = build_triage_cards(scan_doc)
+
+    assert len(cards) == 1
+    assert cards[0].action == "remove"
+
+
 def test_low_confidence_observation_defaults_to_review():
     scan_doc = {
         "findings": [

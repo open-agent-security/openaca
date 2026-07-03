@@ -106,6 +106,32 @@ def test_markdown_report_escapes_untrusted_target_rows():
     assert "\\#\\# Fake heading" in rendered
 
 
+def test_markdown_report_escapes_untrusted_evidence_ids():
+    scan_doc = {
+        "target": {"host_surface": "repository", "rows": []},
+        "stats": {"components": 1},
+        "findings": [
+            {
+                "finding_type": "observation",
+                "observation_id": "X007\n## Fake heading",
+                "title": "Suspicious behavior",
+                "severity": "medium",
+                "confidence": "medium",
+                "source": "external-scanner",
+                "component": {"type": "skill", "name": "frontend"},
+                "component_path": [{"type": "skill", "name": "frontend"}],
+            }
+        ],
+    }
+
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\n## Fake heading" not in rendered
+    assert "\\#\\# Fake heading" in rendered
+
+
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
     rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")

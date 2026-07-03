@@ -6,9 +6,10 @@
 
 **Goal:** Add a shared triage/report layer over scan evidence. `scan` continues
 to collect facts; `triage` ranks and explains component-centric exposures. The
-friendly path is `openaca scan endpoint --report exposure --output report.md`;
-the composable path is `openaca scan endpoint --format json > scan.json`
-followed by `openaca triage scan.json --report exposure --output report.md`.
+friendly path is `openaca scan endpoint --report exposure --format markdown
+--output report.md`; the composable path is `openaca scan endpoint --format
+json > scan.json` followed by `openaca triage scan.json --report exposure
+--format markdown --output report.md`.
 
 **Architecture:** Introduce a pure triage module that consumes structured scan
 output and returns triage cards. Renderers turn cards into text, Markdown, and
@@ -135,8 +136,8 @@ composition data. Gate: `uv run ruff check .`, `uv run ruff format --check .`,
 - [ ] **Step 1 - failing tests.**
   - `openaca scan endpoint --report exposure` renders a report from the same
     triage engine as `openaca triage`;
-  - `--output report.md` writes the report and keeps scan exit behavior
-    findings-driven;
+  - `--output report.md --format markdown` writes the Markdown report and
+    keeps scan exit behavior findings-driven;
   - report generation works with `--include-posture`;
   - unsupported combinations fail clearly.
 - [ ] **Step 2 - implement shortcut.** Internally run the normal scan path,
@@ -153,8 +154,9 @@ composition data. Gate: `uv run ruff check .`, `uv run ruff format --check .`,
 - Coordinate with: `openaca-claude-plugin`
 
 - [ ] **Step 1 - document invocation.** The plugin should call
-  `openaca scan endpoint --report exposure --output <path>` or the two-step
-  `scan`/`triage` flow. It should not implement report logic itself.
+  `openaca scan endpoint --report exposure --format markdown --output <path>`
+  or the two-step `scan`/`triage` flow. It should not implement report logic
+  itself.
 - [ ] **Step 2 - document latency behavior.** Report mode should avoid optional
   slow external scanners unless the user opts in, matching plugin UX needs.
 - [ ] **Step 3 - file follow-up in plugin repo** if plugin command work is not

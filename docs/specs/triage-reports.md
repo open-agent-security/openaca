@@ -26,7 +26,7 @@ exposure summaries and forwardable reports.
 The common path remains one command:
 
 ```bash
-openaca scan endpoint --report exposure --output openaca-exposure-report.md
+openaca scan endpoint --report exposure --format markdown --output openaca-exposure-report.md
 ```
 
 That command runs a normal endpoint scan and immediately renders an exposure
@@ -36,7 +36,7 @@ The composable path is two commands:
 
 ```bash
 openaca scan endpoint --format json > openaca-scan.json
-openaca triage openaca-scan.json --report exposure --output openaca-exposure-report.md
+openaca triage openaca-scan.json --report exposure --format markdown --output openaca-exposure-report.md
 ```
 
 `openaca triage` consumes a scan artifact. It does not read endpoint or repo
@@ -90,8 +90,8 @@ label capability facts by provenance:
 - `analyst-added`: added manually by a reviewer outside the scanner.
 
 V1 CLI-generated reports should avoid `analyst-added` facts unless the user
-provides an overlay/input file for them. A concierge assessment may add those
-facts after local review, but they are not scanner claims.
+provides an overlay/input file for them. A manual review may add those facts
+after local inspection, but they are not scanner claims.
 
 ## Ranking
 

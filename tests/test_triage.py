@@ -146,6 +146,39 @@ def test_direct_package_backed_mcp_findings_stay_distinct_by_source_purl():
     assert {card.component_id for card in cards} == {"pkg:npm/a@1.0.0", "pkg:npm/b@1.0.0"}
 
 
+def test_package_children_group_under_their_mcp_ancestor():
+    # Two vulnerable packages under the same MCP server (no plugin attribution)
+    # must group into one card keyed by the MCP ancestor — the child package
+    # purl must NOT split them into a card per dependency.
+    def _finding(pkg: str) -> dict:
+        return {
+            "finding_type": "vulnerability",
+            "id": f"GHSA-{pkg}",
+            "summary": "vuln",
+            "severity": "high",
+            "confidence": "high",
+            "component": {
+                "type": "package",
+                "name": pkg,
+                "identity": f"package/npm/{pkg}",
+                "source": {"purl": f"pkg:npm/{pkg}@1.0.0"},
+            },
+            "component_path": [
+                {"type": "mcp_server", "name": "git"},
+                {"type": "package", "name": pkg},
+            ],
+        }
+
+    scan_doc = {"findings": [_finding("hono"), _finding("send")]}
+
+    cards = build_triage_cards(scan_doc)
+
+    assert len(cards) == 1
+    assert cards[0].component_id == "mcp_server/git"
+    assert cards[0].component_type == "mcp_server"
+    assert len(cards[0].evidence) == 2
+
+
 def test_malware_finding_takes_priority_over_mutable_posture_action():
     scan_doc = {
         "findings": [

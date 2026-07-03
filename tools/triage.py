@@ -202,39 +202,47 @@ def _evidence_from_finding(raw: dict[str, Any]) -> TriageEvidence | None:
 
 def _select_component(raw: dict[str, Any]) -> _SelectedComponent:
     path = _component_path(raw)
+    own = _component(raw)
+    own_type = _as_str(own.get("type"))
+    own_name = _as_str(own.get("name"))
     for item in path:
         if item.get("type") in _AGENT_COMPONENT_TYPES:
             component_type = item["type"]
             label = item["name"]
-            component_id = _component_id(raw, component_type, label)
+            # The selected path item is the finding's own component only when its
+            # type and name match; otherwise it is an ancestor of the finding.
+            is_own = component_type == own_type and label == own_name
+            component_id = _component_id(raw, component_type, label, own=is_own)
             return _SelectedComponent(component_id, label, component_type, path)
-    component = _component(raw)
-    component_type = _as_str(component.get("type")) or "component"
-    label = _as_str(component.get("name")) or "<unidentified>"
+    component_type = own_type or "component"
+    label = own_name or "<unidentified>"
     return _SelectedComponent(
-        _component_id(raw, component_type, label), label, component_type, path
+        _component_id(raw, component_type, label, own=True), label, component_type, path
     )
 
 
-def _component_id(raw: dict[str, Any], component_type: str, label: str) -> str:
+def _component_id(raw: dict[str, Any], component_type: str, label: str, *, own: bool) -> str:
     attributed_to = _as_str(raw.get("attributed_to"))
     if component_type == "plugin" and attributed_to:
         return attributed_to
-    component = _component(raw)
-    source = component.get("source")
-    if isinstance(source, dict):
-        purl = _as_str(source.get("purl"))
-        # A package-backed agent component (e.g. two `.mcp.json` servers both
-        # named `git` but launching different packages) keys on its purl too, so
-        # distinct packages stay distinct cards rather than merging by label.
-        if purl:
-            return purl
-        match_coordinate = _as_str(source.get("match_coordinate"))
-        if match_coordinate:
-            return match_coordinate
-    identity = _as_str(component.get("identity"))
-    if identity:
-        return identity
+    # `component.source.*`/`identity` describe the finding's OWN component. Use
+    # them only when the selected component IS that component (e.g. a direct
+    # package-backed MCP/skill, where distinct packages must stay distinct
+    # cards). For a true ancestor (an MCP server owning vulnerable package
+    # children) key by the ancestor so its children group into one card.
+    if own:
+        component = _component(raw)
+        source = component.get("source")
+        if isinstance(source, dict):
+            purl = _as_str(source.get("purl"))
+            if purl:
+                return purl
+            match_coordinate = _as_str(source.get("match_coordinate"))
+            if match_coordinate:
+                return match_coordinate
+        identity = _as_str(component.get("identity"))
+        if identity:
+            return identity
     return f"{component_type}/{label}"
 
 

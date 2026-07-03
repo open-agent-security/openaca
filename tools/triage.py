@@ -224,7 +224,10 @@ def _component_id(raw: dict[str, Any], component_type: str, label: str) -> str:
     source = component.get("source")
     if isinstance(source, dict):
         purl = _as_str(source.get("purl"))
-        if component_type == "package" and purl:
+        # A package-backed agent component (e.g. two `.mcp.json` servers both
+        # named `git` but launching different packages) keys on its purl too, so
+        # distinct packages stay distinct cards rather than merging by label.
+        if purl:
             return purl
         match_coordinate = _as_str(source.get("match_coordinate"))
         if match_coordinate:

@@ -79,7 +79,7 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
             [
                 f"### {card.rank}. {card.priority.upper()} - {label}",
                 "",
-                f"- Type: `{card.component_type}`",
+                f"- Type: `{_code_span_safe(card.component_type)}`",
                 f"- Path: `{_path_label_code_span(card.composition_path)}`",
                 f"- Evidence: {_evidence_summary(card, escape=True)}",
                 f"- Action: `{card.action}`",

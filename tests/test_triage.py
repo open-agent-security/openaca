@@ -118,6 +118,34 @@ def test_posture_finding_groups_by_component_identity_not_display_label():
     }
 
 
+def test_direct_package_backed_mcp_findings_stay_distinct_by_source_purl():
+    # Two direct MCP servers both named `git` share the identity `mcp-server/git`
+    # but launch different packages. They must not merge into one card — the
+    # source purl distinguishes them (regression for label-only grouping).
+    def _finding(purl: str) -> dict:
+        return {
+            "finding_type": "vulnerability",
+            "id": "GHSA-example",
+            "summary": "command injection",
+            "severity": "high",
+            "confidence": "high",
+            "component": {
+                "type": "mcp_server",
+                "name": "git",
+                "identity": "mcp-server/git",
+                "source": {"purl": purl},
+            },
+            "component_path": [{"type": "mcp_server", "name": "git"}],
+        }
+
+    scan_doc = {"findings": [_finding("pkg:npm/a@1.0.0"), _finding("pkg:npm/b@1.0.0")]}
+
+    cards = build_triage_cards(scan_doc)
+
+    assert len(cards) == 2
+    assert {card.component_id for card in cards} == {"pkg:npm/a@1.0.0", "pkg:npm/b@1.0.0"}
+
+
 def test_malware_finding_takes_priority_over_mutable_posture_action():
     scan_doc = {
         "findings": [

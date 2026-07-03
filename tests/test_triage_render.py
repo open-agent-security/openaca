@@ -88,6 +88,33 @@ def test_markdown_report_escapes_untrusted_component_label_and_path():
     assert "\\#\\# Fake heading" in rendered
 
 
+def test_markdown_report_escapes_untrusted_component_type():
+    # An externally supplied scan/BOM artifact can carry a crafted
+    # `component.type`; it must not close the `Type` code span or inject a heading.
+    scan_doc = {
+        "stats": {"components": 1},
+        "findings": [
+            {
+                "finding_type": "posture",
+                "rule_id": "openaca-posture-mutable-install-reference",
+                "title": "Mutable install source",
+                "severity": "high",
+                "confidence": "high",
+                "component": {"type": "mcp_server`\n## Fake heading", "name": "svc"},
+                "component_path": [],
+                "remediation": "Pin mutable install source.",
+            }
+        ],
+    }
+
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\n## Fake heading" not in rendered
+    assert "`mcp_server`" not in rendered  # backtick must not close the code span
+
+
 def test_markdown_report_escapes_untrusted_target_rows():
     scan_doc = {
         "target": {

@@ -88,6 +88,24 @@ def test_markdown_report_escapes_untrusted_component_label_and_path():
     assert "\\#\\# Fake heading" in rendered
 
 
+def test_markdown_report_escapes_untrusted_target_rows():
+    scan_doc = {
+        "target": {
+            "host_surface": "repository",
+            "rows": [{"label": "path", "value": "evil\n## Fake heading"}],
+        },
+        "stats": {"components": 0},
+        "findings": [],
+    }
+
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\n## Fake heading" not in rendered
+    assert "\\#\\# Fake heading" in rendered
+
+
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
     rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")

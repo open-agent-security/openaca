@@ -30,18 +30,23 @@ composition data. Gate: `uv run ruff check .`, `uv run ruff format --check .`,
 **Files:**
 - Modify: `tools/scan.py` or existing scan-result module
 - Modify: `tools/render.py` only if needed to expose existing structured data
+- Test: `tests/test_e2e.py`
 - Test: `tests/test_scan.py`
 
-- [ ] **Step 1 - failing test.** Add a test that runs `openaca scan endpoint
-  --format json` on a fixture with a plugin -> MCP -> vulnerable package path
-  and asserts the JSON contains enough data for triage: finding type, component
+- [ ] **Step 1 - failing product-contract test.** Add a one-screen e2e test
+  that runs `openaca scan endpoint --format json` on a fixture with a plugin ->
+  MCP -> vulnerable package path and asserts the JSON carries the composition
+  and finding evidence a report needs.
+- [ ] **Step 2 - failing focused scan contract test.** Add focused assertions in
+  `tests/test_scan.py` for the exact triage fields: finding type, component
   label, matched advisory, normalized severity, fix text when available,
   `component_path`, `declared_by`, and BOM/component identity.
-- [ ] **Step 2 - implement missing fields only.** Do not redesign scan JSON.
+- [ ] **Step 3 - implement missing fields only.** Do not redesign scan JSON.
   Add the smallest missing fields needed by the triage engine. If all fields
   already exist, make the test document the contract and leave production code
   unchanged.
-- [ ] **Step 3 - verify.** Run the focused scan JSON test.
+- [ ] **Step 4 - verify.** Run the focused scan JSON test and the e2e
+  product-contract test.
 
 ## Task 2: Pure triage card model
 

@@ -2203,3 +2203,19 @@ def test_scan_report_rejects_markdown_without_report(tmp_path):
 
     assert result.exit_code != 0
     assert "--format markdown is only supported with --report exposure" in result.output
+
+
+def test_scan_report_ignores_github_actions_auto_promotion(tmp_path, monkeypatch):
+    """`--report exposure` without `--format` must still default to the text
+    report even when GITHUB_ACTIONS=true — the `github` auto-promotion in
+    `_apply_group_opts` would otherwise turn the advertised default report
+    into a hard `--format github` rejection in CI."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    result = CliRunner().invoke(
+        main,
+        ["endpoint", "--config-dir", str(tmp_path), "--report", "exposure"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Exposure report" in result.output
+    assert "does not support --format github" not in result.output

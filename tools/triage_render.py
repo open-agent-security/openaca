@@ -66,7 +66,7 @@ def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str
 
 def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
     lines = ["# OpenACA Exposure Report", ""]
-    target_lines = _target_lines(scan_doc, bullet="- ")
+    target_lines = _target_lines(scan_doc, bullet="- ", escape=True)
     if target_lines:
         lines.extend(["## Target", *target_lines, ""])
     lines.extend(["## Summary", "", f"- {_summary_line(cards, scan_doc)}", ""])
@@ -101,14 +101,18 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _target_lines(scan_doc: dict[str, Any], *, bullet: str) -> list[str]:
+def _target_lines(scan_doc: dict[str, Any], *, bullet: str, escape: bool = False) -> list[str]:
     target = scan_doc.get("target")
     if not isinstance(target, dict):
         return []
+
+    def _clean(text: str) -> str:
+        return _escape_markdown(text) if escape else text
+
     lines: list[str] = []
     host_surface = target.get("host_surface")
     if isinstance(host_surface, str) and host_surface:
-        lines.append(f"{bullet}Surface: {host_surface}")
+        lines.append(f"{bullet}Surface: {_clean(host_surface)}")
     rows = target.get("rows")
     if isinstance(rows, list):
         for row in rows:
@@ -117,7 +121,7 @@ def _target_lines(scan_doc: dict[str, Any], *, bullet: str) -> list[str]:
             label = row.get("label")
             value = row.get("value")
             if isinstance(label, str) and isinstance(value, str):
-                lines.append(f"{bullet}{label}: {value}")
+                lines.append(f"{bullet}{_clean(label)}: {_clean(value)}")
     return lines
 
 

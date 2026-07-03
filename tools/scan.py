@@ -421,6 +421,8 @@ def _apply_group_opts(
     output_format: str,
     no_color: bool,
     include_posture: bool,
+    *,
+    report_kind: str | None = None,
 ) -> tuple[Path | None, str, bool, str, bool, bool]:
     """Forward shared options placed before the subcommand name.
 
@@ -430,7 +432,10 @@ def _apply_group_opts(
     explicitly receive from the command line.
 
     `output_format` also auto-promotes to `github` when GITHUB_ACTIONS=true
-    and the user didn't pass `--format` explicitly at either level.
+    and the user didn't pass `--format` explicitly at either level. That
+    promotion is skipped when `report_kind` is set: `--report exposure`
+    doesn't support the `github` format, so auto-promoting would turn the
+    advertised default (text) report into a hard failure in CI.
     """
     obj = (ctx.parent.obj if ctx.parent else None) or {}
     if ctx.get_parameter_source("sarif") == ParameterSource.DEFAULT:
@@ -444,7 +449,7 @@ def _apply_group_opts(
     if not sub_format_explicit:
         if obj.get("format_explicit"):
             output_format = obj.get("format", output_format)
-        elif os.environ.get("GITHUB_ACTIONS") == "true":
+        elif report_kind is None and os.environ.get("GITHUB_ACTIONS") == "true":
             output_format = "github"
 
     if ctx.get_parameter_source("no_color") == ParameterSource.DEFAULT:
@@ -712,7 +717,14 @@ def repo(
     `query({ mcpServers: ... })`) are out of V0 scope and not surfaced.
     """
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
-        ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
+        ctx,
+        sarif,
+        fail_on,
+        verbose,
+        output_format,
+        no_color,
+        include_posture,
+        report_kind=report_kind,
     )
     _validate_report_options(
         report_kind=report_kind, output_path=output_path, output_format=output_format
@@ -930,7 +942,14 @@ def endpoint(
 ) -> None:
     """Scan the active agent composition installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
-        ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
+        ctx,
+        sarif,
+        fail_on,
+        verbose,
+        output_format,
+        no_color,
+        include_posture,
+        report_kind=report_kind,
     )
     _validate_report_options(
         report_kind=report_kind, output_path=output_path, output_format=output_format
@@ -1146,6 +1165,7 @@ def scan_bom(
         output_format,
         no_color,
         include_posture=False,
+        report_kind=report_kind,
     )
     group_opts = (ctx.parent.obj if ctx.parent else None) or {}
     if include_posture or group_opts.get("include_posture"):

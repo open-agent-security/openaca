@@ -1,7 +1,8 @@
 # CLI Reference
 
 `openaca scan` scans observed agent composition and reports inventory,
-vulnerabilities, and optional posture findings.
+vulnerabilities, and optional posture findings. `openaca triage` turns
+structured scan output into component-centric exposure reports.
 
 ## Install options
 
@@ -62,7 +63,7 @@ openaca scan repo --target . -v
 
 ## Output formats
 
-`openaca scan` emits three stdout formats:
+`openaca scan` emits three stdout formats by default:
 
 - **`text`** *(default)* - grouped human-readable output. One block per
   affected package, severity per finding, ANSI-colored when stdout is a TTY.
@@ -72,9 +73,37 @@ openaca scan repo --target . -v
 - **`json`** - structured per-finding records plus a `stats` block for
   programmatic consumption.
 
+`markdown` is available only with `--report exposure`; it renders a
+forwardable exposure report instead of the raw scan view.
+
 `--sarif <path>` writes a SARIF 2.1.0 artifact in addition to the chosen stdout
 format. `--no-color` disables ANSI output. Color is also disabled automatically
 when stdout is not a TTY.
+
+## Exposure reports
+
+The scan/triage split keeps evidence collection separate from decision output.
+Use scan JSON when you want a reusable artifact:
+
+```bash
+openaca scan endpoint --format json > openaca-scan.json
+openaca triage openaca-scan.json --report exposure --format markdown --output openaca-exposure-report.md
+```
+
+For the common local path, `scan --report exposure` runs a normal scan and
+renders the same triage report in one command:
+
+```bash
+openaca scan endpoint --report exposure --format markdown --output openaca-exposure-report.md
+```
+
+Exposure reports are static composition reports. They rank components using the
+scan evidence available in the artifact; they do not monitor runtime behavior
+or prove exploitability.
+
+Plugin integrations should invoke one of these CLI paths rather than
+implementing report logic themselves. For latency-sensitive plugin UX, omit
+optional external scanners unless the user explicitly opts in.
 
 ## JSON fields
 

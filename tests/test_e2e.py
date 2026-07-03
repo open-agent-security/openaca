@@ -258,6 +258,39 @@ def test_openaca_scan_attributes_bundled_finding_to_plugin():
     assert "path:" in out
 
 
+def test_openaca_scan_json_carries_exposure_triage_contract():
+    """Plan 036 product contract: scan JSON carries enough composition and
+    finding evidence for exposure triage without re-reading the target."""
+    from tools.scan import main as scan_main
+
+    runner = CliRunner()
+    result = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(REPO_ROOT / "tests" / "fixtures" / "repos" / "exposed-mcp"),
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    scan_doc = json.loads(result.stdout)
+    finding = scan_doc["findings"][0]
+    assert finding["finding_type"] == "vulnerability"
+    assert finding["matched_advisory"]["id"] == "GHSA-3q26-f695-pp76"
+    assert finding["severity"] == "UNKNOWN"
+    assert finding["fixed_in"] == "1.2.3"
+    assert finding["component_path"] == [
+        {"type": "plugin", "name": "exposed"},
+        {"type": "package", "name": "@cyanheads/git-mcp-server"},
+    ]
+    assert finding["declared_by"]["path"].endswith("package.json")
+    assert scan_doc["target"]["host_surface"] == "repository"
+
+
 def test_openaca_scan_bun_lock_surfaces_bundled_finding():
     """Risk Attribution over a bun.lock (plan 024): a bun-based plugin whose
     bun.lock pins a vulnerable transitive dep gets the [! bundles: …] marker on

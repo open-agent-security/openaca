@@ -41,6 +41,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import click
 from click.core import ParameterSource
@@ -83,8 +84,10 @@ from tools.render import (
     render_text,
 )
 from tools.sarif import to_sarif
+from tools.triage import build_triage_cards
+from tools.triage_render import TriageFormat, render_triage_report
 
-_FORMAT_CHOICES = ("text", "github", "json")
+_FORMAT_CHOICES = ("text", "github", "json", "markdown")
 
 # Internal ref classifications that are surfaced to users in V0. Everything
 # else (software-dependency) is suppressed from matching, federation, and
@@ -341,6 +344,23 @@ _include_posture_option = click.option(
         "from vulnerability findings and never affect --fail-on exit codes."
     ),
 )
+
+_report_option = click.option(
+    "--report",
+    "report_kind",
+    type=click.Choice(["exposure"]),
+    default=None,
+    help="Render a triage report from this scan. Currently supports `exposure`.",
+)
+
+_output_option = click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write --report output to this file instead of stdout.",
+)
 _scanner_option = click.option(
     "--scanner",
     "external_scanners",
@@ -486,6 +506,7 @@ def _emit(
             posture_findings=posture_findings,
             observations=observations,
             graph=graph,
+            target=target,
         )
     else:
         rendered = render_text(
@@ -503,6 +524,64 @@ def _emit(
         )
     if rendered:
         click.echo(rendered)
+
+
+def _scan_json_document(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    posture_findings: list[PostureFinding] | None = None,
+    observations: list[ObservationFinding] | None = None,
+    graph: Graph | None = None,
+    target: RenderTarget | None = None,
+) -> dict:
+    rendered = render_json(
+        findings,
+        advisory_index,
+        stats,
+        posture_findings=posture_findings,
+        observations=observations,
+        graph=graph,
+        target=target,
+    )
+    return json.loads(rendered)
+
+
+def _emit_triage_report(
+    scan_doc: dict,
+    *,
+    output_format: str,
+    output_path: Path | None,
+) -> None:
+    cards = build_triage_cards(scan_doc)
+    if output_format not in {"text", "markdown", "json"}:
+        raise click.ClickException(f"--report exposure does not support --format {output_format}")
+    rendered = render_triage_report(
+        cards, scan_doc, output_format=cast(TriageFormat, output_format)
+    )
+    if output_path is None:
+        click.echo(rendered, nl=not rendered.endswith("\n"))
+        return
+    try:
+        output_path.write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"failed to write report to {output_path}: {exc}") from exc
+
+
+def _validate_report_options(
+    *, report_kind: str | None, output_path: Path | None, output_format: str
+) -> None:
+    if report_kind is None:
+        if output_path is not None:
+            raise click.ClickException("--output is only supported with --report exposure")
+        if output_format == "markdown":
+            raise click.ClickException("--format markdown is only supported with --report exposure")
+        return
+    if report_kind != "exposure":
+        raise click.ClickException(f"unsupported report type: {report_kind}")
+    if output_format == "github":
+        raise click.ClickException("--report exposure does not support --format github")
 
 
 def _render_bom_inventory_tree(
@@ -598,6 +677,8 @@ def _stderr_summary(
 @_no_color_option
 @_include_posture_option
 @_scanner_option
+@_report_option
+@_output_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -618,6 +699,8 @@ def repo(
     no_color: bool,
     include_posture: bool,
     external_scanners: tuple[str, ...],
+    report_kind: str | None,
+    output_path: Path | None,
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-component manifests committed in a repository.
@@ -630,6 +713,9 @@ def repo(
     """
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
+    )
+    _validate_report_options(
+        report_kind=report_kind, output_path=output_path, output_format=output_format
     )
 
     # The composition graph is the single source of truth (Stage 3): scope and
@@ -764,20 +850,32 @@ def repo(
         parse_failed=n_failed,
         sources=_collect_corpus_sources(corpus),
     )
-    _emit(
-        findings,
-        advisory_index,
-        stats,
-        output_format=output_format,
-        use_color=_use_color(no_color, output_format),
-        verbose=verbose,
-        posture_findings=posture_output,
-        observations=observations,
-        target=card_target,
-        inventory_tree=card_tree,
-        next_actions=card_next,
-        graph=graph,
-    )
+    if report_kind == "exposure":
+        scan_doc = _scan_json_document(
+            findings,
+            advisory_index,
+            stats,
+            posture_findings=posture_output,
+            observations=observations,
+            graph=graph,
+            target=card_target,
+        )
+        _emit_triage_report(scan_doc, output_format=output_format, output_path=output_path)
+    else:
+        _emit(
+            findings,
+            advisory_index,
+            stats,
+            output_format=output_format,
+            use_color=_use_color(no_color, output_format),
+            verbose=verbose,
+            posture_findings=posture_output,
+            observations=observations,
+            target=card_target,
+            inventory_tree=card_tree,
+            next_actions=card_next,
+            graph=graph,
+        )
 
     # For machine formats (github, json), keep the existing one-line stderr
     # summary so consumers parsing only stdout still get totals on stderr.
@@ -814,6 +912,8 @@ def repo(
 @_no_color_option
 @_include_posture_option
 @_scanner_option
+@_report_option
+@_output_option
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
@@ -825,10 +925,15 @@ def endpoint(
     no_color: bool,
     include_posture: bool,
     external_scanners: tuple[str, ...],
+    report_kind: str | None,
+    output_path: Path | None,
 ) -> None:
     """Scan the active agent composition installed on this endpoint."""
     sarif, fail_on, verbose, output_format, no_color, include_posture = _apply_group_opts(
         ctx, sarif, fail_on, verbose, output_format, no_color, include_posture
+    )
+    _validate_report_options(
+        report_kind=report_kind, output_path=output_path, output_format=output_format
     )
     config_dir = _resolve_endpoint_config_dir(config_dir)
 
@@ -945,20 +1050,32 @@ def endpoint(
         component_count=len(refs),
         sources=_collect_corpus_sources(corpus),
     )
-    _emit(
-        findings,
-        advisory_index,
-        stats,
-        output_format=output_format,
-        use_color=_use_color(no_color, output_format),
-        verbose=verbose,
-        posture_findings=posture_output,
-        observations=observations,
-        target=card_target,
-        inventory_tree=card_tree,
-        next_actions=card_next,
-        graph=graph,
-    )
+    if report_kind == "exposure":
+        scan_doc = _scan_json_document(
+            findings,
+            advisory_index,
+            stats,
+            posture_findings=posture_output,
+            observations=observations,
+            graph=graph,
+            target=card_target,
+        )
+        _emit_triage_report(scan_doc, output_format=output_format, output_path=output_path)
+    else:
+        _emit(
+            findings,
+            advisory_index,
+            stats,
+            output_format=output_format,
+            use_color=_use_color(no_color, output_format),
+            verbose=verbose,
+            posture_findings=posture_output,
+            observations=observations,
+            target=card_target,
+            inventory_tree=card_tree,
+            next_actions=card_next,
+            graph=graph,
+        )
     _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
 
     # When --project is not provided, remind the user that project-local
@@ -1002,6 +1119,8 @@ def _is_graph_backed_bom(doc: dict[str, object]) -> bool:
 @_verbose_option
 @_format_option
 @_no_color_option
+@_report_option
+@_output_option
 def scan_bom(
     ctx: click.Context,
     input_path: Path,
@@ -1010,6 +1129,8 @@ def scan_bom(
     verbose: bool,
     output_format: str,
     no_color: bool,
+    report_kind: str | None,
+    output_path: Path | None,
 ) -> None:
     """Scan a previously generated Agent BOM.
 
@@ -1032,6 +1153,9 @@ def scan_bom(
             "--include-posture is not supported for scan bom; posture checks "
             "require the original repo or endpoint configuration."
         )
+    _validate_report_options(
+        report_kind=report_kind, output_path=output_path, output_format=output_format
+    )
     try:
         doc = json.loads(input_path.read_text(encoding="utf-8"))
     except UnicodeDecodeError as exc:
@@ -1142,18 +1266,29 @@ def scan_bom(
         component_count=len(refs),
         sources=_collect_corpus_sources(corpus),
     )
-    _emit(
-        findings,
-        advisory_index,
-        stats,
-        output_format=output_format,
-        use_color=_use_color(no_color, output_format),
-        verbose=verbose,
-        observations=observations,
-        target=card_target,
-        inventory_tree=card_tree,
-        graph=graph,
-    )
+    if report_kind == "exposure":
+        scan_doc = _scan_json_document(
+            findings,
+            advisory_index,
+            stats,
+            observations=observations,
+            graph=graph,
+            target=card_target,
+        )
+        _emit_triage_report(scan_doc, output_format=output_format, output_path=output_path)
+    else:
+        _emit(
+            findings,
+            advisory_index,
+            stats,
+            output_format=output_format,
+            use_color=_use_color(no_color, output_format),
+            verbose=verbose,
+            observations=observations,
+            target=card_target,
+            inventory_tree=card_tree,
+            graph=graph,
+        )
     unit_count = source_unit_count if source_unit_count is not None else 1
     unit_label = source_unit_label or "agent BOM"
     _stderr_summary(

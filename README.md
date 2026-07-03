@@ -70,6 +70,16 @@ This scans your user-level Claude Code config (`~/.claude`). Add
 `--project <path>` to include project-local skills, MCP servers, commands,
 agents, hooks, and plugin manifests.
 
+To generate a component-centric exposure report from the same scan evidence:
+
+```bash
+openaca scan endpoint --report exposure --format markdown --output openaca-exposure-report.md
+```
+
+Exposure reports are static composition reports. They rank components using
+available scan evidence; they do not monitor runtime behavior or prove
+exploitability.
+
 ### Try it on a sample project
 
 Drop a sample `mcp.json` in any empty directory and scan it:

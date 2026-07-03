@@ -770,6 +770,7 @@ def render_json(
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
     graph: Graph | None = None,
+    target: RenderTarget | None = None,
 ) -> str:
     """Structured per-finding records + scan-level stats. The schema is
     documented in README; consumers should treat unknown keys as forward-
@@ -799,6 +800,11 @@ def render_json(
             "sources": sorted(stats.sources),
         },
     }
+    if target is not None:
+        document["target"] = {
+            "host_surface": target.host_surface,
+            "rows": [{"label": label, "value": value} for label, value in target.rows],
+        }
     return json.dumps(document, indent=2, sort_keys=False)
 
 

@@ -258,6 +258,8 @@ def _draft_action(draft: _CardDraft) -> TriageAction:
     for evidence in draft.evidence:
         if evidence.finding_type == "vulnerability" and evidence.fixed_in:
             return "upgrade"
+    if any(e.id.startswith("MAL-") for e in draft.evidence):
+        return "remove"
     for evidence in draft.evidence:
         text = f"{evidence.id} {evidence.title} {evidence.remediation or ''}".lower()
         if any(token in text for token in ("mutable", "unpinned", "@latest", "no digest")):
@@ -266,8 +268,6 @@ def _draft_action(draft: _CardDraft) -> TriageAction:
             return "replace"
     if any(e.finding_type == "observation" and e.confidence == "low" for e in draft.evidence):
         return "review"
-    if any(e.id.startswith("MAL-") for e in draft.evidence):
-        return "remove"
     return "review"
 
 

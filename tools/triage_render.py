@@ -81,7 +81,7 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
                 "",
                 f"- Type: `{card.component_type}`",
                 f"- Path: `{_path_label_code_span(card.composition_path)}`",
-                f"- Evidence: {_evidence_summary(card)}",
+                f"- Evidence: {_evidence_summary(card, escape=True)}",
                 f"- Action: `{card.action}`",
                 f"- Confidence: `{card.confidence}`",
                 "",
@@ -137,8 +137,13 @@ def _summary_line(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
     return f"{len(cards)} exposure card(s) from {finding_count} finding(s)."
 
 
-def _evidence_summary(card: TriageCard) -> str:
-    return ", ".join(f"{item.id} ({item.severity}, {item.provenance})" for item in card.evidence)
+def _evidence_summary(card: TriageCard, *, escape: bool = False) -> str:
+    def _clean(text: str) -> str:
+        return _escape_markdown(text) if escape else text
+
+    return ", ".join(
+        f"{_clean(item.id)} ({item.severity}, {item.provenance})" for item in card.evidence
+    )
 
 
 def _path_label(path: list[dict[str, str]]) -> str:

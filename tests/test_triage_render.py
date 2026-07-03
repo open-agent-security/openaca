@@ -132,6 +132,40 @@ def test_markdown_report_escapes_untrusted_evidence_ids():
     assert "\\#\\# Fake heading" in rendered
 
 
+def test_markdown_report_collapses_bare_carriage_returns():
+    scan_doc = {
+        "target": {
+            "host_surface": "repo\r## Fake surface",
+            "rows": [{"label": "path", "value": "evil\r## Fake target"}],
+        },
+        "stats": {"components": 1},
+        "findings": [
+            {
+                "finding_type": "observation",
+                "observation_id": "X007\r## Fake evidence",
+                "title": "Suspicious behavior",
+                "severity": "medium",
+                "confidence": "medium",
+                "source": "external-scanner",
+                "component": {"type": "skill", "name": "frontend"},
+                "component_path": [
+                    {"type": "skill", "name": "frontend\r## Fake path"},
+                ],
+            }
+        ],
+    }
+
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\r## Fake" not in rendered
+    assert "repo \\#\\# Fake surface" in rendered
+    assert "evil \\#\\# Fake target" in rendered
+    assert "X007 \\#\\# Fake evidence" in rendered
+    assert "frontend ## Fake path" in rendered
+
+
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
     rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")

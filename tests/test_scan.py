@@ -1051,7 +1051,7 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
             {
                 "package": {"ecosystem": "npm", "name": "@cyanheads/git-mcp-server"},
                 "ranges": [
-                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.1.5"}]}
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.2.3"}]}
                 ],
             }
         ],
@@ -2085,3 +2085,121 @@ def test_agent_child_mcp_edge_preserved_in_graph_backed_bom():
     doc = build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()
     deps = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
     assert deps[agent_node.key] == [mcp_node.key]
+
+
+def test_scan_endpoint_json_contains_triage_contract_fields(tmp_path):
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "vuln-plugin", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}
+                    ]
+                },
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output = json.loads(result.stdout)
+    finding = output["findings"][0]
+    assert finding["finding_type"] == "vulnerability"
+    assert finding["component"]["type"] == "package"
+    assert finding["component"]["name"] == "@cyanheads/git-mcp-server"
+    assert finding["matched_advisory"]["id"] == "GHSA-3q26-f695-pp76"
+    assert finding["severity"] == "UNKNOWN"
+    assert finding["fixed_in"] == "1.2.3"
+    assert finding["component_path"][0] == {"type": "plugin", "name": "vuln-plugin"}
+    assert finding["declared_by"]["path"].endswith("package-lock.json")
+    assert output["target"]["host_surface"] == "Claude Code"
+
+
+def test_scan_endpoint_report_shortcut_writes_markdown_and_keeps_scan_exit(tmp_path):
+    cache_dir = tmp_path / "cache" / "vuln-plugin" / "1.0.0"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "vuln-plugin", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"vuln-plugin@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "vuln-plugin@m": [
+                        {"scope": "user", "version": "1.0.0", "installPath": str(cache_dir)}
+                    ]
+                },
+            }
+        )
+    )
+    report_path = tmp_path / "report.md"
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(tmp_path),
+            "--report",
+            "exposure",
+            "--format",
+            "markdown",
+            "--output",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1, result.output
+    report = report_path.read_text(encoding="utf-8")
+    assert "# OpenACA Exposure Report" in report
+    assert "vuln-plugin" in report
+    assert "`upgrade`" in report
+
+
+def test_scan_report_rejects_markdown_without_report(tmp_path):
+    result = CliRunner().invoke(
+        main,
+        ["endpoint", "--config-dir", str(tmp_path), "--format", "markdown"],
+    )
+
+    assert result.exit_code != 0
+    assert "--format markdown is only supported with --report exposure" in result.output

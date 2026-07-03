@@ -11,6 +11,7 @@ from tools.promote import main as promote_cmd
 from tools.remote.cli import main as remote_cmd
 from tools.scan import main as scan_cmd
 from tools.seed.__main__ import main as seed_cmd
+from tools.triage_cli import main as triage_cmd
 
 
 @click.group()
@@ -20,6 +21,7 @@ def main() -> None:
 
 
 scan_cmd.short_help = "Scan a repository or endpoint for agent-composition findings."
+triage_cmd.short_help = "Triage structured scan JSON into exposure reports."
 bom_cmd.short_help = "Generate an Agent BOM for a repository or endpoint."
 lint_cmd.short_help = "Validate overlay YAML against the schema."
 export_cmd.short_help = "Build the static overlay export."
@@ -28,6 +30,7 @@ promote_cmd.short_help = "Promote a reviewed candidate into the corpus."
 seed_cmd.short_help = "Generate review candidates from an OSV dump."
 
 main.add_command(scan_cmd, name="scan")
+main.add_command(triage_cmd, name="triage")
 main.add_command(bom_cmd, name="bom")
 main.add_command(lint_cmd, name="lint")
 main.add_command(export_cmd, name="export")

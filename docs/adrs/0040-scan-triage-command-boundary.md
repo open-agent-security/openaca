@@ -86,10 +86,11 @@ deterministic and conservative; it must not invent capability or runtime facts.
 Capability extraction can improve triage later, but missing capability facts
 should produce honest lower-confidence cards, not overclaims.
 
-This creates a shared local-to-cloud path. The CLI can produce a single-endpoint
-Markdown report; the Claude Code plugin can expose the same report; Cloud can
-aggregate triage cards across endpoints and add blast radius, ownership,
-history, exceptions, and closure workflow.
+This creates one shared decision layer instead of several: the CLI produces a
+single-endpoint Markdown report, and the Claude Code plugin exposes the same
+report. Any consumer that needs to aggregate triage results across multiple
+endpoints should call the same triage engine and reuse its card model rather
+than defining a separate ranking or report format.
 
 ## When to revisit
 

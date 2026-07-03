@@ -37,6 +37,10 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 030 | [Identity semantics hardening](030-identity-hardening.md) | ✅ Done | 029 |
 | 031 | [Observation findings](031-observation-findings.md) | ✅ Done | 030 |
 | 032 | [External observation sources](032-external-observation-sources.md) | ✅ Done | 031 |
+| 033 | [Composition graph](033-composition-graph.md) | ✅ Done | 032 |
+| 034 | [MCP launch dependency resolution](034-mcp-launch-dependency-resolution.md) | ✅ Done | 033 |
+| 035 | [Plugin-first CLI primitives](035-plugin-first-cli-primitives.md) | ✅ Done | 034 |
+| 036 | [Triage command and exposure reports](036-triage-and-exposure-reports.md) | ⏸ Pending | 033, 035 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

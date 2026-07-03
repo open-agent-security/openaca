@@ -69,7 +69,8 @@ Minimum fields:
 
 - `component_id`: stable identifier from scan output;
 - `component_label`: human label;
-- `component_type`: plugin, MCP server, skill, hook, command, agent, or package;
+- `component_type`: `plugin`, `mcp_server`, `skill`, `hook`, `command`, `agent`,
+  or `package`;
 - `rank`: integer position in this report;
 - `priority`: `critical`, `high`, `medium`, `low`, or `info`;
 - `confidence`: `high`, `medium`, or `low`;

@@ -165,14 +165,14 @@ def _path_label_code_span(path: list[dict[str, str]]) -> str:
 
 
 def _code_span_safe(value: str) -> str:
-    return " ".join(value.split("\n")).replace("`", "'")
+    return " ".join(value.splitlines()).replace("`", "'")
 
 
 def _escape_markdown(text: str) -> str:
     """Neutralize Markdown control characters and line breaks in scan-derived
     text so a crafted component name or path can't spoof headings or
     formatting in a forwarded report."""
-    collapsed = " ".join(text.split("\n"))
+    collapsed = " ".join(text.splitlines())
     return "".join(f"\\{ch}" if ch in _MARKDOWN_ESCAPE_CHARS else ch for ch in collapsed)
 
 

@@ -14,7 +14,7 @@ followed by `openaca triage scan.json --report exposure --output report.md`.
 output and returns triage cards. Renderers turn cards into text, Markdown, and
 JSON. CLI plumbing exposes both `openaca triage` and `scan --report exposure`,
 with both paths using the same engine. No new detection rules, runtime claims,
-or Cloud-only behavior in this plan.
+or hosted-only behavior in this plan.
 
 **Tech stack:** Python 3.11, Click, pytest, existing scan JSON and Agent BOM
 composition data. Gate: `uv run ruff check .`, `uv run ruff format --check .`,

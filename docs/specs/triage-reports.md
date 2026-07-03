@@ -55,7 +55,7 @@ V1 emits:
 
 - `text`: terminal-oriented component grouping;
 - `markdown`: forwardable exposure assessment report;
-- `json`: machine-readable triage cards for Cloud and plugin consumers.
+- `json`: machine-readable triage cards for downstream and plugin consumers.
 
 The Claude Code plugin should call the same CLI path rather than implementing a
 separate report generator.
@@ -138,5 +138,5 @@ V1 does not:
 - replace SARIF, GitHub annotations, or raw scan JSON;
 - create OpenACA advisory records.
 
-Fleet/Cloud aggregation can reuse triage cards later, but fleet blast radius and
-history are not part of the local V1 report.
+Aggregating triage cards across multiple endpoints can reuse this card model
+later, but that aggregation is not part of the local V1 report.

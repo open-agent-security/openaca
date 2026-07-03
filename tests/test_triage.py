@@ -75,6 +75,49 @@ def test_multiple_findings_group_under_same_component_and_rank_deterministically
     ]
 
 
+def test_posture_finding_groups_by_component_identity_not_display_label():
+    scan_doc = {
+        "findings": [
+            {
+                "finding_type": "posture",
+                "rule_id": "openaca-posture-mutable-install-reference",
+                "title": "Mutable install source",
+                "severity": "low",
+                "confidence": "high",
+                "component": {
+                    "type": "plugin",
+                    "name": "shared",
+                    "identity": "plugin/marketplace-a/shared",
+                },
+                "component_path": [{"type": "plugin", "name": "shared"}],
+                "remediation": "Pin mutable install source.",
+            },
+            {
+                "finding_type": "posture",
+                "rule_id": "openaca-posture-mutable-install-reference",
+                "title": "Mutable install source",
+                "severity": "low",
+                "confidence": "high",
+                "component": {
+                    "type": "plugin",
+                    "name": "shared",
+                    "identity": "plugin/marketplace-b/shared",
+                },
+                "component_path": [{"type": "plugin", "name": "shared"}],
+                "remediation": "Pin mutable install source.",
+            },
+        ]
+    }
+
+    cards = build_triage_cards(scan_doc)
+
+    assert len(cards) == 2
+    assert {card.component_id for card in cards} == {
+        "plugin/marketplace-a/shared",
+        "plugin/marketplace-b/shared",
+    }
+
+
 def test_low_confidence_observation_defaults_to_review():
     scan_doc = {
         "findings": [

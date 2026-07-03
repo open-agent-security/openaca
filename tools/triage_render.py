@@ -9,6 +9,8 @@ from tools.triage import TriageCard
 
 TriageFormat = Literal["text", "markdown", "json"]
 
+_MARKDOWN_ESCAPE_CHARS = set("\\`*_{}[]()#+-.!|<>~")
+
 
 def render_triage_report(
     cards: list[TriageCard], scan_doc: dict[str, Any], *, output_format: TriageFormat
@@ -72,17 +74,18 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
     if not cards:
         lines.extend(["No exposure cards were generated from this scan.", ""])
     for card in cards[:5]:
+        label = _escape_markdown(card.component_label)
         lines.extend(
             [
-                f"### {card.rank}. {card.priority.upper()} - {card.component_label}",
+                f"### {card.rank}. {card.priority.upper()} - {label}",
                 "",
                 f"- Type: `{card.component_type}`",
-                f"- Path: `{_path_label(card.composition_path)}`",
+                f"- Path: `{_path_label_code_span(card.composition_path)}`",
                 f"- Evidence: {_evidence_summary(card)}",
                 f"- Action: `{card.action}`",
                 f"- Confidence: `{card.confidence}`",
                 "",
-                card.why_it_matters,
+                _escape_markdown(card.why_it_matters),
                 "",
             ]
         )
@@ -136,6 +139,32 @@ def _evidence_summary(card: TriageCard) -> str:
 
 def _path_label(path: list[dict[str, str]]) -> str:
     return " -> ".join(f"{item['type']} {item['name']}" for item in path) or "<unknown>"
+
+
+def _path_label_code_span(path: list[dict[str, str]]) -> str:
+    """Render a composition path for a single-backtick Markdown code span.
+
+    CommonMark doesn't honor backslash escapes inside a code span, so a
+    scan-derived name containing a backtick must be neutralized directly
+    rather than escaped, or it would close the span early.
+    """
+    if not path:
+        return "<unknown>"
+    return " -> ".join(
+        f"{_code_span_safe(item['type'])} {_code_span_safe(item['name'])}" for item in path
+    )
+
+
+def _code_span_safe(value: str) -> str:
+    return " ".join(value.split("\n")).replace("`", "'")
+
+
+def _escape_markdown(text: str) -> str:
+    """Neutralize Markdown control characters and line breaks in scan-derived
+    text so a crafted component name or path can't spoof headings or
+    formatting in a forwarded report."""
+    collapsed = " ".join(text.split("\n"))
+    return "".join(f"\\{ch}" if ch in _MARKDOWN_ESCAPE_CHARS else ch for ch in collapsed)
 
 
 def _report_scope_limits(cards: list[TriageCard]) -> list[str]:

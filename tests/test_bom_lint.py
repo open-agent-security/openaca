@@ -125,7 +125,7 @@ def _valid_bom_doc() -> dict:
         "version": 1,
         "metadata": {
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.2"},
+                {"name": "openaca:schema_version", "value": "0.3"},
                 {"name": "openaca:target_type", "value": "repo"},
             ]
         },

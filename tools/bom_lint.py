@@ -10,6 +10,8 @@ from typing import Any
 import click
 from jsonschema import Draft202012Validator
 
+from tools.capability import COVERAGE_LEVELS, Capability
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca-bom.schema.json"
 
@@ -113,6 +115,37 @@ def _check_component(component: dict[str, Any], index: int) -> list[str]:
     scope = props.get("openaca:scope")
     if scope is not None and scope not in _SCOPES:
         errors.append(f"components[{index}]: openaca:scope {scope!r} is not recognized")
+
+    errors.extend(_check_capability_descriptors(props, index))
+    return errors
+
+
+def _check_capability_descriptors(props: dict[str, str], index: int) -> list[str]:
+    errors: list[str] = []
+    coverage = props.get("openaca:capability_coverage")
+    if coverage is not None and coverage not in COVERAGE_LEVELS:
+        errors.append(
+            f"components[{index}]: openaca:capability_coverage {coverage!r} is not recognized"
+        )
+
+    capabilities_raw = props.get("openaca:capabilities")
+    if capabilities_raw is None:
+        return errors
+    try:
+        capabilities = json.loads(capabilities_raw)
+    except json.JSONDecodeError:
+        errors.append(f"components[{index}]: openaca:capabilities is not valid JSON")
+        return errors
+    if not isinstance(capabilities, list):
+        errors.append(f"components[{index}]: openaca:capabilities must be a JSON array")
+        return errors
+    for entry_index, entry in enumerate(capabilities):
+        try:
+            Capability.from_dict(entry)
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append(
+                f"components[{index}]: openaca:capabilities[{entry_index}] is invalid: {exc}"
+            )
     return errors
 
 

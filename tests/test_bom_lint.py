@@ -199,6 +199,77 @@ def test_bom_lint_accepts_schema_version_0_1(tmp_path):
     assert f"{path}: ok" in result.output
 
 
+def test_bom_lint_rejects_invalid_capability_coverage(tmp_path):
+    doc = _valid_bom_doc()
+    doc["components"][0]["properties"].append(
+        {"name": "openaca:capability_coverage", "value": "bogus"}
+    )
+    path = tmp_path / "bad-coverage.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "openaca:capability_coverage 'bogus' is not recognized" in result.output
+
+
+def test_bom_lint_rejects_non_json_capabilities(tmp_path):
+    doc = _valid_bom_doc()
+    doc["components"][0]["properties"].append({"name": "openaca:capabilities", "value": "not json"})
+    path = tmp_path / "bad-capabilities-json.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "openaca:capabilities is not valid JSON" in result.output
+
+
+def test_bom_lint_rejects_malformed_capability_entry(tmp_path):
+    doc = _valid_bom_doc()
+    doc["components"][0]["properties"].append(
+        {"name": "openaca:capabilities", "value": json.dumps([{"name": "shell_exec"}])}
+    )
+    path = tmp_path / "bad-capability-entry.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "openaca:capabilities[0] is invalid" in result.output
+
+
+def test_bom_lint_accepts_valid_capability_descriptors(tmp_path):
+    doc = _valid_bom_doc()
+    doc["components"][0]["properties"].extend(
+        [
+            {
+                "name": "openaca:capabilities",
+                "value": json.dumps(
+                    [
+                        {
+                            "name": "shell_exec",
+                            "execution_locus": "local",
+                            "method": "declared",
+                            "source": "hook",
+                            "source_version": "1",
+                            "confidence": "high",
+                            "evidence": [{"kind": "manifest_field"}],
+                        }
+                    ]
+                ),
+            },
+            {"name": "openaca:capability_coverage", "value": "partial"},
+        ]
+    )
+    path = tmp_path / "good-capabilities.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+
+
 def test_bom_lint_handles_non_dict_metadata_without_crashing():
     """A schema-invalid BOM whose `metadata` is not an object (e.g. a list or
     string) must not raise AttributeError in check_semantics — it should return

@@ -35,6 +35,25 @@ def test_remote_mcp_maps_to_egress_and_data(tmp_path):
     assert any(e.get("field") == "url" for c in caps for e in c.evidence)
 
 
+def test_remote_mcp_url_only_maps_to_egress_and_data(tmp_path):
+    # A re-ingested/foreign BOM can carry `url` without the redundant
+    # `install_source` copy the parser also populates (ADR-0020: `url` is
+    # the canonical remote-MCP field, `install_source` is a posture-rule
+    # convenience copy).
+    ref = ComponentRef(
+        component_identity="mcp-server/x",
+        extra={
+            "component_type": "mcp_server",
+            "transport": "sse",
+            "url": "https://mcp.example.com/mcp",
+        },
+    )
+    caps = declared_capabilities(ref)
+    names = {c.name for c in caps}
+    assert names == {"network_egress", "sensitive_data_access"}
+    assert all(c.execution_locus == "remote" for c in caps)
+
+
 def test_unknown_component_declares_nothing(tmp_path):
     assert declared_capabilities(ComponentRef(name="p", extra={"component_type": "plugin"})) == []
 

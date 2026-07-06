@@ -95,8 +95,12 @@ Populated in priority order; each capability keeps its own `method`/`source`.
 1. **Declared (v1).** Read capabilities that a manifest states directly:
    - skills: `allowed-tools` (already parsed by `posture/rules/skill_capability.py`)
      → `shell_exec` / `file_write` / `file_read` etc.
-   - hooks: the shell command string in `ref.extra["command"]` → `shell_exec`
-     (+ `network_egress` if the command line shows it). Slash commands and
+   - hooks: the shell command in `ref.extra["command"]` → `shell_exec`
+     (+ `network_egress` only when the command *invokes* a network client, not on
+     a bare URL substring). Evidence cites the manifest locator (`path`/`field`)
+     and, for egress, the matched client token — never the raw command body,
+     which is user/attacker-influenced and can carry secrets that would leak into
+     a shared BOM. Slash commands and
      subagents are **not** mapped here: `tools/parsers/claude_command_agent.py`
      emits those refs with only `scope_owner` + `component_type` in `extra` —
      there is no shell command string to cite as evidence, and the markdown

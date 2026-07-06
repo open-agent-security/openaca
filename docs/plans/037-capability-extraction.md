@@ -145,10 +145,13 @@ def test_slash_command_declares_nothing(tmp_path):
 
 def test_hook_url_substring_without_client_is_not_egress(tmp_path):
     # A URL in the command that is only logged/assigned is not egress.
-    ref = ComponentRef(name="h", extra={"component_type": "hook",
-        "command": 'echo "see https://example.com" >> log.txt'})
+    cmd = 'echo "see https://example.com token=sk-secret" >> log.txt'
+    ref = ComponentRef(name="h", extra={"component_type": "hook", "command": cmd})
     caps = declared_capabilities(ref)
     assert {c.name for c in caps} == {"shell_exec"}  # no network_egress
+    # The raw command (which may carry secrets) is never serialized as evidence.
+    assert all(cmd not in str(e.values()) for c in caps for e in c.evidence)
+    assert caps[0].evidence[0]["field"] == "command"
 
 def test_hook_network_client_maps_to_egress(tmp_path):
     ref = ComponentRef(name="h", extra={"component_type": "hook",
@@ -165,17 +168,24 @@ def test_hook_network_client_maps_to_egress(tmp_path):
     `bash`/`shell`→`shell_exec`, `write`/`edit`→`file_write`, `read`→`file_read`,
     `webfetch`/`websearch`→`network_egress`. Evidence: `{kind: manifest_field,
     path, field: "allowed-tools", value: <tool>}`. `execution_locus="local"`.
-  - hook (`component_type == "hook"`): the shell command string in
-    `ref.extra["command"]` → `shell_exec` (always defensible — it *is* a shell
-    command). Add `network_egress` **only** when the command line **invokes** a
-    network client — a recognized executable token (`curl`, `wget`, `nc`, `scp`,
-    `ssh`, `httpie`/`http`, `rsync`) appearing in command position (argv[0] of
-    the command or a piped/`&&`-chained segment), not merely a `http`/URL
-    substring. A command that logs, assigns, or passes a URL to a local tool
-    shows no egress, and a high-confidence `network_egress` on that evidence
-    would be a false capability fact — "declining beats guessing" (Principle 2).
-    Evidence: the matched command token (for egress) / the command string (for
-    shell_exec). `local`.
+  - hook (`component_type == "hook"`): the shell command in `ref.extra["command"]`
+    → `shell_exec` (always defensible — it *is* a shell command). Add
+    `network_egress` **only** when the command line **invokes** a network client —
+    a recognized executable token (`curl`, `wget`, `nc`, `scp`, `ssh`,
+    `httpie`/`http`, `rsync`) appearing in command position (argv[0] of the
+    command or a piped/`&&`-chained segment), not merely a `http`/URL substring. A
+    command that logs, assigns, or passes a URL to a local tool shows no egress,
+    and a high-confidence `network_egress` on that evidence would be a false
+    capability fact — "declining beats guessing" (Principle 2). **Evidence must
+    not contain the raw command.** A hook command is user/attacker-influenced and
+    can carry inline tokens, secret-bearing env expansions, or local paths;
+    serializing it into `openaca:capabilities` would leak it into shared/uploaded
+    BOMs (existing BOM output never exposes hook command bodies, and the upload
+    contract's secret/path scanning is a backstop, not a license to emit raw
+    payloads). Cite a *locator* instead, mirroring the skill evidence shape:
+    `{kind: manifest_field, path: <hook manifest>, field: "command"}` for
+    `shell_exec`, and for `network_egress` add only the matched client token
+    (e.g. `value: "curl"`) — never the full command string. `local`.
   - slash command / subagent (`component_type` in {`command`,`agent`}):
     **not** mapped here. `tools/parsers/claude_command_agent.py` emits these
     refs with only `scope_owner` + `component_type` in `extra` — there is no

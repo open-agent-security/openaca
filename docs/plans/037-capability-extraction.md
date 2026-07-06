@@ -482,6 +482,17 @@ def test_pinned_launch_matches_unpinned_seed_coordinate():
                "install_source": "npx @modelcontextprotocol/server-filesystem@1.2.3"})
     caps, _ = capabilities_for_ref(ref, load_capability_corpus())
     assert {c.name for c in caps} >= {"file_read", "file_write"}
+
+def test_git_launch_source_yields_no_coordinate():
+    # mcp_package_source returns a tuple for `uvx git+https://…`, but that is a
+    # URL, not a registry coordinate — it must not become a bogus
+    # `PyPI/git+https://…` lookup key. With no declared signal and no valid
+    # coordinate, coverage is unknown.
+    ref = ComponentRef(component_identity="mcp-server/x",
+        extra={"component_type": "mcp_server",
+               "install_source": "uvx git+https://github.com/org/repo"})
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert caps == [] and coverage == "unknown"
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
@@ -496,7 +507,17 @@ def test_pinned_launch_matches_unpinned_seed_coordinate():
   `tools/identity.py` — scope-aware for npm (a leading `@scope/` is part of the
   name; the pin is a *later* `@…`) and handling the PyPI `@`/`==` forms — and
   build the coordinate as `f"{ecosystem}/{stripped}"`, matching the unpinned
-  `match_coordinate` value space the corpus records use (Task 3). `None` when
+  `match_coordinate` value space the corpus records use (Task 3). **Filter to
+  real registry packages first:** `mcp_package_source` also returns a tuple for
+  non-registry launch targets — `uvx git+https://…`, `uvx ./local/path`, direct
+  URLs — whose "package" is a URL/path, not a coordinate (verified:
+  `mcp_package_source("uvx git+https://github.com/org/repo")` →
+  `("uvx","PyPI","git+https://github.com/org/repo")`). Build a coordinate only
+  when the stripped name passes `tools.identity._safe_package_name` for its
+  ecosystem (`allow_scope=True` for npm) — the same gate `infer_unpinned_mcp_package`
+  already applies; otherwise the coordinate is `None` and the ref uses
+  identity-only lookup. Without the filter, a git/local launch would become a
+  bogus `PyPI/git+https://…` coordinate. `None` when
   `mcp_package_source` does not resolve. Union of `declared_capabilities(ref)` and
   `corpus.lookup(<ref identity>, match_coordinate=<computed coordinate>)`
   (dedupe by `(name, execution_locus)`, preferring `declared` evidence).

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from tools.capability_extract import _allowed_tools, _executable_tool_base
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 
@@ -66,10 +66,6 @@ def _allowed_executable_tool_finding(ref: ComponentRef) -> PostureFinding | None
     )
 
 
-def _executable_tool_base(tool: str) -> str:
-    return tool.split("(", 1)[0].strip()
-
-
 def _read_frontmatter(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -85,15 +81,6 @@ def _read_frontmatter(path: Path) -> dict[str, Any]:
     except yaml.YAMLError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
-
-
-def _allowed_tools(frontmatter: dict[str, Any]) -> set[str]:
-    raw = frontmatter.get("allowed-tools")
-    if isinstance(raw, str):
-        return set(re.findall(r"[^\s,(]+(?:\([^)]*\))?", raw))
-    if isinstance(raw, list):
-        return {item for item in raw if isinstance(item, str) and item}
-    return set()
 
 
 def _active_in_for(ref: ComponentRef) -> list[str]:

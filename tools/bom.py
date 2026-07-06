@@ -25,7 +25,7 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
-OPENACA_BOM_SCHEMA_VERSION = "0.2"
+OPENACA_BOM_SCHEMA_VERSION = "0.3"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 _PURL_TO_ECOSYSTEM = {
@@ -569,7 +569,31 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
             extra["source_provenance"] = json.loads(source_provenance)
         except json.JSONDecodeError:
             extra["source_provenance"] = source_provenance
+    _restore_capabilities(props, extra)
     return extra
+
+
+def _restore_capabilities(props: dict[str, str], extra: dict[str, Any]) -> None:
+    """Restore the capability descriptor pair, or neither.
+
+    A re-ingested BOM must recover both `capabilities` and `capability_coverage`
+    (or leave the ref un-annotated so Task 7 recomputes). Restoring only one, or a
+    malformed `capabilities` list, would seed a half-populated or invalid `extra`;
+    validate the pair via `_is_annotated` and restore both only when it holds.
+    """
+    capabilities_raw = props.get("openaca:capabilities")
+    coverage = props.get("openaca:capability_coverage")
+    if capabilities_raw is None or coverage is None:
+        return
+    try:
+        capabilities = json.loads(capabilities_raw)
+    except json.JSONDecodeError:
+        return
+    candidate = {"capabilities": capabilities, "capability_coverage": coverage}
+    if not _is_annotated(candidate):
+        return
+    extra["capabilities"] = capabilities
+    extra["capability_coverage"] = coverage
 
 
 def _agent_host(ref: ComponentRef) -> str | None:

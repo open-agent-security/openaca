@@ -11,11 +11,12 @@ The external interchange format is CycloneDX JSON. OpenACA emits CycloneDX with
 OpenACA-owned metadata in `properties[]` entries whose names start with
 `openaca:`.
 
-The current OpenACA Agent BOM schema version is `0.2` — the graph-encoded
-format introduced in 0.2.0, which shipped mislabeled as `0.1` and is correctly
-labeled from 0.3.0 onward (see `docs/releases/v0.3.0.md`). `openaca bom lint`
-accepts both `0.1` (0.2.0 artifacts, cannot be relabeled) and `0.2`; the emitter
-always produces `0.2`.
+The current OpenACA Agent BOM schema version is `0.3` — adding the capability
+descriptor properties (`openaca:capabilities` / `openaca:capability_coverage`)
+to the graph-encoded format introduced in 0.2.0, which shipped mislabeled as
+`0.1` and is correctly labeled from 0.3.0 onward (see
+`docs/releases/v0.3.0.md`). `openaca bom lint` accepts `0.1` (0.2.0 artifacts,
+cannot be relabeled), `0.2`, and `0.3`; the emitter always produces `0.3`.
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:
@@ -37,7 +38,7 @@ openaca bom lint agent.bom.json
       }
     ],
     "properties": [
-      {"name": "openaca:schema_version", "value": "0.2"},
+      {"name": "openaca:schema_version", "value": "0.3"},
       {"name": "openaca:target_type", "value": "repo"}
     ]
   },
@@ -154,6 +155,8 @@ suffix derived from the component observation fields.
 | `openaca:source_locator` | Locator inside the source manifest. |
 | `openaca:agent_host` | Agent host surface that loads, exposes, or executes the component. |
 | `openaca:source_provenance` | JSON-encoded source provenance recovered from lockfiles or symlink targets. |
+| `openaca:capabilities` | JSON-encoded list of capability descriptors (closed taxonomy). Component descriptor, not a finding (ADR-0041). |
+| `openaca:capability_coverage` | Capability extraction coverage: `unknown`, `partial`, or `complete`. Component descriptor, not a finding (ADR-0041). |
 
 ## Composition Edges
 

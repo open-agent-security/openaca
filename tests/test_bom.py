@@ -249,7 +249,7 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.2"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.3"
     package = _component(doc, "mcp-server/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
@@ -847,6 +847,104 @@ def test_build_agent_bom_recomputes_half_annotated_ref(tmp_path):
     assert out_ref.extra["capability_coverage"] in COVERAGE_LEVELS
     assert isinstance(out_ref.extra["capabilities"], list)
     assert any(c["name"] == "shell_exec" for c in out_ref.extra["capabilities"])
+
+
+def _curated_capability() -> dict:
+    return {
+        "name": "shell_exec",
+        "execution_locus": "local",
+        "method": "curated",
+        "source": "openaca",
+        "source_version": "0.4.0",
+        "confidence": "high",
+        "evidence": [
+            {
+                "kind": "curated_review",
+                "reviewed_version": "1.0",
+                "last_reviewed": "2026-07-03",
+            }
+        ],
+    }
+
+
+def test_bom_emits_capability_descriptors():
+    ref = ComponentRef(
+        component_identity="mcp-server/x",
+        extra={
+            "component_type": "mcp_server",
+            "capabilities": [_curated_capability()],
+            "capability_coverage": "partial",
+        },
+    )
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
+    props = _props(doc["components"][0])
+    assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
+    assert props["openaca:capability_coverage"] == "partial"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.3"
+
+
+def test_bom_emits_coverage_for_uncovered_component():
+    # No declared/curated signal: capabilities=[] but coverage must still emit —
+    # dropping it here would recreate the silent-empty state ADR-0041 rule 2 forbids.
+    ref = ComponentRef(
+        component_identity="plugin/y",
+        extra={
+            "component_type": "plugin",
+            "capabilities": [],
+            "capability_coverage": "unknown",
+        },
+    )
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
+    props = _props(doc["components"][0])
+    assert json.loads(props["openaca:capabilities"]) == []
+    assert props["openaca:capability_coverage"] == "unknown"
+
+
+def test_bom_roundtrips_capability_properties():
+    # scan bom rebuilds refs via component_refs_from_cyclonedx(), which restores
+    # extra from properties through an explicit allow-list (_extra_from_properties).
+    # Descriptors must survive that round trip or a re-ingested BOM silently loses
+    # them.
+    ref = ComponentRef(
+        component_identity="mcp-server/x",
+        extra={
+            "component_type": "mcp_server",
+            "capabilities": [_curated_capability()],
+            "capability_coverage": "partial",
+        },
+    )
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
+    rebuilt = component_refs_from_cyclonedx(doc)[0]
+    assert rebuilt.extra["capabilities"][0]["name"] == "shell_exec"
+    assert rebuilt.extra["capability_coverage"] == "partial"
+
+
+def test_reingest_drops_malformed_capability_items():
+    # A BOM whose openaca:capabilities parses as a list but has an invalid item
+    # (unknown name) must not be treated as annotated: restore neither property so
+    # Task 7 recomputes rather than re-emitting an invalid descriptor.
+    doc = {
+        "components": [
+            {
+                "bom-ref": "mcp-server/x",
+                "type": "application",
+                "properties": [
+                    {"name": "openaca:capability_coverage", "value": "complete"},
+                    {
+                        "name": "openaca:capabilities",
+                        "value": json.dumps([{"name": "not_a_capability"}]),
+                    },
+                ],
+            }
+        ]
+    }
+    rebuilt = component_refs_from_cyclonedx(doc)[0]
+    assert "capabilities" not in rebuilt.extra
+    assert "capability_coverage" not in rebuilt.extra
+
+
+def _props(component: dict) -> dict[str, str]:
+    return {prop["name"]: prop["value"] for prop in component.get("properties", [])}
 
 
 def _metadata_property(doc: dict, name: str) -> str | None:

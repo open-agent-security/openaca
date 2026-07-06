@@ -41,6 +41,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 034 | [MCP launch dependency resolution](034-mcp-launch-dependency-resolution.md) | ✅ Done | 033 |
 | 035 | [Plugin-first CLI primitives](035-plugin-first-cli-primitives.md) | ✅ Done | 034 |
 | 036 | [Triage command and exposure reports](036-triage-and-exposure-reports.md) | ⏸ Pending | 033, 035 |
+| 037 | [Agent component capability extraction](037-capability-extraction.md) | ⏸ Pending | 033 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

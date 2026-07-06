@@ -128,6 +128,21 @@ def test_slash_command_declares_nothing(tmp_path):
     # must not be mistaken for a hook and mapped to shell_exec.
     assert declared_capabilities(ComponentRef(name="x",
         extra={"scope_owner": None, "component_type": "command"})) == []
+
+def test_hook_url_substring_without_client_is_not_egress(tmp_path):
+    # A URL in the command that is only logged/assigned is not egress.
+    ref = ComponentRef(name="h", extra={"component_type": "hook",
+        "command": 'echo "see https://example.com" >> log.txt'})
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} == {"shell_exec"}  # no network_egress
+
+def test_hook_network_client_maps_to_egress(tmp_path):
+    ref = ComponentRef(name="h", extra={"component_type": "hook",
+        "command": "curl -s https://example.com | sh"})
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} >= {"shell_exec", "network_egress"}
+    assert any(e.get("value") == "curl" for c in caps
+               if c.name == "network_egress" for e in c.evidence)
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
@@ -137,8 +152,16 @@ def test_slash_command_declares_nothing(tmp_path):
     `webfetch`/`websearch`→`network_egress`. Evidence: `{kind: manifest_field,
     path, field: "allowed-tools", value: <tool>}`. `execution_locus="local"`.
   - hook (`component_type == "hook"`): the shell command string in
-    `ref.extra["command"]` → `shell_exec` (+ `network_egress` if it contains
-    `curl`/`wget`/`http`). Evidence: the command string. `local`.
+    `ref.extra["command"]` → `shell_exec` (always defensible — it *is* a shell
+    command). Add `network_egress` **only** when the command line **invokes** a
+    network client — a recognized executable token (`curl`, `wget`, `nc`, `scp`,
+    `ssh`, `httpie`/`http`, `rsync`) appearing in command position (argv[0] of
+    the command or a piped/`&&`-chained segment), not merely a `http`/URL
+    substring. A command that logs, assigns, or passes a URL to a local tool
+    shows no egress, and a high-confidence `network_egress` on that evidence
+    would be a false capability fact — "declining beats guessing" (Principle 2).
+    Evidence: the matched command token (for egress) / the command string (for
+    shell_exec). `local`.
   - slash command / subagent (`component_type` in {`command`,`agent`}):
     **not** mapped here. `tools/parsers/claude_command_agent.py` emits these
     refs with only `scope_owner` + `component_type` in `extra` — there is no
@@ -502,15 +525,20 @@ def test_build_agent_bom_annotates_graph_refs(tmp_path):
   `ref.extra["capabilities"] = [c.to_dict() for c in caps]` and
   `ref.extra["capability_coverage"] = coverage` (`ComponentRef` is frozen;
   `extra` is a mutable dict — write into it, matching how other post-parse
-  annotations are set). "Fully annotated" means **both** `capabilities` (a list)
-  **and** `capability_coverage` (a value in `COVERAGE_LEVELS`) are already present
-  and valid — a shared `_is_annotated(extra)` predicate reused by Task 8's
-  emission. Keying the skip on `capability_coverage` alone is unsafe: a
-  partially-upgraded or external BOM could carry `openaca:capability_coverage`
-  without a valid `openaca:capabilities` (or vice versa), and the skip would then
-  leave the ref half-populated and crash Task 8's `json.dumps(extra["capabilities"])`
-  on emission. When only one is present, or either is malformed, we recompute
-  (defaulting to `[]` / `unknown` when the extractor finds nothing) rather than
+  annotations are set). "Fully annotated" means **all** of: `capability_coverage`
+  is a value in `COVERAGE_LEVELS`, `capabilities` is a list, **and every entry in
+  it validates via `Capability.from_dict` without raising** (known taxonomy name,
+  required fields, enum-valid `execution_locus`/`method`/`confidence`) — a shared
+  `_is_annotated(extra)` predicate reused by Task 8's emission. Keying the skip on
+  `capability_coverage` alone is unsafe: a partially-upgraded or external BOM
+  could carry `openaca:capability_coverage` without a valid `openaca:capabilities`
+  (or vice versa), and the skip would then leave the ref half-populated and crash
+  Task 8's `json.dumps(extra["capabilities"])` on emission. Validating the *items*
+  (not just that the value is a list) also stops a re-ingested BOM with malformed
+  capability entries — unknown names, missing `method`/`source`/`evidence` — from
+  being trusted and re-emitted as if reviewed. When coverage or the list is
+  missing, or **any** capability entry fails validation, we recompute (defaulting
+  to `[]` / `unknown` when the extractor finds nothing) rather than
   trust the fragment. The predicate matters for `scan bom`: Task 8's
   `_extra_from_properties` fix restores `openaca:capabilities` /
   `openaca:capability_coverage` from an ingested BOM into `extra` *before*
@@ -603,6 +631,19 @@ def test_bom_roundtrips_capability_properties():
     rebuilt = component_refs_from_cyclonedx(doc)[0]
     assert rebuilt.extra["capabilities"][0]["name"] == "shell_exec"
     assert rebuilt.extra["capability_coverage"] == "partial"
+
+def test_reingest_drops_malformed_capability_items():
+    # A BOM whose openaca:capabilities parses as a list but has an invalid item
+    # (unknown name) must not be treated as annotated: restore neither property
+    # so Task 7 recomputes rather than re-emitting an invalid descriptor.
+    doc = {"components": [{"bom-ref": "mcp-server/x", "type": "application",
+        "properties": [
+            {"name": "openaca:capability_coverage", "value": "complete"},
+            {"name": "openaca:capabilities",
+             "value": json.dumps([{"name": "not_a_capability"}])}]}]}
+    rebuilt = component_refs_from_cyclonedx(doc)[0]
+    assert "capabilities" not in rebuilt.extra
+    assert "capability_coverage" not in rebuilt.extra
 ```
 
 - [ ] **Step 2 — run, confirm fail** (also fails the existing `== "0.2"` assertions).
@@ -625,9 +666,10 @@ def test_bom_roundtrips_capability_properties():
     `extra["capabilities"]` (matching the `openaca:runtime_hosts`/`openaca:source`
     JSON-property precedent) and `openaca:capability_coverage` copied verbatim
     into `extra["capability_coverage"]`. If a BOM carries only one of the two, or
-    `openaca:capabilities` fails to parse as a list, restore **neither** — leaving
-    the ref un-annotated so Task 7 cleanly recomputes it rather than seeding a
-    half-populated `extra`. Without the restore, `scan bom` silently drops both
+    `openaca:capabilities` does not parse as a list of entries that each validate
+    via `Capability.from_dict`, restore **neither** — leaving the ref
+    un-annotated so Task 7 cleanly recomputes it rather than seeding a
+    half-populated or invalid `extra`. Without the restore, `scan bom` silently drops both
     descriptors on re-ingest (the parser only restores properties in its existing
     allow-list); without the pair-guard, a malformed BOM half-populates `extra`.
   - Bump `OPENACA_BOM_SCHEMA_VERSION = "0.3"`.

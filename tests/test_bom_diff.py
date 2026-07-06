@@ -65,6 +65,8 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "source_provenance": None,
                 "match_coordinate": None,
                 "scope": None,
+                "capabilities": None,
+                "capability_coverage": None,
             }
         ],
         "removed_components": [
@@ -84,6 +86,8 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "source_provenance": None,
                 "match_coordinate": None,
                 "scope": None,
+                "capabilities": None,
+                "capability_coverage": None,
             }
         ],
         "changed_components": [
@@ -104,6 +108,8 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "source_provenance": None,
                     "match_coordinate": None,
                     "scope": None,
+                    "capabilities": None,
+                    "capability_coverage": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -117,6 +123,8 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "source_provenance": None,
                     "match_coordinate": None,
                     "scope": None,
+                    "capabilities": None,
+                    "capability_coverage": None,
                 },
             }
         ],
@@ -166,6 +174,8 @@ def _component(
     source_provenance: str | None = None,
     match_coordinate: str | None = None,
     scope: str | None = None,
+    capabilities: str | None = None,
+    capability_coverage: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -204,6 +214,12 @@ def _component(
         )
     if scope is not None:
         component["properties"].append({"name": "openaca:scope", "value": scope})
+    if capabilities is not None:
+        component["properties"].append({"name": "openaca:capabilities", "value": capabilities})
+    if capability_coverage is not None:
+        component["properties"].append(
+            {"name": "openaca:capability_coverage", "value": capability_coverage}
+        )
     return component
 
 
@@ -483,3 +499,78 @@ def test_diff_boms_detects_scope_change():
     assert changed.after.scope == "agent-dependency"
     assert changed.to_json()["before"]["scope"] == "software-dependency"
     assert changed.to_json()["after"]["scope"] == "agent-dependency"
+
+
+def test_diff_boms_detects_capability_change():
+    old_caps = json.dumps([{"name": "file_read"}], sort_keys=True)
+    new_caps = json.dumps([{"name": "file_read"}, {"name": "shell_exec"}], sort_keys=True)
+    before = _bom(
+        components=[
+            _component(
+                "skill/deploy",
+                "skill/deploy",
+                "skill",
+                capabilities=old_caps,
+                capability_coverage="partial",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "skill/deploy",
+                "skill/deploy",
+                "skill",
+                capabilities=new_caps,
+                capability_coverage="partial",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.capabilities == old_caps
+    assert changed.after.capabilities == new_caps
+    assert changed.to_json()["before"]["capabilities"] == old_caps
+    assert changed.to_json()["after"]["capabilities"] == new_caps
+
+
+def test_diff_boms_detects_capability_coverage_change():
+    caps = json.dumps([{"name": "file_read"}], sort_keys=True)
+    before = _bom(
+        components=[
+            _component(
+                "skill/deploy",
+                "skill/deploy",
+                "skill",
+                capabilities=caps,
+                capability_coverage="unknown",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "skill/deploy",
+                "skill/deploy",
+                "skill",
+                capabilities=caps,
+                capability_coverage="partial",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.capability_coverage == "unknown"
+    assert changed.after.capability_coverage == "partial"
+    assert changed.to_json()["before"]["capability_coverage"] == "unknown"
+    assert changed.to_json()["after"]["capability_coverage"] == "partial"

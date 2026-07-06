@@ -25,6 +25,8 @@ class BomDiffComponent:
     source_provenance: str | None
     match_coordinate: str | None
     scope: str | None
+    capabilities: str | None
+    capability_coverage: str | None
 
     def comparable(self) -> tuple[str | None, ...]:
         return (
@@ -42,6 +44,8 @@ class BomDiffComponent:
             self.source_provenance,
             self.match_coordinate,
             self.scope,
+            self.capabilities,
+            self.capability_coverage,
         )
 
     def to_json(self) -> JsonObject:
@@ -61,6 +65,8 @@ class BomDiffComponent:
             "source_provenance": self.source_provenance,
             "match_coordinate": self.match_coordinate,
             "scope": self.scope,
+            "capabilities": self.capabilities,
+            "capability_coverage": self.capability_coverage,
         }
 
 
@@ -87,6 +93,8 @@ class ChangedBomDiffComponent:
                 "source_provenance": self.before.source_provenance,
                 "match_coordinate": self.before.match_coordinate,
                 "scope": self.before.scope,
+                "capabilities": self.before.capabilities,
+                "capability_coverage": self.before.capability_coverage,
             },
             "after": {
                 "version": self.after.version,
@@ -100,6 +108,8 @@ class ChangedBomDiffComponent:
                 "source_provenance": self.after.source_provenance,
                 "match_coordinate": self.after.match_coordinate,
                 "scope": self.after.scope,
+                "capabilities": self.after.capabilities,
+                "capability_coverage": self.after.capability_coverage,
             },
         }
 
@@ -183,6 +193,8 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             source_provenance=_property(item, "openaca:source_provenance"),
             match_coordinate=_property(item, "openaca:match_coordinate"),
             scope=_property(item, "openaca:scope"),
+            capabilities=_property(item, "openaca:capabilities"),
+            capability_coverage=_property(item, "openaca:capability_coverage"),
         )
     return result
 

@@ -127,8 +127,11 @@ def _network_client(command: str) -> str | None:
             tokens = shlex.split(segment)
         except ValueError:
             tokens = segment.split()
-        if tokens and tokens[0] in _NETWORK_CLIENTS:
-            return tokens[0]
+        if not tokens:
+            continue
+        client = Path(tokens[0]).name
+        if client in _NETWORK_CLIENTS:
+            return client
     return None
 
 

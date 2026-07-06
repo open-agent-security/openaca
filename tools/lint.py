@@ -34,6 +34,7 @@ def _check_uri(value: object) -> bool:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
+CAPABILITY_SCHEMA_PATH = REPO_ROOT / "schema" / "openaca-capability.schema.json"
 # Recognized upstream ID families per ADR-0009 (overlays/<upstream-id>.yaml).
 UPSTREAM_ID_RE = re.compile(
     r"^(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}|CVE-\d{4}-\d+|OSV-\d{4}-\d+|PYSEC-\d{4}-\d+|MAL-\d{4}-\d+)$"
@@ -153,10 +154,106 @@ def check_schema(overlay: dict, validator: Draft202012Validator) -> list[str]:
     return errors
 
 
+def lint_capability_dir(target: Path) -> list[str]:
+    """Lint curated capability records under TARGET, mirroring overlay lint.
+
+    Returns a flat list of ``"<path>: <error>"`` strings (empty == clean).
+    Discovers records with ``rglob("*.yaml")`` to match the Task-4 loader.
+    """
+    schema = json.loads(CAPABILITY_SCHEMA_PATH.read_text())
+    validator = Draft202012Validator(schema, format_checker=_FORMAT_CHECKER)
+    records = find_overlays(target)
+
+    loaded: list[tuple[Path, dict | None, str | None]] = []
+    identity_first: dict[str, Path] = {}
+    coordinate_first: dict[str, Path] = {}
+    duplicate_identities: dict[str, Path] = {}
+    duplicate_coordinates: dict[str, Path] = {}
+    for path in records:
+        try:
+            record = yaml.safe_load(path.read_text())
+        except yaml.YAMLError as e:
+            loaded.append((path, None, f"yaml: {e}"))
+            continue
+        loaded.append((path, record, None))
+        if not isinstance(record, dict):
+            continue
+        identity = record.get("identity")
+        coordinate = record.get("match_coordinate")
+        if isinstance(coordinate, str):
+            if coordinate in coordinate_first:
+                duplicate_coordinates[coordinate] = coordinate_first[coordinate]
+            else:
+                coordinate_first[coordinate] = path
+        elif isinstance(identity, str):
+            if identity in identity_first:
+                duplicate_identities[identity] = identity_first[identity]
+            else:
+                identity_first[identity] = path
+
+    errors: list[str] = []
+    for path, record, parse_error in loaded:
+        if parse_error is not None or record is None:
+            errors.append(f"{path}: {parse_error or 'failed to load'}")
+            continue
+        record_errors = check_schema(record, validator)
+        for cap in record.get("capabilities") or []:
+            if isinstance(cap, dict) and not (cap.get("evidence") or []):
+                record_errors.append(
+                    f"evidence: capability {cap.get('name', '<unknown>')!r} has no evidence"
+                )
+        coordinate = record.get("match_coordinate")
+        identity = record.get("identity")
+        if isinstance(coordinate, str) and coordinate in duplicate_coordinates:
+            record_errors.append(
+                f"match_coordinate: {coordinate!r} also declared in "
+                f"{duplicate_coordinates[coordinate]}"
+            )
+        elif isinstance(identity, str) and identity in duplicate_identities:
+            record_errors.append(
+                f"identity: {identity!r} also declared in {duplicate_identities[identity]}"
+            )
+        errors.extend(f"{path}: {err}" for err in record_errors)
+    return errors
+
+
+def _is_capability_target(target: Path) -> bool:
+    """Detect a capability corpus vs. an overlay corpus by record shape.
+
+    Capability records key on ``identity`` + ``capabilities``; overlays key on
+    ``id`` + ``database_specific``. Sniff the first parseable record so a
+    single ``lint`` command dispatches to the right validator without a
+    separate subcommand.
+    """
+    for path in find_overlays(target):
+        try:
+            record = yaml.safe_load(path.read_text())
+        except yaml.YAMLError:
+            continue
+        if isinstance(record, dict):
+            return "capabilities" in record and "id" not in record
+    return False
+
+
 @click.command()
 @click.argument("target", type=click.Path(exists=True, path_type=Path))
 def main(target: Path) -> None:
-    """Lint OpenACA overlays under TARGET (file or directory)."""
+    """Lint OpenACA overlays (or a capability corpus) under TARGET."""
+    if _is_capability_target(target):
+        records = find_overlays(target)
+        errors = lint_capability_dir(target)
+        for err in errors:
+            click.echo(err, err=True)
+        if not records:
+            click.echo(f"no capability YAML files found under {target}", err=True)
+            sys.exit(0)
+        if errors:
+            click.echo(f"\n{len(errors)} capability lint error(s)", err=True)
+            sys.exit(1)
+        for path in records:
+            click.echo(f"{path}: ok")
+        return
+
     schema = load_schema()
     validator = Draft202012Validator(schema, format_checker=_FORMAT_CHECKER)
     overlays = find_overlays(target)

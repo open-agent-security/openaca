@@ -30,7 +30,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["tools", "openaca"]
-force-include = { "overlays" = "overlays", "docs/frameworks" = "docs/frameworks", "schema" = "schema" }
+force-include = { "overlays" = "overlays", "docs/frameworks" = "docs/frameworks", "schema" = "schema", "capabilities" = "capabilities" }
 
 [dependency-groups]
 dev = [

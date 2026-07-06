@@ -25,9 +25,7 @@ _SKILL_TOOL_CAPABILITIES = {
     "websearch": "network_egress",
 }
 
-_NETWORK_CLIENTS = frozenset(
-    {"curl", "wget", "nc", "scp", "ssh", "httpie", "http", "rsync"}
-)
+_NETWORK_CLIENTS = frozenset({"curl", "wget", "nc", "scp", "ssh", "httpie", "http", "rsync"})
 
 
 def _openaca_version() -> str:

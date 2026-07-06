@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = ["Capability", "CAPABILITY_NAMES", "COVERAGE_LEVELS"]
 
-CAPABILITY_NAMES = frozenset({
-    "file_read",
-    "file_write",
-    "shell_exec",
-    "network_egress",
-    "credential_access",
-    "sensitive_data_access",
-})
+CAPABILITY_NAMES = frozenset(
+    {
+        "file_read",
+        "file_write",
+        "shell_exec",
+        "network_egress",
+        "credential_access",
+        "sensitive_data_access",
+    }
+)
 
 COVERAGE_LEVELS = ("unknown", "partial", "complete")
 
@@ -31,7 +34,7 @@ class Capability:
     source: str
     source_version: str
     confidence: str
-    evidence: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    evidence: Sequence[dict[str, Any]] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.name not in CAPABILITY_NAMES:

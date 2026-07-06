@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-__all__ = ["Capability", "CAPABILITY_NAMES", "COVERAGE_LEVELS"]
+__all__ = ["Capability", "CAPABILITY_NAMES", "COVERAGE_LEVELS", "capabilities_for_ref"]
+
+if TYPE_CHECKING:
+    from tools.capability_corpus import CapabilityCorpus
+    from tools.component_ref import ComponentRef
 
 CAPABILITY_NAMES = frozenset(
     {
@@ -71,3 +75,41 @@ class Capability:
             confidence=data["confidence"],
             evidence=tuple(data["evidence"]),
         )
+
+
+def capabilities_for_ref(
+    ref: ComponentRef, corpus: CapabilityCorpus
+) -> tuple[list[Capability], str]:
+    # Function-local imports break the import cycle: capability_extract already
+    # imports Capability from this module, so importing it at module top would
+    # cycle.
+    from tools.capability_extract import declared_capabilities
+    from tools.identity import (
+        _safe_package_name,
+        canonical_component_identity,
+        mcp_package_source,
+        strip_package_version,
+    )
+
+    coordinate: str | None = None
+    source = mcp_package_source((ref.extra or {}).get("install_source"))
+    if source is not None:
+        _launcher, ecosystem, package = source
+        stripped = strip_package_version(ecosystem, package)
+        allow_scope = ecosystem == "npm"
+        if _safe_package_name(stripped, allow_scope=allow_scope):
+            coordinate = f"{ecosystem}/{stripped}"
+
+    identity = canonical_component_identity(ref)
+    declared = declared_capabilities(ref)
+    curated = corpus.lookup(identity or "", match_coordinate=coordinate)
+
+    merged: dict[tuple[str, str], Capability] = {}
+    for cap in curated:
+        merged[(cap.name, cap.execution_locus)] = cap
+    for cap in declared:
+        merged[(cap.name, cap.execution_locus)] = cap
+
+    caps = list(merged.values())
+    coverage = "unknown" if not caps else "partial"
+    return caps, coverage

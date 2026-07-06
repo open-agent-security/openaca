@@ -6,6 +6,7 @@ from tools.identity import (
     match_coordinates,
     mcp_package_source,
     safe_unpinned_mcp_install_source,
+    strip_package_version,
     unpinned_mcp_package,
 )
 
@@ -168,3 +169,15 @@ def test_mcp_package_source_bunx_maps_to_npm():
 def test_binary_or_local_mcp_install_source_is_not_a_package_source():
     assert mcp_package_source("python server.py --token secret") is None
     assert mcp_package_source("/usr/local/bin/server --token secret") is None
+
+
+def test_strip_package_version():
+    # npm: a leading @scope/ is part of the name; the pin is a later @...
+    assert strip_package_version("npm", "@scope/pkg@1.2.3") == "@scope/pkg"
+    assert strip_package_version("npm", "@scope/pkg") == "@scope/pkg"
+    assert strip_package_version("npm", "server-filesystem@1.2.3") == "server-filesystem"
+    assert strip_package_version("npm", "server-filesystem") == "server-filesystem"
+    # PyPI: both the @ and == pin forms.
+    assert strip_package_version("PyPI", "weather-mcp@0.5.0") == "weather-mcp"
+    assert strip_package_version("PyPI", "weather-mcp==0.5.0") == "weather-mcp"
+    assert strip_package_version("PyPI", "weather-mcp") == "weather-mcp"

@@ -989,3 +989,69 @@ def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
 
 def _props_by_name(component):
     return {prop["name"]: prop["value"] for prop in component.get("properties", [])}
+
+
+def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
+    """Plan 037 marquee: a scan of a repo with (a) a skill declaring
+    `allowed-tools: Bash` and (b) an MCP server launched via
+    `npx @modelcontextprotocol/server-filesystem` produces an Agent BOM where
+    both components carry capability descriptors — the skill's declared
+    `shell_exec` and the curated `file_read`/`file_write` for the filesystem
+    server — with `partial` coverage, across the declared extractor, the real
+    curated corpus, the orchestrator, the composition graph, and the BOM
+    emitter behind the `bom repo` CLI.
+
+    The MCP entry matches the checked-in seed via its npm package coordinate
+    (`match_coordinate: npm/@modelcontextprotocol/server-filesystem`), not the
+    local config alias (`fs`), demonstrating the coordinate-keyed curated
+    lookup against the real `capabilities/` corpus.
+    """
+    from tools.bom_cli import main as bom_main
+
+    skill_dir = tmp_path / ".claude" / "skills" / "bashful"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: bashful\ndescription: runs bash\nallowed-tools: Bash\n---\nbody\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fs": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+
+    by_type = {}
+    for component in doc["components"]:
+        props = _props_by_name(component)
+        by_type[props.get("openaca:component_type")] = props
+
+    skill_props = by_type["skill"]
+    assert skill_props["openaca:capability_coverage"] == "partial"
+    skill_caps = json.loads(skill_props["openaca:capabilities"])
+    shell = next(c for c in skill_caps if c["name"] == "shell_exec")
+    assert shell["method"] == "declared"
+    assert shell["execution_locus"] == "local"
+
+    mcp_props = by_type["mcp_server"]
+    assert mcp_props["openaca:capability_coverage"] == "partial"
+    mcp_caps = json.loads(mcp_props["openaca:capabilities"])
+    curated = {c["name"]: c for c in mcp_caps}
+    assert {"file_read", "file_write"} <= set(curated)
+    for name in ("file_read", "file_write"):
+        assert curated[name]["method"] == "curated"
+        assert curated[name]["execution_locus"] == "local"
+
+    meta_props = _props_by_name(doc["metadata"])
+    assert meta_props["openaca:schema_version"] == "0.3"

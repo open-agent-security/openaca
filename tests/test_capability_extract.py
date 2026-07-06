@@ -79,3 +79,27 @@ def test_hook_network_client_maps_to_egress(tmp_path):
     assert any(
         e.get("value") == "curl" for c in caps if c.name == "network_egress" for e in c.evidence
     )
+
+
+def test_hook_network_client_path_maps_to_egress(tmp_path):
+    # Invoked by absolute path -- shlex leaves the full path as the first
+    # token, so matching must compare the basename against _NETWORK_CLIENTS.
+    ref = ComponentRef(
+        name="h",
+        extra={"component_type": "hook", "command": "/usr/bin/curl -s https://example.com"},
+    )
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} >= {"shell_exec", "network_egress"}
+    assert any(
+        e.get("value") == "curl" for c in caps if c.name == "network_egress" for e in c.evidence
+    )
+
+
+def test_hook_wrapper_script_named_like_client_is_not_egress(tmp_path):
+    # A wrapper script named "curl.sh" is not the curl binary itself -- only
+    # an exact basename match should count as the network client.
+    ref = ComponentRef(
+        name="h", extra={"component_type": "hook", "command": "curl.sh -s https://example.com"}
+    )
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} == {"shell_exec"}

@@ -248,6 +248,15 @@ def _format_changed_component(component: ChangedBomDiffComponent) -> list[str]:
         )
     if component.before.scope != component.after.scope:
         lines.append(f"    scope: {component.before.scope} -> {component.after.scope}")
+    if component.before.capabilities != component.after.capabilities:
+        lines.append(
+            f"    capabilities: {component.before.capabilities} -> {component.after.capabilities}"
+        )
+    if component.before.capability_coverage != component.after.capability_coverage:
+        lines.append(
+            f"    capability_coverage: {component.before.capability_coverage}"
+            f" -> {component.after.capability_coverage}"
+        )
     return lines
 
 

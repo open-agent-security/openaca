@@ -204,6 +204,19 @@ def match_coordinates(ref: Any) -> list[MatchCoordinate]:
     return []
 
 
+def strip_package_version(ecosystem: object, package: str) -> str:
+    if ecosystem == "npm" and package.startswith("@"):
+        # A leading @scope/ is part of the name; the pin is a later @.
+        scope, sep, rest = package.partition("/")
+        if not sep:
+            return package
+        rest = rest.split("@", 1)[0]
+        return f"{scope}/{rest}"
+    if ecosystem == "PyPI":
+        package = package.split("==", 1)[0]
+    return package.split("@", 1)[0]
+
+
 def infer_unpinned_mcp_package(extra: dict[str, Any]) -> tuple[str, str] | None:
     if extra.get("component_type") != "mcp_server":
         return None

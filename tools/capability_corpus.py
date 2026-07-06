@@ -30,9 +30,7 @@ class CapabilityCorpus:
     by_coordinate: dict[str, list[Capability]]
     by_identity: dict[str, list[Capability]]
 
-    def lookup(
-        self, identity: str, match_coordinate: str | None = None
-    ) -> list[Capability]:
+    def lookup(self, identity: str, match_coordinate: str | None = None) -> list[Capability]:
         if match_coordinate is not None:
             return list(self.by_coordinate.get(match_coordinate, []))
         return list(self.by_identity.get(identity, []))
@@ -55,9 +53,7 @@ def load_capability_corpus(root: Path | None = None) -> CapabilityCorpus:
     return CapabilityCorpus(by_coordinate=by_coordinate, by_identity=by_identity)
 
 
-def _record_capabilities(
-    record: dict[str, Any], source_version: str
-) -> list[Capability]:
+def _record_capabilities(record: dict[str, Any], source_version: str) -> list[Capability]:
     review = {
         "kind": "curated_review",
         "reviewed_version": record.get("reviewed_version"),

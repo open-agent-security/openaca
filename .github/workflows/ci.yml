@@ -69,6 +69,15 @@ jobs:
             echo "::notice::no overlays present yet; skipping openaca lint"
           fi
 
+      - name: Lint capability corpus
+        if: steps.project_check.outputs.have_project == 'true'
+        run: |
+          if [ -d capabilities ] && [ "$(find capabilities -name '*.yaml' -print -quit)" ]; then
+            uv run openaca lint capabilities/
+          else
+            echo "::notice::no capabilities present yet; skipping openaca lint"
+          fi
+
   # lint-and-test installs from the committed uv.lock (--frozen) — the *dev*
   # env. End users run `uv tool install` from PyPI, which ignores uv.lock and
   # re-resolves deps from this package's metadata (pyproject constraints). That

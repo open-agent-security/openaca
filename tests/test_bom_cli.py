@@ -498,6 +498,32 @@ def test_bom_repo_excludes_bare_package_json_as_software_dependency(tmp_path):
     )
 
 
+def test_bom_cli_repo_emits_capability_properties(tmp_path):
+    """The direct `bom repo` CLI path (no tools/scan.py) annotates + emits capabilities."""
+    skill_dir = tmp_path / ".claude" / "skills" / "bashful"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: bashful\ndescription: runs bash\nallowed-tools: Bash(*)\n---\nbody\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(openaca_main, ["bom", "repo", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    skill = next(
+        c
+        for c in doc["components"]
+        if any(
+            p["name"] == "openaca:component_type" and p["value"] == "skill"
+            for p in c.get("properties", [])
+        )
+    )
+    props = {p["name"]: p["value"] for p in skill["properties"]}
+    assert props["openaca:capability_coverage"] in {"partial", "complete"}
+    assert any(c["name"] == "shell_exec" for c in json.loads(props["openaca:capabilities"]))
+
+
 def test_bom_repo_warns_on_parse_failures(tmp_path):
     """bom repo emits a stderr warning when manifests fail to parse."""
     (tmp_path / ".mcp.json").write_text("not valid json{{{", encoding="utf-8")

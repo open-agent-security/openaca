@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import unquote
 
+from tools.capability import COVERAGE_LEVELS, Capability, capabilities_for_ref
+from tools.capability_corpus import load_capability_corpus
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
@@ -108,6 +111,30 @@ class AgentBOM:
         }
 
 
+def _is_annotated(extra: dict[str, Any]) -> bool:
+    if extra.get("capability_coverage") not in COVERAGE_LEVELS:
+        return False
+    capabilities = extra.get("capabilities")
+    if not isinstance(capabilities, list):
+        return False
+    for entry in capabilities:
+        try:
+            Capability.from_dict(entry)
+        except (KeyError, TypeError, ValueError):
+            return False
+    return True
+
+
+def _annotate_capabilities(refs: Iterable[ComponentRef]) -> None:
+    corpus = load_capability_corpus()
+    for ref in refs:
+        if _is_annotated(ref.extra):
+            continue
+        caps, coverage = capabilities_for_ref(ref, corpus)
+        ref.extra["capabilities"] = [c.to_dict() for c in caps]
+        ref.extra["capability_coverage"] = coverage
+
+
 def build_agent_bom(
     refs: list[ComponentRef],
     *,
@@ -125,6 +152,7 @@ def build_agent_bom(
             source_unit_count=source_unit_count,
             source_unit_label=source_unit_label,
         )
+    _annotate_capabilities(refs)
     components = [
         BOMComponent(ref=ref, bom_ref=bom_ref)
         for ref, bom_ref in zip(refs, _stable_bom_refs(refs), strict=True)
@@ -163,12 +191,14 @@ def _build_agent_bom_from_graph(
     """
     root = graph.root
     included: dict[str, BOMComponent] = {}
-    for node in graph.nodes.values():
-        if node.ref is None:  # synthetic target root: never a components[] entry
-            continue
-        if graph.scope_of(node) not in _AGENT_SCOPES:
-            continue
-        ref = replace(node.ref, scope=graph.scope_of(node))
+    included_refs: list[tuple[Node, ComponentRef]] = [
+        (node, node.ref)
+        for node in graph.nodes.values()
+        if node.ref is not None and graph.scope_of(node) in _AGENT_SCOPES
+    ]
+    _annotate_capabilities(ref for _, ref in included_refs)
+    for node, node_ref in included_refs:
+        ref = replace(node_ref, scope=graph.scope_of(node))
         included[node.key] = BOMComponent(ref=ref, bom_ref=node.key)
 
     included_keys = set(included) | {root.key}
@@ -446,6 +476,16 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
             props,
             "openaca:source_provenance",
             json.dumps(source_provenance, sort_keys=True),
+        )
+    if _is_annotated(ref.extra or {}):
+        props.append(
+            {"name": "openaca:capabilities", "value": json.dumps(ref.extra["capabilities"])}
+        )
+        props.append(
+            {
+                "name": "openaca:capability_coverage",
+                "value": ref.extra["capability_coverage"],
+            }
         )
     return props
 

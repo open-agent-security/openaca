@@ -6,6 +6,7 @@ from tools.bom import (
     component_refs_from_cyclonedx,
     graph_from_cyclonedx,
 )
+from tools.capability import COVERAGE_LEVELS
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.matcher import match
@@ -757,6 +758,95 @@ def test_infer_unpinned_uvx_package_skips_short_python_flag():
 
     assert refs[0].ecosystem == "PyPI"
     assert refs[0].name == "my-tool"
+
+
+def _skill_with_bash(tmp_path) -> ComponentRef:
+    manifest = tmp_path / "SKILL.md"
+    manifest.write_text("---\nname: x\nallowed-tools: Bash(*)\n---\n", encoding="utf-8")
+    return ComponentRef(
+        component_identity="skill/x",
+        source_manifest=str(manifest),
+        extra={"component_type": "skill"},
+    )
+
+
+def _graph_with_bash_skill(tmp_path) -> Graph:
+    manifest = tmp_path / "SKILL.md"
+    manifest.write_text("---\nname: x\nallowed-tools: Bash(*)\n---\n", encoding="utf-8")
+    skill = Node(
+        key="skill/x",
+        kind="skill",
+        ref=ComponentRef(
+            component_identity="skill/x",
+            source_manifest=str(manifest),
+            extra={"component_type": "skill"},
+        ),
+    )
+    root = Node(key="openaca:target", kind="target", ref=None)
+    return Graph(
+        nodes={n.key: n for n in (root, skill)},
+        edges=[Edge(parent=root.key, child=skill.key)],
+    )
+
+
+def test_build_agent_bom_annotates_plain_refs(tmp_path):
+    ref = _skill_with_bash(tmp_path)
+    bom = build_agent_bom([ref], target_type="repo")
+    out_ref = bom.components[0].ref
+    assert out_ref.extra["capability_coverage"] in {"partial", "complete"}
+    assert any(c["name"] == "shell_exec" for c in out_ref.extra["capabilities"])
+
+
+def test_build_agent_bom_annotates_graph_refs(tmp_path):
+    graph = _graph_with_bash_skill(tmp_path)
+    bom = build_agent_bom([], target_type="repo", graph=graph)
+    skill = next(c.ref for c in bom.components if c.ref.extra.get("component_type") == "skill")
+    assert skill.extra["capability_coverage"] in {"partial", "complete"}
+    assert any(c["name"] == "shell_exec" for c in skill.extra["capabilities"])
+
+
+def test_build_agent_bom_preserves_reingested_capabilities():
+    capability = {
+        "name": "shell_exec",
+        "execution_locus": "local",
+        "method": "curated",
+        "source": "openaca",
+        "source_version": "0.4.0",
+        "confidence": "high",
+        "evidence": [
+            {
+                "kind": "curated_review",
+                "reviewed_version": "1.0",
+                "last_reviewed": "2026-07-03",
+            }
+        ],
+    }
+    ref = ComponentRef(
+        component_identity="skill/x",
+        source_manifest=".claude/skills/x/SKILL.md",
+        extra={
+            "component_type": "skill",
+            "capabilities": [capability],
+            "capability_coverage": "complete",
+        },
+    )
+    bom = build_agent_bom([ref], target_type="repo")
+    out_ref = bom.components[0].ref
+    assert out_ref.extra["capability_coverage"] == "complete"
+    assert out_ref.extra["capabilities"] == [capability]
+
+
+def test_build_agent_bom_recomputes_half_annotated_ref(tmp_path):
+    ref = ComponentRef(
+        component_identity="skill/x",
+        source_manifest=str(_skill_with_bash(tmp_path).source_manifest),
+        extra={"component_type": "skill", "capability_coverage": "complete"},
+    )
+    bom = build_agent_bom([ref], target_type="repo")
+    out_ref = bom.components[0].ref
+    assert out_ref.extra["capability_coverage"] in COVERAGE_LEVELS
+    assert isinstance(out_ref.extra["capabilities"], list)
+    assert any(c["name"] == "shell_exec" for c in out_ref.extra["capabilities"])
 
 
 def _metadata_property(doc: dict, name: str) -> str | None:

@@ -68,7 +68,7 @@ def test_capability_rejects_non_object_evidence_entry():
             source="openaca",
             source_version="0.4.0",
             confidence="high",
-            evidence=[42],
+            evidence=[42],  # type: ignore[list-item]
         )
 
 

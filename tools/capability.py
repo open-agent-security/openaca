@@ -52,6 +52,9 @@ class Capability:
         object.__setattr__(self, "evidence", tuple(self.evidence))
         if not self.evidence:
             raise ValueError("capability evidence must be non-empty")
+        for e in self.evidence:
+            if not isinstance(e, dict):
+                raise ValueError(f"capability evidence entries must be objects, got {e!r}")
 
     def to_dict(self) -> dict[str, Any]:
         return {

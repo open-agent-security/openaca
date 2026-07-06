@@ -94,6 +94,20 @@ def test_lint_rejects_bad_capability_name(tmp_path):
     assert any("not_a_cap" in e for e in errors)
 
 
+def test_lint_rejects_non_object_evidence_entry(tmp_path):
+    # A scalar evidence entry (e.g. `[42]`) passes a bare "non-empty array"
+    # check but breaks Capability.to_dict()'s `dict(e)` at BOM-build time.
+    # The schema must reject it at lint time instead.
+    bad = tmp_path / "x.yaml"
+    bad.write_text(
+        "identity: mcp-server/x\nlast_reviewed: '2026-07-03'\n"
+        "reviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high, evidence: [42]}\n"
+    )
+    errors = lint_capability_dir(tmp_path)
+    assert any("evidence" in e for e in errors)
+
+
 def test_lint_rejects_duplicate_match_coordinate(tmp_path):
     # A match_coordinate keys the coordinate index alone (Task 4); two records
     # sharing one are as ambiguous as duplicate identities and must fail lint.

@@ -129,9 +129,14 @@ ground truth.
 
 ## Curated capability corpus
 
-- Location: `capabilities/<identity>.yaml`, a corpus **distinct from** the
-  advisory `overlays/` — capabilities are not advisories (different version
-  semantics, review cadence, and evidence model).
+- Location: the `capabilities/` tree, a corpus **distinct from** the advisory
+  `overlays/` — capabilities are not advisories (different version semantics,
+  review cadence, and evidence model). Discovery is **recursive** (`rglob("*.yaml")`,
+  matching how `overlays/` loads), and the lookup key is read from each record's
+  `identity` / `match_coordinate` **field**, never from the file path — so a
+  file may be named for a sanitized identity (`mcp-server-filesystem.yaml`) or
+  nested (`npm/@scope/name.yaml`) without the loader silently skipping it. The
+  corpus ships in the wheel (`force-include`) so installed/Action runs resolve it.
 - **Keyed by `openaca:identity`** (ADR-0038: the stable, version-stripped
   cross-occurrence join key) — e.g. `mcp-server/desktop-commander`,
   `package/npm/@scope/name`. A record may instead declare a `match_coordinate`

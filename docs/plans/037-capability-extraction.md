@@ -61,8 +61,14 @@ def test_capability_roundtrip():
 - [ ] **Step 3 — implement** `tools/capability.py`: a frozen `Capability`
   dataclass with fields `name`, `execution_locus` (`local`|`remote`), `method`
   (`declared`|`curated`|`inferred`), `source`, `source_version`, `confidence`
-  (`high`|`medium`|`low`), `evidence: list[dict]`; `to_dict()` / `from_dict()`
-  (evidence as a tuple internally for frozen-hashability, list in dict form);
+  (`high`|`medium`|`low`), `evidence: tuple[dict, ...]` (stored as a tuple for
+  immutability; `to_dict()` renders it back to a `list`, `from_dict()` re-tuples
+  it). `Capability` is a frozen dataclass compared **by value**, not hashed — a
+  tuple whose members are `dict`s is not itself hashable, and nothing relies on
+  hashing it: the Task-6 merge dedupes on the `(name, execution_locus)` pair, not
+  on the `Capability` object. So do **not** claim or depend on `Capability`
+  hashability; `eq=True` (the dataclass default) is all Task 1's round-trip test
+  needs. `to_dict()` / `from_dict()`;
   module constants `CAPABILITY_NAMES` (the frozenset above) and `COVERAGE_LEVELS`.
   Validate `name in CAPABILITY_NAMES` and `execution_locus`/`method`/`confidence`
   in their enums in `__post_init__`; raise `ValueError` otherwise.
@@ -244,20 +250,68 @@ def test_lookup_identity_only_for_unconstrained_records(tmp_path):
         "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n"
     )
     corpus = load_capability_corpus(root=tmp_path)
+    # No derivable coordinate -> identity index is queried.
     assert {c.name for c in corpus.lookup("mcp-server/x")} == {"file_read"}
+
+def test_identity_only_record_suppressed_when_ref_resolves_to_coordinate(tmp_path):
+    # An unconstrained record keyed by identity `mcp-server/filesystem`. A ref
+    # that resolves to a real package coordinate but whose local alias collides
+    # with that identity string must NOT inherit the record: once a coordinate
+    # is derivable, the alias is untrustworthy and the identity index is skipped.
+    (tmp_path / "fs.yaml").write_text(
+        "identity: mcp-server/filesystem\nlast_reviewed: '2026-07-03'\n"
+        "reviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n"
+    )
+    corpus = load_capability_corpus(root=tmp_path)
+    assert corpus.lookup("mcp-server/filesystem",
+                         match_coordinate="npm/some-other-package") == []
+
+def test_corpus_discovers_nested_records(tmp_path):
+    # Recursive discovery: a record in a subdirectory is still loaded.
+    nested = tmp_path / "npm" / "@scope"
+    nested.mkdir(parents=True)
+    (nested / "name.yaml").write_text(
+        "identity: package/npm/@scope/name\nlast_reviewed: '2026-07-03'\n"
+        "reviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n"
+    )
+    corpus = load_capability_corpus(root=tmp_path)
+    assert {c.name for c in corpus.lookup("package/npm/@scope/name")} == {"file_read"}
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
-- [ ] **Step 3 — implement** `load_capability_corpus(root="capabilities") -> CapabilityCorpus`:
-  parse every `*.yaml`. Records that declare `match_coordinate` are indexed by
+- [ ] **Step 3 — implement** `load_capability_corpus(root=None) -> CapabilityCorpus`:
+  when `root` is `None`, resolve the packaged corpus dir via a new
+  `default_capabilities_dir()` that mirrors `tools/scan.py`'s `default_overlays_dir()`
+  (the `capabilities/` tree is `force-include`d into the wheel — see Task 5 —
+  so wheel/Action installs find it, not just source checkouts). Parse every
+  YAML found by `root.rglob("*.yaml")` — **recursive**, matching
+  `tools/overlays.load_overlays` / `tools/export.load_corpus` (both `rglob`), so
+  a record whose sanitized filename or subdirectory nests it (identities such as
+  `package/npm/@scope/name` or `mcp-server/desktop-commander` contain `/`) is not
+  silently skipped by a root-only glob. The lookup key comes from each record's
+  `identity` / `match_coordinate` **field**, never from the file path, so the
+  on-disk layout is free. Records that declare `match_coordinate` are indexed by
   that coordinate *only*; records without one are indexed by `identity` *only*.
-  `CapabilityCorpus.lookup(identity, match_coordinate=None)` unions a hit from
-  the identity-only index (always queried) with a hit from the
-  match-coordinate index (queried only when `match_coordinate` is given) — so a
-  constrained record can never surface via identity alone, and an unconstrained
-  record can never surface via a coordinate. Callers compute `match_coordinate`
-  from the ref itself (see Task 6); the corpus never guesses it from the
-  record's own `identity` field. Returned capabilities carry `method="curated"`,
+  `CapabilityCorpus.lookup(identity, match_coordinate=None)`:
+  - when `match_coordinate` is given (the ref has a *derivable* package
+    coordinate — Task 6), query the **coordinate index only** and do **not** fall
+    back to the identity index. For a package-launched MCP the `identity` is the
+    user's local config alias, so an identity-only record that happens to be
+    keyed by that alias string (e.g. someone runs `npx some-other-package` under
+    a config named `filesystem`, matching an unconstrained `mcp-server/filesystem`
+    record) would attach unreviewed capabilities — the exact false-descriptor the
+    coordinate constraint exists to prevent. This matches the spec: *identity-only
+    keying is for records with no derivable package coordinate.*
+  - when `match_coordinate` is `None`, query the **identity index only**.
+
+  So a constrained record can never surface via identity alone, an unconstrained
+  record can never surface via a coordinate, and an unconstrained (alias-keyed)
+  record can never attach to a ref that *does* resolve to a package coordinate.
+  Callers compute `match_coordinate` from the ref itself (see Task 6); the corpus
+  never guesses it from the record's own `identity` field. Returned capabilities
+  carry `method="curated"`,
   `source="openaca"`, `source_version=<openaca __version__>` — matching the
   declared tier's convention that `source_version` is the version of the
   *asserting source* (the OpenACA release), not the reviewed component. The
@@ -271,10 +325,13 @@ def test_lookup_identity_only_for_unconstrained_records(tmp_path):
 
 ---
 
-## Task 5: Corpus linter (`openaca lint capabilities/`)
+## Task 5: Corpus linter (`openaca lint capabilities/`) + CI gate + packaging
 
 **Files:**
 - Modify: the lint CLI entry (`tools/lint*.py` / the `openaca lint` command wiring)
+- Modify: `.github/workflows/ci.yml` (hard-fail lint gate for the new corpus)
+- Modify: `scripts/git-hooks/pre-push` (CI parity)
+- Modify: `pyproject.toml` (`force-include` the corpus into the wheel)
 - Test: `tests/test_capability_corpus.py` (lint portion) or the lint test module
 
 - [ ] **Step 1 — failing test.** A malformed entry (bad capability name; missing
@@ -288,15 +345,43 @@ def test_lint_rejects_bad_capability_name(tmp_path):
                    "  - {name: not_a_cap, execution_locus: local, confidence: high, evidence: []}\n")
     errors = lint_capability_dir(tmp_path)
     assert any("not_a_cap" in e for e in errors)
+
+def test_lint_rejects_duplicate_match_coordinate(tmp_path):
+    # A match_coordinate keys the coordinate index alone (Task 4); two records
+    # sharing one are as ambiguous as duplicate identities and must fail lint.
+    for n in ("a", "b"):
+        (tmp_path / f"{n}.yaml").write_text(
+            f"identity: mcp-server/{n}\nmatch_coordinate: npm/dup\n"
+            "last_reviewed: 2026-07-03\nreviewed_version: '1.0'\ncapabilities:\n"
+            "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n")
+    errors = lint_capability_dir(tmp_path)
+    assert any("npm/dup" in e for e in errors)
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
 - [ ] **Step 3 — implement** `lint_capability_dir(path)` mirroring overlay lint
   discipline: schema validation, identity-format check, evidence-presence,
-  duplicate-identity detection. Wire it into `openaca lint` so
+  duplicate-identity detection, **and duplicate-`match_coordinate` detection**
+  (a coordinate keys the coordinate index alone in Task 4, so two records
+  declaring the same one are exactly as ambiguous as two sharing an identity).
+  Discover records with `rglob("*.yaml")` (matching the Task-4 loader), so nested
+  records are linted too. Wire it into `openaca lint` so
   `openaca lint capabilities/` works.
 - [ ] **Step 4 — run, confirm PASS**; run `uv run openaca lint capabilities/`.
-- [ ] **Step 5 — commit.** `feat(capability): corpus linter + openaca lint wiring`
+- [ ] **Step 5 — gate + package the corpus.** Two edits so the new corpus is
+  actually enforced and shipped:
+  - `.github/workflows/ci.yml`: today the lint gate only runs
+    `uv run openaca lint overlays/` (guarded on `overlays/` existing). Add a
+    parallel guarded step `uv run openaca lint capabilities/` (run only when
+    `capabilities/` exists and holds a `*.yaml`), and mirror it into
+    `scripts/git-hooks/pre-push` so local pushes match CI. Without this, corpus
+    edits escape PR hard-fail validation even though a schema + linter now exist
+    for them (linter discipline: schema/ID validity is hard-fail).
+  - `pyproject.toml`: extend `[tool.hatch.build.targets.wheel]` `force-include`
+    (which already ships `overlays`/`schema`/`docs/frameworks`) with
+    `"capabilities" = "capabilities"`, so `default_capabilities_dir()` (Task 4)
+    resolves inside a wheel/Action install, not only a source checkout.
+- [ ] **Step 6 — commit.** `feat(capability): corpus linter, CI gate, and wheel packaging`
 
 ---
 
@@ -335,14 +420,33 @@ def test_package_mcp_matches_curated_seed_despite_local_alias():
     caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
     assert {c.name for c in caps} >= {"file_read", "file_write"}
     assert coverage == "partial"
+
+def test_pinned_launch_matches_unpinned_seed_coordinate():
+    # mcp_package_source retains the version pin in `package`
+    # (`@scope/pkg@1.2.3`); the seed's match_coordinate is unpinned, so the
+    # computed coordinate must be version-stripped or the pinned deployment
+    # silently misses its curated record.
+    ref = ComponentRef(component_identity="mcp-server/fs",
+        extra={"component_type": "mcp_server",
+               "install_source": "npx @modelcontextprotocol/server-filesystem@1.2.3"})
+    caps, _ = capabilities_for_ref(ref, load_capability_corpus())
+    assert {c.name for c in caps} >= {"file_read", "file_write"}
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
 - [ ] **Step 3 — implement** `capabilities_for_ref(ref, corpus) -> tuple[list[Capability], str]`:
-  compute the ref's own match coordinate via
-  `tools.identity.mcp_package_source(ref.extra.get("install_source"))` —
-  `f"{ecosystem}/{package}"` when it resolves (an npx/uvx/bunx-launched MCP
-  server), else `None`. Union of `declared_capabilities(ref)` and
+  compute the ref's own match coordinate from
+  `tools.identity.mcp_package_source(ref.extra.get("install_source"))`, which
+  returns `(launcher, ecosystem, package)` for an npx/uvx/bunx launch. **Strip
+  the version pin from `package` first**: `_extract_mcp_package_from_args`
+  returns the launch token verbatim, so `package` retains any pin
+  (`@modelcontextprotocol/server-filesystem@1.2.3`, `weather-mcp@0.5.0`). Add a
+  small shared helper `strip_package_version(ecosystem, package)` in
+  `tools/identity.py` — scope-aware for npm (a leading `@scope/` is part of the
+  name; the pin is a *later* `@…`) and handling the PyPI `@`/`==` forms — and
+  build the coordinate as `f"{ecosystem}/{stripped}"`, matching the unpinned
+  `match_coordinate` value space the corpus records use (Task 3). `None` when
+  `mcp_package_source` does not resolve. Union of `declared_capabilities(ref)` and
   `corpus.lookup(<ref identity>, match_coordinate=<computed coordinate>)`
   (dedupe by `(name, execution_locus)`, preferring `declared` evidence).
   Reusing `mcp_package_source` (already used for advisory match-coordinate
@@ -393,19 +497,28 @@ def test_build_agent_bom_annotates_graph_refs(tmp_path):
 - [ ] **Step 2 — run, confirm fail.**
 - [ ] **Step 3 — implement** `_annotate_capabilities(refs: Iterable[ComponentRef]) -> None`
   in `tools/bom.py`: load the corpus once (`load_capability_corpus()`); for each
-  ref **that does not already carry `capability_coverage` in `extra`**, compute
+  ref **that is not already fully annotated**, compute
   `caps, coverage = capabilities_for_ref(ref, corpus)`, then write
   `ref.extra["capabilities"] = [c.to_dict() for c in caps]` and
   `ref.extra["capability_coverage"] = coverage` (`ComponentRef` is frozen;
   `extra` is a mutable dict — write into it, matching how other post-parse
-  annotations are set). The presence check matters for `scan bom`: Task 8's
+  annotations are set). "Fully annotated" means **both** `capabilities` (a list)
+  **and** `capability_coverage` (a value in `COVERAGE_LEVELS`) are already present
+  and valid — a shared `_is_annotated(extra)` predicate reused by Task 8's
+  emission. Keying the skip on `capability_coverage` alone is unsafe: a
+  partially-upgraded or external BOM could carry `openaca:capability_coverage`
+  without a valid `openaca:capabilities` (or vice versa), and the skip would then
+  leave the ref half-populated and crash Task 8's `json.dumps(extra["capabilities"])`
+  on emission. When only one is present, or either is malformed, we recompute
+  (defaulting to `[]` / `unknown` when the extractor finds nothing) rather than
+  trust the fragment. The predicate matters for `scan bom`: Task 8's
   `_extra_from_properties` fix restores `openaca:capabilities` /
   `openaca:capability_coverage` from an ingested BOM into `extra` *before*
-  `build_agent_bom` runs, so a ref arriving with `capability_coverage` already
-  set carries descriptors produced by whatever corpus/extractor built the
-  original BOM (possibly a newer OpenACA release or an external one) — skipping
-  re-annotation preserves that evidence instead of silently overwriting it with
-  a fresh (and potentially weaker) local recomputation. Call it:
+  `build_agent_bom` runs, so a ref arriving **fully** annotated carries
+  descriptors produced by whatever corpus/extractor built the original BOM
+  (possibly a newer OpenACA release or an external one) — skipping re-annotation
+  preserves that evidence instead of silently overwriting it with a fresh (and
+  potentially weaker) local recomputation. Call it:
   - in `build_agent_bom`'s non-graph branch, over `refs`, before building
     `components`;
   - in `_build_agent_bom_from_graph`, over the `ref` of every included node,
@@ -428,7 +541,12 @@ def test_build_agent_bom_annotates_graph_refs(tmp_path):
   what `_extra_from_properties` restores from an ingested BOM) must come out of
   `build_agent_bom` with that exact `capabilities` list and `"complete"`
   coverage unchanged, not recomputed to `"partial"` by the local corpus/extractor
-  — the regression test for the `scan bom` re-ingest gap.
+  — the regression test for the `scan bom` re-ingest gap. Add
+  `test_build_agent_bom_recomputes_half_annotated_ref`: a ref carrying
+  `extra={"capability_coverage": "complete"}` but **no** `capabilities` key (a
+  malformed/partial ingest) must be re-annotated — `build_agent_bom` returns it
+  with both keys present and valid (not raising on the missing list), proving the
+  skip requires *both* properties, not coverage alone.
 - [ ] **Step 5 — commit.** `feat(bom): annotate refs with capabilities during BOM construction`
 
 ---
@@ -452,7 +570,7 @@ def test_bom_emits_capability_descriptors():
                                  "method": "curated", "source": "openaca",
                                  "confidence": "high", "evidence": []}],
                "capability_coverage": "partial"})
-    doc = build_bom([ref], target_type="repo").to_cyclonedx()
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
     assert props["openaca:capability_coverage"] == "partial"
@@ -465,7 +583,7 @@ def test_bom_emits_coverage_for_uncovered_component():
     ref = ComponentRef(component_identity="plugin/y",
         extra={"component_type": "plugin", "capabilities": [],
                "capability_coverage": "unknown"})
-    doc = build_bom([ref], target_type="repo").to_cyclonedx()
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"]) == []
     assert props["openaca:capability_coverage"] == "unknown"
@@ -481,7 +599,7 @@ def test_bom_roundtrips_capability_properties():
                                  "method": "curated", "source": "openaca",
                                  "confidence": "high", "evidence": []}],
                "capability_coverage": "partial"})
-    doc = build_bom([ref], target_type="repo").to_cyclonedx()
+    doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
     rebuilt = component_refs_from_cyclonedx(doc)[0]
     assert rebuilt.extra["capabilities"][0]["name"] == "shell_exec"
     assert rebuilt.extra["capability_coverage"] == "partial"
@@ -489,20 +607,29 @@ def test_bom_roundtrips_capability_properties():
 
 - [ ] **Step 2 — run, confirm fail** (also fails the existing `== "0.2"` assertions).
 - [ ] **Step 3 — implement:**
-  - In `_component_to_cyclonedx`, key the emission on whether
-    `capability_coverage` is present in `extra` (i.e. the capability-annotation
-    pass ran on this ref) — **not** on whether `capabilities` is non-empty.
-    Append `{"name": "openaca:capabilities", "value": json.dumps(extra["capabilities"])}`
+  - In `_component_to_cyclonedx`, key the emission on the shared
+    `_is_annotated(extra)` predicate from Task 7 (both `capabilities` **and**
+    `capability_coverage` present + valid) — **not** on whether `capabilities` is
+    non-empty. Because every ref that reaches emission has been through
+    `build_agent_bom`'s annotation pass, `_is_annotated` is true for all of them,
+    including the uncovered case: append
+    `{"name": "openaca:capabilities", "value": json.dumps(extra["capabilities"])}`
     and `{"name": "openaca:capability_coverage", "value": extra["capability_coverage"]}`
     (JSON-encoded value, matching the `openaca:source_provenance` precedent) even
-    when `capabilities` is `[]` and coverage is `unknown`.
-  - In `_extra_from_properties`, restore both properties back into `extra`:
-    `openaca:capabilities` parsed with `json.loads` into `extra["capabilities"]`
-    (matching the `openaca:runtime_hosts`/`openaca:source` JSON-property
-    precedent), `openaca:capability_coverage` copied verbatim into
-    `extra["capability_coverage"]`. Without this, `scan bom` silently drops
-    both descriptors on re-ingest (the parser only restores properties in its
-    existing allow-list).
+    when `capabilities` is `[]` and coverage is `unknown`. Guarding on the
+    predicate (not on `capability_coverage` alone) means a ref that somehow
+    carries only coverage never reaches `json.dumps(extra["capabilities"])` with a
+    missing key.
+  - In `_extra_from_properties`, restore both properties back into `extra`, but
+    **only as a pair**: `openaca:capabilities` parsed with `json.loads` into
+    `extra["capabilities"]` (matching the `openaca:runtime_hosts`/`openaca:source`
+    JSON-property precedent) and `openaca:capability_coverage` copied verbatim
+    into `extra["capability_coverage"]`. If a BOM carries only one of the two, or
+    `openaca:capabilities` fails to parse as a list, restore **neither** — leaving
+    the ref un-annotated so Task 7 cleanly recomputes it rather than seeding a
+    half-populated `extra`. Without the restore, `scan bom` silently drops both
+    descriptors on re-ingest (the parser only restores properties in its existing
+    allow-list); without the pair-guard, a malformed BOM half-populates `extra`.
   - Bump `OPENACA_BOM_SCHEMA_VERSION = "0.3"`.
   - In `schema/openaca-bom.schema.json`: add `openaca:capabilities` /
     `openaca:capability_coverage` to the allowed property names; change the

@@ -108,6 +108,16 @@ def test_lint_rejects_non_object_evidence_entry(tmp_path):
     assert any("evidence" in e for e in errors)
 
 
+def test_lint_reports_non_mapping_record_instead_of_crashing(tmp_path):
+    # Syntactically valid YAML that isn't a mapping (e.g. a bare list) passes
+    # the "record is None" guard -- must be reported as a lint error, not
+    # crash with AttributeError when the capabilities loop calls `.get()`.
+    bad = tmp_path / "x.yaml"
+    bad.write_text("[]\n")
+    errors = lint_capability_dir(tmp_path)
+    assert any("not a mapping" in e for e in errors)
+
+
 def test_lint_rejects_duplicate_match_coordinate(tmp_path):
     # A match_coordinate keys the coordinate index alone (Task 4); two records
     # sharing one are as ambiguous as duplicate identities and must fail lint.

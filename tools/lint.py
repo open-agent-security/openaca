@@ -196,6 +196,9 @@ def lint_capability_dir(target: Path) -> list[str]:
         if parse_error is not None or record is None:
             errors.append(f"{path}: {parse_error or 'failed to load'}")
             continue
+        if not isinstance(record, dict):
+            errors.append(f"{path}: schema: record is not a mapping (at <root>)")
+            continue
         record_errors = check_schema(record, validator)
         for cap in record.get("capabilities") or []:
             if isinstance(cap, dict) and not (cap.get("evidence") or []):

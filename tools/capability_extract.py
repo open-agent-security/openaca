@@ -110,8 +110,14 @@ def _hook_capabilities(ref: ComponentRef) -> list[Capability]:
 
 def _mcp_capabilities(ref: ComponentRef) -> list[Capability]:
     extra = ref.extra or {}
-    install_source = extra.get("install_source")
-    url = install_source if isinstance(install_source, str) else ""
+    # `url` is the canonical remote-MCP signal (ADR-0020); `install_source` is
+    # a redundant copy the parser populates for posture rules and isn't
+    # guaranteed on every ref (e.g. a re-ingested foreign BOM that models the
+    # URL without duplicating it into install_source).
+    url = extra.get("url")
+    if not isinstance(url, str) or not url:
+        install_source = extra.get("install_source")
+        url = install_source if isinstance(install_source, str) else ""
     if not url.startswith(("http://", "https://")):
         return []
     evidence = {"kind": "manifest_field", "field": "url", "value": url}

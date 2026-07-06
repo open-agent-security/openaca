@@ -564,9 +564,11 @@ def test_build_agent_bom_annotates_graph_refs(tmp_path):
   fixture with a `Bash` skill, asserting the CycloneDX output carries
   `openaca:capabilities` — the regression test for the direct-CLI-path gap.
   Add `test_build_agent_bom_preserves_reingested_capabilities` to
-  `tests/test_bom.py`: a ref pre-populated with
-  `extra={"capability_coverage": "complete", "capabilities": [...]}` (simulating
-  what `_extra_from_properties` restores from an ingested BOM) must come out of
+  `tests/test_bom.py`: a ref pre-populated with `capability_coverage: "complete"`
+  and a `capabilities` list holding one **fully valid** entry (all required
+  `Capability` fields, incl. `source_version`, so `_is_annotated` accepts it —
+  simulating what `_extra_from_properties` restores from an ingested BOM) must
+  come out of
   `build_agent_bom` with that exact `capabilities` list and `"complete"`
   coverage unchanged, not recomputed to `"partial"` by the local corpus/extractor
   — the regression test for the `scan bom` re-ingest gap. Add
@@ -596,6 +598,7 @@ def test_bom_emits_capability_descriptors():
         extra={"component_type": "mcp_server",
                "capabilities": [{"name": "shell_exec", "execution_locus": "local",
                                  "method": "curated", "source": "openaca",
+                                 "source_version": "0.4.0",
                                  "confidence": "high", "evidence": []}],
                "capability_coverage": "partial"})
     doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
@@ -625,6 +628,7 @@ def test_bom_roundtrips_capability_properties():
         extra={"component_type": "mcp_server",
                "capabilities": [{"name": "shell_exec", "execution_locus": "local",
                                  "method": "curated", "source": "openaca",
+                                 "source_version": "0.4.0",
                                  "confidence": "high", "evidence": []}],
                "capability_coverage": "partial"})
     doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()

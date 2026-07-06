@@ -55,6 +55,13 @@ def test_capability_roundtrip():
                    "field": "allowed-tools", "value": "Bash(*)"}],
     )
     assert Capability.from_dict(cap.to_dict()) == cap
+
+def test_capability_requires_nonempty_evidence():
+    import pytest
+    with pytest.raises(ValueError):
+        Capability(name="shell_exec", execution_locus="local", method="declared",
+                   source="openaca", source_version="0.4.0", confidence="high",
+                   evidence=[])
 ```
 
 - [ ] **Step 2 — run, confirm fail** (module missing).
@@ -70,8 +77,15 @@ def test_capability_roundtrip():
   hashability; `eq=True` (the dataclass default) is all Task 1's round-trip test
   needs. `to_dict()` / `from_dict()`;
   module constants `CAPABILITY_NAMES` (the frozenset above) and `COVERAGE_LEVELS`.
-  Validate `name in CAPABILITY_NAMES` and `execution_locus`/`method`/`confidence`
-  in their enums in `__post_init__`; raise `ValueError` otherwise.
+  Validate in `__post_init__` (raise `ValueError` otherwise): `name in
+  CAPABILITY_NAMES`; `execution_locus`/`method`/`confidence` in their enums; and
+  **`evidence` is non-empty** — a capability with no citable observation is
+  exactly the unsupported claim Principle 2 ("assert only with citable evidence")
+  forbids, so the model rejects it rather than emitting a descriptor backed by
+  nothing. Every legitimate source already supplies evidence: the declared
+  extractor cites the manifest field, and the curated loader appends a
+  `curated_review` entry (Task 4), so this invariant is cheap to hold at every
+  assertion point (declared, curated, re-ingested via `from_dict`).
 - [ ] **Step 4 — run, confirm PASS.**
 - [ ] **Step 5 — commit.** `feat(capability): closed taxonomy + Capability record`
 
@@ -342,7 +356,11 @@ def test_corpus_discovers_nested_records(tmp_path):
   dropped or overloaded onto `source_version`: append one evidence entry per
   capability, `{"kind": "curated_review", "reviewed_version": ...,
   "last_reviewed": ...}`, so a downstream report can still flag
-  reviewed-version-vs-installed-version drift. Return `[]` on miss.
+  reviewed-version-vs-installed-version drift. Appending this entry **before**
+  constructing the `Capability` also guarantees the non-empty-evidence invariant
+  (Task 1) for curated capabilities even when a record's own `evidence` list is
+  empty — the curated-review provenance is itself the minimum citation. Return
+  `[]` on miss.
 - [ ] **Step 4 — run, confirm PASS.**
 - [ ] **Step 5 — commit.** `feat(capability): coordinate-constrained curated corpus loader`
 
@@ -598,8 +616,10 @@ def test_bom_emits_capability_descriptors():
         extra={"component_type": "mcp_server",
                "capabilities": [{"name": "shell_exec", "execution_locus": "local",
                                  "method": "curated", "source": "openaca",
-                                 "source_version": "0.4.0",
-                                 "confidence": "high", "evidence": []}],
+                                 "source_version": "0.4.0", "confidence": "high",
+                                 "evidence": [{"kind": "curated_review",
+                                               "reviewed_version": "1.0",
+                                               "last_reviewed": "2026-07-03"}]}],
                "capability_coverage": "partial"})
     doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
     props = _props(doc["components"][0])
@@ -628,8 +648,10 @@ def test_bom_roundtrips_capability_properties():
         extra={"component_type": "mcp_server",
                "capabilities": [{"name": "shell_exec", "execution_locus": "local",
                                  "method": "curated", "source": "openaca",
-                                 "source_version": "0.4.0",
-                                 "confidence": "high", "evidence": []}],
+                                 "source_version": "0.4.0", "confidence": "high",
+                                 "evidence": [{"kind": "curated_review",
+                                               "reviewed_version": "1.0",
+                                               "last_reviewed": "2026-07-03"}]}],
                "capability_coverage": "partial"})
     doc = build_agent_bom([ref], target_type="repo").to_cyclonedx()
     rebuilt = component_refs_from_cyclonedx(doc)[0]

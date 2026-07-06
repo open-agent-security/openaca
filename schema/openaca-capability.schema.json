@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openaca.dev/schema/openaca-capability.schema.json",
+  "title": "OpenACA curated capability record",
+  "type": "object",
+  "required": ["identity", "last_reviewed", "reviewed_version", "capabilities"],
+  "properties": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The openaca:identity this curated record applies to (e.g. mcp-server/filesystem)."
+    },
+    "match_coordinate": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional package coordinate in the value space f\"{ecosystem}/{package}\" (e.g. npm/@modelcontextprotocol/server-filesystem). Not an alternate identity: when present, the record binds to that upstream package and is looked up by the coordinate alone, because a local MCP config alias is user-chosen and not a reliable key for a package-scoped record."
+    },
+    "last_reviewed": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the capabilities were last curated (YYYY-MM-DD)."
+    },
+    "reviewed_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Component version the review was performed against."
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/capability"}
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "required": ["name", "execution_locus", "confidence", "evidence"],
+      "properties": {
+        "name": {
+          "enum": [
+            "file_read",
+            "file_write",
+            "shell_exec",
+            "network_egress",
+            "credential_access",
+            "sensitive_data_access"
+          ]
+        },
+        "execution_locus": {"enum": ["local", "remote"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "evidence": {"type": "array"}
+      }
+    }
+  }
+}

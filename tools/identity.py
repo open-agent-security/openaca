@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -245,7 +246,12 @@ def strip_package_version(ecosystem: object, package: str) -> str:
             return f"{scope}/{rest}"
         return package.split("@", 1)[0]
     if ecosystem == "PyPI":
-        package = package.split("==", 1)[0]
+        # Strip PEP 508 extras (`[cli]`), env markers (`;`), and PEP 440 version
+        # specifiers (`==`, `>=`, `<`, `~=`, `!=`, `,`) so `fastmcp[cli]>=2` and
+        # `fastmcp==2.0` both reduce to `fastmcp` — parity with strip_launch_version.
+        marker = re.search(r"[(\[;]|[><=!~]", package)
+        if marker:
+            package = package[: marker.start()]
     return package.split("@", 1)[0]
 
 

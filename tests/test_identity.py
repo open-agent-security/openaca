@@ -198,6 +198,13 @@ def test_strip_package_version_resolves_npm_alias_spec():
     assert strip_package_version("npm", "foo@npm:bar@1.0.0") == "bar"
 
 
+def test_strip_package_version_handles_pypi_extras_and_specifiers():
+    assert strip_package_version("PyPI", "fastmcp[cli]==2.0") == "fastmcp"
+    assert strip_package_version("PyPI", "fastmcp>=2") == "fastmcp"
+    assert strip_package_version("PyPI", "fastmcp[cli]>=1,<2") == "fastmcp"
+    assert strip_package_version("PyPI", "weather-mcp") == "weather-mcp"
+
+
 def test_normalize_launcher_command_strips_path_and_extension():
     # Match _classify_command's stem-based classification so an abs-path or
     # extensioned launcher is still recognized as npx/uvx/bunx.

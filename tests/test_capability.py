@@ -145,6 +145,20 @@ def test_git_launch_source_yields_no_coordinate():
     assert caps == [] and coverage == "unknown"
 
 
+def test_abs_path_launcher_matches_curated_seed():
+    # A full-path launcher (`/usr/local/bin/npx`) must be normalized to its
+    # basename so the npx package coordinate is derived, matching the seed.
+    ref = ComponentRef(
+        component_identity="mcp-server/fs",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "/usr/local/bin/npx @modelcontextprotocol/server-filesystem",
+        },
+    )
+    caps, _ = capabilities_for_ref(ref, load_capability_corpus())
+    assert {c.name for c in caps} >= {"file_read", "file_write"}
+
+
 def test_pypi_launch_name_is_normalized_before_matching(tmp_path):
     # A curated record keyed on the PEP 503-normalized PyPI coordinate must
     # match a launch that uses a non-normalized spelling (case + separators).

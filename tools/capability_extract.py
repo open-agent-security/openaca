@@ -128,16 +128,28 @@ def _mcp_capabilities(ref: ComponentRef) -> list[Capability]:
 
 
 def _network_client(command: str) -> str | None:
-    for segment in re.split(r"\||&&|;", command):
-        try:
-            tokens = shlex.split(segment)
-        except ValueError:
-            tokens = segment.split()
-        if not tokens:
+    # Tokenize respecting shell quoting so a client name inside a quoted
+    # argument (e.g. `echo '; curl ...'`) is not mistaken for an invoked
+    # command. punctuation_chars splits shell operators (; | & < >) into their
+    # own tokens; a client counts only in command position (first token, or the
+    # token right after an operator). Decline on a parse error rather than guess
+    # (Principle 2).
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    at_command_position = True
+    for token in tokens:
+        if token and all(char in "();<>|&" for char in token):
+            at_command_position = True
             continue
-        client = Path(tokens[0]).name
-        if client in _NETWORK_CLIENTS:
-            return client
+        if at_command_position:
+            client = Path(token).name
+            if client in _NETWORK_CLIENTS:
+                return client
+            at_command_position = False
     return None
 
 

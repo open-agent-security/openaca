@@ -95,12 +95,18 @@ def capabilities_for_ref(
         mcp_package_source,
         strip_package_version,
     )
+    from tools.mcp_launch_resolve import normalize_pypi_name
 
     coordinate: str | None = None
     source = mcp_package_source((ref.extra or {}).get("install_source"))
     if source is not None:
         _launcher, ecosystem, package = source
         stripped = strip_package_version(ecosystem, package)
+        if ecosystem == "PyPI":
+            # PyPI project names are case- and separator-insensitive (PEP 503);
+            # curated coordinates are keyed on the normalized name, so a launch
+            # spelled `AWS_MCP_Server` must match `PyPI/aws-mcp-server`.
+            stripped = normalize_pypi_name(stripped)
         allow_scope = ecosystem == "npm"
         if _safe_package_name(stripped, allow_scope=allow_scope):
             coordinate = f"{ecosystem}/{stripped}"

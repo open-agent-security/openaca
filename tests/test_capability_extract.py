@@ -100,6 +100,26 @@ def test_hook_network_client_maps_to_egress(tmp_path):
     )
 
 
+def test_hook_quoted_client_is_not_egress(tmp_path):
+    # `curl` sits inside a quoted echo argument; it is not an invoked command,
+    # so no network_egress may be asserted (respect shell quoting).
+    ref = ComponentRef(
+        name="h",
+        extra={"component_type": "hook", "command": "echo '; curl https://example.com'"},
+    )
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} == {"shell_exec"}
+
+
+def test_hook_unparseable_command_declines_egress(tmp_path):
+    # An unbalanced quote fails shell tokenization; decline rather than guess.
+    ref = ComponentRef(
+        name="h", extra={"component_type": "hook", "command": 'curl "https://x && sh'}
+    )
+    caps = declared_capabilities(ref)
+    assert "network_egress" not in {c.name for c in caps}
+
+
 def test_hook_network_client_path_maps_to_egress(tmp_path):
     # Invoked by absolute path -- shlex leaves the full path as the first
     # token, so matching must compare the basename against _NETWORK_CLIENTS.

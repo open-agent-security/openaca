@@ -212,4 +212,13 @@ def test_normalize_launcher_command_strips_path_and_extension():
     assert normalize_launcher_command("npx.cmd @m/p") == "npx @m/p"
     assert normalize_launcher_command("uvx.exe weather-mcp") == "uvx weather-mcp"
     assert normalize_launcher_command("npx @m/p") == "npx @m/p"
+
+
+def test_normalize_launcher_command_keeps_dotted_local_scripts():
+    # A local wrapper `npx.sh` is NOT the npx launcher; only known executable
+    # extensions (.cmd/.exe/...) are stripped, so `.sh` scripts stay intact and
+    # are declined by mcp_package_source rather than blessed as npx.
+    assert normalize_launcher_command("/tmp/npx.sh @acme/dc") == "npx.sh @acme/dc"
+    assert normalize_launcher_command("wrapper.py uvx pkg") == "wrapper.py uvx pkg"
+    assert mcp_package_source(normalize_launcher_command("/tmp/npx.sh @acme/dc")) is None
     assert strip_package_version("npm", "@myscope/alias@npm:@other/real@2.0.0") == "@other/real"

@@ -12,8 +12,8 @@
     },
     "match_coordinate": {
       "type": "string",
-      "minLength": 1,
-      "description": "Optional package coordinate in the value space f\"{ecosystem}/{package}\" (e.g. npm/@modelcontextprotocol/server-filesystem). Not an alternate identity: when present, the record binds to that upstream package and is looked up by the coordinate alone, because a local MCP config alias is user-chosen and not a reliable key for a package-scoped record."
+      "pattern": "^(npm|PyPI)/.+",
+      "description": "Optional package coordinate in the value space f\"{ecosystem}/{package}\" (e.g. npm/@modelcontextprotocol/server-filesystem). The ecosystem prefix must be npm or PyPI to match what capabilities_for_ref derives from a launch; a mis-shaped coordinate would silently never match. Not an alternate identity: when present, the record binds to that upstream package and is looked up by the coordinate alone, because a local MCP config alias is user-chosen and not a reliable key for a package-scoped record."
     },
     "last_reviewed": {
       "type": "string",

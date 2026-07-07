@@ -5,6 +5,7 @@ from tools.identity import (
     match_coordinate_for_bom,
     match_coordinates,
     mcp_package_source,
+    normalize_launcher_command,
     safe_unpinned_mcp_install_source,
     strip_package_version,
     unpinned_mcp_package,
@@ -195,4 +196,13 @@ def test_strip_package_version_resolves_npm_alias_spec():
         == "some-other-mcp"
     )
     assert strip_package_version("npm", "foo@npm:bar@1.0.0") == "bar"
+
+
+def test_normalize_launcher_command_strips_path_and_extension():
+    # Match _classify_command's stem-based classification so an abs-path or
+    # extensioned launcher is still recognized as npx/uvx/bunx.
+    assert normalize_launcher_command("/usr/local/bin/npx @m/p") == "npx @m/p"
+    assert normalize_launcher_command("npx.cmd @m/p") == "npx @m/p"
+    assert normalize_launcher_command("uvx.exe weather-mcp") == "uvx weather-mcp"
+    assert normalize_launcher_command("npx @m/p") == "npx @m/p"
     assert strip_package_version("npm", "@myscope/alias@npm:@other/real@2.0.0") == "@other/real"

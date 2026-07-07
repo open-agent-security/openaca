@@ -207,10 +207,13 @@ def match_coordinates(ref: Any) -> list[MatchCoordinate]:
 
 
 def normalize_launcher_command(src: str) -> str:
-    """Reduce a full-path launcher to its basename so `mcp_package_source`
-    (which matches the launcher token exactly) recognizes it — e.g.
-    `/usr/local/bin/npx @scope/pkg` -> `npx @scope/pkg`. Shell-aware so a quoted
-    launcher path tokenizes cleanly; falls back to a naive split on bad syntax.
+    """Reduce a full-path/extensioned launcher to its bare name so
+    `mcp_package_source` (which matches the launcher token exactly) recognizes
+    it — e.g. `/usr/local/bin/npx @scope/pkg` and `npx.cmd @scope/pkg` both ->
+    `npx @scope/pkg`. Uses `Path(...).stem` to match the manifest parser's
+    `_classify_command`, so capability lookup and component classification agree
+    on which launches are npx/uvx/bunx. Shell-aware so a quoted launcher path
+    tokenizes cleanly; falls back to a naive split on bad syntax.
     """
     try:
         tokens = shlex.split(src)
@@ -218,7 +221,7 @@ def normalize_launcher_command(src: str) -> str:
         tokens = src.split()
     if not tokens:
         return src
-    return " ".join([Path(tokens[0]).name, *tokens[1:]])
+    return " ".join([Path(tokens[0]).stem, *tokens[1:]])
 
 
 def strip_package_version(ecosystem: object, package: str) -> str:

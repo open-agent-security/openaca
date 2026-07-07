@@ -159,6 +159,20 @@ def test_abs_path_launcher_matches_curated_seed():
     assert {c.name for c in caps} >= {"file_read", "file_write"}
 
 
+def test_extensioned_launcher_matches_curated_seed():
+    # A `.cmd` launcher spelling (classified as npx via stem) must still derive
+    # the npx coordinate and match the seed.
+    ref = ComponentRef(
+        component_identity="mcp-server/fs",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx.cmd @modelcontextprotocol/server-filesystem",
+        },
+    )
+    caps, _ = capabilities_for_ref(ref, load_capability_corpus())
+    assert {c.name for c in caps} >= {"file_read", "file_write"}
+
+
 def test_pypi_launch_name_is_normalized_before_matching(tmp_path):
     # A curated record keyed on the PEP 503-normalized PyPI coordinate must
     # match a launch that uses a non-normalized spelling (case + separators).

@@ -129,6 +129,11 @@ def _check_capability_descriptors(props: dict[str, str], index: int) -> list[str
         )
 
     capabilities_raw = props.get("openaca:capabilities")
+    if (capabilities_raw is None) != (coverage is None):
+        errors.append(
+            f"components[{index}]: openaca:capabilities and openaca:capability_coverage "
+            "must both be present or both absent"
+        )
     if capabilities_raw is None:
         return errors
     try:

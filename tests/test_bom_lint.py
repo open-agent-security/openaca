@@ -239,6 +239,38 @@ def test_bom_lint_rejects_malformed_capability_entry(tmp_path):
     assert "openaca:capabilities[0] is invalid" in result.output
 
 
+def test_bom_lint_rejects_capability_evidence_missing_kind(tmp_path):
+    doc = _valid_bom_doc()
+    doc["components"][0]["properties"].extend(
+        [
+            {
+                "name": "openaca:capabilities",
+                "value": json.dumps(
+                    [
+                        {
+                            "name": "shell_exec",
+                            "execution_locus": "local",
+                            "method": "declared",
+                            "source": "hook",
+                            "source_version": "1",
+                            "confidence": "high",
+                            "evidence": [{}],
+                        }
+                    ]
+                ),
+            },
+            {"name": "openaca:capability_coverage", "value": "partial"},
+        ]
+    )
+    path = tmp_path / "bad-evidence-kind.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "openaca:capabilities[0] is invalid" in result.output
+
+
 def test_bom_lint_rejects_coverage_without_capabilities(tmp_path):
     doc = _valid_bom_doc()
     doc["components"][0]["properties"].append(

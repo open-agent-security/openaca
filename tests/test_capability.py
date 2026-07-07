@@ -72,6 +72,21 @@ def test_capability_rejects_non_object_evidence_entry():
         )
 
 
+def test_capability_rejects_evidence_entry_missing_kind():
+    import pytest
+
+    with pytest.raises(ValueError):
+        Capability(
+            name="shell_exec",
+            execution_locus="local",
+            method="declared",
+            source="openaca",
+            source_version="0.4.0",
+            confidence="high",
+            evidence=[{"path": "SKILL.md"}],
+        )
+
+
 def _skill_with_bash(tmp_path):
     p = tmp_path / "SKILL.md"
     p.write_text("---\nname: x\nallowed-tools: Bash(*)\n---\n")

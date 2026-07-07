@@ -143,3 +143,22 @@ def test_git_launch_source_yields_no_coordinate():
     )
     caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
     assert caps == [] and coverage == "unknown"
+
+
+def test_pypi_launch_name_is_normalized_before_matching(tmp_path):
+    # A curated record keyed on the PEP 503-normalized PyPI coordinate must
+    # match a launch that uses a non-normalized spelling (case + separators).
+    (tmp_path / "rec.yaml").write_text(
+        "identity: mcp-server/aws\nmatch_coordinate: PyPI/aws-mcp-server\n"
+        "last_reviewed: '2026-07-03'\nreviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: network_egress, execution_locus: remote, confidence: high,\n"
+        "     evidence: [{kind: curated_review}]}\n"
+    )
+    corpus = load_capability_corpus(root=tmp_path)
+    ref = ComponentRef(
+        component_identity="mcp-server/aws",
+        extra={"component_type": "mcp_server", "install_source": "uvx AWS_MCP_Server==1.0"},
+    )
+    caps, coverage = capabilities_for_ref(ref, corpus)
+    assert {c.name for c in caps} == {"network_egress"}
+    assert coverage == "partial"

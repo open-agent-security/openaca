@@ -120,6 +120,17 @@ def test_hook_unparseable_command_declines_egress(tmp_path):
     assert "network_egress" not in {c.name for c in caps}
 
 
+def test_hook_env_assignment_prefix_still_detects_client(tmp_path):
+    # A leading `VAR=value` env assignment must be skipped so the real client
+    # that follows is still detected.
+    ref = ComponentRef(
+        name="h",
+        extra={"component_type": "hook", "command": "TOKEN=$TOKEN curl -s https://example.com"},
+    )
+    caps = declared_capabilities(ref)
+    assert {c.name for c in caps} >= {"shell_exec", "network_egress"}
+
+
 def test_hook_network_client_path_maps_to_egress(tmp_path):
     # Invoked by absolute path -- shlex leaves the full path as the first
     # token, so matching must compare the basename against _NETWORK_CLIENTS.

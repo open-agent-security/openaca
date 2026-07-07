@@ -146,6 +146,10 @@ def _network_client(command: str) -> str | None:
             at_command_position = True
             continue
         if at_command_position:
+            # A leading `VAR=value` is a shell env assignment, not the command;
+            # the real client can still follow (e.g. `TOKEN=$T curl ...`).
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token):
+                continue
             client = Path(token).name
             if client in _NETWORK_CLIENTS:
                 return client

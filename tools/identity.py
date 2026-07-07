@@ -205,13 +205,25 @@ def match_coordinates(ref: Any) -> list[MatchCoordinate]:
 
 
 def strip_package_version(ecosystem: object, package: str) -> str:
-    if ecosystem == "npm" and package.startswith("@"):
-        # A leading @scope/ is part of the name; the pin is a later @.
-        scope, sep, rest = package.partition("/")
-        if not sep:
-            return package
-        rest = rest.split("@", 1)[0]
-        return f"{scope}/{rest}"
+    if ecosystem == "npm":
+        alias_marker = "@npm:"
+        alias_idx = package.find(alias_marker)
+        if alias_idx != -1:
+            # npm alias spec (`<alias>@npm:<real-name>[@version]`, e.g. from
+            # `npx <alias>@npm:<real-name>`): <alias> is a user-chosen label
+            # npm/npx accept for any package, so it is exactly the kind of
+            # untrusted local name ADR-0041 already treats as unreliable.
+            # Resolve to the real package name that actually gets installed
+            # and run, not the alias.
+            package = package[alias_idx + len(alias_marker) :]
+        if package.startswith("@"):
+            # A leading @scope/ is part of the name; the pin is a later @.
+            scope, sep, rest = package.partition("/")
+            if not sep:
+                return package
+            rest = rest.split("@", 1)[0]
+            return f"{scope}/{rest}"
+        return package.split("@", 1)[0]
     if ecosystem == "PyPI":
         package = package.split("==", 1)[0]
     return package.split("@", 1)[0]

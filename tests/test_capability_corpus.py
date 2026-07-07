@@ -118,6 +118,35 @@ def test_lint_reports_non_mapping_record_instead_of_crashing(tmp_path):
     assert any("not a mapping" in e for e in errors)
 
 
+def test_lint_rejects_empty_evidence_kind(tmp_path):
+    # `evidence: [{kind: ''}]` satisfies a bare "key is present" schema check
+    # but Capability.__post_init__ rejects a falsy kind -- which means a bad
+    # corpus entry would pass `openaca lint capabilities/` and only crash
+    # later, at scan/BOM-build time when load_capability_corpus() constructs
+    # the Capability. The schema must reject it at lint time instead.
+    bad = tmp_path / "x.yaml"
+    bad.write_text(
+        "identity: mcp-server/x\nlast_reviewed: '2026-07-03'\n"
+        "reviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high, "
+        "evidence: [{kind: ''}]}\n"
+    )
+    errors = lint_capability_dir(tmp_path)
+    assert any("kind" in e for e in errors)
+
+
+def test_lint_rejects_null_evidence_kind(tmp_path):
+    bad = tmp_path / "x.yaml"
+    bad.write_text(
+        "identity: mcp-server/x\nlast_reviewed: '2026-07-03'\n"
+        "reviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high, "
+        "evidence: [{kind: null}]}\n"
+    )
+    errors = lint_capability_dir(tmp_path)
+    assert any("kind" in e for e in errors)
+
+
 def test_lint_rejects_duplicate_match_coordinate(tmp_path):
     # A match_coordinate keys the coordinate index alone (Task 4); two records
     # sharing one are as ambiguous as duplicate identities and must fail lint.

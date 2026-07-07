@@ -93,12 +93,16 @@ def capabilities_for_ref(
         _safe_package_name,
         canonical_component_identity,
         mcp_package_source,
+        normalize_launcher_command,
         strip_package_version,
     )
     from tools.mcp_launch_resolve import normalize_pypi_name
 
     coordinate: str | None = None
-    source = mcp_package_source((ref.extra or {}).get("install_source"))
+    install_source = (ref.extra or {}).get("install_source")
+    if isinstance(install_source, str):
+        install_source = normalize_launcher_command(install_source)
+    source = mcp_package_source(install_source)
     if source is not None:
         _launcher, ecosystem, package = source
         stripped = strip_package_version(ecosystem, package)

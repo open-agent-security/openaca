@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -202,6 +204,21 @@ def match_coordinates(ref: Any) -> list[MatchCoordinate]:
         return [MatchCoordinate(kind="external_audit", value=match_coordinate)]
 
     return []
+
+
+def normalize_launcher_command(src: str) -> str:
+    """Reduce a full-path launcher to its basename so `mcp_package_source`
+    (which matches the launcher token exactly) recognizes it — e.g.
+    `/usr/local/bin/npx @scope/pkg` -> `npx @scope/pkg`. Shell-aware so a quoted
+    launcher path tokenizes cleanly; falls back to a naive split on bad syntax.
+    """
+    try:
+        tokens = shlex.split(src)
+    except ValueError:
+        tokens = src.split()
+    if not tokens:
+        return src
+    return " ".join([Path(tokens[0]).name, *tokens[1:]])
 
 
 def strip_package_version(ecosystem: object, package: str) -> str:

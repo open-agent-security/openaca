@@ -181,3 +181,18 @@ def test_strip_package_version():
     assert strip_package_version("PyPI", "weather-mcp@0.5.0") == "weather-mcp"
     assert strip_package_version("PyPI", "weather-mcp==0.5.0") == "weather-mcp"
     assert strip_package_version("PyPI", "weather-mcp") == "weather-mcp"
+
+
+def test_strip_package_version_resolves_npm_alias_spec():
+    # npm/npx alias syntax (`<alias>@npm:<real-name>[@version]`) lets a user
+    # (or an attacker) run any real package under a name of their choosing --
+    # e.g. `npx @modelcontextprotocol/server-filesystem@npm:some-other-mcp`
+    # actually installs and runs `some-other-mcp`. The derived coordinate must
+    # follow the real package, not the spoofable alias, or curated capability
+    # lookup would bless the wrong package's code under a trusted name.
+    assert (
+        strip_package_version("npm", "@modelcontextprotocol/server-filesystem@npm:some-other-mcp")
+        == "some-other-mcp"
+    )
+    assert strip_package_version("npm", "foo@npm:bar@1.0.0") == "bar"
+    assert strip_package_version("npm", "@myscope/alias@npm:@other/real@2.0.0") == "@other/real"

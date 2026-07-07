@@ -108,6 +108,21 @@ def test_lint_rejects_non_object_evidence_entry(tmp_path):
     assert any("evidence" in e for e in errors)
 
 
+def test_lint_rejects_misshapen_match_coordinate(tmp_path):
+    # A match_coordinate must be `npm/...` or `PyPI/...` to match what
+    # capabilities_for_ref derives; a bare/mis-prefixed value silently never
+    # matches, so the schema must reject it.
+    bad = tmp_path / "x.yaml"
+    bad.write_text(
+        "identity: mcp-server/x\nmatch_coordinate: just-a-name\n"
+        "last_reviewed: '2026-07-03'\nreviewed_version: '1.0'\ncapabilities:\n"
+        "  - {name: file_read, execution_locus: local, confidence: high,\n"
+        "     evidence: [{kind: curated_review}]}\n"
+    )
+    errors = lint_capability_dir(tmp_path)
+    assert errors
+
+
 def test_lint_reports_non_mapping_record_instead_of_crashing(tmp_path):
     # Syntactically valid YAML that isn't a mapping (e.g. a bare list) passes
     # the "record is None" guard -- must be reported as a lint error, not

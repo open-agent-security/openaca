@@ -55,6 +55,8 @@ class Capability:
         for e in self.evidence:
             if not isinstance(e, dict):
                 raise ValueError(f"capability evidence entries must be objects, got {e!r}")
+            if not e.get("kind"):
+                raise ValueError(f"capability evidence entries must have a 'kind', got {e!r}")
 
     def to_dict(self) -> dict[str, Any]:
         return {

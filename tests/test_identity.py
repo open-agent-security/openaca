@@ -33,6 +33,23 @@ def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():
     ]
 
 
+def test_github_sourced_mcp_identity_is_not_masked_by_uvx_from():
+    # A parsed `uvx --from git+https://...` ref already carries ecosystem
+    # "github"; `install_source` still literally contains the git URL, so
+    # `mcp_package_source()` would otherwise misread it as a PyPI package.
+    ref = ComponentRef(
+        ecosystem="github",
+        name="oraios/serena",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "uvx --from git+https://github.com/oraios/serena mcp-server-x",
+            "component_path": [{"type": "mcp_server", "name": "serena"}],
+        },
+    )
+
+    assert canonical_component_identity(ref) == "mcp-server/github/oraios/serena"
+
+
 def test_package_source_ref_identity_is_graph_native():
     # Option B: a package-source ref's identity is `package/{eco}/{name}`;
     # parentage lives on the graph edge, not in the identity string.

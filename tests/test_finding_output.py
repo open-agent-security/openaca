@@ -174,6 +174,35 @@ def test_finding_to_output_derives_component_path_from_graph_lineage():
     assert out["bom_ref"] == "pkg-node"
 
 
+def test_graphless_stored_path_collapses_to_exact_leaf_occurrence():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="lodash",
+        version="4.17.20",
+        extra={
+            "component_type": "package",
+            "bom_ref": "package-occurrence",
+            "component_path": [
+                {"type": "plugin", "name": "acme-devtools"},
+                {"type": "package", "name": "lodash"},
+            ],
+        },
+    )
+    finding = Finding("GHSA-test", ref, "high")
+
+    out = finding_to_output(finding, None)
+
+    assert out["component_path"] == [
+        {
+            "type": "package",
+            "name": "lodash",
+            "bom_ref": "package-occurrence",
+            "identity": "package/npm/lodash",
+            "version": "4.17.20",
+        }
+    ]
+
+
 def test_finding_to_output_marks_source_unknown_for_source_less_skill():
     ref = ComponentRef(
         name="bootstrap",

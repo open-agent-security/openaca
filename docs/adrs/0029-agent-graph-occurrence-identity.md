@@ -4,7 +4,7 @@ title: Make openaca identity the agent graph occurrence key
 status: superseded
 date: 2026-06-07
 supersedes: 0020
-superseded-by: 0031
+superseded-by: 0042
 ---
 
 ## Context

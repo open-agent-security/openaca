@@ -50,9 +50,15 @@ def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
                 component_path=_component_path_for(ref, install_source),
                 standards=_standards_for(ref),
                 remediation=REMEDIATION,
+                bom_ref=_bom_ref_for(ref),
             )
         )
     return findings
+
+
+def _bom_ref_for(ref: ComponentRef) -> str | None:
+    value = (ref.extra or {}).get("bom_ref")
+    return value if isinstance(value, str) and value else None
 
 
 def _mutable_install_source_for(ref: ComponentRef) -> str | None:

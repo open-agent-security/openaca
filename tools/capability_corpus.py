@@ -1,4 +1,4 @@
-"""Curated-tier capability corpus loader, identity-/coordinate-keyed."""
+"""Curated-tier capability corpus loader, keyed by source-stable identity."""
 
 from __future__ import annotations
 
@@ -27,30 +27,22 @@ def _openaca_version() -> str:
 
 @dataclass(frozen=True)
 class CapabilityCorpus:
-    by_coordinate: dict[str, list[Capability]]
     by_identity: dict[str, list[Capability]]
 
-    def lookup(self, identity: str, match_coordinate: str | None = None) -> list[Capability]:
-        if match_coordinate is not None:
-            return list(self.by_coordinate.get(match_coordinate, []))
+    def lookup(self, identity: str) -> list[Capability]:
         return list(self.by_identity.get(identity, []))
 
 
 def load_capability_corpus(root: Path | None = None) -> CapabilityCorpus:
     if root is None:
         root = default_capabilities_dir()
-    by_coordinate: dict[str, list[Capability]] = {}
     by_identity: dict[str, list[Capability]] = {}
     source_version = _openaca_version()
     for path in sorted(root.rglob("*.yaml")):
         record = yaml.safe_load(path.read_text())
         caps = _record_capabilities(record, source_version)
-        coordinate = record.get("match_coordinate")
-        if coordinate:
-            by_coordinate[coordinate] = caps
-        else:
-            by_identity[record["identity"]] = caps
-    return CapabilityCorpus(by_coordinate=by_coordinate, by_identity=by_identity)
+        by_identity[record["identity"]] = caps
+    return CapabilityCorpus(by_identity=by_identity)
 
 
 def _record_capabilities(record: dict[str, Any], source_version: str) -> list[Capability]:

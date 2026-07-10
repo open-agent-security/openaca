@@ -76,7 +76,11 @@ def _collect_endpoint_components(
     """
     graph = build_graph(config_dir, mode="endpoint", project_root=project)
     all_refs = [
-        replace(node.ref, scope=graph.scope_of(node))
+        replace(
+            node.ref,
+            scope=graph.scope_of(node),
+            extra={**(node.ref.extra or {}), "bom_ref": node.key},
+        )
         for node in graph.nodes.values()
         if node.ref is not None
     ]
@@ -483,7 +487,7 @@ def _redact_source_path(path: str, *, config_dir: Path, project: Path | None) ->
 
     Shared by the bom-ref path-portion redaction and the `openaca:source_manifest`
     property redaction so they stay byte-identical: graph consumers map findings
-    back to nodes by `ref_occurrence_key` (source_manifest + locator + identity),
+    back to nodes by `ref_occurrence_key` (manifest, locator, and source/display facts),
     NOT the bom-ref, so a redacted `source_manifest` that collapsed two out-of-root
     same-basename manifests to `package.json` would make their occurrence keys
     collide and misattribute findings. Non-absolute paths pass through unchanged."""
@@ -496,7 +500,9 @@ def _redact_source_path(path: str, *, config_dir: Path, project: Path | None) ->
     return redacted
 
 
-def _redact_bom_refs_in_bom(bom: JsonObject, *, config_dir: Path, project: Path | None) -> None:
+def _redact_bom_refs_in_bom(
+    bom: JsonObject, *, config_dir: Path, project: Path | None
+) -> dict[str, str]:
     """In-place redaction of absolute-path bom-refs across the CycloneDX BOM.
 
     Graph-backed BOMs use node occurrence keys as bom-refs; when the path
@@ -527,7 +533,7 @@ def _redact_bom_refs_in_bom(bom: JsonObject, *, config_dir: Path, project: Path 
                 ref_map[old] = new
 
     if not ref_map:
-        return
+        return {}
 
     if isinstance(metadata, dict):
         mc = metadata.get("component")
@@ -554,6 +560,7 @@ def _redact_bom_refs_in_bom(bom: JsonObject, *, config_dir: Path, project: Path 
             dependency["dependsOn"] = [
                 ref_map.get(item, item) if isinstance(item, str) else item for item in depends_on
             ]
+    return ref_map
 
 
 def _redact_payload_for_remote(
@@ -578,8 +585,9 @@ def _redact_payload_for_remote(
     those absolute paths appear in bom-ref, dependencies[].ref, and dependsOn[].
     """
     bom = payload.get("bom")
+    ref_map: dict[str, str] = {}
     if isinstance(bom, dict):
-        _redact_bom_refs_in_bom(bom, config_dir=config_dir, project=project)
+        ref_map = _redact_bom_refs_in_bom(bom, config_dir=config_dir, project=project)
         for component in bom.get("components", []) or []:
             if not isinstance(component, dict):
                 continue
@@ -607,6 +615,9 @@ def _redact_payload_for_remote(
     for finding in payload.get("posture_findings", []) or []:
         if not isinstance(finding, dict):
             continue
+        component_bom_ref = finding.get("component_bom_ref")
+        if isinstance(component_bom_ref, str) and component_bom_ref in ref_map:
+            finding["component_bom_ref"] = ref_map[component_bom_ref]
         evidence = finding.get("evidence")
         if not isinstance(evidence, dict):
             continue
@@ -626,6 +637,9 @@ def _redact_payload_for_remote(
     for finding in payload.get("observations", []) or []:
         if not isinstance(finding, dict):
             continue
+        component_bom_ref = finding.get("component_bom_ref")
+        if isinstance(component_bom_ref, str) and component_bom_ref in ref_map:
+            finding["component_bom_ref"] = ref_map[component_bom_ref]
         for key in ("evidence", "declared_by"):
             value = finding.get(key)
             if not isinstance(value, dict):
@@ -725,7 +739,7 @@ def _asset_registration_payload() -> JsonObject:
 
 
 def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
-    return {
+    payload: JsonObject = {
         "source": finding.source,
         "source_version": finding.source_version,
         "finding_id": _source_finding_id(finding.source, finding.rule_id),
@@ -733,24 +747,25 @@ def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
         "severity": finding.severity.upper(),
         "confidence": finding.confidence,
         "scope": _posture_scope(finding),
-        "component_identity": _posture_component_identity(finding),
         "summary": finding.title,
         "fix": finding.remediation,
         "evidence": _posture_evidence(finding),
         "taxonomies": _finding_taxonomies(finding.evidence),
         "source_specific": _source_specific(finding.source, finding.rule_id, finding.evidence),
     }
+    if finding.bom_ref is not None:
+        payload["component_bom_ref"] = finding.bom_ref
+    return payload
 
 
 def _observation_to_payload(finding: ObservationFinding) -> JsonObject:
-    return {
+    payload: JsonObject = {
         "source": finding.source,
         "source_version": finding.source_version,
         "finding_id": _source_finding_id(finding.source, finding.observation_id),
         "finding_version": "1",
         "severity": finding.severity.upper(),
         "confidence": finding.confidence,
-        "component_identity": _observation_component_identity(finding),
         "subject_coordinate": finding.subject_coordinate,
         "summary": finding.title,
         "fix": finding.remediation,
@@ -761,6 +776,9 @@ def _observation_to_payload(finding: ObservationFinding) -> JsonObject:
         ),
         "declared_by": finding.declared_by or {},
     }
+    if finding.bom_ref is not None:
+        payload["component_bom_ref"] = finding.bom_ref
+    return payload
 
 
 def _source_finding_id(source: str, native_id: str) -> str:
@@ -790,11 +808,6 @@ def _normalized_evidence(evidence: Mapping[str, Any]) -> JsonObject:
         for key, value in evidence.items()
         if key not in {"sarif_rule_id", "sarif_level", "categories"}
     }
-
-
-def _observation_component_identity(finding: ObservationFinding) -> str:
-    identity = finding.component.get("identity")
-    return identity if isinstance(identity, str) and identity else finding.subject_coordinate
 
 
 def _posture_scope(finding: PostureFinding) -> str:
@@ -925,13 +938,11 @@ def _is_binary_mcp_component(
         isinstance(identity, str) and identity.startswith(("mcp-stdio/binary:", "mcp-stdio/local:"))
     ) or legacy_name.startswith(("mcp-stdio/binary:", "mcp-stdio/local:")):
         return True
-    # ADR-0029: binary/local MCPs now carry mcp-server/<name> identity.
-    # Distinguish from package-backed MCPs by absence of PURL and from
-    # package-manager-launched MCPs (npx/uvx) by the install_source first token.
+    # Source-less binary/local MCPs intentionally have no cross-BOM identity.
+    # Distinguish them from package-backed MCPs using typed component/source
+    # facts, never the configured display alias.
     if not (
         props_by_name.get("openaca:component_type") == "mcp_server"
-        and isinstance(identity, str)
-        and identity.startswith("mcp-server/")
         and not component_purl
         and "openaca:transport" not in props_by_name
         and "openaca:install_source" in props_by_name
@@ -942,13 +953,8 @@ def _is_binary_mcp_component(
 
 
 def _is_package_mcp_component(props_by_name: dict[Any, Any]) -> bool:
-    identity = props_by_name.get("openaca:identity")
-    # Package-backed MCPs carry mcp-server/<name> graph identity. Distinguish
-    # them from binary MCPs by npx/uvx first token in install_source.
     if not (
         props_by_name.get("openaca:component_type") == "mcp_server"
-        and isinstance(identity, str)
-        and identity.startswith("mcp-server/")
         and "openaca:transport" not in props_by_name
         and "openaca:install_source" in props_by_name
     ):

@@ -40,24 +40,13 @@ One node **per discovered occurrence** of a component or package. Types:
 software-dependency, future transitive-dependency) derived from a package node's
 **lineage**, not from the node itself.
 
-**Node identity is an occurrence key, not a package identity.** Per ADR-0031,
-`openaca:identity` is the graph occurrence key (≈ scan target + normalized source
-path + source locator + component identity), distinct from the **match coordinate**
-(purl) used for advisory matching. Two skills that each declare `lodash@4.17.20` are
-**two `package` nodes** with two distinct parent edges; `skill/foo` appearing once
-direct and once bundled is two nodes. Purl is carried for matching/display but is
-**never** the node key. Deduplication (see Construction) collapses only the *same
-occurrence* reached by two discovery paths — never two occurrences of the same purl.
-
-> **Refined by ADR-0038 (as built).** This section uses "`openaca:identity`" for
-> the occurrence-key *concept*. In the emitted BOM the occurrence/node key is the
-> **`bom-ref`** (`{source_manifest}#{source_locator}#{coordinate}`, where
-> `{coordinate}` is the canonical identity for agent components and the package
-> PURL for package nodes; this `bom-ref` IS `node.key`). The `openaca:identity`
-> *property* holds the canonical, cross-occurrence identity (the short
-> type-prefixed name, shared when a component appears more than once). Read
-> "node key / `bom-ref`" wherever this spec says "`openaca:identity` is the
-> occurrence key."
+**Node identity is the occurrence `bom-ref`.** Per ADR-0042, `node.key` is the
+CycloneDX `bom-ref`, built from normalized source path, locator, and component
+coordinate. Two skills that each declare `lodash@4.17.20` are two package nodes
+with distinct keys and parent edges. `openaca:identity` is a separate, optional,
+source-stable cross-BOM join key; PURL/Git/external coordinates remain matching
+facts. Deduplication collapses only the same occurrence reached by two discovery
+paths.
 
 ### Edges
 
@@ -147,14 +136,14 @@ Component-type parsers (V1):
   edges by any consumer that needs it. The scanner and Fleet land the change together.
 - Future transitive package edges → additional `dependencies[]` entries.
 
-This reconciles ADR-0022 (Agent BOM is the composition IR; CycloneDX `dependencies[]`
-carries composition edges) with ADR-0031 (occurrence identity vs match coordinate):
-node key = occurrence (`openaca:identity`), match = purl, edges = `dependencies[]`.
+This reconciles ADR-0022 and ADR-0042: node key = occurrence (`bom-ref`), optional
+cross-BOM join = `openaca:identity`, match = typed source coordinate, and edges =
+`dependencies[]`.
 
 ## What changes vs today
 
-- **Node key → occurrence** for packages too (components already use `openaca:identity`
-  per ADR-0031); purl is match/display only.
+- **Node key → occurrence** for every component; source-stable identity is optional
+  and purl is match/display only.
 - **Build the composition tree via recursive descent** (correct parent edges); reuse
   `bom.py`'s `edges`/`dependencies[]` serialization. Add `metadata.component` = target
   with a bom-ref (today the target is only an `openaca:target` property).

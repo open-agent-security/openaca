@@ -86,7 +86,6 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
             "severity": "LOW",
             "confidence": "high",
             "scope": "component",
-            "component_identity": "mcp-server/example",
             "summary": "Mutable install",
             "fix": "Pin the install reference.",
             "evidence": {"install_ref": "@example/mcp", "manifest_path": ".mcp.json"},
@@ -188,7 +187,6 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
             "finding_version": "1",
             "severity": "HIGH",
             "confidence": "medium",
-            "component_identity": "skill/deploy-helper",
             "subject_coordinate": "sha256:test",
             "summary": "Instruction override",
             "fix": "Review the instruction.",
@@ -207,7 +205,6 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
             "severity": "MEDIUM",
             "confidence": "medium",
             "scope": "component",
-            "component_identity": "skill/deploy-helper",
             "summary": "Wildcard permission",
             "fix": "Review the declared permission.",
             "evidence": {
@@ -433,6 +430,7 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
             "component_type": "mcp_server",
             "install_source": "npx @playwright/mcp@latest",
             "component_path": [{"type": "mcp_server", "name": "playwright"}],
+            "bom_ref": "mcp-server/npm/@playwright/mcp",
         },
     )
 
@@ -451,9 +449,9 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/playwright"
-    assert collection.bom["components"][0]["bom-ref"] == "mcp-server/playwright"
-    assert collection.posture_findings[0]["component_identity"] == "mcp-server/playwright"
+    assert props["openaca:identity"] == "mcp-server/npm/@playwright/mcp"
+    assert collection.bom["components"][0]["bom-ref"] == "mcp-server/npm/@playwright/mcp"
+    assert collection.posture_findings[0]["component_bom_ref"] == ("mcp-server/npm/@playwright/mcp")
 
 
 def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
@@ -472,6 +470,7 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
             "install_source": "http://example.com/mcp",
             "component_path": [{"type": "mcp_server", "name": "foo"}],
             "declared_by": {"kind": "manifest", "path": str(manifest_path)},
+            "bom_ref": "mcp-remote/example.com/mcp",
         },
     )
 
@@ -490,9 +489,9 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/foo"
-    assert collection.bom["components"][0]["bom-ref"] == "mcp-server/foo"
-    assert collection.posture_findings[0]["component_identity"] == "mcp-server/foo"
+    assert props["openaca:identity"] == "mcp-remote/example.com/mcp"
+    assert collection.bom["components"][0]["bom-ref"] == "mcp-remote/example.com/mcp"
+    assert collection.posture_findings[0]["component_bom_ref"] == "mcp-remote/example.com/mcp"
 
 
 def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_path, monkeypatch):
@@ -822,9 +821,8 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
 
 
 def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path, monkeypatch):
-    # Realistic parser output: component_path is always set by _mcp_ref_extra, which causes
-    # canonical_component_identity() to return mcp-server/<name> instead of mcp-stdio/binary:<cmd>.
-    # Regression test for ADR-0029 identity: binary install_source must still be trimmed to 1 token.
+    # Source-less binary MCPs have no cross-BOM identity; install_source still
+    # trims to the executable before upload.
     ref = ComponentRef(
         component_identity="mcp-stdio/binary:python",
         source_manifest=".mcp.json",
@@ -852,12 +850,12 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/my-mcp"
+    assert "openaca:identity" not in props
     assert props["openaca:install_source"] == "python"
 
 
 def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path, monkeypatch):
-    # Same as above for local (bun/php) MCPs whose identity is now mcp-server/<name>.
+    # Same as above for a local plugin launcher without a stable source.
     ref = ComponentRef(
         component_identity="mcp-stdio/local:discord",
         source_manifest=".mcp.json",
@@ -885,7 +883,7 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/discord"
+    assert "openaca:identity" not in props
     assert props["openaca:install_source"] == "bun"
 
 
@@ -925,7 +923,7 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/my-mcp"
+    assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
     assert props["openaca:install_source"] == "npx @scope/pkg"
 
 
@@ -961,7 +959,7 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/my-tool"
+    assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
     # --python is a value-taking flag; "3.11" is its argument, not the package.
     # "my-tool" is the first positional after the flags.
     assert props["openaca:install_source"] == "uvx my-tool"
@@ -996,7 +994,7 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/my-tool"
+    assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
     assert props["openaca:install_source"] == "uvx my-tool"
 
 
@@ -1029,7 +1027,7 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/weather"
+    assert props["openaca:identity"] == "mcp-server/pypi/weather-mcp"
     assert "openaca:match_coordinate" not in props
     assert props["openaca:install_source"] == "uvx weather-mcp"
 
@@ -1090,7 +1088,7 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
-    assert props["openaca:identity"] == "mcp-server/my-mcp"
+    assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
     assert props["openaca:install_source"] == expected
 
 

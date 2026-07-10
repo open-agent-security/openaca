@@ -45,7 +45,7 @@ def test_purl_for_pypi():
     assert ref.purl == "pkg:pypi/aws-mcp-server@0.3.1"
 
 
-def test_canonical_identity_for_package_backed_mcp_uses_server_occurrence():
+def test_canonical_identity_for_package_backed_mcp_uses_package_source():
     ref = ComponentRef(
         ecosystem="npm",
         name="@playwright/mcp",
@@ -58,10 +58,10 @@ def test_canonical_identity_for_package_backed_mcp_uses_server_occurrence():
         },
     )
 
-    assert canonical_component_identity(ref) == "mcp-server/playwright"
+    assert canonical_component_identity(ref) == "mcp-server/npm/@playwright/mcp"
 
 
-def test_canonical_identity_prefers_stored_mcp_server_identity_when_no_component_path():
+def test_canonical_identity_prefers_source_over_unfinalized_stored_alias():
     # BOM round-trip: component was written with openaca:identity = "mcp-server/playwright"
     # and purl = pkg:npm/%40playwright/mcp@latest, but without openaca:component_path.
     # Reading it back sets ref.name = "@playwright/mcp" (from PURL) and
@@ -78,7 +78,7 @@ def test_canonical_identity_prefers_stored_mcp_server_identity_when_no_component
         extra={"component_type": "mcp_server"},
     )
 
-    assert canonical_component_identity(ref) == "mcp-server/playwright"
+    assert canonical_component_identity(ref) == "mcp-server/npm/@playwright/mcp"
 
 
 def test_canonical_identity_for_package_dependency_is_graph_native():
@@ -94,13 +94,13 @@ def test_canonical_identity_for_package_dependency_is_graph_native():
     assert canonical_component_identity(ref) == "package/npm/hono"
 
 
-def test_canonical_identity_preserves_explicit_source_less_identity():
+def test_canonical_identity_drops_explicit_source_less_identity():
     ref = ComponentRef(
         component_identity="claude-hook/hook:a3fd7e17b2bab038",
         extra={"component_type": "hook"},
     )
 
-    assert canonical_component_identity(ref) == "claude-hook/hook:a3fd7e17b2bab038"
+    assert canonical_component_identity(ref) is None
 
 
 @pytest.mark.parametrize(

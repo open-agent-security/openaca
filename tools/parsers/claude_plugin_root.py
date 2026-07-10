@@ -69,6 +69,7 @@ def _parse_manifest_refs(
             if isinstance(dep, str):
                 refs.append(
                     ComponentRef(
+                        name=dep,
                         component_identity=f"plugin-dep/{dep}",
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
@@ -80,6 +81,7 @@ def _parse_manifest_refs(
                     ident = f"{ident}@{dep['version']}"
                 refs.append(
                     ComponentRef(
+                        name=str(dep["name"]),
                         component_identity=ident,
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,

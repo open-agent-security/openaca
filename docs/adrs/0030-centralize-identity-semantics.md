@@ -1,10 +1,10 @@
 ---
 id: 0030
 title: Centralize identity semantics behind helper APIs
-status: accepted
+status: superseded
 date: 2026-06-08
 supersedes: null
-superseded-by: null
+superseded-by: 0042
 ---
 
 ## Context

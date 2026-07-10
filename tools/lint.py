@@ -166,9 +166,7 @@ def lint_capability_dir(target: Path) -> list[str]:
 
     loaded: list[tuple[Path, dict | None, str | None]] = []
     identity_first: dict[str, Path] = {}
-    coordinate_first: dict[str, Path] = {}
     duplicate_identities: dict[str, Path] = {}
-    duplicate_coordinates: dict[str, Path] = {}
     for path in records:
         try:
             record = yaml.safe_load(path.read_text())
@@ -179,13 +177,7 @@ def lint_capability_dir(target: Path) -> list[str]:
         if not isinstance(record, dict):
             continue
         identity = record.get("identity")
-        coordinate = record.get("match_coordinate")
-        if isinstance(coordinate, str):
-            if coordinate in coordinate_first:
-                duplicate_coordinates[coordinate] = coordinate_first[coordinate]
-            else:
-                coordinate_first[coordinate] = path
-        elif isinstance(identity, str):
+        if isinstance(identity, str):
             if identity in identity_first:
                 duplicate_identities[identity] = identity_first[identity]
             else:
@@ -205,14 +197,8 @@ def lint_capability_dir(target: Path) -> list[str]:
                 record_errors.append(
                     f"evidence: capability {cap.get('name', '<unknown>')!r} has no evidence"
                 )
-        coordinate = record.get("match_coordinate")
         identity = record.get("identity")
-        if isinstance(coordinate, str) and coordinate in duplicate_coordinates:
-            record_errors.append(
-                f"match_coordinate: {coordinate!r} also declared in "
-                f"{duplicate_coordinates[coordinate]}"
-            )
-        elif isinstance(identity, str) and identity in duplicate_identities:
+        if isinstance(identity, str) and identity in duplicate_identities:
             record_errors.append(
                 f"identity: {identity!r} also declared in {duplicate_identities[identity]}"
             )

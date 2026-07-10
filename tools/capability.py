@@ -92,35 +92,11 @@ def capabilities_for_ref(
     # imports Capability from this module, so importing it at module top would
     # cycle.
     from tools.capability_extract import declared_capabilities
-    from tools.identity import (
-        _safe_package_name,
-        canonical_component_identity,
-        mcp_package_source,
-        normalize_launcher_command,
-        strip_package_version,
-    )
-    from tools.mcp_launch_resolve import normalize_pypi_name
-
-    coordinate: str | None = None
-    install_source = (ref.extra or {}).get("install_source")
-    if isinstance(install_source, str):
-        install_source = normalize_launcher_command(install_source)
-    source = mcp_package_source(install_source)
-    if source is not None:
-        _launcher, ecosystem, package = source
-        stripped = strip_package_version(ecosystem, package)
-        if ecosystem == "PyPI":
-            # PyPI project names are case- and separator-insensitive (PEP 503);
-            # curated coordinates are keyed on the normalized name, so a launch
-            # spelled `AWS_MCP_Server` must match `PyPI/aws-mcp-server`.
-            stripped = normalize_pypi_name(stripped)
-        allow_scope = ecosystem == "npm"
-        if _safe_package_name(stripped, allow_scope=allow_scope):
-            coordinate = f"{ecosystem}/{stripped}"
+    from tools.identity import canonical_component_identity
 
     identity = canonical_component_identity(ref)
     declared = declared_capabilities(ref)
-    curated = corpus.lookup(identity or "", match_coordinate=coordinate)
+    curated = corpus.lookup(identity or "")
 
     merged: dict[tuple[str, str], Capability] = {}
     for cap in curated:

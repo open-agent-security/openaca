@@ -38,7 +38,7 @@ def check_mcp_auto_approve(
             auto_approve = entry.get("autoApprove")
             if not _is_enabled(auto_approve):
                 continue
-            identity = f"mcp-server/{name}"
+            label = f"mcp-server/{name}"
             findings.append(
                 PostureFinding(
                     rule_id=RULE_ID,
@@ -47,12 +47,11 @@ def check_mcp_auto_approve(
                     confidence=CONFIDENCE,
                     component={
                         "type": "mcp_server",
-                        "name": f"{identity} autoApprove",
-                        "identity": identity,
+                        "name": f"{label} autoApprove",
                     },
                     active_in=_infer_hosts(manifest),
                     declared_by={"kind": "manifest", "path": str(path)},
-                    component_path=[{"type": "mcp_server", "name": identity}],
+                    component_path=[{"type": "mcp_server", "name": label}],
                     standards=_STANDARDS,
                     remediation=REMEDIATION,
                 )

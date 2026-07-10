@@ -27,8 +27,8 @@ Component diff identity uses `bom-ref`, which is the graph occurrence key in
 OpenACA graph-backed BOMs. This intentionally answers "what changed in this
 installed composition?" rather than "is this the same package coordinate?"
 
-The human summary displays `openaca:identity` when present because it is the
-canonical component identity users recognize across occurrences.
+The human summary displays `openaca:identity` when present and falls back to the
+component's display name when the source is unknown.
 
 ## Output
 
@@ -45,4 +45,3 @@ The following primitives are intentionally deferred:
 
 Those need a graph-selector design so CLI targets, BOM occurrence keys, and
 component identities do not diverge.
-

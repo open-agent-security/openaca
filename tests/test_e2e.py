@@ -1054,4 +1054,4 @@ def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
         assert curated[name]["execution_locus"] == "local"
 
     meta_props = _props_by_name(doc["metadata"])
-    assert meta_props["openaca:schema_version"] == "0.3"
+    assert meta_props["openaca:schema_version"] == "0.4"

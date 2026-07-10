@@ -76,13 +76,30 @@ def test_bom_lint_rejects_dangling_dependency_refs(tmp_path):
     assert "dependency target 'missing' does not match any component bom-ref" in result.output
 
 
-def test_bom_lint_rejects_component_without_identity(tmp_path):
+def test_bom_lint_accepts_schema_0_4_component_without_identity(tmp_path):
     doc = _valid_bom_doc()
     component = doc["components"][0]
     component["properties"] = [
         prop for prop in component["properties"] if prop["name"] != "openaca:identity"
     ]
     path = tmp_path / "missing-identity.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_bom_lint_rejects_pre_0_4_component_without_identity(tmp_path):
+    doc = _valid_bom_doc()
+    for prop in doc["metadata"]["properties"]:
+        if prop["name"] == "openaca:schema_version":
+            prop["value"] = "0.3"
+    component = doc["components"][0]
+    component["properties"] = [
+        prop for prop in component["properties"] if prop["name"] != "openaca:identity"
+    ]
+    path = tmp_path / "legacy-missing-identity.bom.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
 
     result = CliRunner().invoke(bom_main, ["lint", str(path)])
@@ -125,7 +142,7 @@ def _valid_bom_doc() -> dict:
         "version": 1,
         "metadata": {
             "properties": [
-                {"name": "openaca:schema_version", "value": "0.3"},
+                {"name": "openaca:schema_version", "value": "0.4"},
                 {"name": "openaca:target_type", "value": "repo"},
             ]
         },

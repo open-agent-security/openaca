@@ -44,17 +44,20 @@ def _allowed_executable_tool_finding(ref: ComponentRef) -> PostureFinding | None
     )
     if not executable:
         return None
-    identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
+    identity = canonical_component_identity(ref)
+    name = ref.name or identity or "skill"
+    component: dict[str, Any] = {
+        "name": name,
+        "type": "skill",
+    }
+    if identity is not None:
+        component["identity"] = identity
     return PostureFinding(
         rule_id=RULE_ID,
         title=TITLE,
         severity=SEVERITY,
         confidence=CONFIDENCE,
-        component={
-            "identity": identity,
-            "name": ref.name or identity,
-            "type": "skill",
-        },
+        component=component,
         active_in=_active_in_for(ref),
         declared_by=(ref.extra or {}).get("declared_by")
         if isinstance((ref.extra or {}).get("declared_by"), dict)
@@ -63,7 +66,13 @@ def _allowed_executable_tool_finding(ref: ComponentRef) -> PostureFinding | None
         standards=_STANDARDS,
         remediation=REMEDIATION,
         evidence={"allowed_tools": executable},
+        bom_ref=_bom_ref_for(ref),
     )
+
+
+def _bom_ref_for(ref: ComponentRef) -> str | None:
+    value = (ref.extra or {}).get("bom_ref")
+    return value if isinstance(value, str) and value else None
 
 
 def _read_frontmatter(path: Path) -> dict[str, Any]:
@@ -100,5 +109,5 @@ def _component_path(ref: ComponentRef) -> list[dict[str, str]]:
             and item.get("type") is not None
             and item.get("name") is not None
         ]
-    identity = canonical_component_identity(ref) or ref.component_identity
-    return [{"type": "skill", "name": identity}] if identity else []
+    name = ref.name or canonical_component_identity(ref)
+    return [{"type": "skill", "name": name}] if name else []

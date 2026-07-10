@@ -137,21 +137,15 @@ ground truth.
   `overlays/` — capabilities are not advisories (different version semantics,
   review cadence, and evidence model). Discovery is **recursive** (`rglob("*.yaml")`,
   matching how `overlays/` loads), and the lookup key is read from each record's
-  `identity` / `match_coordinate` **field**, never from the file path — so a
+  `identity` field, never from the file path — so a
   file may be named for a sanitized identity (`mcp-server-filesystem.yaml`) or
   nested (`npm/@scope/name.yaml`) without the loader silently skipping it. The
   corpus ships in the wheel (`force-include`) so installed/Action runs resolve it.
-- **Keyed by `openaca:identity`** (ADR-0038: the stable, version-stripped
-  cross-occurrence join key) — e.g. `mcp-server/desktop-commander`,
-  `package/npm/@scope/name`. A record may instead declare a `match_coordinate`
-  (a package coordinate, `f"{ecosystem}/{package}"`) — for MCP servers,
-  `canonical_component_identity()` is the user's local config alias
-  (`mcp-server/<config name>`), not a reliable key for a package-scoped record,
-  so a `match_coordinate` **replaces** identity as the lookup key for that
-  record rather than supplementing it: the record is looked up only by the
-  coordinate, and never surfaces for a ref that merely shares its `identity`
-  string. Identity-only keying is for records with no derivable package
-  coordinate.
+- **Keyed by `openaca:identity`** (ADR-0042) — e.g.
+  `mcp-server/npm/@modelcontextprotocol/server-filesystem` or
+  `package/npm/@scope/name`. Package-backed MCP identities are source-derived,
+  so local aliases and version pins resolve to the same corpus key without a
+  parallel match-coordinate index.
 - **Version-independent by default.** Capabilities are a coarse, slowly-changing
   behavioral property; they are near-monotonic (added far more often than
   removed), so a version-independent record's error is asymmetric (it may
@@ -159,7 +153,7 @@ ground truth.
   `(package, version)` matrix.
 - **Version ranges are deferred, not a v1 field.** Enforcing "this capability
   only applies from version X on" needs ecosystem-aware version comparison, and
-  identities here are not all PURL-shaped (ADR-0038 keys them version-stripped
+  identities here are not all PURL-shaped (ADR-0042 keys them version-stripped
   by design). Real drift-catch — checking a curated record against the
   installed version — is tier-3 (source analysis) territory; see Extraction
   tiers.
@@ -188,10 +182,10 @@ cards. Those are derived decisions (scan-report / exposure-layer data that
 *references* BOM components), consistent with how findings are handled today. The
 companion ADR records this amendment explicitly.
 
-Adding `openaca:capabilities` changes the emitted BOM shape → bump
-`OPENACA_BOM_SCHEMA_VERSION` `0.2 → 0.3`; the release skill's schema-drift check
-gates it. The lint schema accepts prior versions per the established
-backward-read policy.
+Adding `openaca:capabilities` changed the emitted BOM shape in schema `0.3`.
+ADR-0042 subsequently advances the schema to `0.4` for optional source-stable
+identity. The release skill's schema-drift check gates either change, and the
+lint schema accepts prior versions per the established backward-read policy.
 
 ## Consumer (context, not part of this spec)
 
@@ -206,7 +200,7 @@ consumes. The scan/BOM remains the evidence layer; exposure is the decision laye
   capabilities + evidence); curated-overlay lookup by identity; (deferred)
   source-analysis pattern tests.
 - Corpus linter tests: schema validity, identity format, evidence required,
-  `match_coordinate` handling.
+  duplicate identity handling.
 - `tests/test_e2e.py`: a fixture repo where a skill declaring `Bash` and an MCP
   with a curated capability entry produce capability-annotated components in the
   Agent BOM, with correct `method`/`source`/`coverage`.

@@ -116,7 +116,13 @@ def _refs_from_graph(graph: Graph) -> list[ComponentRef]:
     for node in graph.nodes.values():
         if node.ref is None:  # the synthetic target root has no ref
             continue
-        refs.append(replace(node.ref, scope=graph.scope_of(node)))
+        refs.append(
+            replace(
+                node.ref,
+                scope=graph.scope_of(node),
+                extra={**(node.ref.extra or {}), "bom_ref": node.key},
+            )
+        )
     return refs
 
 
@@ -130,9 +136,7 @@ def _component_type(ref: ComponentRef) -> str:
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
-    return _component_type(ref) == "plugin" and bool(
-        ref.component_identity and ref.component_identity.startswith("plugin/")
-    )
+    return _component_type(ref) == "plugin"
 
 
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:

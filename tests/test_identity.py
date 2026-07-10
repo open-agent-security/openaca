@@ -25,7 +25,7 @@ def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():
 
     graph_identity = canonical_component_identity(ref)
 
-    assert graph_identity == "mcp-server/playwright"
+    assert graph_identity == "mcp-server/npm/@playwright/mcp"
     assert ref.purl == "pkg:npm/%40playwright/mcp"
     assert match_coordinate_for_bom(ref) is None
     assert match_coordinates(ref) == [
@@ -57,7 +57,7 @@ def test_source_less_remote_mcp_has_no_match_coordinate_by_default():
 
     graph_identity = canonical_component_identity(ref)
 
-    assert graph_identity == "mcp-server/example"
+    assert graph_identity == "mcp-remote/api.example.com/mcp"
     assert match_coordinate_for_bom(ref) is None
     assert match_coordinates(ref) == []
 
@@ -73,19 +73,19 @@ def test_explicit_external_match_coordinate_round_trips():
 
     graph_identity = canonical_component_identity(ref)
 
-    assert graph_identity == "skill/frontend-design"
+    assert graph_identity == "skill/skills.sh/anthropics/skills/frontend-design"
     assert match_coordinate_for_bom(ref) == "skills.sh:anthropics/skills/frontend-design"
     assert match_coordinates(ref) == [
         MatchCoordinate(kind="external_audit", value="skills.sh:anthropics/skills/frontend-design")
     ]
 
 
-def test_source_less_direct_component_identity_is_already_graph_identity():
+def test_source_less_direct_component_has_no_cross_bom_identity():
     ref = ComponentRef(component_identity="skill/direct-skill", extra={"component_type": "skill"})
 
     graph_identity = canonical_component_identity(ref)
 
-    assert graph_identity == "skill/direct-skill"
+    assert graph_identity is None
     assert match_coordinate_for_bom(ref) is None
 
 
@@ -107,8 +107,101 @@ def test_match_coordinates_never_fall_back_to_graph_identity():
         extra={"component_type": "skill"},
     )
 
-    assert canonical_component_identity(ref) == "skill/local-helper"
+    assert canonical_component_identity(ref) is None
     assert match_coordinates(ref) == []
+
+
+def test_package_backed_mcp_identity_ignores_config_alias_and_version():
+    refs = [
+        ComponentRef(
+            ecosystem="npm",
+            name="@modelcontextprotocol/server-filesystem",
+            version=version,
+            extra={
+                "component_type": "mcp_server",
+                "install_source": install_source,
+                "component_path": [{"type": "mcp_server", "name": alias}],
+            },
+        )
+        for alias, version, install_source in (
+            ("fs", "1.0.0", "npx @modelcontextprotocol/server-filesystem@1.0.0"),
+            ("files", "1.1.0", "npx @modelcontextprotocol/server-filesystem@1.1.0"),
+        )
+    ]
+
+    assert {canonical_component_identity(ref) for ref in refs} == {
+        "mcp-server/npm/@modelcontextprotocol/server-filesystem"
+    }
+
+
+def test_same_mcp_alias_does_not_merge_different_package_sources():
+    refs = [
+        ComponentRef(
+            ecosystem=ecosystem,
+            name=name,
+            extra={
+                "component_type": "mcp_server",
+                "install_source": install_source,
+                "component_path": [{"type": "mcp_server", "name": "git"}],
+            },
+        )
+        for ecosystem, name, install_source in (
+            ("npm", "mcp-server-git", "npx mcp-server-git"),
+            ("PyPI", "other-git-mcp", "uvx other-git-mcp"),
+        )
+    ]
+
+    assert [canonical_component_identity(ref) for ref in refs] == [
+        "mcp-server/npm/mcp-server-git",
+        "mcp-server/pypi/other-git-mcp",
+    ]
+
+
+def test_local_mcp_alias_is_display_only_without_a_source():
+    ref = ComponentRef(
+        component_identity="mcp-stdio/local:discord",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "node ./server.js",
+            "component_path": [{"type": "mcp_server", "name": "reply"}],
+        },
+    )
+
+    assert canonical_component_identity(ref) is None
+
+
+def test_plugin_private_child_uses_plugin_as_authoritative_namespace():
+    ref = ComponentRef(
+        name="configure",
+        component_identity="skill/configure@1.2.3",
+        version="1.2.3",
+        extra={"component_type": "skill"},
+    )
+
+    assert (
+        canonical_component_identity(
+            ref,
+            parent_identity="plugin/claude-plugins-official/discord",
+        )
+        == "skill/plugin/claude-plugins-official/discord/configure"
+    )
+
+
+def test_independently_sourced_child_does_not_include_parent_plugin():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@playwright/mcp",
+        version="0.0.31",
+        extra={"component_type": "mcp_server", "install_source": "npx @playwright/mcp@0.0.31"},
+    )
+
+    assert (
+        canonical_component_identity(
+            ref,
+            parent_identity="plugin/claude-plugins-official/playwright",
+        )
+        == "mcp-server/npm/@playwright/mcp"
+    )
 
 
 def test_match_coordinates_normalize_unpinned_stdio_mcp_to_package_coordinate():

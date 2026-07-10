@@ -249,11 +249,11 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.3"
-    package = _component(doc, "mcp-server/@mcpjam/inspector")
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    package = _component(doc, "mcp-server/npm/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
-    assert _property(package, "openaca:identity") == "mcp-server/@mcpjam/inspector"
+    assert _property(package, "openaca:identity") == "mcp-server/npm/@mcpjam/inspector"
     assert _property(package, "openaca:component_type") == "mcp_server"
     remote = _component(doc, "mcp-remote/api.example.com/mcp")
     assert _property(remote, "openaca:identity") == "mcp-remote/api.example.com/mcp"
@@ -277,10 +277,10 @@ def test_package_backed_mcp_bom_uses_agent_graph_identity_as_bom_ref():
         [ref], target_type="endpoint", target="endpoint:user-scope"
     ).to_cyclonedx()
 
-    component = _component(doc, "mcp-server/playwright")
+    component = _component(doc, "mcp-server/npm/@playwright/mcp")
     assert component["name"] == "@playwright/mcp"
     assert component["purl"] == "pkg:npm/%40playwright/mcp@latest"
-    assert _property(component, "openaca:identity") == "mcp-server/playwright"
+    assert _property(component, "openaca:identity") == "mcp-server/npm/@playwright/mcp"
 
 
 def test_remote_mcp_bom_does_not_invent_match_coordinate():
@@ -300,11 +300,11 @@ def test_remote_mcp_bom_does_not_invent_match_coordinate():
         [ref], target_type="endpoint", target="endpoint:user-scope"
     ).to_cyclonedx()
 
-    component = _component(doc, "mcp-server/example")
-    assert _property(component, "openaca:identity") == "mcp-server/example"
+    component = _component(doc, "mcp-remote/api.example.com/mcp")
+    assert _property(component, "openaca:identity") == "mcp-remote/api.example.com/mcp"
     assert _property(component, "openaca:match_coordinate") is None
     refs = component_refs_from_cyclonedx(doc)
-    assert refs[0].component_identity == "mcp-server/example"
+    assert refs[0].component_identity == "mcp-remote/api.example.com/mcp"
     assert "match_coordinate" not in refs[0].extra
     assert match(refs=refs, advisories=[]) == []
 
@@ -331,14 +331,17 @@ def test_explicit_external_match_coordinate_round_trips_for_matching():
         [ref], target_type="endpoint", target="endpoint:user-scope"
     ).to_cyclonedx()
 
-    component = _component(doc, "skill/frontend-design")
-    assert _property(component, "openaca:identity") == "skill/frontend-design"
+    component = _component(doc, "skill/skills.sh/anthropics/skills/frontend-design")
+    assert (
+        _property(component, "openaca:identity")
+        == "skill/skills.sh/anthropics/skills/frontend-design"
+    )
     assert (
         _property(component, "openaca:match_coordinate")
         == "skills.sh:anthropics/skills/frontend-design"
     )
     refs = component_refs_from_cyclonedx(doc)
-    assert refs[0].component_identity == "skill/frontend-design"
+    assert refs[0].component_identity == "skill/skills.sh/anthropics/skills/frontend-design"
     assert refs[0].extra["match_coordinate"] == "skills.sh:anthropics/skills/frontend-design"
     findings = match(refs=refs, advisories=[advisory])
     assert len(findings) == 1
@@ -377,12 +380,12 @@ def test_uv_tool_run_bom_uses_purl_and_install_context_for_matching():
         [ref], target_type="endpoint", target="endpoint:user-scope"
     ).to_cyclonedx()
 
-    component = _component(doc, "mcp-server/weather")
+    component = _component(doc, "mcp-server/pypi/weather-mcp")
     assert component["purl"] == "pkg:pypi/weather-mcp"
-    assert _property(component, "openaca:identity") == "mcp-server/weather"
+    assert _property(component, "openaca:identity") == "mcp-server/pypi/weather-mcp"
     assert _property(component, "openaca:match_coordinate") is None
     refs = component_refs_from_cyclonedx(doc)
-    assert refs[0].component_identity == "mcp-server/weather"
+    assert refs[0].component_identity == "mcp-server/pypi/weather-mcp"
     assert "match_coordinate" not in refs[0].extra
     findings = match(refs=refs, advisories=[advisory])
     assert len(findings) == 1
@@ -434,7 +437,8 @@ def test_skill_artifact_coordinates_round_trip_through_bom():
         [ref], target_type="endpoint", target="endpoint:user-scope"
     ).to_cyclonedx()
 
-    component = _component(doc, "skill/deploy-helper")
+    component = doc["components"][0]
+    assert _property(component, "openaca:identity") is None
     artifact_coordinates = _property(component, "openaca:artifact_coordinates")
     assert artifact_coordinates is not None
     assert json.loads(artifact_coordinates) == [
@@ -464,7 +468,7 @@ def test_duplicate_preferred_bom_refs_get_stable_suffixes():
     bom_refs = [c["bom-ref"] for c in doc["components"]]
 
     assert len(set(bom_refs)) == 2
-    assert all(ref.startswith("skill/bootstrap#") for ref in bom_refs)
+    assert all(ref.startswith("openaca:unidentified:") for ref in bom_refs)
 
 
 def test_cyclonedx_dependencies_includes_all_components_including_leaves():
@@ -494,12 +498,11 @@ def test_cyclonedx_dependencies_includes_all_components_including_leaves():
     # is a leaf in dependencies[] with an empty dependsOn. Edges come from the
     # graph-backed path (see graph_from_cyclonedx round-trip tests).
     deps_by_ref = {d["ref"]: d["dependsOn"] for d in doc["dependencies"]}
-    assert "plugin/my-plugin" in deps_by_ref
-    assert deps_by_ref["plugin/my-plugin"] == []
-    assert "mcp-stdio/some-server" in deps_by_ref
-    assert deps_by_ref["mcp-stdio/some-server"] == []
-    assert "mcp-server/standalone-tool" in deps_by_ref
-    assert deps_by_ref["mcp-server/standalone-tool"] == []
+    unidentified_refs = [ref for ref in deps_by_ref if ref.startswith("openaca:unidentified:")]
+    assert len(unidentified_refs) == 2
+    assert all(deps_by_ref[ref] == [] for ref in unidentified_refs)
+    assert "mcp-server/npm/standalone-tool" in deps_by_ref
+    assert deps_by_ref["mcp-server/npm/standalone-tool"] == []
 
 
 def test_cyclonedx_round_trips_components_needed_for_matching():
@@ -531,7 +534,7 @@ def test_cyclonedx_round_trips_components_needed_for_matching():
     assert refs[0].name == "fastmcp"
     assert refs[0].version == "2.0.0"
     assert refs[0].purl == "pkg:pypi/fastmcp@2.0.0"
-    assert refs[1].component_identity == "claude-hook/hook:abc123"
+    assert refs[1].component_identity is None
     assert refs[1].extra["component_type"] == "hook"
 
 
@@ -880,7 +883,7 @@ def test_bom_emits_capability_descriptors():
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
     assert props["openaca:capability_coverage"] == "partial"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.3"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
 
 
 def test_bom_emits_coverage_for_uncovered_component():

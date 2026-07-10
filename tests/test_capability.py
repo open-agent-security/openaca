@@ -192,7 +192,7 @@ def test_pypi_launch_name_is_normalized_before_matching(tmp_path):
     # A curated record keyed on the PEP 503-normalized PyPI coordinate must
     # match a launch that uses a non-normalized spelling (case + separators).
     (tmp_path / "rec.yaml").write_text(
-        "identity: mcp-server/aws\nmatch_coordinate: PyPI/aws-mcp-server\n"
+        "identity: mcp-server/pypi/aws-mcp-server\n"
         "last_reviewed: '2026-07-03'\nreviewed_version: '1.0'\ncapabilities:\n"
         "  - {name: network_egress, execution_locus: remote, confidence: high,\n"
         "     evidence: [{kind: curated_review}]}\n"

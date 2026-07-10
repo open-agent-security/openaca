@@ -111,6 +111,9 @@ def test_claude_skills_layout(tmp_path):
     pkg = next(n for n in g.nodes.values() if n.kind == "package")
     assert g.scope_of(pkg) == "agent-dependency"
     assert [n.kind for n in g.lineage(pkg)] == ["package", "skill", "target"]
+    skill = next(n for n in g.nodes.values() if n.kind == "skill")
+    assert skill.ref is not None
+    assert skill.ref.component_identity is None
 
 
 def test_plugin_bundled_skill_layout(tmp_path):
@@ -183,6 +186,22 @@ def _seed_endpoint_fixture(tmp_path):
     project_root = tmp_path / "project"
     project_root.mkdir()
     return install_root, project_root
+
+
+def test_endpoint_plugin_private_skill_uses_marketplace_namespace(tmp_path):
+    install_root, project_root = _seed_endpoint_fixture(tmp_path)
+
+    graph = build_graph(install_root, mode="endpoint", project_root=project_root)
+
+    plugin = next(node for node in graph.nodes.values() if node.kind == "plugin")
+    skill = next(node for node in graph.nodes.values() if node.kind == "skill")
+    remote_mcp = next(node for node in graph.nodes.values() if node.kind == "mcp_server")
+    assert plugin.ref is not None
+    assert skill.ref is not None
+    assert remote_mcp.ref is not None
+    assert plugin.ref.component_identity == "plugin/mp/demo"
+    assert skill.ref.component_identity == "skill/plugin/mp/demo/deploy"
+    assert remote_mcp.ref.component_identity == "mcp-remote/mcp.example.com/sse"
 
 
 def test_endpoint_active_plugin_chain(tmp_path):
@@ -1201,7 +1220,8 @@ def test_repo_bundled_plugin_dep_refs_are_component_nodes(tmp_path):
         f"Expected 1 'component' node for plugin-dep/helper-lib, got {len(component_nodes)}"
     )
     assert component_nodes[0].ref is not None
-    assert component_nodes[0].ref.component_identity == "plugin-dep/helper-lib"
+    assert component_nodes[0].ref.name == "helper-lib"
+    assert component_nodes[0].ref.component_identity is None
     assert [n.kind for n in g.lineage(component_nodes[0])] == ["component", "plugin", "target"]
 
 

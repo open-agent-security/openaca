@@ -10,9 +10,10 @@ output strictly vulnerability findings.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
@@ -55,7 +56,84 @@ def run_posture_rules(
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs))
-    return findings
+    return [_attach_bom_ref(finding, refs) for finding in findings]
+
+
+def _attach_bom_ref(finding: PostureFinding, refs: list[ComponentRef]) -> PostureFinding:
+    if finding.bom_ref is not None or finding.rule_id == "openaca-posture-api-endpoint-override":
+        return finding
+    declared_path = _declared_path(finding)
+    component_type = finding.component.get("type")
+    aliases = _finding_aliases(finding)
+    matches: list[ComponentRef] = []
+    for ref in refs:
+        bom_ref = (ref.extra or {}).get("bom_ref")
+        if not isinstance(bom_ref, str) or not bom_ref:
+            continue
+        if (
+            isinstance(component_type, str)
+            and (ref.extra or {}).get("component_type") != component_type
+        ):
+            continue
+        if declared_path is not None and not _same_path(declared_path, ref.source_manifest):
+            continue
+        if aliases and not aliases.intersection(_ref_aliases(ref)):
+            continue
+        matches.append(ref)
+    matches_by_bom_ref = {
+        str((ref.extra or {})["bom_ref"]): ref
+        for ref in matches
+        if isinstance((ref.extra or {}).get("bom_ref"), str)
+    }
+    if len(matches_by_bom_ref) != 1:
+        return finding
+    bom_ref, matched_ref = next(iter(matches_by_bom_ref.items()))
+    component = dict(finding.component)
+    identity = canonical_component_identity(matched_ref)
+    if identity is None:
+        component.pop("identity", None)
+    else:
+        component["identity"] = identity
+    return replace(finding, bom_ref=bom_ref, component=component)
+
+
+def _declared_path(finding: PostureFinding) -> str | None:
+    if not isinstance(finding.declared_by, dict):
+        return None
+    path = finding.declared_by.get("path")
+    return path if isinstance(path, str) and path else None
+
+
+def _same_path(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _finding_aliases(finding: PostureFinding) -> set[str]:
+    values: list[object] = [finding.component.get("identity"), finding.component.get("name")]
+    values.extend(item.get("name") for item in finding.component_path if isinstance(item, dict))
+    return {_normalize_alias(value) for value in values if _normalize_alias(value)}
+
+
+def _ref_aliases(ref: ComponentRef) -> set[str]:
+    values: list[object] = [ref.name, ref.component_identity]
+    component_path = (ref.extra or {}).get("component_path")
+    if isinstance(component_path, list):
+        values.extend(item.get("name") for item in component_path if isinstance(item, dict))
+    return {_normalize_alias(value) for value in values if _normalize_alias(value)}
+
+
+def _normalize_alias(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.split(" @ ", maxsplit=1)[0].strip()
+    if normalized.startswith("mcp-server/"):
+        normalized = normalized.removeprefix("mcp-server/")
+    return normalized
 
 
 def collect_mcp_manifests(

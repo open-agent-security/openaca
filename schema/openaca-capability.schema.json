@@ -8,12 +8,7 @@
     "identity": {
       "type": "string",
       "minLength": 1,
-      "description": "The openaca:identity this curated record applies to (e.g. mcp-server/filesystem)."
-    },
-    "match_coordinate": {
-      "type": "string",
-      "pattern": "^(npm|PyPI)/.+",
-      "description": "Optional package coordinate in the value space f\"{ecosystem}/{package}\" (e.g. npm/@modelcontextprotocol/server-filesystem). The ecosystem prefix must be npm or PyPI to match what capabilities_for_ref derives from a launch; a mis-shaped coordinate would silently never match. Not an alternate identity: when present, the record binds to that upstream package and is looked up by the coordinate alone, because a local MCP config alias is user-chosen and not a reliable key for a package-scoped record."
+      "description": "The source-stable openaca:identity this curated record applies to (e.g. mcp-server/npm/@modelcontextprotocol/server-filesystem)."
     },
     "last_reviewed": {
       "type": "string",

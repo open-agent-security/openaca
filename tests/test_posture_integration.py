@@ -6,6 +6,7 @@ import json
 
 from click.testing import CliRunner
 
+from tools.component_ref import ComponentRef
 from tools.posture import (
     collect_endpoint_settings_manifests,
     collect_mcp_manifests,
@@ -13,6 +14,37 @@ from tools.posture import (
     run_posture_rules,
 )
 from tools.scan import main as scan_main
+
+
+def test_manifest_posture_resolves_exact_component_bom_ref(tmp_path):
+    manifest_path = tmp_path / ".mcp.json"
+    manifest = {
+        "mcpServers": {
+            "alpha": {"url": "http://alpha.example/mcp"},
+            "beta": {"url": "http://beta.example/mcp"},
+        }
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    refs = [
+        ComponentRef(
+            component_identity=f"mcp-remote/{name}.example/mcp",
+            source_manifest=str(manifest_path),
+            source_locator=f"$.mcpServers.{name}",
+            extra={
+                "component_type": "mcp_server",
+                "component_path": [{"type": "mcp_server", "name": name}],
+                "bom_ref": f"endpoint/.mcp.json#$.mcpServers.{name}#mcp-remote/{name}.example/mcp",
+            },
+        )
+        for name in ("alpha", "beta")
+    ]
+
+    findings = run_posture_rules(refs, [(manifest_path, manifest)])
+
+    assert {finding.bom_ref for finding in findings} == {
+        "endpoint/.mcp.json#$.mcpServers.alpha#mcp-remote/alpha.example/mcp",
+        "endpoint/.mcp.json#$.mcpServers.beta#mcp-remote/beta.example/mcp",
+    }
 
 
 def test_posture_off_by_default():

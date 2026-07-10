@@ -52,6 +52,7 @@ class PostureFinding:
     source: str = "openaca"
     source_version: str = "unknown"
     finding_type: str = "posture"
+    bom_ref: str | None = None
 
     @property
     def component_label(self) -> str:

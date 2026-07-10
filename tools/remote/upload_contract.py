@@ -133,6 +133,9 @@ def _validate_evidence_strings(payload: dict[str, Any], key: str) -> None:
     for f_idx, finding in enumerate(payload.get(key, []) or []):
         if not isinstance(finding, dict):
             continue
+        subject_coordinate = finding.get("subject_coordinate")
+        if isinstance(subject_coordinate, str):
+            _check_evidence_string_at(subject_coordinate, f"$.{key}[{f_idx}].subject_coordinate")
         for object_key in ("evidence", "declared_by", "source_specific", "taxonomies"):
             evidence = finding.get(object_key)
             if not isinstance(evidence, dict):

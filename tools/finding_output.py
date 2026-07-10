@@ -70,15 +70,34 @@ def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:
 def component_path_for(ref: ComponentRef) -> list[dict[str, Any]]:
     component_path = (ref.extra or {}).get("component_path")
     if isinstance(component_path, list):
-        out = []
+        display_path = []
+        exact_path = []
         for item in component_path:
             if isinstance(item, dict):
                 typ = item.get("type")
                 name = item.get("name")
-                if isinstance(typ, str) and isinstance(name, str):
-                    out.append({"type": typ, "name": name})
-        if out:
-            return out
+                if not (isinstance(typ, str) and isinstance(name, str)):
+                    continue
+                display_path.append({"type": typ, "name": name})
+                bom_ref = item.get("bom_ref")
+                if not (isinstance(bom_ref, str) and bom_ref):
+                    exact_path = []
+                    continue
+                node: dict[str, Any] = {
+                    "type": typ,
+                    "name": name,
+                    "bom_ref": bom_ref,
+                    "identity": item.get("identity")
+                    if isinstance(item.get("identity"), str)
+                    else None,
+                }
+                if isinstance(item.get("version"), str):
+                    node["version"] = item["version"]
+                exact_path.append(node)
+        if exact_path and len(exact_path) == len(display_path):
+            return exact_path
+        if display_path and not isinstance((ref.extra or {}).get("bom_ref"), str):
+            return display_path
     node: dict[str, Any] = {
         "type": component_type_for(ref),
         "name": component_name_for(ref),

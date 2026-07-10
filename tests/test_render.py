@@ -1021,6 +1021,24 @@ def test_tree_local_stdio_mcp_leaf_uses_server_identity():
     assert "${CLAUDE_PLUGIN_ROOT}" not in out
 
 
+def test_tree_local_stdio_mcp_leaf_keeps_alias_after_identity_finalization():
+    refs = [
+        ComponentRef(
+            component_identity=None,
+            extra={
+                "component_type": "mcp_server",
+                "install_source": "bun run ./server.ts",
+                "component_path": [{"type": "mcp_server", "name": "discord"}],
+                "_identity_finalized": True,
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
+
+    assert "discord (stdio via bun, local)" in out
+
+
 def test_tree_source_less_stdio_mcp_leaf_shows_command_only():
     refs = [
         ComponentRef(

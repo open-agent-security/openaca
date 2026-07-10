@@ -21,8 +21,8 @@ Three match strategies, dispatched per-ref:
   non-PURL/non-Git match coordinate, such as a future skills.sh audit handle,
   and the advisory targets `database_specific.openaca.match_coordinate`.
 
-Graph occurrence identity (`openaca:identity`) is not a vulnerability matching
-coordinate.
+Component identity (`openaca:identity`) and the occurrence key (`bom-ref`) are
+not vulnerability matching coordinates.
 
 Out of V0 scope: the schema's `database_specific.openaca.detection_hints`
 field — substring matching against synthesized command lines is fragile

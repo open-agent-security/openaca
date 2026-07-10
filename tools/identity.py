@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
@@ -293,26 +293,151 @@ def safe_unpinned_mcp_install_source(
     return f"{launcher} {package}"
 
 
-def canonical_component_identity(ref: Any) -> Optional[str]:
-    component_type = (ref.extra or {}).get("component_type")
-    if component_type == "mcp_server":
-        server_name = _component_path_leaf(ref, "mcp_server")
-        if server_name:
-            return f"mcp-server/{server_name}"
-        if ref.component_identity and ref.component_identity.startswith("mcp-server/"):
-            return ref.component_identity
-        if ref.name:
-            return f"mcp-server/{ref.name}"
-
-    if ref.component_identity:
+def canonical_component_identity(
+    ref: Any,
+    *,
+    parent_identity: str | None = None,
+) -> Optional[str]:
+    extra = ref.extra or {}
+    if extra.get("_identity_finalized") is True:
         return ref.component_identity
 
+    component_type = (ref.extra or {}).get("component_type")
+    if component_type == "mcp_server":
+        package_identity = _role_qualified_package_identity("mcp-server", ref)
+        if package_identity:
+            return package_identity
+        if ref.component_identity and ref.component_identity.startswith("mcp-remote/"):
+            return ref.component_identity
+        private_identity = _plugin_private_identity(ref, "mcp-server", parent_identity)
+        if private_identity:
+            return private_identity
+        return None
+
+    if component_type == "plugin":
+        marketplace = extra.get("marketplace")
+        if isinstance(marketplace, str) and marketplace and ref.name:
+            return f"plugin/{marketplace}/{ref.name}"
+        if isinstance(ref.component_identity, str) and ref.component_identity.count("/") >= 2:
+            return ref.component_identity
+        return None
+
+    if component_type == "skill":
+        external_identity = _external_identity("skill", match_coordinate_for_bom(ref))
+        if external_identity:
+            return external_identity
+        provenance_identity = _skill_provenance_identity(ref)
+        if provenance_identity:
+            return provenance_identity
+        return _plugin_private_identity(ref, "skill", parent_identity)
+
+    if component_type in {"command", "agent", "hook"}:
+        return _plugin_private_identity(ref, str(component_type), parent_identity)
+
     if is_package_source_ref(ref):
-        ecosystem = canonical_ecosystem(ref.ecosystem)
-        if ecosystem and ref.name:
-            return f"package/{ecosystem}/{ref.name}"
+        return _role_qualified_package_identity("package", ref)
 
     return None
+
+
+def finalize_component_identity(
+    ref: Any,
+    *,
+    parent_identity: str | None = None,
+) -> Any:
+    """Freeze the source-stable identity selected for one graph node.
+
+    Parsers retain source facts and display aliases. Graph construction owns
+    containment, so this is the first layer that can decide whether a
+    source-less child belongs to a plugin's private namespace.
+    """
+    identity = canonical_component_identity(ref, parent_identity=parent_identity)
+    namespace = identity if identity and identity.startswith("plugin/") else parent_identity
+    extra = {**(ref.extra or {}), "_identity_finalized": True}
+    if namespace:
+        extra["_identity_namespace"] = namespace
+    return replace(
+        ref,
+        component_identity=identity,
+        extra=extra,
+    )
+
+
+def _role_qualified_package_identity(role: str, ref: Any) -> str | None:
+    install_source = (ref.extra or {}).get("install_source")
+    if isinstance(install_source, str):
+        install_source = normalize_launcher_command(install_source)
+    source = mcp_package_source(install_source)
+    if source is not None:
+        _launcher, ecosystem, package = source
+        normalized_name = strip_package_version(ecosystem, package)
+    elif is_package_source_ref(ref):
+        ecosystem = ref.ecosystem
+        normalized_name = strip_package_version(ecosystem, ref.name)
+    else:
+        return None
+    canonical = canonical_ecosystem(ecosystem)
+    if not canonical or not normalized_name:
+        return None
+    if canonical == "pypi":
+        normalized_name = re.sub(r"[-_.]+", "-", normalized_name).lower()
+    return f"{role}/{canonical}/{normalized_name}"
+
+
+def _external_identity(role: str, coordinate: str | None) -> str | None:
+    if not coordinate:
+        return None
+    namespace, separator, value = coordinate.partition(":")
+    if separator and namespace and value:
+        return f"{role}/{namespace}/{value.lstrip('/')}"
+    encoded = quote(coordinate, safe="/@._-")
+    return f"{role}/external/{encoded}" if encoded else None
+
+
+def _skill_provenance_identity(ref: Any) -> str | None:
+    provenance = (ref.extra or {}).get("source_provenance")
+    if not isinstance(provenance, dict) or provenance.get("status") != "known":
+        return None
+    source_type = provenance.get("source_type")
+    source = provenance.get("source")
+    if not isinstance(source_type, str) or not isinstance(source, str) or not source:
+        return None
+    if source_type.lower() != "github":
+        return None
+    source = _normalize_github_source(source)
+    if not source:
+        return None
+    skill_path = provenance.get("skill_path")
+    leaf = skill_path if isinstance(skill_path, str) and skill_path else ref.name
+    if not isinstance(leaf, str) or not leaf:
+        return None
+    return f"skill/github/{source}/{leaf.strip('/')}"
+
+
+def _normalize_github_source(source: str) -> str:
+    value = source.strip().removesuffix(".git")
+    for prefix in (
+        "https://github.com/",
+        "http://github.com/",
+        "git+https://github.com/",
+        "github.com/",
+    ):
+        if value.lower().startswith(prefix):
+            return value[len(prefix) :].strip("/")
+    return value.strip("/")
+
+
+def _plugin_private_identity(
+    ref: Any,
+    role: str,
+    parent_identity: str | None,
+) -> str | None:
+    if not parent_identity or not parent_identity.startswith("plugin/"):
+        return None
+    name = ref.name or _component_path_leaf(ref, str((ref.extra or {}).get("component_type")))
+    if not isinstance(name, str) or not name:
+        return None
+    return f"{role}/{parent_identity}/{name}"
 
 
 def safe_pinned_mcp_install_source(

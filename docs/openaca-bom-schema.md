@@ -11,12 +11,10 @@ The external interchange format is CycloneDX JSON. OpenACA emits CycloneDX with
 OpenACA-owned metadata in `properties[]` entries whose names start with
 `openaca:`.
 
-The current OpenACA Agent BOM schema version is `0.3` — adding the capability
-descriptor properties (`openaca:capabilities` / `openaca:capability_coverage`)
-to the graph-encoded format introduced in 0.2.0, which shipped mislabeled as
-`0.1` and is correctly labeled from 0.3.0 onward (see
-`docs/releases/v0.3.0.md`). `openaca bom lint` accepts `0.1` (0.2.0 artifacts,
-cannot be relabeled), `0.2`, and `0.3`; the emitter always produces `0.3`.
+The current OpenACA Agent BOM schema version is `0.4`. It makes
+`openaca:identity` optional and source-stable while retaining `bom-ref` as the
+exact occurrence key (ADR-0042). `openaca bom lint` accepts `0.1`, `0.2`,
+`0.3`, and `0.4`; the emitter always produces `0.4`.
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:
@@ -38,7 +36,7 @@ openaca bom lint agent.bom.json
       }
     ],
     "properties": [
-      {"name": "openaca:schema_version", "value": "0.3"},
+      {"name": "openaca:schema_version", "value": "0.4"},
       {"name": "openaca:target_type", "value": "repo"}
     ]
   },
@@ -52,40 +50,41 @@ openaca bom lint agent.bom.json
 Each detected agent component or agent dependency is serialized as one
 CycloneDX component.
 
-`openaca:identity` holds the stable logical identity of a component — the
-cross-occurrence join key consumers join on for posture/drift/policy/Fleet rows
-(ADR-0038): for agent
-components (MCP servers, skills, plugins, hooks, commands) this is the canonical
-type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`); for package
-nodes it is the stable `package/<ecosystem>/<name>` coordinate shared across all
-occurrences. In graph-backed BOMs, each component's `bom-ref` is the
-per-occurrence node key `{source_manifest}#{source_locator}#{coordinate}`, where
-`{coordinate}` is the canonical identity for agent components (e.g.
-`plugin/demo`) and the package PURL for package nodes (e.g.
-`pkg:npm/hono@4.12.5`, falling back to the package name). It is therefore
-distinct from `openaca:identity` for both — most visibly for package nodes,
-whose key ends in the PURL, not the `package/<ecosystem>/<name>` identity. In
-flat (non-graph-backed) BOMs, agent components derive `bom-ref` from the same
-canonical identity, so it equals `openaca:identity`.
+Every component has a `bom-ref`, the exact occurrence key used by graph edges
+and occurrence-level findings. A component also has `openaca:identity` when the
+scanner can derive a trustworthy, version-independent source namespace. The
+identity is role-qualified, for example
+`mcp-server/npm/@modelcontextprotocol/server-filesystem`,
+`package/npm/@modelcontextprotocol/server-filesystem`, or
+`plugin/claude-plugins-official/discord`. The same source can have distinct
+identities in distinct roles.
+
+Local aliases are display data, not identity. A direct local skill, hook, or
+binary MCP without a trustworthy source omits `openaca:identity` and remains
+occurrence-local. A plugin-private child may use its source-stable plugin as an
+authoritative namespace, such as
+`skill/plugin/claude-plugins-official/discord/configure`. Independently sourced
+children never include their containing plugin in identity; containment stays
+in `dependencies[]`.
 
 **Which key to join on.** For joins *within* a BOM — following `dependencies[]`
 edges, or resolving a finding's `bom-ref` to its component — use `bom-ref` (the
 occurrence/node key). For grouping the *same logical component across*
-occurrences, scans, or time (posture, drift, policy, Fleet rows) — use
-`openaca:identity`. Do not join occurrence-level rows on `openaca:identity`: it
-is shared whenever a component appears more than once.
+occurrences, scans, or time (posture, drift, policy, Fleet rows) — group only on
+non-null `openaca:identity`. A missing identity means "do not merge across
+BOMs." Do not join occurrence-level rows on `openaca:identity`.
 
 Package-backed components also carry their external package coordinate as `purl`:
 
 ```json
 {
   "type": "application",
-  "bom-ref": "mcp-server/filesystem",
+  "bom-ref": ".mcp.json#$.mcpServers.filesystem#mcp-server/npm/@modelcontextprotocol/server-filesystem",
   "name": "@modelcontextprotocol/server-filesystem",
   "version": "1.0.0",
   "purl": "pkg:npm/%40modelcontextprotocol/server-filesystem@1.0.0",
   "properties": [
-    {"name": "openaca:identity", "value": "mcp-server/filesystem"},
+    {"name": "openaca:identity", "value": "mcp-server/npm/@modelcontextprotocol/server-filesystem"},
     {"name": "openaca:component_type", "value": "mcp_server"},
     {"name": "openaca:scope", "value": "agent-component"},
     {"name": "openaca:source_manifest", "value": ".mcp.json"},
@@ -94,20 +93,18 @@ Package-backed components also carry their external package coordinate as `purl`
 }
 ```
 
-`openaca:identity` is the stable logical identity for both agent components and
-package nodes. Package nodes use the `package/<ecosystem>/<name>` coordinate;
-per-occurrence identity lives in the `bom-ref` in graph-backed BOMs. Package and
-Git-backed components use their standard PURL/Git metadata for matching. When a
+Package and Git-backed components use their standard PURL/Git metadata for
+matching. Vulnerability matching never falls back to `openaca:identity`. When a
 parser has an explicit non-PURL/non-Git external audit or registry handle,
 OpenACA can also emit `openaca:match_coordinate`:
 
 ```json
 {
   "type": "application",
-  "bom-ref": "skill/frontend-design",
+  "bom-ref": "skill/skills.sh/anthropics/skills/frontend-design",
   "name": "frontend-design",
   "properties": [
-    {"name": "openaca:identity", "value": "skill/frontend-design"},
+    {"name": "openaca:identity", "value": "skill/skills.sh/anthropics/skills/frontend-design"},
     {"name": "openaca:match_coordinate", "value": "skills.sh:anthropics/skills/frontend-design"},
     {"name": "openaca:component_type", "value": "skill"}
   ]
@@ -147,7 +144,7 @@ suffix derived from the component observation fields.
 | `openaca:schema_version` | OpenACA Agent BOM schema version. Stored on BOM metadata. |
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
 | `openaca:target` | Human-readable target path or endpoint config path when available. |
-| `openaca:identity` | Stable logical identity and cross-occurrence join key (ADR-0038). For agent components: canonical type-prefixed name (e.g. `mcp-server/filesystem`, `plugin/demo`). For package nodes: stable `package/<ecosystem>/<name>` coordinate (shared across occurrences). In graph-backed BOMs, the per-occurrence key is `bom-ref`. |
+| `openaca:identity` | Optional source-stable, version-independent, role-qualified cross-BOM join key (ADR-0042). Missing means the component must remain occurrence-local. |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
@@ -169,7 +166,7 @@ dependencies; a skill to its own bundled deps. This edge set, not a stored
 
 ```json
 {
-  "ref": "external_plugins/discord/.claude-plugin/plugin.json#$#plugin/discord",
+  "ref": "endpoint/plugins/installed_plugins.json#$.plugins.discord#plugin/claude-plugins-official/discord",
   "dependsOn": ["external_plugins/discord/bun.lock#$.packages['hono']#pkg:npm/hono@4.12.5"]
 }
 ```

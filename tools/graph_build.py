@@ -8,7 +8,7 @@ discovered component or package, recursing into each.
 parsers in `tools.parsers` own *content* (what a manifest declares). Scope is
 never stamped on the ref here — it is derived from the graph (`Graph.scope_of`).
 
-Node identity is the *occurrence* (ADR-0031), never the bare purl: two
+Node identity is the *occurrence bom-ref* (ADR-0042), never the bare purl: two
 manifests declaring the same purl yield two distinct package nodes. The target
 root's key is a fixed logical value (`openaca:target`) so repo BOMs are
 reproducible across machines — the resolved scan path is evidence, not identity.
@@ -26,7 +26,7 @@ from pathspec import GitIgnoreSpec
 
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
-from tools.identity import canonical_component_identity
+from tools.identity import canonical_component_identity, finalize_component_identity
 from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
@@ -103,6 +103,20 @@ def _add_child(graph: Graph, parent_node: Node, child_node: Node) -> Node:
 
     Returns the canonical node for the key (the pre-existing one if present).
     """
+    parent_node = graph.nodes.get(parent_node.key, parent_node)
+    if child_node.ref is not None:
+        parent_namespace = None
+        if parent_node.ref is not None:
+            candidate = (parent_node.ref.extra or {}).get("_identity_namespace")
+            if isinstance(candidate, str) and candidate:
+                parent_namespace = candidate
+        child_node = replace(
+            child_node,
+            ref=finalize_component_identity(
+                child_node.ref,
+                parent_identity=parent_namespace,
+            ),
+        )
     existing = graph.nodes.get(child_node.key)
     if existing is None:
         graph.nodes[child_node.key] = child_node
@@ -189,12 +203,12 @@ def _make_normalizer(
 
 
 def occurrence_key(ref: ComponentRef, normalize: SourceNormalizer = _identity_normalizer) -> str:
-    """The node key for a ref: its occurrence identity, never the bare purl.
+    """The node key for a ref: its occurrence key, never the bare purl.
 
     The key is the occurrence — where the ref was declared
     (source_manifest + source_locator) plus what it is — never the bare
-    component identity or purl (spec: openaca:identity ≈ source path +
-    locator + identity). So two same-named skills at different paths, or two
+    component identity or display/source coordinate. So two same-named skills
+    at different paths, or two
     manifests declaring the same purl, yield distinct nodes; a single
     occurrence reached by two discovery paths collapses (same manifest +
     locator + what).

@@ -25,7 +25,7 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
-OPENACA_BOM_SCHEMA_VERSION = "0.3"
+OPENACA_BOM_SCHEMA_VERSION = "0.4"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 _PURL_TO_ECOSYSTEM = {
@@ -337,10 +337,7 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
             ecosystem, name = inferred_package
             parsed = {"ecosystem": ecosystem, "name": name}
     component_identity = props.get("openaca:identity")
-    if component_identity is None and not parsed:
-        bom_ref = component.get("bom-ref")
-        if isinstance(bom_ref, str) and bom_ref:
-            component_identity = bom_ref
+    extra["_identity_finalized"] = True
     return ComponentRef(
         ecosystem=parsed.get("ecosystem"),
         name=parsed.get("name") or _string(component.get("name")),
@@ -428,7 +425,7 @@ def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
     doc: dict[str, Any] = {
         "type": _cyclonedx_component_type(ref),
         "bom-ref": component.bom_ref,
-        "name": ref.name or identity or ref.component_identity or "<unidentified>",
+        "name": _component_display_name(ref, identity),
     }
     if ref.version:
         doc["version"] = ref.version
@@ -438,6 +435,17 @@ def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:
     if properties:
         doc["properties"] = properties
     return doc
+
+
+def _component_display_name(ref: ComponentRef, identity: str | None) -> str:
+    if ref.name:
+        return ref.name
+    component_path = (ref.extra or {}).get("component_path")
+    if isinstance(component_path, list):
+        for item in reversed(component_path):
+            if isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"]:
+                return item["name"]
+    return identity or ref.component_identity or "<unidentified>"
 
 
 def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:

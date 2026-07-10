@@ -75,7 +75,6 @@ def test_skill_capability_reports_posture_metadata(tmp_path: Path) -> None:
     assert finding.severity == "low"
     assert finding.confidence == "high"
     assert finding.component == {
-        "identity": "skill/deploy-helper",
         "name": "deploy-helper",
         "type": "skill",
     }

@@ -316,7 +316,6 @@ def _observation_from_result(
     location = _first_location(result, scan_path)
     declared_by = {"kind": "sarif", "path": location["uri"]} if "uri" in location else None
     evidence = _evidence_for_result(result, rule_id, message, location)
-    identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
     return ObservationFinding(
         source="skillspector",
         source_version=source_version,
@@ -324,16 +323,13 @@ def _observation_from_result(
         title=message,
         severity=_severity(result),
         confidence=_confidence(result),
-        component={
-            "identity": identity,
-            "name": ref.name or identity,
-            "type": str((ref.extra or {}).get("component_type") or "component"),
-        },
+        component=_finding_component(ref),
         subject_coordinate=_subject_coordinate(ref),
         evidence=evidence,
         categories=list(_CATEGORY_MAP.get(rule_id, [])),
         declared_by=declared_by,
         component_path=_component_path(ref),
+        bom_ref=_bom_ref_for(ref),
     )
 
 
@@ -351,7 +347,6 @@ def _posture_from_result(
     categories = _CATEGORY_MAP.get(rule_id, [])
     if categories:
         evidence["categories"] = list(categories)
-    identity = canonical_component_identity(ref) or ref.component_identity or ref.name or "skill"
     return PostureFinding(
         source="skillspector",
         source_version=source_version,
@@ -359,18 +354,31 @@ def _posture_from_result(
         title=message,
         severity=_posture_severity(result),
         confidence=_confidence(result),
-        component={
-            "identity": identity,
-            "name": ref.name or identity,
-            "type": str((ref.extra or {}).get("component_type") or "component"),
-        },
+        component=_finding_component(ref),
         active_in=_active_in(ref),
         declared_by=declared_by,
         component_path=_component_path(ref),
         standards=Standards(),
         remediation=message,
         evidence=evidence,
+        bom_ref=_bom_ref_for(ref),
     )
+
+
+def _bom_ref_for(ref: ComponentRef) -> str | None:
+    value = (ref.extra or {}).get("bom_ref")
+    return value if isinstance(value, str) and value else None
+
+
+def _finding_component(ref: ComponentRef) -> dict[str, Any]:
+    identity = canonical_component_identity(ref)
+    component: dict[str, Any] = {
+        "name": ref.name or identity or "skill",
+        "type": str((ref.extra or {}).get("component_type") or "component"),
+    }
+    if identity is not None:
+        component["identity"] = identity
+    return component
 
 
 def _evidence_for_result(
@@ -452,7 +460,7 @@ def _subject_coordinate(ref: ComponentRef) -> str:
             value = coordinate.get("value")
             if isinstance(value, str) and value:
                 return value
-    return canonical_component_identity(ref) or ref.component_identity or ref.source_manifest
+    return canonical_component_identity(ref) or ref.source_manifest
 
 
 def _component_path(ref: ComponentRef) -> list[dict[str, str]]:
@@ -465,8 +473,8 @@ def _component_path(ref: ComponentRef) -> list[dict[str, str]]:
             and item.get("type") is not None
             and item.get("name") is not None
         ]
-    identity = canonical_component_identity(ref) or ref.component_identity
-    return [{"type": "skill", "name": identity}] if identity else []
+    name = ref.name or canonical_component_identity(ref)
+    return [{"type": "skill", "name": name}] if name else []
 
 
 def _first_location(result: dict[str, Any], scan_path: Path) -> dict[str, Any]:

@@ -31,6 +31,7 @@ class ObservationFinding:
     declared_by: dict[str, Any] | None = None
     component_path: list[dict[str, str]] = field(default_factory=list)
     finding_type: str = "observation"
+    bom_ref: str | None = None
 
     @property
     def component_label(self) -> str:

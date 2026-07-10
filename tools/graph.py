@@ -15,7 +15,7 @@ class GraphInvariantError(Exception):
 
 @dataclass(frozen=True)
 class Node:
-    key: str  # occurrence identity (ADR-0031); never the purl.
+    key: str  # occurrence key / CycloneDX bom-ref (ADR-0042).
     # V1 invariant: this IS the CycloneDX bom-ref.
     kind: NodeKind
     ref: Optional[ComponentRef]  # None only for the synthetic target root
@@ -33,8 +33,8 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
 
     Scan projects the flat ref list as `dataclasses.replace(node.ref,
     scope=...)` copies, so the occurrence-identifying fields are untouched.
-    Keying on those fields (manifest + locator + identity
-    coordinates) lets any output site (render, sarif, finding_output) recover a
+    Keying on those fields (manifest + locator + source/display facts) lets any
+    output site (render, sarif, finding_output) recover a
     ref's node without recomputing the build-time occurrence key (which needs
     the source normalizer those sites do not have). Shared so every consumer
     maps a `ComponentRef` to its `Node` identically."""
@@ -127,15 +127,16 @@ class Graph:
     def attribution_for(self, node: Node) -> Optional[str]:
         """The "via plugin X" attribution string for a node, or None.
 
-        The nearest plugin ancestor's component_identity, versioned
-        (`<identity>@<version>`) when the plugin carries a version. A node with
-        no plugin ancestor attributes to None. Pure derivation over the edges;
-        the single source consumers (render, sarif, finding_output) use to
-        compute "via plugin X" at output time."""
+        Uses the nearest plugin ancestor's stable identity when available and
+        its display name otherwise, adding the observed version when present.
+        A node with no plugin ancestor attributes to None. This is presentation
+        derived from edges, not a cross-BOM join key."""
         plugin = self.nearest_plugin_ancestor(node)
         if plugin is None or plugin.ref is None:
             return None
         identity = plugin.ref.component_identity
+        if not identity and plugin.ref.name:
+            identity = f"plugin/{plugin.ref.name}"
         if not identity:
             return None
         return f"{identity}@{plugin.ref.version}" if plugin.ref.version else identity

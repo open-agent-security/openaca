@@ -1,32 +1,34 @@
 # Identity Model
 
-OpenACA separates where a component appears in an agent graph from the external
-coordinate used to match it against advisory sources.
+OpenACA exposes two component identifiers and keeps advisory matching separate.
 
-## Graph identity
+## Occurrence: `bom-ref`
 
-`openaca:identity` is a component's **canonical identity** within the agent
-composition graph — the type-prefixed name (`plugin/<name>`, `mcp-server/<name>`,
-`package/<ecosystem>/<name>`) that is **shared across every occurrence** of that
-component. The agent stack is a containment graph:
+Every graph node has a `bom-ref` that is unique inside one Agent BOM. Graph
+edges, findings, posture, and observations attach to this exact occurrence.
+Containment belongs in these edges rather than in a second occurrence ID.
+
+## Cross-BOM identity: `openaca:identity`
+
+`openaca:identity` is an optional source-stable join key for the same logical
+component across BOMs. It is role-qualified and version-independent:
 
 ```text
-host -> plugin -> skill / mcp-server / hook -> dependency
+mcp-server/npm/@modelcontextprotocol/server-filesystem
+package/npm/@modelcontextprotocol/server-filesystem
+plugin/claude-plugins-official/discord
+package/npm/lodash
+mcp-remote/api.example.com/mcp
 ```
 
-Each *occurrence* of a component is a distinct graph node keyed by its `bom-ref`
-(not `openaca:identity`), and the graph **edges** record which plugin or skill
-contains it. So `openaca:identity` together with the edges answer:
+Local aliases and display names are not identities. When no trustworthy source
+namespace exists, `openaca:identity` is absent and the component remains
+occurrence-local. A plugin namespaces a private child only when that child has
+no independent source, for example
+`skill/plugin/claude-plugins-official/discord/configure`.
 
-- where did this component enter the agent stack? (its node's lineage)
-- which plugin, skill, MCP server, hook, or command introduced it? (its nearest
-  plugin/skill ancestor along the edges)
-- what should the UI show in an Agent BOM or finding path?
-
-`openaca:identity` is the cross-occurrence join key (posture, drift, policy,
-Fleet); the per-occurrence key is `bom-ref`. See ADR-0038. Neither is an advisory
-match key — they describe local agent composition, not external package or source
-coordinates.
+Cross-BOM consumers group only non-null identities. Versions stay on the
+observed occurrence rather than splitting logical identity.
 
 ## Match coordinate
 
@@ -50,16 +52,13 @@ Match coordinates answer questions such as:
 
 ## Why they are separate
 
-A single external package can appear multiple times in an agent stack. For
-example, one vulnerable npm package might be bundled by a plugin and also
-launched directly as an MCP server.
+A single external package can appear multiple times in an agent stack and can
+also play multiple roles. The same source package may therefore have both a
+`package/npm/...` identity and an `mcp-server/npm/...` identity.
 
-Those occurrences share both a match coordinate (same external package version)
-and a graph identity (`openaca:identity`, e.g. `package/npm/lodash`) — but they
-are **distinct graph nodes** with distinct `bom-ref`s and distinct parent edges.
-Attribution — which stack path introduced a given finding — is preserved by
-those per-occurrence `bom-ref` nodes and the `dependencies[]` edges (the nearest
-plugin/skill ancestor), not by `openaca:identity`.
+Two occurrences of the same role and source share `openaca:identity`, but remain
+distinct graph nodes with distinct `bom-ref`s and parent edges. Attribution is
+preserved by those occurrence nodes and `dependencies[]`, not by identity.
 
 Conversely, many graph components do not have package coordinates at all:
 local skills, source-less hooks, local commands, and direct binary launches can
@@ -68,9 +67,9 @@ version-specific package advisories until a match coordinate exists.
 
 ## Agent BOM usage
 
-Agent BOMs carry graph identity for composition and attribution. They carry
-match coordinates separately when a component can be matched against OSV.dev or
-another advisory source.
+Agent BOMs always carry occurrence `bom-ref`s and carry `openaca:identity` only
+when it can be derived from stable source facts. Match coordinates remain
+separate when a component can be queried against OSV.dev or another source.
 
 This lets a BOM answer both questions:
 

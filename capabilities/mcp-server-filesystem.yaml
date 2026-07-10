@@ -1,5 +1,4 @@
-identity: mcp-server/filesystem
-match_coordinate: "npm/@modelcontextprotocol/server-filesystem"
+identity: mcp-server/npm/@modelcontextprotocol/server-filesystem
 last_reviewed: "2026-07-06"
 reviewed_version: "2025.8.21"
 capabilities:

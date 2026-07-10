@@ -836,9 +836,13 @@ def _component_type_for_tree(ref: ComponentRef) -> str:
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
-    return _component_type_for_tree(ref) == "plugin" and bool(
-        ref.component_identity and ref.component_identity.startswith("plugin/")
-    )
+    return _component_type_for_tree(ref) == "plugin"
+
+
+def _plugin_display_identity(ref: ComponentRef) -> str:
+    if ref.component_identity:
+        return ref.component_identity
+    return f"plugin/{ref.name}" if ref.name else "plugin/<unidentified>"
 
 
 @dataclass
@@ -987,7 +991,7 @@ def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
             ident = ident[len(parent_plugin) + 1 :]
         return ident
     if ref.name:
-        return ref.name
+        return f"{ref.name}@{ref.version}" if ref.version else ref.name
     return "<unidentified>"
 
 
@@ -1339,7 +1343,7 @@ def _build_plugin_node(
     marker = _finding_marker(direct_ids, use_color)
     # Display identity includes version from ref.version (component_identity is
     # canonical and version-less; version is the observation-layer value).
-    plugin_identity = plugin_ref.component_identity or ""
+    plugin_identity = _plugin_display_identity(plugin_ref)
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )
@@ -1514,7 +1518,7 @@ def render_inventory_tree(
 
     plugins = sorted(
         (r for r in refs if _is_plugin_ref(r)),
-        key=lambda r: (r.component_identity or "").lower(),
+        key=lambda r: _plugin_display_identity(r).lower(),
     )
     if view is not None:
         # Graph-based: direct components are the target root's category-kind
@@ -1568,7 +1572,7 @@ def render_repo_inventory_tree(
     view = _GraphView.build(graph, all_refs) if graph is not None else None
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
-        key=lambda r: (r.component_identity or "").lower(),
+        key=lambda r: _plugin_display_identity(r).lower(),
     )
 
     root_node = _TreeNode(label=f"repo {root}")
@@ -1654,7 +1658,7 @@ def _build_repo_plugin_node(
     view: Optional["_GraphView"] = None,
 ) -> tuple[_TreeNode, set[tuple]]:
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
-    plugin_identity = plugin_ref.component_identity or ""
+    plugin_identity = _plugin_display_identity(plugin_ref)
     display_id = (
         f"{plugin_identity}@{plugin_ref.version}" if plugin_ref.version else plugin_identity
     )

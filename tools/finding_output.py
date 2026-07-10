@@ -149,6 +149,10 @@ def finding_to_output(
     attributed_to = graph.attribution_for_ref(ref) if graph is not None else None
     if attributed_to:
         out["attributed_to"] = attributed_to
+    if graph is not None:
+        node = graph.node_for_ref(ref)
+        if node is not None:
+            out["bom_ref"] = node.key
     declared_by = declared_by_for(ref)
     if declared_by is not None:
         out["declared_by"] = declared_by
@@ -173,6 +177,8 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
     }
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by
+    if finding.bom_ref is not None:
+        out["bom_ref"] = finding.bom_ref
     return out
 
 
@@ -195,6 +201,8 @@ def observation_to_output(finding: ObservationFinding) -> dict[str, Any]:
         out["remediation"] = finding.remediation
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by
+    if finding.bom_ref is not None:
+        out["bom_ref"] = finding.bom_ref
     return out
 
 

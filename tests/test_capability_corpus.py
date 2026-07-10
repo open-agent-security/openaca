@@ -17,15 +17,9 @@ def test_seed_entry_validates():
     assert all(c["name"] for c in doc["capabilities"])
 
 
-def test_lookup_by_match_coordinate_ignores_local_alias():
-    # The seed's match_coordinate is the npm package coordinate. A ref that
-    # aliases the same server under a different local config name must still
-    # get the curated capabilities via the coordinate, not the alias.
+def test_lookup_by_source_stable_identity():
     corpus = load_capability_corpus()  # defaults to capabilities/
-    caps = corpus.lookup(
-        "mcp-server/some-local-alias",
-        match_coordinate="npm/@modelcontextprotocol/server-filesystem",
-    )
+    caps = corpus.lookup("mcp-server/npm/@modelcontextprotocol/server-filesystem")
     assert {c.name for c in caps} >= {"file_read", "file_write"}
     assert all(c.method == "curated" and c.source == "openaca" for c in caps)
     assert any(e.get("kind") == "curated_review" for c in caps for e in c.evidence)
@@ -33,16 +27,6 @@ def test_lookup_by_match_coordinate_ignores_local_alias():
 
 def test_lookup_unknown_identity_returns_empty():
     assert load_capability_corpus().lookup("mcp-server/does-not-exist") == []
-
-
-def test_constrained_record_not_returned_by_identity_alone():
-    # A record with a match_coordinate must never surface via identity alone
-    # -- otherwise an unrelated component that happens to reuse the curated
-    # identity string as its local config alias would inherit capabilities
-    # it was never reviewed for.
-    corpus = load_capability_corpus()
-    assert corpus.lookup("mcp-server/filesystem") == []
-    assert corpus.lookup("mcp-server/filesystem", match_coordinate="npm/some-other-package") == []
 
 
 def test_lookup_identity_only_for_unconstrained_records(tmp_path):
@@ -54,20 +38,6 @@ def test_lookup_identity_only_for_unconstrained_records(tmp_path):
     corpus = load_capability_corpus(root=tmp_path)
     # No derivable coordinate -> identity index is queried.
     assert {c.name for c in corpus.lookup("mcp-server/x")} == {"file_read"}
-
-
-def test_identity_only_record_suppressed_when_ref_resolves_to_coordinate(tmp_path):
-    # An unconstrained record keyed by identity `mcp-server/filesystem`. A ref
-    # that resolves to a real package coordinate but whose local alias collides
-    # with that identity string must NOT inherit the record: once a coordinate
-    # is derivable, the alias is untrustworthy and the identity index is skipped.
-    (tmp_path / "fs.yaml").write_text(
-        "identity: mcp-server/filesystem\nlast_reviewed: '2026-07-03'\n"
-        "reviewed_version: '1.0'\ncapabilities:\n"
-        "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n"
-    )
-    corpus = load_capability_corpus(root=tmp_path)
-    assert corpus.lookup("mcp-server/filesystem", match_coordinate="npm/some-other-package") == []
 
 
 def test_corpus_discovers_nested_records(tmp_path):
@@ -106,21 +76,6 @@ def test_lint_rejects_non_object_evidence_entry(tmp_path):
     )
     errors = lint_capability_dir(tmp_path)
     assert any("evidence" in e for e in errors)
-
-
-def test_lint_rejects_misshapen_match_coordinate(tmp_path):
-    # A match_coordinate must be `npm/...` or `PyPI/...` to match what
-    # capabilities_for_ref derives; a bare/mis-prefixed value silently never
-    # matches, so the schema must reject it.
-    bad = tmp_path / "x.yaml"
-    bad.write_text(
-        "identity: mcp-server/x\nmatch_coordinate: just-a-name\n"
-        "last_reviewed: '2026-07-03'\nreviewed_version: '1.0'\ncapabilities:\n"
-        "  - {name: file_read, execution_locus: local, confidence: high,\n"
-        "     evidence: [{kind: curated_review}]}\n"
-    )
-    errors = lint_capability_dir(tmp_path)
-    assert errors
 
 
 def test_lint_reports_non_mapping_record_instead_of_crashing(tmp_path):
@@ -162,14 +117,12 @@ def test_lint_rejects_null_evidence_kind(tmp_path):
     assert any("kind" in e for e in errors)
 
 
-def test_lint_rejects_duplicate_match_coordinate(tmp_path):
-    # A match_coordinate keys the coordinate index alone (Task 4); two records
-    # sharing one are as ambiguous as duplicate identities and must fail lint.
+def test_lint_rejects_duplicate_identity(tmp_path):
     for n in ("a", "b"):
         (tmp_path / f"{n}.yaml").write_text(
-            f"identity: mcp-server/{n}\nmatch_coordinate: npm/dup\n"
+            "identity: mcp-server/npm/dup\n"
             "last_reviewed: 2026-07-03\nreviewed_version: '1.0'\ncapabilities:\n"
             "  - {name: file_read, execution_locus: local, confidence: high, evidence: []}\n"
         )
     errors = lint_capability_dir(tmp_path)
-    assert any("npm/dup" in e for e in errors)
+    assert any("mcp-server/npm/dup" in e for e in errors)

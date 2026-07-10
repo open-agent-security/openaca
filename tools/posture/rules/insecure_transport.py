@@ -63,7 +63,7 @@ def check_insecure_transport(
             url = entry.get("url")
             if not isinstance(url, str) or not url.startswith("http://"):
                 continue
-            identity = f"mcp-server/{name}"
+            label = f"mcp-server/{name}"
             findings.append(
                 PostureFinding(
                     rule_id=RULE_ID,
@@ -72,13 +72,12 @@ def check_insecure_transport(
                     confidence=CONFIDENCE,
                     component={
                         "type": "mcp_server",
-                        "name": f"{identity} @ {url}",
-                        "identity": identity,
+                        "name": f"{label} @ {url}",
                         "source": {"url": url},
                     },
                     active_in=_infer_hosts(manifest),
                     declared_by={"kind": "manifest", "path": str(path)},
-                    component_path=[{"type": "mcp_server", "name": identity}],
+                    component_path=[{"type": "mcp_server", "name": label}],
                     standards=_STANDARDS,
                     remediation=REMEDIATION,
                 )

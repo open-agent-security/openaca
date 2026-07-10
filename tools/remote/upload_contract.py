@@ -223,8 +223,6 @@ def _validate_component_properties(value: dict[Any, Any], path: str) -> None:
     component_purl = value.get("purl")
     graph_mcp_without_purl = (
         component_type == "mcp_server"
-        and isinstance(identity, str)
-        and identity.startswith("mcp-server/")
         and not component_purl
         and "openaca:transport" not in props_by_name
         and isinstance(install_source, str)

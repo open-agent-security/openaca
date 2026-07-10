@@ -82,8 +82,9 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
             if isinstance(metadata_ref, str):
                 bom_refs.add(metadata_ref)
 
+    schema_version = _openaca_schema_version(doc)
     for index, component in enumerate(components):
-        errors.extend(_check_component(component, index))
+        errors.extend(_check_component(component, index, schema_version=schema_version))
 
     for index, dependency in enumerate(doc.get("dependencies") or []):
         if not isinstance(dependency, dict):
@@ -100,10 +101,15 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _check_component(component: dict[str, Any], index: int) -> list[str]:
+def _check_component(
+    component: dict[str, Any],
+    index: int,
+    *,
+    schema_version: str | None,
+) -> list[str]:
     errors: list[str] = []
     props = _properties_by_name(component)
-    if "openaca:identity" not in props:
+    if schema_version in {"0.1", "0.2", "0.3"} and "openaca:identity" not in props:
         errors.append(f"components[{index}] must have openaca:identity")
 
     component_type = props.get("openaca:component_type")
@@ -118,6 +124,13 @@ def _check_component(component: dict[str, Any], index: int) -> list[str]:
 
     errors.extend(_check_capability_descriptors(props, index))
     return errors
+
+
+def _openaca_schema_version(doc: dict[str, Any]) -> str | None:
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    return _properties_by_name(metadata).get("openaca:schema_version")
 
 
 def _check_capability_descriptors(props: dict[str, str], index: int) -> list[str]:

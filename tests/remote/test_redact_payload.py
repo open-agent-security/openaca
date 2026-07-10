@@ -595,8 +595,8 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
                 {"ref": out_of_root, "dependsOn": []},
             ],
         },
-        "posture_findings": [],
-        "observations": [],
+        "posture_findings": [{"component_bom_ref": out_of_root, "evidence": {}}],
+        "observations": [{"component_bom_ref": out_of_root, "evidence": {}, "declared_by": {}}],
     }
     expected_ref = _redact_bom_ref_path(out_of_root, config_dir=cfg, project=None)
     _redact_payload_for_remote(payload, config_dir=cfg, project=None)
@@ -616,13 +616,15 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
     assert expected_ref in deps
     assert "openaca:target" in deps
     assert deps["openaca:target"] == [expected_ref]
+    assert payload["posture_findings"][0]["component_bom_ref"] == expected_ref
+    assert payload["observations"][0]["component_bom_ref"] == expected_ref
 
 
 def test_redact_payload_source_manifest_property_matches_bom_ref_disambiguation() -> None:
     """Two out-of-root plugins with the same-basename source manifest must keep
     DISTINCT redacted `openaca:source_manifest` values (not both collapse to
     `package.json`), consistent with the bom-ref disambiguation — otherwise
-    graph consumers' `ref_occurrence_key` (source_manifest + locator + identity)
+    graph consumers' `ref_occurrence_key` (manifest, locator, and source/display facts)
     collides and findings misattribute."""
     cfg = Path("/home/u/.claude")
 

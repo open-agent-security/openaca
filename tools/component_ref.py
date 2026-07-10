@@ -33,8 +33,9 @@ __all__ = [
 class ComponentRef:
     """A single component installation discovered in a repository.
 
-    Either (ecosystem + name + version) is set with a derivable standard PURL,
-    or component_identity is set with an OpenACA-native identifier.
+    Parsers record source and display facts here. Graph finalization assigns an
+    optional source-stable ``component_identity``; ``bom_ref`` is stamped in
+    ``extra`` when refs are read back from the graph.
     """
 
     ecosystem: Optional[str] = None

@@ -321,7 +321,12 @@ def _component_path(raw: dict[str, Any]) -> list[ExposurePathNode]:
             is_own = index == len(raw_path) - 1 and component_type == own_type and name == own_name
             bom_ref = _as_str(item.get("bom_ref")) or (own_bom_ref if is_own else None)
             if bom_ref is None:
-                raise ValueError("every component_path node must contain bom_ref")
+                # A flat/pre-Stage-4 BOM never captured a bom_ref for anything but
+                # the leaf occurrence, so a stored ancestor node (e.g. a plugin)
+                # can't be resolved to an exact occurrence. Drop it rather than
+                # raise — every emitted node still carries one (ADR-0043), it's
+                # just not this unresolvable ancestor.
+                continue
             path.append(
                 ExposurePathNode(
                     type=component_type,
@@ -406,12 +411,12 @@ def _draft_action(evidence: list[ExposureEvidence]) -> ExposureAction:
         text = f"{item.id} {item.title} {item.remediation or ''}".lower()
         if any(token in text for token in ("mutable", "unpinned", "@latest", "no digest")):
             return "pin"
+    if any(item.finding_type == "vulnerability" and item.fixed_in for item in evidence):
+        return "upgrade"
     for item in evidence:
         text = f"{item.id} {item.title} {item.remediation or ''}".lower()
         if any(token in text for token in ("insecure transport", "unauthenticated", "http")):
             return "replace"
-    if any(item.finding_type == "vulnerability" and item.fixed_in for item in evidence):
-        return "upgrade"
     return "review"
 
 

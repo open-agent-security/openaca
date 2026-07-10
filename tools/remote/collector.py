@@ -640,6 +640,14 @@ def _redact_payload_for_remote(
         component_bom_ref = finding.get("component_bom_ref")
         if isinstance(component_bom_ref, str) and component_bom_ref in ref_map:
             finding["component_bom_ref"] = ref_map[component_bom_ref]
+        subject_coordinate = finding.get("subject_coordinate")
+        if isinstance(subject_coordinate, str):
+            # Scanners without a stable artifact coordinate (e.g. a local skill
+            # SkillSpector scans by path) fall back to a raw filesystem path here;
+            # redact it identically to evidence/declared_by paths.
+            finding["subject_coordinate"] = _redact_property_value_for_remote(
+                subject_coordinate, config_dir=config_dir, project=project
+            )
         for key in ("evidence", "declared_by"):
             value = finding.get(key)
             if not isinstance(value, dict):

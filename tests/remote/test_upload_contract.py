@@ -723,6 +723,33 @@ def test_rejects_file_uri_in_observation_declared_by():
     assert "file://" in str(exc.value)
 
 
+def test_rejects_absolute_path_in_observation_subject_coordinate():
+    """subject_coordinate falls back to a raw filesystem path for local skills
+    with no artifact coordinate or source-stable identity (SkillSpector); it
+    must be rejected as defense-in-depth alongside evidence/declared_by, since
+    _redact_payload_for_remote normalizes it before the enforcer runs.
+    """
+    payload = _payload(
+        observations=[
+            {
+                "source": "skillspector",
+                "source_version": "0.4.0",
+                "observation_id": "P1",
+                "severity": "HIGH",
+                "confidence": "medium",
+                "component_identity": "skill/deploy-helper",
+                "subject_coordinate": "/Users/alice/.claude/skills/deploy-helper/SKILL.md",
+                "summary": "Instruction override",
+                "evidence": {},
+                "declared_by": {},
+            }
+        ]
+    )
+    with pytest.raises(RemoteUploadContractError) as exc:
+        enforce_remote_upload_contract(payload)
+    assert "observations[0].subject_coordinate" in str(exc.value)
+
+
 def _payload(**overrides):
     payload = {
         "asset_id": "asset-123",

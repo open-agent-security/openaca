@@ -472,6 +472,70 @@ def test_contract_accepts_payload_after_json_path_redaction() -> None:
     enforce_remote_upload_contract(payload)  # must not raise
 
 
+# --- observation subject_coordinate redaction --------------------------------
+
+
+def test_redact_observation_subject_coordinate_absolute_path() -> None:
+    """subject_coordinate falls back to a raw filesystem path for local skills
+    with no artifact coordinate (SkillSpector); it must be relativized like
+    evidence/declared_by, or the endpoint's absolute path leaks to remote sync.
+    """
+    cfg = Path("/home/u/.claude")
+    payload = {
+        "bom": {"components": []},
+        "observations": [
+            {
+                "subject_coordinate": "/home/u/.claude/skills/deploy-helper/SKILL.md",
+                "evidence": {},
+                "declared_by": {},
+            }
+        ],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    assert payload["observations"][0]["subject_coordinate"] == "skills/deploy-helper/SKILL.md"
+
+
+def test_redact_observation_subject_coordinate_leaves_stable_coordinate_alone() -> None:
+    """A stable, non-path subject_coordinate (e.g. a purl or identity string)
+    passes through unchanged."""
+    cfg = Path("/home/u/.claude")
+    payload = {
+        "bom": {"components": []},
+        "observations": [
+            {
+                "subject_coordinate": "skill/deploy-helper",
+                "evidence": {},
+                "declared_by": {},
+            }
+        ],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    assert payload["observations"][0]["subject_coordinate"] == "skill/deploy-helper"
+
+
+def test_contract_accepts_payload_after_subject_coordinate_redaction() -> None:
+    """After redacting subject_coordinate, the upload contract must be satisfied."""
+    cfg = Path("/home/u/.claude")
+    payload = {
+        "asset_id": "ast_T",
+        "source": "endpoint",
+        "openaca_version": "0.1.0b5",
+        "target_locator": "endpoint:user-scope",
+        "content_hash": "sha256:abc",
+        "bom": {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        "posture_findings": [],
+        "observations": [
+            {
+                "subject_coordinate": "/home/u/.claude/skills/deploy-helper/SKILL.md",
+                "evidence": {},
+                "declared_by": {},
+            }
+        ],
+    }
+    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    enforce_remote_upload_contract(payload)  # must not raise
+
+
 # --- bom-ref redaction -------------------------------------------------------
 
 

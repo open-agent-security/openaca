@@ -189,6 +189,17 @@ def test_malware_action_takes_precedence() -> None:
     assert card.action == "remove"
 
 
+def test_fixed_vulnerability_recommends_upgrade_despite_http_in_title() -> None:
+    """A `fixed_in` vulnerability whose id/title happens to mention "http" (e.g.
+    an HTTP request-smuggling advisory) must still recommend the known upgrade,
+    not the generic transport "replace" heuristic."""
+    finding = _vulnerability(id="GHSA-http-smuggling", title="HTTP request smuggling in lodash")
+
+    card = build_exposure_cards({"findings": [finding]})[0]
+
+    assert card.action == "upgrade"
+
+
 def test_low_confidence_observation_defaults_to_review() -> None:
     finding = {
         "finding_type": "observation",
@@ -225,6 +236,33 @@ def test_component_scoped_finding_requires_an_occurrence_key() -> None:
         assert "bom_ref" in str(exc)
     else:
         raise AssertionError("expected a missing bom_ref error")
+
+
+def test_component_path_drops_unresolvable_ancestor_from_graphless_scan() -> None:
+    """A flat/pre-Stage-4 BOM re-scan (`scan bom` with no reconstructable graph)
+    only ever carries a bom_ref for the leaf occurrence; a stored ancestor node
+    (e.g. a bundling plugin) has none. That must not crash triage — the
+    unresolvable ancestor is dropped, leaving the occurrence that does have an
+    exact bom_ref."""
+    finding = _vulnerability(
+        component_path=[
+            {"type": "plugin", "name": "acme-devtools"},
+            {
+                "type": "package",
+                "name": "lodash",
+                "bom_ref": "package-occurrence",
+                "identity": "package/npm/lodash",
+                "version": "4.17.20",
+            },
+        ]
+    )
+
+    cards = build_exposure_cards({"findings": [finding]})
+
+    assert len(cards) == 1
+    path = cards[0].occurrences[0].composition_paths[0]
+    assert [node.type for node in path] == ["package"]
+    assert path[0].bom_ref == "package-occurrence"
 
 
 def test_asset_scoped_posture_does_not_become_a_component_exposure() -> None:

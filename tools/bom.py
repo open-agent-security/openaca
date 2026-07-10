@@ -198,7 +198,11 @@ def _build_agent_bom_from_graph(
     ]
     _annotate_capabilities(ref for _, ref in included_refs)
     for node, node_ref in included_refs:
-        ref = replace(node_ref, scope=graph.scope_of(node))
+        ref = replace(
+            node_ref,
+            scope=graph.scope_of(node),
+            extra={**(node_ref.extra or {}), "bom_ref": node.key},
+        )
         included[node.key] = BOMComponent(ref=ref, bom_ref=node.key)
 
     included_keys = set(included) | {root.key}

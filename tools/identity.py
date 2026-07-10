@@ -368,7 +368,10 @@ def _role_qualified_package_identity(role: str, ref: Any) -> str | None:
     if isinstance(install_source, str):
         install_source = normalize_launcher_command(install_source)
     source = mcp_package_source(install_source)
-    if source is not None:
+    if source is not None and (
+        not ref.ecosystem
+        or purl_type_for_ecosystem(ref.ecosystem) == purl_type_for_ecosystem(source[1])
+    ):
         _launcher, ecosystem, package = source
         normalized_name = strip_package_version(ecosystem, package)
     elif is_package_source_ref(ref):

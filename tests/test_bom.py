@@ -102,6 +102,26 @@ def test_graph_bom_component_bom_ref_equals_node_key_and_edges_match_graph():
     assert deps_by_ref["skill/deploy"] == {"plugin/mktplace/demo/skill/deploy/deps/npm/lodash"}
 
 
+def test_graph_bom_component_refs_carry_bom_ref_extra():
+    # component_refs() feeds posture/observation collectors, which join
+    # findings back to a component via `ref.extra["bom_ref"]` (ADR-0042:
+    # occurrence-level signals attach by bom-ref). It must be stamped here,
+    # the same way `_refs_from_graph`/`_collect_endpoint_components` stamp it
+    # for the non-graph-reconstructed ref list.
+    graph = _graph_target_plugin_skill_package()
+
+    bom = build_agent_bom([], target_type="endpoint", target="~/.claude", graph=graph)
+
+    bom_ref_by_key = {c.bom_ref: (c.ref.extra or {}).get("bom_ref") for c in bom.components}
+    assert bom_ref_by_key == {
+        "plugin/mktplace/demo": "plugin/mktplace/demo",
+        "skill/deploy": "skill/deploy",
+        "plugin/mktplace/demo/skill/deploy/deps/npm/lodash": (
+            "plugin/mktplace/demo/skill/deploy/deps/npm/lodash"
+        ),
+    }
+
+
 def test_graph_bom_excludes_software_dependency_nodes_from_components():
     graph = _graph_target_plugin_skill_package()
 

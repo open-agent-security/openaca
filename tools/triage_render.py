@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from tools.triage import TriageCard
+from tools.triage import ExposureCard, ExposurePathNode
 
 TriageFormat = Literal["text", "markdown", "json"]
 
@@ -13,7 +13,7 @@ _MARKDOWN_ESCAPE_CHARS = set("\\`*_{}[]()#+-.!|<>~")
 
 
 def render_triage_report(
-    cards: list[TriageCard], scan_doc: dict[str, Any], *, output_format: TriageFormat
+    cards: list[ExposureCard], scan_doc: dict[str, Any], *, output_format: TriageFormat
 ) -> str:
     if output_format == "json":
         return render_triage_json(cards, scan_doc)
@@ -22,7 +22,7 @@ def render_triage_report(
     return render_triage_text(cards, scan_doc)
 
 
-def render_triage_json(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
+def render_triage_json(cards: list[ExposureCard], scan_doc: dict[str, Any]) -> str:
     return json.dumps(
         {
             "report_type": "exposure",
@@ -35,7 +35,7 @@ def render_triage_json(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str
     )
 
 
-def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
+def render_triage_text(cards: list[ExposureCard], scan_doc: dict[str, Any]) -> str:
     lines = ["Exposure report", ""]
     lines.extend(_target_lines(scan_doc, bullet=""))
     if len(lines) > 2:
@@ -47,9 +47,10 @@ def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str
         lines.extend(
             [
                 "",
-                f"{card.rank}. {card.priority.upper()} - {card.component_label}",
-                f"   type: {card.component_type}",
-                f"   path: {_path_label(card.composition_path)}",
+                f"{card.rank}. {card.priority.upper()} - {card.component.name}",
+                f"   type: {card.component.type}",
+                f"   path: {_path_label(_primary_path(card))}",
+                f"   occurrences: {len(card.occurrences)}",
                 f"   evidence: {_evidence_summary(card)}",
                 f"   why: {card.why_it_matters}",
                 f"   action: {card.action}",
@@ -64,7 +65,7 @@ def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str
     return "\n".join(lines)
 
 
-def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
+def render_triage_markdown(cards: list[ExposureCard], scan_doc: dict[str, Any]) -> str:
     lines = ["# OpenACA Exposure Report", ""]
     target_lines = _target_lines(scan_doc, bullet="- ", escape=True)
     if target_lines:
@@ -74,13 +75,14 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
     if not cards:
         lines.extend(["No exposure cards were generated from this scan.", ""])
     for card in cards[:5]:
-        label = _escape_markdown(card.component_label)
+        label = _escape_markdown(card.component.name)
         lines.extend(
             [
                 f"### {card.rank}. {card.priority.upper()} - {label}",
                 "",
-                f"- Type: `{_code_span_safe(card.component_type)}`",
-                f"- Path: `{_path_label_code_span(card.composition_path)}`",
+                f"- Type: `{_code_span_safe(card.component.type)}`",
+                f"- Path: `{_path_label_code_span(_primary_path(card))}`",
+                f"- Occurrences: `{len(card.occurrences)}`",
                 f"- Evidence: {_evidence_summary(card, escape=True)}",
                 f"- Action: `{card.action}`",
                 f"- Confidence: `{card.confidence}`",
@@ -125,7 +127,7 @@ def _target_lines(scan_doc: dict[str, Any], *, bullet: str, escape: bool = False
     return lines
 
 
-def _summary_line(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
+def _summary_line(cards: list[ExposureCard], scan_doc: dict[str, Any]) -> str:
     stats = scan_doc.get("stats") if isinstance(scan_doc.get("stats"), dict) else {}
     finding_count = len(scan_doc.get("findings") or [])
     component_count = stats.get("components") if isinstance(stats, dict) else None
@@ -137,7 +139,7 @@ def _summary_line(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
     return f"{len(cards)} exposure card(s) from {finding_count} finding(s)."
 
 
-def _evidence_summary(card: TriageCard, *, escape: bool = False) -> str:
+def _evidence_summary(card: ExposureCard, *, escape: bool = False) -> str:
     def _clean(text: str) -> str:
         return _escape_markdown(text) if escape else text
 
@@ -146,11 +148,15 @@ def _evidence_summary(card: TriageCard, *, escape: bool = False) -> str:
     )
 
 
-def _path_label(path: list[dict[str, str]]) -> str:
-    return " -> ".join(f"{item['type']} {item['name']}" for item in path) or "<unknown>"
+def _primary_path(card: ExposureCard) -> list[ExposurePathNode]:
+    return card.occurrences[0].composition_paths[0]
 
 
-def _path_label_code_span(path: list[dict[str, str]]) -> str:
+def _path_label(path: list[ExposurePathNode]) -> str:
+    return " -> ".join(f"{item.type} {item.name}" for item in path) or "<unknown>"
+
+
+def _path_label_code_span(path: list[ExposurePathNode]) -> str:
     """Render a composition path for a single-backtick Markdown code span.
 
     CommonMark doesn't honor backslash escapes inside a code span, so a
@@ -160,7 +166,7 @@ def _path_label_code_span(path: list[dict[str, str]]) -> str:
     if not path:
         return "<unknown>"
     return " -> ".join(
-        f"{_code_span_safe(item['type'])} {_code_span_safe(item['name'])}" for item in path
+        f"{_code_span_safe(item.type)} {_code_span_safe(item.name)}" for item in path
     )
 
 
@@ -176,7 +182,7 @@ def _escape_markdown(text: str) -> str:
     return "".join(f"\\{ch}" if ch in _MARKDOWN_ESCAPE_CHARS else ch for ch in collapsed)
 
 
-def _report_scope_limits(cards: list[TriageCard]) -> list[str]:
+def _report_scope_limits(cards: list[ExposureCard]) -> list[str]:
     limits = {
         "Static composition report; runtime behavior was not observed.",
         "Exposure priority uses scan evidence only and is not proof of exploitability.",

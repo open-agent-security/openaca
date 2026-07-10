@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -67,7 +67,7 @@ def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:
     return None
 
 
-def component_path_for(ref: ComponentRef) -> list[dict[str, str]]:
+def component_path_for(ref: ComponentRef) -> list[dict[str, Any]]:
     component_path = (ref.extra or {}).get("component_path")
     if isinstance(component_path, list):
         out = []
@@ -79,10 +79,20 @@ def component_path_for(ref: ComponentRef) -> list[dict[str, str]]:
                     out.append({"type": typ, "name": name})
         if out:
             return out
-    return [{"type": component_type_for(ref), "name": component_name_for(ref)}]
+    node: dict[str, Any] = {
+        "type": component_type_for(ref),
+        "name": component_name_for(ref),
+    }
+    bom_ref = (ref.extra or {}).get("bom_ref")
+    if isinstance(bom_ref, str) and bom_ref:
+        node["bom_ref"] = bom_ref
+        node["identity"] = canonical_component_identity(ref)
+        if ref.version:
+            node["version"] = ref.version
+    return [node]
 
 
-def _component_path_from_graph(ref: ComponentRef, graph: Graph) -> list[dict[str, str]] | None:
+def _component_path_from_graph(ref: ComponentRef, graph: Graph) -> list[dict[str, Any]] | None:
     """Derive the component path from graph lineage.
 
     Walks from the ref's node up to (but not including) the target root and
@@ -95,14 +105,41 @@ def _component_path_from_graph(ref: ComponentRef, graph: Graph) -> list[dict[str
     lineage = graph.lineage(node)
     # lineage is [node, ..., target_root]; reverse so root ancestors come first,
     # then exclude the target root (ref=None) and any node without a ref.
-    path = []
+    path: list[dict[str, Any]] = []
     for ancestor in reversed(lineage):
         if ancestor.ref is None:
             continue
         # component_name_for reads the MCP server's logical name from
         # extra.component_path[-1]["name"] rather than the npm package name.
-        path.append({"type": ancestor.kind, "name": component_name_for(ancestor.ref)})
+        path.append(_graph_path_node(ancestor.kind, ancestor.key, ancestor.ref))
     return path if path else None
+
+
+def _component_path_from_bom_ref(
+    bom_ref: str | None, graph: Graph | None
+) -> list[dict[str, Any]] | None:
+    if graph is None or bom_ref is None:
+        return None
+    node = graph.nodes.get(bom_ref)
+    if node is None or node.ref is None:
+        return None
+    path: list[dict[str, Any]] = []
+    for ancestor in reversed(graph.lineage(node)):
+        if ancestor.ref is not None:
+            path.append(_graph_path_node(ancestor.kind, ancestor.key, ancestor.ref))
+    return path or None
+
+
+def _graph_path_node(kind: str, bom_ref: str, ref: ComponentRef) -> dict[str, Any]:
+    node: dict[str, Any] = {
+        "type": kind,
+        "name": component_name_for(ref),
+        "bom_ref": bom_ref,
+        "identity": canonical_component_identity(ref),
+    }
+    if ref.version:
+        node["version"] = ref.version
+    return node
 
 
 def _active_in_for(ref: ComponentRef) -> list[str]:
@@ -132,16 +169,20 @@ def finding_to_output(
 ) -> dict[str, Any]:
     ref = finding.component
     graph_path = _component_path_from_graph(ref, graph) if graph is not None else None
+    component: dict[str, Any] = {
+        "type": component_type_for(ref),
+        "name": component_name_for(ref),
+        "source": source_for(ref),
+    }
+    identity = canonical_component_identity(ref)
+    if identity is not None:
+        component["identity"] = identity
     out: dict[str, Any] = {
         "finding_type": "vulnerability",
         "id": finding.advisory_id,
         "confidence": finding.confidence,
         "title": _title_for_advisory(finding.advisory_id, advisory),
-        "component": {
-            "type": component_type_for(ref),
-            "name": component_name_for(ref),
-            "source": source_for(ref),
-        },
+        "component": component,
         "active_in": _active_in_for(ref),
         "component_path": graph_path if graph_path is not None else component_path_for(ref),
         "matched_advisory": _matched_advisory_for(finding.advisory_id, advisory),
@@ -163,7 +204,8 @@ def finding_to_output(
     return out
 
 
-def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
+def posture_to_output(finding: PostureFinding, *, graph: Graph | None = None) -> dict[str, Any]:
+    graph_path = _component_path_from_bom_ref(finding.bom_ref, graph)
     out: dict[str, Any] = {
         "finding_type": "posture",
         "source": finding.source,
@@ -174,7 +216,7 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
         "confidence": finding.confidence,
         "component": finding.component,
         "active_in": finding.active_in,
-        "component_path": finding.component_path,
+        "component_path": graph_path if graph_path is not None else finding.component_path,
         "standards": finding.standards.to_dict(),
         "remediation": finding.remediation,
         "evidence": finding.evidence,
@@ -186,7 +228,10 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
     return out
 
 
-def observation_to_output(finding: ObservationFinding) -> dict[str, Any]:
+def observation_to_output(
+    finding: ObservationFinding, *, graph: Graph | None = None
+) -> dict[str, Any]:
+    graph_path = _component_path_from_bom_ref(finding.bom_ref, graph)
     out: dict[str, Any] = {
         "finding_type": "observation",
         "source": finding.source,
@@ -197,7 +242,7 @@ def observation_to_output(finding: ObservationFinding) -> dict[str, Any]:
         "confidence": finding.confidence,
         "component": finding.component,
         "subject_coordinate": finding.subject_coordinate,
-        "component_path": finding.component_path,
+        "component_path": graph_path if graph_path is not None else finding.component_path,
         "categories": finding.categories,
         "evidence": finding.evidence,
     }

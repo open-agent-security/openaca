@@ -20,10 +20,25 @@ def _write_scan_json(tmp_path):
                         "severity": "HIGH",
                         "confidence": "high",
                         "fixed_in": "2.0.0",
-                        "component": {"type": "package", "name": "lodash"},
+                        "bom_ref": "package-occurrence",
+                        "component": {
+                            "type": "package",
+                            "name": "lodash",
+                            "identity": "package/npm/lodash",
+                        },
                         "component_path": [
-                            {"type": "plugin", "name": "demo"},
-                            {"type": "package", "name": "lodash"},
+                            {
+                                "type": "plugin",
+                                "name": "demo",
+                                "bom_ref": "plugin-occurrence",
+                                "identity": "plugin/marketplace/demo",
+                            },
+                            {
+                                "type": "package",
+                                "name": "lodash",
+                                "bom_ref": "package-occurrence",
+                                "identity": "package/npm/lodash",
+                            },
                         ],
                     }
                 ],

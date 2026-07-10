@@ -1,6 +1,6 @@
 import json
 
-from tools.triage import build_triage_cards
+from tools.triage import build_exposure_cards
 from tools.triage_render import render_triage_report
 
 
@@ -20,20 +20,43 @@ def _scan_doc():
                 "confidence": "high",
                 "fixed_in": "2.0.0",
                 "source": "osv.dev",
-                "component": {"type": "package", "name": "lodash"},
+                "bom_ref": "package-occurrence",
+                "component": {
+                    "type": "package",
+                    "name": "lodash",
+                    "identity": "package/npm/lodash",
+                },
                 "component_path": [
-                    {"type": "plugin", "name": "demo"},
-                    {"type": "package", "name": "lodash"},
+                    {
+                        "type": "plugin",
+                        "name": "demo",
+                        "bom_ref": "plugin-occurrence",
+                        "identity": "plugin/marketplace/demo",
+                    },
+                    {
+                        "type": "package",
+                        "name": "lodash",
+                        "bom_ref": "package-occurrence",
+                        "identity": "package/npm/lodash",
+                    },
                 ],
-                "attributed_to": "plugin/demo@1.0.0",
             }
         ],
     }
 
 
+def _cards(scan_doc):
+    for finding_index, finding in enumerate(scan_doc.get("findings", [])):
+        finding.setdefault("bom_ref", f"finding-{finding_index}")
+        for path_index, node in enumerate(finding.get("component_path", [])):
+            node.setdefault("bom_ref", f"path-{finding_index}-{path_index}")
+            node.setdefault("identity", None)
+    return build_exposure_cards(scan_doc)
+
+
 def test_text_report_is_component_centric():
     scan_doc = _scan_doc()
-    rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="text")
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="text")
 
     assert "Exposure report" in rendered
     assert "HIGH - demo" in rendered
@@ -44,9 +67,7 @@ def test_text_report_is_component_centric():
 
 def test_markdown_report_has_forwardable_sections():
     scan_doc = _scan_doc()
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert rendered.startswith("# OpenACA Exposure Report")
     assert "## Summary" in rendered
@@ -79,9 +100,7 @@ def test_markdown_report_escapes_untrusted_component_label_and_path():
         ],
     }
 
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert "\n## Fake heading" not in rendered
     assert "weird`name`" not in rendered
@@ -107,9 +126,7 @@ def test_markdown_report_escapes_untrusted_component_type():
         ],
     }
 
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert "\n## Fake heading" not in rendered
     assert "`mcp_server`" not in rendered  # backtick must not close the code span
@@ -125,9 +142,7 @@ def test_markdown_report_escapes_untrusted_target_rows():
         "findings": [],
     }
 
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert "\n## Fake heading" not in rendered
     assert "\\#\\# Fake heading" in rendered
@@ -151,9 +166,7 @@ def test_markdown_report_escapes_untrusted_evidence_ids():
         ],
     }
 
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert "\n## Fake heading" not in rendered
     assert "\\#\\# Fake heading" in rendered
@@ -182,9 +195,7 @@ def test_markdown_report_collapses_bare_carriage_returns():
         ],
     }
 
-    rendered = render_triage_report(
-        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
-    )
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="markdown")
 
     assert "\r## Fake" not in rendered
     assert "repo \\#\\# Fake surface" in rendered
@@ -195,9 +206,15 @@ def test_markdown_report_collapses_bare_carriage_returns():
 
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
-    rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")
+    rendered = render_triage_report(_cards(scan_doc), scan_doc, output_format="json")
     parsed = json.loads(rendered)
 
     assert parsed["report_type"] == "exposure"
     assert parsed["cards"][0]["evidence"][0]["id"] == "GHSA-test"
-    assert parsed["cards"][0]["component_id"] == "plugin/demo@1.0.0"
+    assert parsed["cards"][0]["component"] == {
+        "identity": "plugin/marketplace/demo",
+        "type": "plugin",
+        "name": "demo",
+        "versions": [],
+    }
+    assert parsed["cards"][0]["occurrences"][0]["bom_ref"] == "plugin-occurrence"

@@ -2138,7 +2138,13 @@ def test_scan_endpoint_json_contains_triage_contract_fields(tmp_path):
     assert finding["matched_advisory"]["id"] == "GHSA-3q26-f695-pp76"
     assert finding["severity"] == "UNKNOWN"
     assert finding["fixed_in"] == "1.2.3"
-    assert finding["component_path"][0] == {"type": "plugin", "name": "vuln-plugin"}
+    plugin = finding["component_path"][0]
+    assert plugin["type"] == "plugin"
+    assert plugin["name"] == "vuln-plugin"
+    assert plugin["identity"] == "plugin/m/vuln-plugin"
+    assert plugin["version"] == "1.0.0"
+    assert isinstance(plugin["bom_ref"], str)
+    assert finding["component_path"][-1]["bom_ref"] == finding["bom_ref"]
     assert finding["declared_by"]["path"].endswith("package-lock.json")
     assert output["target"]["host_surface"] == "Claude Code"
 

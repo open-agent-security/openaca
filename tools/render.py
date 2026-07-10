@@ -1061,9 +1061,7 @@ _SAFE_PACKAGE_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._-]*/)?[A-Za-z0-
 
 def _stdio_local_label(identity: str | None, extra: dict, command: str | None) -> Optional[str]:
     prefix = "mcp-stdio/local:"
-    if not identity or not identity.startswith(prefix):
-        return None
-    label = identity[len(prefix) :]
+    label = identity[len(prefix) :] if identity and identity.startswith(prefix) else None
     path = extra.get("component_path")
     if isinstance(path, list) and path:
         last = path[-1]
@@ -1071,7 +1069,7 @@ def _stdio_local_label(identity: str | None, extra: dict, command: str | None) -
             name = last.get("name")
             if isinstance(name, str) and name:
                 label = name
-    if not _SAFE_PACKAGE_NAME_RE.match(label):
+    if not label or not _SAFE_PACKAGE_NAME_RE.match(label):
         return None
     return f"{label} (stdio via {command or 'local command'}, local)"
 

@@ -45,6 +45,29 @@ def test_finding_to_output_explains_direct_mcp_component():
     assert out["matched_advisory"]["id"] == "GHSA-xxxx-yyyy-zzzz"
 
 
+def test_finding_to_output_reads_bom_ref_from_extra_without_graph():
+    # scan bom's flat (non-graph-backed) path calls finding_to_output(graph=None);
+    # bom_components_from_cyclonedx stamps the CycloneDX bom-ref into
+    # ref.extra["bom_ref"], so it must still surface here (ADR-0042: joins
+    # within a BOM use bom-ref).
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="mcp-remote",
+        version="0.1.0",
+        extra={"component_type": "package", "bom_ref": "pkg:npm/mcp-remote@0.1.0"},
+    )
+    finding = Finding(
+        advisory_id="GHSA-xxxx-yyyy-zzzz",
+        component=ref,
+        confidence="high",
+        reason="matched range",
+    )
+
+    out = finding_to_output(finding, None, graph=None)
+
+    assert out["bom_ref"] == "pkg:npm/mcp-remote@0.1.0"
+
+
 def test_finding_to_output_surfaces_external_match_coordinate():
     ref = ComponentRef(
         component_identity="skill/frontend-design",

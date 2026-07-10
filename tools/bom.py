@@ -228,7 +228,11 @@ def bom_components_from_cyclonedx(doc: dict[str, Any]) -> list[BOMComponent]:
     Consumers persist findings against their stored rows by `bom-ref`, so they
     need the ref alongside each reconstructed `ComponentRef`. Components emitted
     by `build_agent_bom` always carry a `bom-ref`; a positional fallback covers
-    any externally-produced doc that omits it.
+    any externally-produced doc that omits it. The `bom-ref` is also stamped
+    into `ref.extra["bom_ref"]`, mirroring `_build_agent_bom_from_graph`, so
+    `component_refs_from_cyclonedx()` (the flat-BOM `scan bom` path) can join
+    occurrence-level findings back to a component the same way the
+    graph-backed path does (ADR-0042).
     """
     components: list[BOMComponent] = []
     for index, component in enumerate(doc.get("components") or []):
@@ -238,6 +242,7 @@ def bom_components_from_cyclonedx(doc: dict[str, Any]) -> list[BOMComponent]:
         bom_ref = component.get("bom-ref")
         if not (isinstance(bom_ref, str) and bom_ref):
             bom_ref = f"component-{index}"
+        ref = replace(ref, extra={**(ref.extra or {}), "bom_ref": bom_ref})
         components.append(BOMComponent(ref=ref, bom_ref=bom_ref))
     return components
 

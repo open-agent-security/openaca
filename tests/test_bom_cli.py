@@ -343,6 +343,8 @@ def test_scan_bom_flat_package_keeps_stored_agent_dependency_scope(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["stats"]["components"] == 1
     assert any(f["id"] == "GHSA-6xpm-ggf7-wc3p" for f in payload["findings"])
+    finding = next(f for f in payload["findings"] if f["id"] == "GHSA-6xpm-ggf7-wc3p")
+    assert finding["bom_ref"] == "pkg:npm/mcp-remote@0.1.0"
 
 
 def test_scan_bom_nontarget_metadata_component_keeps_stored_scope(tmp_path):

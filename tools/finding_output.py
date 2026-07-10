@@ -153,6 +153,10 @@ def finding_to_output(
         node = graph.node_for_ref(ref)
         if node is not None:
             out["bom_ref"] = node.key
+    else:
+        extra_bom_ref = (ref.extra or {}).get("bom_ref")
+        if isinstance(extra_bom_ref, str) and extra_bom_ref:
+            out["bom_ref"] = extra_bom_ref
     declared_by = declared_by_for(ref)
     if declared_by is not None:
         out["declared_by"] = declared_by

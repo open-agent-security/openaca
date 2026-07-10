@@ -13,6 +13,16 @@ ExposureAction = Literal["remove", "pin", "upgrade", "approve", "replace", "acce
 _AGENT_COMPONENT_TYPES = {"plugin", "mcp_server", "skill", "hook", "command", "agent"}
 _SEVERITY_RANK = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
 _CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+# Posture rules that describe a manifest/host-level fact rather than a specific
+# installed component occurrence. These never resolve a bom_ref by design
+# (tools/posture/rules/api_endpoint_override.py, insecure_transport.py,
+# mcp_auto_approve.py), unlike component-scoped posture rules (mutable_install,
+# skill_capability) which always attempt to resolve one from the ComponentRef.
+_ASSET_SCOPED_POSTURE_RULE_IDS = {
+    "openaca-posture-api-endpoint-override",
+    "openaca-posture-insecure-transport",
+    "openaca-posture-mcp-auto-approve",
+}
 
 
 @dataclass(frozen=True)
@@ -246,7 +256,8 @@ def _evidence_from_finding(raw: dict[str, Any]) -> ExposureEvidence | None:
     finding_type = _as_str(raw.get("finding_type")) or "finding"
     bom_ref = _as_str(raw.get("bom_ref"))
     if bom_ref is None:
-        if finding_type == "posture" and _as_str(_component(raw).get("type")) == "agent_config":
+        rule_id = _as_str(raw.get("rule_id"))
+        if finding_type == "posture" and rule_id in _ASSET_SCOPED_POSTURE_RULE_IDS:
             return None
         raise ValueError("component-scoped finding must contain bom_ref")
     if finding_type == "vulnerability":

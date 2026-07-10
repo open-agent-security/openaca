@@ -279,6 +279,36 @@ def test_asset_scoped_posture_does_not_become_a_component_exposure() -> None:
     assert build_exposure_cards({"findings": [finding]}) == []
 
 
+def test_asset_scoped_mcp_server_posture_does_not_crash_exposure_report() -> None:
+    # openaca-posture-insecure-transport and openaca-posture-mcp-auto-approve
+    # describe a manifest-level MCP server entry, not a scanned BOM occurrence,
+    # so they never carry a bom_ref even though their component type
+    # ("mcp_server") is also used by real, bom_ref-bearing BOM components.
+    insecure_transport = {
+        "finding_type": "posture",
+        "rule_id": "openaca-posture-insecure-transport",
+        "title": "Remote MCP endpoint uses insecure transport",
+        "severity": "medium",
+        "confidence": "high",
+        "component": {
+            "type": "mcp_server",
+            "name": "mcp-server/demo @ http://example.com",
+        },
+        "component_path": [{"type": "mcp_server", "name": "mcp-server/demo"}],
+    }
+    auto_approve = {
+        "finding_type": "posture",
+        "rule_id": "openaca-posture-mcp-auto-approve",
+        "title": "MCP server has auto-approval enabled",
+        "severity": "medium",
+        "confidence": "medium",
+        "component": {"type": "mcp_server", "name": "mcp-server/demo autoApprove"},
+        "component_path": [{"type": "mcp_server", "name": "mcp-server/demo"}],
+    }
+
+    assert build_exposure_cards({"findings": [insecure_transport, auto_approve]}) == []
+
+
 def test_shared_decision_function_recomputes_action_for_merged_evidence() -> None:
     vulnerability_card = build_exposure_cards({"findings": [_vulnerability()]})[0]
     posture = {

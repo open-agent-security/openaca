@@ -67,16 +67,15 @@ evidence that made it worth reviewing.
 
 Minimum fields:
 
-- `component_id`: stable identifier from scan output;
-- `component_label`: human label;
-- `component_type`: `plugin`, `mcp_server`, `skill`, `hook`, `command`, `agent`,
-  or `package`;
+- `component`: nullable source-stable `identity`, display `name`, `type`, and
+  observed `versions`;
+- `occurrences`: exact `bom_ref` values with one or more composition paths and
+  active host facts;
 - `rank`: integer position in this report;
 - `priority`: `critical`, `high`, `medium`, `low`, or `info`;
 - `confidence`: `high`, `medium`, or `low`;
 - `action`: one of `remove`, `pin`, `upgrade`, `approve`, `replace`, `accept`,
   or `review`;
-- `composition_path`: target-to-component path from scan output;
 - `evidence`: vulnerability, posture, and observation references;
 - `why_it_matters`: short generated explanation using only available evidence;
 - `scope_limits`: caveats relevant to this card.
@@ -92,6 +91,11 @@ label capability facts by provenance:
 V1 CLI-generated reports should avoid `analyst-added` facts unless the user
 provides an overlay/input file for them. A manual review may add those facts
 after local inspection, but they are not scanner claims.
+
+Every component path node carries `type`, display `name`, exact `bom_ref`,
+nullable source-stable `identity`, and `version` when observed. The engine
+groups by non-null identity and otherwise by exact occurrence. It never creates
+a label-derived rollup identity.
 
 ## Ranking
 
@@ -138,5 +142,9 @@ V1 does not:
 - replace SARIF, GitHub annotations, or raw scan JSON;
 - create OpenACA advisory records.
 
-Aggregating triage cards across multiple endpoints can reuse this card model
-later, but that aggregation is not part of the local V1 report.
+Aggregating evidence across multiple endpoints reuses this model and engine but
+is not part of the local report. A downstream consumer may add asset counts and
+freshness; it must not redefine the card's ranking, action, or explanation.
+Because `bom-ref` is only unique within one BOM, cross-asset consumers keep
+asset scope outside the local occurrence object and call `decide_exposure` on
+the unioned evidence and paths.

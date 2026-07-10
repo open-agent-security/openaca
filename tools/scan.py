@@ -84,7 +84,7 @@ from tools.render import (
     render_text,
 )
 from tools.sarif import to_sarif
-from tools.triage import build_triage_cards
+from tools.triage import build_exposure_cards
 from tools.triage_render import TriageFormat, render_triage_report
 
 _FORMAT_CHOICES = ("text", "github", "json", "markdown")
@@ -563,7 +563,7 @@ def _emit_triage_report(
     output_format: str,
     output_path: Path | None,
 ) -> None:
-    cards = build_triage_cards(scan_doc)
+    cards = build_exposure_cards(scan_doc)
     if output_format not in {"text", "markdown", "json"}:
         raise click.ClickException(f"--report exposure does not support --format {output_format}")
     rendered = render_triage_report(

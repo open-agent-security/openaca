@@ -283,10 +283,15 @@ def test_openaca_scan_json_carries_exposure_triage_contract():
     assert finding["matched_advisory"]["id"] == "GHSA-3q26-f695-pp76"
     assert finding["severity"] == "UNKNOWN"
     assert finding["fixed_in"] == "1.2.3"
-    assert finding["component_path"] == [
-        {"type": "plugin", "name": "exposed"},
-        {"type": "package", "name": "@cyanheads/git-mcp-server"},
-    ]
+    plugin, package = finding["component_path"]
+    assert plugin["type"] == "plugin"
+    assert plugin["name"] == "exposed"
+    assert plugin["identity"] is None
+    assert isinstance(plugin["bom_ref"], str)
+    assert package["type"] == "package"
+    assert package["name"] == "@cyanheads/git-mcp-server"
+    assert package["identity"] == "package/npm/@cyanheads/git-mcp-server"
+    assert package["bom_ref"] == finding["bom_ref"]
     assert finding["declared_by"]["path"].endswith("package.json")
     assert scan_doc["target"]["host_surface"] == "repository"
 
@@ -731,10 +736,15 @@ def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
     assert finding["component"]["name"] == "evil"
     assert finding["declared_by"]["kind"] == "plugin"
     assert finding["declared_by"]["name"] == "vuln-plugin"
-    assert finding["component_path"] == [
-        {"type": "plugin", "name": "vuln-plugin"},
-        {"type": "mcp_server", "name": "evil"},
-    ]
+    plugin, mcp = finding["component_path"]
+    assert plugin["type"] == "plugin"
+    assert plugin["name"] == "vuln-plugin"
+    assert plugin["identity"] == "plugin/m/vuln-plugin"
+    assert isinstance(plugin["bom_ref"], str)
+    assert mcp["type"] == "mcp_server"
+    assert mcp["name"] == "evil"
+    assert mcp["identity"] == "mcp-server/npm/@evil/mcp"
+    assert mcp["bom_ref"] == finding["bom_ref"]
     assert finding["matched_advisory"]["id"] == "CVE-2026-9004"
 
 

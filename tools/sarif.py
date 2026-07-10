@@ -167,7 +167,7 @@ def to_sarif(
     if posture_findings:
         seen_rule_ids: set[str] = {r["id"] for r in rules}
         for p in posture_findings:
-            normalized = posture_to_output(p)
+            normalized = posture_to_output(p, graph=graph)
             if p.rule_id not in seen_rule_ids:
                 seen_rule_ids.add(p.rule_id)
                 rules.append(
@@ -215,7 +215,7 @@ def to_sarif(
     if observations:
         seen_rule_ids = {r["id"] for r in rules}
         for observation in observations:
-            normalized = observation_to_output(observation)
+            normalized = observation_to_output(observation, graph=graph)
             rule_id = f"{observation.source}:{observation.observation_id}"
             if rule_id not in seen_rule_ids:
                 seen_rule_ids.add(rule_id)

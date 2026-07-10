@@ -12,6 +12,8 @@ import tools.identity
 import tools.matcher
 import tools.osv_federation
 import tools.severity
+import tools.triage
+import tools.triage_render
 
 
 def test_facade_reexports_are_identical_objects():
@@ -29,3 +31,12 @@ def test_facade_reexports_are_identical_objects():
     assert core.Finding is tools.matcher.Finding
     assert core.derive_severity_label is tools.severity.derive_severity_label
     assert core.derive_severity_score is tools.severity.derive_severity_score
+    assert core.ExposureCard is tools.triage.ExposureCard
+    assert core.ExposureComponent is tools.triage.ExposureComponent
+    assert core.ExposureDecision is tools.triage.ExposureDecision
+    assert core.ExposureEvidence is tools.triage.ExposureEvidence
+    assert core.ExposureOccurrence is tools.triage.ExposureOccurrence
+    assert core.ExposurePathNode is tools.triage.ExposurePathNode
+    assert core.build_exposure_cards is tools.triage.build_exposure_cards
+    assert core.decide_exposure is tools.triage.decide_exposure
+    assert core.render_triage_report is tools.triage_render.render_triage_report

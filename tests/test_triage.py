@@ -1,237 +1,275 @@
-from tools.triage import build_triage_cards
+from tools.triage import build_exposure_cards, decide_exposure
 
 
-def test_vulnerable_package_groups_under_agent_component_with_upgrade_action():
-    scan_doc = {
-        "findings": [
-            {
-                "finding_type": "vulnerability",
-                "id": "GHSA-test",
-                "title": "Package vulnerability",
-                "severity": "HIGH",
-                "confidence": "high",
-                "fixed_in": "2.0.0",
-                "source": "osv.dev",
-                "component": {"type": "package", "name": "lodash"},
-                "component_path": [
-                    {"type": "plugin", "name": "demo"},
-                    {"type": "mcp_server", "name": "files"},
-                    {"type": "package", "name": "lodash"},
-                ],
-                "attributed_to": "plugin/demo@1.0.0",
-            }
-        ]
-    }
-
-    cards = build_triage_cards(scan_doc)
-
-    assert len(cards) == 1
-    assert cards[0].component_id == "plugin/demo@1.0.0"
-    assert cards[0].component_type == "plugin"
-    assert cards[0].priority == "high"
-    assert cards[0].action == "upgrade"
-    assert cards[0].evidence[0].id == "GHSA-test"
-
-
-def test_multiple_findings_group_under_same_component_and_rank_deterministically():
-    scan_doc = {
-        "findings": [
-            {
-                "finding_type": "vulnerability",
-                "id": "GHSA-b",
-                "severity": "MEDIUM",
-                "confidence": "high",
-                "component": {"type": "package", "name": "b"},
-                "component_path": [{"type": "plugin", "name": "beta"}],
-            },
-            {
-                "finding_type": "posture",
-                "rule_id": "openaca-posture-mutable-install",
-                "title": "Mutable install source",
-                "severity": "high",
-                "confidence": "medium",
-                "component": {"type": "plugin", "name": "alpha"},
-                "component_path": [{"type": "plugin", "name": "alpha"}],
-                "remediation": "Pin mutable install source.",
-            },
-            {
-                "finding_type": "vulnerability",
-                "id": "GHSA-a",
-                "severity": "HIGH",
-                "confidence": "high",
-                "component": {"type": "package", "name": "a"},
-                "component_path": [{"type": "plugin", "name": "alpha"}],
-            },
-        ]
-    }
-
-    cards = build_triage_cards(scan_doc)
-
-    assert [card.component_label for card in cards] == ["alpha", "beta"]
-    assert cards[0].action == "pin"
-    assert [item.id for item in cards[0].evidence] == [
-        "openaca-posture-mutable-install",
-        "GHSA-a",
+def _path(
+    *,
+    plugin_bom_ref: str = "plugin-occurrence",
+    plugin_identity: str | None = "plugin/marketplace/demo",
+    plugin_version: str = "1.0.0",
+    package_bom_ref: str = "package-occurrence",
+) -> list[dict]:
+    return [
+        {
+            "type": "plugin",
+            "name": "demo",
+            "bom_ref": plugin_bom_ref,
+            "identity": plugin_identity,
+            "version": plugin_version,
+        },
+        {
+            "type": "package",
+            "name": "lodash",
+            "bom_ref": package_bom_ref,
+            "identity": "package/npm/lodash",
+            "version": "4.17.20",
+        },
     ]
 
 
-def test_posture_finding_groups_by_component_identity_not_display_label():
-    scan_doc = {
-        "findings": [
-            {
-                "finding_type": "posture",
-                "rule_id": "openaca-posture-mutable-install-reference",
-                "title": "Mutable install source",
-                "severity": "low",
-                "confidence": "high",
-                "component": {
-                    "type": "plugin",
-                    "name": "shared",
-                    "identity": "plugin/marketplace-a/shared",
-                },
-                "component_path": [{"type": "plugin", "name": "shared"}],
-                "remediation": "Pin mutable install source.",
-            },
-            {
-                "finding_type": "posture",
-                "rule_id": "openaca-posture-mutable-install-reference",
-                "title": "Mutable install source",
-                "severity": "low",
-                "confidence": "high",
-                "component": {
-                    "type": "plugin",
-                    "name": "shared",
-                    "identity": "plugin/marketplace-b/shared",
-                },
-                "component_path": [{"type": "plugin", "name": "shared"}],
-                "remediation": "Pin mutable install source.",
-            },
-        ]
+def _vulnerability(**overrides: object) -> dict:
+    finding = {
+        "finding_type": "vulnerability",
+        "id": "GHSA-test",
+        "title": "Package vulnerability",
+        "severity": "HIGH",
+        "confidence": "high",
+        "fixed_in": "4.17.21",
+        "source": "osv.dev",
+        "bom_ref": "package-occurrence",
+        "component": {
+            "type": "package",
+            "name": "lodash",
+            "identity": "package/npm/lodash",
+            "source": {"purl": "pkg:npm/lodash@4.17.20"},
+        },
+        "component_path": _path(),
     }
+    finding.update(overrides)
+    return finding
 
-    cards = build_triage_cards(scan_doc)
 
-    assert len(cards) == 2
-    assert {card.component_id for card in cards} == {
-        "plugin/marketplace-a/shared",
-        "plugin/marketplace-b/shared",
+def test_exposure_card_separates_component_identity_from_occurrences() -> None:
+    cards = build_exposure_cards({"findings": [_vulnerability()]})
+
+    assert len(cards) == 1
+    card = cards[0]
+    assert card.component.to_dict() == {
+        "identity": "plugin/marketplace/demo",
+        "type": "plugin",
+        "name": "demo",
+        "versions": ["1.0.0"],
     }
-
-
-def test_direct_package_backed_mcp_findings_stay_distinct_by_source_purl():
-    # Two direct MCP servers both named `git` share the identity `mcp-server/git`
-    # but launch different packages. They must not merge into one card — the
-    # source purl distinguishes them (regression for label-only grouping).
-    def _finding(purl: str) -> dict:
-        return {
-            "finding_type": "vulnerability",
-            "id": "GHSA-example",
-            "summary": "command injection",
-            "severity": "high",
-            "confidence": "high",
-            "component": {
-                "type": "mcp_server",
-                "name": "git",
-                "identity": "mcp-server/git",
-                "source": {"purl": purl},
-            },
-            "component_path": [{"type": "mcp_server", "name": "git"}],
+    assert [occurrence.to_dict() for occurrence in card.occurrences] == [
+        {
+            "bom_ref": "plugin-occurrence",
+            "composition_paths": [_path()],
+            "active_in": [],
         }
+    ]
+    assert card.priority == "high"
+    assert card.action == "upgrade"
+    assert card.evidence[0].bom_ref == "package-occurrence"
 
-    scan_doc = {"findings": [_finding("pkg:npm/a@1.0.0"), _finding("pkg:npm/b@1.0.0")]}
 
-    cards = build_triage_cards(scan_doc)
+def test_same_identity_rolls_versions_and_occurrences_into_one_card() -> None:
+    second = _vulnerability(
+        id="GHSA-second",
+        bom_ref="package-occurrence-2",
+        component_path=_path(
+            plugin_bom_ref="plugin-occurrence-2",
+            plugin_version="1.1.0",
+            package_bom_ref="package-occurrence-2",
+        ),
+    )
+
+    cards = build_exposure_cards({"findings": [_vulnerability(), second]})
+
+    assert len(cards) == 1
+    assert cards[0].component.versions == ["1.0.0", "1.1.0"]
+    assert [item.bom_ref for item in cards[0].occurrences] == [
+        "plugin-occurrence",
+        "plugin-occurrence-2",
+    ]
+    assert {item.id for item in cards[0].evidence} == {"GHSA-test", "GHSA-second"}
+
+
+def test_unidentified_aliases_remain_distinct_occurrences() -> None:
+    first = _vulnerability(component_path=_path(plugin_identity=None))
+    second = _vulnerability(
+        id="GHSA-second",
+        bom_ref="package-occurrence-2",
+        component_path=_path(
+            plugin_bom_ref="plugin-occurrence-2",
+            plugin_identity=None,
+            package_bom_ref="package-occurrence-2",
+        ),
+    )
+
+    cards = build_exposure_cards({"findings": [first, second]})
 
     assert len(cards) == 2
-    assert {card.component_id for card in cards} == {"pkg:npm/a@1.0.0", "pkg:npm/b@1.0.0"}
+    assert all(card.component.identity is None for card in cards)
+    assert {card.occurrences[0].bom_ref for card in cards} == {
+        "plugin-occurrence",
+        "plugin-occurrence-2",
+    }
 
 
-def test_package_children_group_under_their_mcp_ancestor():
-    # Two vulnerable packages under the same MCP server (no plugin attribution)
-    # must group into one card keyed by the MCP ancestor — the child package
-    # purl must NOT split them into a card per dependency.
-    def _finding(pkg: str) -> dict:
+def test_direct_package_backed_mcps_group_by_role_qualified_identity() -> None:
+    def finding(alias: str, bom_ref: str, identity: str, version: str) -> dict:
         return {
-            "finding_type": "vulnerability",
-            "id": f"GHSA-{pkg}",
-            "summary": "vuln",
-            "severity": "high",
+            "finding_type": "posture",
+            "rule_id": f"posture-{bom_ref}",
+            "title": "Mutable install source",
+            "severity": "low",
             "confidence": "high",
-            "component": {
-                "type": "package",
-                "name": pkg,
-                "identity": f"package/npm/{pkg}",
-                "source": {"purl": f"pkg:npm/{pkg}@1.0.0"},
-            },
+            "bom_ref": bom_ref,
+            "component": {"type": "mcp_server", "name": alias, "identity": identity},
             "component_path": [
-                {"type": "mcp_server", "name": "git"},
-                {"type": "package", "name": pkg},
+                {
+                    "type": "mcp_server",
+                    "name": alias,
+                    "bom_ref": bom_ref,
+                    "identity": identity,
+                    "version": version,
+                }
             ],
+            "remediation": "Pin the package version.",
         }
 
-    scan_doc = {"findings": [_finding("hono"), _finding("send")]}
-
-    cards = build_triage_cards(scan_doc)
-
-    assert len(cards) == 1
-    assert cards[0].component_id == "mcp_server/git"
-    assert cards[0].component_type == "mcp_server"
-    assert len(cards[0].evidence) == 2
-
-
-def test_malware_finding_takes_priority_over_mutable_posture_action():
+    shared = "mcp-server/npm/@modelcontextprotocol/server-filesystem"
     scan_doc = {
         "findings": [
-            {
-                "finding_type": "vulnerability",
-                "id": "MAL-2024-1234",
-                "title": "Known malicious package",
-                "severity": "critical",
-                "confidence": "high",
-                "source": "osv.dev",
-                "component": {"type": "package", "name": "evil-pkg"},
-                "component_path": [
-                    {"type": "plugin", "name": "demo"},
-                    {"type": "package", "name": "evil-pkg"},
-                ],
-            },
-            {
-                "finding_type": "posture",
-                "rule_id": "openaca-posture-mutable-install-reference",
-                "title": "Mutable install source",
-                "severity": "high",
-                "confidence": "medium",
-                "component": {"type": "plugin", "name": "demo"},
-                "component_path": [{"type": "plugin", "name": "demo"}],
-                "remediation": "Pin mutable install source.",
-            },
+            finding("fs", "mcp-a", shared, "1.0.0"),
+            finding("files", "mcp-b", shared, "1.1.0"),
+            finding("files", "mcp-c", "mcp-server/npm/other", "2.0.0"),
         ]
     }
 
-    cards = build_triage_cards(scan_doc)
+    cards = build_exposure_cards(scan_doc)
+
+    assert len(cards) == 2
+    shared_card = next(card for card in cards if card.component.identity == shared)
+    assert shared_card.component.versions == ["1.0.0", "1.1.0"]
+    assert {item.bom_ref for item in shared_card.occurrences} == {"mcp-a", "mcp-b"}
+
+
+def test_multiple_finding_types_share_decision_rules() -> None:
+    posture = {
+        "finding_type": "posture",
+        "rule_id": "openaca-posture-mutable-install-reference",
+        "title": "Mutable install source",
+        "severity": "high",
+        "confidence": "medium",
+        "bom_ref": "plugin-occurrence",
+        "component": {
+            "type": "plugin",
+            "name": "demo",
+            "identity": "plugin/marketplace/demo",
+        },
+        "component_path": _path()[:1],
+        "remediation": "Pin mutable install source.",
+    }
+
+    cards = build_exposure_cards({"findings": [_vulnerability(), posture]})
 
     assert len(cards) == 1
-    assert cards[0].action == "remove"
+    assert cards[0].action == "pin"
+    assert [item.id for item in cards[0].evidence] == [
+        "openaca-posture-mutable-install-reference",
+        "GHSA-test",
+    ]
 
 
-def test_low_confidence_observation_defaults_to_review():
-    scan_doc = {
-        "findings": [
+def test_malware_action_takes_precedence() -> None:
+    malware = _vulnerability(id="MAL-2026-1234", severity="critical", fixed_in=None)
+
+    card = build_exposure_cards({"findings": [malware]})[0]
+
+    assert card.action == "remove"
+
+
+def test_low_confidence_observation_defaults_to_review() -> None:
+    finding = {
+        "finding_type": "observation",
+        "observation_id": "X007",
+        "title": "Could not reach scanner",
+        "severity": "info",
+        "confidence": "low",
+        "source": "skillspector",
+        "bom_ref": "skill-occurrence",
+        "component": {"type": "skill", "name": "frontend", "identity": None},
+        "component_path": [
             {
-                "finding_type": "observation",
-                "observation_id": "X007",
-                "title": "Could not reach scanner",
-                "severity": "info",
-                "confidence": "low",
-                "source": "skillspector",
-                "component": {"type": "skill", "name": "frontend"},
-                "component_path": [{"type": "skill", "name": "frontend"}],
+                "type": "skill",
+                "name": "frontend",
+                "bom_ref": "skill-occurrence",
+                "identity": None,
             }
-        ]
+        ],
     }
 
-    cards = build_triage_cards(scan_doc)
+    card = build_exposure_cards({"findings": [finding]})[0]
 
-    assert cards[0].action == "review"
-    assert cards[0].confidence == "low"
-    assert cards[0].evidence[0].provenance == "external-scanner-derived"
+    assert card.action == "review"
+    assert card.confidence == "low"
+    assert card.evidence[0].provenance == "external-scanner-derived"
+
+
+def test_component_scoped_finding_requires_an_occurrence_key() -> None:
+    finding = _vulnerability(bom_ref=None, component_path=[])
+
+    try:
+        build_exposure_cards({"findings": [finding]})
+    except ValueError as exc:
+        assert "bom_ref" in str(exc)
+    else:
+        raise AssertionError("expected a missing bom_ref error")
+
+
+def test_asset_scoped_posture_does_not_become_a_component_exposure() -> None:
+    finding = {
+        "finding_type": "posture",
+        "rule_id": "openaca-posture-api-endpoint-override",
+        "title": "Claude API endpoint is overridden",
+        "severity": "high",
+        "confidence": "medium",
+        "component": {"type": "agent_config", "name": "claude-settings/api-endpoint"},
+        "component_path": [{"type": "agent_config", "name": "api-endpoint"}],
+    }
+
+    assert build_exposure_cards({"findings": [finding]}) == []
+
+
+def test_shared_decision_function_recomputes_action_for_merged_evidence() -> None:
+    vulnerability_card = build_exposure_cards({"findings": [_vulnerability()]})[0]
+    posture = {
+        "finding_type": "posture",
+        "rule_id": "openaca-posture-mutable-install-reference",
+        "title": "Mutable install source",
+        "severity": "medium",
+        "confidence": "high",
+        "bom_ref": "plugin-occurrence",
+        "component": {
+            "type": "plugin",
+            "name": "demo",
+            "identity": "plugin/marketplace/demo",
+        },
+        "component_path": _path()[:1],
+        "remediation": "Pin mutable install source.",
+    }
+    posture_card = build_exposure_cards({"findings": [posture]})[0]
+
+    decision = decide_exposure(
+        vulnerability_card.component,
+        [*vulnerability_card.evidence, *posture_card.evidence],
+        [
+            path
+            for card in (vulnerability_card, posture_card)
+            for occurrence in card.occurrences
+            for path in occurrence.composition_paths
+        ],
+    )
+
+    assert vulnerability_card.action == "upgrade"
+    assert decision.action == "pin"

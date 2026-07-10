@@ -120,10 +120,10 @@ def test_finding_to_output_derives_component_path_from_graph_lineage():
     )
     skill_ref = ComponentRef(
         name="deploy",
-        component_identity="skill/deploy",
+        component_identity="skill/plugin/m/acme-devtools/deploy",
         source_manifest="skills/deploy/SKILL.md",
         source_locator="$.frontmatter",
-        extra={"component_type": "skill"},
+        extra={"component_type": "skill", "_identity_finalized": True},
     )
     pkg_ref = ComponentRef(
         ecosystem="npm",
@@ -150,10 +150,28 @@ def test_finding_to_output_derives_component_path_from_graph_lineage():
     out = finding_to_output(finding, None, graph=graph)
 
     assert out["component_path"] == [
-        {"type": "plugin", "name": "acme-devtools"},
-        {"type": "skill", "name": "deploy"},
-        {"type": "package", "name": "lodash"},
+        {
+            "type": "plugin",
+            "name": "acme-devtools",
+            "bom_ref": "plugin-node",
+            "identity": "plugin/m/acme-devtools",
+        },
+        {
+            "type": "skill",
+            "name": "deploy",
+            "bom_ref": "skill-node",
+            "identity": "skill/plugin/m/acme-devtools/deploy",
+        },
+        {
+            "type": "package",
+            "name": "lodash",
+            "bom_ref": "pkg-node",
+            "identity": "package/npm/lodash",
+            "version": "4.17.20",
+        },
     ]
+    assert out["component"]["identity"] == "package/npm/lodash"
+    assert out["bom_ref"] == "pkg-node"
 
 
 def test_finding_to_output_marks_source_unknown_for_source_less_skill():

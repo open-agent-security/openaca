@@ -40,9 +40,10 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 033 | [Composition graph](033-composition-graph.md) | ✅ Done | 032 |
 | 034 | [MCP launch dependency resolution](034-mcp-launch-dependency-resolution.md) | ✅ Done | 033 |
 | 035 | [Plugin-first CLI primitives](035-plugin-first-cli-primitives.md) | ✅ Done | 034 |
-| 036 | [Triage command and exposure reports](036-triage-and-exposure-reports.md) | ⏸ Pending | 033, 035 |
+| 036 | [Triage command and exposure reports](036-triage-and-exposure-reports.md) | ✅ Done | 033, 035 |
 | 037 | [Agent component capability extraction](037-capability-extraction.md) | ⏸ Pending | 033 |
 | 038 | [Source-stable component identity](038-source-stable-component-identity.md) | ✅ Done | 033, 034, 037 |
+| 039 | [Shared exposure contract](039-shared-exposure-contract.md) | ✅ Done | 036, 038 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

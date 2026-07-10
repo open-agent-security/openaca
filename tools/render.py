@@ -786,9 +786,9 @@ def render_json(
         entry["source"] = _source_for_advisory(adv)
         out_findings.append(entry)
     for p in posture_findings or []:
-        out_findings.append(posture_to_output(p))
+        out_findings.append(posture_to_output(p, graph=graph))
     for observation in observations or []:
-        out_findings.append(observation_to_output(observation))
+        out_findings.append(observation_to_output(observation, graph=graph))
     document = {
         "findings": out_findings,
         "stats": {

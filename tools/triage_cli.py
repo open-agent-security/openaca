@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import click
 
-from tools.triage import build_triage_cards
+from tools.triage import build_exposure_cards
 from tools.triage_render import TriageFormat, render_triage_report
 
 
@@ -49,7 +49,7 @@ def main(
         raise click.ClickException(f"unsupported report type: {report_kind}")
     scan_doc = _read_scan_json(scan_json)
     try:
-        cards = build_triage_cards(scan_doc)
+        cards = build_exposure_cards(scan_doc)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     rendered = render_triage_report(

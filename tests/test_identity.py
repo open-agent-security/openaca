@@ -50,6 +50,39 @@ def test_github_sourced_mcp_identity_is_not_masked_by_uvx_from():
     assert canonical_component_identity(ref) == "mcp-server/github/oraios/serena"
 
 
+def test_non_registry_npm_spec_does_not_mint_fake_package_identity():
+    # `npx <tarball-url>` is a valid npm install spec but not a registry
+    # package name; minting `mcp-server/npm/<url>` would be a stable-looking
+    # identity for a spec that isn't stable at all.
+    ref = ComponentRef(
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx https://example.com/pkg.tgz",
+            "component_path": [{"type": "mcp_server", "name": "custom"}],
+        },
+    )
+
+    assert canonical_component_identity(ref) is None
+
+
+def test_non_registry_npm_spec_falls_back_to_parsed_ref_identity():
+    # install_source is a raw git URL spec (unsafe), but the parser already
+    # resolved a registry-safe ecosystem/name onto the ref itself. Fall back
+    # to that instead of minting an identity from the raw install_source
+    # token.
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@acme/adapter",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx git+https://github.com/owner/repo",
+            "component_path": [{"type": "mcp_server", "name": "custom"}],
+        },
+    )
+
+    assert canonical_component_identity(ref) == "mcp-server/npm/@acme/adapter"
+
+
 def test_package_source_ref_identity_is_graph_native():
     # Option B: a package-source ref's identity is `package/{eco}/{name}`;
     # parentage lives on the graph edge, not in the identity string.

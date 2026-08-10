@@ -78,11 +78,20 @@ degrades past ~20 records per session due to context budget.
      for malicious MCP servers and malicious tool plugins — do
      not flag these for downgrade. Flag for downgrade to
      `AML.T0010.001` (AI Software, general) and removal of
-     `AML.T0104` (Publish Poisoned AI Agent Tool) only when the
+     `AML.T0104` (Publish Poisoned AI Agent Tool) when the
      OSV record describes a general AI library, LLM framework,
      or developer tooling (CLI / inspector / SDK / lib /
      scaffolder / `*-dev-*`) with no server or agent-tool
      evidence.
+
+     Independently of that downgrade check, for every batch record
+     that carries `AML.T0104`, confirm the OSV evidence describes the
+     adversary *publishing* the poisoned tool into a registry,
+     repository, catalog, or hosted remote-tool directory
+     (`docs/frameworks/mitre-atlas.md` T0104 rule). Compromise of an
+     already-published, already-connected endpoint is not
+     publication — flag `AML.T0104` for removal in that case even
+     when `AML.T0010.005` is correct and stays.
    - **Audit 2 — `AML.T0074` (Masquerading) missing/over-applied.**
      For every batch record, check the package name for typosquat
      fingerprints: exact upstream leaf under a non-canonical scope

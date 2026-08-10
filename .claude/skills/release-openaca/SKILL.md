@@ -113,8 +113,14 @@ git diff "${prev_tag}..HEAD" -- tools/bom.py | grep -E "OPENACA_BOM_SCHEMA_VERSI
   edges, properties, or component types) but `OPENACA_BOM_SCHEMA_VERSION`
   / `schema/openaca-bom.schema.json` did **not** change → bump
   `OPENACA_BOM_SCHEMA_VERSION` and document it under `## Compatibility`.
-- The overlay record shape changed but `schema/openaca.schema.json` (and
-  the records' `schema_version`) did **not** → bump.
+- The overlay record shape changed but `schema/openaca.schema.json` did
+  **not** → update the JSON Schema to match. Never rewrite the records'
+  own `schema_version` field: it is the upstream OSV schema version,
+  copied per record by the seeder (the corpus legitimately mixes values
+  like `1.7.3` and `1.7.5`), not an OpenACA format counter. If consumers
+  ever need an OpenACA overlay-format version signal, that is a design
+  decision (new field under `database_specific.openaca`, own ADR) — not
+  a release-time bump.
 
 Bump on *consumer-visible format change*, not on every release. If the
 format genuinely didn't change, say so in one line in the release PR so

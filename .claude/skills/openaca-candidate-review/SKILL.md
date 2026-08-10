@@ -15,6 +15,13 @@ LLM provider path.
 - `/openaca-candidate-review candidates/` — every candidate whose
   `_candidate.review_status` is `needs_review`
 
+Directory mode selects **direct children of `candidates/` only** —
+never files under `candidates/ready_for_review/` or
+`candidates/rejected/`. Files moved to `ready_for_review/` keep
+`review_status: needs_review` (this skill forbids editing
+`_candidate`), so a recursive selection would re-edit the stable
+external-review queue.
+
 For directory mode, if there are more than 20 candidates to review,
 stop and ask the user to split into smaller batches; quality
 degrades past ~20 records per session due to context budget.

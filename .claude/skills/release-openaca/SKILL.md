@@ -42,7 +42,7 @@ git rev-parse --abbrev-ref HEAD                    # must be main
 git status --porcelain                              # must be empty
 git fetch --tags origin
 git rev-parse --verify "v<version>" 2>/dev/null    # MUST FAIL — tag not yet exists
-git rev-parse HEAD == git rev-parse origin/main    # in sync with remote
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"    # in sync with remote
 ```
 
 Surface any failures verbatim to the user; do not try to "fix" a dirty
@@ -179,9 +179,15 @@ uv lock                                            # refresh uv.lock
 
 ### Step 5. Release-prep commit + PR
 
+If the user's original request did not explicitly ask to cut, ship, or
+publish a release, stop before the push/PR commands and ask for confirmation.
+Editing `pyproject.toml`'s version field is enough to invoke this skill, but
+it is not by itself permission to publish a branch or open a PR.
+
 ```bash
 git checkout -b release/<version>
-git add pyproject.toml uv.lock docs/releases/v<version>.md
+git add pyproject.toml uv.lock README.md docs schema overlays tools/bom.py
+git diff --name-only        # MUST be empty; inspect/stage intended release-prep files or stop
 git commit -m "release: <version> — <theme>"
 git push -u origin release/<version>
 gh pr create --title "release: <version>" --body "$(cat <<EOF

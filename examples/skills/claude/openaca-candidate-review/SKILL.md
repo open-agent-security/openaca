@@ -55,11 +55,15 @@ degrades past ~20 records per session due to context budget.
      tool.
 5. **Validate.** After all edits, run:
    ```
-   uv run openaca lint candidates/
+   for f in <list of candidate files edited in this batch>; do
+     uv run openaca lint "$f"
+   done
    ```
    If validation fails, read the error message, correct the
    relevant candidate, and re-run validation. Do not move on with
-   unresolved validation errors.
+   unresolved validation errors. Do not lint the whole `candidates/`
+   tree from this skill: rejected candidates are intentionally not
+   schema-valid review targets.
 6. **Internal audit pass (before user review).** Dispatch three
    parallel subagents (single tool-call block, type
    `general-purpose`, read-only) that each audit the batch for one
@@ -102,8 +106,8 @@ degrades past ~20 records per session due to context budget.
      code for removal.
 
    Apply the audit findings as another bulk edit pass, then re-run
-   `uv run openaca lint candidates/` to confirm structural validity
-   after revisions.
+   lint on the edited batch files to confirm structural validity after
+   revisions.
 7. **Move approved candidates to `candidates/ready_for_review/`.**
    After annotation + lint + audit are clean, `mv` each candidate
    from `candidates/<id>.yaml` to `candidates/ready_for_review/<id>.yaml`.
@@ -121,7 +125,12 @@ degrades past ~20 records per session due to context budget.
    ```bash
    mkdir -p candidates/ready_for_review
    for f in <list of approved candidate filenames>; do
-     mv "candidates/${f}" "candidates/ready_for_review/${f}"
+     dest="candidates/ready_for_review/${f}"
+     if [ -e "$dest" ]; then
+       echo "STOP: $dest already exists - compare before overwriting"
+       exit 1
+     fi
+     mv "candidates/${f}" "$dest"
    done
    ```
 

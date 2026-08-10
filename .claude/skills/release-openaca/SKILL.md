@@ -223,11 +223,20 @@ git tag v<version>
 git push origin v<version>
 ```
 
-Then watch the workflow:
+Then watch the workflow. The tag-triggered run registers asynchronously,
+so `--limit 1` can grab a stale earlier run; poll for the run tied to the
+tagged commit and watch that ID:
 
 ```bash
-gh run watch --repo open-agent-security/openaca \
-  $(gh run list --repo open-agent-security/openaca --workflow publish-pypi.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+tag_sha=$(git rev-parse "v<version>^{commit}")
+run_id=""
+until [ -n "$run_id" ]; do
+  run_id=$(gh run list --repo open-agent-security/openaca \
+    --workflow publish-pypi.yml --commit "$tag_sha" \
+    --json databaseId --jq '.[0].databaseId // empty')
+  [ -z "$run_id" ] && sleep 5
+done
+gh run watch --repo open-agent-security/openaca "$run_id"
 ```
 
 ### Step 7. Verify

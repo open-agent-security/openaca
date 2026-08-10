@@ -81,20 +81,25 @@ contradicts it. (b7 example: README still showed the pre-ADR-0029
 
 ### Step 2c. Schema-version drift check (don't skip)
 
-Two formats carry their own version, **independent of the package
-version**, and consumers rely on them to detect changes:
+Two consumer-visible formats can drift, and only one carries an
+OpenACA-owned version:
 
-- **BOM output:** `OPENACA_BOM_SCHEMA_VERSION` in `tools/bom.py` (emitted
-  as the `openaca:schema_version` BOM property) + `schema/openaca-bom.schema.json`.
-  The Fleet backend that ingests uploaded BOMs and the site corpus
-  pipeline read this to tell formats apart.
-- **Overlay record:** `schema_version` rules in `schema/openaca.schema.json`.
+- **BOM output** carries `OPENACA_BOM_SCHEMA_VERSION` in `tools/bom.py`
+  (emitted as the `openaca:schema_version` BOM property) +
+  `schema/openaca-bom.schema.json`, **independent of the package
+  version**. Downstream consumers that ingest uploaded BOMs read this to
+  tell formats apart.
+- **Overlay records** are validated by `schema/openaca.schema.json`.
+  They have **no OpenACA-owned version field** — each record's
+  `schema_version` is the upstream OSV schema version, copied per record
+  by the seeder. The JSON Schema is the format definition; keep it in
+  sync with shape changes.
 
-A format change that does **not** bump its version field is silent and
-breaks downstream change-detection. This has already bitten us: 0.2.0
-shipped a graph-encoded Agent BOM (explicit dependencies, `attributed_to`
-removed, `library` component type) but left `openaca:schema_version` at
-`0.1`. Do not repeat it.
+A BOM format change that does **not** bump `OPENACA_BOM_SCHEMA_VERSION`
+is silent and breaks downstream change-detection. This has already
+bitten us: 0.2.0 shipped a graph-encoded Agent BOM (explicit
+dependencies, `attributed_to` removed, `library` component type) but
+left `openaca:schema_version` at `0.1`. Do not repeat it.
 
 Diff the format-defining files since the previous release:
 

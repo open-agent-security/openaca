@@ -180,9 +180,9 @@ uv lock                                            # refresh uv.lock
 ### Step 5. Release-prep commit + PR
 
 If the user's original request did not explicitly ask to cut, ship, or
-publish a release, stop before the push/PR commands and ask for confirmation.
+publish a release, stop before the push commands and ask for confirmation.
 Editing `pyproject.toml`'s version field is enough to invoke this skill, but
-it is not by itself permission to publish a branch or open a PR.
+it is not by itself permission to publish a branch.
 
 ```bash
 git checkout -b release/<version>
@@ -190,6 +190,14 @@ git add pyproject.toml uv.lock README.md docs schema overlays tools/bom.py
 git diff --name-only        # MUST be empty; inspect/stage intended release-prep files or stop
 git commit -m "release: <version> — <theme>"
 git push -u origin release/<version>
+```
+
+Opening the PR needs its own explicit ask — "cut a release" or "publish
+`<version>`" authorizes the branch push above but not opening a PR. Stop
+here and confirm before running `gh pr create`, unless the user's original
+request explicitly asked for a PR too.
+
+```bash
 gh pr create --title "release: <version>" --body "$(cat <<EOF
 Release prep for <version>.
 

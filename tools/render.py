@@ -31,7 +31,12 @@ from urllib.parse import urlparse, urlunparse
 from packaging.version import InvalidVersion, Version
 
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
-from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
+from tools.finding_output import (
+    finding_to_output,
+    observation_to_output,
+    overlay_taxonomies,
+    posture_to_output,
+)
 from tools.graph import Graph, Node, ref_occurrence_key
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -86,6 +91,10 @@ _SEVERITY_COLOR = {
     "UNKNOWN": "\x1b[2m",
 }
 _RESET = "\x1b[0m"
+
+# Edition marker on the default agentic line, mirroring the `[osv.dev]` source
+# marker on the finding line above it. Tracks docs/frameworks/.
+_ASI_FRAMEWORK = "owasp-agentic-top-10-2026"
 
 
 # ── Helpers shared across formats ────────────────────────────────────────────
@@ -431,18 +440,24 @@ def _render_finding_groups(
             out.append(
                 f"  {label_disp}  {f.advisory_id}  fixed in {fixed_in}  {summary}  [{source}]"
             )
+            taxonomies = overlay_taxonomies(adv)
+            agentic = taxonomies.get("owasp_agentic_top10")
+            if agentic:
+                # Codes are lowercase in the corpus; OWASP writes them uppercase.
+                codes = ", ".join(code.upper() for code in agentic)
+                out.append(f"        owasp-asi: {codes}  [{_ASI_FRAMEWORK}]")
             if verbose:
                 ds_openaca = (adv.get("database_specific") or {}).get("openaca") or {}
                 if not isinstance(ds_openaca, dict):
                     ds_openaca = {}
-                taxonomies = ds_openaca.get("taxonomies") or {}
-                if isinstance(taxonomies, dict):
-                    taxonomy_parts = []
-                    for family, values in sorted(taxonomies.items()):
-                        if isinstance(values, list) and values:
-                            taxonomy_parts.append(f"{family}={','.join(str(v) for v in values)}")
-                    if taxonomy_parts:
-                        out.append(f"        taxonomies: {'; '.join(taxonomy_parts)}")
+                # The agentic family already printed above; -v adds the rest.
+                taxonomy_parts = [
+                    f"{family}={','.join(values)}"
+                    for family, values in sorted(taxonomies.items())
+                    if family != "owasp_agentic_top10"
+                ]
+                if taxonomy_parts:
+                    out.append(f"        taxonomies: {'; '.join(taxonomy_parts)}")
                 evidence_level = ds_openaca.get("evidence_level")
                 if isinstance(evidence_level, str):
                     out.append(f"        evidence_level: {evidence_level}")

@@ -400,20 +400,85 @@ def test_text_color_escapes_present_when_enabled():
     assert "\x1b[" not in out_plain
 
 
-def test_text_verbose_adds_taxonomies_and_evidence_level():
+def test_text_verbose_adds_evidence_level_and_remaining_taxonomies():
     findings = [_finding("X", "pkg", "1.0.0")]
     advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
     advisory["database_specific"]["openaca"]["taxonomies"] = {
-        "owasp_agentic_top10": ["asi02", "asi05"]
+        "owasp_agentic_top10": ["asi02", "asi05"],
+        "owasp_mcp_top10": ["mcp03:2025"],
     }
     advisory["database_specific"]["openaca"]["evidence_level"] = "confirmed"
     index = {"X": advisory}
     out_v = render_text(findings, index, _stats(), verbose=True)
     out_p = render_text(findings, index, _stats(), verbose=False)
-    assert "taxonomies: owasp_agentic_top10=asi02,asi05" in out_v
+    assert "taxonomies: owasp_mcp_top10=mcp03:2025" in out_v
     assert "evidence_level: confirmed" in out_v
     assert "confidence:" in out_v
+    # The agentic family is shown by default, so -v must not repeat it.
+    assert "owasp_agentic_top10=" not in out_v
+    # The generic taxonomies line stays verbose-only.
     assert "taxonomies:" not in out_p
+    assert "owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]" in out_p
+
+
+def test_text_default_shows_agentic_taxonomy():
+    findings = [_finding("X", "pkg", "1.0.0")]
+    advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
+    advisory["database_specific"]["openaca"]["taxonomies"] = {
+        "owasp_agentic_top10": ["asi02", "asi05"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+    index = {"X": advisory}
+    out = render_text(findings, index, _stats(), verbose=False)
+    assert "owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]" in out
+    # Other families stay behind -v.
+    assert "AML.T0051" not in out
+
+
+def test_text_default_omits_agentic_line_without_overlay():
+    findings = [_finding("X", "pkg", "1.0.0")]
+    index = {"X": _advisory("X", "npm", "pkg", severity_label="HIGH")}
+    out = render_text(findings, index, _stats(), verbose=False)
+    assert "owasp-asi:" not in out
+
+
+def test_text_default_omits_agentic_line_when_family_absent():
+    findings = [_finding("X", "pkg", "1.0.0")]
+    advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
+    advisory["database_specific"]["openaca"]["taxonomies"] = {
+        "mitre_atlas": ["AML.T0051"],
+    }
+    index = {"X": advisory}
+    out = render_text(findings, index, _stats(), verbose=False)
+    assert "owasp-asi:" not in out
+
+
+def test_text_verbose_does_not_repeat_agentic_family():
+    """-v is additive: the generic taxonomies line covers the families the
+    default `owasp-asi:` line did not already show."""
+    findings = [_finding("X", "pkg", "1.0.0")]
+    advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
+    advisory["database_specific"]["openaca"]["taxonomies"] = {
+        "owasp_agentic_top10": ["asi02"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+    index = {"X": advisory}
+    out = render_text(findings, index, _stats(), verbose=True)
+    assert "owasp-asi: ASI02  [owasp-agentic-top-10-2026]" in out
+    assert "taxonomies: mitre_atlas=AML.T0051" in out
+    assert "owasp_agentic_top10=" not in out
+
+
+def test_text_verbose_omits_taxonomies_line_when_only_agentic_present():
+    findings = [_finding("X", "pkg", "1.0.0")]
+    advisory = _advisory("X", "npm", "pkg", severity_label="HIGH")
+    advisory["database_specific"]["openaca"]["taxonomies"] = {
+        "owasp_agentic_top10": ["asi02"],
+    }
+    index = {"X": advisory}
+    out = render_text(findings, index, _stats(), verbose=True)
+    assert "owasp-asi: ASI02  [owasp-agentic-top-10-2026]" in out
+    assert "taxonomies:" not in out
 
 
 def test_text_verbose_adds_direct_component_identity_details():

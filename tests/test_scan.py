@@ -1076,7 +1076,7 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
 
     assert result.exit_code == 1, result.output
     assert "GHSA-3q26-f695-pp76" in result.output
-    assert "taxonomies: owasp_agentic_top10=asi02,asi05" in result.output
+    assert "owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]" in result.output
     assert "evidence_level: confirmed" in result.output
 
 
@@ -1625,6 +1625,36 @@ def test_scan_format_json_produces_parseable_document(tmp_path):
         "findings"
     ][0].keys()
     assert "stats" in parsed
+
+
+def test_scan_format_json_carries_overlay_taxonomies():
+    """The JSON envelope surfaces overlay taxonomies for an overlaid finding."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(FIXTURES / "repos" / "exposed-mcp"),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    output = result.output
+    start = output.index("{")
+    parsed = None
+    for end in range(len(output), start, -1):
+        try:
+            parsed = json.loads(output[start:end])
+            break
+        except json.JSONDecodeError:
+            continue
+    assert parsed is not None
+
+    overlaid = [f for f in parsed["findings"] if f.get("id") == "GHSA-3q26-f695-pp76"]
+    assert overlaid, parsed["findings"]
+    assert overlaid[0]["taxonomies"]["owasp_agentic_top10"] == ["asi02", "asi05"]
 
 
 def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch):

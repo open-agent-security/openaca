@@ -121,6 +121,14 @@ Each finding includes:
   component.
 - `component_path` - containment path such as `plugin -> mcp_server`.
 - `matched_advisory` - advisory identity for vulnerability findings.
+- `taxonomies` - OpenACA overlay taxonomy mappings (e.g. `owasp_agentic_top10`)
+  for the matched advisory. Absent entirely when the advisory carries no
+  overlay.
+
+Posture findings always carry a `standards` key, even when it is `{}`, while
+vulnerability findings omit `taxonomies` entirely when empty; a consumer
+iterating one `findings[]` array should expect both conventions depending on
+`finding_type`.
 
 Overlay records remain advisory data. They do not store local scan context such
 as `active_in`, `declared_by`, or `component_path`.

@@ -118,6 +118,7 @@ Found 1 vulnerability in 1 package.
   fix:      upgrade to >=2.1.5
 
   HIGH  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]
+        owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]
 
 Next
   emit Agent BOM: openaca bom repo --target . --output openaca-bom.json

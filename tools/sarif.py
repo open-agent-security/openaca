@@ -61,6 +61,9 @@ def _properties_for(finding: Finding, advisory: dict | None, graph: Graph | None
     attributed_to = output.get("attributed_to")
     if isinstance(attributed_to, str) and attributed_to:
         props["attributed_to"] = attributed_to
+    taxonomies = output.get("taxonomies")
+    if isinstance(taxonomies, dict) and taxonomies:
+        props["taxonomies"] = taxonomies
     extra = finding.component.extra or {}
     if "transitive" in extra:
         transitive = bool(extra["transitive"])

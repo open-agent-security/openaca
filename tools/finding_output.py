@@ -127,6 +127,32 @@ def _matched_advisory_for(advisory_id: str, advisory: dict | None) -> dict[str, 
     return matched
 
 
+def overlay_taxonomies(advisory: dict | None) -> dict[str, list[str]]:
+    """Extract `database_specific.openaca.taxonomies` from an advisory record.
+
+    Upstream OSV records are third-party data, so every level is guarded.
+    Families with a missing, non-list, or empty value are dropped. This
+    excludes `supplemental_taxonomies`, which the schema defines as an object
+    of arrays rather than a list, pending a shape decision.
+    """
+    if not isinstance(advisory, dict):
+        return {}
+    database_specific = advisory.get("database_specific")
+    if not isinstance(database_specific, dict):
+        return {}
+    openaca = database_specific.get("openaca")
+    if not isinstance(openaca, dict):
+        return {}
+    taxonomies = openaca.get("taxonomies")
+    if not isinstance(taxonomies, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for family, values in taxonomies.items():
+        if isinstance(values, list) and values:
+            out[str(family)] = [str(v) for v in values]
+    return out
+
+
 def finding_to_output(
     finding: Finding, advisory: dict | None, *, graph: Graph | None = None
 ) -> dict[str, Any]:
@@ -146,6 +172,9 @@ def finding_to_output(
         "component_path": graph_path if graph_path is not None else component_path_for(ref),
         "matched_advisory": _matched_advisory_for(finding.advisory_id, advisory),
     }
+    taxonomies = overlay_taxonomies(advisory)
+    if taxonomies:
+        out["taxonomies"] = taxonomies
     attributed_to = graph.attribution_for_ref(ref) if graph is not None else None
     if attributed_to:
         out["attributed_to"] = attributed_to

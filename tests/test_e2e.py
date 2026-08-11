@@ -919,6 +919,39 @@ def test_repo_lockfile_finds_corpus_advisory(tmp_path):
     properties = matching[0].get("properties", {})
     assert properties.get("coverage") == "transitive"
     assert properties.get("attributed_to") == "plugin/host@1.0.0"
+    assert properties["taxonomies"]["owasp_agentic_top10"] == ["asi02", "asi05"]
+
+
+def test_default_scan_text_shows_agentic_taxonomy_from_real_corpus(tmp_path):
+    """Corpus overlay -> matcher -> default text card, without -v.
+
+    Fails if the overlay loader stops merging `database_specific.openaca`, if the
+    matcher stops attaching the advisory, or if the renderer re-gates the agentic
+    line behind verbose. Per ADR-0043 the default card shows only the agentic
+    family.
+    """
+    from tools.scan import main as scan_main
+
+    target = tmp_path / "host-repo"
+    target.mkdir()
+    _mark_as_plugin(target, name="host", version="1.0.0")
+    (target / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "host", "version": "1.0.0"},
+                    "node_modules/@cyanheads/git-mcp-server": {"version": "1.1.0"},
+                },
+            }
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(scan_main, ["repo", "--target", str(target)])
+
+    assert result.exit_code == 1, result.output
+    assert "GHSA-3q26-f695-pp76" in result.output
+    assert "owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]" in result.output
 
 
 # Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and remote upload.

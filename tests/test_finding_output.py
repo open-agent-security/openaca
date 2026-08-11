@@ -1,5 +1,5 @@
 from tools.component_ref import ComponentRef
-from tools.finding_output import finding_to_output
+from tools.finding_output import finding_to_output, overlay_taxonomies
 from tools.graph import Edge, Graph, Node
 from tools.matcher import Finding
 
@@ -172,3 +172,99 @@ def test_finding_to_output_marks_source_unknown_for_source_less_skill():
     assert out["component"]["type"] == "skill"
     assert out["component"]["name"] == "bootstrap"
     assert out["component"]["source"] == {"status": "unknown"}
+
+
+def test_overlay_taxonomies_extracts_all_families():
+    advisory = {
+        "id": "GHSA-X",
+        "database_specific": {
+            "openaca": {
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi02", "asi05"],
+                    "mitre_atlas": ["AML.T0051"],
+                },
+                "evidence_level": "confirmed",
+            }
+        },
+    }
+    assert overlay_taxonomies(advisory) == {
+        "owasp_agentic_top10": ["asi02", "asi05"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+
+
+def test_overlay_taxonomies_returns_empty_without_overlay():
+    assert overlay_taxonomies(None) == {}
+    assert overlay_taxonomies({}) == {}
+    assert overlay_taxonomies({"id": "GHSA-X"}) == {}
+    assert overlay_taxonomies({"database_specific": {}}) == {}
+    assert overlay_taxonomies({"database_specific": {"openaca": {}}}) == {}
+
+
+def test_overlay_taxonomies_tolerates_malformed_blocks():
+    # Upstream OSV records are third-party data; a non-dict openaca block or a
+    # non-list family value must not raise.
+    assert overlay_taxonomies({"database_specific": "nope"}) == {}
+    assert overlay_taxonomies({"database_specific": {"openaca": "nope"}}) == {}
+    assert overlay_taxonomies({"database_specific": {"openaca": {"taxonomies": "nope"}}}) == {}
+    assert (
+        overlay_taxonomies(
+            {"database_specific": {"openaca": {"taxonomies": {"owasp_agentic_top10": "asi02"}}}}
+        )
+        == {}
+    )
+
+
+def test_overlay_taxonomies_drops_empty_families_and_coerces_members():
+    advisory = {
+        "database_specific": {
+            "openaca": {
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi02"],
+                    "owasp_mcp_top10": [],
+                    "mitre_atlas": [1],
+                }
+            }
+        }
+    }
+    assert overlay_taxonomies(advisory) == {
+        "owasp_agentic_top10": ["asi02"],
+        "mitre_atlas": ["1"],
+    }
+
+
+def test_finding_to_output_carries_all_taxonomy_families():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="pkg",
+        version="1.0.0",
+        source_manifest="package.json",
+    )
+    advisory = {
+        "id": "GHSA-X",
+        "summary": "test",
+        "database_specific": {
+            "openaca": {
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi02"],
+                    "mitre_atlas": ["AML.T0051"],
+                }
+            }
+        },
+    }
+    out = finding_to_output(Finding("GHSA-X", ref, "high"), advisory)
+    assert out["taxonomies"] == {
+        "owasp_agentic_top10": ["asi02"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+
+
+def test_finding_to_output_omits_taxonomies_key_without_overlay():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="pkg",
+        version="1.0.0",
+        source_manifest="package.json",
+    )
+    out = finding_to_output(Finding("GHSA-X", ref, "high"), {"id": "GHSA-X"})
+    assert "taxonomies" not in out

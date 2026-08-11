@@ -488,3 +488,41 @@ def test_sarif_observation_result_omits_empty_evidence_and_categories():
     props = result["properties"]
     assert "evidence" not in props
     assert "categories" not in props
+
+
+def test_sarif_result_carries_overlay_taxonomies():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="pkg",
+        version="1.0.0",
+        source_manifest="package.json",
+    )
+    advisory = {
+        "id": "GHSA-X",
+        "database_specific": {
+            "openaca": {
+                "taxonomies": {
+                    "owasp_agentic_top10": ["asi02"],
+                    "mitre_atlas": ["AML.T0051"],
+                }
+            }
+        },
+    }
+    sarif = to_sarif([Finding("GHSA-X", ref, "high")], {"GHSA-X": advisory})
+    props = sarif["runs"][0]["results"][0]["properties"]
+    assert props["taxonomies"] == {
+        "owasp_agentic_top10": ["asi02"],
+        "mitre_atlas": ["AML.T0051"],
+    }
+
+
+def test_sarif_omits_taxonomies_without_overlay():
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="pkg",
+        version="1.0.0",
+        source_manifest="package.json",
+    )
+    sarif = to_sarif([Finding("GHSA-X", ref, "high")], {})
+    props = sarif["runs"][0]["results"][0].get("properties", {})
+    assert "taxonomies" not in props

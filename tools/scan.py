@@ -1422,7 +1422,7 @@ def scan_bom(
     # The scanned host list, for per-host tags/breakdown. Primary source is
     # the `openaca:scanned_hosts` metadata property (multi-host-endpoint-
     # gated, so single-host and pre-Stage-4 BOMs don't carry it); fallback
-    # derives the distinct hosts `_ref_host` attributes across `refs` the
+    # derives the distinct hosts `_ref_hosts` attributes across `refs` the
     # same way the live endpoint path does (ancestry via `graph` when
     # graph-backed, else each ref's own `runtime_hosts`/default). Either way
     # this is a real (never-None) list, same as `selected_hosts` on the live

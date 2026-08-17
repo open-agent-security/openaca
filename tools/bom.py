@@ -667,9 +667,9 @@ def _restore_capabilities(props: dict[str, str], extra: dict[str, Any]) -> None:
 
 def agent_host(ref: ComponentRef) -> str | None:
     """The single host a ref's `runtime_hosts` names, or `None` when absent,
-    empty, or shared across more than one host. Public: `tools.render` reuses
-    this exact derivation for per-host stats/tags rather than reimplementing
-    it (see `tools.render._ref_host`)."""
+    empty, or shared across more than one host. Public: `tools.render`'s
+    `_ref_hosts` falls back to this same field for the multi-host-aware,
+    always-a-list derivation it needs for per-host stats/tags."""
     runtime_hosts = (ref.extra or {}).get("runtime_hosts")
     if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
         return None

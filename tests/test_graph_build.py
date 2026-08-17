@@ -2184,6 +2184,31 @@ def test_repo_dual_native_plugin_manifests_resolve_to_claude_format(tmp_path):
         assert plugin_nodes[0].ref.name == "claude-format", hosts
 
 
+def test_repo_dual_native_plugin_manifests_falls_back_when_preferred_is_malformed(tmp_path):
+    # When a directory carries BOTH native manifests but the preferred
+    # (.claude-plugin) one is malformed, the root must not be dropped
+    # entirely — the valid .cursor-plugin candidate realizes instead, and
+    # the bundle's root mcp.json stays owned by the plugin rather than
+    # falling through to standalone discovery and being misattributed.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text("{not json")
+    (plugin_root / ".cursor-plugin").mkdir()
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "cursor-format"}')
+    (plugin_root / "mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}}'
+    )
+    g = build_graph(tmp_path, mode="repo", hosts=["claude-code", "cursor"])
+    plugin_nodes = [n for n in g.nodes.values() if n.kind == "plugin"]
+    assert len(plugin_nodes) == 1
+    assert plugin_nodes[0].ref is not None
+    assert plugin_nodes[0].ref.name == "cursor-format"
+    parent_of = {e.child: e.parent for e in g.edges}
+    mcp_nodes = [n for n in g.nodes.values() if n.kind == "mcp_server"]
+    assert len(mcp_nodes) == 1
+    assert parent_of[mcp_nodes[0].key] == plugin_nodes[0].key
+
+
 def test_repo_cursor_plugin_bundled_components_nest_under_plugin_node(tmp_path):
     # The graph-realization contract: bundled components are children of the
     # plugin node, never direct children of target, and every bundled ref

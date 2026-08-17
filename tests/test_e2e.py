@@ -1347,6 +1347,42 @@ def test_two_host_endpoint_scan_shows_per_host_attribution(tmp_path, monkeypatch
     assert sum(doc["stats"]["components_by_host"].values()) == doc["stats"]["components"]
 
 
+def test_two_host_endpoint_scan_shared_subagent_attributes_to_both_hosts(tmp_path, monkeypatch):
+    """A `.claude/agents/*.md` subagent with no `.cursor/agents/` override is
+    genuinely shared (Cursor's unconditional compatibility read, ADR-0045
+    Decision #4): `subagent_precedence.py` tags it `runtime_hosts=["claude-code",
+    "cursor"]`. `tools.bom.agent_host` deliberately returns `None` for that
+    (single-value derivation, ambiguous when shared) — but the render layer
+    must not collapse that ambiguity into "claude-code" by default: the host
+    tag must show both hosts, and `components_by_host` must count the
+    subagent under both, not silently drop its Cursor ownership."""
+    from tools.cli import main as cli_main
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    claude_root = tmp_path / ".claude"
+    (claude_root / "agents").mkdir(parents=True)
+    (claude_root / "agents" / "shared.md").write_text(
+        "---\nname: shared\ndescription: d\n---\nrun\n"
+    )
+    (claude_root / "settings.json").write_text("{}")
+
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir(parents=True)
+
+    runner = CliRunner()
+
+    text_result = runner.invoke(cli_main, ["scan", "endpoint"])
+    assert text_result.exit_code == 0, text_result.output
+    assert "shared [claude-code + cursor]" in text_result.output
+
+    json_result = runner.invoke(cli_main, ["scan", "endpoint", "--format", "json"])
+    assert json_result.exit_code == 0, json_result.output
+    doc = _scan_json_doc(json_result.output)
+    assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}
+
+
 def test_two_host_endpoint_scan_attributes_bundled_package_deps_by_ancestor(tmp_path, monkeypatch):
     """`_add_dep_manifest_packages` (tools/graph_build.py) never stamps
     `runtime_hosts` on the package refs it emits, for either the plugin-own-

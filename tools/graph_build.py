@@ -788,23 +788,34 @@ def descend(
         # standalone-surface walk below and gets misattributed to the target
         # under the wrong host.
         unselected_host_plugin_roots: list[Path] = []
-        for plugin_root, plugin_manifest in plugin_roots:
-            parser = _plugin_parser_for_path(plugin_manifest, directory, hosts)
-            if parser is None:
-                unselected_host_plugin_roots.append(plugin_root)
-                continue
-            plugin_node = _descend_into_plugin(
-                graph,
-                parent,
-                plugin_root,
-                plugin_manifest,
-                normalize,
-                parser=parser,
-                root_dir=root_dir,
-                root_spec=root_spec,
-            )
+        for plugin_root, manifest_candidates in plugin_roots:
+            plugin_node = None
+            any_selected_host_candidate = False
+            for plugin_manifest in manifest_candidates:
+                parser = _plugin_parser_for_path(plugin_manifest, directory, hosts)
+                if parser is None:
+                    continue
+                any_selected_host_candidate = True
+                plugin_node = _descend_into_plugin(
+                    graph,
+                    parent,
+                    plugin_root,
+                    plugin_manifest,
+                    normalize,
+                    parser=parser,
+                    root_dir=root_dir,
+                    root_spec=root_spec,
+                )
+                # A candidate that realizes wins outright — a directory with
+                # both a broken preferred manifest and a valid fallback one
+                # must still produce a plugin node, not silently drop to the
+                # standalone/subagent walks below (see `_find_plugin_roots`).
+                if plugin_node is not None:
+                    break
             if plugin_node is not None:
                 realized_roots.append(plugin_root)
+            elif not any_selected_host_candidate:
+                unselected_host_plugin_roots.append(plugin_root)
         if excluded_plugin_roots is not None:
             excluded_plugin_roots.extend(unselected_host_plugin_roots)
         # Agent Plugins bundles (content-detected, outside manifest_registry)
@@ -955,7 +966,7 @@ def _plugin_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserF
 
 def _find_plugin_roots(
     directory: Path, *, include_gitignored: bool = False
-) -> list[tuple[Path, Path]]:
+) -> list[tuple[Path, list[Path]]]:
     """Plugin roots are dirs containing a `.claude-plugin/plugin.json` or
     `.cursor-plugin/plugin.json`, at ANY depth (parity with parse_repo).
     Discovery is host-agnostic — the caller decides, per root, whether the
@@ -964,20 +975,27 @@ def _find_plugin_roots(
     emitted) via `_plugin_parser_for_path`. Discovery uses the same
     gitignore-aware walk as project-skill discovery so we skip
     `node_modules/`, `.git/`, gitignored dirs. Returns `(plugin_root,
-    manifest_path)` pairs sorted by plugin_root for determinism.
+    [manifest_path, ...])` pairs sorted by plugin_root for determinism.
 
-    One directory carrying BOTH native manifests yields ONE root: the first
-    manifest the walk reaches wins and the `seen` set drops the other. That is
-    walk order, not host-selection order — `iter_unignored_files` sorts
-    directory entries, so `.claude-plugin/` is always visited before
-    `.cursor-plugin/` and the Claude-format manifest always wins, whichever
-    order the hosts were selected in. Repo-mode manifest accounting still
-    counts both files; only the graph collapses them. Pinned by
-    `test_repo_dual_native_plugin_manifests_resolve_to_claude_format`.
+    One directory carrying BOTH native manifests yields ONE root with BOTH
+    manifest paths as candidates, in walk order: `iter_unignored_files` sorts
+    directory entries, so `.claude-plugin/plugin.json` always precedes
+    `.cursor-plugin/plugin.json` regardless of host-selection order. The
+    caller (`descend()`'s target branch) tries candidates in that order and
+    falls back to the next one if a preferred candidate's host isn't
+    selected, or its manifest fails to realize (malformed JSON, no self-ref)
+    — so a valid Cursor-format manifest still realizes the plugin even when a
+    sibling Claude-format manifest in the same directory is broken, instead
+    of the whole root silently going unrealized. When every candidate in a
+    directory is itself valid, the first (Claude-format) one still wins, same
+    as before — pinned by
+    `test_repo_dual_native_plugin_manifests_resolve_to_claude_format`. Repo-
+    mode manifest accounting still counts both files independently; only the
+    graph's realization choice is affected here.
     """
     spec = None if include_gitignored else load_gitignore_spec(directory)
-    roots: list[tuple[Path, Path]] = []
-    seen: set[Path] = set()
+    roots: dict[Path, list[Path]] = {}
+    order: list[Path] = []
     for path in iter_unignored_files(directory, spec):
         if path.name != "plugin.json" or path.parent.name not in (
             ".claude-plugin",
@@ -986,12 +1004,13 @@ def _find_plugin_roots(
             continue
         root = path.parent.parent
         resolved = root.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        roots.append((root, path))
-    roots.sort(key=lambda pair: pair[0])
-    return roots
+        if resolved not in roots:
+            roots[resolved] = []
+            order.append(root)
+        roots[resolved].append(path)
+    pairs = [(root, roots[root.resolve()]) for root in order]
+    pairs.sort(key=lambda pair: pair[0])
+    return pairs
 
 
 def _plugin_manifest_context(plugin_node: Node, plugin_root: Path) -> tuple[Path, list[str] | None]:

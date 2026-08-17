@@ -30,7 +30,6 @@ from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
-from tools.bom import agent_host
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import (
     finding_to_output,
@@ -66,23 +65,36 @@ class ScanStats:
 _DEFAULT_HOST = "claude-code"
 
 
-def _ref_host(ref: ComponentRef, graph: Graph | None = None) -> str:
-    """The host a component belongs to, for per-host stats/tags.
+def _ref_hosts(ref: ComponentRef, graph: Graph | None = None) -> list[str]:
+    """Every host a component belongs to, for per-host stats/tags.
 
-    Tries `agent_host` (the same derivation the BOM's `openaca:agent_host`
-    property uses) on the ref itself first. A dependency-manifest `package`
-    node never carries its own `runtime_hosts` — `_add_dep_manifest_packages`
-    (`tools/graph_build.py`) stamps none regardless of which host's plugin or
-    skill it descended from — so for those (and any other ref with no
-    resolvable host of its own) this walks the graph lineage for the nearest
-    ancestor `agent_host` resolves, e.g. a Cursor-hosted plugin's bundled
-    skill's own `package.json` dep attributes to `cursor` through its skill/
-    plugin ancestors. Only when neither the ref nor any ancestor resolves a
-    host (every Claude-only surface today, since Claude's plugin/direct refs
-    that DO carry `runtime_hosts` always say `claude-code`) does this fall
-    back to the scanning default host.
+    Unlike `agent_host` (the BOM's `openaca:agent_host` property — a single
+    value, `None` when a ref's `runtime_hosts` names more than one host),
+    this always returns the full set: a genuinely shared component (e.g. a
+    `.claude/agents/*.md` subagent Cursor also reads unconditionally, tagged
+    `runtime_hosts=["claude-code", "cursor"]`) must attribute to every host
+    it belongs to, not collapse to a single default.
+
+    Tries the ref's own `runtime_hosts` first. A dependency-manifest
+    `package` node never carries its own `runtime_hosts` —
+    `_add_dep_manifest_packages` (`tools/graph_build.py`) stamps none
+    regardless of which host's plugin or skill it descended from — so for
+    those (and any other ref with no resolvable host of its own) this walks
+    the graph lineage for the nearest ancestor that does carry
+    `runtime_hosts`, e.g. a Cursor-hosted plugin's bundled skill's own
+    `package.json` dep attributes to `cursor` through its skill/plugin
+    ancestors. Only when neither the ref nor any ancestor resolves a host
+    does this fall back to the scanning default host.
     """
-    own = agent_host(ref)
+
+    def _own_hosts(candidate: ComponentRef) -> list[str] | None:
+        runtime_hosts = (candidate.extra or {}).get("runtime_hosts")
+        if not isinstance(runtime_hosts, list) or not runtime_hosts:
+            return None
+        hosts = [h for h in runtime_hosts if isinstance(h, str) and h]
+        return hosts or None
+
+    own = _own_hosts(ref)
     if own is not None:
         return own
     if graph is not None:
@@ -90,33 +102,50 @@ def _ref_host(ref: ComponentRef, graph: Graph | None = None) -> str:
         if node is not None:
             for ancestor in graph.lineage(node)[1:]:
                 if ancestor.ref is not None:
-                    ancestor_host = agent_host(ancestor.ref)
-                    if ancestor_host is not None:
-                        return ancestor_host
-    return _DEFAULT_HOST
+                    ancestor_hosts = _own_hosts(ancestor.ref)
+                    if ancestor_hosts is not None:
+                        return ancestor_hosts
+    return [_DEFAULT_HOST]
+
+
+def _ref_host_label(ref: ComponentRef, graph: Graph | None = None) -> str:
+    """Display label for a component's host(s) — joins with `" + "` (same
+    style as `stats.sources`) when a ref genuinely belongs to more than one
+    host, rather than showing only the first/default one."""
+    return " + ".join(_ref_hosts(ref, graph))
 
 
 def compute_components_by_host(
     refs: list[ComponentRef], graph: Graph | None = None
 ) -> dict[str, int]:
-    """Per-host component counts for the JSON stats `components_by_host` key.
+    """Per-host component counts for the JSON stats `components_by_host` key,
+    and the source for the text card's per-host breakdown line.
 
-    Counts every ref passed in (mirrors `ScanStats.component_count`'s
-    population), keyed by `_ref_host`."""
+    Counts every ref once per host `_ref_hosts` attributes it to. For the
+    overwhelmingly common single-host case this mirrors
+    `ScanStats.component_count`'s population exactly (each ref lands in one
+    bucket, so `sum(counts.values())` equals the ref count). A ref genuinely
+    shared across hosts (multi-entry `runtime_hosts`, e.g. a subagent Cursor
+    reads unconditionally from `.claude/agents/`) increments every host's
+    bucket instead of being folded into a single one — it really is present
+    under each of those hosts, so `sum(counts.values())` can then exceed the
+    ref count."""
     counts: dict[str, int] = {}
     for ref in refs:
-        host = _ref_host(ref, graph)
-        counts[host] = counts.get(host, 0) + 1
+        for host in _ref_hosts(ref, graph):
+            counts[host] = counts.get(host, 0) + 1
     return counts
 
 
 def hosts_from_refs(refs: list[ComponentRef], graph: Graph | None = None) -> list[str]:
     """Fallback host-list derivation for BOM round-trips that lack the
-    `openaca:scanned_hosts` metadata property: the distinct hosts `_ref_host`
+    `openaca:scanned_hosts` metadata property: the distinct hosts `_ref_hosts`
     attributes across `refs` (own `runtime_hosts`, else ancestry, else the
-    default host), ordered by host-registry registration order for
-    determinism."""
-    present = {_ref_host(ref, graph) for ref in refs}
+    default host) — a shared ref contributes every host it names, not just
+    one — ordered by host-registry registration order for determinism."""
+    present: set[str] = set()
+    for ref in refs:
+        present.update(_ref_hosts(ref, graph))
     return [host_id for host_id in all_host_ids() if host_id in present]
 
 
@@ -1414,7 +1443,9 @@ def _build_plugin_node(
         context.append(f"sha: {sha[:8]}")
     context_note = f" ({', '.join(context)})" if context else ""
     host_note = (
-        f" [{_ref_host(plugin_ref, view.graph if view is not None else None)}]" if show_host else ""
+        f" [{_ref_host_label(plugin_ref, view.graph if view is not None else None)}]"
+        if show_host
+        else ""
     )
     scope = plugin_ref.extra.get("scope")
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
@@ -1522,7 +1553,9 @@ def _build_direct_node(
                 leaf_label = f"{leaf_label} (from {r.source_manifest})"
             leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
             host_note = (
-                f" [{_ref_host(r, view.graph if view is not None else None)}]" if show_host else ""
+                f" [{_ref_host_label(r, view.graph if view is not None else None)}]"
+                if show_host
+                else ""
             )
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
             leaf = _TreeNode(label=f"{leaf_label}{host_note}{leaf_marker}")

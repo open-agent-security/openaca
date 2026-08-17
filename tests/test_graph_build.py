@@ -2113,6 +2113,24 @@ def test_repo_cursor_plugin_absent_from_graph_when_cursor_not_selected(tmp_path)
     assert not [n for n in g.nodes.values() if n.kind != "target"]
 
 
+def test_repo_cursor_native_plugin_bundled_mcp_excluded_when_cursor_not_selected(tmp_path):
+    # Regression guard: Cursor's default bundled MCP filename is the bare
+    # "mcp.json" — the same basename Claude Code's own bare-mcp.json registry
+    # pattern matches. An unselected-host native plugin bundle's root must
+    # still be excluded from the standalone-surface walk (a bundle boundary,
+    # even though no plugin node is realized for it), or `<bundle>/mcp.json`
+    # falls through and gets attributed as a Claude Code component directly
+    # under the target instead of being dropped for the unselected host.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    (plugin_root / "mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather@1.0.0"]}}}'
+    )
+    g = build_graph(tmp_path, mode="repo", hosts=["claude-code"])
+    assert not [n for n in g.nodes.values() if n.kind != "target"]
+
+
 def test_repo_dual_native_plugin_manifests_resolve_to_claude_format(tmp_path):
     # One directory carrying BOTH native manifests resolves to exactly one
     # plugin root, and the winner is the `.claude-plugin` one — the walk

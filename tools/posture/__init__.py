@@ -43,7 +43,7 @@ _MCP_MANIFEST_NAMES: frozenset[str] = frozenset(
     {"mcp.json", ".mcp.json", "claude_desktop_config.json"}
 )
 _PLUGIN_MANIFEST_NAME = "plugin.json"
-_PLUGIN_MANIFEST_PARENT_DIR = ".claude-plugin"
+_PLUGIN_MANIFEST_PARENT_DIRS = frozenset({".claude-plugin", ".cursor-plugin"})
 
 
 def run_posture_rules(
@@ -199,7 +199,7 @@ def collect_mcp_manifests(
                 if isinstance(data, dict):
                     out.append((path, data))
         for path in root.rglob(_PLUGIN_MANIFEST_NAME):
-            if path.parent.name != _PLUGIN_MANIFEST_PARENT_DIR:
+            if path.parent.name not in _PLUGIN_MANIFEST_PARENT_DIRS:
                 continue
             if is_ignored(path.relative_to(root), spec):
                 continue

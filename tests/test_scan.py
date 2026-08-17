@@ -2501,6 +2501,46 @@ def test_scan_repo_cursor_cache_mcp_json_posture_uses_claude_code(tmp_path):
     assert posture == []  # claude-code-owned manifest, not visible under --host cursor
 
 
+def test_scan_repo_cursor_native_plugin_inline_mcp_servers_posture_finding(tmp_path):
+    # Regression guard: `mcpServers` declared inline in `.cursor-plugin/
+    # plugin.json` (not a separate mcp.json file) is inventoried by the
+    # graph — `walk_plugin_root` parses `mcpServers` off the plugin.json
+    # content itself, for both native plugin formats. But posture's own
+    # `collect_mcp_manifests` plugin-manifest walk only matched a
+    # `.claude-plugin` parent dir, so it never read a `.cursor-plugin/
+    # plugin.json` at all and the insecure-transport rule missed the inline
+    # servers entirely under a Cursor bundle.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "cursor",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1
+    assert posture[0]["active_in"] == ["cursor"]
+
+
 def test_scan_repo_cursor_native_plugin_bundled_mcp_posture_uses_cursor(tmp_path):
     # Regression guard: a Cursor native plugin's bundled MCP manifest lives at
     # <plugin-root>/mcp.json, not the literal `.cursor/mcp.json` shape

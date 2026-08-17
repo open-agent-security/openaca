@@ -761,16 +761,25 @@ def descend(
         # root is a boundary handoff: the plugin owns its entire subtree, so its
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
-        plugin_roots = _find_plugin_roots(directory, hosts, include_gitignored=include_gitignored)
+        plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
         # Only directories that actually produced a plugin node own their
         # subtree. A malformed/empty `plugin.json` yields no node, so its dir
         # must NOT be excluded from sibling discovery — otherwise one bad
         # manifest would silently hide an otherwise-valid `.mcp.json`, project
         # skill, or dep manifest in the same/under that directory.
         realized_roots: list[Path] = []
+        # A native plugin root whose owning host isn't selected is never
+        # realized as a plugin node, but its bundle boundary is still real —
+        # without this, an unselected-host bundle's bare `mcp.json` (e.g. a
+        # Cursor plugin's bundled `<root>/mcp.json`, which collides with
+        # Claude's own bare `mcp.json` pattern) falls through to the
+        # standalone-surface walk below and gets misattributed to the target
+        # under the wrong host.
+        unselected_host_plugin_roots: list[Path] = []
         for plugin_root, plugin_manifest in plugin_roots:
             parser = _plugin_parser_for_path(plugin_manifest, directory, hosts)
             if parser is None:
+                unselected_host_plugin_roots.append(plugin_root)
                 continue
             plugin_node = _descend_into_plugin(
                 graph,
@@ -799,7 +808,7 @@ def descend(
         # `package.json` beside a root Agent Plugins bundle must keep its
         # target-level dep nodes — unlike a native plugin root, an Agent
         # Plugins root must NOT gate `_add_dep_manifest_packages` below.
-        standalone_exclude_roots = list(realized_roots)
+        standalone_exclude_roots = list(realized_roots) + unselected_host_plugin_roots
         if "cursor" in hosts:
             for manifest_path in _find_agent_plugin_roots(
                 directory, exclude_under=realized_roots, include_gitignored=include_gitignored
@@ -931,11 +940,14 @@ def _plugin_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserF
 
 
 def _find_plugin_roots(
-    directory: Path, hosts: list[str], *, include_gitignored: bool = False
+    directory: Path, *, include_gitignored: bool = False
 ) -> list[tuple[Path, Path]]:
     """Plugin roots are dirs containing a `.claude-plugin/plugin.json` or
-    `.cursor-plugin/plugin.json`, at ANY depth (parity with parse_repo),
-    gated on the owning host being selected. Discovery uses the same
+    `.cursor-plugin/plugin.json`, at ANY depth (parity with parse_repo).
+    Discovery is host-agnostic — the caller decides, per root, whether the
+    owning host is selected (realize a plugin node) or not (still a bundle
+    boundary, excluded from standalone/subagent discovery but no node
+    emitted) via `_plugin_parser_for_path`. Discovery uses the same
     gitignore-aware walk as project-skill discovery so we skip
     `node_modules/`, `.git/`, gitignored dirs. Returns `(plugin_root,
     manifest_path)` pairs sorted by plugin_root for determinism.
@@ -957,8 +969,6 @@ def _find_plugin_roots(
             ".claude-plugin",
             ".cursor-plugin",
         ):
-            continue
-        if _plugin_parser_for_path(path, directory, hosts) is None:
             continue
         root = path.parent.parent
         resolved = root.resolve()

@@ -226,7 +226,14 @@ def _cursor_collect_endpoint_posture_manifests(
     out = load_manifest_files(paths)
     seen = {path.resolve() for path, _ in out}
 
-    for path, data in collect_mcp_manifests(_cursor_plugin_bundle_roots(refs)):
+    # Cursor realization only ever reads `.cursor-plugin/plugin.json` (or the
+    # Agent Plugins root plugin.json, which posture never collects) — a
+    # `.claude-plugin/plugin.json` sibling in the same bundle is never loaded
+    # by Cursor, so it must not be collected as Cursor posture.
+    for path, data in collect_mcp_manifests(
+        _cursor_plugin_bundle_roots(refs),
+        plugin_manifest_parent_dirs=frozenset({".cursor-plugin"}),
+    ):
         resolved = path.resolve()
         if resolved in seen:
             continue

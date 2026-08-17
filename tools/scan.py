@@ -978,6 +978,13 @@ def repo(
             if _API_ENDPOINT_OVERRIDE_RULE_ID in active_rule_ids
             else []
         )
+        # The settings walk is an independent filesystem pass of the same
+        # tree — it must honor the unselected-host bundle boundary the MCP
+        # manifest list above already does, or a `.claude/settings.json`
+        # inside an excluded bundle still produces posture findings.
+        settings_manifests = [
+            (p, d) for p, d in settings_manifests if not _is_under_any(p, excluded_resolved)
+        ]
         posture_findings.extend(
             run_posture_rules(refs, manifests, settings_manifests, manifest_hosts)
         )

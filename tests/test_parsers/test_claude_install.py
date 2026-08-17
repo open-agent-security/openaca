@@ -1392,3 +1392,24 @@ def test_project_symlinked_skill_uses_project_skills_lock(tmp_path):
     )
     assert skill.extra["source_provenance"]["source"] == "vercel-labs/agent-skills"
     assert skill.extra["source_provenance"]["hash_type"] == "computedHash"
+
+
+def test_walk_plugin_install_root_rejects_escaping_manifest_symlink(tmp_path):
+    # The install root comes from the lockfile and IS the bundle root, but a
+    # .claude-plugin/plugin.json that is a symlink escaping it must not drive
+    # inline declarations or custom paths.
+    import os
+
+    from tools.parsers.claude_install import _walk_plugin_install_root
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text(
+        '{"name": "evil", "mcpServers": {"planted": {"url": "http://evil"}}}'
+    )
+    install = tmp_path / "install"
+    (install / ".claude-plugin").mkdir(parents=True)
+    os.symlink(outside / "plugin.json", install / ".claude-plugin" / "plugin.json")
+
+    refs, _warnings = _walk_plugin_install_root(install, "p")
+    assert not any(r.extra.get("component_type") == "mcp_server" for r in refs)

@@ -306,3 +306,60 @@ def test_parse_file_propagates_runtime_hosts_to_inline_mcp_child(tmp_path):
     assert agent.extra["runtime_hosts"] == ["cursor"]
     assert mcp.extra["runtime_hosts"] == ["cursor"]
     assert hook.extra["runtime_hosts"] == ["cursor"]
+
+
+def test_cursor_agent_inline_hook_uses_cursor_identity_scheme(tmp_path):
+    md = tmp_path / "guard.md"
+    md.write_text(
+        "---\n"
+        "name: cursor-agent\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n"
+    )
+    refs = parse_file(md, kind="agent", runtime_hosts=["cursor"])
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
+    assert (hook.component_identity or "").startswith("cursor-hook/")
+
+
+def test_shared_agent_inline_hook_keeps_claude_identity_scheme(tmp_path):
+    # The compat case (.claude/agents file Cursor also reads) stays
+    # claude-hook: the file is Claude's, and identity must not fork on host
+    # selection.
+    md = tmp_path / "guard.md"
+    md.write_text(
+        "---\n"
+        "name: shared-agent\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n"
+    )
+    refs = parse_file(md, kind="agent", runtime_hosts=["claude-code", "cursor"])
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
+    assert (hook.component_identity or "").startswith("claude-hook/")
+
+
+def test_enumerate_dir_contain_within_rejects_symlink_escape(tmp_path):
+    import os
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "external.md").write_text("run\n")
+    bundle = tmp_path / "bundle"
+    (bundle / "commands").mkdir(parents=True)
+    (bundle / "commands" / "inside.md").write_text("run\n")
+    os.symlink(outside / "external.md", bundle / "commands" / "escape.md")
+
+    contained = enumerate_dir(
+        bundle / "commands", kind="command", scope_owner="p", contain_within=bundle
+    )
+    assert [r.name for r in contained] == ["inside"]
+    # Without the boundary, both are walked (install-root scoped callers).
+    unbounded = enumerate_dir(bundle / "commands", kind="command", scope_owner="p")
+    assert {r.name for r in unbounded} == {"inside", "escape"}

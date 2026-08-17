@@ -47,7 +47,7 @@ from tools.parsers import (
     skill_lock,
     uv_lock,
 )
-from tools.parsers.claude_plugin_root import walk_plugin_root
+from tools.parsers.claude_plugin_root import resolve_within, walk_plugin_root
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
@@ -443,9 +443,16 @@ def _walk_plugin_install_root(
         return refs, warnings
 
     # Read plugin.json once to drive custom-path handling for every surface.
+    # Containment-checked against the resolved install root: a manifest that
+    # is a symlink escaping the bundle must not drive custom paths or inline
+    # declarations (install_path itself comes from the lockfile and IS the
+    # bundle root by definition, so only the manifest under it needs the check).
     plugin_data: dict = {}
     plugin_json_path = install_path / ".claude-plugin" / "plugin.json"
-    if plugin_json_path.is_file():
+    if (
+        plugin_json_path.is_file()
+        and resolve_within(install_path, ".claude-plugin/plugin.json") is not None
+    ):
         try:
             loaded = json.loads(plugin_json_path.read_text())
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):

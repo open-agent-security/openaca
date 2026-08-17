@@ -422,7 +422,19 @@ def _seed_endpoint_subagents(
         )
     )
     if project_root is not None:
-        occurrences.extend(resolve_subagent_occurrences(project_root, hosts))
+        # Honor the project root's .gitignore, parity with the project-scoped
+        # skill seeds (both hosts' endpoint_seeds thread the same spec):
+        # a subagent under an ignored path (.worktrees/, node_modules/) must
+        # not be inventoried. Repo mode gets this via _is_ignored_under in
+        # _add_repo_standalone_components; the endpoint project scope walks
+        # here instead, so filter here.
+        project_spec = load_gitignore_spec(project_root)
+        occurrences.extend(
+            occ
+            for occ in resolve_subagent_occurrences(project_root, hosts)
+            if not occ.source_manifest
+            or not _is_ignored_under(Path(occ.source_manifest), project_root, project_spec)
+        )
     for _manifest_path, refs in group_occurrences_by_manifest(occurrences):
         if not refs:
             continue
@@ -866,8 +878,16 @@ def descend(
         # Plugins root must NOT gate `_add_dep_manifest_packages` below.
         standalone_exclude_roots = list(realized_roots) + unselected_host_plugin_roots
         if "cursor" in hosts:
+            # exclude_under gets the FULL boundary list (realized + unselected-
+            # host bundle roots), not just realized_roots: an unselected-host
+            # bundle's example/fixture plugin.json must not realize as an
+            # independent Agent Plugins bundle only because the owning host
+            # wasn't selected — inventory must not depend on host selection
+            # that way.
             for manifest_path in _find_agent_plugin_roots(
-                directory, exclude_under=realized_roots, include_gitignored=include_gitignored
+                directory,
+                exclude_under=standalone_exclude_roots,
+                include_gitignored=include_gitignored,
             ):
                 plugin_node = _realize_agent_plugin(
                     graph,
@@ -1034,6 +1054,13 @@ def _find_plugin_roots(
         ):
             continue
         root = path.parent.parent
+        # A manifest that is a symlink escaping its own bundle root must not
+        # be a candidate at all: realizing it mints plugin self-identity from
+        # a document outside the bundle, and the same external content is
+        # later re-read by _plugin_manifest_data/_plugin_custom_skills_field.
+        # (os.walk prunes symlinked dirs, but symlinked FILES still appear.)
+        if resolve_within(root, f"{path.parent.name}/plugin.json") is None:
+            continue
         resolved = root.resolve()
         if resolved not in roots:
             roots[resolved] = []
@@ -1393,6 +1420,12 @@ def _find_agent_plugin_roots(
         resolved = path.resolve()
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
+        # Same containment rule as _find_plugin_roots: the bundle root is the
+        # manifest's parent, so a symlinked plugin.json escaping it must not
+        # be schema-detected (widest-reach read — this runs against every
+        # bare plugin.json in the tree).
+        if resolve_within(path.parent, "plugin.json") is None:
+            continue
         if not agent_plugins.is_agent_plugins_manifest(path):
             continue
         manifests.append(path)
@@ -1512,7 +1545,7 @@ def _add_bundled_skills(
     default_skills = resolve_within(directory, "skills")
     if default_skills is not None and default_skills.is_dir():
         skill_dirs.append(default_skills)
-    custom_skills = _plugin_custom_skills_field(plugin_manifest_path)
+    custom_skills = _plugin_custom_skills_field(plugin_manifest_path, plugin_root=directory)
     if isinstance(custom_skills, str):
         custom_dir = resolve_within(directory, custom_skills)
         if custom_dir is not None and custom_dir.is_dir():
@@ -1536,7 +1569,9 @@ def _add_bundled_skills(
         )
 
 
-def _plugin_custom_skills_field(plugin_manifest_path: Path) -> object:
+def _plugin_custom_skills_field(plugin_manifest_path: Path, *, plugin_root: Path) -> object:
+    if not _manifest_within_root(plugin_manifest_path, plugin_root):
+        return None
     try:
         data = json.loads(plugin_manifest_path.read_text())
     except (OSError, ValueError, UnicodeDecodeError):
@@ -1544,6 +1579,18 @@ def _plugin_custom_skills_field(plugin_manifest_path: Path) -> object:
     if not isinstance(data, dict):
         return None
     return data.get("skills")
+
+
+def _manifest_within_root(manifest: Path, root: Path) -> bool:
+    """Whether `manifest`, after following symlinks, still lives inside the
+    resolved `root`. Guards the bundled-surface content reads: a plugin
+    manifest that is a symlink escaping its bundle must not drive custom
+    paths or inline declarations (repo-mode candidates are pre-filtered by
+    `_find_plugin_roots`; endpoint mode's hardcoded default path is not)."""
+    try:
+        return manifest.resolve().is_relative_to(root.resolve())
+    except (OSError, RuntimeError):
+        return False
 
 
 def _add_skills_from_dir(
@@ -1965,7 +2012,7 @@ def _add_bundled_plugin_surfaces(
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    plugin_data = _plugin_manifest_data(plugin_manifest_path)
+    plugin_data = _plugin_manifest_data(plugin_manifest_path, plugin_root=plugin_root)
     default_mcp_filename = default_mcp_filename_for_manifest(plugin_manifest_path)
 
     refs: list[ComponentRef] = []
@@ -2023,7 +2070,9 @@ def _add_bundled_plugin_surfaces(
         _add_child(graph, plugin_node, node)
 
 
-def _plugin_manifest_data(plugin_manifest_path: Path) -> dict:
+def _plugin_manifest_data(plugin_manifest_path: Path, *, plugin_root: Path) -> dict:
+    if not _manifest_within_root(plugin_manifest_path, plugin_root):
+        return {}
     try:
         data = json.loads(plugin_manifest_path.read_text())
     except (OSError, ValueError, UnicodeDecodeError):

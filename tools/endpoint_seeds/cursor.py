@@ -3,8 +3,8 @@ HOSTS["cursor"]. Unlike Claude Code's, this has no lockfile-backed
 install-state to resolve: MCP servers, Skills, and Commands are direct
 file reads; Plugins are scoped to presence only (dev-linked and
 marketplace-cached), with no enabled-state property, per ADR-0045
-Decision #7 and ADR-0045 Decision #7. Subagents are seeded by build_graph's cross-host
-pass, never here.
+Decision #7. Subagents are seeded by build_graph's cross-host pass,
+never here.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from tools.graph_build import (
 )
 from tools.parsers import claude_command_agent, claude_plugin, mcp_json
 from tools.parsers.agent_plugins import is_agent_plugins_manifest
+from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import load_gitignore_spec
 
 
@@ -156,9 +157,18 @@ def _realize_plugin_bundle(
     `extra` only (ADR-0045 Decision #7's cached-plugin caller stamps
     `cursor_marketplace_dir` this way; dev-linked callers omit it, so a
     dev-linked ref never carries the key).
+
+    Both manifest candidates are containment-checked against the resolved
+    bundle root before parsing: a manifest that is a symlink escaping the
+    bundle would otherwise realize an external document as the installed
+    plugin (and upload names/metadata read from outside the bundle via
+    remote sync). The check is against `plugin_dir.resolve()`, so a
+    dev-linked bundle — where `plugin_dir` itself is deliberately a
+    symlink into a workspace — still passes for manifests inside the
+    resolved workspace.
     """
-    native = plugin_dir / ".cursor-plugin" / "plugin.json"
-    if native.is_file():
+    native = _contained_bundle_manifest(plugin_dir, ".cursor-plugin/plugin.json")
+    if native is not None:
         # claude_plugin.parse raises on bad JSON (unlike the [] -on-failure
         # agent_plugins/is_agent_plugins_manifest pair below), so go through
         # _safe_parse: one corrupt manifest must cost exactly this plugin,
@@ -175,8 +185,8 @@ def _realize_plugin_bundle(
             # dep manifests instead, unlike Claude's endpoint plugin path.
             descend(graph, plugin_node, plugin_dir, normalize)
             return True
-    root_manifest = plugin_dir / "plugin.json"
-    if root_manifest.is_file() and is_agent_plugins_manifest(root_manifest):
+    root_manifest = _contained_bundle_manifest(plugin_dir, "plugin.json")
+    if root_manifest is not None and is_agent_plugins_manifest(root_manifest):
         # The closed, skills+MCP-only realization (Task 14) — never the
         # native descent above, which would enumerate the client-private
         # surfaces the portable Agent Plugins contract excludes.
@@ -185,6 +195,19 @@ def _realize_plugin_bundle(
         )
         return node is not None
     return False
+
+
+def _contained_bundle_manifest(plugin_dir: Path, rel: str) -> Path | None:
+    """The manifest at `plugin_dir/rel` if it exists and, after following
+    symlinks, still resolves inside the resolved bundle root; None otherwise.
+    Returns the unresolved path so source_manifest strings keep the bundle's
+    own path shape (normalization resolves them consistently later)."""
+    manifest = plugin_dir / rel
+    if not manifest.is_file():
+        return None
+    if resolve_within(plugin_dir, rel) is None:
+        return None
+    return manifest
 
 
 def _seed_marketplace_cached_plugins(graph, target, config_root, normalize, *, warnings) -> None:
@@ -246,7 +269,11 @@ def _seed_manifest_less_cached_plugin(
         runtime_hosts=["cursor"],
     )
     for ref in claude_command_agent.enumerate_dir(
-        version_dir / "commands", kind="command", scope_owner=name, runtime_hosts=["cursor"]
+        version_dir / "commands",
+        kind="command",
+        scope_owner=name,
+        runtime_hosts=["cursor"],
+        contain_within=version_dir,
     ):
         node = Node(key=occurrence_key(ref, normalize), kind="command", ref=ref)
         _add_child(graph, plugin_node, node)

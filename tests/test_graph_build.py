@@ -3259,3 +3259,162 @@ def test_shared_agents_skills_root_is_home_scoped_not_override_relative(tmp_path
     assert "endpoint-shared-agents/skills/home-shared/SKILL.md" in shared.key
     assert str(home) not in shared.key
     assert str(override_root) not in shared.key
+
+
+def test_endpoint_native_manifest_symlink_escape_rejected(tmp_path, monkeypatch):
+    # A dev-linked bundle whose `.cursor-plugin/plugin.json` is a symlink to a
+    # file OUTSIDE the bundle must not realize the external document as the
+    # installed plugin (endpoint scans would inventory — and remote sync
+    # upload — names/metadata read from outside the selected bundle).
+    home = tmp_path / "home"
+    cursor_root = home / ".cursor"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text('{"name": "evil-native"}')
+    evil = cursor_root / "plugins" / "local" / "evil" / ".cursor-plugin"
+    evil.mkdir(parents=True)
+    os.symlink(outside / "plugin.json", evil / "plugin.json")
+    monkeypatch.setenv("HOME", str(home))
+    g = build_graph(cursor_root, mode="endpoint", host_config_roots={"cursor": cursor_root})
+    assert not [n for n in g.nodes.values() if n.kind == "plugin"]
+
+
+def test_endpoint_agent_plugins_manifest_symlink_escape_rejected(tmp_path, monkeypatch):
+    # Same containment rule for the Agent Plugins root manifest: a bundle-root
+    # `plugin.json` symlinked to an external schema-tagged document must not
+    # realize.
+    home = tmp_path / "home"
+    cursor_root = home / ".cursor"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text(
+        '{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+        ' "name": "evil-open"}'
+    )
+    evil = cursor_root / "plugins" / "local" / "evil"
+    evil.mkdir(parents=True)
+    os.symlink(outside / "plugin.json", evil / "plugin.json")
+    monkeypatch.setenv("HOME", str(home))
+    g = build_graph(cursor_root, mode="endpoint", host_config_roots={"cursor": cursor_root})
+    assert not [n for n in g.nodes.values() if n.kind == "plugin"]
+
+
+def test_endpoint_dev_linked_symlinked_bundle_still_realizes(tmp_path, monkeypatch):
+    # Dev-linking works by symlinking the whole bundle directory into
+    # plugins/local — the containment check must compare against the RESOLVED
+    # bundle root so this deliberate symlink shape keeps realizing.
+    home = tmp_path / "home"
+    cursor_root = home / ".cursor"
+    workspace = tmp_path / "ws" / "myplugin"
+    (workspace / ".cursor-plugin").mkdir(parents=True)
+    (workspace / ".cursor-plugin" / "plugin.json").write_text('{"name": "dev-plugin"}')
+    plugins_local = cursor_root / "plugins" / "local"
+    plugins_local.mkdir(parents=True)
+    os.symlink(workspace, plugins_local / "myplugin")
+    monkeypatch.setenv("HOME", str(home))
+    g = build_graph(cursor_root, mode="endpoint", host_config_roots={"cursor": cursor_root})
+    plugin_names = {n.ref.name for n in g.nodes.values() if n.kind == "plugin" and n.ref}
+    assert plugin_names == {"dev-plugin"}
+
+
+def test_endpoint_cached_manifest_less_commands_symlink_escape_rejected(tmp_path, monkeypatch):
+    # G-class containment: the manifest-less cached bundle's commands walk
+    # must not follow a symlinked commands dir (or *.md) out of the bundle —
+    # parity with its skills walk, which is plugin_root-contained.
+    home = tmp_path / "home"
+    cursor_root = home / ".cursor"
+    outside = tmp_path / "outside-commands"
+    outside.mkdir()
+    (outside / "external-cmd.md").write_text("run\n")
+    cached = cursor_root / "plugins" / "cache" / "cursor-public" / "granola" / "somesha"
+    cached.mkdir(parents=True)
+    (cached / ".cache-complete").write_text("")
+    os.symlink(outside, cached / "commands")
+    monkeypatch.setenv("HOME", str(home))
+
+    g = build_graph(cursor_root, mode="endpoint", host_config_roots={"cursor": cursor_root})
+
+    plugin_nodes = [n for n in g.nodes.values() if n.kind == "plugin"]
+    assert len(plugin_nodes) == 1  # presence-only self ref still synthesized
+    assert not [n for n in g.nodes.values() if n.kind == "command"]
+
+
+def test_repo_native_manifest_symlink_escape_not_realized(tmp_path):
+    # Repo-mode half of the endpoint containment rule: a
+    # .claude-plugin/plugin.json symlinked to a document outside the bundle
+    # must not mint plugin self-identity from it.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text('{"name": "evil-native"}')
+    repo = tmp_path / "repo"
+    bundle_cfg = repo / "pkg" / ".claude-plugin"
+    bundle_cfg.mkdir(parents=True)
+    os.symlink(outside / "plugin.json", bundle_cfg / "plugin.json")
+
+    g = build_graph(repo, mode="repo")
+    assert not [n for n in g.nodes.values() if n.kind == "plugin"]
+
+
+def test_repo_agent_plugins_manifest_symlink_escape_not_realized(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text(
+        '{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+        ' "name": "evil-open"}'
+    )
+    repo = tmp_path / "repo"
+    (repo / "pkg").mkdir(parents=True)
+    os.symlink(outside / "plugin.json", repo / "pkg" / "plugin.json")
+
+    g = build_graph(repo, mode="repo", hosts=["claude-code", "cursor"])
+    assert not [n for n in g.nodes.values() if n.kind == "plugin"]
+
+
+def test_unselected_host_bundle_excludes_nested_agent_plugins_fixture(tmp_path):
+    # An unselected Claude bundle's example/fixture Agent Plugins manifest
+    # must not realize as an independent Cursor plugin: inventory must not
+    # depend on host selection that way (exclude_under gets the full
+    # boundary list, not just realized roots).
+    repo = tmp_path / "repo"
+    bundle_cfg = repo / "pkg" / ".claude-plugin"
+    bundle_cfg.mkdir(parents=True)
+    (bundle_cfg / "plugin.json").write_text('{"name": "claude-plugin"}')
+    fixture = repo / "pkg" / "examples" / "demo"
+    fixture.mkdir(parents=True)
+    (fixture / "plugin.json").write_text(
+        '{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+        ' "name": "demo-fixture"}'
+    )
+
+    both = build_graph(repo, mode="repo", hosts=["claude-code", "cursor"])
+    both_names = {n.ref.name for n in both.nodes.values() if n.kind == "plugin" and n.ref}
+    assert both_names == {"claude-plugin"}
+
+    cursor_only = build_graph(repo, mode="repo", hosts=["cursor"])
+    assert not [n for n in cursor_only.nodes.values() if n.kind == "plugin"]
+
+
+def test_endpoint_project_subagents_honor_project_gitignore(tmp_path, monkeypatch):
+    # Parity with the project-scoped skill seeds: a subagent under a path the
+    # project's .gitignore excludes (a worktree, node_modules) must not be
+    # inventoried in endpoint mode.
+    home = tmp_path / "home"
+    claude_root = home / ".claude"
+    claude_root.mkdir(parents=True)
+    project = tmp_path / "project"
+    (project / ".claude" / "agents").mkdir(parents=True)
+    (project / ".claude" / "agents" / "kept.md").write_text("---\nname: kept\n---\nbody\n")
+    ignored_agents = project / ".worktrees" / "wt1" / ".claude" / "agents"
+    ignored_agents.mkdir(parents=True)
+    (ignored_agents / "dropped.md").write_text("---\nname: dropped\n---\nbody\n")
+    (project / ".gitignore").write_text(".worktrees/\n")
+    monkeypatch.setenv("HOME", str(home))
+
+    g = build_graph(
+        claude_root,
+        mode="endpoint",
+        project_root=project,
+        host_config_roots={"claude-code": claude_root},
+    )
+    agent_names = {n.ref.name for n in g.nodes.values() if n.kind == "agent" and n.ref}
+    assert agent_names == {"kept"}

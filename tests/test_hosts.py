@@ -163,3 +163,61 @@ def test_cursor_collect_endpoint_posture_manifests_drops_malformed_manifest(tmp_
     result = collect(config_root, None, [])
 
     assert result == []
+
+
+def test_cursor_posture_skips_never_realized_claude_sibling_manifest(tmp_path):
+    # A Cursor bundle shipping a `.claude-plugin/plugin.json` sibling: Cursor
+    # realization never reads that manifest, so its inline mcpServers must not
+    # surface as Cursor posture.
+    bundle = tmp_path / "plugins" / "local" / "demo"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    (bundle / ".claude-plugin").mkdir()
+    (bundle / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    config_root = tmp_path
+    ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest=str(bundle / ".cursor-plugin" / "plugin.json"),
+        source_locator="$",
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [ref])
+
+    parents = {path.parent.name for path, _ in result}
+    assert ".claude-plugin" not in parents
+    assert ".cursor-plugin" in parents
+
+
+def test_claude_endpoint_posture_skips_never_realized_cursor_sibling_manifest(tmp_path):
+    # Mirror case: a Claude plugin install path shipping a
+    # `.cursor-plugin/plugin.json` must not have that manifest attributed to
+    # claude-code posture.
+    from tools.posture import collect_endpoint_mcp_manifests
+
+    install = tmp_path / "install" / "demo"
+    (install / ".claude-plugin").mkdir(parents=True)
+    (install / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    (install / ".cursor-plugin").mkdir()
+    (install / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    config_dir = tmp_path / "claude-config"
+    config_dir.mkdir()
+    ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest="installed_plugins.json",
+        source_locator="$",
+        extra={"component_type": "plugin", "installPath": str(install)},
+    )
+
+    result = collect_endpoint_mcp_manifests(config_dir, None, [ref])
+    parents = {path.parent.name for path, _ in result}
+    assert ".cursor-plugin" not in parents
+    assert ".claude-plugin" in parents

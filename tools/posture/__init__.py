@@ -153,8 +153,17 @@ def _normalize_alias(value: object) -> str:
 def collect_mcp_manifests(
     roots: list[Path],
     include_gitignored: bool = True,
+    plugin_manifest_parent_dirs: frozenset[str] = _PLUGIN_MANIFEST_PARENT_DIRS,
 ) -> list[tuple[Path, dict]]:
     """Walk one or more roots for MCP-shaped manifests and return parsed dicts.
+
+    `plugin_manifest_parent_dirs` narrows which native plugin manifests are
+    collected. Endpoint collectors MUST pass only the calling host's own
+    directory name: realization for one host never reads the other host's
+    native manifest in the same bundle, so collecting it would report posture
+    findings (e.g. inline `mcpServers` URLs) from a manifest the host was
+    never shown to load. Repo mode keeps the full default set and instead
+    filters losing siblings via `scan._is_losing_plugin_manifest`.
 
     Used by URL-shape rules that need the raw manifest to inspect
     `mcpServers[*].url` and adjacent fields. Parse failures are silently
@@ -199,7 +208,7 @@ def collect_mcp_manifests(
                 if isinstance(data, dict):
                     out.append((path, data))
         for path in root.rglob(_PLUGIN_MANIFEST_NAME):
-            if path.parent.name not in _PLUGIN_MANIFEST_PARENT_DIRS:
+            if path.parent.name not in plugin_manifest_parent_dirs:
                 continue
             if is_ignored(path.relative_to(root), spec):
                 continue
@@ -227,6 +236,10 @@ def collect_settings_manifests(
     for root in roots:
         if root is None or not root.exists():
             continue
+        try:
+            root_resolved = root.resolve()
+        except (OSError, RuntimeError):
+            continue
         spec = None if include_gitignored else load_gitignore_spec(root)
         for path in root.rglob("settings.json"):
             if path.parent.name != ".claude":
@@ -234,6 +247,10 @@ def collect_settings_manifests(
             if is_ignored(path.relative_to(root), spec):
                 continue
             resolved = path.resolve()
+            # Same containment as collect_mcp_manifests: a planted symlink
+            # escaping `root` must not be read into posture evaluation.
+            if not resolved.is_relative_to(root_resolved):
+                continue
             if resolved in seen:
                 continue
             seen.add(resolved)
@@ -287,7 +304,10 @@ def collect_endpoint_mcp_manifests(
         if isinstance(install_path, str) and install_path:
             roots.append(Path(install_path))
 
-    out = collect_mcp_manifests(roots)
+    # Claude realization never reads a `.cursor-plugin/plugin.json` shipped
+    # inside a Claude plugin's install path — don't collect it as claude-code
+    # posture (see collect_mcp_manifests' parameter doc).
+    out = collect_mcp_manifests(roots, plugin_manifest_parent_dirs=frozenset({".claude-plugin"}))
     seen = {path.resolve() for path, _ in out}
 
     direct_paths = [

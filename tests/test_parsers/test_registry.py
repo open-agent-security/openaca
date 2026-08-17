@@ -384,3 +384,105 @@ def test_both_plugin_formats_in_same_directory_both_parsed(tmp_path):
     )
     grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code", "cursor"])
     assert n_found == 2
+
+
+def _write_cursor_native_bundle(root: Path, dirname: str = "cbundle") -> Path:
+    bundle = root / dirname
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text('{"name": "cursor-native"}')
+    (bundle / "mcp.json").write_text(
+        '{"mcpServers": {"bundled": {"command": "npx", "args": ["bundled-mcp@1.0.0"]}}}'
+    )
+    return bundle
+
+
+def test_unselected_cursor_bundle_excluded_from_parser_walk(tmp_path):
+    # A valid Cursor native bundle under hosts=["claude-code"]: its bare root
+    # mcp.json would otherwise match Claude's bare pattern and be inventoried
+    # (and counted) for a host the caller explicitly excluded — build_graph
+    # already excludes the bundle subtree; the public parser walk must too.
+    _write_cursor_native_bundle(tmp_path)
+    (tmp_path / "mcp.json").write_text(
+        '{"mcpServers": {"own": {"command": "npx", "args": ["own-mcp@1.0.0"]}}}'
+    )
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code"])
+    manifests = {str(p) for p, _ in grouped}
+    assert str(tmp_path / "mcp.json") in manifests
+    assert not any("cbundle" in m for m in manifests)
+    assert n_found == 1
+    refs = parse_repo(tmp_path, hosts=["claude-code"])
+    assert not any(r.name == "bundled" for r in refs)
+
+
+def test_unselected_bundle_subagents_excluded_from_parser_walk(tmp_path):
+    bundle = _write_cursor_native_bundle(tmp_path)
+    agents_dir = bundle / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "helper.md").write_text("---\nname: helper\n---\nbody\n")
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code"])
+    assert grouped == []
+    assert n_found == 0
+
+
+def test_dual_manifest_bundle_stays_when_selected_sibling_realizes(tmp_path):
+    bundle = _write_cursor_native_bundle(tmp_path)
+    (bundle / ".claude-plugin").mkdir()
+    (bundle / ".claude-plugin" / "plugin.json").write_text('{"name": "claude-native"}')
+    refs = parse_repo(tmp_path, hosts=["claude-code"])
+    identities = {r.component_identity for r in refs if r.component_identity}
+    assert "plugin/claude-native" in identities
+
+
+def test_dual_manifest_bundle_excluded_when_selected_sibling_malformed(tmp_path):
+    # Realization parity with build_graph: a malformed selected-host manifest
+    # does not keep the bundle in scope when a valid unselected-host sibling
+    # proves a foreign bundle boundary.
+    bundle = _write_cursor_native_bundle(tmp_path)
+    (bundle / ".claude-plugin").mkdir()
+    (bundle / ".claude-plugin" / "plugin.json").write_text("{not json")
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code"])
+    assert grouped == []
+    assert n_found == 0
+
+
+def test_all_hosts_walk_unaffected_by_bundle_exclusion(tmp_path):
+    # Default selection (hosts=None) selects every registered host, so no
+    # foreign-bundle pre-pass runs and the bundle stays fully visible.
+    _write_cursor_native_bundle(tmp_path)
+    refs = parse_repo(tmp_path)
+    identities = {r.component_identity for r in refs if r.component_identity}
+    assert "plugin/cursor-native" in identities
+
+
+def test_native_manifest_symlink_escape_not_matched_by_parser_walk(tmp_path):
+    import os
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text('{"name": "evil-native"}')
+    repo = tmp_path / "repo"
+    bundle_cfg = repo / "pkg" / ".claude-plugin"
+    bundle_cfg.mkdir(parents=True)
+    os.symlink(outside / "plugin.json", bundle_cfg / "plugin.json")
+
+    grouped, n_found = parse_repo_grouped(repo)
+    assert grouped == []
+    assert n_found == 0
+
+
+def test_agent_plugins_manifest_symlink_escape_not_detected(tmp_path):
+    import os
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "plugin.json").write_text(
+        '{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+        ' "name": "evil-open"}'
+    )
+    repo = tmp_path / "repo"
+    (repo / "pkg").mkdir(parents=True)
+    os.symlink(outside / "plugin.json", repo / "pkg" / "plugin.json")
+
+    grouped, n_found = parse_repo_grouped(repo, hosts=["claude-code", "cursor"])
+    assert grouped == []
+    assert n_found == 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 from pathlib import Path
 from typing import Callable
 
@@ -21,6 +22,7 @@ from tools.parsers import (
     pyproject_toml,
     uv_lock,
 )
+from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
 ParserFn = Callable[[Path], list[ComponentRef]]
@@ -110,6 +112,67 @@ _HOST_AMBIGUOUS_BASENAMES = frozenset({"mcp.json", ".mcp.json"})
 # never an Agent Plugins root — skip it in the content-based dispatch below
 # regardless of whether the native parse actually succeeds.
 _NATIVE_PLUGIN_CONFIG_DIRS = frozenset({".claude-plugin", ".cursor-plugin"})
+
+# Which host each native plugin manifest directory belongs to — the parser
+# walk's equivalent of graph dispatch's `_plugin_parser_for_path` ownership.
+_NATIVE_PLUGIN_MANIFEST_OWNERS = {".claude-plugin": "claude-code", ".cursor-plugin": "cursor"}
+
+
+def _plugin_manifest_realizes(manifest: Path) -> bool:
+    """Whether `claude_plugin.parse` would emit a plugin self ref for this
+    manifest: valid JSON object with a non-empty string `name`. Mirrors the
+    graph's realization test (`_descend_into_plugin` succeeds iff the parser
+    yields a plugin-typed ref) without paying for a full bundled-surface walk.
+    """
+    try:
+        data = json.loads(manifest.read_text())
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    name = data.get("name")
+    return isinstance(name, str) and bool(name)
+
+
+def _unselected_native_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> list[Path]:
+    """Resolved roots of native plugin bundles owned by an UNSELECTED host.
+
+    Mirror of `build_graph`'s `unselected_host_plugin_roots` for the public
+    parser walk: a bundle root is excluded when a native manifest owned by an
+    unselected host exists there and no selected-host sibling manifest
+    realizes. Without this, a Cursor bundle's bare root `mcp.json` matches
+    Claude's bare pattern under `hosts=["claude-code"]` and its servers are
+    inventoried (and counted in n_found) for a host the caller explicitly
+    excluded — `build_graph` gained this boundary, but direct `parse_repo`
+    consumers walk independently and need the same one.
+    """
+    roots: list[Path] = []
+    for path in iter_unignored_files(root, spec):
+        if path.name != "plugin.json":
+            continue
+        owner = _NATIVE_PLUGIN_MANIFEST_OWNERS.get(path.parent.name)
+        if owner is None or owner in selected_hosts:
+            continue
+        bundle_root = path.parent.parent
+        # Realization parity with the graph: a selected-host sibling manifest
+        # that realizes keeps the bundle in scope; a malformed selected
+        # sibling does not — the unselected candidate's mere presence still
+        # proves a foreign bundle boundary.
+        if any(
+            other_owner in selected_hosts
+            and (candidate := bundle_root / config_dir / "plugin.json").is_file()
+            # A symlinked sibling manifest escaping the bundle must not decide
+            # whether a foreign bundle stays in scope.
+            and resolve_within(bundle_root, f"{config_dir}/plugin.json") is not None
+            and _plugin_manifest_realizes(candidate)
+            for config_dir, other_owner in _NATIVE_PLUGIN_MANIFEST_OWNERS.items()
+        ):
+            continue
+        try:
+            roots.append(bundle_root.resolve())
+        except OSError:
+            continue
+    return roots
 
 
 def resolve_host_selection(hosts: list[str] | None) -> list[str]:
@@ -337,12 +400,41 @@ def parse_repo_grouped(
     those callers want one finding per logical component, not per discovery
     path.
     """
+    from tools.hosts import HOSTS  # deferred: tools.hosts imports from this module
+
     spec = None if include_gitignored else load_gitignore_spec(root)
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     registry = _active_registry(hosts)
     selected_hosts = resolve_host_selection(hosts)
+    # Only pay for the boundary pre-pass when some known host is actually
+    # unselected — the default all-hosts walk can't have foreign bundles.
+    excluded_bundle_roots: list[Path] = []
+    if any(host_id not in selected_hosts for host_id in HOSTS):
+        excluded_bundle_roots = _unselected_native_bundle_roots(root, spec, selected_hosts)
+
+    def _under_excluded_bundle(path: Path) -> bool:
+        if not excluded_bundle_roots:
+            return False
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return False
+        return any(resolved.is_relative_to(r) for r in excluded_bundle_roots)
+
     for path in iter_unignored_files(root, spec):
+        if _under_excluded_bundle(path):
+            continue
+        # A native plugin manifest that is a symlink escaping its own bundle
+        # root must not match its registry pattern: parsing it mints plugin
+        # self-identity from a document outside the bundle (graph dispatch's
+        # _find_plugin_roots applies the same containment).
+        if (
+            path.name == "plugin.json"
+            and path.parent.name in _NATIVE_PLUGIN_CONFIG_DIRS
+            and resolve_within(path.parent.parent, f"{path.parent.name}/plugin.json") is None
+        ):
+            continue
         matched = False
         for pattern, parser in registry:
             if not registry_pattern_matches(path, root, pattern):
@@ -360,6 +452,10 @@ def parse_repo_grouped(
             and path.name == "plugin.json"
             and path.parent.name not in _NATIVE_PLUGIN_CONFIG_DIRS
             and "cursor" in selected_hosts
+            # A symlinked plugin.json escaping its own bundle root (the
+            # manifest's parent) must not be schema-detected or parsed —
+            # same containment as graph dispatch's _find_agent_plugin_roots.
+            and resolve_within(path.parent, "plugin.json") is not None
             and agent_plugins.is_agent_plugins_manifest(path)
         ):
             n_found += 1
@@ -383,6 +479,8 @@ def parse_repo_grouped(
     for manifest_path, manifest_refs in group_occurrences_by_manifest(
         resolve_subagent_occurrences(root, selected_hosts)
     ):
+        if _under_excluded_bundle(manifest_path):
+            continue
         try:
             rel = manifest_path.relative_to(root)
         except ValueError:

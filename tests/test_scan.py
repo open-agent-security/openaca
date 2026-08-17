@@ -3051,3 +3051,51 @@ def test_endpoint_posture_claude_settings_layer_unchanged(tmp_path, monkeypatch)
         and f.get("rule_id") == "openaca-posture-mcp-auto-approve"
     ]
     assert len(auto_approve) == 1
+
+
+def test_scan_repo_settings_inside_unselected_bundle_excluded_from_posture(tmp_path):
+    # The settings walk is an independent filesystem pass — it must honor the
+    # unselected-host bundle boundary the MCP manifest list already does. A
+    # `.claude/settings.json` inside an excluded Cursor bundle must not
+    # produce api-endpoint-override findings under --host claude-code, while
+    # the same file outside the bundle still does.
+    bundle = tmp_path / "cursor-bundle"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    (bundle / ".claude").mkdir()
+    (bundle / ".claude" / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://gateway.example.com/api"}})
+    )
+    runner = CliRunner()
+
+    def _override_findings(target):
+        result = runner.invoke(
+            main,
+            [
+                "repo",
+                "--target",
+                str(target),
+                "--host",
+                "claude-code",
+                "--include-posture",
+                "--format",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        doc = _scan_json_doc(result.output)
+        return [
+            f
+            for f in doc["findings"]
+            if f.get("finding_type") == "posture"
+            and f.get("rule_id") == "openaca-posture-api-endpoint-override"
+        ]
+
+    assert _override_findings(tmp_path) == []
+
+    control = tmp_path / "control"
+    (control / ".claude").mkdir(parents=True)
+    (control / ".claude" / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://gateway.example.com/api"}})
+    )
+    assert _override_findings(control) != []

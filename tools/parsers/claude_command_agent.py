@@ -73,21 +73,42 @@ def enumerate_dir(
     kind: Kind,
     scope_owner: Optional[str],
     runtime_hosts: Optional[list[str]] = None,
+    contain_within: Optional[Path] = None,
 ) -> list[ComponentRef]:
     """Walk `dir_path/*.md`, emit one ComponentRef per file.
 
     `scope_owner` is the plugin name for bundled components, or None for
     repo-declared ones. It is retained in `extra` as observation metadata.
     Parentage is set by the graph edge, not stored on the refs.
+
+    `contain_within`, when given, is a bundle root every walked file must
+    stay inside after resolving symlinks — the same containment rule
+    `claude_plugin_root._enumerate_bundled_command_agent_dir` applies. Bundle-
+    relative callers (a plugin's `commands/` dir) must pass it so a symlinked
+    directory or `*.md` escaping the bundle isn't attributed to the plugin;
+    install-root/project-root scoped callers have no bundle boundary and omit it.
     """
     if not dir_path.is_dir():
         return []
+    contain_resolved: Optional[Path] = None
+    if contain_within is not None:
+        try:
+            contain_resolved = contain_within.resolve()
+        except (OSError, RuntimeError):
+            return []
     refs: list[ComponentRef] = []
     # Sort for deterministic emission order — makes diffs in fixture
     # snapshots and verbose output stable across runs.
     for child in sorted(dir_path.rglob("*.md")):
         if not child.is_file() or child.suffix != ".md":
             continue
+        if contain_resolved is not None:
+            try:
+                child_resolved = child.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not child_resolved.is_relative_to(contain_resolved):
+                continue
         refs.extend(
             parse_file(child, kind=kind, scope_owner=scope_owner, runtime_hosts=runtime_hosts)
         )
@@ -144,12 +165,19 @@ def _agent_frontmatter_child_refs(
 
     hooks_block = frontmatter.get("hooks")
     if isinstance(hooks_block, dict):
+        # Identity scheme follows the OWNING host of the subagent file, not
+        # the default: a Cursor-only subagent's inline hook is a Cursor hook.
+        # The shared ["claude-code", "cursor"] compat case stays "claude-hook"
+        # deliberately — the file is Claude's (.claude/agents), Cursor merely
+        # also reads it, and identity must not fork on host selection.
+        identity_scheme = "cursor-hook" if runtime_hosts == ["cursor"] else "claude-hook"
         refs.extend(
             hooks_json.parse_plugin_hooks_inline(
                 hooks_block=hooks_block,
                 plugin_name="",
                 source_manifest=str(md_path),
                 runtime_hosts=runtime_hosts,
+                identity_scheme=identity_scheme,
             )
         )
 

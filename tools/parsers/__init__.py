@@ -154,6 +154,11 @@ def _unselected_native_bundle_roots(root: Path, spec, selected_hosts: list[str])
         if owner is None or owner in selected_hosts:
             continue
         bundle_root = path.parent.parent
+        # Containment parity with the graph: _find_plugin_roots drops a
+        # manifest symlink escaping its own bundle root before it can become
+        # a candidate, so it proves no foreign boundary here either.
+        if resolve_within(bundle_root, f"{path.parent.name}/plugin.json") is None:
+            continue
         # Realization parity with the graph: a selected-host sibling manifest
         # that realizes keeps the bundle in scope; a malformed selected
         # sibling does not — the unselected candidate's mere presence still

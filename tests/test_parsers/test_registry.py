@@ -445,6 +445,42 @@ def test_dual_manifest_bundle_excluded_when_selected_sibling_malformed(tmp_path)
     assert n_found == 0
 
 
+def test_escaping_foreign_manifest_symlink_not_a_bundle_boundary(tmp_path):
+    import os
+
+    # Containment parity with build_graph's _find_plugin_roots: an unselected
+    # host's manifest that is a symlink escaping its own bundle root is not a
+    # candidate at all, so it must not mark the bundle as foreign — the
+    # sibling mcp.json stays inventoried for the selected host.
+    bundle = tmp_path / "cbundle"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    outside = tmp_path / "outside-manifest.json"
+    outside.write_text('{"name": "cursor-native"}')
+    os.symlink(outside, bundle / ".cursor-plugin" / "plugin.json")
+    (bundle / "mcp.json").write_text(
+        '{"mcpServers": {"bundled": {"command": "npx", "args": ["bundled-mcp@1.0.0"]}}}'
+    )
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code"])
+    manifests = {str(p) for p, _ in grouped}
+    assert str(bundle / "mcp.json") in manifests
+    assert n_found == 1
+
+
+def test_broken_foreign_manifest_symlink_not_a_bundle_boundary(tmp_path):
+    import os
+
+    bundle = tmp_path / "cbundle"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    os.symlink("/nonexistent/target/plugin.json", bundle / ".cursor-plugin" / "plugin.json")
+    (bundle / "mcp.json").write_text(
+        '{"mcpServers": {"bundled": {"command": "npx", "args": ["bundled-mcp@1.0.0"]}}}'
+    )
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code"])
+    manifests = {str(p) for p, _ in grouped}
+    assert str(bundle / "mcp.json") in manifests
+    assert n_found == 1
+
+
 def test_all_hosts_walk_unaffected_by_bundle_exclusion(tmp_path):
     # Default selection (hosts=None) selects every registered host, so no
     # foreign-bundle pre-pass runs and the bundle stays fully visible.

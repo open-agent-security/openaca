@@ -62,7 +62,9 @@ def parse_file(
     )
     refs = [parent]
     if kind == "agent" and scope_owner is None:
-        refs.extend(_agent_frontmatter_child_refs(md_path, frontmatter))
+        refs.extend(
+            _agent_frontmatter_child_refs(md_path, frontmatter, runtime_hosts=runtime_hosts)
+        )
     return refs
 
 
@@ -126,6 +128,7 @@ def _read_frontmatter(md_path: Path) -> dict:
 def _agent_frontmatter_child_refs(
     md_path: Path,
     frontmatter: dict,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
 
@@ -135,6 +138,7 @@ def _agent_frontmatter_child_refs(
             mcp_servers,
             source_manifest=str(md_path),
             locator_prefix="$.mcpServers",
+            runtime_hosts=runtime_hosts,
         )
     )
 
@@ -145,6 +149,7 @@ def _agent_frontmatter_child_refs(
                 hooks_block=hooks_block,
                 plugin_name="",
                 source_manifest=str(md_path),
+                runtime_hosts=runtime_hosts,
             )
         )
 

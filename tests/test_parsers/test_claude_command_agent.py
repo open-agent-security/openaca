@@ -275,3 +275,34 @@ def test_parse_file_explicit_runtime_hosts_claude_code_matches_default(tmp_path)
     explicit_extra = dict(explicit_refs[0].extra)
     explicit_extra.pop("runtime_hosts")
     assert default_extra == explicit_extra
+
+
+def test_parse_file_propagates_runtime_hosts_to_inline_mcp_child(tmp_path):
+    # Regression guard: a Cursor-only subagent (parent runtime_hosts=["cursor"]
+    # from subagent_precedence's compatibility-read resolution) must tag its
+    # own inline mcpServers/hooks children with the same host list, not
+    # silently default them to claude-code via mcp_json/hooks_json's own
+    # defaulting.
+    md = tmp_path / "browser.md"
+    md.write_text(
+        "---\n"
+        "name: browser-tester\n"
+        "mcpServers:\n"
+        "  - playwright:\n"
+        "      type: stdio\n"
+        "      command: npx\n"
+        "      args: ['@playwright/mcp@1.2.3']\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n"
+    )
+    refs = parse_file(md, kind="agent", runtime_hosts=["cursor"])
+    agent = next(r for r in refs if r.extra.get("component_type") == "agent")
+    mcp = next(r for r in refs if r.extra.get("component_type") == "mcp_server")
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
+    assert agent.extra["runtime_hosts"] == ["cursor"]
+    assert mcp.extra["runtime_hosts"] == ["cursor"]
+    assert hook.extra["runtime_hosts"] == ["cursor"]

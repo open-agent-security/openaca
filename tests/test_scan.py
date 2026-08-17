@@ -2607,6 +2607,49 @@ def test_scan_repo_cursor_native_plugin_bundled_mcp_posture_uses_cursor(tmp_path
     assert posture[0]["active_in"] == ["cursor"]  # not "claude-code"
 
 
+def test_scan_repo_cursor_native_plugin_bundled_mcp_posture_excluded_when_host_unselected(
+    tmp_path,
+):
+    # Regression guard: when Cursor isn't selected, the graph never realizes
+    # this bundle (no `manifest_hosts` provenance entry), so `resolved_owner`
+    # falls back to `owning_host`'s path-shape heuristic. `<plugin-root>/
+    # mcp.json` doesn't match the literal `.cursor/mcp.json` shape it
+    # recognizes, so it falls back to "claude-code" — which IS in the
+    # selected set, so the bundle must be dropped by its own boundary
+    # (`excluded_plugin_roots`), not left to leak through as a
+    # Claude Code finding for a host the user explicitly excluded.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    (plugin_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+
+    claude_only = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert claude_only.exit_code == 0, claude_only.output
+    doc = _scan_json_doc(claude_only.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture == []  # cursor-owned bundle, not visible under --host claude-code
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

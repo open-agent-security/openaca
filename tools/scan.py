@@ -182,6 +182,20 @@ def _repo_manifest_hosts(
     return out
 
 
+def _safe_resolve(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def _is_under_any(path: Path, roots: list[Path]) -> bool:
+    resolved = _safe_resolve(path)
+    if resolved is None:
+        return False
+    return any(resolved.is_relative_to(root) for root in roots)
+
+
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
     if output_format != "text":
         return None
@@ -840,7 +854,18 @@ def repo(
 
     # The composition graph is the single source of truth (Stage 3): scope and
     # attribution are derived from graph structure, not path heuristics.
-    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored, hosts=hosts)
+    # `excluded_plugin_roots` is populated with every native plugin bundle root
+    # the graph discovered but declined to realize because its owning host
+    # isn't selected — posture manifest collection below needs the same
+    # boundary (see `manifest_hosts` comment).
+    excluded_plugin_roots: list[Path] = []
+    graph = build_graph(
+        target,
+        mode="repo",
+        include_gitignored=include_gitignored,
+        hosts=hosts,
+        excluded_plugin_roots=excluded_plugin_roots,
+    )
     all_refs = _refs_from_graph(graph)
     # Reconstruct the per-manifest `grouped` list the repo renderer expects by
     # grouping the projected refs by their source_manifest Path; the renderer is
@@ -891,7 +916,22 @@ def repo(
         # bundled MCP server ref), same as `resolved_owner` already does for
         # endpoint mode's collection provenance.
         manifest_hosts = _repo_manifest_hosts(manifests, all_refs)
-        manifests = [(p, d) for p, d in manifests if resolved_owner(p, manifest_hosts) in hosts]
+        # A bundle whose owning host isn't selected has no `manifest_hosts`
+        # entry (the graph never realized it, so it produced no `mcp_server`
+        # ref to reconstruct provenance from) and `owning_host`'s path-shape
+        # fallback doesn't recognize its bundled manifest either, so it would
+        # otherwise fall back to "claude-code" and leak through the `hosts`
+        # filter below even though the user excluded that host. Drop anything
+        # under `excluded_plugin_roots` outright rather than let it reach the
+        # fallback.
+        excluded_resolved = [_safe_resolve(p) for p in excluded_plugin_roots]
+        excluded_resolved = [p for p in excluded_resolved if p is not None]
+        manifests = [
+            (p, d)
+            for p, d in manifests
+            if resolved_owner(p, manifest_hosts) in hosts
+            and not _is_under_any(p, excluded_resolved)
+        ]
         active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
         settings_manifests = (
             collect_settings_manifests([target], include_gitignored=include_gitignored)

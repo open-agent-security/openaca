@@ -261,6 +261,7 @@ def build_graph(
     warnings: list[str] | None = None,
     hosts: list[str] | None = None,
     host_config_roots: dict[str, Path] | None = None,
+    excluded_plugin_roots: list[Path] | None = None,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -332,6 +333,7 @@ def build_graph(
             root_dir=root_dir,
             root_spec=root_spec,
             hosts=hosts,
+            excluded_plugin_roots=excluded_plugin_roots,
         )
         attach_root_dir = root_dir
         attach_root_spec = root_spec
@@ -719,6 +721,7 @@ def descend(
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
     hosts: list[str] | None = None,
+    excluded_plugin_roots: list[Path] | None = None,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -753,6 +756,15 @@ def descend(
     `hosts` gates which hosts' registry entries the `target` branch dispatches
     on. The `plugin`/`skill` branches never read it — they are Claude-only in
     this phase — so their recursive calls fall back to its default.
+
+    `excluded_plugin_roots`, when given, is extended with every native plugin
+    bundle root discovered but not realized because its owning host isn't
+    selected (the `target` branch's own `unselected_host_plugin_roots`) — the
+    graph excludes their subtree from discovery internally, but callers doing
+    an independent filesystem walk of the same directory (posture manifest
+    collection in `tools/scan.py`) need the same boundary to avoid
+    misattributing an unselected host's bundled manifest via `owning_host`'s
+    path-shape fallback.
     """
     hosts = hosts if hosts is not None else all_host_ids()
     if parent.kind == "target":
@@ -793,6 +805,8 @@ def descend(
             )
             if plugin_node is not None:
                 realized_roots.append(plugin_root)
+        if excluded_plugin_roots is not None:
+            excluded_plugin_roots.extend(unselected_host_plugin_roots)
         # Agent Plugins bundles (content-detected, outside manifest_registry)
         # realize here too, BEFORE the project-skill and standalone-surface
         # walks below, so a bundle's whole subtree — a host-private

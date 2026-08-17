@@ -2131,6 +2131,40 @@ def test_repo_cursor_native_plugin_bundled_mcp_excluded_when_cursor_not_selected
     assert not [n for n in g.nodes.values() if n.kind != "target"]
 
 
+def test_repo_build_graph_reports_unselected_native_plugin_root_via_excluded_plugin_roots(
+    tmp_path,
+):
+    # `excluded_plugin_roots` is the side channel callers doing an independent
+    # filesystem walk of the same directory (posture manifest collection in
+    # tools/scan.py) use to learn the same bundle boundary the graph enforces
+    # internally, for a bundle whose owning host wasn't selected.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    excluded_plugin_roots: list[Path] = []
+    build_graph(
+        tmp_path,
+        mode="repo",
+        hosts=["claude-code"],
+        excluded_plugin_roots=excluded_plugin_roots,
+    )
+    assert [p.resolve() for p in excluded_plugin_roots] == [plugin_root.resolve()]
+
+
+def test_repo_build_graph_omits_realized_plugin_root_from_excluded_plugin_roots(tmp_path):
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    excluded_plugin_roots: list[Path] = []
+    build_graph(
+        tmp_path,
+        mode="repo",
+        hosts=["claude-code", "cursor"],
+        excluded_plugin_roots=excluded_plugin_roots,
+    )
+    assert excluded_plugin_roots == []
+
+
 def test_repo_dual_native_plugin_manifests_resolve_to_claude_format(tmp_path):
     # One directory carrying BOTH native manifests resolves to exactly one
     # plugin root, and the winner is the `.claude-plugin` one — the walk

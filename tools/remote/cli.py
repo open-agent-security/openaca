@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import click
 import httpx
 
+from tools.endpoint_request import resolve_endpoint_request
+from tools.hosts import all_host_ids
 from tools.remote.client import RemoteClient, RemoteClientError
 from tools.remote.collector import (
     CollectError,
@@ -100,6 +101,16 @@ def sync() -> None:
     help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
 )
 @click.option(
+    "--host",
+    "host_values",
+    multiple=True,
+    default=(),
+    help=(
+        "Host(s) to sync on this endpoint (repeatable or comma-separated). Known hosts: "
+        f"{', '.join(all_host_ids())}. Omitted: every host detected on this machine."
+    ),
+)
+@click.option(
     "--project",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
@@ -121,19 +132,22 @@ def sync() -> None:
 )
 def endpoint(
     config_dir: Path | None,
+    host_values: tuple[str, ...],
     project: Path | None,
     quiet: bool,
     allow_offline_cache: bool,
     external_scanners: tuple[str, ...],
 ) -> None:
     """Sync endpoint composition to the configured remote."""
+    selected_hosts, host_roots = resolve_endpoint_request(host_values, config_dir)
     try:
         result = collect_endpoint(
-            config_dir=_resolve_endpoint_config_dir(config_dir),
+            config_dir=host_roots[selected_hosts[0]],
             project=project,
             quiet=quiet,
             allow_offline_cache=allow_offline_cache,
             external_scanners=external_scanners,
+            host_config_roots=host_roots,
         )
     except CollectError as exc:
         if not quiet:
@@ -149,15 +163,6 @@ def _print_upload_result(result) -> None:
     click.echo(f"Findings: {result.finding_count}")
     click.echo(f"Policy violations: {result.policy_violation_count}")
     click.echo(f"Dashboard: {result.dashboard_url}")
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 def _mask_token(token: str) -> str:

@@ -630,6 +630,88 @@ def test_cyclonedx_round_trips_plugin_scope_and_git_commit_sha():
     assert refs[0].extra["gitCommitSha"] == "deadbeef1234abcd"
 
 
+def test_cursor_endpoint_plugin_bom_carries_plugin_scope_property():
+    """Cursor endpoint plugins are location-derived `scope: user` (mirrors the
+    Claude assertion above), so `openaca:plugin_scope` must appear in the BOM
+    the same way it does for Claude's lockfile-recorded scope."""
+    ref = ComponentRef(
+        component_identity="plugin/cursor-public/1password",
+        version="1.2.0",
+        source_manifest="~/.cursor/plugins/cache/cursor-public/1password/deadbeef/.cursor-plugin/plugin.json",
+        source_locator="$",
+        extra={
+            "component_type": "plugin",
+            "runtime_hosts": ["cursor"],
+            "scope": "user",
+        },
+    )
+
+    doc = build_agent_bom([ref], target_type="endpoint", target="~/.cursor").to_cyclonedx()
+
+    component = _component(doc, "plugin/cursor-public/1password")
+    assert _property(component, "openaca:plugin_scope") == "user"
+    assert _property(component, "openaca:agent_host") == "cursor"
+
+
+def test_cyclonedx_round_trips_cursor_marketplace_dir():
+    """extra["cursor_marketplace_dir"] (ADR-0045 Decision #7) survives BOM encode/decode.
+
+    Cached Cursor plugins stamp the observed marketplace directory segment as
+    non-identity provenance; without serializing it, `bom endpoint` and
+    remote sync payloads would silently drop the only place that provenance
+    is recorded.
+    """
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                name="alpha",
+                component_identity="plugin/alpha",
+                source_manifest="/home/.cursor/plugins/cache/cursor-public/alpha/deadbeef/.cursor-plugin/plugin.json",
+                source_locator="$",
+                extra={
+                    "component_type": "plugin",
+                    "runtime_hosts": ["cursor"],
+                    "cursor_marketplace_dir": "cursor-public",
+                },
+            )
+        ],
+        target_type="endpoint",
+        target="~/.cursor",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    component = encoded["components"][0]
+    assert _property(component, "openaca:cursor_marketplace_dir") == "cursor-public"
+
+    refs = component_refs_from_cyclonedx(encoded)
+    assert refs[0].extra["cursor_marketplace_dir"] == "cursor-public"
+
+
+def test_cyclonedx_dev_linked_plugin_has_no_marketplace_dir_property():
+    """A dev-linked plugin ref (no `cursor_marketplace_dir` in extra) must
+    not emit the property at all — absent, not an empty string."""
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                name="demo",
+                component_identity="plugin/demo",
+                source_manifest="/home/.cursor/plugins/local/demo/.cursor-plugin/plugin.json",
+                source_locator="$",
+                extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+            )
+        ],
+        target_type="endpoint",
+        target="~/.cursor",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    component = encoded["components"][0]
+    assert _property(component, "openaca:cursor_marketplace_dir") is None
+
+    refs = component_refs_from_cyclonedx(encoded)
+    assert "cursor_marketplace_dir" not in refs[0].extra
+
+
 def test_parse_purl_strips_qualifiers_and_subpath():
     """PURLs with qualifiers (?...) or subpath (#...) must yield a clean version."""
     doc = {
@@ -964,6 +1046,35 @@ def test_reingest_drops_malformed_capability_items():
     rebuilt = component_refs_from_cyclonedx(doc)[0]
     assert "capabilities" not in rebuilt.extra
     assert "capability_coverage" not in rebuilt.extra
+
+
+def test_bom_metadata_omits_scanned_hosts_and_host_config_roots_by_default():
+    # Single-host callers (bom repo, bom endpoint with one host) never pass
+    # scanned_hosts/host_config_roots, so byte-identical existing output
+    # depends on these keys being absent, not present-but-empty.
+    doc = build_agent_bom([], target_type="endpoint", target="/home/x/.claude").to_cyclonedx()
+    names = {p["name"] for p in doc["metadata"]["properties"]}
+    assert "openaca:scanned_hosts" not in names
+    assert "openaca:host_config_roots" not in names
+
+
+def test_bom_metadata_carries_scanned_hosts_and_host_config_roots_when_given():
+    doc = build_agent_bom(
+        [],
+        target_type="endpoint",
+        target="/home/x/.claude",
+        scanned_hosts=["claude-code", "cursor"],
+        host_config_roots={"claude-code": "/home/x/.claude", "cursor": "/home/x/.cursor"},
+    ).to_cyclonedx()
+    props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    assert json.loads(props["openaca:scanned_hosts"]) == ["claude-code", "cursor"]
+    assert json.loads(props["openaca:host_config_roots"]) == {
+        "claude-code": "/home/x/.claude",
+        "cursor": "/home/x/.cursor",
+    }
+    # openaca:target is unaffected by the new multi-host properties: it stays
+    # exactly the first selected host's root, the documented API-compat anchor.
+    assert _metadata_property(doc, "openaca:target") == "/home/x/.claude"
 
 
 def _props(component: dict) -> dict[str, str]:

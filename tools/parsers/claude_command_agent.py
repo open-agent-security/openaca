@@ -38,6 +38,7 @@ def parse_file(
     md_path: Path,
     kind: Kind,
     scope_owner: Optional[str] = None,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     """Emit one ref for a single `*.md` file. Used by the repo-mode
     registry where `rglob` discovers paths individually."""
@@ -49,12 +50,15 @@ def parse_file(
     identity = (
         f"{ecosystem}/{scope_owner}/{name}" if scope_owner is not None else f"{ecosystem}/{name}"
     )
+    extra: dict = {"scope_owner": scope_owner, "component_type": kind}
+    if runtime_hosts is not None:
+        extra["runtime_hosts"] = runtime_hosts
     parent = ComponentRef(
         name=name,
         component_identity=identity,
         source_manifest=str(md_path),
         source_locator="$",
-        extra={"scope_owner": scope_owner, "component_type": kind},
+        extra=extra,
     )
     refs = [parent]
     if kind == "agent" and scope_owner is None:
@@ -66,6 +70,7 @@ def enumerate_dir(
     dir_path: Path,
     kind: Kind,
     scope_owner: Optional[str],
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     """Walk `dir_path/*.md`, emit one ComponentRef per file.
 
@@ -81,7 +86,9 @@ def enumerate_dir(
     for child in sorted(dir_path.rglob("*.md")):
         if not child.is_file() or child.suffix != ".md":
             continue
-        refs.extend(parse_file(child, kind=kind, scope_owner=scope_owner))
+        refs.extend(
+            parse_file(child, kind=kind, scope_owner=scope_owner, runtime_hosts=runtime_hosts)
+        )
     return refs
 
 

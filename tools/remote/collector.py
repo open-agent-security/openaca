@@ -16,6 +16,11 @@ import httpx
 
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
+from tools.endpoint_request import (
+    TARGET_LOCATOR_ENDPOINT,
+    endpoint_discovery_roots,
+    endpoint_normalization_label,
+)
 from tools.graph import Graph
 from tools.graph_build import build_graph
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
@@ -27,8 +32,7 @@ from tools.observations import (
 )
 from tools.posture import (
     PostureFinding,
-    collect_endpoint_mcp_manifests,
-    collect_endpoint_settings_manifests,
+    collect_endpoint_posture_inputs,
     run_posture_rules,
 )
 from tools.remote.client import BomUploadResult, RemoteClient, RemoteClientError, RemoteServerError
@@ -44,7 +48,6 @@ from tools.remote.upload_contract import (
 )
 
 JsonObject = dict[str, Any]
-TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
 _AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
 
 
@@ -67,14 +70,18 @@ def get_pending_dir() -> Path:
 
 
 def _collect_endpoint_components(
-    config_dir: Path, project: Path | None
+    config_dir: Path,
+    project: Path | None,
+    host_config_roots: dict[str, Path] | None = None,
 ) -> tuple[Graph, list[ComponentRef]]:
     """Build the endpoint composition graph and return agent-scope refs.
 
     Isolated as a helper so tests can monkeypatch this single boundary
     rather than every graph-build internal.
     """
-    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    graph = build_graph(
+        config_dir, mode="endpoint", project_root=project, host_config_roots=host_config_roots
+    )
     all_refs = [
         replace(
             node.ref,
@@ -92,8 +99,23 @@ def build_endpoint_collection(
     project: Path | None,
     *,
     external_scanners: tuple[str, ...] = (),
+    host_config_roots: dict[str, Path] | None = None,
 ) -> EndpointCollection:
-    graph, refs = _collect_endpoint_components(config_dir, project)
+    graph, refs = _collect_endpoint_components(config_dir, project, host_config_roots)
+    roots = host_config_roots or {"claude-code": config_dir}
+    selected_hosts = list(roots)
+    # Mirror how openaca:target is kept remote-safe: it's never given the real
+    # absolute config_dir, only the synthetic TARGET_LOCATOR_ENDPOINT. So
+    # host_config_roots gets each host's discovery label (`endpoint`,
+    # `endpoint-cursor`, ...) instead of its real root — no absolute path is
+    # ever constructed into this BOM, so there is nothing for the redaction
+    # pass below to catch or miss.
+    scanned_hosts = selected_hosts if len(selected_hosts) > 1 else None
+    host_config_roots_for_bom = (
+        {host_id: endpoint_normalization_label(host_id) for host_id in selected_hosts}
+        if len(selected_hosts) > 1
+        else None
+    )
     bom = _prepare_remote_bom(
         build_agent_bom(
             refs,
@@ -102,13 +124,18 @@ def build_endpoint_collection(
             source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
             source_unit_label="active plugin",
             graph=graph,
+            scanned_hosts=scanned_hosts,
+            host_config_roots=host_config_roots_for_bom,
         ).to_cyclonedx()
     )
-    mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
-    settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
+    mcp_manifests, manifest_hosts, settings_manifests = collect_endpoint_posture_inputs(
+        roots, project, refs
+    )
     posture_findings = [
         _posture_finding_to_payload(finding)
-        for finding in run_posture_rules(refs, mcp_manifests, settings_manifests)
+        for finding in run_posture_rules(
+            refs, mcp_manifests, settings_manifests, manifest_hosts=manifest_hosts
+        )
     ]
     observations, scanner_posture_findings = _collect_scanner_findings(
         refs, external_scanners=external_scanners
@@ -150,6 +177,7 @@ def collect_endpoint(
     quiet: bool = False,
     allow_offline_cache: bool = False,
     external_scanners: tuple[str, ...] = (),
+    host_config_roots: dict[str, Path] | None = None,
 ) -> BomUploadResult:
     config_path = get_config_path()
     config = load_remote_config(config_path)
@@ -165,9 +193,12 @@ def collect_endpoint(
             config_dir=config_dir,
             project=project,
             external_scanners=external_scanners,
+            host_config_roots=host_config_roots,
         )
     else:
-        collection = build_endpoint_collection(config_dir=config_dir, project=project)
+        collection = build_endpoint_collection(
+            config_dir=config_dir, project=project, host_config_roots=host_config_roots
+        )
     asset_id = config.asset_id
     if asset_id is None:
         try:
@@ -193,11 +224,15 @@ def collect_endpoint(
     # filesystem paths because the OSS CLI runs on the user's own machine;
     # those paths are useful for offline analysis. remote uploads cross a
     # SaaS network boundary into a multi-tenant store, so we redact at the
-    # upload boundary. Relativize against config_dir / project first to
-    # preserve component provenance (each skill still identifies as a
-    # distinct relative path), and fall back to basename only when no known
-    # root applies.
-    _redact_payload_for_remote(payload, config_dir=config_dir, project=project)
+    # upload boundary. Relativize against every endpoint discovery root
+    # (Task 15's endpoint_discovery_roots — the same labeled, host- and
+    # auxiliary-root-aware descriptor graph normalization consumes) and
+    # project first to preserve component provenance (each skill still
+    # identifies as a distinct, labeled relative path), and fall back to
+    # basename only when no known root applies.
+    roots = host_config_roots or {"claude-code": config_dir}
+    discovery_roots = endpoint_discovery_roots(list(roots), roots)
+    _redact_payload_for_remote(payload, discovery_roots=discovery_roots, project=project)
     # Recompute content_hash AFTER redaction so the stored hash matches the
     # stored raw_bom. The remote contract defines content_hash as
     # sha256(raw_bom); without this, the wire payload carries a hash of the
@@ -281,15 +316,20 @@ def _extract_file_uri_path(uri: str) -> str:
 def _relativize_path_for_remote(
     value: str,
     *,
-    config_dir: Path,
+    discovery_roots: dict[str, Path],
     project: Path | None,
 ) -> str:
     """Convert an absolute filesystem path into a redacted form safe for
     remote upload.
 
     Order matters. Try to preserve provenance:
-      1. If the path is under `config_dir` (e.g. ~/.claude), return the
-         path relative to it (e.g. `skills/clerk-billing/SKILL.md`).
+      1. If the path is under one of `discovery_roots` (Task 15's
+         `endpoint_discovery_roots` — every selected host's config root plus
+         the auxiliary roots endpoint composition reads, e.g. `endpoint/`
+         for Claude Code, `endpoint-cursor/`, `endpoint-shared-agents/`),
+         return `<label>/<relative>` — the label is required, never
+         collapsed to an unlabeled relative path, so paths under different
+         roots with the same relative shape stay distinct.
       2. If the path is under `project` (when set), return `project/<rel>`.
       3. Otherwise, fall back to the basename so we never ship absolute
          paths over the wire.
@@ -304,9 +344,8 @@ def _relativize_path_for_remote(
     # runner, `Path("C:\\Users\\foo").name` returns the full string
     # unchanged — `\` is not a separator. Use PureWindowsPath to strip to
     # the basename consistently with how the helper redacts every other
-    # unknown-root absolute path. Windows roots never match POSIX
-    # config_dir/project, so going straight to the basename fallback is
-    # correct.
+    # unknown-root absolute path. Windows roots never match POSIX discovery
+    # roots/project, so going straight to the basename fallback is correct.
     if value.startswith("\\\\") or (
         len(value) >= 3 and value[1] == ":" and value[2] in ("\\", "/")
     ):
@@ -315,10 +354,12 @@ def _relativize_path_for_remote(
         candidate = Path(value)
     except (TypeError, ValueError):
         return Path(value).name
-    try:
-        return candidate.relative_to(config_dir).as_posix()
-    except ValueError:
-        pass
+    for label, root in discovery_roots.items():
+        try:
+            relative = candidate.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        return f"{label}/{relative}" if relative != "." else label
     if project is not None:
         try:
             relative = candidate.relative_to(project).as_posix()
@@ -331,7 +372,7 @@ def _relativize_path_for_remote(
 def _redact_json_node_for_remote(
     node: object,
     *,
-    config_dir: Path,
+    discovery_roots: dict[str, Path],
     project: Path | None,
 ) -> object:
     """Recursively walk a parsed JSON structure, redacting any string leaf
@@ -345,16 +386,22 @@ def _redact_json_node_for_remote(
     """
     if isinstance(node, dict):
         return {
-            k: _redact_property_value_for_remote(v, config_dir=config_dir, project=project)
+            k: _redact_property_value_for_remote(
+                v, discovery_roots=discovery_roots, project=project
+            )
             if isinstance(v, str)
-            else _redact_json_node_for_remote(v, config_dir=config_dir, project=project)
+            else _redact_json_node_for_remote(v, discovery_roots=discovery_roots, project=project)
             for k, v in node.items()
         }
     if isinstance(node, list):
         return [
-            _redact_property_value_for_remote(item, config_dir=config_dir, project=project)
+            _redact_property_value_for_remote(
+                item, discovery_roots=discovery_roots, project=project
+            )
             if isinstance(item, str)
-            else _redact_json_node_for_remote(item, config_dir=config_dir, project=project)
+            else _redact_json_node_for_remote(
+                item, discovery_roots=discovery_roots, project=project
+            )
             for item in node
         ]
     return node
@@ -363,7 +410,7 @@ def _redact_json_node_for_remote(
 def _redact_embedded_unix_paths(
     value: str,
     *,
-    config_dir: Path,
+    discovery_roots: dict[str, Path],
     project: Path | None,
 ) -> str:
     """Redact Unix absolute paths embedded within a larger string.
@@ -374,7 +421,9 @@ def _redact_embedded_unix_paths(
     """
 
     def _replace(m: re.Match) -> str:  # type: ignore[type-arg]
-        return _relativize_path_for_remote(m.group(0), config_dir=config_dir, project=project)
+        return _relativize_path_for_remote(
+            m.group(0), discovery_roots=discovery_roots, project=project
+        )
 
     return _EMBEDDED_UNIX_PATH_RE.sub(_replace, value)
 
@@ -393,7 +442,7 @@ def _redact_embedded_urls_in_string(value: str) -> str:
 def _redact_property_value_for_remote(
     value: str,
     *,
-    config_dir: Path,
+    discovery_roots: dict[str, Path],
     project: Path | None,
 ) -> str:
     """Redact a single openaca:* property value or posture-evidence string.
@@ -407,10 +456,10 @@ def _redact_property_value_for_remote(
       relativize the embedded path segment, preserve surrounding structure.
     """
     if _is_absolute_path(value):
-        return _relativize_path_for_remote(value, config_dir=config_dir, project=project)
+        return _relativize_path_for_remote(value, discovery_roots=discovery_roots, project=project)
     if value.lower().startswith("file://"):
         return _relativize_path_for_remote(
-            _extract_file_uri_path(value), config_dir=config_dir, project=project
+            _extract_file_uri_path(value), discovery_roots=discovery_roots, project=project
         )
     if value.lower().startswith(("http://", "https://")):
         return _redact_url_for_remote(value)
@@ -419,19 +468,21 @@ def _redact_property_value_for_remote(
             parsed = json.loads(value)
         except json.JSONDecodeError:
             return value
-        redacted = _redact_json_node_for_remote(parsed, config_dir=config_dir, project=project)
+        redacted = _redact_json_node_for_remote(
+            parsed, discovery_roots=discovery_roots, project=project
+        )
         return json.dumps(redacted, sort_keys=True)
     # Redact embedded URLs before checking for Unix paths: URL path components
     # like `//host/path` would otherwise trigger `_EMBEDDED_UNIX_PATH_RE`.
     if _EMBEDDED_URL_RE.search(value):
         value = _redact_embedded_urls_in_string(value)
     if _EMBEDDED_UNIX_PATH_RE.search(value):
-        return _redact_embedded_unix_paths(value, config_dir=config_dir, project=project)
+        return _redact_embedded_unix_paths(value, discovery_roots=discovery_roots, project=project)
     return value
 
 
-def _is_in_known_root(path: str, *, config_dir: Path, project: Path | None) -> bool:
-    """Return True when path falls under config_dir or project.
+def _is_in_known_root(path: str, *, discovery_roots: dict[str, Path], project: Path | None) -> bool:
+    """Return True when path falls under a discovery root or project.
 
     Mirrors the root-detection logic in _relativize_path_for_remote so callers
     can detect whether the basename fallback was taken without duplicating the
@@ -445,11 +496,12 @@ def _is_in_known_root(path: str, *, config_dir: Path, project: Path | None) -> b
         candidate = Path(path)
     except (TypeError, ValueError):
         return False
-    try:
-        candidate.relative_to(config_dir)
-        return True
-    except ValueError:
-        pass
+    for root in discovery_roots.values():
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            continue
     if project is not None:
         try:
             candidate.relative_to(project)
@@ -459,14 +511,16 @@ def _is_in_known_root(path: str, *, config_dir: Path, project: Path | None) -> b
     return False
 
 
-def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None) -> str:
+def _redact_bom_ref_path(
+    bom_ref: str, *, discovery_roots: dict[str, Path], project: Path | None
+) -> str:
     """Relativize the source-manifest path portion of an occurrence-key bom-ref.
 
     Graph occurrence keys have the form `{source_manifest}#{locator}#{what}`.
     When the path normalizer falls back to an absolute path (e.g. a plugin
-    installed outside config_dir/project), the bom-ref embeds that absolute path
-    and must be relativized before remote upload. Non-absolute bom-refs pass through
-    unchanged.
+    installed outside every discovery root/project), the bom-ref embeds that
+    absolute path and must be relativized before remote upload. Non-absolute
+    bom-refs pass through unchanged.
 
     For out-of-root paths (basename fallback), a stable 8-char SHA-256 digest of
     the original absolute path is appended to keep distinct install locations
@@ -477,11 +531,13 @@ def _redact_bom_ref_path(bom_ref: str, *, config_dir: Path, project: Path | None
     path_part = parts[0]
     if not _is_absolute_path(path_part):
         return bom_ref
-    redacted = _redact_source_path(path_part, config_dir=config_dir, project=project)
+    redacted = _redact_source_path(path_part, discovery_roots=discovery_roots, project=project)
     return f"{redacted}#{parts[1]}" if len(parts) > 1 else redacted
 
 
-def _redact_source_path(path: str, *, config_dir: Path, project: Path | None) -> str:
+def _redact_source_path(
+    path: str, *, discovery_roots: dict[str, Path], project: Path | None
+) -> str:
     """Relativize an absolute source-manifest path, appending a stable 8-char
     digest of the original path for out-of-root locations (basename fallback).
 
@@ -493,15 +549,15 @@ def _redact_source_path(path: str, *, config_dir: Path, project: Path | None) ->
     collide and misattribute findings. Non-absolute paths pass through unchanged."""
     if not _is_absolute_path(path):
         return path
-    redacted = _relativize_path_for_remote(path, config_dir=config_dir, project=project)
-    if not _is_in_known_root(path, config_dir=config_dir, project=project):
+    redacted = _relativize_path_for_remote(path, discovery_roots=discovery_roots, project=project)
+    if not _is_in_known_root(path, discovery_roots=discovery_roots, project=project):
         digest = hashlib.sha256(path.encode()).hexdigest()[:8]
         redacted = f"{redacted}.{digest}"
     return redacted
 
 
 def _redact_bom_refs_in_bom(
-    bom: JsonObject, *, config_dir: Path, project: Path | None
+    bom: JsonObject, *, discovery_roots: dict[str, Path], project: Path | None
 ) -> dict[str, str]:
     """In-place redaction of absolute-path bom-refs across the CycloneDX BOM.
 
@@ -519,7 +575,7 @@ def _redact_bom_refs_in_bom(
         if isinstance(mc, dict):
             old = mc.get("bom-ref")
             if isinstance(old, str):
-                new = _redact_bom_ref_path(old, config_dir=config_dir, project=project)
+                new = _redact_bom_ref_path(old, discovery_roots=discovery_roots, project=project)
                 if new != old:
                     ref_map[old] = new
 
@@ -528,7 +584,7 @@ def _redact_bom_refs_in_bom(
             continue
         old = component.get("bom-ref")
         if isinstance(old, str):
-            new = _redact_bom_ref_path(old, config_dir=config_dir, project=project)
+            new = _redact_bom_ref_path(old, discovery_roots=discovery_roots, project=project)
             if new != old:
                 ref_map[old] = new
 
@@ -566,7 +622,7 @@ def _redact_bom_refs_in_bom(
 def _redact_payload_for_remote(
     payload: JsonObject,
     *,
-    config_dir: Path,
+    discovery_roots: dict[str, Path],
     project: Path | None,
 ) -> None:
     """In-place redaction of absolute filesystem paths inside a Remote
@@ -575,19 +631,29 @@ def _redact_payload_for_remote(
     CLI-synthesized property/evidence values that the backend will scan,
     not arbitrary pass-through CycloneDX content.
 
+    `discovery_roots` is Task 15's `endpoint_discovery_roots` result — every
+    selected host's config root plus the auxiliary roots endpoint composition
+    reads, each labeled (`endpoint/`, `endpoint-<host-id>/`,
+    `endpoint-shared-agents/`, `endpoint-claude-compat/`). It is the same
+    complete, labeled descriptor graph normalization consumes, so a shared
+    relative path under two different roots (e.g. the shared-agents and
+    claude-compat auxiliary roots) never collapses to the same redacted
+    string.
+
     Handles both plain-string values (e.g. `openaca:source_manifest`) and
     JSON-encoded values (e.g. `openaca:declared_by`, `openaca:source_provenance`)
     that may embed absolute paths inside their fields.
 
     Also redacts bom-refs: graph-backed BOMs use occurrence keys (which embed
     the source_manifest path) as bom-refs. The path normalizer falls back to
-    the absolute path for plugin installPaths outside config_dir/project, so
-    those absolute paths appear in bom-ref, dependencies[].ref, and dependsOn[].
+    the absolute path for plugin installPaths outside every discovery root/
+    project, so those absolute paths appear in bom-ref, dependencies[].ref,
+    and dependsOn[].
     """
     bom = payload.get("bom")
     ref_map: dict[str, str] = {}
     if isinstance(bom, dict):
-        ref_map = _redact_bom_refs_in_bom(bom, config_dir=config_dir, project=project)
+        ref_map = _redact_bom_refs_in_bom(bom, discovery_roots=discovery_roots, project=project)
         for component in bom.get("components", []) or []:
             if not isinstance(component, dict):
                 continue
@@ -605,11 +671,11 @@ def _redact_payload_for_remote(
                 # digest) — keeping two out-of-root same-basename manifests distinct.
                 if prop_name == "openaca:source_manifest":
                     prop["value"] = _redact_source_path(
-                        value, config_dir=config_dir, project=project
+                        value, discovery_roots=discovery_roots, project=project
                     )
                 else:
                     prop["value"] = _redact_property_value_for_remote(
-                        value, config_dir=config_dir, project=project
+                        value, discovery_roots=discovery_roots, project=project
                     )
 
     for finding in payload.get("posture_findings", []) or []:
@@ -624,11 +690,13 @@ def _redact_payload_for_remote(
         for key, value in list(evidence.items()):
             if isinstance(value, str):
                 evidence[key] = _redact_property_value_for_remote(
-                    value, config_dir=config_dir, project=project
+                    value, discovery_roots=discovery_roots, project=project
                 )
             elif isinstance(value, list):
                 evidence[key] = [
-                    _redact_property_value_for_remote(item, config_dir=config_dir, project=project)
+                    _redact_property_value_for_remote(
+                        item, discovery_roots=discovery_roots, project=project
+                    )
                     if isinstance(item, str)
                     else item
                     for item in value
@@ -646,7 +714,7 @@ def _redact_payload_for_remote(
             # SkillSpector scans by path) fall back to a raw filesystem path here;
             # redact it identically to evidence/declared_by paths.
             finding["subject_coordinate"] = _redact_property_value_for_remote(
-                subject_coordinate, config_dir=config_dir, project=project
+                subject_coordinate, discovery_roots=discovery_roots, project=project
             )
         for key in ("evidence", "declared_by"):
             value = finding.get(key)
@@ -655,12 +723,12 @@ def _redact_payload_for_remote(
             for evidence_key, evidence_value in list(value.items()):
                 if isinstance(evidence_value, str):
                     value[evidence_key] = _redact_property_value_for_remote(
-                        evidence_value, config_dir=config_dir, project=project
+                        evidence_value, discovery_roots=discovery_roots, project=project
                     )
                 elif isinstance(evidence_value, list):
                     value[evidence_key] = [
                         _redact_property_value_for_remote(
-                            item, config_dir=config_dir, project=project
+                            item, discovery_roots=discovery_roots, project=project
                         )
                         if isinstance(item, str)
                         else item
@@ -755,6 +823,7 @@ def _posture_finding_to_payload(finding: PostureFinding) -> JsonObject:
         "severity": finding.severity.upper(),
         "confidence": finding.confidence,
         "scope": _posture_scope(finding),
+        "active_in": finding.active_in,
         "summary": finding.title,
         "fix": finding.remediation,
         "evidence": _posture_evidence(finding),
@@ -819,7 +888,7 @@ def _normalized_evidence(evidence: Mapping[str, Any]) -> JsonObject:
 
 
 def _posture_scope(finding: PostureFinding) -> str:
-    if finding.rule_id == "openaca-posture-api-endpoint-override":
+    if finding.rule_id == "openaca-posture-api-endpoint-override" or finding.bom_ref is None:
         return "asset"
     return "component"
 

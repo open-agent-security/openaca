@@ -67,6 +67,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "scope": None,
                 "capabilities": None,
                 "capability_coverage": None,
+                "runtime_hosts": None,
             }
         ],
         "removed_components": [
@@ -88,6 +89,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                 "scope": None,
                 "capabilities": None,
                 "capability_coverage": None,
+                "runtime_hosts": None,
             }
         ],
         "changed_components": [
@@ -110,6 +112,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "scope": None,
                     "capabilities": None,
                     "capability_coverage": None,
+                    "runtime_hosts": None,
                 },
                 "after": {
                     "version": "1.1.0",
@@ -125,6 +128,7 @@ def test_diff_boms_reports_component_and_edge_changes():
                     "scope": None,
                     "capabilities": None,
                     "capability_coverage": None,
+                    "runtime_hosts": None,
                 },
             }
         ],
@@ -176,6 +180,7 @@ def _component(
     scope: str | None = None,
     capabilities: str | None = None,
     capability_coverage: str | None = None,
+    runtime_hosts: str | None = None,
 ) -> dict:
     component: dict = {
         "type": "application",
@@ -220,6 +225,8 @@ def _component(
         component["properties"].append(
             {"name": "openaca:capability_coverage", "value": capability_coverage}
         )
+    if runtime_hosts is not None:
+        component["properties"].append({"name": "openaca:runtime_hosts", "value": runtime_hosts})
     return component
 
 
@@ -574,3 +581,56 @@ def test_diff_boms_detects_capability_coverage_change():
     assert changed.after.capability_coverage == "partial"
     assert changed.to_json()["before"]["capability_coverage"] == "unknown"
     assert changed.to_json()["after"]["capability_coverage"] == "partial"
+
+
+def test_diff_boms_detects_runtime_hosts_change():
+    before = _bom(
+        components=[
+            _component(
+                "agents/shared",
+                "agents/shared",
+                "agent_definition",
+                runtime_hosts="claude",
+            )
+        ],
+    )
+    after = _bom(
+        components=[
+            _component(
+                "agents/shared",
+                "agents/shared",
+                "agent_definition",
+                runtime_hosts="claude,cursor",
+            )
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert len(result.changed_components) == 1
+    changed = result.changed_components[0]
+    assert changed.before.runtime_hosts == "claude"
+    assert changed.after.runtime_hosts == "claude,cursor"
+    assert changed.to_json()["before"]["runtime_hosts"] == "claude"
+    assert changed.to_json()["after"]["runtime_hosts"] == "claude,cursor"
+
+
+def test_diff_boms_no_runtime_hosts_property_not_changed():
+    before = _bom(
+        components=[
+            _component("plugin/demo", "plugin/demo", "plugin", version="1.0.0"),
+        ],
+    )
+    after = _bom(
+        components=[
+            _component("plugin/demo", "plugin/demo", "plugin", version="1.0.0"),
+        ],
+    )
+
+    result = diff_boms(before, after)
+
+    assert result.added_components == []
+    assert result.removed_components == []
+    assert result.changed_components == []

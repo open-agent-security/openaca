@@ -243,3 +243,47 @@ def test_parse_plugin_hooks_inline_returns_empty_for_empty_block():
         )
         == []
     )
+
+
+# Format-aware plugin hooks (Cursor native format): runtime_hosts +
+# identity_scheme. See docs/specs/multi-host-support.md Hooks section.
+
+
+def test_cursor_format_hooks_camelcase_event_and_cursor_scheme():
+    refs = parse_plugin_hooks_inline(
+        {"postToolUse": [{"command": "./check.sh"}]},
+        "demo",
+        "/p/.cursor-plugin/plugin.json",
+        runtime_hosts=["cursor"],
+        identity_scheme="cursor-hook",
+    )
+    assert len(refs) == 1
+    assert refs[0].extra["event"] == "postToolUse"
+    assert refs[0].extra["runtime_hosts"] == ["cursor"]
+    assert (refs[0].component_identity or "").startswith("cursor-hook/")
+
+
+def test_unknown_event_names_recorded_not_dropped():
+    # Cursor's vocabulary is larger than Claude's and still growing
+    # (agent-lifecycle events); dropping unregistered event names would
+    # silently lose real hooks, so the shared walk stays permissive.
+    refs = parse_plugin_hooks_inline(
+        {"someFutureEvent": [{"command": "./x.sh"}]},
+        "demo",
+        "/p/.cursor-plugin/plugin.json",
+        runtime_hosts=["cursor"],
+        identity_scheme="cursor-hook",
+    )
+    assert len(refs) == 1
+    assert refs[0].extra["event"] == "someFutureEvent"
+
+
+def test_claude_format_defaults_unchanged():
+    refs = parse_plugin_hooks_inline(
+        {"PostToolUse": [{"type": "command", "command": "echo done"}]},
+        "demo",
+        "/p/.claude-plugin/plugin.json",
+    )
+    assert len(refs) == 1
+    assert "runtime_hosts" not in refs[0].extra
+    assert (refs[0].component_identity or "").startswith("claude-hook/")

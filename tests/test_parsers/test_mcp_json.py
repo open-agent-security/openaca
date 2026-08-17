@@ -982,3 +982,21 @@ def test_format_install_source_shell_quotes_spaced_args():
     install_source = refs[0].extra["install_source"]
     # shlex.split must recover the original single-path token, not split on space.
     assert shlex.split(install_source) == ["node", "./my server/index.js"]
+
+
+def test_parse_default_runtime_hosts_is_claude_code(tmp_path):
+    path = tmp_path / "mcp.json"
+    path.write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}}'
+    )
+    refs = parse(path)
+    assert refs[0].extra["runtime_hosts"] == ["claude-code"]
+
+
+def test_parse_accepts_explicit_runtime_hosts(tmp_path):
+    path = tmp_path / "mcp.json"
+    path.write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}}'
+    )
+    refs = parse(path, runtime_hosts=["cursor"])
+    assert refs[0].extra["runtime_hosts"] == ["cursor"]

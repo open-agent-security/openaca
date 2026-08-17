@@ -762,7 +762,7 @@ def test_json_score_none_when_only_upstream_label():
 def _plugin_ref(
     name: str,
     version: str,
-    scope: str = "user",
+    scope: str | None = "user",
     sha: str = "",
     marketplace: str | None = None,
 ) -> ComponentRef:
@@ -845,6 +845,65 @@ def _graph_from_refs(refs: list[ComponentRef]) -> Graph:
     g = Graph(nodes, edges)
     g.validate()
     return g
+
+
+def test_tree_shows_no_host_breakdown_for_single_host():
+    refs = [
+        _plugin_ref("a", "1.0.0"),
+        _bundled(
+            "skill",
+            "direct-skill",
+            None,
+            attributed_to=None,
+            component_identity="skill/direct-skill",
+        ),
+    ]
+    out = render_inventory_tree(
+        refs, [], use_unicode=True, graph=_graph_from_refs(refs), hosts=["claude-code"]
+    )
+    assert "(claude-code:" not in out
+    assert "[claude-code]" not in out
+
+
+def test_tree_shows_per_host_breakdown_and_top_level_tags_only(tmp_path):
+    plugin_ref = ComponentRef(
+        name="demo",
+        version="1.2.0",
+        component_identity="plugin/cursor-public/demo",
+        source_manifest="fake",
+        extra={"component_type": "plugin", "scope": "user", "runtime_hosts": ["cursor"]},
+    )
+    bundled_skill = ComponentRef(
+        name="bundled-skill",
+        component_identity="skill/bundled-skill",
+        source_manifest="fake",
+        extra={
+            "component_type": "skill",
+            "runtime_hosts": ["cursor"],
+            "_test_attributed_to": "plugin/cursor-public/demo@1.2.0",
+        },
+    )
+    direct_skill = ComponentRef(
+        name="direct-skill",
+        component_identity="skill/direct-skill",
+        source_manifest="fake",
+        extra={"component_type": "skill", "runtime_hosts": ["claude-code"]},
+    )
+    refs = [plugin_ref, bundled_skill, direct_skill]
+
+    out = render_inventory_tree(
+        refs,
+        [],
+        use_unicode=True,
+        graph=_graph_from_refs(refs),
+        hosts=["claude-code", "cursor"],
+    )
+
+    assert "(claude-code: 1, cursor: 1)" in out
+    assert "plugin/cursor-public/demo@1.2.0 [cursor] [scope=user]" in out
+    assert "direct-skill [claude-code]" in out
+    assert "bundled-skill [cursor]" not in out
+    assert "bundled-skill [claude-code]" not in out
 
 
 def test_tree_header_counts_plugins_direct_total():
@@ -1205,6 +1264,15 @@ def test_tree_plugin_header_shows_marketplace_context():
     assert "plugin/official/superpowers@5.1.0" in out
     assert "(sha: 917e5f53)" in out
     assert "[scope=user]" in out
+
+
+def test_tree_plugin_header_omits_scope_bracket_when_scope_absent():
+    refs = [_plugin_ref("granola", "unknown", scope=None)]
+
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
+
+    assert "[scope=" not in out
+    assert "scope=None" not in out
 
 
 def test_tree_empty_plugin_shows_no_bundled_components():

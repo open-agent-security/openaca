@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools.host_paths import resolved_owner
 from tools.posture.finding import PostureFinding, Standards
 
 RULE_ID = "openaca-posture-mcp-auto-approve"
@@ -24,9 +25,17 @@ _STANDARDS = Standards(
 
 def check_mcp_auto_approve(
     manifests: list[tuple[Path, dict]],
+    manifest_hosts: dict[Path, str] | None = None,
 ) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for path, manifest in manifests:
+        if resolved_owner(path, manifest_hosts) != "claude-code":
+            # autoApprove is a Claude Code mcp.json convention with no
+            # documented Cursor equivalent (verified against Cursor's
+            # own MCP docs — approval there is Run-Modes/UI state).
+            # A manifest belonging to another host carrying this key
+            # isn't evidence of an active posture on that host.
+            continue
         servers = _get_server_map(manifest)
         if servers is None:
             continue
@@ -49,7 +58,7 @@ def check_mcp_auto_approve(
                         "type": "mcp_server",
                         "name": f"{label} autoApprove",
                     },
-                    active_in=_infer_hosts(manifest),
+                    active_in=_infer_hosts(path, manifest, manifest_hosts),
                     declared_by={"kind": "manifest", "path": str(path)},
                     component_path=[{"type": "mcp_server", "name": label}],
                     standards=_STANDARDS,
@@ -67,10 +76,17 @@ def _is_enabled(value: object) -> bool:
     return False
 
 
-def _infer_hosts(manifest: dict) -> list[str]:
-    if isinstance(manifest.get("mcpServers"), dict):
-        return ["claude-code"]
-    return []
+def _infer_hosts(
+    path: Path, manifest: dict, manifest_hosts: dict[Path, str] | None = None
+) -> list[str]:
+    """`mcpServers` is the shape both Claude Code and Cursor use — content
+    alone can't tell them apart, but `resolved_owner` (collection
+    provenance, falling back to path shape) always can. Other shapes
+    (`servers` for VS Code, flat-root) carry no host signal at all; leave
+    active_in empty rather than guess."""
+    if not isinstance(manifest.get("mcpServers"), dict):
+        return []
+    return [resolved_owner(path, manifest_hosts)]
 
 
 def _get_server_map(manifest: dict) -> dict | None:

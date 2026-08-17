@@ -76,3 +76,18 @@ def test_settings_file_mcp_autoapprove_flagged(tmp_path):
     assert len(findings) == 1
     assert findings[0].rule_id == "openaca-posture-mcp-auto-approve"
     assert "inline-server" in findings[0].component_label
+
+
+def test_cursor_mcp_json_not_flagged(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    manifest = {"mcpServers": {"x": {"autoApprove": True}}}
+    findings = check_mcp_auto_approve([(cursor_dir / "mcp.json", manifest)])
+    assert findings == []
+
+
+def test_claude_mcp_json_still_flagged(tmp_path):
+    # Regression guard: the Claude-only case must keep working.
+    manifest = {"mcpServers": {"x": {"autoApprove": True}}}
+    findings = check_mcp_auto_approve([(tmp_path / "mcp.json", manifest)])
+    assert len(findings) == 1
+    assert findings[0].active_in == ["claude-code"]

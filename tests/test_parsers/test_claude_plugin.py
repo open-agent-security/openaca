@@ -539,6 +539,93 @@ def test_symlinked_command_file_outside_plugin_root_is_rejected(tmp_path):
     assert command_refs == []
 
 
+# Cursor Plugins (native format): host-parameterized parse(), format-aware
+# default MCP filename, format-aware hooks. See docs/specs/multi-host-support.md
+# Plugins section.
+
+
+def test_cursor_plugin_uses_unqualified_identity_not_host_qualified(tmp_path):
+    plugin_dir = tmp_path / ".cursor-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+
+    refs = parse(plugin_dir / "plugin.json", runtime_hosts=["cursor"])
+    self_ref = next(r for r in refs if r.extra.get("component_type") == "plugin")
+    assert self_ref.component_identity == "plugin/demo"
+    assert self_ref.extra["runtime_hosts"] == ["cursor"]
+
+
+def test_cursor_plugin_bundled_skill_tagged_cursor(tmp_path):
+    plugin_dir = tmp_path / ".cursor-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+    skills_dir = tmp_path / "skills" / "helper"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("---\nname: helper\ndescription: d\n---\nrun\n")
+
+    refs = parse(plugin_dir / "plugin.json", runtime_hosts=["cursor"])
+    skill_refs = [r for r in refs if r.extra.get("component_type") == "skill"]
+    assert len(skill_refs) == 1
+    assert skill_refs[0].extra["runtime_hosts"] == ["cursor"]
+
+
+def test_cursor_plugin_default_mcp_is_root_mcp_json(tmp_path):
+    # Cursor's default bundled MCP manifest is root `mcp.json`; Claude's
+    # `.mcp.json` filename must NOT be read in a Cursor bundle.
+    plugin_dir = tmp_path / ".cursor-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+    # The npx package name must match the mcpServers key: mcp_json.parse
+    # derives `name` from the launched package, not the config key.
+    (tmp_path / "mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather@1.0.0"]}}}'
+    )
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers": {"decoy": {"command": "npx", "args": ["decoy@1.0.0"]}}}'
+    )
+
+    refs = parse(plugin_dir / "plugin.json", runtime_hosts=["cursor"])
+    mcp_names = {r.name for r in refs if r.extra.get("component_type") == "mcp_server"}
+    assert mcp_names == {"weather"}
+
+
+def test_claude_plugin_default_mcp_still_dot_mcp_json(tmp_path):
+    # The mirror case: a Claude plugin reads `.mcp.json` only; a stray root
+    # `mcp.json` is not its default bundled manifest.
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather@1.0.0"]}}}'
+    )
+    (tmp_path / "mcp.json").write_text(
+        '{"mcpServers": {"decoy": {"command": "npx", "args": ["decoy@1.0.0"]}}}'
+    )
+
+    refs = parse(plugin_dir / "plugin.json")
+    mcp_names = {r.name for r in refs if r.extra.get("component_type") == "mcp_server"}
+    assert mcp_names == {"weather"}
+
+
+def test_cursor_plugin_inline_hooks_sourced_from_cursor_manifest(tmp_path):
+    # Inline hooks must carry the real manifest as source_manifest — the
+    # walker's historical `.claude-plugin/plugin.json` construction would
+    # fabricate a path that does not exist for a Cursor plugin.
+    plugin_dir = tmp_path / ".cursor-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(
+        '{"name": "demo", "hooks": {"postToolUse": [{"command": "echo done"}]}}'
+    )
+
+    refs = parse(plugin_dir / "plugin.json", runtime_hosts=["cursor"])
+    hook_refs = [r for r in refs if r.extra.get("component_type") == "hook"]
+    assert len(hook_refs) == 1
+    assert hook_refs[0].source_manifest == str(plugin_dir / "plugin.json")
+    assert hook_refs[0].extra["runtime_hosts"] == ["cursor"]
+    assert hook_refs[0].extra["event"] == "postToolUse"
+    assert (hook_refs[0].component_identity or "").startswith("cursor-hook/")
+
+
 def test_symlinked_agent_file_outside_plugin_root_is_rejected(tmp_path):
     import os
 

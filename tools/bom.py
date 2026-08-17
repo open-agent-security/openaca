@@ -57,6 +57,16 @@ class AgentBOM:
     source_unit_count: int | None = None
     source_unit_label: str | None = None
     target_bom_ref: str | None = None
+    # Multi-host-gated: only ever set (by callers) when 2+ hosts are in play,
+    # so single-host BOMs never carry these keys and stay byte-identical.
+    # openaca:target follows the same gate: single-host scans keep the
+    # selected host's config root (the documented API-compatibility anchor);
+    # multi-host scans set it to the neutral `endpoint:user-scope` locator
+    # (see `tools.endpoint_request.TARGET_LOCATOR_ENDPOINT`) since no single
+    # host's root is authoritative — the per-host roots stay available via
+    # `host_config_roots`.
+    scanned_hosts: list[str] | None = None
+    host_config_roots: dict[str, str] | None = None
 
     def component_refs(self) -> list[ComponentRef]:
         return [component.ref for component in self.components]
@@ -75,6 +85,12 @@ class AgentBOM:
         if self.source_unit_label is not None:
             metadata_properties.append(
                 {"name": "openaca:source_unit_label", "value": self.source_unit_label}
+            )
+        if self.scanned_hosts is not None:
+            _append_json_prop(metadata_properties, "openaca:scanned_hosts", self.scanned_hosts)
+        if self.host_config_roots is not None:
+            _append_json_prop(
+                metadata_properties, "openaca:host_config_roots", self.host_config_roots
             )
 
         # dependencies[] keys: every component, plus the target root (when graph-
@@ -143,6 +159,8 @@ def build_agent_bom(
     source_unit_count: int | None = None,
     source_unit_label: str | None = None,
     graph: Graph | None = None,
+    scanned_hosts: list[str] | None = None,
+    host_config_roots: dict[str, str] | None = None,
 ) -> AgentBOM:
     if graph is not None:
         return _build_agent_bom_from_graph(
@@ -151,6 +169,8 @@ def build_agent_bom(
             target=target,
             source_unit_count=source_unit_count,
             source_unit_label=source_unit_label,
+            scanned_hosts=scanned_hosts,
+            host_config_roots=host_config_roots,
         )
     _annotate_capabilities(refs)
     components = [
@@ -164,6 +184,8 @@ def build_agent_bom(
         target=target,
         source_unit_count=source_unit_count,
         source_unit_label=source_unit_label,
+        scanned_hosts=scanned_hosts,
+        host_config_roots=host_config_roots,
     )
 
 
@@ -177,6 +199,8 @@ def _build_agent_bom_from_graph(
     target: str | None,
     source_unit_count: int | None,
     source_unit_label: str | None,
+    scanned_hosts: list[str] | None = None,
+    host_config_roots: dict[str, str] | None = None,
 ) -> AgentBOM:
     """Encode the composition graph: node.key == bom-ref (the V1 invariant).
 
@@ -219,6 +243,8 @@ def _build_agent_bom_from_graph(
         source_unit_count=source_unit_count,
         source_unit_label=source_unit_label,
         target_bom_ref=root.key,
+        scanned_hosts=scanned_hosts,
+        host_config_roots=host_config_roots,
     )
 
 
@@ -367,6 +393,26 @@ def target_info_from_cyclonedx(doc: dict[str, Any]) -> tuple[str | None, str | N
     return props.get("openaca:target_type"), props.get("openaca:target")
 
 
+def scanned_hosts_from_cyclonedx(doc: dict[str, Any]) -> list[str] | None:
+    """The `openaca:scanned_hosts` metadata property (host ids, registry
+    order), or `None` when absent -- single-host and pre-Stage-4 BOMs never
+    set it (see `AgentBOM.scanned_hosts`)."""
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    props = _properties_by_name(metadata)
+    raw = props.get("openaca:scanned_hosts")
+    if raw is None:
+        return None
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    return value
+
+
 def source_unit_from_cyclonedx(doc: dict[str, Any]) -> tuple[int | None, str | None]:
     metadata = doc.get("metadata")
     if not isinstance(metadata, dict):
@@ -466,7 +512,7 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
-    _append_prop(props, "openaca:agent_host", _agent_host(ref))
+    _append_prop(props, "openaca:agent_host", agent_host(ref))
     _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
     _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))
     _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
@@ -476,6 +522,11 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
         props,
         "openaca:source_subdirectory",
         (ref.extra or {}).get("source_subdirectory"),
+    )
+    _append_prop(
+        props,
+        "openaca:cursor_marketplace_dir",
+        (ref.extra or {}).get("cursor_marketplace_dir"),
     )
     _append_prop(props, "openaca:git_ref", (ref.extra or {}).get("git_ref"))
     _append_prop(props, "openaca:transport", (ref.extra or {}).get("transport"))
@@ -576,6 +627,7 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         ("openaca:url", "url"),
         ("openaca:plugin_scope", "scope"),
         ("openaca:git_commit_sha", "gitCommitSha"),
+        ("openaca:cursor_marketplace_dir", "cursor_marketplace_dir"),
     ):
         value = props.get(prop_name)
         if value:
@@ -613,7 +665,11 @@ def _restore_capabilities(props: dict[str, str], extra: dict[str, Any]) -> None:
     extra["capability_coverage"] = coverage
 
 
-def _agent_host(ref: ComponentRef) -> str | None:
+def agent_host(ref: ComponentRef) -> str | None:
+    """The single host a ref's `runtime_hosts` names, or `None` when absent,
+    empty, or shared across more than one host. Public: `tools.render` reuses
+    this exact derivation for per-host stats/tags rather than reimplementing
+    it (see `tools.render._ref_host`)."""
     runtime_hosts = (ref.extra or {}).get("runtime_hosts")
     if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
         return None

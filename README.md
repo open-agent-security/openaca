@@ -198,6 +198,18 @@ Today it reads:
 - package manifests and lockfiles when they belong to agent components, such as
   dependencies bundled by a Claude Code plugin.
 
+`openaca scan repo` also discovers Cursor MCP servers, Skills, Plugins (both
+the native `.cursor-plugin` format and the Agent Plugins open standard),
+Subagents, and Commands committed to a repository, alongside Claude Code's,
+with results tagged by host. `openaca scan endpoint`, `openaca bom endpoint`,
+and `openaca remote sync endpoint` cover the same Cursor surfaces installed on
+this machine, including both dev-linked and marketplace-cached Plugins, with
+one exception: Plugin enabled/disabled state is not observable and is not
+reported — every seeded Plugin is presence-only (see
+[Limitations](#limitations)). Use `--host` to scan a specific host or set of
+hosts; see the
+[CLI Reference](https://github.com/open-agent-security/openaca/blob/main/docs/reference/cli.md).
+
 Use `--include-posture` to include configuration-hygiene findings such as
 unpinned installs, insecure MCP endpoints, endpoint overrides, and MCP
 auto-approval.
@@ -212,8 +224,15 @@ for the full details.
 OpenACA V0 does not yet see:
 
 - programmatic SDK configuration embedded directly in source code;
-- non-Claude agent-host local state such as Codex CLI, Cursor, Windsurf, or VS
-  Code agent-mode config;
+- non-Claude agent-host *local machine* state such as Codex CLI endpoint
+  installs (Windsurf and VS Code agent-mode config are also not yet covered).
+  Cursor endpoint installs are covered — MCP servers, Skills, Subagents,
+  Commands, and both dev-linked and marketplace-cached Plugin presence —
+  with one named exception: Plugin enabled/active state is not observable
+  and is never reported, per
+  [ADR-0045](https://github.com/open-agent-security/openaca/blob/main/docs/adrs/0045-cursor-host.md)
+  Decision #7 and
+  [ADR-0045 Decision #7](https://github.com/open-agent-security/openaca/blob/main/docs/adrs/0045-cursor-host.md);
 - vulnerabilities for local-only or source-less components that do not provide
   a package, Git, or external match coordinate;
 - live tool invocations or runtime blocking.

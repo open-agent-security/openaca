@@ -354,6 +354,7 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
         return _upload_result(asset_id="asset-123")
 
     monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
+    monkeypatch.setenv("HOME", str(tmp_path))  # hermetic: no ~/.claude fallback
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
 
     result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
@@ -386,6 +387,36 @@ def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert calls[0]["external_scanners"] == ("nvidia-skillspector",)
+
+
+def test_collect_endpoint_cli_forwards_host_option_to_root_map(tmp_path, monkeypatch):
+    calls: list[dict] = []
+
+    def fake_collect_endpoint(**kwargs):
+        calls.append(kwargs)
+        return _upload_result(asset_id="asset-123")
+
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
+
+    cursor_root = tmp_path / "cursor-config"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0]["config_dir"] == cursor_root
+    assert calls[0]["host_config_roots"] == {"cursor": cursor_root}
 
 
 def _upload_result(*, asset_id: str) -> BomUploadResult:

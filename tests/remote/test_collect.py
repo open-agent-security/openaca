@@ -47,7 +47,7 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         calls.append(("_collect_endpoint_components", args))
         return None, [ref]
 
-    def fake_run_posture_rules(refs, manifests, settings_manifests):
+    def fake_run_posture_rules(refs, manifests, settings_manifests, manifest_hosts=None):
         calls.append(("run_posture_rules", refs))
         assert manifests == [("mcp", {})]
         assert settings_manifests == [("settings", {})]
@@ -57,12 +57,8 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         "tools.remote.collector._collect_endpoint_components", fake_collect_endpoint_components
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [("mcp", {})],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [("settings", {})],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([("mcp", {})], {}, [("settings", {})]),
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", fake_run_posture_rules)
 
@@ -86,6 +82,7 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
             "severity": "LOW",
             "confidence": "high",
             "scope": "component",
+            "active_in": ["claude-code"],
             "summary": "Mutable install",
             "fix": "Pin the install reference.",
             "evidence": {"install_ref": "@example/mcp", "manifest_path": ".mcp.json"},
@@ -93,6 +90,7 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
             "source_specific": {
                 "openaca": {"rule_id": "openaca-posture-mutable-install-reference"}
             },
+            "component_bom_ref": "bom-ref-example",
         }
     ]
 
@@ -109,14 +107,10 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     def fake_collect_skillspector_findings(refs):
         assert refs == [ref]
@@ -163,6 +157,7 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
                         "sarif_rule_id": "LP2",
                         "categories": ["privilege-escalation"],
                     },
+                    bom_ref="skill-deploy-helper",
                 )
             ],
             warnings=[],
@@ -205,6 +200,7 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
             "severity": "MEDIUM",
             "confidence": "medium",
             "scope": "component",
+            "active_in": [],
             "summary": "Wildcard permission",
             "fix": "Review the declared permission.",
             "evidence": {
@@ -212,6 +208,7 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
             },
             "taxonomies": {"openaca_categories": ["privilege-escalation"]},
             "source_specific": {"skillspector": {"rule_id": "LP2"}},
+            "component_bom_ref": "skill-deploy-helper",
         }
     ]
 
@@ -228,14 +225,10 @@ def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, mon
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     def missing_collect(_refs):
         from tools.observations.skillspector import SkillSpectorCommandNotFound
@@ -264,14 +257,10 @@ def test_build_endpoint_collection_surfaces_scanner_warnings(tmp_path, monkeypat
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     monkeypatch.setattr(
         "tools.remote.collector.collect_skillspector_findings",
@@ -307,14 +296,10 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -339,14 +324,10 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -371,14 +352,10 @@ def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monke
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -403,14 +380,10 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -438,12 +411,8 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
@@ -478,12 +447,12 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [(manifest_path, manifest)],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: (
+            [(manifest_path, manifest)],
+            {manifest_path: "claude-code"},
+            [],
+        ),
     )
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
@@ -511,14 +480,10 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -547,14 +512,10 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -589,14 +550,10 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -638,14 +595,10 @@ def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -672,14 +625,10 @@ def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_p
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -707,14 +656,10 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -737,14 +682,10 @@ def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path,
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -771,14 +712,10 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_pre
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -805,14 +742,10 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -838,14 +771,10 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -871,14 +800,10 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -911,14 +836,10 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -947,14 +868,10 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -982,14 +899,10 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -1015,14 +928,10 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -1076,14 +985,10 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
         "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
     )
     monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     collection = build_endpoint_collection(config_dir=tmp_path, project=None)
 
@@ -1102,7 +1007,7 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
     monkeypatch.setattr("tools.remote.collector.socket.gethostname", lambda: "demo-host")
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1170,6 +1075,7 @@ def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, mon
             "config_dir": tmp_path,
             "project": None,
             "external_scanners": ("nvidia-skillspector",),
+            "host_config_roots": None,
         },
     )
     assert calls[1][0] == "upload_bom"
@@ -1208,7 +1114,7 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(bom=dirty_bom),
+        lambda config_dir, project, host_config_roots=None: _collection(bom=dirty_bom),
     )
 
     class FakeClient:
@@ -1256,7 +1162,7 @@ def test_redact_payload_redacts_absolute_paths_in_observation_evidence_list(tmp_
         ],
     }
 
-    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": config_dir}, project=None)
 
     evidence = payload["observations"][0]["evidence"]
     assert not evidence["matched_text"][0].startswith("/"), evidence["matched_text"]
@@ -1288,7 +1194,7 @@ def test_redact_payload_redacts_embedded_absolute_path_in_bash_filter(tmp_path):
         ],
     }
 
-    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": config_dir}, project=None)
 
     evidence = payload["observations"][0]["evidence"]
     tool = evidence["matched_text"][0]
@@ -1320,7 +1226,7 @@ def test_redact_payload_preserves_url_in_embedded_bash_filter(tmp_path):
         ],
     }
 
-    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": config_dir}, project=None)
 
     evidence = payload["observations"][0]["evidence"]
     tool = evidence["matched_text"][0]
@@ -1358,16 +1264,16 @@ def test_redact_payload_redacts_file_uri_in_scanner_evidence(tmp_path):
         ],
     }
 
-    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": config_dir}, project=None)
 
     obs = payload["observations"][0]
-    assert obs["evidence"]["location_uri"] == "skills/deploy-helper/SKILL.md"
-    assert obs["declared_by"]["path"] == "skills/deploy-helper/SKILL.md"
+    assert obs["evidence"]["location_uri"] == "endpoint/skills/deploy-helper/SKILL.md"
+    assert obs["declared_by"]["path"] == "endpoint/skills/deploy-helper/SKILL.md"
     assert obs["declared_by"]["kind"] == "sarif"
 
     pf = payload["posture_findings"][0]
-    assert pf["evidence"]["location_uri"] == "skills/deploy-helper/SKILL.md"
-    assert pf["evidence"]["manifest_path"] == "skills/deploy-helper/SKILL.md"
+    assert pf["evidence"]["location_uri"] == "endpoint/skills/deploy-helper/SKILL.md"
+    assert pf["evidence"]["manifest_path"] == "endpoint/skills/deploy-helper/SKILL.md"
 
 
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
@@ -1377,7 +1283,7 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1405,7 +1311,7 @@ def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1433,7 +1339,7 @@ def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1460,7 +1366,7 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1496,7 +1402,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     outside = "/Users/alex/.claude/settings.json"
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(
+        lambda config_dir, project, host_config_roots=None: _collection(
             bom={
                 "bomFormat": "CycloneDX",
                 "specVersion": "1.7",
@@ -1526,11 +1432,242 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     collect_endpoint(config_dir=tmp_path, project=None)
 
     props = uploads[0]["bom"]["components"][0]["properties"]
-    # Inside config_dir → relativized; outside config_dir → basename + stable digest
-    # (openaca:source_manifest disambiguator, parity with the bom-ref redaction).
+    # Inside config_dir → relativized with its endpoint discovery label; outside
+    # every discovery root → basename + stable digest (openaca:source_manifest
+    # disambiguator, parity with the bom-ref redaction).
     outside_digest = hashlib.sha256(outside.encode()).hexdigest()[:8]
-    assert props[0]["value"] == "skills/x/SKILL.md"
+    assert props[0]["value"] == "endpoint/skills/x/SKILL.md"
     assert props[1]["value"] == f"settings.json.{outside_digest}"
+
+
+def test_build_endpoint_collection_cursor_only_posture_active_in_cursor(tmp_path):
+    """A Cursor-only collection through an explicit root deliberately not
+    named `.cursor` produces an insecure-transport posture finding with
+    active_in == ["cursor"]; the same collection contains no Claude
+    settings-rule finding (api_endpoint_override / settings-layer
+    mcp_auto_approve) since Cursor has no settings.json surface. With
+    Task 17's real Cursor `seed_endpoint` wired, the same collection's BOM
+    also carries real Cursor components (MCP + dev-linked plugin), proving
+    components and posture findings reach one upload payload together."""
+    from tools.posture import collect_endpoint_posture_inputs, run_posture_rules
+
+    cursor_root = tmp_path / "cursor-config"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    plugin_dir = cursor_root / "plugins" / "local" / "demo" / ".cursor-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}))
+
+    mcp_manifests, manifest_hosts, settings_manifests = collect_endpoint_posture_inputs(
+        {"cursor": cursor_root}, None, []
+    )
+    assert settings_manifests == []
+    findings = run_posture_rules(
+        [], mcp_manifests, settings_manifests, manifest_hosts=manifest_hosts
+    )
+    insecure = [f for f in findings if f.rule_id == "openaca-posture-insecure-transport"]
+    assert len(insecure) == 1
+    assert insecure[0].active_in == ["cursor"]
+    assert not any(f.rule_id == "openaca-posture-api-endpoint-override" for f in findings)
+    assert not any(f.rule_id == "openaca-posture-mcp-auto-approve" for f in findings)
+
+    collection = build_endpoint_collection(
+        config_dir=cursor_root, project=None, host_config_roots={"cursor": cursor_root}
+    )
+    collected_ids = {f["finding_id"] for f in collection.posture_findings}
+    assert "openaca-posture-insecure-transport" in collected_ids
+    assert "openaca-posture-api-endpoint-override" not in collected_ids
+    assert "openaca-posture-mcp-auto-approve" not in collected_ids
+
+    uploaded_insecure = next(
+        f
+        for f in collection.posture_findings
+        if f["finding_id"] == "openaca-posture-insecure-transport"
+    )
+    assert uploaded_insecure["active_in"] == ["cursor"]
+
+    components = collection.bom["components"]
+    mcp_components = [c for c in components if c.get("name") == "api"]
+    plugin_components = [c for c in components if c.get("name") == "demo"]
+    assert len(mcp_components) == 1
+    assert len(plugin_components) == 1
+    assert mcp_components[0]["bom-ref"].startswith("endpoint-cursor/")
+    assert plugin_components[0]["bom-ref"].startswith("endpoint-cursor/")
+    assert uploaded_insecure["scope"] == "component"
+    assert uploaded_insecure["component_bom_ref"] == mcp_components[0]["bom-ref"]
+
+
+def test_build_endpoint_collection_posture_finding_without_bom_match_is_asset_scoped(tmp_path):
+    """`insecure_transport` flags a remote MCP entry purely from the raw
+    manifest shape (a `url` string starting with `http://`), independent of
+    whether the graph parser could build a ComponentRef for that same entry.
+    An interpolated URL (`${HOST}`) is exactly such a case: `parse_mcp_servers`
+    / `_normalize_remote_identity` refuses to mint an identity for it (no
+    resolvable host), so no ref — and therefore no bom-ref match — ever
+    exists for `_attach_bom_ref` to find, while the posture rule still fires
+    because it only inspects the raw `url` string. The resulting finding must
+    upload as asset-scoped with no `component_bom_ref`, not as a
+    component-scoped finding with no component to point at."""
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    config_dir = tmp_path / "claude-config"
+    config_dir.mkdir()
+    (config_dir / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"bad": {"url": "http://${HOST}/mcp"}}})
+    )
+
+    collection = build_endpoint_collection(config_dir=config_dir, project=None)
+
+    insecure = [
+        f
+        for f in collection.posture_findings
+        if f["finding_id"] == "openaca-posture-insecure-transport"
+    ]
+    assert len(insecure) == 1
+    assert insecure[0]["scope"] == "asset"
+    assert "component_bom_ref" not in insecure[0]
+
+    payload = _payload(bom=collection.bom, posture_findings=collection.posture_findings)
+    enforce_remote_upload_contract(payload)  # must not raise
+
+
+def test_collect_endpoint_two_host_roots_payload_has_no_absolute_paths(tmp_path, monkeypatch):
+    """A two-host-root collection produces a serialized payload containing
+    neither absolute host root, and the upload-contract check passes."""
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+
+    claude_root = tmp_path / "claude-config"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}")
+    (claude_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"claude-tool": {"url": "http://claude.example.com/mcp"}}})
+    )
+    cursor_root = tmp_path / "cursor-config"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"cursor-tool": {"url": "http://cursor.example.com/mcp"}}})
+    )
+
+    uploads: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    collect_endpoint(
+        config_dir=claude_root,
+        project=None,
+        host_config_roots={"claude-code": claude_root, "cursor": cursor_root},
+    )
+
+    payload = uploads[0]
+    serialized = json.dumps(payload)
+    assert str(claude_root) not in serialized
+    assert str(cursor_root) not in serialized
+    enforce_remote_upload_contract(payload)  # must not raise
+
+    # openaca:host_config_roots must mirror how openaca:target is already kept
+    # safe for remote (never given a real absolute root) — labels only.
+    metadata_props = {p["name"]: p["value"] for p in payload["bom"]["metadata"]["properties"]}
+    assert json.loads(metadata_props["openaca:scanned_hosts"]) == ["claude-code", "cursor"]
+    assert json.loads(metadata_props["openaca:host_config_roots"]) == {
+        "claude-code": "endpoint",
+        "cursor": "endpoint-cursor",
+    }
+
+
+def test_collect_endpoint_cursor_only_shared_and_compat_roots_relativized(tmp_path, monkeypatch):
+    """A Cursor-only fixture pins HOME and CLAUDE_CONFIG_DIR under one parent
+    and the explicit Cursor root under an unrelated parent, then includes
+    both a shared global Skill from ~/.agents/skills and a compatibility
+    Subagent from <CLAUDE_CONFIG_DIR>/agents. The serialized payload must
+    contain none of the three absolute roots, both refs must use their
+    Task 15 auxiliary labels, and the upload contract must pass.
+
+    The compatibility Subagent is discovered by real, already-landed
+    graph_build.py code (`_seed_endpoint_subagents`); the shared Skill needs
+    a stubbed Cursor `seed_endpoint` (Task 17's real seed doesn't exist yet)
+    to put a real Cursor-endpoint component under the shared-agents root.
+    """
+    import dataclasses
+
+    from tools.hosts import HOSTS
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    claude_compat = home / "claude-compat"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_compat))
+    (claude_compat / "agents").mkdir(parents=True)
+    (claude_compat / "agents" / "helper.md").write_text("---\nname: helper\n---\nh\n")
+
+    (home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
+    (home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: d\n---\nrun\n"
+    )
+
+    cursor_root = tmp_path / "elsewhere" / "cursor-config"
+    cursor_root.mkdir(parents=True)
+
+    def _stub_cursor_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        from tools.endpoint_request import shared_agents_root
+        from tools.graph import Node
+        from tools.graph_build import _add_child, occurrence_key
+        from tools.parsers import claude_skill
+
+        shared_skill_path = shared_agents_root() / "skills" / "shared-skill" / "SKILL.md"
+        for ref in claude_skill.parse(shared_skill_path, runtime_hosts=["cursor"]):
+            _add_child(
+                graph, target, Node(key=occurrence_key(ref, normalize), kind="skill", ref=ref)
+            )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_stub_cursor_seed)
+    )
+
+    uploads: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    collect_endpoint(
+        config_dir=cursor_root, project=None, host_config_roots={"cursor": cursor_root}
+    )
+
+    payload = uploads[0]
+    serialized = json.dumps(payload)
+    assert str(home) not in serialized
+    assert str(claude_compat) not in serialized
+    assert str(cursor_root) not in serialized
+
+    bom_refs = [c["bom-ref"] for c in payload["bom"]["components"]]
+    assert any(ref.startswith("endpoint-shared-agents/") for ref in bom_refs)
+    assert any(ref.startswith("endpoint-claude-compat/") for ref in bom_refs)
+
+    enforce_remote_upload_contract(payload)  # must not raise
 
 
 def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
@@ -1540,7 +1677,7 @@ def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1566,7 +1703,7 @@ def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path,
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1595,7 +1732,7 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1627,7 +1764,10 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: (collection_built.append(True), _collection())[1],
+        lambda config_dir, project, host_config_roots=None: (
+            collection_built.append(True),
+            _collection(),
+        )[1],
     )
 
     class FakeClient:
@@ -1659,7 +1799,7 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1692,7 +1832,7 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1738,7 +1878,7 @@ def test_collect_endpoint_purges_stale_asset_pending_files_on_replay(tmp_path, m
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
         "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        lambda config_dir, project, host_config_roots=None: _collection(),
     )
 
     class FakeClient:
@@ -1780,6 +1920,7 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
             "quiet": True,
             "allow_offline_cache": False,
             "external_scanners": (),
+            "host_config_roots": {"claude-code": tmp_path},
         }
     ]
     assert "bom-123" in result.output
@@ -1867,4 +2008,5 @@ def _posture(rule_id: str) -> PostureFinding:
         component_path=[{"type": "mcp_server", "name": "mcp-server/example"}],
         standards=Standards(),
         remediation="Pin the install reference.",
+        bom_ref="bom-ref-example",
     )

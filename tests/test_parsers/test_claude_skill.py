@@ -198,3 +198,26 @@ def _artifact_coordinate_value(path: Path) -> str:
     value = coordinates[0]["value"]
     assert isinstance(value, str)
     return value
+
+
+def _write_runtime_hosts_skill(tmp_path: Path, name: str = "deploy") -> Path:
+    skill_dir = tmp_path / name
+    skill_dir.mkdir()
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text(f"---\nname: {name}\ndescription: d\n---\nbody\n")
+    return skill_md
+
+
+def test_parse_default_runtime_hosts_is_claude_code(tmp_path):
+    refs = parse(_write_runtime_hosts_skill(tmp_path))
+    assert refs[0].extra["runtime_hosts"] == ["claude-code"]
+
+
+def test_parse_accepts_explicit_runtime_hosts(tmp_path):
+    refs = parse(_write_runtime_hosts_skill(tmp_path), runtime_hosts=["cursor"])
+    assert refs[0].extra["runtime_hosts"] == ["cursor"]
+
+
+def test_parse_accepts_multiple_runtime_hosts(tmp_path):
+    refs = parse(_write_runtime_hosts_skill(tmp_path), runtime_hosts=["cursor", "codex"])
+    assert refs[0].extra["runtime_hosts"] == ["cursor", "codex"]

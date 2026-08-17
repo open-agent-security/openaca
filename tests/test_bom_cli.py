@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -178,6 +179,7 @@ def test_bom_diff_command_can_emit_json(tmp_path):
             "scope": None,
             "capabilities": None,
             "capability_coverage": None,
+            "runtime_hosts": None,
         }
     ]
     assert payload["added_edges"] == [{"parent": "openaca:target", "child": "mcp/new"}]
@@ -620,6 +622,312 @@ def test_bom_endpoint_surfaces_resolver_warnings(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "ghost@mp enabled but missing from installed_plugins.json" in result.output
+
+
+def test_bom_endpoint_host_cursor_stub_component_wires_request_and_root_map(tmp_path, monkeypatch):
+    """Proves `--host cursor` resolution, root map, and BOM emit are wired
+    through `resolve_endpoint_request` — before Task 17 registers a real
+    `HOSTS["cursor"].seed_endpoint`, a bare `bom endpoint --host cursor`
+    would legitimately emit zero Cursor components, so this stubs the
+    adapter (the `_with_detect`-style `monkeypatch.setitem(HOSTS, ...)`
+    pattern, substituting a stub `seed_endpoint`) to prove the plumbing
+    without asserting on real Cursor composition."""
+    import dataclasses
+
+    from tools.component_ref import ComponentRef
+    from tools.graph import Node
+    from tools.graph_build import _add_child, occurrence_key
+    from tools.hosts import HOSTS
+
+    def _stub_cursor_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        ref = ComponentRef(
+            name="stub-server",
+            source_manifest=str(config_root / "mcp.json"),
+            source_locator="$.mcpServers.stub",
+            extra={"component_type": "mcp_server", "runtime_hosts": ["cursor"]},
+        )
+        _add_child(
+            graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_stub_cursor_seed)
+    )
+
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--host", "cursor", "--config-dir", str(cursor_root)],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    stub_components = [c for c in doc["components"] if c.get("name") == "stub-server"]
+    assert len(stub_components) == 1
+    component = stub_components[0]
+    assert {"name": "openaca:agent_host", "value": "cursor"} in component["properties"]
+    assert component["bom-ref"].startswith("endpoint-cursor/")
+
+
+def test_bom_endpoint_cursor_dev_linked_plugin_has_no_enabled_property(tmp_path):
+    """Task 17's real Cursor `seed_endpoint`, against a dev-linked plugin
+    fixture: the plugin component is host-tagged `cursor` and carries no
+    enabled/active property (ADR-0045 Decision #7 — no such state exists
+    for a dev-linked plugin, so none is asserted)."""
+    cursor_root = tmp_path / "cursor"
+    plugin_dir = cursor_root / "plugins" / "local" / "demo" / ".cursor-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--host", "cursor", "--config-dir", str(cursor_root)],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    plugin_components = [c for c in doc["components"] if c.get("name") == "demo"]
+    assert len(plugin_components) == 1
+    component = plugin_components[0]
+    assert {"name": "openaca:agent_host", "value": "cursor"} in component["properties"]
+    prop_names = {p["name"] for p in component["properties"]}
+    assert not any(name.endswith(":enabled") or name.endswith(":active") for name in prop_names)
+
+
+def _bom_metadata_properties(doc: dict) -> dict[str, str]:
+    return {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+
+
+def test_bom_endpoint_claude_only_metadata_is_byte_identical_pinned(tmp_path):
+    """Claude-only `bom endpoint` must keep emitting exactly today's metadata
+    property set (no `openaca:scanned_hosts`/`openaca:host_config_roots`, and
+    `source_unit_label` stays `"active plugin"`). Pinned as an exact-set
+    assertion so a future change can't silently widen single-host output."""
+    config_dir = tmp_path / "claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}", encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "endpoint", "--config-dir", str(config_dir)])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    props = _bom_metadata_properties(doc)
+    assert props == {
+        "openaca:schema_version": doc["metadata"]["properties"][0]["value"],
+        "openaca:target_type": "endpoint",
+        "openaca:target": str(config_dir),
+        "openaca:source_unit_count": "0",
+        "openaca:source_unit_label": "active plugin",
+    }
+
+
+def test_bom_endpoint_cursor_only_metadata_labels_plugin_not_active(tmp_path):
+    """Cursor is presence-only (ADR-0045 Decision #7): a Cursor-only endpoint BOM must not
+    claim "active plugin", and single-host output carries no scanned_hosts/
+    host_config_roots (those are multi-host-gated)."""
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(
+        openaca_main, ["bom", "endpoint", "--host", "cursor", "--config-dir", str(cursor_root)]
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    props = _bom_metadata_properties(doc)
+    assert props["openaca:source_unit_label"] == "plugin"
+    assert props["openaca:target"] == str(cursor_root)
+    assert "openaca:scanned_hosts" not in props
+    assert "openaca:host_config_roots" not in props
+
+
+def test_bom_endpoint_two_hosts_metadata_scanned_hosts_and_config_roots(tmp_path, monkeypatch):
+    """A two-host endpoint BOM must append `openaca:scanned_hosts` (host ids,
+    root-map order) and `openaca:host_config_roots` (host id -> config root).
+    `openaca:target` becomes the neutral `endpoint:user-scope` locator since no
+    single host's root is authoritative for a multi-host scan; the label
+    reflects Cursor's presence-only posture."""
+    import dataclasses
+
+    from tools.component_ref import ComponentRef
+    from tools.graph import Node
+    from tools.graph_build import _add_child, occurrence_key
+    from tools.hosts import HOSTS
+
+    def _stub_cursor_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        ref = ComponentRef(
+            name="stub-server",
+            source_manifest=str(config_root / "mcp.json"),
+            source_locator="$.mcpServers.stub",
+            extra={"component_type": "mcp_server", "runtime_hosts": ["cursor"]},
+        )
+        _add_child(
+            graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_stub_cursor_seed)
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}", encoding="utf-8")
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(openaca_main, ["bom", "endpoint"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+    props = _bom_metadata_properties(doc)
+    assert props["openaca:target"] == "endpoint:user-scope"
+    assert json.loads(props["openaca:scanned_hosts"]) == ["claude-code", "cursor"]
+    assert json.loads(props["openaca:host_config_roots"]) == {
+        "claude-code": str(claude_root),
+        "cursor": str(cursor_root),
+    }
+    assert props["openaca:source_unit_label"] == "plugin"
+
+
+def test_scan_bom_verbose_renders_multi_host_target_locator(tmp_path, monkeypatch):
+    """`scan bom` round-tripping a multi-host endpoint BOM must show the
+    neutral `endpoint:user-scope` locator in the "original target" card row,
+    not either host's config root."""
+    import dataclasses
+
+    from tools.component_ref import ComponentRef
+    from tools.graph import Node
+    from tools.graph_build import _add_child, occurrence_key
+    from tools.hosts import HOSTS
+
+    def _stub_cursor_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        ref = ComponentRef(
+            name="stub-server",
+            source_manifest=str(config_root / "mcp.json"),
+            source_locator="$.mcpServers.stub",
+            extra={"component_type": "mcp_server", "runtime_hosts": ["cursor"]},
+        )
+        _add_child(
+            graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_stub_cursor_seed)
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}", encoding="utf-8")
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir()
+
+    bom_path = tmp_path / "multi-host.bom.json"
+    bom_result = CliRunner().invoke(openaca_main, ["bom", "endpoint", "--output", str(bom_path)])
+    assert bom_result.exit_code == 0, bom_result.output
+
+    from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "-v"])
+
+    assert from_bom.exit_code == 0, from_bom.output
+    assert "original target: endpoint endpoint:user-scope" in from_bom.output
+
+
+def _two_host_endpoint_bom(tmp_path, monkeypatch) -> tuple[Path, Path]:
+    """Build a two-host endpoint BOM (claude-code has one MCP server, Cursor
+    a stubbed one) and return (bom_path, claude_root)."""
+    import dataclasses
+
+    from tools.component_ref import ComponentRef
+    from tools.graph import Node
+    from tools.graph_build import _add_child, occurrence_key
+    from tools.hosts import HOSTS
+
+    def _stub_cursor_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        ref = ComponentRef(
+            name="stub-server",
+            source_manifest=str(config_root / "mcp.json"),
+            source_locator="$.mcpServers.stub",
+            extra={"component_type": "mcp_server", "runtime_hosts": ["cursor"]},
+        )
+        _add_child(
+            graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_stub_cursor_seed)
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    claude_root.joinpath("settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["@modelcontextprotocol/server-filesystem"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir()
+
+    bom_path = tmp_path / "multi-host.bom.json"
+    bom_result = CliRunner().invoke(openaca_main, ["bom", "endpoint", "--output", str(bom_path)])
+    assert bom_result.exit_code == 0, bom_result.output
+    return bom_path, claude_root
+
+
+def test_scan_bom_two_host_shows_per_host_tags_and_breakdown(tmp_path, monkeypatch):
+    """`scan bom --input` on a two-host endpoint BOM must show the same
+    per-host display a live `scan endpoint` shows: `[host]` tags on
+    top-level inventory entries, an (host: N, ...) stats breakdown, and
+    `components_by_host` in JSON stats -- reading `openaca:scanned_hosts`
+    off the round-tripped BOM to know the scan spanned two hosts."""
+    bom_path, _ = _two_host_endpoint_bom(tmp_path, monkeypatch)
+
+    text_result = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path)])
+    assert text_result.exit_code == 0, text_result.output
+    assert "(claude-code: 1, cursor: 1)" in text_result.output
+    assert "[claude-code]" in text_result.output
+    assert "[cursor]" in text_result.output
+
+    json_result = CliRunner().invoke(
+        scan_main, ["bom", "--input", str(bom_path), "--format", "json"]
+    )
+    assert json_result.exit_code == 0, json_result.output
+    doc = json.loads("\n".join(json_result.output.splitlines()[:-1]))
+    assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}
+
+
+def test_scan_bom_multi_host_refs_without_scanned_hosts_falls_back(tmp_path, monkeypatch):
+    """A BOM whose `openaca:scanned_hosts` metadata property is missing (pre-
+    Stage-4 BOM, or the property stripped) but whose components still carry
+    per-ref host attribution must still show the per-host breakdown, derived
+    from the refs themselves rather than the metadata property."""
+    bom_path, _ = _two_host_endpoint_bom(tmp_path, monkeypatch)
+
+    doc = json.loads(bom_path.read_text(encoding="utf-8"))
+    doc["metadata"]["properties"] = [
+        p for p in doc["metadata"]["properties"] if p["name"] != "openaca:scanned_hosts"
+    ]
+    bom_path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path)])
+    assert result.exit_code == 0, result.output
+    assert "(claude-code: 1, cursor: 1)" in result.output
+    assert "[claude-code]" in result.output
+    assert "[cursor]" in result.output
 
 
 def _diff_bom(

@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
 
 from tools.component_ref import ComponentRef
 from tools.parsers.claude_plugin_root import walk_plugin_root
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, runtime_hosts: Optional[list[str]] = None) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
     if not isinstance(data, dict):
@@ -36,15 +37,17 @@ def parse(path: Path) -> list[ComponentRef]:
     if not isinstance(version, (str, type(None))):
         version = None
     if name:
-        component_identity = f"plugin/{name}"
+        extra: dict = {"component_type": "plugin"}
+        if runtime_hosts is not None:
+            extra["runtime_hosts"] = runtime_hosts
         refs.append(
             ComponentRef(
                 name=name,
                 version=version,
-                component_identity=component_identity,
+                component_identity=f"plugin/{name}",
                 source_manifest=str(path),
                 source_locator="$",
-                extra={"component_type": "plugin"},
+                extra=extra,
             )
         )
 
@@ -54,6 +57,7 @@ def parse(path: Path) -> list[ComponentRef]:
             plugin_name=name or "",
             plugin_data=data,
             plugin_json_path=path,
+            runtime_hosts=runtime_hosts,
         )
     )
     return refs

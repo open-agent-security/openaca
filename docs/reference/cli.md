@@ -61,6 +61,60 @@ openaca scan -v repo --target .
 openaca scan repo --target . -v
 ```
 
+## Host selection
+
+`openaca scan repo` accepts `--host` to scope discovery to specific agent
+hosts. Repeatable and/or comma-separated:
+
+```bash
+openaca scan repo --target . --host cursor
+openaca scan repo --target . --host claude-code,cursor
+openaca scan repo --target . --host claude-code --host cursor
+```
+
+Known values: `claude-code`, `cursor`. Omitted: every registered host is
+scanned. `--host` selects which manifest patterns to look for in the
+repository (declared composition) — it does not depend on which hosts are
+installed on the scanning machine.
+
+`openaca scan endpoint`, `openaca bom endpoint`, and `openaca remote sync
+endpoint` also accept `--host` (same known values), scoped to hosts installed
+on this machine rather than manifest patterns in a repository:
+
+```bash
+openaca scan endpoint --host cursor
+openaca bom endpoint --host cursor --config-dir ~/.cursor
+openaca remote sync endpoint --host claude-code,cursor
+```
+
+Omitted: every host *detected* on this machine (not every registered host —
+repo mode's registered-hosts default above and endpoint mode's
+detected-hosts default are deliberately different). An explicit `--host` that
+names an undetected host is a hard error unless `--config-dir` is also given.
+
+`--config-dir` sets one host's config root explicitly, and is allowed only
+when exactly one host is selected — the directory it points at counts as that
+host's root without consulting host detection, so it works even when the
+default location doesn't exist. Passing `--config-dir` with two or more
+selected hosts is a hard error asking for a single `--host` to disambiguate.
+A bare `--config-dir` with no `--host` at all resolves to the default host,
+`claude-code`.
+
+Cursor's endpoint-mode Plugin coverage includes both dev-linked
+(`plugins/local/`) and marketplace-cached
+(`plugins/cache/<marketplace>/<name>/<version>/`) plugins, presence-only:
+enabled/disabled state is not observable and is never reported (see
+[Coverage](coverage.md) and
+[ADR-0045 Decision #7](../adrs/0045-cursor-host.md)). `openaca bom
+endpoint`'s `openaca:source_unit_label` metadata reflects this: it stays
+`"active plugin"` only when every selected host asserts enabled state; a
+selection that includes a presence-only host (Cursor) reports `"plugin"`
+instead. A 2+-host `bom endpoint` also adds `openaca:scanned_hosts` and
+`openaca:host_config_roots` metadata (see
+[the BOM schema reference](../openaca-bom-schema.md#openaca-properties));
+`openaca:target` itself is unchanged and still names only the first selected
+host's root.
+
 ## Output formats
 
 `openaca scan` emits three stdout formats by default:
@@ -71,7 +125,9 @@ openaca scan repo --target . -v
 - **`github`** - GitHub workflow annotation lines (`::error file=...::`).
   Auto-selected when `GITHUB_ACTIONS=true`; can also be selected explicitly.
 - **`json`** - structured per-finding records plus a `stats` block for
-  programmatic consumption.
+  programmatic consumption. `stats.components_by_host` is a per-host
+  component count (e.g. `{"claude-code": 33, "cursor": 22}`); it always
+  has at least one key, even for a single-host scan.
 
 `markdown` is available only with `--report exposure`; it renders a
 forwardable exposure report instead of the raw scan view.

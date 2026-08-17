@@ -1024,6 +1024,21 @@ def _props_by_name(component):
     return {prop["name"]: prop["value"] for prop in component.get("properties", [])}
 
 
+def _scan_json_doc(output: str) -> dict:
+    """Pull the JSON document out of mixed stdout+stderr CliRunner output.
+
+    Same extraction `tests/test_scan.py`'s `_scan_json_doc` does: CliRunner
+    captures the stderr scan summary alongside the JSON block.
+    """
+    start = output.index("{")
+    for end in range(len(output), start, -1):
+        try:
+            return json.loads(output[start:end])
+        except json.JSONDecodeError:
+            continue
+    raise AssertionError(f"no JSON document in output: {output!r}")
+
+
 def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
     """Plan 037 marquee: a scan of a repo with (a) a skill declaring
     `allowed-tools: Bash` and (b) an MCP server launched via
@@ -1088,3 +1103,339 @@ def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
 
     meta_props = _props_by_name(doc["metadata"])
     assert meta_props["openaca:schema_version"] == "0.4"
+
+
+def test_cursor_repo_scan_end_to_end(tmp_path):
+    """A repo with Cursor MCP + Skills scans correctly by default: both
+    surfaces are found, correctly host-tagged in the BOM, and posture
+    rules label them as Cursor, not Claude Code."""
+    from tools.cli import main as cli_main
+    from tools.graph_build import build_graph
+
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]},
+                    "insecure-api": {"url": "http://example.com/mcp"},
+                    "git": {"command": "npx", "args": ["@cyanheads/git-mcp-server@1.1.0"]},
+                }
+            }
+        )
+    )
+    skill_dir = cursor_dir / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: deploy things\n---\nrun the deploy\n"
+    )
+
+    # BOM layer: component discovered, correctly host-tagged.
+    # build_agent_bom ignores its positional `refs` argument entirely
+    # whenever `graph=` is also passed (it early-returns into
+    # _build_agent_bom_from_graph(graph, ...) — confirmed by reading
+    # tools/bom.py:138-166) — no need for tools.scan's private
+    # _refs_from_graph helper here at all; pass [] for the ignored arg.
+    graph = build_graph(tmp_path, mode="repo")  # --host omitted -> every host
+    bom = build_agent_bom([], target_type="repo", target=str(tmp_path), graph=graph).to_cyclonedx()
+    round_tripped = component_refs_from_cyclonedx(bom)
+    weather = next(r for r in round_tripped if r.name == "weather-mcp")
+    assert weather.extra["runtime_hosts"] == ["cursor"]
+    skill = next(
+        r for r in round_tripped if r.name == "deploy" and r.extra.get("component_type") == "skill"
+    )
+    assert skill.extra["runtime_hosts"] == ["cursor"]
+
+    # CLI/posture layer: the insecure-transport rule labels the finding
+    # as Cursor, not Claude Code (Task 9's fix).
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_main,
+        ["scan", "repo", "--target", str(tmp_path), "--include-posture", "--format", "json"],
+    )
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture
+    assert posture[0]["active_in"] == ["cursor"]
+
+    # OSV-matching layer: a Cursor-discovered component
+    # must flow through vulnerability matching the same as a Claude one,
+    # not just BOM/posture. Uses conftest's offline-OSV fixture map
+    # (@cyanheads/git-mcp-server@1.1.0 -> GHSA-3q26-f695-pp76, already
+    # relied on elsewhere in this file) rather than a live OSV.dev call.
+    #
+    # Filter by advisory ID, not component.name: finding_to_output()'s
+    # component name comes from
+    # component_name_for(), which prefers the last component_path entry
+    # — the mcpServers dict *key* ("git", this fixture's server alias) —
+    # over the package name ("git-mcp-server"), per
+    # tools/finding_output.py:25-35. Filtering on "git-mcp-server" would
+    # silently match nothing. The advisory ID is unambiguous and doesn't
+    # depend on getting the display-name precedence rule right in the
+    # test too.
+    vuln_result = runner.invoke(
+        cli_main,
+        ["scan", "repo", "--target", str(tmp_path), "--format", "json"],
+    )
+    vuln_doc = _scan_json_doc(vuln_result.output)
+    vuln_findings = [
+        f
+        for f in vuln_doc["findings"]
+        if f.get("finding_type") == "vulnerability" and f.get("id") == "GHSA-3q26-f695-pp76"
+    ]
+    assert vuln_findings
+    assert vuln_findings[0]["active_in"] == ["cursor"]
+
+
+def test_cursor_endpoint_scan_end_to_end(tmp_path, monkeypatch):
+    """Endpoint-mode Cursor scan through the real CLI: MCP + Skills +
+    dev-linked Plugin discovered, host-labeled, no enabled-state asserted
+    for the plugin, findings attributed to cursor."""
+    from tools.cli import main as cli_main
+
+    # ~/.agents/skills is home-scoped; keep the scan hermetic.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cursor_root = tmp_path / "cursor"
+    (cursor_root / "skills" / "helper").mkdir(parents=True)
+    (cursor_root / "skills" / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: d\n---\nrun\n"
+    )
+    (cursor_root / "mcp.json").write_text(
+        '{"mcpServers": {"git": {"command": "npx", "args": ["@cyanheads/git-mcp-server@1.1.0"]},'
+        ' "insecure-api": {"url": "http://insecure.example/mcp"}}}'
+    )
+    plugin_dir = cursor_root / "plugins" / "local" / "demo" / ".cursor-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_main,
+        [
+            "scan",
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    doc = _scan_json_doc(result.output)
+
+    vuln = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "vulnerability" and f.get("id") == "GHSA-3q26-f695-pp76"
+    ]
+    assert vuln and vuln[0]["active_in"] == ["cursor"]
+    posture = [
+        f for f in doc["findings"] if f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture and posture[0]["active_in"] == ["cursor"]
+    assert not [
+        f for f in doc["findings"] if f.get("rule_id") == "openaca-posture-mcp-auto-approve"
+    ]
+    # Cursor's host_surface display label ("Cursor") is how the JSON
+    # document names the scanned host at the target level.
+    assert doc["target"]["host_surface"] == "Cursor"
+
+
+def test_cursor_endpoint_marketplace_cached_plugin_scan_end_to_end(tmp_path, monkeypatch):
+    """ADR-0045 Decision #7: a marketplace-cached plugin (never dev-linked) is detected
+    end to end through the real CLI — presence-only, no enabled-state, with
+    its bundled skill and insecure-transport MCP attributed to cursor."""
+    from tools.cli import main as cli_main
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cursor_root = tmp_path / "cursor"
+    cached = cursor_root / "plugins" / "cache" / "cursor-public" / "alpha" / "deadbeef"
+    (cached / ".cursor-plugin").mkdir(parents=True)
+    (cached / ".cursor-plugin" / "plugin.json").write_text('{"name": "alpha"}')
+    (cached / "skills" / "cached-skill").mkdir(parents=True)
+    (cached / "skills" / "cached-skill" / "SKILL.md").write_text(
+        "---\nname: cached-skill\ndescription: d\n---\nrun\n"
+    )
+    (cached / "mcp.json").write_text(
+        '{"mcpServers": {"insecure-api": {"url": "http://insecure.example/mcp"}}}'
+    )
+    (cached / ".cache-complete").write_text("")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_main,
+        [
+            "scan",
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    doc = _scan_json_doc(result.output)
+
+    posture = [
+        f for f in doc["findings"] if f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture and posture[0]["active_in"] == ["cursor"]
+    assert doc["target"]["host_surface"] == "Cursor"
+    # Presence-only plugin + its bundled skill + its bundled MCP server.
+    assert doc["stats"]["components"] >= 3
+
+
+def test_two_host_endpoint_scan_shows_per_host_attribution(tmp_path, monkeypatch):
+    """Plan follow-up: a real two-host endpoint scan (Claude Code + Cursor)
+    through the CLI shows per-host attribution end to end — the stats line
+    breakdown, a host tag on each top-level inventory entry (not on any
+    bundled child), and `components_by_host` in the JSON stats object.
+    Change B's fix is exercised alongside it: the Cursor plugin's
+    location-derived `scope: user` must never render as `[scope=None]`."""
+    from tools.cli import main as cli_main
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    claude_root = tmp_path / ".claude"
+    (claude_root / "skills" / "foo").mkdir(parents=True)
+    (claude_root / "skills" / "foo" / "SKILL.md").write_text(
+        "---\nname: foo\ndescription: d\n---\nrun\n"
+    )
+    (claude_root / "settings.json").write_text("{}")
+
+    cursor_root = tmp_path / ".cursor"
+    (cursor_root / "skills" / "bar").mkdir(parents=True)
+    (cursor_root / "skills" / "bar" / "SKILL.md").write_text(
+        "---\nname: bar\ndescription: d\n---\nrun\n"
+    )
+    plugin_dir = cursor_root / "plugins" / "local" / "demo" / ".cursor-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+
+    runner = CliRunner()
+
+    text_result = runner.invoke(cli_main, ["scan", "endpoint"])
+    assert text_result.exit_code == 0, text_result.output
+    # Cursor is presence-only (ADR-0045 Decision #7): a selection that includes it must
+    # not claim "active plugin", so the tree header says "plugin" here.
+    assert "1 plugin, 2 direct components, 2 total components" in text_result.output
+    assert "(claude-code: 1, cursor: 1)" in text_result.output
+    assert "plugin/demo" in text_result.output
+    assert "[cursor] [scope=user]" in text_result.output
+    assert "foo [claude-code]" in text_result.output
+    assert "bar [cursor]" in text_result.output
+    assert "[scope=None]" not in text_result.output
+
+    json_result = runner.invoke(cli_main, ["scan", "endpoint", "--format", "json"])
+    assert json_result.exit_code == 0, json_result.output
+    doc = _scan_json_doc(json_result.output)
+    # `components_by_host` mirrors `stats.components`' population (every ref,
+    # including the plugin self ref itself) — not the tree header's
+    # plugin-excluded `total components` count above.
+    assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 2}
+    assert sum(doc["stats"]["components_by_host"].values()) == doc["stats"]["components"]
+
+
+def test_two_host_endpoint_scan_attributes_bundled_package_deps_by_ancestor(tmp_path, monkeypatch):
+    """`_add_dep_manifest_packages` (tools/graph_build.py) never stamps
+    `runtime_hosts` on the package refs it emits, for either the plugin-own-
+    root-deps call site or the bundled-skill call site — so a Cursor cached
+    plugin's bundled skill's own `package.json` dependency, and a Claude
+    active plugin's bundled skill's own `package.json` dependency, both
+    reach `compute_components_by_host` with no host of their own. This must
+    resolve through the graph lineage to the nearest ancestor that DOES carry
+    `runtime_hosts` (the bundling skill node in both cases) rather than
+    silently defaulting every package to `claude-code` regardless of which
+    host's plugin it came from."""
+    from tools.cli import main as cli_main
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    claude_root = tmp_path / ".claude"
+    claude_plugin_dir = claude_root / "plugins" / "cache" / "market" / "demo" / "1.0.0"
+    (claude_plugin_dir / "skills" / "helper").mkdir(parents=True)
+    (claude_plugin_dir / "skills" / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: d\n---\nrun\n"
+    )
+    (claude_plugin_dir / "skills" / "helper" / "package.json").write_text(
+        json.dumps({"dependencies": {"left-pad": "1.0.0"}})
+    )
+    (claude_root / "plugins").mkdir(parents=True, exist_ok=True)
+    (claude_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@market": [
+                        {
+                            "scope": "user",
+                            "installPath": str(claude_plugin_dir),
+                            "version": "1.0.0",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    (claude_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"demo@market": True}})
+    )
+
+    cursor_root = tmp_path / ".cursor"
+    cached = cursor_root / "plugins" / "cache" / "cursor-public" / "alpha" / "deadbeef"
+    (cached / ".cursor-plugin").mkdir(parents=True)
+    (cached / ".cursor-plugin" / "plugin.json").write_text('{"name": "alpha"}')
+    (cached / "skills" / "cached-skill").mkdir(parents=True)
+    (cached / "skills" / "cached-skill" / "SKILL.md").write_text(
+        "---\nname: cached-skill\ndescription: d\n---\nrun\n"
+    )
+    (cached / "skills" / "cached-skill" / "package.json").write_text(
+        json.dumps({"dependencies": {"right-pad": "1.0.0"}})
+    )
+    (cached / ".cache-complete").write_text("")
+
+    runner = CliRunner()
+
+    text_result = runner.invoke(cli_main, ["scan", "endpoint"])
+    assert text_result.exit_code == 0, text_result.output
+    # Tree total-components population excludes the plugin self refs: one
+    # skill + one package per host. Cursor is presence-only (ADR-0045 Decision #7), so
+    # the label is "plugins", not "active plugins".
+    assert "2 plugins, 0 direct components, 4 total components" in text_result.output
+    assert "(claude-code: 2, cursor: 2)" in text_result.output
+
+    json_result = runner.invoke(cli_main, ["scan", "endpoint", "--format", "json"])
+    assert json_result.exit_code == 0, json_result.output
+    doc = _scan_json_doc(json_result.output)
+    # JSON population includes the plugin self refs too: plugin + skill +
+    # package per host.
+    assert doc["stats"]["components_by_host"] == {"claude-code": 3, "cursor": 3}
+
+
+def test_single_host_endpoint_scan_json_stats_components_by_host_one_key(tmp_path, monkeypatch):
+    """`components_by_host` is always present in the JSON stats object (not
+    gated on host count), but a single-host scan has exactly one key."""
+    from tools.cli import main as cli_main
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_main,
+        ["scan", "endpoint", "--config-dir", str(config_dir), "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    assert doc["stats"]["components_by_host"] == {"claude-code": doc["stats"]["components"]}

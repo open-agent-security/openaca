@@ -558,15 +558,26 @@ def _with_plugin_context(
     refs: list[ComponentRef],
     plugin_name: str,
     plugin_manifest_path: Path,
+    runtime_hosts: list[str] | None = None,
 ) -> list[ComponentRef]:
+    """Stamp plugin-container placement metadata onto bundled refs.
+
+    `runtime_hosts` defaults to `["claude-code"]` when omitted — the
+    endpoint-mode call site below never passes it (endpoint mode is
+    Claude-only in this phase); repo mode's graph realization passes the
+    plugin node's own derived `runtime_hosts` (e.g. `["cursor"]`) so a
+    Cursor bundle's refs keep their real host provenance instead of being
+    silently retagged.
+    """
     out: list[ComponentRef] = []
+    effective_hosts = runtime_hosts if runtime_hosts is not None else ["claude-code"]
     plugin_node = {"type": "plugin", "name": plugin_name}
     for ref in refs:
         child_type = _component_type_for_child(ref)
         child_name = _component_name_for_child(ref)
         extra = dict(ref.extra)
         extra["component_type"] = child_type
-        extra["runtime_hosts"] = ["claude-code"]
+        extra["runtime_hosts"] = effective_hosts
         extra["declared_by"] = {
             "kind": "plugin",
             "name": plugin_name,

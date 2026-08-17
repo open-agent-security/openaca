@@ -27,6 +27,7 @@ class BomDiffComponent:
     scope: str | None
     capabilities: str | None
     capability_coverage: str | None
+    runtime_hosts: str | None
 
     def comparable(self) -> tuple[str | None, ...]:
         return (
@@ -46,6 +47,7 @@ class BomDiffComponent:
             self.scope,
             self.capabilities,
             self.capability_coverage,
+            self.runtime_hosts,
         )
 
     def to_json(self) -> JsonObject:
@@ -67,6 +69,7 @@ class BomDiffComponent:
             "scope": self.scope,
             "capabilities": self.capabilities,
             "capability_coverage": self.capability_coverage,
+            "runtime_hosts": self.runtime_hosts,
         }
 
 
@@ -95,6 +98,7 @@ class ChangedBomDiffComponent:
                 "scope": self.before.scope,
                 "capabilities": self.before.capabilities,
                 "capability_coverage": self.before.capability_coverage,
+                "runtime_hosts": self.before.runtime_hosts,
             },
             "after": {
                 "version": self.after.version,
@@ -110,6 +114,7 @@ class ChangedBomDiffComponent:
                 "scope": self.after.scope,
                 "capabilities": self.after.capabilities,
                 "capability_coverage": self.after.capability_coverage,
+                "runtime_hosts": self.after.runtime_hosts,
             },
         }
 
@@ -195,6 +200,7 @@ def _components_by_bom_ref(doc: JsonObject) -> dict[str, BomDiffComponent]:
             scope=_property(item, "openaca:scope"),
             capabilities=_property(item, "openaca:capabilities"),
             capability_coverage=_property(item, "openaca:capability_coverage"),
+            runtime_hosts=_property(item, "openaca:runtime_hosts"),
         )
     return result
 

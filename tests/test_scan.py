@@ -697,6 +697,9 @@ def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
         json.dumps({"version": 1, "plugins": {}})
     )
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    # Pin HOME so a real ~/.cursor on the developer machine can't be
+    # detected and add its components to this Claude-only fixture scan.
+    monkeypatch.setenv("HOME", str(tmp_path))
 
     runner = CliRunner()
     result = runner.invoke(
@@ -2225,6 +2228,49 @@ def test_scan_endpoint_report_shortcut_writes_markdown_and_keeps_scan_exit(tmp_p
     assert "`upgrade`" in report
 
 
+def test_scan_endpoint_report_exposure_surfaces_host_aware_posture_finding(tmp_path):
+    # Verification note (this task's brief, not new production code): --report
+    # exposure needs no separate host-aware wiring. tools/scan.py's `endpoint`
+    # command builds `posture_output` from this task's host-aware
+    # `collect_endpoint_posture_inputs` call once, then EITHER path
+    # (`report_kind == "exposure"` -> `_scan_json_document(...,
+    # posture_findings=posture_output, ...)`, or the plain `_emit(...,
+    # posture_findings=posture_output, ...)`) reads that same list — so a
+    # Cursor-attributed posture finding surfaces in the exposure report
+    # exactly like a Claude one would, with no separate report-path change.
+    cursor_root = tmp_path / "cursor"  # deliberately not ".cursor"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--include-posture",
+            "--report",
+            "exposure",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    evidence_ids = {
+        evidence["id"]
+        for card in doc["cards"]
+        for evidence in card["evidence"]
+        if evidence["finding_type"] == "posture"
+    }
+    assert "openaca-posture-insecure-transport" in evidence_ids
+
+
 def test_scan_report_rejects_markdown_without_report(tmp_path):
     result = CliRunner().invoke(
         main,
@@ -2249,3 +2295,565 @@ def test_scan_report_ignores_github_actions_auto_promotion(tmp_path, monkeypatch
     assert result.exit_code == 0, result.output
     assert "Exposure report" in result.output
     assert "does not support --format github" not in result.output
+
+
+def test_scan_repo_cursor_mcp_via_host_flag(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path), "--host", "cursor"])
+    assert "weather-mcp" in result.output
+
+
+def test_scan_repo_default_host_includes_cursor(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path)])  # --host omitted
+    assert "weather-mcp" in result.output
+
+
+def test_scan_repo_host_claude_code_only_excludes_cursor(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path), "--host", "claude-code"])
+    assert "weather-mcp" not in result.output
+
+
+def test_scan_repo_unknown_host_errors(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path), "--host", "not-a-real-host"])
+    assert result.exit_code != 0
+
+
+def test_scan_repo_duplicate_host_dedupes(tmp_path):
+    # Repeated forms resolve the same duplicate away rather than erroring
+    # or double-scanning: verify the manifest/component counts a duplicate
+    # --host selection reports match a single-host scan exactly. A broken
+    # dedup would double-count the one manifest here instead.
+    (tmp_path / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}})
+    )
+    runner = CliRunner()
+    single = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    duplicate = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--host",
+            "claude-code",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert single.exit_code == 0, single.output
+    assert duplicate.exit_code == 0, duplicate.output
+    single_stats = _scan_json_doc(single.output)["stats"]
+    duplicate_stats = _scan_json_doc(duplicate.output)["stats"]
+    assert duplicate_stats["units"] == single_stats["units"] == 1
+    assert duplicate_stats["components"] == single_stats["components"] == 1
+
+
+def test_scan_repo_host_comma_and_whitespace_forms_equivalent(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}})
+    )
+    runner = CliRunner()
+    comma = runner.invoke(
+        main, ["repo", "--target", str(tmp_path), "--host", "claude-code, cursor"]
+    )
+    repeated = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--host",
+            "cursor",
+        ],
+    )
+    assert ("weather-mcp" in comma.output) == ("weather-mcp" in repeated.output) is True
+
+
+def test_scan_repo_host_empty_value_errors(tmp_path):
+    # A comma-only or empty --host value resolves to zero valid host
+    # names after stripping — that must be a hard error ("you gave me
+    # nothing usable"), not a silent scan of zero hosts (which would
+    # look identical to "target has no manifests" from the outside).
+    runner = CliRunner()
+    result = runner.invoke(main, ["repo", "--target", str(tmp_path), "--host", ","])
+    assert result.exit_code != 0
+
+
+def _scan_json_doc(output: str) -> dict:
+    """Pull the JSON document out of mixed stdout+stderr CliRunner output.
+
+    Same extraction the existing `--format json` tests do: CliRunner
+    captures the stderr scan summary alongside the JSON block.
+    """
+    start = output.index("{")
+    for end in range(len(output), start, -1):
+        try:
+            return json.loads(output[start:end])
+        except json.JSONDecodeError:
+            continue
+    raise AssertionError(f"no JSON document in output: {output!r}")
+
+
+def test_scan_repo_host_claude_code_excludes_cursor_posture_finding(tmp_path):
+    # Confirms exclusion happens at collection, not just at labeling
+    # (Steps 8-9 below fix labeling; this fixes collection).
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir()
+    (cursor_dir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture == []
+
+
+def test_scan_repo_cursor_cache_mcp_json_posture_uses_claude_code(tmp_path):
+    # Same boundary case as the registry/graph dispatch tests: a manifest
+    # merely nested under .cursor/ but not the exact .cursor/mcp.json
+    # shape must be posture-scanned as claude-code, not silently
+    # dropped by a --host cursor selection (or, before the owning_host
+    # precision fix, wrongly kept as "cursor" despite the graph never
+    # recognizing it as a Cursor component at all).
+    nested = tmp_path / ".cursor" / "cache"
+    nested.mkdir(parents=True)
+    (nested / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    cursor_only = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "cursor",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    doc = _scan_json_doc(cursor_only.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert posture == []  # claude-code-owned manifest, not visible under --host cursor
+
+
+def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
+    """HostAdapter is frozen — replace the registry entry, never setattr."""
+    import dataclasses
+
+    from tools.hosts import HOSTS
+
+    monkeypatch.setitem(HOSTS, host_id, dataclasses.replace(HOSTS[host_id], detect=lambda: value))
+
+
+def test_scan_endpoint_default_skips_undetected_cursor(tmp_path, monkeypatch):
+    _with_detect(monkeypatch, "cursor", False)
+    config_dir = tmp_path / "claude"
+    (config_dir / "agents").mkdir(parents=True)
+    (config_dir / "settings.json").write_text("{}")
+    (config_dir / "agents" / "reviewer.md").write_text("---\nname: reviewer\n---\nr\n")
+    # A cursor config dir exists next door but is neither detected nor selected.
+    (tmp_path / "cursor" / "agents").mkdir(parents=True)
+    (tmp_path / "cursor" / "agents" / "other.md").write_text("---\nname: other\n---\no\n")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--config-dir", str(config_dir)])
+    assert result.exit_code == 0, result.output
+    assert "host surface: Claude Code" in result.output
+    assert f"config: {config_dir}" in result.output
+    assert "reviewer" in result.output
+    assert "other" not in result.output
+
+
+def test_scan_endpoint_explicit_host_cursor_no_root_no_override_hard_error(monkeypatch):
+    _with_detect(monkeypatch, "cursor", False)
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--host", "cursor"])
+    assert result.exit_code != 0
+    assert "cursor" in result.output
+
+
+def test_scan_endpoint_explicit_config_dir_with_host_cursor_accepted(tmp_path, monkeypatch):
+    _with_detect(monkeypatch, "cursor", False)
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text('{"mcpServers": {}}')
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["endpoint", "--host", "cursor", "--config-dir", str(cursor_root)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "host surface: Cursor" in result.output
+
+
+def test_scan_endpoint_unknown_host_rejected(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--host", "typo", "--config-dir", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "unknown host" in result.output
+
+
+def test_scan_endpoint_config_dir_with_two_hosts_rejected(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--host",
+            "claude-code",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--host" in result.output
+
+
+def test_scan_endpoint_two_hosts_render_both_config_roots(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_root = tmp_path / ".claude"
+    (claude_root / "agents").mkdir(parents=True)
+    (claude_root / "settings.json").write_text("{}")
+    (claude_root / "agents" / "reviewer.md").write_text("---\nname: reviewer\n---\nr\n")
+    (tmp_path / ".cursor").mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint"])
+    assert result.exit_code == 0, result.output
+    assert "host surface: Claude Code, Cursor" in result.output
+    assert f"config (claude-code): {claude_root}" in result.output
+    assert f"config (cursor): {tmp_path / '.cursor'}" in result.output
+    # The shared subagent is one occurrence readable by both hosts.
+    assert "reviewer" in result.output
+
+
+def _with_cursor_seed(monkeypatch):
+    """Stand-in for Task 17's Cursor endpoint seed (same stubbed-adapter
+    pattern tests/test_graph_build.py uses): `<config_root>/mcp.json`
+    servers become target children, enough to give Cursor a real graph
+    component before `HOSTS["cursor"].seed_endpoint` exists for real."""
+    import dataclasses
+
+    from tools.graph import Node
+    from tools.graph_build import _add_child, occurrence_key
+    from tools.hosts import HOSTS
+    from tools.parsers import mcp_json
+
+    def _cursor_mcp_seed(graph, target, config_root, project_root, normalize, *, warnings=None):
+        mcp_path = config_root / "mcp.json"
+        if not mcp_path.is_file():
+            return
+        for ref in mcp_json.parse(mcp_path):
+            if (ref.extra or {}).get("component_type") != "mcp_server":
+                continue
+            _add_child(
+                graph,
+                target,
+                Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref),
+            )
+
+    monkeypatch.setitem(
+        HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=_cursor_mcp_seed)
+    )
+
+
+def test_endpoint_posture_cursor_manifest_active_in_cursor(tmp_path):
+    # Cursor root deliberately named "cursor", not ".cursor" — collection
+    # provenance, not path shape, must drive attribution (owning_host would
+    # misattribute this root to claude-code).
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1
+    assert posture[0]["active_in"] == ["cursor"]
+
+
+def test_endpoint_posture_cursor_cached_plugin_bundled_mcp(tmp_path):
+    # ADR-0045 Decision #7 point 5: a marketplace-cached plugin's bundled mcp.json joins
+    # Cursor's endpoint posture collection, mirroring how Claude's collector
+    # derives plugin install roots from its refs.
+    cursor_root = tmp_path / "cursor"
+    cached = cursor_root / "plugins" / "cache" / "cursor-public" / "alpha" / "deadbeef"
+    (cached / ".cursor-plugin").mkdir(parents=True)
+    (cached / ".cursor-plugin" / "plugin.json").write_text('{"name": "alpha"}')
+    (cached / ".cache-complete").write_text("")
+    (cached / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1
+    assert posture[0]["active_in"] == ["cursor"]
+
+
+def test_scan_endpoint_cursor_only_reports_plugin_not_active_plugin(tmp_path):
+    """Cursor is presence-only (ADR-0045 Decision #7): a Cursor-only endpoint scan must
+    not claim "active plugin" in its text summary line, mirroring the same
+    rule `bom endpoint`'s `openaca:source_unit_label` already applies."""
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(
+        main,
+        ["endpoint", "--host", "cursor", "--config-dir", str(cursor_root), "--format", "text"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Scanned 0 plugins" in result.output
+    assert "active plugin" not in result.output
+
+
+def test_scan_endpoint_cursor_only_json_stats_unit_is_plugin(tmp_path):
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+
+    result = CliRunner().invoke(
+        main,
+        ["endpoint", "--host", "cursor", "--config-dir", str(cursor_root), "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    assert doc["stats"]["unit"] == "plugin"
+
+
+def test_scan_endpoint_two_hosts_json_stats_unit_is_plugin(tmp_path, monkeypatch):
+    """A selection that includes Cursor alongside Claude Code must still fall
+    back to "plugin" — presence-only-ness of any selected host is enough,
+    it doesn't require an all-Cursor selection."""
+    _with_cursor_seed(monkeypatch)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}")
+    (tmp_path / ".cursor").mkdir()
+
+    result = CliRunner().invoke(main, ["endpoint", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    assert doc["stats"]["unit"] == "plugin"
+
+
+def test_endpoint_two_host_posture_findings_not_duplicated(tmp_path, monkeypatch):
+    # Both hosts' roots via default detection; ref-keyed rules (here
+    # mutable-install-reference, from each host's unpinned npx MCP) must
+    # fire at most once per ref — run_posture_rules running per-host would
+    # double-count them since it consumes the whole refs list each call.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _with_cursor_seed(monkeypatch)
+
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}")
+    (claude_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"claude-tool": {"command": "npx", "args": ["claude-pkg"]}}})
+    )
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"cursor-tool": {"command": "npx", "args": ["cursor-pkg"]}}})
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--include-posture", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    mutable = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-mutable-install-reference"
+    ]
+    assert len(mutable) == 2
+    pairs = [(f["rule_id"], f.get("bom_ref")) for f in mutable]
+    assert len(pairs) == len(set(pairs))
+
+
+def test_endpoint_posture_dispatch_runs_once_over_union(tmp_path, monkeypatch):
+    # Spy on run_posture_rules: exactly ONE call; its manifests argument is
+    # the deduped (path, dict) union of both hosts' collector outputs, and
+    # manifest_hosts maps each path to the host that collected it.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    claude_root = tmp_path / ".claude"
+    claude_root.mkdir()
+    (claude_root / "settings.json").write_text("{}")
+    (claude_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"claude-tool": {"url": "http://claude.example.com/mcp"}}})
+    )
+    cursor_root = tmp_path / ".cursor"
+    cursor_root.mkdir()
+    (cursor_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"cursor-tool": {"url": "http://cursor.example.com/mcp"}}})
+    )
+
+    import tools.scan as scan_module
+
+    calls: list[tuple[list, dict | None]] = []
+    real_run_posture_rules = scan_module.run_posture_rules
+
+    def spy(refs, manifests, settings_manifests, manifest_hosts=None):
+        calls.append((manifests, manifest_hosts))
+        return real_run_posture_rules(
+            refs, manifests, settings_manifests, manifest_hosts=manifest_hosts
+        )
+
+    monkeypatch.setattr(scan_module, "run_posture_rules", spy)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["endpoint", "--include-posture", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    manifests, manifest_hosts = calls[0]
+    paths = [path for path, _ in manifests]
+    assert len(paths) == len(set(paths))
+    assert set(paths) == {claude_root / ".mcp.json", cursor_root / "mcp.json"}
+    assert manifest_hosts == {
+        claude_root / ".mcp.json": "claude-code",
+        cursor_root / "mcp.json": "cursor",
+    }
+
+
+def test_endpoint_posture_claude_settings_layer_unchanged(tmp_path, monkeypatch):
+    # A claude settings.json mcpServers autoApprove entry still produces the
+    # mcp_auto_approve finding through collect_endpoint_settings_manifests —
+    # the settings path is untouched by the collect_endpoint_posture_inputs
+    # refactor.
+    _with_detect(monkeypatch, "cursor", False)
+    config_dir = tmp_path / "claude"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {"mcpServers": {"tool": {"command": "npx", "args": ["pkg"], "autoApprove": True}}}
+        )
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["endpoint", "--config-dir", str(config_dir), "--include-posture", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    auto_approve = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-mcp-auto-approve"
+    ]
+    assert len(auto_approve) == 1

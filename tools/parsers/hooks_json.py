@@ -1,18 +1,32 @@
-"""Parse Claude Code hooks — both plugin-bundled and settings-scoped.
+"""Parse plugin-bundled and settings-scoped hooks — Claude Code and Cursor
+Plugins share the same wrapper/entry-array shape, but the event-name
+vocabulary and the occurrence-local identity label are format-specific.
 
 Two input shapes wrap the same inner format:
 
 - **Plugin format** at `<plugin-root>/hooks/hooks.json`:
   `{"description": "...", "hooks": {<EventName>: [<entry>, ...]}}`
-- **Settings format** inside a `settings.json` (any scope):
+- **Settings format** inside a `settings.json` (any scope, Claude-only):
   `{<EventName>: [<entry>, ...]}` (the value of the `hooks` key)
 
-Each entry is `{"type": "command"|"prompt", "command": "...", "matcher": "..."?}`.
+Each entry is `{"type": "command"|"prompt", "command": "...", "matcher": "..."?}`
+for Claude Code. Cursor Plugins use the same `{event: [entry, ...]}` array
+shape and the same standalone `{"hooks": {...}}` wrapper, but a disjoint
+camelCase event vocabulary (`preToolUse`, `postToolUse`, `postToolUseFailure`,
+`beforeSubmitPrompt`, `stop`, plus agent-lifecycle events), and entries carry
+`command`/`matcher` only — no `type` field (verified against Cursor's plugin
+reference docs, docs/specs/multi-host-support.md Hooks section). The walk
+below is permissive about both: any string event name is accepted and
+recorded as-is, and absent `type`/`matcher` fields degrade the identity hash
+to a command-only digest rather than being rejected.
 
 Identity is derived from the hook payload, not where the hook is declared.
 `event`, array `index`, settings `scope`, `type`, `command`, and `matcher`
 live in `extra`; `source_manifest` and `source_locator` carry the observed
-location.
+location. `identity_scheme` (`"claude-hook"` default, `"cursor-hook"` for a
+Cursor Plugin bundle) is occurrence-local display metadata, not identity —
+`tools/identity.py`'s `canonical_component_identity` routes `hook` refs
+through `_plugin_private_identity`, which never reads this string.
 
 Skipped silently on read or parse errors so one malformed hooks block
 doesn't abort the wider scan.
@@ -28,7 +42,21 @@ from typing import Optional
 from tools.component_ref import ComponentRef
 
 
-def parse_plugin_hooks(hooks_json_path: Path, plugin_name: str) -> list[ComponentRef]:
+def hook_identity_scheme_for_manifest(plugin_json_path: Path) -> str:
+    """`"cursor-hook"` for a `.cursor-plugin/plugin.json` bundle, else
+    `"claude-hook"` — same directory-name keying as
+    `claude_plugin_root.default_mcp_filename_for_manifest`."""
+    if plugin_json_path.parent.name == ".cursor-plugin":
+        return "cursor-hook"
+    return "claude-hook"
+
+
+def parse_plugin_hooks(
+    hooks_json_path: Path,
+    plugin_name: str,
+    runtime_hosts: Optional[list[str]] = None,
+    identity_scheme: str = "claude-hook",
+) -> list[ComponentRef]:
     """Walk a plugin's `hooks/hooks.json` file.
 
     Returns [] for any read/parse error or shape violation (non-object root,
@@ -51,11 +79,17 @@ def parse_plugin_hooks(hooks_json_path: Path, plugin_name: str) -> list[Componen
         hooks_block,
         source_manifest=str(hooks_json_path),
         scope=None,
+        runtime_hosts=runtime_hosts,
+        identity_scheme=identity_scheme,
     )
 
 
 def parse_plugin_hooks_inline(
-    hooks_block: dict, plugin_name: str, source_manifest: str
+    hooks_block: dict,
+    plugin_name: str,
+    source_manifest: str,
+    runtime_hosts: Optional[list[str]] = None,
+    identity_scheme: str = "claude-hook",
 ) -> list[ComponentRef]:
     """Walk a plugin.json's inline `hooks` key.
 
@@ -69,6 +103,8 @@ def parse_plugin_hooks_inline(
         hooks_block,
         source_manifest=source_manifest,
         scope=None,
+        runtime_hosts=runtime_hosts,
+        identity_scheme=identity_scheme,
     )
 
 
@@ -94,6 +130,8 @@ def _walk_events(
     hooks_block: dict,
     source_manifest: str,
     scope: Optional[str],
+    runtime_hosts: Optional[list[str]] = None,
+    identity_scheme: str = "claude-hook",
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     for event, entries in hooks_block.items():
@@ -111,10 +149,12 @@ def _walk_events(
             }
             if scope is not None:
                 extra["scope"] = scope
+            if runtime_hosts is not None:
+                extra["runtime_hosts"] = runtime_hosts
             extra["component_type"] = "hook"
             refs.append(
                 ComponentRef(
-                    component_identity=_hook_identity(entry),
+                    component_identity=_hook_identity(entry, identity_scheme),
                     source_manifest=source_manifest,
                     source_locator=f"$.hooks.{event}[{index}]",
                     extra=extra,
@@ -123,7 +163,7 @@ def _walk_events(
     return refs
 
 
-def _hook_identity(entry: dict) -> str:
+def _hook_identity(entry: dict, identity_scheme: str = "claude-hook") -> str:
     hook_type = entry.get("type")
     command = entry.get("command")
     prompt = entry.get("prompt")
@@ -135,4 +175,4 @@ def _hook_identity(entry: dict) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()[:16]
     kind = payload["type"] or "hook"
-    return f"claude-hook/{kind}:{digest}"
+    return f"{identity_scheme}/{kind}:{digest}"

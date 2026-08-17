@@ -17,15 +17,24 @@ def walk_plugin_root(
     plugin_name: str,
     plugin_data: dict,
     plugin_json_path: Optional[Path] = None,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
-    """Enumerate plugin-bundled components under a Claude Code plugin root.
+    """Enumerate plugin-bundled components under a Claude Code or Cursor
+    Plugin root.
 
-    This is used by both repo mode (`<repo>/.claude-plugin/plugin.json`) and
-    endpoint mode (`installed_plugins.json[*].installPath`). Parentage is set by
-    the graph edge from the plugin node, not stored on the refs.
+    This is used by both repo mode (`<repo>/.claude-plugin/plugin.json` or
+    `<repo>/.cursor-plugin/plugin.json`) and endpoint mode
+    (`installed_plugins.json[*].installPath`, Claude-only). Parentage is set
+    by the graph edge from the plugin node, not stored on the refs.
+
+    `runtime_hosts`, when given, is stamped onto every emitted ref (self-
+    identity excluded — that ref is built by the caller) and defaults to
+    `["claude-code"]` at the caller (`claude_plugin.parse`) when omitted.
     """
     if plugin_json_path is None:
         plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
+
+    default_filename = default_mcp_filename_for_manifest(plugin_json_path)
 
     refs: list[ComponentRef] = []
     refs.extend(
@@ -33,13 +42,42 @@ def walk_plugin_root(
             plugin_data,
             plugin_json_path=plugin_json_path,
             plugin_root=plugin_root,
+            runtime_hosts=runtime_hosts,
         )
     )
-    refs.extend(_parse_default_mcp(plugin_root, refs))
-    refs.extend(_parse_bundled_skills(plugin_root, plugin_data))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
-    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
+    refs.extend(
+        _parse_default_mcp(
+            plugin_root,
+            refs,
+            default_filename=default_filename,
+            runtime_hosts=runtime_hosts,
+        )
+    )
+    refs.extend(_parse_bundled_skills(plugin_root, plugin_data, runtime_hosts=runtime_hosts))
+    refs.extend(
+        _parse_bundled_hooks(
+            plugin_root,
+            plugin_data,
+            plugin_name,
+            plugin_json_path=plugin_json_path,
+            runtime_hosts=runtime_hosts,
+        )
+    )
+    refs.extend(
+        _parse_bundled_command_agents(
+            plugin_root, plugin_data, plugin_name, runtime_hosts=runtime_hosts
+        )
+    )
     return refs
+
+
+def default_mcp_filename_for_manifest(plugin_json_path: Path) -> str:
+    """`"mcp.json"` for a `.cursor-plugin/plugin.json` bundle (Cursor's
+    verified default bundled MCP manifest, spec's Plugins section), else
+    `".mcp.json"` (Claude's default)."""
+    if plugin_json_path.parent.name == ".cursor-plugin":
+        return "mcp.json"
+    return ".mcp.json"
 
 
 def resolve_within(base: Path, rel: str) -> Optional[Path]:
@@ -60,6 +98,7 @@ def _parse_manifest_refs(
     *,
     plugin_json_path: Path,
     plugin_root: Path,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     deps = data.get("dependencies")
@@ -67,24 +106,32 @@ def _parse_manifest_refs(
         for i, dep in enumerate(deps):
             locator = f"$.dependencies[{i}]"
             if isinstance(dep, str):
+                extra: dict = {}
+                if runtime_hosts is not None:
+                    extra["runtime_hosts"] = runtime_hosts
                 refs.append(
                     ComponentRef(
                         name=dep,
                         component_identity=f"plugin-dep/{dep}",
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
+                        extra=extra,
                     )
                 )
             elif isinstance(dep, dict) and dep.get("name"):
                 ident = f"plugin-dep/{dep['name']}"
                 if dep.get("version"):
                     ident = f"{ident}@{dep['version']}"
+                extra = {}
+                if runtime_hosts is not None:
+                    extra["runtime_hosts"] = runtime_hosts
                 refs.append(
                     ComponentRef(
                         name=str(dep["name"]),
                         component_identity=ident,
                         source_manifest=str(plugin_json_path),
                         source_locator=locator,
+                        extra=extra,
                     )
                 )
 
@@ -95,26 +142,33 @@ def _parse_manifest_refs(
                 servers,
                 source_manifest=str(plugin_json_path),
                 locator_prefix="$.mcpServers (inlined)",
+                runtime_hosts=runtime_hosts,
             )
         )
     elif isinstance(servers, str):
         referenced = resolve_within(plugin_root, servers)
         if referenced is not None and referenced.exists():
             try:
-                file_refs = mcp_json.parse(referenced)
+                file_refs = mcp_json.parse(referenced, runtime_hosts=runtime_hosts)
             except Exception:
                 file_refs = []
             refs.extend(file_refs)
     return refs
 
 
-def _parse_default_mcp(plugin_root: Path, existing_refs: list[ComponentRef]) -> list[ComponentRef]:
-    default_mcp = resolve_within(plugin_root, ".mcp.json")
+def _parse_default_mcp(
+    plugin_root: Path,
+    existing_refs: list[ComponentRef],
+    *,
+    default_filename: str = ".mcp.json",
+    runtime_hosts: Optional[list[str]] = None,
+) -> list[ComponentRef]:
+    default_mcp = resolve_within(plugin_root, default_filename)
     if default_mcp is None or not default_mcp.is_file():
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}
     try:
-        mcp_refs = mcp_json.parse(default_mcp)
+        mcp_refs = mcp_json.parse(default_mcp, runtime_hosts=runtime_hosts)
     except Exception:
         return []
     out: list[ComponentRef] = []
@@ -133,7 +187,9 @@ def _source_manifest_key(ref: ComponentRef) -> str:
         return ref.source_manifest
 
 
-def _parse_bundled_skills(plugin_root: Path, data: dict) -> list[ComponentRef]:
+def _parse_bundled_skills(
+    plugin_root: Path, data: dict, *, runtime_hosts: Optional[list[str]] = None
+) -> list[ComponentRef]:
     try:
         plugin_root_resolved = plugin_root.resolve()
     except (OSError, RuntimeError):
@@ -178,11 +234,19 @@ def _parse_bundled_skills(plugin_root: Path, data: dict) -> list[ComponentRef]:
                 continue
             if not skill_md_resolved.is_relative_to(plugin_root_resolved):
                 continue
-            refs.extend(claude_skill.parse(skill_md))
+            refs.extend(claude_skill.parse(skill_md, runtime_hosts=runtime_hosts))
     return refs
 
 
-def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> list[ComponentRef]:
+def _parse_bundled_hooks(
+    plugin_root: Path,
+    data: dict,
+    plugin_name: str,
+    *,
+    plugin_json_path: Path,
+    runtime_hosts: Optional[list[str]] = None,
+) -> list[ComponentRef]:
+    identity_scheme = hooks_json.hook_identity_scheme_for_manifest(plugin_json_path)
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
     default_hooks = resolve_within(plugin_root, "hooks/hooks.json")
@@ -192,16 +256,19 @@ def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> lis
             hooks_json.parse_plugin_hooks(
                 default_hooks,
                 plugin_name=plugin_name,
+                runtime_hosts=runtime_hosts,
+                identity_scheme=identity_scheme,
             )
         )
     inline_hooks = data.get("hooks")
-    plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
     if isinstance(inline_hooks, dict):
         refs.extend(
             hooks_json.parse_plugin_hooks_inline(
                 hooks_block=inline_hooks,
                 plugin_name=plugin_name,
                 source_manifest=str(plugin_json_path),
+                runtime_hosts=runtime_hosts,
+                identity_scheme=identity_scheme,
             )
         )
     elif isinstance(inline_hooks, str):
@@ -213,13 +280,19 @@ def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> lis
                     hooks_json.parse_plugin_hooks(
                         custom_hooks_file,
                         plugin_name=plugin_name,
+                        runtime_hosts=runtime_hosts,
+                        identity_scheme=identity_scheme,
                     )
                 )
     return refs
 
 
 def _parse_bundled_command_agents(
-    plugin_root: Path, data: dict, plugin_name: str
+    plugin_root: Path,
+    data: dict,
+    plugin_name: str,
+    *,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -252,6 +325,7 @@ def _parse_bundled_command_agents(
                     kind=kind,
                     plugin_name=plugin_name,
                     plugin_root_resolved=plugin_root_resolved,
+                    runtime_hosts=runtime_hosts,
                 )
             )
     return refs
@@ -263,6 +337,7 @@ def _enumerate_bundled_command_agent_dir(
     kind: Kind,
     plugin_name: str,
     plugin_root_resolved: Path,
+    runtime_hosts: Optional[list[str]] = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -281,6 +356,7 @@ def _enumerate_bundled_command_agent_dir(
                 child,
                 kind=kind,
                 scope_owner=plugin_name,
+                runtime_hosts=runtime_hosts,
             )
         )
     return refs

@@ -143,7 +143,11 @@ suffix derived from the component observation fields.
 |---|---|
 | `openaca:schema_version` | OpenACA Agent BOM schema version. Stored on BOM metadata. |
 | `openaca:target_type` | `repo`, `endpoint`, or `bom`. Stored on BOM metadata. |
-| `openaca:target` | Human-readable target path or endpoint config path when available. |
+| `openaca:target` | Human-readable target path or endpoint config path when available. Single-host endpoint BOMs (and repo BOMs) carry the selected host's config root — the documented API-compatibility anchor. Multi-host endpoint BOMs carry the neutral locator `endpoint:user-scope` instead, since no single host's root is authoritative; per-host roots are still available via `openaca:host_config_roots`. |
+| `openaca:source_unit_count` | Count of the unit named by `openaca:source_unit_label` (e.g. manifests parsed, plugins found). Stored on BOM metadata. |
+| `openaca:source_unit_label` | Unit name for `openaca:source_unit_count`: `manifest`, `active plugin`, or (endpoint BOMs where any selected host's plugins are presence-only, e.g. Cursor per ADR-0045 Decision #7) `plugin` — "active" is never asserted for a host that cannot observe enabled state. |
+| `openaca:scanned_hosts` | JSON-encoded array of selected host ids, in root-map order. Stored on BOM metadata **only when 2+ hosts are selected** on an endpoint BOM; single-host BOMs omit it entirely. |
+| `openaca:host_config_roots` | JSON-encoded object mapping each selected host id to its config root path. Same multi-host gating as `openaca:scanned_hosts`. |
 | `openaca:identity` | Optional source-stable, version-independent, role-qualified cross-BOM join key (ADR-0042). Missing means the component must remain occurrence-local. |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |

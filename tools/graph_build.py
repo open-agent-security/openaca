@@ -16,6 +16,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 
 from __future__ import annotations
 
+import functools
 import json
 import tomllib
 from collections.abc import Callable
@@ -25,14 +26,21 @@ from pathlib import Path
 from pathspec import GitIgnoreSpec
 
 from tools.component_ref import ComponentRef
+from tools.endpoint_request import (
+    claude_compat_agents_dir,
+    endpoint_discovery_roots,
+    endpoint_normalization_label,
+)
 from tools.graph import Edge, Graph, Node
+from tools.hosts import HOSTS, all_host_ids
 from tools.identity import canonical_component_identity, finalize_component_identity
 from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
+    ParserFn,
+    agent_plugins,
     bun_lock,
     claude_command_agent,
     claude_install,
-    claude_plugin,
     claude_settings,
     claude_skill,
     hooks_json,
@@ -40,6 +48,8 @@ from tools.parsers import (
     package_json,
     package_lock_json,
     pyproject_toml,
+    registry_pattern_matches,
+    resolve_host_selection,
     skill_lock,
     uv_lock,
 )
@@ -49,11 +59,16 @@ from tools.parsers.claude_plugin_root import (
     _parse_bundled_hooks,
     _parse_default_mcp,
     _parse_manifest_refs,
+    default_mcp_filename_for_manifest,
     resolve_within,
 )
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import SCOPE_PRECEDENCE
-from tools.parsers.settings_layers import load as load_settings
+from tools.subagent_precedence import (
+    group_occurrences_by_manifest,
+    resolve_subagent_occurrences,
+    resolve_subagent_occurrences_for_dirs,
+)
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -136,7 +151,11 @@ def _identity_normalizer(abs_path: str) -> str:
 
 
 def _make_normalizer(
-    mode: str, target: Path, install_root: Path, project_root: Path | None
+    mode: str,
+    target: Path,
+    project_root: Path | None,
+    *,
+    discovery_roots: dict[str, Path] | None = None,
 ) -> SourceNormalizer:
     """Build the `source_manifest`-path normalizer for a scan.
 
@@ -147,12 +166,15 @@ def _make_normalizer(
     - **repo mode**: the single scan `target` is the only root; the key path is
       `source_manifest` relative to `target` (POSIX), e.g.
       `.claude/skills/deploy/package.json`.
-    - **endpoint mode**: paths span `install_root` (the scan target, e.g.
-      `~/.claude`, incl. plugin install/cache dirs under it) and `project_root`
-      (the project dir). Strip the matching known root and prefix a logical label
-      so paths under different roots can't collide: `project/<rel>` under
-      `project_root`, `endpoint/<rel>` under `install_root`. A path under neither
-      falls back to the absolute path (last resort).
+    - **endpoint mode**: paths span `project_root` (the project dir) and every
+      endpoint discovery root — each selected host's config root plus the
+      auxiliary roots endpoint composition reads (see
+      `tools.endpoint_request.endpoint_discovery_roots`). Strip the matching
+      known root and prefix its logical label so paths under different roots
+      can't collide: `project/<rel>` under `project_root`, then `<label>/<rel>`
+      per discovery root in descriptor order (`endpoint/` for Claude Code,
+      `endpoint-<host_id>/` or `endpoint-<aux_label>/` for the rest). A path
+      under neither falls back to the absolute path (last resort).
     """
     # Keep BOTH the logical (un-resolved) and resolved forms of each root.
     # Resolved roots make prefix-matching symlink-stable for genuinely-nested
@@ -164,8 +186,11 @@ def _make_normalizer(
     # relativize the logical path against the logical root FIRST, and only fall
     # back to the resolved/resolved match.
     target_r = target.resolve()
-    install_r = install_root.resolve()
     project_r = project_root.resolve() if project_root is not None else None
+    labeled_roots = [
+        (label, root, root.resolve())
+        for label, root in (discovery_roots or {"endpoint": target}).items()
+    ]
 
     def _rel(abs_path: str, root_logical: Path, root_resolved: Path) -> str | None:
         path = Path(abs_path)
@@ -194,9 +219,10 @@ def _make_normalizer(
             rel = _rel(abs_path, project_root, project_r)
             if rel is not None:
                 return f"project/{rel}"
-        rel = _rel(abs_path, install_root, install_r)
-        if rel is not None:
-            return f"endpoint/{rel}"
+        for label, root_logical, root_resolved in labeled_roots:
+            rel = _rel(abs_path, root_logical, root_resolved)
+            if rel is not None:
+                return f"{label}/{rel}"
         return abs_path
 
     return normalize
@@ -233,9 +259,36 @@ def build_graph(
     *,
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
+    hosts: list[str] | None = None,
+    host_config_roots: dict[str, Path] | None = None,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
+    hosts = hosts if hosts is not None else all_host_ids()
+    if mode == "repo":
+        # Same resolution `_active_registry` runs for parse_repo_grouped —
+        # called here once, before descend()'s per-directory walk, so duplicate
+        # host IDs are deduped and a colliding host selection fails loudly at
+        # the single graph entry point, not per-directory or not at all. The
+        # deduped list is what actually flows into descend() below, not the raw
+        # `hosts` argument.
+        hosts = resolve_host_selection(hosts)
+
+    endpoint_roots: dict[str, Path] = {}
+    discovery_roots: dict[str, Path] | None = None
+    if mode == "endpoint":
+        endpoint_roots = (
+            {host_id: Path(r) for host_id, r in host_config_roots.items()}
+            if host_config_roots
+            else {"claude-code": Path(target)}
+        )
+        first_root = next(iter(endpoint_roots.values()))
+        # `target` stays the API-compatibility anchor and the BOM target string.
+        if Path(target) != first_root:
+            raise ValueError(
+                f"endpoint target {target} must equal the first host root {first_root}"
+            )
+        discovery_roots = endpoint_discovery_roots(list(endpoint_roots), endpoint_roots)
 
     root = Node(key=_TARGET_KEY, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
@@ -243,13 +296,22 @@ def build_graph(
     # root so node keys — which become CycloneDX bom-refs — are reproducible.
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
-    normalize = _make_normalizer(mode, Path(target), Path(target), project_root)
+    normalize = _make_normalizer(mode, Path(target), project_root, discovery_roots=discovery_roots)
     # ADR-0039 launch resolution context, set per-branch below.
     attach_root_dir: Path | None = None
     attach_root_spec: GitIgnoreSpec | None = None
     attach_include_gitignored = include_gitignored
     if mode == "endpoint":
-        _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=warnings)
+        for host_id, host_root in endpoint_roots.items():
+            adapter = HOSTS.get(host_id)
+            if adapter is None or adapter.seed_endpoint is None:
+                continue
+            adapter.seed_endpoint(
+                graph, root, host_root, project_root, normalize, warnings=warnings
+            )
+        _seed_endpoint_subagents(
+            graph, root, endpoint_roots, project_root, normalize, hosts=list(endpoint_roots)
+        )
         # Endpoint has no single repo root; installed artifacts are not
         # gitignore-filtered (parity with the descent's root_dir=None behavior).
         attach_include_gitignored = True
@@ -269,24 +331,46 @@ def build_graph(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            hosts=hosts,
         )
         attach_root_dir = root_dir
         attach_root_spec = root_spec
-    name_index = build_manifest_name_index(
-        Path(target), include_gitignored=attach_include_gitignored
-    )
+    # Endpoint mode: project_root is separate from every host root, so its
+    # manifests are absent from the host walks. Merge them in so a
+    # project-scoped MCP declaring `npx <pkg>` can resolve by name against the
+    # project's own package.json / pyproject.toml. project_root entries take
+    # precedence. project_root is a user project dir — respect its .gitignore
+    # (matching project-skill filtering); only host-root artifacts need the
+    # unfiltered walk (attach_include_gitignored=True).
+    project_name_index: dict[tuple[str, str], Path] = {}
     if project_root is not None:
-        # Endpoint mode: project_root is separate from install_root (target),
-        # so its manifests are absent from the target walk. Merge them in so
-        # that a project-scoped MCP declaring `npx <pkg>` can resolve by name
-        # against the project's own package.json / pyproject.toml.
-        # project_root entries take precedence over install_root entries.
+        project_name_index = build_manifest_name_index(
+            project_root, include_gitignored=include_gitignored
+        )
+    label_roots: dict[str, Path] = {}
+    label_name_indexes: dict[str, dict[tuple[str, str], Path]] = {}
+    if mode == "endpoint":
+        # One index per host root, kept separate: a merged global map would let
+        # one host's MCP bind a same-named package that exists only under
+        # another host's root — a cross-host misattribution, not a fallback.
+        for host_id, host_root in endpoint_roots.items():
+            label = endpoint_normalization_label(host_id)
+            label_roots[label] = host_root
+            label_name_indexes[label] = {
+                **build_manifest_name_index(
+                    host_root, include_gitignored=attach_include_gitignored
+                ),
+                **project_name_index,
+            }
+        # The default index (used for project-scoped MCPs, which belong to no
+        # host root) stays anchored to the PRIMARY host — `target`'s own host —
+        # so today's project-over-install rule keeps exactly its single-host
+        # meaning rather than gaining entries from a second host's root.
+        name_index = next(iter(label_name_indexes.values()))
+    else:
         name_index = {
-            **name_index,
-            # project_root is a user project dir — respect its .gitignore (matching
-            # project-skill filtering at _seed_endpoint line ~343). Only install_root
-            # artifacts need the unfiltered walk (attach_include_gitignored=True).
-            **build_manifest_name_index(project_root, include_gitignored=include_gitignored),
+            **build_manifest_name_index(Path(target), include_gitignored=attach_include_gitignored),
+            **project_name_index,
         }
     _attach_mcp_launch_deps(
         graph,
@@ -298,95 +382,59 @@ def build_graph(
         project_root_include_gitignored=include_gitignored,
         root_dir=attach_root_dir,
         root_spec=attach_root_spec,
+        label_roots=label_roots,
+        label_name_indexes=label_name_indexes,
     )
     graph.validate()
     return graph
 
 
-def _seed_endpoint(
+def _seed_endpoint_subagents(
     graph: Graph,
     target: Node,
-    install_root: Path,
+    roots: dict[str, Path],
     project_root: Path | None,
     normalize: SourceNormalizer,
     *,
-    warnings: list[str] | None = None,
+    hosts: list[str],
 ) -> None:
-    """Endpoint mode: the target's children are seeded from resolved Claude
-    config, not a filesystem glob. Recursive descent (the SAME `descend` used
-    in repo mode) still applies under each seeded root.
+    """Seed subagents once across every selected host, outside any single
+    host's `seed_endpoint`.
 
-    Three seed surfaces:
-
-    - **Active plugins** (`installed_plugins.json` ∩ settings `enabledPlugins`):
-      each becomes a `plugin` child of the target. We then `descend` into the
-      plugin's on-disk install path (reusing the repo-mode plugin branch, which
-      walks bundled `skills/<name>/` and their dep manifests), and attach the
-      plugin's own tier-2 lockfile deps as `package` children of the plugin.
-    - **Project skills** under `<project_root>/.claude/skills/...`: reuse the
-      repo-mode project-skill discovery as `skill` children of the target.
-    - **Remote MCPs** declared in settings `mcpServers` (URLs/commands, nothing
-      on disk): `mcp_server` leaf children of the target, no descent.
-    - **Other direct components**: install-root direct skills
-      (`<install_root>/skills/<name>/`), personal+project commands/agents
-      (`commands/`, `agents/`, `.claude/commands|agents/`), and settings-scoped
-      hooks. All children of the target (attribution None — direct, not
-      plugin-bundled). See `_seed_direct_components`.
+    A shared-file occurrence (`<claude_root>/agents/helper.md` readable by both
+    hosts) can span hosts, so no one host's seed can own it: per-host seeding
+    would emit the same file twice, or dedup it into a selection-order-dependent
+    host tag. The global scope passes each host's agents directory explicitly —
+    an endpoint config root is an arbitrary path, so the dot-directory
+    convention `resolve_subagent_occurrences` walks doesn't apply there. The
+    project scope, where that convention genuinely holds, uses the repo-style
+    resolver.
     """
-    layers = load_settings(install_root, project_root=project_root)
-    effective = layers.merged("endpoint")
-    by_scope = layers.by_scope()
-
-    plugins_map, lockfile_path, plugin_warnings = claude_install._load_plugins_map(install_root)
-    if warnings is not None:
-        warnings.extend(plugin_warnings)
-    enabled = effective.get("enabledPlugins") or {}
-    if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
-        _seed_active_plugins(
-            graph,
-            target,
-            enabled,
-            plugins_map,
-            lockfile_path,
-            layers,
-            normalize,
-            warnings=warnings,
+    occurrences = list(
+        resolve_subagent_occurrences_for_dirs(
+            claude_compat_agents_dir(hosts, roots),
+            (roots["cursor"] / "agents") if "cursor" in roots else None,
+            hosts,
         )
-
+    )
     if project_root is not None:
-        # Project skills are the one endpoint surface the old _walk_project_skill_dirs
-        # filtered by the project root's .gitignore (e.g. skills under an ignored
-        # .worktrees/). Thread the project root as root_dir so that filtering is
-        # preserved; installed-plugin/install-root surfaces stay unfiltered.
-        project_skill_spec = load_gitignore_spec(project_root)
-        _add_project_skills(
-            graph,
-            target,
-            project_root,
-            normalize=normalize,
-            project_root=project_root,
-            stamp_provenance=True,
-            root_dir=project_root,
-            root_spec=project_skill_spec,
-        )
-        # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
-        # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
-        # <project>/.claude/skills/ are discovered — parity with the old
-        # _walk_project_skill_dirs path that called _walk_skill_dir (iterdir-based)
-        # before iter_unignored_files. _add_child dedup collapses non-symlink dupes.
-        # stamp_provenance matches _parse_direct_skill, which both old project-skill
-        # walks shared.
-        _add_skills_from_dir(
-            graph,
-            target,
-            project_root / ".claude" / "skills",
-            normalize=normalize,
-            project_root=project_root,
-            stamp_provenance=True,
-        )
-
-    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
-    _seed_direct_components(graph, target, install_root, project_root, by_scope, normalize)
+        occurrences.extend(resolve_subagent_occurrences(project_root, hosts))
+    for _manifest_path, refs in group_occurrences_by_manifest(occurrences):
+        if not refs:
+            continue
+        self_node = Node(key=occurrence_key(refs[0], normalize), kind="agent", ref=refs[0])
+        _add_child(graph, target, self_node)
+        # Agents may declare frontmatter mcpServers/hooks; parse_file returns
+        # them as subsequent refs. Attach them under the agent node (not the
+        # target) so scope_of / lineage see the agent ancestor.
+        for child_ref in refs[1:]:
+            child_kind = _component_type(child_ref)
+            if not isinstance(child_kind, str):
+                continue
+            child_node = Node(
+                key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref
+            )
+            _add_child(graph, self_node, child_node)
 
 
 def _seed_active_plugins(
@@ -537,9 +585,11 @@ def _seed_direct_components(
     `claude_install` sub-helpers so the occurrence content matches what
     `parse_install` produced.
 
-    What is NOT seeded here (already owned by `_seed_endpoint`):
-    - Project skills under `<project_root>/.claude/skills/` (`_add_project_skills`).
+    What is NOT seeded here:
+    - Project skills under `<project_root>/.claude/skills/` (`_add_project_skills`,
+      from `endpoint_seeds.claude_code.seed_endpoint`).
     - Remote MCPs from settings `mcpServers` and `.mcp.json` (`_seed_remote_mcps`).
+    - Subagents at either scope (`_seed_endpoint_subagents`, cross-host).
 
     Seeding only the non-overlapping surfaces (rather than calling
     `_walk_direct_components` wholesale and relying on edge-dedup) keeps the two
@@ -551,21 +601,18 @@ def _seed_direct_components(
     # `_add_skill_node` used for project skills and plugin-bundled skills).
     _add_direct_endpoint_skills(graph, target, install_root / "skills", normalize, project_root)
 
-    # Personal commands/agents: per-file parse so agent frontmatter
-    # mcpServers/hooks attach under the agent node, not the target (parity with
-    # the `.md` branch of `_add_repo_standalone_components`).
+    # Personal commands: per-file parse so frontmatter-declared children attach
+    # under the command node, not the target (parity with the `.md` branch of
+    # `_add_repo_standalone_components`). Subagents are NOT seeded here — they
+    # span hosts, so `_seed_endpoint_subagents` owns both scopes.
     _add_endpoint_command_agents(
         graph, target, install_root / "commands", normalize, kind="command"
     )
-    _add_endpoint_command_agents(graph, target, install_root / "agents", normalize, kind="agent")
 
-    # Project commands/agents under `.claude/`.
+    # Project commands under `.claude/`.
     if project_root is not None:
         _add_endpoint_command_agents(
             graph, target, project_root / ".claude" / "commands", normalize, kind="command"
-        )
-        _add_endpoint_command_agents(
-            graph, target, project_root / ".claude" / "agents", normalize, kind="agent"
         )
 
     # Settings-scoped hooks, per scope (no cross-scope merging — parity with
@@ -671,6 +718,7 @@ def descend(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    hosts: list[str] | None = None,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -701,27 +749,36 @@ def descend(
     Nested project skills (`.claude/skills/<name>/SKILL.md` at any depth) and
     plugin custom skill-dir paths (the manifest's `"skills"` field) are handled
     here (Task 2.3). Endpoint mode is Task 2.4.
+
+    `hosts` gates which hosts' registry entries the `target` branch dispatches
+    on. The `plugin`/`skill` branches never read it — they are Claude-only in
+    this phase — so their recursive calls fall back to its default.
     """
+    hosts = hosts if hosts is not None else all_host_ids()
     if parent.kind == "target":
         # Plugins are discovered at ANY depth (parity with parse_repo, which
         # matches `.claude-plugin/plugin.json` anywhere in the tree). Each plugin
         # root is a boundary handoff: the plugin owns its entire subtree, so its
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
-        plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
+        plugin_roots = _find_plugin_roots(directory, hosts, include_gitignored=include_gitignored)
         # Only directories that actually produced a plugin node own their
         # subtree. A malformed/empty `plugin.json` yields no node, so its dir
         # must NOT be excluded from sibling discovery — otherwise one bad
         # manifest would silently hide an otherwise-valid `.mcp.json`, project
         # skill, or dep manifest in the same/under that directory.
         realized_roots: list[Path] = []
-        for plugin_root in plugin_roots:
+        for plugin_root, plugin_manifest in plugin_roots:
+            parser = _plugin_parser_for_path(plugin_manifest, directory, hosts)
+            if parser is None:
+                continue
             plugin_node = _descend_into_plugin(
                 graph,
                 parent,
                 plugin_root,
-                plugin_root / ".claude-plugin" / "plugin.json",
+                plugin_manifest,
                 normalize,
+                parser=parser,
                 root_dir=root_dir,
                 root_spec=root_spec,
             )
@@ -736,6 +793,7 @@ def descend(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            hosts=hosts,
         )
         # A plugin root owns its own dep manifests (emitted under the plugin via
         # the plugin-branch descent); emitting them again under target would
@@ -761,13 +819,29 @@ def descend(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            hosts=hosts,
         )
     elif parent.kind == "plugin":
+        plugin_manifest_path, plugin_runtime_hosts = _plugin_manifest_context(parent, directory)
         _add_bundled_skills(
-            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
+            graph,
+            parent,
+            directory,
+            normalize,
+            plugin_manifest_path=plugin_manifest_path,
+            runtime_hosts=plugin_runtime_hosts,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
         _add_bundled_plugin_surfaces(
-            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
+            graph,
+            parent,
+            directory,
+            normalize,
+            plugin_manifest_path=plugin_manifest_path,
+            runtime_hosts=plugin_runtime_hosts,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
         if emit_own_root_deps:
             _add_dep_manifest_packages(
@@ -795,25 +869,101 @@ def _same_path(a: Path, b: Path) -> bool:
     return a.resolve() == b.resolve()
 
 
-def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> list[Path]:
-    """Plugin roots are dirs containing `.claude-plugin/plugin.json`, at ANY
-    depth (parity with parse_repo). Discovery uses the same gitignore-aware walk
-    as project-skill discovery so we skip `node_modules/`, `.git/`, gitignored
-    dirs. Returns each plugin root sorted for determinism.
+_PLUGIN_REGISTRY_PATTERNS = frozenset({".claude-plugin/plugin.json", ".cursor-plugin/plugin.json"})
+
+# Directory names that own their own `plugin.json` via a directory-scoped
+# registry pattern above. A bare `plugin.json` nested under one of these is
+# that native format's manifest, never an Agent Plugins root — the content-
+# based dispatch in `_add_repo_standalone_components` skips it regardless of
+# whether the native plugin realization actually succeeded for that dir.
+_PLUGIN_MANIFEST_CONFIG_DIRS = frozenset({".claude-plugin", ".cursor-plugin"})
+
+
+def _plugin_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserFn | None:
+    """First selected host's manifest_registry entry whose pattern is
+    plugin-shaped and matches `path`, or None.
+
+    Same allowlist idiom as `_mcp_parser_for_path`/`_skill_parser_for_path`/
+    `_command_parser_for_path`: used only to *choose* which parser owns a
+    matched manifest (Cursor's registry entry is pre-bound to
+    `runtime_hosts=["cursor"]`); placement stays the plugin branch's own.
+    """
+    for host_id in hosts:
+        adapter = HOSTS.get(host_id)
+        if adapter is None:
+            continue
+        for pattern, parser in adapter.manifest_registry:
+            if pattern in _PLUGIN_REGISTRY_PATTERNS and registry_pattern_matches(
+                path, root, pattern
+            ):
+                return parser
+    return None
+
+
+def _find_plugin_roots(
+    directory: Path, hosts: list[str], *, include_gitignored: bool = False
+) -> list[tuple[Path, Path]]:
+    """Plugin roots are dirs containing a `.claude-plugin/plugin.json` or
+    `.cursor-plugin/plugin.json`, at ANY depth (parity with parse_repo),
+    gated on the owning host being selected. Discovery uses the same
+    gitignore-aware walk as project-skill discovery so we skip
+    `node_modules/`, `.git/`, gitignored dirs. Returns `(plugin_root,
+    manifest_path)` pairs sorted by plugin_root for determinism.
+
+    One directory carrying BOTH native manifests yields ONE root: the first
+    manifest the walk reaches wins and the `seen` set drops the other. That is
+    walk order, not host-selection order — `iter_unignored_files` sorts
+    directory entries, so `.claude-plugin/` is always visited before
+    `.cursor-plugin/` and the Claude-format manifest always wins, whichever
+    order the hosts were selected in. Repo-mode manifest accounting still
+    counts both files; only the graph collapses them. Pinned by
+    `test_repo_dual_native_plugin_manifests_resolve_to_claude_format`.
     """
     spec = None if include_gitignored else load_gitignore_spec(directory)
-    roots: list[Path] = []
+    roots: list[tuple[Path, Path]] = []
     seen: set[Path] = set()
     for path in iter_unignored_files(directory, spec):
-        if path.name != "plugin.json" or path.parent.name != ".claude-plugin":
+        if path.name != "plugin.json" or path.parent.name not in (
+            ".claude-plugin",
+            ".cursor-plugin",
+        ):
+            continue
+        if _plugin_parser_for_path(path, directory, hosts) is None:
             continue
         root = path.parent.parent
         resolved = root.resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
-        roots.append(root)
-    return sorted(roots)
+        roots.append((root, path))
+    roots.sort(key=lambda pair: pair[0])
+    return roots
+
+
+def _plugin_manifest_context(plugin_node: Node, plugin_root: Path) -> tuple[Path, list[str] | None]:
+    """Derive `(plugin_manifest_path, runtime_hosts)` from the plugin node's
+    own self ref, rather than re-deriving from a hardcoded location.
+
+    Repo mode's self ref (`claude_plugin.parse`, either format) sets
+    `source_manifest` to the real manifest path that was matched, so this
+    reads back correctly for both `.claude-plugin/plugin.json` and
+    `.cursor-plugin/plugin.json`. Endpoint mode's `_seed_active_plugins`
+    instead sources its self ref from `installed_plugins.json` (for
+    lockfile-accurate version/gitCommitSha) — not a real plugin manifest —
+    so that case falls back to the historical `.claude-plugin/plugin.json`
+    default, preserving endpoint mode's existing (Claude-only) behavior.
+    """
+    plugin_ref = plugin_node.ref
+    runtime_hosts = plugin_ref.extra.get("runtime_hosts") if plugin_ref is not None else None
+    manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
+    if plugin_ref is not None and plugin_ref.source_manifest:
+        candidate = Path(plugin_ref.source_manifest)
+        if candidate.name == "plugin.json" and candidate.parent.name in (
+            ".claude-plugin",
+            ".cursor-plugin",
+        ):
+            manifest_path = candidate
+    return manifest_path, runtime_hosts
 
 
 def _attach_mcp_launch_deps(
@@ -827,6 +977,8 @@ def _attach_mcp_launch_deps(
     project_root_include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    label_roots: dict[str, Path] | None = None,
+    label_name_indexes: dict[str, dict[tuple[str, str], Path]] | None = None,
 ) -> None:
     """ADR-0039: make `mcp_server` non-leaf. For each MCP node, resolve its
     launch target to a dependency-manifest dir and attach that dir's deps as
@@ -839,6 +991,10 @@ def _attach_mcp_launch_deps(
     owned by another agent component (e.g. its bundling plugin, or a different MCP
     that resolved the same dir first), that owner wins and this MCP's just-added
     edge is dropped instead. Deterministic node order makes "first claim" stable.
+
+    In endpoint mode `label_roots`/`label_name_indexes` carry one entry per host
+    root, keyed by the node key's normalization label prefix — so each MCP node
+    resolves against the root that seeded it and that root's own name index.
     """
     mcp_nodes = sorted(
         (n for n in graph.nodes.values() if n.kind == "mcp_server"), key=lambda n: n.key
@@ -851,18 +1007,35 @@ def _attach_mcp_launch_deps(
     for mcp in mcp_nodes:
         if mcp.ref is None:
             continue
-        # Endpoint mode spans install_root and a separate project_root; a local
-        # launch path declared in a project manifest resolves under project_root,
-        # so use it as the scan_root when this MCP was declared there.
+        # Endpoint mode spans one root per selected host plus a separate
+        # project_root; a local launch path declared in a project manifest
+        # resolves under project_root, so use it as the scan_root when this MCP
+        # was declared there.
         effective_scan_root = scan_root
+        effective_name_index = name_index
+        from_project = False
         if project_root is not None and mcp.ref.source_manifest:
             try:
                 if Path(mcp.ref.source_manifest).resolve().is_relative_to(project_root.resolve()):
                     effective_scan_root = project_root
+                    from_project = True
             except (ValueError, OSError):
                 pass
+        if label_roots and not from_project:
+            # Otherwise resolve against the host root that seeded this node,
+            # recovered from its key's normalization label. A label with no host
+            # root behind it is an auxiliary or unmapped root: those contribute
+            # no name index and no launch resolution at all (contract item 3) —
+            # falling back to the primary host's root/index would bind the node
+            # to a root that does not own it.
+            label = mcp.key.split("/", 1)[0]
+            owning_root = label_roots.get(label)
+            if owning_root is None:
+                continue
+            effective_scan_root = owning_root
+            effective_name_index = (label_name_indexes or {}).get(label, name_index)
         resolved = resolve_mcp_launch_dir(
-            mcp.ref, scan_root=effective_scan_root, name_index=name_index
+            mcp.ref, scan_root=effective_scan_root, name_index=effective_name_index
         )
         if resolved is None:
             continue
@@ -870,7 +1043,7 @@ def _attach_mcp_launch_deps(
         # project-root gitignore context, matching project-skills and project
         # name-index filtering. Install-root MCPs use the endpoint-wide context
         # (include_gitignored=True; installed artifacts are never filtered).
-        if effective_scan_root is not scan_root:
+        if from_project:
             eff_include = project_root_include_gitignored
             eff_root = project_root
             eff_spec = project_root_spec
@@ -976,20 +1149,22 @@ def _descend_into_plugin(
     plugin_manifest: Path,
     normalize: SourceNormalizer,
     *,
+    parser: ParserFn,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> Node | None:
     """Create the plugin node (child of target) and descend into its subtree.
 
-    Reuses `claude_plugin.parse` only to obtain the plugin self-identity ref;
-    placement (the plugin → target edge, and which children hang off the
-    plugin) is owned here.
+    Reuses the registry-selected parser (`claude_plugin.parse`, or Cursor's
+    `runtime_hosts=["cursor"]`-bound partial) only to obtain the plugin
+    self-identity ref; placement (the plugin → target edge, and which
+    children hang off the plugin) is owned here.
 
     Returns the created plugin node, or `None` when the manifest is malformed
     or yields no self-ref. A `None` return means the directory is NOT an owned
     plugin subtree, so the caller must not exclude it from sibling discovery.
     """
-    parsed = _safe_parse(claude_plugin.parse, plugin_manifest)
+    parsed = _safe_parse(parser, plugin_manifest)
     self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
         return None
@@ -997,6 +1172,116 @@ def _descend_into_plugin(
     _add_child(graph, target, plugin_node)
     descend(graph, plugin_node, plugin_root, normalize, root_dir=root_dir, root_spec=root_spec)
     return plugin_node
+
+
+def _realize_agent_plugin(
+    graph: Graph,
+    parent: Node,
+    manifest_path: Path,
+    normalize: SourceNormalizer,
+    *,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+    self_ref_extra: dict[str, object] | None = None,
+) -> Node | None:
+    """Closed, parser-output-only realization for an Agent Plugins bundle
+    (ADR-0045 Decision #3): every node attached here comes straight from
+    `agent_plugins.parse`'s own ref list — self, skills, MCP servers — never
+    a fresh read of the bundle. Unlike Task 13's native plugin descent
+    (`_descend_into_plugin`), nothing else in the bundle is enumerated at
+    realization time: no hooks/commands/agents, no plugin-root dependency-
+    manifest walk, no `extensions` read. That richer surface set is exactly
+    what the portable v1 contract excludes.
+
+    `root_dir`/`root_spec` thread the scan-root `.gitignore` context into the
+    bundled-skill descent, matching Task 13's `_descend_into_plugin` — a
+    gitignored dep manifest under an Agent Plugin's bundled skill must stay
+    excluded in repo mode. Callers that omit them (Task 17's endpoint seed)
+    keep the historical unfiltered behavior.
+
+    Returns the created plugin node, or `None` when the parse yields no refs
+    or the first ref isn't the plugin self ref (e.g. a schema-tagged manifest
+    missing `name` — a malformed-but-detected bundle attaches nothing).
+    Callers use this `None` to know that nothing was actually realized, so
+    they must not treat any of the bundle's other files (e.g. its own root
+    `mcp.json`) as claimed.
+
+    Reused verbatim by Task 17's endpoint seed for dev-linked Agent Plugins,
+    so repo and endpoint mode cannot drift into two interpretations of the
+    closed surface. `self_ref_extra`, when given, is merged onto the plugin
+    self ref's `extra` only (ADR-0045 Decision #7's cached-plugin caller uses it to stamp
+    `cursor_marketplace_dir`; dev-linked callers omit it).
+    """
+    refs = _safe_parse(
+        functools.partial(agent_plugins.parse, runtime_hosts=["cursor"]), manifest_path
+    )
+    if not (refs and _component_type(refs[0]) == "plugin"):
+        return None
+    self_ref = refs[0]
+    if self_ref_extra:
+        self_ref = replace(self_ref, extra={**self_ref.extra, **self_ref_extra})
+    plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
+    plugin_node = _add_child(graph, parent, plugin_node)
+    for ref in refs[1:]:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
+            continue
+        child_node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+        child_node = _add_child(graph, plugin_node, child_node)
+        if component_type == "skill" and ref.source_manifest:
+            descend(
+                graph,
+                child_node,
+                Path(ref.source_manifest).parent,
+                normalize,
+                root_dir=root_dir,
+                root_spec=root_spec,
+            )
+    return plugin_node
+
+
+_SKILL_REGISTRY_PATTERNS = frozenset(
+    {
+        "**/.claude/skills/*/SKILL.md",
+        "**/.cursor/skills/*/SKILL.md",
+        "**/.agents/skills/*/SKILL.md",
+    }
+)
+
+# The host-owned config directory names those skill patterns are anchored on
+# (`.claude`, `.cursor`, `.agents`), derived from the patterns themselves so
+# the two can't drift. A bare `plugin.json` sitting directly in one of these
+# is host configuration, never an Agent Plugins bundle root: the bundle root's
+# `skills/<name>/SKILL.md` would then BE `<config-dir>/skills/<name>/SKILL.md`,
+# an occurrence `_add_project_skills` discovers independently and parents to
+# the target — realizing the bundle too would put one occurrence under two
+# parents and abort the scan.
+_SKILL_ROOT_CONFIG_DIRS = frozenset(pattern.split("/")[1] for pattern in _SKILL_REGISTRY_PATTERNS)
+
+
+def _skill_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserFn | None:
+    """First selected host's manifest_registry entry whose pattern is
+    skill-shaped and matches `path`, or None.
+
+    Same allowlist trade-off as `_mcp_parser_for_path`: a new host reusing one
+    of these three directory-name shapes still needs one line added to this
+    set for its own distinct pattern string — allowlisting is per pattern
+    string, not per shape. Reusing an existing pattern string verbatim needs
+    no allowlist change, but only holds when that string's existing owner
+    host isn't also selected in the same scan; `resolve_host_selection`
+    rejects two distinct, simultaneously selected hosts claiming the same
+    pattern string (see ADR-0044, Decision #1).
+    """
+    for host_id in hosts:
+        adapter = HOSTS.get(host_id)
+        if adapter is None:
+            continue
+        for pattern, parser in adapter.manifest_registry:
+            if pattern in _SKILL_REGISTRY_PATTERNS and registry_pattern_matches(
+                path, root, pattern
+            ):
+                return parser
+    return None
 
 
 def _add_project_skills(
@@ -1011,6 +1296,7 @@ def _add_project_skills(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    hosts: list[str] | None = None,
 ) -> None:
     """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
 
@@ -1022,7 +1308,14 @@ def _add_project_skills(
     `exclude_under` is the set of plugin roots already descended from `parent`:
     skills inside any of those subtrees belong to the plugin branch
     (single-parent invariant), so they are skipped here to avoid double-discovery.
+
+    Which skill directory shapes count, and how their refs are host-tagged,
+    comes from each selected host's `HostAdapter.manifest_registry` via the
+    same `registry_pattern_matches` `parse_repo_grouped` uses — so graph
+    placement and manifest accounting can never independently decide a path
+    belongs to different hosts.
     """
+    hosts = hosts if hosts is not None else all_host_ids()
     eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
     # The walk yields paths relative to `directory`; ignore checks evaluate
     # relative to `eval_root` (the scan root in repo mode). When the walk root and
@@ -1030,7 +1323,10 @@ def _add_project_skills(
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
     for path in iter_unignored_files(directory, walk_spec):
-        if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
+        if path.name != "SKILL.md":
+            continue
+        skill_parser = _skill_parser_for_path(path, directory, hosts)
+        if skill_parser is None:
             continue
         if _is_ignored_under(path, eval_root, spec):
             continue
@@ -1046,22 +1342,8 @@ def _add_project_skills(
             stamp_provenance=stamp_provenance,
             root_dir=root_dir,
             root_spec=root_spec,
+            skill_parser=skill_parser,
         )
-
-
-def _is_project_skill_md(path: Path, root: Path) -> bool:
-    """True iff `path` is `.../.claude/skills/<name>/SKILL.md` relative to root."""
-    try:
-        parts = path.relative_to(root).parts
-    except ValueError:
-        return False
-    # parts == (..., ".claude", "skills", "<name>", "SKILL.md")
-    return (
-        len(parts) >= 4
-        and parts[-1] == "SKILL.md"
-        and parts[-3] == "skills"
-        and parts[-4] == ".claude"
-    )
 
 
 def _add_bundled_skills(
@@ -1070,6 +1352,8 @@ def _add_bundled_skills(
     directory: Path,
     normalize: SourceNormalizer,
     *,
+    plugin_manifest_path: Path,
+    runtime_hosts: list[str] | None = None,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
@@ -1079,13 +1363,15 @@ def _add_bundled_skills(
     Path resolution mirrors `claude_plugin_root._parse_bundled_skills`:
     `resolve_within` rejects traversal outside the plugin root, the default
     `skills/` is always tried, and a custom dir equal to the default is
-    deduped.
+    deduped. `plugin_manifest_path` is the plugin's own manifest (either
+    format), resolved once by the caller from the plugin node's self ref —
+    never re-derived from a hardcoded `.claude-plugin` location.
     """
     skill_dirs: list[Path] = []
     default_skills = resolve_within(directory, "skills")
     if default_skills is not None and default_skills.is_dir():
         skill_dirs.append(default_skills)
-    custom_skills = _plugin_custom_skills_field(directory)
+    custom_skills = _plugin_custom_skills_field(plugin_manifest_path)
     if isinstance(custom_skills, str):
         custom_dir = resolve_within(directory, custom_skills)
         if custom_dir is not None and custom_dir.is_dir():
@@ -1103,15 +1389,15 @@ def _add_bundled_skills(
             skills_dir,
             normalize=normalize,
             plugin_root=directory,
+            runtime_hosts=runtime_hosts,
             root_dir=root_dir,
             root_spec=root_spec,
         )
 
 
-def _plugin_custom_skills_field(plugin_root: Path) -> object:
-    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+def _plugin_custom_skills_field(plugin_manifest_path: Path) -> object:
     try:
-        data = json.loads(manifest.read_text())
+        data = json.loads(plugin_manifest_path.read_text())
     except (OSError, ValueError, UnicodeDecodeError):
         return None
     if not isinstance(data, dict):
@@ -1130,6 +1416,7 @@ def _add_skills_from_dir(
     stamp_provenance: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    runtime_hosts: list[str] | None = None,
 ) -> None:
     if not skills_dir.is_dir():
         return
@@ -1169,6 +1456,7 @@ def _add_skills_from_dir(
             stamp_provenance=stamp_provenance,
             root_dir=root_dir,
             root_spec=root_spec,
+            runtime_hosts=runtime_hosts,
         )
 
 
@@ -1182,18 +1470,28 @@ def _add_skill_node(
     stamp_provenance: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    runtime_hosts: list[str] | None = None,
+    skill_parser: ParserFn | None = None,
 ) -> None:
     """Create a skill node (child of `parent`) and descend into its dep manifests.
 
     `stamp_provenance` is set ONLY by the endpoint project-skill walk
-    (`_add_project_skills` invoked from `_seed_endpoint`), matching the old
+    (`_add_project_skills` invoked from `endpoint_seeds.claude_code.seed_endpoint`),
+    matching the old
     `_walk_project_skill_dirs` → `_parse_direct_skill` path that stamped
     `extra["source_provenance"]` from a `skills-lock.json` / symlink target.
     Repo-mode `.claude/skills` (old REGISTRY `claude_skill.parse`, no stamp) and
     plugin-bundled skills (old `walk_plugin_root`, no stamp) leave it False.
+
+    `skill_parser` is the registry-provided parser, passed only by the
+    registry-driven caller (`_add_project_skills`); the Claude-only callers
+    pass neither it nor `runtime_hosts` and keep the `["claude-code"]` default.
     """
+    if skill_parser is None:
+        runtime_hosts = runtime_hosts if runtime_hosts is not None else ["claude-code"]
+        skill_parser = functools.partial(claude_skill.parse, runtime_hosts=runtime_hosts)
     skill_md = skill_subdir / "SKILL.md"
-    for ref in _safe_parse(claude_skill.parse, skill_md):
+    for ref in _safe_parse(skill_parser, skill_md):
         if stamp_provenance and ref.name:
             provenance = skill_lock.provenance_for_skill(
                 skill_md, ref.name, project_root=project_root
@@ -1323,12 +1621,56 @@ def _is_ignored_under(path: Path, eval_root: Path, spec: GitIgnoreSpec | None) -
 # patterns, which match by bare name anywhere in the tree).
 _STANDALONE_MCP_FILENAMES = ("mcp.json", ".mcp.json", "claude_desktop_config.json")
 
-# `.claude/<subdir>/**/*.md` agent-component surfaces discovered at any depth in
-# repo mode, mirroring the REGISTRY command/agent patterns.
-_COMMAND_AGENT_SURFACES: tuple[tuple[str, Kind], ...] = (
-    ("commands", "command"),
-    ("agents", "agent"),
+_MCP_REGISTRY_PATTERNS = frozenset({*_STANDALONE_MCP_FILENAMES, ".cursor/mcp.json"})
+
+
+_COMMAND_REGISTRY_PATTERNS = frozenset(
+    {"**/.claude/commands/**/*.md", "**/.cursor/commands/**/*.md"}
 )
+
+
+def _command_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserFn | None:
+    """First selected host's manifest_registry entry whose pattern is
+    command-shaped and matches `path`, or None."""
+    for host_id in hosts:
+        adapter = HOSTS.get(host_id)
+        if adapter is None:
+            continue
+        for pattern, parser in adapter.manifest_registry:
+            if pattern not in _COMMAND_REGISTRY_PATTERNS:
+                continue
+            if registry_pattern_matches(path, root, pattern):
+                return parser
+    return None
+
+
+def _mcp_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserFn | None:
+    """First selected host's manifest_registry entry whose pattern is
+    MCP-shaped and matches `path`, or None.
+
+    The `_MCP_REGISTRY_PATTERNS` allowlist is this function's one
+    remaining piece of host-specific knowledge: manifest_registry's
+    `(pattern, ParserFn)` shape doesn't itself say what kind of
+    component a pattern produces, only which parser to call for it.
+    Allowlisting is per pattern *string*, not per filename/location
+    *shape*: a new host reusing one of these shapes with its own
+    distinct pattern string still needs one line added to this set —
+    smaller and more centralized than the old "write a new hardcoded
+    dispatch branch" ask, but not zero. Reusing an existing pattern
+    string verbatim needs no allowlist change, but only holds when that
+    string's existing owner host isn't also selected in the same scan;
+    `resolve_host_selection` rejects two distinct, simultaneously
+    selected hosts claiming the same pattern string (see ADR-0044,
+    Decision #1).
+    """
+    for host_id in hosts:
+        adapter = HOSTS.get(host_id)
+        if adapter is None:
+            continue
+        for pattern, parser in adapter.manifest_registry:
+            if pattern in _MCP_REGISTRY_PATTERNS and registry_pattern_matches(path, root, pattern):
+                return parser
+    return None
 
 
 def _add_repo_standalone_components(
@@ -1341,6 +1683,7 @@ def _add_repo_standalone_components(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    hosts: list[str] | None = None,
 ) -> None:
     """Repo target-level standalone surfaces: MCP manifests and `.claude`
     commands/agents discovered at any depth (parity with the parser REGISTRY),
@@ -1349,18 +1692,72 @@ def _add_repo_standalone_components(
     Files inside a plugin subtree are skipped (`exclude_under` = the plugin
     roots already descended from the target) so a plugin's bundled MCP/command
     surfaces stay under the plugin node (single-parent).
+
+    The MCP surface resolves its parser through each selected host's
+    `HostAdapter.manifest_registry`, using the same `registry_pattern_matches`
+    `parse_repo_grouped` uses — so graph placement and manifest accounting
+    can never independently decide a path belongs to different hosts.
     """
+    hosts = hosts if hosts is not None else all_host_ids()
     eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
-    for path in iter_unignored_files(directory, walk_spec):
+
+    def _skip(path: Path) -> bool:
         if _is_ignored_under(path, eval_root, spec):
-            continue
+            return True
         resolved = path.resolve()
-        if any(resolved.is_relative_to(root) for root in exclude_resolved):
+        return any(resolved.is_relative_to(root) for root in exclude_resolved)
+
+    paths = [path for path in iter_unignored_files(directory, walk_spec) if not _skip(path)]
+
+    # Agent Plugins (content-detected, outside manifest_registry) realize in
+    # their own pass BEFORE the standalone-surface loop below, so a bundle's
+    # root `mcp.json` — already nested under the plugin node by
+    # `_realize_agent_plugin` — is claimed before the bare-`mcp.json` branch
+    # can reach it independently. `iter_unignored_files` yields filenames
+    # alphabetically ("mcp.json" sorts before "plugin.json"), so a single
+    # forward pass over one directory's files would hit the MCP file first
+    # and double-parent it; a repo-order guarantee this function otherwise
+    # doesn't need.
+    #
+    # `own_mcp` is only claimed when `_realize_agent_plugin` actually created
+    # a plugin node: a schema-tagged manifest that yields no self ref (e.g.
+    # missing `name`) attaches nothing, so its sibling `mcp.json` is a real,
+    # unclaimed standalone surface and must still be discovered below.
+    claimed_agent_plugin_mcp: set[Path] = set()
+    if "cursor" in hosts:
+        for path in paths:
+            if path.name != "plugin.json" or path.parent.name in _PLUGIN_MANIFEST_CONFIG_DIRS:
+                continue
+            if path.parent.name in _SKILL_ROOT_CONFIG_DIRS:
+                # Host config dir, not a bundle root — see
+                # `_SKILL_ROOT_CONFIG_DIRS`. Its `skills/` belongs to the
+                # registry-driven project-skill walk that already ran.
+                continue
+            if not agent_plugins.is_agent_plugins_manifest(path):
+                continue
+            plugin_node = _realize_agent_plugin(
+                graph, parent, path, normalize, root_dir=root_dir, root_spec=root_spec
+            )
+            if plugin_node is None:
+                continue
+            own_mcp = path.parent / "mcp.json"
+            if own_mcp.is_file():
+                claimed_agent_plugin_mcp.add(own_mcp.resolve())
+
+    for path in paths:
+        if path.name == "plugin.json" and path.parent.name not in _PLUGIN_MANIFEST_CONFIG_DIRS:
+            # Already handled by the Agent Plugins pass above (realized, or
+            # rejected there by the schema check) — never a command/agent/
+            # mcp/settings surface itself.
             continue
-        if path.name in _STANDALONE_MCP_FILENAMES:
-            for ref in _safe_parse(mcp_json.parse, path):
+        if path.resolve() in claimed_agent_plugin_mcp:
+            continue
+
+        mcp_parser = _mcp_parser_for_path(path, directory, hosts)
+        if mcp_parser is not None:
+            for ref in _safe_parse(mcp_parser, path):
                 if _component_type(ref) != "mcp_server":
                     continue
                 node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
@@ -1374,20 +1771,14 @@ def _add_repo_standalone_components(
                 _add_child(graph, parent, node)
             continue
         if path.suffix == ".md":
-            kind = _command_agent_kind(path, directory)
-            if kind is None:
+            command_parser = _command_parser_for_path(path, directory, hosts)
+            if command_parser is None:
                 continue
-            try:
-                refs = claude_command_agent.parse_file(path, kind=kind)
-            except Exception:
-                refs = []
+            refs = _safe_parse(command_parser, path)
             if not refs:
                 continue
-            self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])
+            self_node = Node(key=occurrence_key(refs[0], normalize), kind="command", ref=refs[0])
             _add_child(graph, parent, self_node)
-            # Agents may declare frontmatter mcpServers/hooks; parse_file returns
-            # them as subsequent refs. Attach them under the agent node (not the
-            # target) with their own kinds so scope_of / lineage see the agent ancestor.
             for child_ref in refs[1:]:
                 child_kind = _component_type(child_ref)
                 if not isinstance(child_kind, str):
@@ -1396,6 +1787,35 @@ def _add_repo_standalone_components(
                     key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref
                 )
                 _add_child(graph, self_node, child_node)
+
+    # Subagents (`.claude/agents/**/*.md`, `.cursor/agents/**/*.md`) are
+    # resolved as one directory-wide precedence pass rather than per-path
+    # like the surfaces above: pairing a Cursor override with its Claude
+    # counterpart needs to see both files before deciding either file's
+    # occurrence count (Task 12), which the single-path loop above can't do.
+    for manifest_path, refs in group_occurrences_by_manifest(
+        resolve_subagent_occurrences(directory, hosts)
+    ):
+        if _is_ignored_under(manifest_path, eval_root, spec):
+            continue
+        resolved = manifest_path.resolve()
+        if any(resolved.is_relative_to(root) for root in exclude_resolved):
+            continue
+        if not refs:
+            continue
+        self_node = Node(key=occurrence_key(refs[0], normalize), kind="agent", ref=refs[0])
+        _add_child(graph, parent, self_node)
+        # Agents may declare frontmatter mcpServers/hooks; parse_file returns
+        # them as subsequent refs. Attach them under the agent node (not the
+        # target) with their own kinds so scope_of / lineage see the agent ancestor.
+        for child_ref in refs[1:]:
+            child_kind = _component_type(child_ref)
+            if not isinstance(child_kind, str):
+                continue
+            child_node = Node(
+                key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref
+            )
+            _add_child(graph, self_node, child_node)
 
 
 def _is_claude_settings_json(path: Path, root: Path) -> bool:
@@ -1407,26 +1827,14 @@ def _is_claude_settings_json(path: Path, root: Path) -> bool:
     return rel == ".claude/settings.json" or rel.endswith("/.claude/settings.json")
 
 
-def _command_agent_kind(path: Path, root: Path) -> Kind | None:
-    """Return `"command"`/`"agent"` if `path` is a `.md` under a
-    `.claude/commands/` or `.claude/agents/` dir at any depth, else None."""
-    try:
-        parts = path.relative_to(root).parts
-    except ValueError:
-        return None
-    for subdir, kind in _COMMAND_AGENT_SURFACES:
-        for i in range(len(parts) - 2):
-            if parts[i] == ".claude" and parts[i + 1] == subdir:
-                return kind
-    return None
-
-
 def _add_bundled_plugin_surfaces(
     graph: Graph,
     plugin_node: Node,
     plugin_root: Path,
     normalize: SourceNormalizer,
     *,
+    plugin_manifest_path: Path,
+    runtime_hosts: list[str] | None = None,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
@@ -1437,31 +1845,57 @@ def _add_bundled_plugin_surfaces(
     Bundled skills are NOT added here — the `_add_bundled_skills` descent already
     creates them and their dep chains; re-emitting via the surface walker would
     double-create. Parentage of every bundled surface is set by the graph edge
-    from the plugin node below, not stored on the refs.
+    from the plugin node below, not stored on the refs. `plugin_manifest_path`
+    is the plugin's own manifest (either format), resolved once by the caller
+    from the plugin node's self ref — never re-derived from a hardcoded
+    `.claude-plugin` location, so a Cursor bundle's `mcp.json` default and
+    inline hooks are read from the manifest that was actually matched.
     """
     plugin_ref = plugin_node.ref
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    plugin_data = _plugin_manifest_data(plugin_root)
-    plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
+    plugin_data = _plugin_manifest_data(plugin_manifest_path)
+    default_mcp_filename = default_mcp_filename_for_manifest(plugin_manifest_path)
 
     refs: list[ComponentRef] = []
     manifest_refs = _parse_manifest_refs(
         plugin_data,
         plugin_json_path=plugin_manifest_path,
         plugin_root=plugin_root,
+        runtime_hosts=runtime_hosts,
     )
     refs.extend(manifest_refs)
-    refs.extend(_parse_default_mcp(plugin_root, manifest_refs))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
-    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
+    refs.extend(
+        _parse_default_mcp(
+            plugin_root,
+            manifest_refs,
+            default_filename=default_mcp_filename,
+            runtime_hosts=runtime_hosts,
+        )
+    )
+    refs.extend(
+        _parse_bundled_hooks(
+            plugin_root,
+            plugin_data,
+            plugin_name,
+            plugin_json_path=plugin_manifest_path,
+            runtime_hosts=runtime_hosts,
+        )
+    )
+    refs.extend(
+        _parse_bundled_command_agents(
+            plugin_root, plugin_data, plugin_name, runtime_hosts=runtime_hosts
+        )
+    )
     refs = [r for r in refs if _component_type(r) != "skill"]
     # Stamp plugin-container context (declared_by.kind=plugin + a
     # plugin-prefixed component_path) onto each bundled ref. This is placement
     # metadata the descent owns — parity with the pre-graph `_with_plugin_context`
     # that the endpoint walker applied — not a content read.
-    refs = claude_install._with_plugin_context(refs, plugin_name, plugin_manifest_path)
+    refs = claude_install._with_plugin_context(
+        refs, plugin_name, plugin_manifest_path, runtime_hosts=runtime_hosts
+    )
     # Honor the scan-root .gitignore in repo mode (parity with parse_repo_grouped,
     # which filters secondary refs): a bundled surface declared in a file the root
     # ignores (e.g. a plugin repo with `.mcp.json` gitignored) must not be emitted.
@@ -1479,10 +1913,9 @@ def _add_bundled_plugin_surfaces(
         _add_child(graph, plugin_node, node)
 
 
-def _plugin_manifest_data(plugin_root: Path) -> dict:
-    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+def _plugin_manifest_data(plugin_manifest_path: Path) -> dict:
     try:
-        data = json.loads(manifest.read_text())
+        data = json.loads(plugin_manifest_path.read_text())
     except (OSError, ValueError, UnicodeDecodeError):
         return {}
     return data if isinstance(data, dict) else {}

@@ -9,7 +9,7 @@ Identity is name-based; repo/plugin location is carried separately.
 
 from pathlib import Path
 
-from tools.parsers.claude_command_agent import enumerate_dir
+from tools.parsers.claude_command_agent import enumerate_dir, parse_file
 
 
 def _write(path: Path, content: str) -> Path:
@@ -247,3 +247,31 @@ def test_user_project_agent_frontmatter_hooks_are_emitted(tmp_path):
 
     hook = next(r for r in refs if r.extra.get("component_type") == "hook")
     assert hook.extra["event"] == "PreToolUse"
+
+
+def test_parse_file_default_omits_runtime_hosts_key(tmp_path):
+    md = tmp_path / "deploy.md"
+    md.write_text("run\n")
+    refs = parse_file(md, kind="command")
+    assert "runtime_hosts" not in refs[0].extra
+
+
+def test_parse_file_explicit_runtime_hosts_cursor(tmp_path):
+    md = tmp_path / "deploy.md"
+    md.write_text("run\n")
+    refs = parse_file(md, kind="command", runtime_hosts=["cursor"])
+    assert refs[0].extra["runtime_hosts"] == ["cursor"]
+
+
+def test_parse_file_explicit_runtime_hosts_claude_code_matches_default(tmp_path):
+    md = tmp_path / "deploy.md"
+    md.write_text("run\n")
+    default_refs = parse_file(md, kind="command")
+    explicit_refs = parse_file(md, kind="command", runtime_hosts=["claude-code"])
+    assert explicit_refs[0].extra["runtime_hosts"] == ["claude-code"]
+    # The two calls differ ONLY in whether the key is present — same host,
+    # explicit vs. default, must not otherwise diverge.
+    default_extra = dict(default_refs[0].extra)
+    explicit_extra = dict(explicit_refs[0].extra)
+    explicit_extra.pop("runtime_hosts")
+    assert default_extra == explicit_extra

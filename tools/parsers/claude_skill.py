@@ -28,7 +28,9 @@ import yaml
 from tools.component_ref import ComponentRef
 
 
-def parse(skill_md_path: Path) -> list[ComponentRef]:
+def parse(skill_md_path: Path, runtime_hosts: list[str] | None = None) -> list[ComponentRef]:
+    if runtime_hosts is None:
+        runtime_hosts = ["claude-code"]
     try:
         text = skill_md_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -50,7 +52,10 @@ def parse(skill_md_path: Path) -> list[ComponentRef]:
     identity = f"skill/{name}"
     if version:
         identity = f"{identity}@{version}"
-    extra: dict[str, object] = {"component_type": "skill"}
+    extra: dict[str, object] = {
+        "component_type": "skill",
+        "runtime_hosts": list(runtime_hosts),
+    }
     coordinate = _skill_tree_coordinate(skill_md_path.parent)
     if coordinate is not None:
         extra["artifact_coordinates"] = [coordinate]

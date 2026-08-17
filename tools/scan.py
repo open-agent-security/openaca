@@ -50,12 +50,16 @@ from tools.bom import (
     build_agent_bom,
     component_refs_from_cyclonedx,
     graph_from_cyclonedx,
+    scanned_hosts_from_cyclonedx,
     source_unit_from_cyclonedx,
     target_info_from_cyclonedx,
 )
 from tools.component_ref import ComponentRef
+from tools.endpoint_request import resolve_endpoint_request
 from tools.graph import Graph
 from tools.graph_build import _TARGET_KEY, build_graph
+from tools.host_paths import owning_host
+from tools.hosts import HOSTS, all_host_ids, plugin_unit_label
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
@@ -68,15 +72,17 @@ from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_o
 from tools.parsers import parse_repo_grouped
 from tools.posture import (
     PostureFinding,
-    collect_endpoint_mcp_manifests,
-    collect_endpoint_settings_manifests,
+    collect_endpoint_posture_inputs,
     collect_mcp_manifests,
     collect_settings_manifests,
     run_posture_rules,
 )
+from tools.posture.rules.api_endpoint_override import RULE_ID as _API_ENDPOINT_OVERRIDE_RULE_ID
 from tools.render import (
     RenderTarget,
     ScanStats,
+    compute_components_by_host,
+    hosts_from_refs,
     render_github,
     render_inventory_tree,
     render_json,
@@ -282,6 +288,59 @@ _target_option_required = click.option(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Path to scan.",
 )
+_host_option = click.option(
+    "--host",
+    "host_values",
+    multiple=True,
+    default=(),
+    help=(
+        "Host(s) to scan for (repeatable or comma-separated). Known hosts: "
+        f"{', '.join(all_host_ids())}. Omitted: every known host."
+    ),
+)
+_endpoint_host_option = click.option(
+    "--host",
+    "host_values",
+    multiple=True,
+    default=(),
+    help=(
+        "Host(s) to scan on this endpoint (repeatable or comma-separated). Known hosts: "
+        f"{', '.join(all_host_ids())}. Omitted: every host detected on this machine. "
+        "A named host that is not detected is an error unless --config-dir supplies "
+        "its config root."
+    ),
+)
+
+
+def _resolve_hosts(host_values: tuple[str, ...]) -> list[str]:
+    """Flatten repeatable/comma-separated --host values; omitted = every known host."""
+    if not host_values:
+        return all_host_ids()
+    known = set(all_host_ids())
+    resolved: list[str] = []
+    for raw in host_values:
+        for piece in raw.split(","):
+            host_id = piece.strip()
+            if not host_id:
+                continue
+            if host_id not in known:
+                raise click.BadParameter(
+                    f"unknown host {host_id!r}; known hosts: {', '.join(sorted(known))}"
+                )
+            if host_id not in resolved:
+                resolved.append(host_id)
+    if not resolved:
+        # --host was given but every piece was empty after stripping
+        # (e.g. "--host ','" or "--host ''") — an explicit, unusable
+        # value is an error, not indistinguishable from "scanned zero
+        # hosts on purpose."
+        raise click.BadParameter(
+            "--host given but contains no usable host name "
+            f"(known hosts: {', '.join(sorted(known))})"
+        )
+    return resolved
+
+
 _config_dir_option = click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -603,15 +662,19 @@ def _render_bom_inventory_tree(
     use_color: bool,
     use_unicode: bool,
     graph: Graph | None = None,
+    hosts: list[str] | None = None,
 ) -> str:
     if target_type == "repo":
+        # Repo mode has no endpoint host concept (Cursor/Windsurf manifests
+        # are V1 for repo mode too), so `hosts` is intentionally not threaded
+        # here even when the round-tripped BOM carries scanned_hosts.
         root = Path(target) if target else input_path.parent
         grouped = _group_refs_for_repo_tree(refs)
         return render_repo_inventory_tree(
             root, grouped, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
         )
     return render_inventory_tree(
-        refs, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
+        refs, findings, use_color=use_color, use_unicode=use_unicode, graph=graph, hosts=hosts
     )
 
 
@@ -688,6 +751,7 @@ def _stderr_summary(
 @_scanner_option
 @_report_option
 @_output_option
+@_host_option
 @click.option(
     "--include-gitignored",
     is_flag=True,
@@ -710,6 +774,7 @@ def repo(
     external_scanners: tuple[str, ...],
     report_kind: str | None,
     output_path: Path | None,
+    host_values: tuple[str, ...],
     include_gitignored: bool,
 ) -> None:
     """Scan supported agent-component manifests committed in a repository.
@@ -734,9 +799,11 @@ def repo(
         report_kind=report_kind, output_path=output_path, output_format=output_format
     )
 
+    hosts = _resolve_hosts(host_values)
+
     # The composition graph is the single source of truth (Stage 3): scope and
     # attribution are derived from graph structure, not path heuristics.
-    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored)
+    graph = build_graph(target, mode="repo", include_gitignored=include_gitignored, hosts=hosts)
     all_refs = _refs_from_graph(graph)
     # Reconstruct the per-manifest `grouped` list the repo renderer expects by
     # grouping the projected refs by their source_manifest Path; the renderer is
@@ -746,7 +813,9 @@ def repo(
     # filesystem walk, not the graph; source them from the walk so the scanned/
     # failed-to-parse summary is unchanged. (No scope/attribution comes from
     # here — that is graph-derived.)
-    parse_groups, n_found = parse_repo_grouped(target, include_gitignored=include_gitignored)
+    parse_groups, n_found = parse_repo_grouped(
+        target, include_gitignored=include_gitignored, hosts=hosts
+    )
     n_failed = n_found - len(parse_groups)
     # V0: drop software-dependency refs (deps from non-plugin manifests).
     # OpenACA is agent-composition analysis; deps belonging to general
@@ -777,8 +846,12 @@ def repo(
     if include_posture:
         posture_findings.extend(scanner_posture_findings)
         manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
-        settings_manifests = collect_settings_manifests(
-            [target], include_gitignored=include_gitignored
+        manifests = [(p, d) for p, d in manifests if owning_host(p) in hosts]
+        active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
+        settings_manifests = (
+            collect_settings_manifests([target], include_gitignored=include_gitignored)
+            if _API_ENDPOINT_OVERRIDE_RULE_ID in active_rule_ids
+            else []
         )
         posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
 
@@ -863,6 +936,7 @@ def repo(
         unit_count=n_found,
         unit_label="manifest",
         component_count=len(refs),
+        components_by_host=compute_components_by_host(refs, graph),
         parse_failed=n_failed,
         sources=_collect_corpus_sources(corpus),
     )
@@ -920,6 +994,7 @@ def repo(
 @main.command()
 @click.pass_context
 @_config_dir_option
+@_endpoint_host_option
 @_project_option
 @_sarif_option
 @_fail_on_option
@@ -933,6 +1008,7 @@ def repo(
 def endpoint(
     ctx: click.Context,
     config_dir: Path | None,
+    host_values: tuple[str, ...],
     project: Path | None,
     sarif: Path | None,
     fail_on: str,
@@ -958,7 +1034,10 @@ def endpoint(
     _validate_report_options(
         report_kind=report_kind, output_path=output_path, output_format=output_format
     )
-    config_dir = _resolve_endpoint_config_dir(config_dir)
+    selected_hosts, host_roots = resolve_endpoint_request(host_values, config_dir)
+    # The primary host's root stays the scan anchor: the BOM `target` string,
+    # the posture-manifest scope, and `build_graph`'s API-compatibility target.
+    config_dir = host_roots[selected_hosts[0]]
 
     # Scan-scope transparency. For the default text card the Target block owns
     # this, so the stderr preamble would just precede (and duplicate) the card;
@@ -972,14 +1051,25 @@ def endpoint(
         )
 
     warnings: list[str] = []
-    graph = build_graph(config_dir, mode="endpoint", project_root=project, warnings=warnings)
+    graph = build_graph(
+        config_dir,
+        mode="endpoint",
+        project_root=project,
+        warnings=warnings,
+        host_config_roots=host_roots,
+    )
     refs = _refs_from_graph(graph)
+    # ADR-0045 Decision #7: Cursor plugins are presence-only, so a selection that includes
+    # it must not claim "active plugin" — same rule bom_cli.py's `bom
+    # endpoint` applies to openaca:source_unit_label, shared via tools.hosts
+    # so the wording can't drift between the two surfaces.
+    plugin_unit = plugin_unit_label(selected_hosts)
     refs = build_agent_bom(
         _filter_agent_scope_refs(refs),
         target_type="endpoint",
         target=str(config_dir),
         source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
-        source_unit_label="active plugin",
+        source_unit_label=plugin_unit,
         graph=graph,
     ).component_refs()
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(
@@ -998,9 +1088,12 @@ def endpoint(
     posture_findings: list[PostureFinding] = []
     if include_posture:
         posture_findings.extend(scanner_posture_findings)
-        manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
-        settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
-        posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
+        manifests, manifest_hosts, settings_manifests = collect_endpoint_posture_inputs(
+            host_roots, project, refs
+        )
+        posture_findings.extend(
+            run_posture_rules(refs, manifests, settings_manifests, manifest_hosts=manifest_hosts)
+        )
 
     # None means posture was not requested (rendered as "skipped"); [] means it ran and
     # found nothing. Don't collapse the empty-but-ran case to None.
@@ -1011,10 +1104,15 @@ def endpoint(
 
     # Inventory tree for the text card (default stdout). Machine formats keep the
     # tree as a verbose-stderr diagnostic only (below).
+    config_rows = (
+        [("config", str(config_dir))]
+        if len(selected_hosts) == 1
+        else [(f"config ({h})", str(host_roots[h])) for h in selected_hosts]
+    )
     card_target = RenderTarget(
-        host_surface="Claude Code",
+        host_surface=_host_surface_label(selected_hosts),
         rows=[
-            ("config", str(config_dir)),
+            *config_rows,
             ("project", str(project) if project is not None else "not included"),
         ],
     )
@@ -1026,6 +1124,7 @@ def endpoint(
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
             graph=graph,
+            hosts=selected_hosts,
         )
     card_next: list[str] = []
     if project is None:
@@ -1045,6 +1144,7 @@ def endpoint(
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
                 graph=graph,
+                hosts=selected_hosts,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -1069,8 +1169,9 @@ def endpoint(
 
     stats = ScanStats(
         unit_count=plugin_count,
-        unit_label="active plugin",
+        unit_label=plugin_unit,
         component_count=len(refs),
+        components_by_host=compute_components_by_host(refs, graph),
         sources=_collect_corpus_sources(corpus),
     )
     if report_kind == "exposure":
@@ -1099,7 +1200,7 @@ def endpoint(
             next_actions=card_next,
             graph=graph,
         )
-    _stderr_summary(findings, f"resolved {plugin_count} active plugin(s)", output_format)
+    _stderr_summary(findings, f"resolved {plugin_count} {plugin_unit}(s)", output_format)
 
     # When --project is not provided, remind the user that project-local
     # skills/MCPs/plugin manifests are NOT included in this scan. For the text
@@ -1231,6 +1332,19 @@ def scan_bom(
     observations = []
     advisory_index = {a["id"]: a for a in corpus}
 
+    # The scanned host list, for per-host tags/breakdown. Primary source is
+    # the `openaca:scanned_hosts` metadata property (multi-host-endpoint-
+    # gated, so single-host and pre-Stage-4 BOMs don't carry it); fallback
+    # derives the distinct hosts `_ref_host` attributes across `refs` the
+    # same way the live endpoint path does (ancestry via `graph` when
+    # graph-backed, else each ref's own `runtime_hosts`/default). Either way
+    # this is a real (never-None) list, same as `selected_hosts` on the live
+    # path: single-host BOMs get a length-1 list, which the render/stats
+    # gating (`len(hosts) > 1`) treats identically to today's output.
+    hosts = scanned_hosts_from_cyclonedx(doc)
+    if hosts is None:
+        hosts = hosts_from_refs(refs, graph)
+
     # Inventory tree for the text card; machine formats keep it verbose-only.
     is_text = output_format == "text"
     bom_rows: list[tuple[str, str]] = [("file", str(input_path))]
@@ -1249,6 +1363,7 @@ def scan_bom(
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
             graph=graph,
+            hosts=hosts,
         )
 
     if verbose:
@@ -1267,6 +1382,7 @@ def scan_bom(
                 use_color=_use_color(no_color, output_format),
                 use_unicode=_use_unicode(no_color),
                 graph=graph,
+                hosts=hosts,
             )
             if tree:
                 click.echo(tree, err=True)
@@ -1288,6 +1404,7 @@ def scan_bom(
         unit_count=source_unit_count if source_unit_count is not None else 1,
         unit_label=source_unit_label or "agent BOM",
         component_count=len(refs),
+        components_by_host=compute_components_by_host(refs, graph),
         sources=_collect_corpus_sources(corpus),
     )
     if report_kind == "exposure":
@@ -1323,18 +1440,11 @@ def scan_bom(
     _exit_for_findings(fail_on, findings)
 
 
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    """Resolve endpoint config directory defaults.
+_HOST_SURFACE_NAMES = {"claude-code": "Claude Code", "cursor": "Cursor"}
 
-    Explicit `--config-dir` wins. Otherwise use `$CLAUDE_CONFIG_DIR` when set,
-    then fall back to Claude Code's default user config directory.
-    """
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
+
+def _host_surface_label(host_ids: list[str]) -> str:
+    return ", ".join(_HOST_SURFACE_NAMES.get(h, h) for h in host_ids)
 
 
 if __name__ == "__main__":

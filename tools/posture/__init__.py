@@ -14,6 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.hosts import HOSTS
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
@@ -29,9 +30,11 @@ __all__ = [
     "PostureFinding",
     "Standards",
     "collect_endpoint_mcp_manifests",
+    "collect_endpoint_posture_inputs",
     "collect_endpoint_settings_manifests",
     "collect_mcp_manifests",
     "collect_settings_manifests",
+    "load_manifest_files",
     "run_posture_rules",
 ]
 
@@ -47,13 +50,24 @@ def run_posture_rules(
     refs: list[ComponentRef],
     manifests: list[tuple[Path, dict]],
     settings_manifests: list[tuple[Path, dict]] | None = None,
+    manifest_hosts: dict[Path, str] | None = None,
 ) -> list[PostureFinding]:
-    """Run all V0 posture rules and concatenate their findings."""
+    """Run all V0 posture rules and concatenate their findings.
+
+    `manifest_hosts` (built by `collect_endpoint_posture_inputs`) is collection
+    provenance: which host's collector actually produced each manifest path.
+    When given, it overrides `owning_host(path)` in the manifest-keyed
+    host-sensitive rules — the only correct attribution for an explicit
+    `--config-dir` root whose basename doesn't match a host's own directory
+    convention. `None` (every repo-mode caller) keeps behavior byte-identical.
+    """
     settings_manifests = settings_manifests or []
     findings: list[PostureFinding] = []
     findings.extend(mutable_install.check_mutable_install(refs))
-    findings.extend(insecure_transport.check_insecure_transport(manifests))
-    findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
+    findings.extend(insecure_transport.check_insecure_transport(manifests, manifest_hosts))
+    findings.extend(
+        mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests, manifest_hosts)
+    )
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs))
     return [_attach_bom_ref(finding, refs) for finding in findings]
@@ -217,6 +231,27 @@ def collect_settings_manifests(
     return out
 
 
+def load_manifest_files(paths: list[Path]) -> list[tuple[Path, dict]]:
+    """Read and parse each path as a JSON manifest, in order.
+
+    Missing files and parse failures are silently dropped — the same
+    read-parse-skip guard `collect_mcp_manifests` and
+    `collect_endpoint_mcp_manifests` use for their direct-path candidates, so
+    a malformed or absent manifest never aborts posture collection.
+    """
+    out: list[tuple[Path, dict]] = []
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            out.append((path, data))
+    return out
+
+
 def collect_endpoint_mcp_manifests(
     config_dir: Path,
     project_root: Path | None,
@@ -248,21 +283,55 @@ def collect_endpoint_mcp_manifests(
     if project_root is not None:
         direct_paths.append(project_root / ".mcp.json")
 
-    for path in direct_paths:
-        if not path.is_file():
-            continue
+    for path, data in load_manifest_files(direct_paths):
         resolved = path.resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict):
-            out.append((path, data))
+        out.append((path, data))
 
     return out
+
+
+def collect_endpoint_posture_inputs(
+    host_config_roots: dict[str, Path],
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> tuple[list[tuple[Path, dict]], dict[Path, str], list[tuple[Path, dict]]]:
+    """Returns (mcp_manifests, manifest_hosts, settings_manifests).
+
+    - mcp_manifests: the concatenation of every selected host's
+      collect_endpoint_posture_manifests(root, project_root, refs) output,
+      in root-map order, deduped by resolved path (first collector wins).
+    - manifest_hosts: each collected path -> the host whose collector
+      produced it (collection provenance, for rule attribution).
+    - settings_manifests: collect_endpoint_settings_manifests(...) when
+      "claude-code" is in the root map, else [] — Cursor has no
+      settings.json surface.
+
+    The single shared entry point for both `scan endpoint` and `remote sync
+    endpoint`'s collector, so local and uploaded posture findings can't drift.
+    """
+    mcp_manifests: list[tuple[Path, dict]] = []
+    manifest_hosts: dict[Path, str] = {}
+    seen: set[Path] = set()
+    for host_id, root in host_config_roots.items():
+        adapter = HOSTS.get(host_id)
+        if adapter is None or adapter.collect_endpoint_posture_manifests is None:
+            continue
+        for path, data in adapter.collect_endpoint_posture_manifests(root, project_root, refs):
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            mcp_manifests.append((path, data))
+            manifest_hosts[path] = host_id
+    settings_manifests = (
+        collect_endpoint_settings_manifests(host_config_roots["claude-code"], project_root)
+        if "claude-code" in host_config_roots
+        else []
+    )
+    return mcp_manifests, manifest_hosts, settings_manifests
 
 
 def collect_endpoint_settings_manifests(

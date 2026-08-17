@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import click
@@ -11,7 +10,9 @@ import click
 from tools.bom import build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
+from tools.endpoint_request import TARGET_LOCATOR_ENDPOINT, resolve_endpoint_request
 from tools.graph_build import build_graph
+from tools.hosts import all_host_ids, plugin_unit_label
 from tools.parsers import parse_repo_grouped
 from tools.scan import _filter_agent_scope_refs, _is_plugin_ref, _refs_from_graph
 
@@ -92,27 +93,66 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
     help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
 )
 @click.option(
+    "--host",
+    "host_values",
+    multiple=True,
+    default=(),
+    help=(
+        "Host(s) to include on this endpoint (repeatable or comma-separated). Known hosts: "
+        f"{', '.join(all_host_ids())}. Omitted: every host detected on this machine."
+    ),
+)
+@click.option(
     "--project",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
     help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
 )
 @_output_option
-def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
+def endpoint(
+    config_dir: Path | None,
+    host_values: tuple[str, ...],
+    project: Path | None,
+    output_path: Path | None,
+) -> None:
     """Generate an Agent BOM from active endpoint composition."""
-    config_dir = _resolve_endpoint_config_dir(config_dir)
+    selected_hosts, host_roots = resolve_endpoint_request(host_values, config_dir)
+    # The primary host's root stays the BOM `target` string, matching
+    # `build_graph`'s API-compatibility anchor rule.
+    config_dir = host_roots[selected_hosts[0]]
     warnings: list[str] = []
-    graph = build_graph(config_dir, mode="endpoint", project_root=project, warnings=warnings)
+    graph = build_graph(
+        config_dir,
+        mode="endpoint",
+        project_root=project,
+        warnings=warnings,
+        host_config_roots=host_roots,
+    )
     for w in warnings:
         click.echo(f"warning: {w}", err=True)
     refs = _refs_from_graph(graph)
+    # Multi-host-gated: single-host selections keep today's byte-identical
+    # metadata (no scanned_hosts/host_config_roots keys at all, and
+    # `openaca:target` stays the single host's config root). Multi-host
+    # selections have no single authoritative root, so `openaca:target` is
+    # the same neutral locator the remote wire uses; the per-host roots are
+    # still available via `openaca:host_config_roots`.
+    is_multi_host = len(selected_hosts) > 1
+    scanned_hosts = selected_hosts if is_multi_host else None
+    host_config_roots = (
+        {host_id: str(host_roots[host_id]) for host_id in selected_hosts} if is_multi_host else None
+    )
+    target = TARGET_LOCATOR_ENDPOINT if is_multi_host else str(config_dir)
+    source_unit_label = plugin_unit_label(selected_hosts)
     bom = build_agent_bom(
         _filter_agent_scope_refs(refs),
         target_type="endpoint",
-        target=str(config_dir),
+        target=target,
         source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
-        source_unit_label="active plugin",
+        source_unit_label=source_unit_label,
         graph=graph,
+        scanned_hosts=scanned_hosts,
+        host_config_roots=host_config_roots,
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
@@ -150,15 +190,6 @@ def diff_command(before_path: Path, after_path: Path, output_format: str) -> Non
         click.echo(json.dumps(result.to_json(), indent=2))
         return
     click.echo(_render_diff_text(result))
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 def _read_json_bom(path: Path) -> object:

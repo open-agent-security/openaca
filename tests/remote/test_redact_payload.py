@@ -51,9 +51,11 @@ def test_relativize_under_config_dir() -> None:
     cfg = Path("/home/u/.claude")
     assert (
         _relativize_path_for_remote(
-            "/home/u/.claude/skills/clerk-cli/SKILL.md", config_dir=cfg, project=None
+            "/home/u/.claude/skills/clerk-cli/SKILL.md",
+            discovery_roots={"endpoint": cfg},
+            project=None,
         )
-        == "skills/clerk-cli/SKILL.md"
+        == "endpoint/skills/clerk-cli/SKILL.md"
     )
 
 
@@ -63,7 +65,7 @@ def test_relativize_under_project_prefixed() -> None:
     assert (
         _relativize_path_for_remote(
             "/home/u/code/myrepo/.claude/skills/x.md",
-            config_dir=cfg,
+            discovery_roots={"endpoint": cfg},
             project=proj,
         )
         == "project/.claude/skills/x.md"
@@ -73,7 +75,9 @@ def test_relativize_under_project_prefixed() -> None:
 def test_relativize_unknown_root_falls_back_to_basename() -> None:
     cfg = Path("/home/u/.claude")
     assert (
-        _relativize_path_for_remote("/tmp/random/whatever.md", config_dir=cfg, project=None)
+        _relativize_path_for_remote(
+            "/tmp/random/whatever.md", discovery_roots={"endpoint": cfg}, project=None
+        )
         == "whatever.md"
     )
 
@@ -96,28 +100,35 @@ def test_relativize_windows_paths_strip_to_basename(value: str, expected: str) -
     relativize fallback must be consistent with that classification.
     """
     cfg = Path("/home/u/.claude")
-    assert _relativize_path_for_remote(value, config_dir=cfg, project=None) == expected
+    assert (
+        _relativize_path_for_remote(value, discovery_roots={"endpoint": cfg}, project=None)
+        == expected
+    )
 
 
 def test_relativize_non_absolute_unchanged() -> None:
     cfg = Path("/home/u/.claude")
     assert (
-        _relativize_path_for_remote("relative/path.md", config_dir=cfg, project=None)
+        _relativize_path_for_remote(
+            "relative/path.md", discovery_roots={"endpoint": cfg}, project=None
+        )
         == "relative/path.md"
     )
 
 
 def test_relativize_prefers_config_dir_when_both_match() -> None:
-    """If a path is inside config_dir AND inside project (unusual but
-    possible if config_dir IS project), prefer the config_dir relativization
-    (no `project/` prefix), since config_dir is the more specific anchor for
-    endpoint composition.
+    """If a path is inside a discovery root AND inside project (unusual but
+    possible if config_dir IS project), prefer the discovery-root
+    relativization (no `project/` prefix), since discovery roots are the
+    more specific anchor for endpoint composition.
     """
     cfg = Path("/home/u/.claude")
     proj = Path("/home/u")
     assert (
-        _relativize_path_for_remote("/home/u/.claude/skills/x.md", config_dir=cfg, project=proj)
-        == "skills/x.md"
+        _relativize_path_for_remote(
+            "/home/u/.claude/skills/x.md", discovery_roots={"endpoint": cfg}, project=proj
+        )
+        == "endpoint/skills/x.md"
     )
 
 
@@ -149,9 +160,9 @@ def _payload_with_property(value: str, name: str = "openaca:source_manifest") ->
 def test_redact_replaces_absolute_path_under_config_dir() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/clerk-cli/SKILL.md")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     new_value = payload["bom"]["components"][0]["properties"][0]["value"]
-    assert new_value == "skills/clerk-cli/SKILL.md"
+    assert new_value == "endpoint/skills/clerk-cli/SKILL.md"
 
 
 def test_redact_uses_basename_for_unknown_root() -> None:
@@ -160,7 +171,7 @@ def test_redact_uses_basename_for_unknown_root() -> None:
     cfg = Path("/home/u/.claude")
     abspath = "/var/lib/openaca/cache/manifest.json"
     payload = _payload_with_property(abspath)
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     # openaca:source_manifest out-of-root → basename + stable digest, keeping
     # distinct out-of-root manifests distinct so graph occurrence keys don't collide.
     digest = hashlib.sha256(abspath.encode()).hexdigest()[:8]
@@ -170,14 +181,14 @@ def test_redact_uses_basename_for_unknown_root() -> None:
 def test_redact_leaves_relative_paths_alone() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("skills/clerk-cli/SKILL.md")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     assert payload["bom"]["components"][0]["properties"][0]["value"] == "skills/clerk-cli/SKILL.md"
 
 
 def test_redact_ignores_non_openaca_properties() -> None:
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/x.md", name="cdx:other:source-path")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     # Untouched — pass-through CycloneDX content is out of scope (ADR 0003).
     assert (
         payload["bom"]["components"][0]["properties"][0]["value"] == "/home/u/.claude/skills/x.md"
@@ -203,8 +214,8 @@ def test_redact_handles_posture_evidence() -> None:
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
-    assert payload["posture_findings"][0]["evidence"]["manifest_path"] == "settings.json"
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
+    assert payload["posture_findings"][0]["evidence"]["manifest_path"] == "endpoint/settings.json"
     assert payload["posture_findings"][0]["evidence"]["transport"] == "http"
 
 
@@ -228,10 +239,10 @@ def test_redact_handles_posture_evidence_list_items() -> None:
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     evidence = payload["posture_findings"][0]["evidence"]
-    assert evidence["allowed_tools"] == ["Bash(skills/deploy/run.sh *)"]
-    assert evidence["manifest_path"] == "skills/deploy/SKILL.md"
+    assert evidence["allowed_tools"] == ["Bash(endpoint/skills/deploy/run.sh *)"]
+    assert evidence["manifest_path"] == "endpoint/skills/deploy/SKILL.md"
 
 
 def test_redact_posture_evidence_list_round_trip_contract() -> None:
@@ -254,7 +265,7 @@ def test_redact_posture_evidence_list_round_trip_contract() -> None:
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     enforce_remote_upload_contract(payload)  # must not raise
 
 
@@ -299,7 +310,7 @@ def test_contract_accepts_relativized_payload() -> None:
     """
     cfg = Path("/home/u/.claude")
     payload = _payload_with_property("/home/u/.claude/skills/x.md")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     enforce_remote_upload_contract(payload)  # must not raise
 
 
@@ -338,7 +349,7 @@ def test_redact_uppercase_url_path_in_openaca_property() -> None:
     payload = _payload_with_property(
         "HTTPS://api.example.com/mcp/secret?token=ABC", name="openaca:install_source"
     )
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     assert payload["bom"]["components"][0]["properties"][0]["value"] == "HTTPS://api.example.com"
 
 
@@ -357,7 +368,7 @@ def test_redact_replaces_url_paths_in_openaca_properties() -> None:
     payload = _payload_with_property(
         "https://api.githubcopilot.com/mcp/", name="openaca:install_source"
     )
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     assert (
         payload["bom"]["components"][0]["properties"][0]["value"] == "https://api.githubcopilot.com"
     )
@@ -387,9 +398,9 @@ def test_redact_declared_by_json_embedded_path() -> None:
         {"kind": "manifest", "path": "/home/u/.claude/mcp.json"}, sort_keys=True
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
-    assert result["path"] == "mcp.json"
+    assert result["path"] == "endpoint/mcp.json"
     assert result["kind"] == "manifest"
 
 
@@ -409,10 +420,10 @@ def test_redact_source_provenance_embedded_paths() -> None:
     payload = _payload_with_property(
         json.dumps(provenance, sort_keys=True), name="openaca:source_provenance"
     )
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
-    assert result["lockfile_path"] == "skills/.skill-lock.json"
-    assert result["resolved_path"] == "skills/clerk-cli"
+    assert result["lockfile_path"] == "endpoint/skills/.skill-lock.json"
+    assert result["resolved_path"] == "endpoint/skills/clerk-cli"
     assert result["source"] == "github"
 
 
@@ -426,9 +437,9 @@ def test_redact_declared_by_plugin_with_absolute_path() -> None:
         sort_keys=True,
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
-    assert result["path"] == "plugins/my-plugin"
+    assert result["path"] == "endpoint/plugins/my-plugin"
     assert result["name"] == "my-plugin"
     assert result["kind"] == "plugin"
 
@@ -442,7 +453,7 @@ def test_redact_json_url_with_path_inside_value() -> None:
         {"kind": "http", "url": "https://api.example.com/mcp/"}, sort_keys=True
     )
     payload = _payload_with_property(source_json, name="openaca:source")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["url"] == "https://api.example.com"
 
@@ -454,7 +465,7 @@ def test_redact_json_relative_path_unchanged() -> None:
     cfg = Path("/home/u/.claude")
     declared_by_json = json.dumps({"kind": "manifest", "path": "skills/x/SKILL.md"}, sort_keys=True)
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     result = json.loads(payload["bom"]["components"][0]["properties"][0]["value"])
     assert result["path"] == "skills/x/SKILL.md"
 
@@ -468,7 +479,7 @@ def test_contract_accepts_payload_after_json_path_redaction() -> None:
         {"kind": "manifest", "path": "/home/u/.claude/mcp.json"}, sort_keys=True
     )
     payload = _payload_with_property(declared_by_json, name="openaca:declared_by")
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     enforce_remote_upload_contract(payload)  # must not raise
 
 
@@ -491,8 +502,10 @@ def test_redact_observation_subject_coordinate_absolute_path() -> None:
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
-    assert payload["observations"][0]["subject_coordinate"] == "skills/deploy-helper/SKILL.md"
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
+    assert (
+        payload["observations"][0]["subject_coordinate"] == "endpoint/skills/deploy-helper/SKILL.md"
+    )
 
 
 def test_redact_observation_subject_coordinate_leaves_stable_coordinate_alone() -> None:
@@ -509,7 +522,7 @@ def test_redact_observation_subject_coordinate_leaves_stable_coordinate_alone() 
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     assert payload["observations"][0]["subject_coordinate"] == "skill/deploy-helper"
 
 
@@ -532,7 +545,7 @@ def test_contract_accepts_payload_after_subject_coordinate_redaction() -> None:
             }
         ],
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     enforce_remote_upload_contract(payload)  # must not raise
 
 
@@ -546,7 +559,7 @@ def test_redact_bom_ref_path_absolute_outside_roots() -> None:
     cfg = Path("/home/u/.claude")
     path_part = "/opt/plugins/my-plugin/.claude-plugin/plugin.json"
     bom_ref = f"{path_part}#$.plugin#plugin/my-plugin"
-    result = _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None)
+    result = _redact_bom_ref_path(bom_ref, discovery_roots={"endpoint": cfg}, project=None)
     digest = hashlib.sha256(path_part.encode()).hexdigest()[:8]
     assert result == f"plugin.json.{digest}#$.plugin#plugin/my-plugin"
 
@@ -556,8 +569,8 @@ def test_redact_bom_ref_path_two_out_of_root_plugins_stay_distinct() -> None:
     cfg = Path("/home/u/.claude")
     ref_a = "/rootA/package.json#$.dependencies.left-pad#pkg:npm/left-pad@1.0.0"
     ref_b = "/rootB/package.json#$.dependencies.left-pad#pkg:npm/left-pad@1.0.0"
-    result_a = _redact_bom_ref_path(ref_a, config_dir=cfg, project=None)
-    result_b = _redact_bom_ref_path(ref_b, config_dir=cfg, project=None)
+    result_a = _redact_bom_ref_path(ref_a, discovery_roots={"endpoint": cfg}, project=None)
+    result_b = _redact_bom_ref_path(ref_b, discovery_roots={"endpoint": cfg}, project=None)
     assert result_a != result_b
     assert result_a.startswith("package.json.")
     assert result_b.startswith("package.json.")
@@ -567,15 +580,15 @@ def test_redact_bom_ref_path_under_config_dir() -> None:
     """A bom-ref whose path is under config_dir is relativized correctly."""
     cfg = Path("/home/u/.claude")
     bom_ref = "/home/u/.claude/installed_plugins.json#$.plugins.my-plugin[0]#plugin/my-plugin"
-    result = _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None)
-    assert result == "installed_plugins.json#$.plugins.my-plugin[0]#plugin/my-plugin"
+    result = _redact_bom_ref_path(bom_ref, discovery_roots={"endpoint": cfg}, project=None)
+    assert result == "endpoint/installed_plugins.json#$.plugins.my-plugin[0]#plugin/my-plugin"
 
 
 def test_redact_bom_ref_path_already_relative() -> None:
     """A bom-ref without an absolute path prefix passes through unchanged."""
     cfg = Path("/home/u/.claude")
     bom_ref = "endpoint/installed_plugins.json#$.plugins.x[0]#plugin/x"
-    assert _redact_bom_ref_path(bom_ref, config_dir=cfg, project=None) == bom_ref
+    assert _redact_bom_ref_path(bom_ref, discovery_roots={"endpoint": cfg}, project=None) == bom_ref
 
 
 def test_redact_bom_refs_in_bom_consistent_rewrite() -> None:
@@ -601,11 +614,15 @@ def test_redact_bom_refs_in_bom_consistent_rewrite() -> None:
             {"ref": child_ref, "dependsOn": []},
         ],
     }
-    _redact_bom_refs_in_bom(bom, config_dir=cfg, project=None)
+    _redact_bom_refs_in_bom(bom, discovery_roots={"endpoint": cfg}, project=None)
 
     # Compute what the expected redacted refs are (avoids hardcoding hash values).
-    expected_plugin = _redact_bom_ref_path(out_of_root, config_dir=cfg, project=None)
-    expected_skill = _redact_bom_ref_path(child_ref, config_dir=cfg, project=None)
+    expected_plugin = _redact_bom_ref_path(
+        out_of_root, discovery_roots={"endpoint": cfg}, project=None
+    )
+    expected_skill = _redact_bom_ref_path(
+        child_ref, discovery_roots={"endpoint": cfg}, project=None
+    )
 
     # Both components' bom-refs are relativized (basename + hash suffix for out-of-root)
     assert bom["components"][0]["bom-ref"] == expected_plugin
@@ -662,8 +679,10 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
         "posture_findings": [{"component_bom_ref": out_of_root, "evidence": {}}],
         "observations": [{"component_bom_ref": out_of_root, "evidence": {}, "declared_by": {}}],
     }
-    expected_ref = _redact_bom_ref_path(out_of_root, config_dir=cfg, project=None)
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    expected_ref = _redact_bom_ref_path(
+        out_of_root, discovery_roots={"endpoint": cfg}, project=None
+    )
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
     comp = payload["bom"]["components"][0]
     # bom-ref is relativized (basename + hash suffix for out-of-root)
     assert comp["bom-ref"] == expected_ref
@@ -682,6 +701,66 @@ def test_redact_payload_for_remote_redacts_bom_refs() -> None:
     assert deps["openaca:target"] == [expected_ref]
     assert payload["posture_findings"][0]["component_bom_ref"] == expected_ref
     assert payload["observations"][0]["component_bom_ref"] == expected_ref
+
+
+def test_redact_payload_preserves_distinct_labels_for_shared_agents_and_claude_compat() -> None:
+    """Two source manifests share the same relative path under two DIFFERENT
+    Task 15 auxiliary roots (shared-agents vs claude-compat). Relativizing
+    against the labeled discovery-roots map must keep them distinct
+    component occurrences (`endpoint-shared-agents/<rel>` and
+    `endpoint-claude-compat/<rel>`) rather than colliding after
+    relativization — this pins provenance-label preservation independently
+    of the two surfaces' different real directory layouts.
+    """
+    shared_root = Path("/home/u/shared-agents-root")
+    compat_root = Path("/home/u/claude-compat-root")
+    discovery_roots = {
+        "endpoint-shared-agents": shared_root,
+        "endpoint-claude-compat": compat_root,
+    }
+    payload = {
+        "bom": {
+            "components": [
+                {
+                    "bom-ref": f"{shared_root / 'agents' / 'helper.md'}#$.frontmatter#agent/helper",
+                    "properties": [
+                        {
+                            "name": "openaca:source_manifest",
+                            "value": str(shared_root / "agents" / "helper.md"),
+                        }
+                    ],
+                },
+                {
+                    "bom-ref": f"{compat_root / 'agents' / 'helper.md'}#$.frontmatter#agent/helper",
+                    "properties": [
+                        {
+                            "name": "openaca:source_manifest",
+                            "value": str(compat_root / "agents" / "helper.md"),
+                        }
+                    ],
+                },
+            ]
+        },
+    }
+
+    _redact_payload_for_remote(payload, discovery_roots=discovery_roots, project=None)
+
+    comps = payload["bom"]["components"]
+    assert (
+        comps[0]["bom-ref"] == "endpoint-shared-agents/agents/helper.md#$.frontmatter#agent/helper"
+    )
+    assert (
+        comps[1]["bom-ref"] == "endpoint-claude-compat/agents/helper.md#$.frontmatter#agent/helper"
+    )
+    assert comps[0]["bom-ref"] != comps[1]["bom-ref"]
+
+    def _prop(c, name):
+        return next(p["value"] for p in c["properties"] if p["name"] == name)
+
+    sm_shared = _prop(comps[0], "openaca:source_manifest")
+    sm_compat = _prop(comps[1], "openaca:source_manifest")
+    assert sm_shared == "endpoint-shared-agents/agents/helper.md"
+    assert sm_compat == "endpoint-claude-compat/agents/helper.md"
 
 
 def test_redact_payload_source_manifest_property_matches_bom_ref_disambiguation() -> None:
@@ -705,7 +784,7 @@ def test_redact_payload_source_manifest_property_matches_bom_ref_disambiguation(
     payload = {
         "bom": {"components": [_component("/rootA"), _component("/rootB")]},
     }
-    _redact_payload_for_remote(payload, config_dir=cfg, project=None)
+    _redact_payload_for_remote(payload, discovery_roots={"endpoint": cfg}, project=None)
 
     comps = payload["bom"]["components"]
 

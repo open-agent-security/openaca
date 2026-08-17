@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import Callable
 
 from tools.component_ref import ComponentRef
+from tools.host_paths import owning_host
 from tools.parsers import (
+    agent_plugins,
     bun_lock,
     claude_command_agent,
     claude_plugin,
@@ -27,70 +30,243 @@ def _parse_repo_command(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(path, kind="command")
 
 
-def _parse_repo_agent(path: Path) -> list[ComponentRef]:
-    return claude_command_agent.parse_file(path, kind="agent")
-
-
-REGISTRY: list[tuple[str, ParserFn]] = [
+# Software-dependency / lockfile manifests: no host concept, always active
+# regardless of which hosts are selected.
+#
+# Plan 009 lockfile parsers give repo-mode transitive coverage:
+# extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
+HOST_AGNOSTIC_REGISTRY: list[tuple[str, ParserFn]] = [
     ("package.json", package_json.parse),
     ("pyproject.toml", pyproject_toml.parse),
-    ("mcp.json", mcp_json.parse),
-    (".mcp.json", mcp_json.parse),
-    # Claude Desktop user-config: same JSON shape as `mcp.json`
-    # (`mcpServers` map of stdio launches), different filename. Reuse
-    # the same parser; the filename pattern is the only addition.
-    ("claude_desktop_config.json", mcp_json.parse),
-    (".claude-plugin/plugin.json", claude_plugin.parse),
-    (".claude/settings.json", claude_settings.parse),
-    # Plan 008: agent-component inventory in repo mode. These
-    # surfaces emit the same ecosystems as endpoint mode; parentage is set by
-    # the graph edge, not stored on the refs.
-    ("**/.claude/skills/*/SKILL.md", claude_skill.parse),
-    ("**/.claude/commands/**/*.md", _parse_repo_command),
-    ("**/.claude/agents/**/*.md", _parse_repo_agent),
-    # Plan 009: lockfile parsers for repo-mode transitive coverage.
-    # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
     ("package-lock.json", package_lock_json.parse),
     ("uv.lock", uv_lock.parse),
     ("bun.lock", bun_lock.parse),
 ]
 
+# Claude Code's agent-component surfaces (ADR-0044). Unchanged content from
+# the pre-split REGISTRY; only the name and grouping changed.
+#
+# `claude_desktop_config.json` is Claude Desktop user-config: same JSON shape
+# as `mcp.json` (`mcpServers` map of stdio launches), different filename —
+# same parser, the filename pattern is the only addition. The skill/command/
+# agent patterns (plan 008) emit the same ecosystems as endpoint mode;
+# parentage is set by the graph edge, not stored on the refs.
+CLAUDE_CODE_MANIFEST_REGISTRY: list[tuple[str, ParserFn]] = [
+    ("mcp.json", mcp_json.parse),
+    (".mcp.json", mcp_json.parse),
+    ("claude_desktop_config.json", mcp_json.parse),
+    (".claude-plugin/plugin.json", claude_plugin.parse),
+    (".claude/settings.json", claude_settings.parse),
+    ("**/.claude/skills/*/SKILL.md", claude_skill.parse),
+    ("**/.claude/commands/**/*.md", _parse_repo_command),
+]
 
-def _registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
+# Cursor's repo-mode MCP and Skills surfaces (ADR-0044). Parsers are
+# pre-bound via functools.partial so each still matches the single-Path
+# ParserFn signature; the registry dispatch loop never needs to know
+# host-tagging happened.
+CURSOR_MANIFEST_REGISTRY: list[tuple[str, ParserFn]] = [
+    (".cursor/mcp.json", functools.partial(mcp_json.parse, runtime_hosts=["cursor"])),
+    (
+        "**/.cursor/skills/*/SKILL.md",
+        functools.partial(claude_skill.parse, runtime_hosts=["cursor"]),
+    ),
+    (
+        "**/.agents/skills/*/SKILL.md",
+        # Not ["cursor", "codex"]: Codex isn't a registered host in this
+        # plan (no HOSTS["codex"] entry exists), so a scan can never
+        # actually select it — tagging refs with a host the scan didn't
+        # verify contradicts this project's evidence-over-inference
+        # discipline, even though .agents/skills genuinely is Codex-
+        # readable per the spec's own research. It also collides with
+        # the spec's Identity section, which names subagents as the
+        # *only* confirmed case where one occurrence needs multiple
+        # runtime_hosts — .agents/skills getting the same treatment here
+        # wasn't reconciled against that. Revisit together with subagents
+        # once Codex is a registered host (ADR-0045's "When to revisit"
+        # names the Codex trigger; not resolved by this design).
+        functools.partial(claude_skill.parse, runtime_hosts=["cursor"]),
+    ),
+    (
+        "**/.cursor/commands/**/*.md",
+        functools.partial(
+            claude_command_agent.parse_file, kind="command", runtime_hosts=["cursor"]
+        ),
+    ),
+    (
+        ".cursor-plugin/plugin.json",
+        functools.partial(claude_plugin.parse, runtime_hosts=["cursor"]),
+    ),
+]
+
+# Bare (non-host-scoped) basenames more than one host's convention can claim.
+# Only directory context tells them apart, so the bare-basename branch of
+# `registry_pattern_matches` defers to `owning_host` for these.
+_HOST_AMBIGUOUS_BASENAMES = frozenset({"mcp.json", ".mcp.json"})
+
+# Directory names that own their own `plugin.json` via a registry pattern
+# (`.claude-plugin/plugin.json`, `.cursor-plugin/plugin.json`). A bare
+# `plugin.json` nested under one of these is that native format's manifest,
+# never an Agent Plugins root — skip it in the content-based dispatch below
+# regardless of whether the native parse actually succeeds.
+_NATIVE_PLUGIN_CONFIG_DIRS = frozenset({".claude-plugin", ".cursor-plugin"})
+
+
+def resolve_host_selection(hosts: list[str] | None) -> list[str]:
+    """Resolve `hosts` to a concrete, order-preserving, duplicate-free
+    list of *known* host IDs, and raise if two of them claim the
+    identical registry pattern string.
+
+    Combines three concerns handled inconsistently before this fix:
+    unknown-ID rejection, deduplication, and collision rejection.
+
+    **Unknown-ID rejection:** `tools/scan.py`'s CLI already rejects an
+    unrecognized `--host` value with a clear `click.BadParameter` before
+    calling either public function below, but a direct caller bypassing
+    the CLI — a test, or a future non-CLI consumer — passing
+    `hosts=["typo"]` previously got no error at all: `_active_registry`/
+    graph dispatch simply found no adapter for `"typo"` and silently
+    contributed nothing for it, while `HOST_AGNOSTIC_REGISTRY`'s
+    dependency-manifest parsers still ran normally — producing a scan
+    that *looks* like a legitimate, complete result rather than an
+    obviously-wrong one, with no signal that the requested host was
+    never recognized.
+
+    **Deduplication:** `tools/scan.py`'s CLI already dedupes repeated/
+    comma-separated `--host` values, but `_active_registry` and
+    `build_graph` are themselves public, and a direct caller passing
+    `hosts=["cursor", "cursor"]` would previously make `_active_registry`
+    extend its registry with Cursor's `manifest_registry` twice,
+    double-counting `n_found` and producing duplicate refs for the same
+    file, while graph dispatch stayed correct — its first-match loop is
+    idempotent for a repeated ID. That's the same "accounting
+    over-counts, graph doesn't" divergence class the pattern-collision
+    check below exists to prevent, from a different cause.
+
+    **Collision rejection:** a bare (non-host-scoped) pattern like
+    "mcp.json" carries no path information distinguishing which host
+    owns a matching file. Reusing one verbatim across two *distinct*,
+    simultaneously selected hosts is genuinely ambiguous, not just
+    under-specified. Cursor's own pattern (`.cursor/mcp.json`) never
+    collides with Claude's bare filenames precisely because it's
+    host-scoped in the path itself — a future host wanting to reuse a
+    bare, already-allowlisted pattern *alongside* its existing owner
+    must do the same rather than share the identical string.
+
+    Called from both `_active_registry` and `build_graph`'s repo-mode
+    entry point: one implementation, so the two mechanisms can't
+    silently disagree about any of the three concerns, only fail or
+    normalize identically.
+    """
+    from tools.hosts import HOSTS
+
+    selected = list(dict.fromkeys(hosts if hosts is not None else HOSTS.keys()))
+    if hosts is not None:
+        unknown = [host_id for host_id in selected if host_id not in HOSTS]
+        if unknown:
+            known = ", ".join(sorted(HOSTS))
+            raise ValueError(f"unknown host(s) {unknown!r}; known hosts: {known}")
+    owners: dict[str, str] = {}
+    for host_id in selected:
+        adapter = HOSTS.get(host_id)
+        if adapter is None:
+            continue
+        for pattern, _parser in adapter.manifest_registry:
+            if pattern in owners and owners[pattern] != host_id:
+                raise ValueError(
+                    f"registry pattern {pattern!r} is claimed by both "
+                    f"{owners[pattern]!r} and {host_id!r} — reusing a "
+                    "pattern verbatim across two simultaneously selected "
+                    "hosts is ambiguous. Give the new host a distinct, "
+                    "host-scoped pattern (e.g. the '.newhost/mcp.json' "
+                    "shape Cursor already uses), or move the parser to "
+                    "HOST_AGNOSTIC_REGISTRY if it's genuinely meant to be "
+                    "shared across hosts."
+                )
+            owners[pattern] = host_id
+    return selected
+
+
+def _active_registry(hosts: list[str] | None) -> list[tuple[str, ParserFn]]:
+    from tools.hosts import HOSTS  # deferred: tools.hosts imports from this module
+
+    selected = resolve_host_selection(hosts)
+    registry = list(HOST_AGNOSTIC_REGISTRY)
+    for host_id in selected:
+        adapter = HOSTS.get(host_id)
+        if adapter is not None:
+            registry.extend(adapter.manifest_registry)
+    return registry
+
+
+def registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
     try:
         rel = path.relative_to(root)
     except ValueError:
         rel = path
 
     if "/" not in pattern and "*" not in pattern:
+        # A `.cursor`-nested `mcp.json` must stop matching Claude's bare
+        # pattern entirely: the dispatch loop checks every pattern, not just
+        # the first match, so without this the same file would be parsed
+        # twice — once mistagged claude-code — inflating n_found.
+        if pattern in _HOST_AMBIGUOUS_BASENAMES and owning_host(rel) != "claude-code":
+            return False
         return rel.name == pattern
 
     rel_parts = rel.parts
     rel_posix = rel.as_posix()
-    if pattern in {".claude-plugin/plugin.json", ".claude/settings.json"}:
+    if pattern in {
+        ".claude-plugin/plugin.json",
+        ".cursor-plugin/plugin.json",
+        ".claude/settings.json",
+        ".cursor/mcp.json",
+    }:
         return rel_posix == pattern or rel_posix.endswith(f"/{pattern}")
 
-    if len(rel_parts) < 4 or rel_parts[-1] != "SKILL.md":
-        skill_match = False
-    else:
-        skill_match = any(
-            rel_parts[i] == ".claude"
-            and i + 3 < len(rel_parts)
-            and rel_parts[i + 1] == "skills"
-            and i + 3 == len(rel_parts) - 1
-            for i in range(len(rel_parts) - 3)
-        )
-    if pattern == "**/.claude/skills/*/SKILL.md":
-        return skill_match
+    skill_dir_name = _skill_pattern_config_dir(pattern)
+    if skill_dir_name is not None:
+        return _skill_path_matches(rel_parts, skill_dir_name)
 
-    if pattern in {"**/.claude/commands/**/*.md", "**/.claude/agents/**/*.md"}:
-        kind = "commands" if "commands" in pattern else "agents"
+    command_config_dir = _COMMAND_PATTERN_CONFIG_DIRS.get(pattern)
+    if command_config_dir is not None:
         return rel.suffix == ".md" and any(
-            rel_parts[i] == ".claude" and i + 2 < len(rel_parts) and rel_parts[i + 1] == kind
+            rel_parts[i] == command_config_dir
+            and i + 2 < len(rel_parts)
+            and rel_parts[i + 1] == "commands"
             for i in range(len(rel_parts) - 2)
         )
 
     return rel.match(pattern)
+
+
+_COMMAND_PATTERN_CONFIG_DIRS = {
+    "**/.claude/commands/**/*.md": ".claude",
+    "**/.cursor/commands/**/*.md": ".cursor",
+}
+
+
+_SKILL_PATTERN_CONFIG_DIRS = {
+    "**/.claude/skills/*/SKILL.md": ".claude",
+    "**/.cursor/skills/*/SKILL.md": ".cursor",
+    "**/.agents/skills/*/SKILL.md": ".agents",
+}
+
+
+def _skill_pattern_config_dir(pattern: str) -> str | None:
+    return _SKILL_PATTERN_CONFIG_DIRS.get(pattern)
+
+
+def _skill_path_matches(rel_parts: tuple[str, ...], config_dir: str) -> bool:
+    if len(rel_parts) < 4 or rel_parts[-1] != "SKILL.md":
+        return False
+    return any(
+        rel_parts[i] == config_dir
+        and i + 3 < len(rel_parts)
+        and rel_parts[i + 1] == "skills"
+        and i + 3 == len(rel_parts) - 1
+        for i in range(len(rel_parts) - 3)
+    )
 
 
 def _filter_secondary_refs(
@@ -133,6 +309,7 @@ def _filter_secondary_refs(
 def parse_repo_grouped(
     root: Path,
     include_gitignored: bool = False,
+    hosts: list[str] | None = None,
 ) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
     """Walk `root` and return (per-manifest results, total paths matched).
 
@@ -163,10 +340,14 @@ def parse_repo_grouped(
     spec = None if include_gitignored else load_gitignore_spec(root)
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
+    registry = _active_registry(hosts)
+    selected_hosts = resolve_host_selection(hosts)
     for path in iter_unignored_files(root, spec):
-        for pattern, parser in REGISTRY:
-            if not _registry_pattern_matches(path, root, pattern):
+        matched = False
+        for pattern, parser in registry:
+            if not registry_pattern_matches(path, root, pattern):
                 continue
+            matched = True
             n_found += 1
             try:
                 refs = parser(path)
@@ -174,6 +355,43 @@ def parse_repo_grouped(
                 grouped.append((path, refs))
             except Exception:
                 continue
+        if (
+            not matched
+            and path.name == "plugin.json"
+            and path.parent.name not in _NATIVE_PLUGIN_CONFIG_DIRS
+            and "cursor" in selected_hosts
+            and agent_plugins.is_agent_plugins_manifest(path)
+        ):
+            n_found += 1
+            try:
+                refs = agent_plugins.parse(path, runtime_hosts=["cursor"])
+                refs = _filter_secondary_refs(refs, path, root, spec)
+                grouped.append((path, refs))
+            except Exception:
+                continue
+
+    # Subagents (`.claude/agents/**/*.md`, `.cursor/agents/**/*.md`) are no
+    # longer registry-driven: pairing a Cursor override with its Claude
+    # counterpart needs the resolver's cross-file precedence logic, which a
+    # single-path registry pattern can't express (Task 12).
+    # deferred: subagent_precedence imports from this module
+    from tools.subagent_precedence import (
+        group_occurrences_by_manifest,
+        resolve_subagent_occurrences,
+    )
+
+    for manifest_path, manifest_refs in group_occurrences_by_manifest(
+        resolve_subagent_occurrences(root, selected_hosts)
+    ):
+        try:
+            rel = manifest_path.relative_to(root)
+        except ValueError:
+            rel = manifest_path
+        if is_ignored(rel, spec):
+            continue
+        n_found += 1
+        grouped.append((manifest_path, manifest_refs))
+
     return grouped, n_found
 
 
@@ -223,7 +441,9 @@ def flatten_grouped(
     return refs
 
 
-def parse_repo(root: Path, include_gitignored: bool = False) -> list[ComponentRef]:
+def parse_repo(
+    root: Path, include_gitignored: bool = False, hosts: list[str] | None = None
+) -> list[ComponentRef]:
     """Walk `root` and return deduplicated ComponentRefs from all known manifests."""
-    grouped, _ = parse_repo_grouped(root, include_gitignored=include_gitignored)
+    grouped, _ = parse_repo_grouped(root, include_gitignored=include_gitignored, hosts=hosts)
     return flatten_grouped(grouped)

@@ -30,6 +30,7 @@ from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
+from tools.bom import agent_host
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import (
     finding_to_output,
@@ -38,6 +39,7 @@ from tools.finding_output import (
     posture_to_output,
 )
 from tools.graph import Graph, Node, ref_occurrence_key
+from tools.hosts import all_host_ids, plugin_unit_label
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -58,6 +60,64 @@ class ScanStats:
     component_count: int = 0
     parse_failed: int = 0
     sources: set[str] = field(default_factory=set)
+    components_by_host: dict[str, int] = field(default_factory=dict)
+
+
+_DEFAULT_HOST = "claude-code"
+
+
+def _ref_host(ref: ComponentRef, graph: Graph | None = None) -> str:
+    """The host a component belongs to, for per-host stats/tags.
+
+    Tries `agent_host` (the same derivation the BOM's `openaca:agent_host`
+    property uses) on the ref itself first. A dependency-manifest `package`
+    node never carries its own `runtime_hosts` — `_add_dep_manifest_packages`
+    (`tools/graph_build.py`) stamps none regardless of which host's plugin or
+    skill it descended from — so for those (and any other ref with no
+    resolvable host of its own) this walks the graph lineage for the nearest
+    ancestor `agent_host` resolves, e.g. a Cursor-hosted plugin's bundled
+    skill's own `package.json` dep attributes to `cursor` through its skill/
+    plugin ancestors. Only when neither the ref nor any ancestor resolves a
+    host (every Claude-only surface today, since Claude's plugin/direct refs
+    that DO carry `runtime_hosts` always say `claude-code`) does this fall
+    back to the scanning default host.
+    """
+    own = agent_host(ref)
+    if own is not None:
+        return own
+    if graph is not None:
+        node = graph.node_for_ref(ref)
+        if node is not None:
+            for ancestor in graph.lineage(node)[1:]:
+                if ancestor.ref is not None:
+                    ancestor_host = agent_host(ancestor.ref)
+                    if ancestor_host is not None:
+                        return ancestor_host
+    return _DEFAULT_HOST
+
+
+def compute_components_by_host(
+    refs: list[ComponentRef], graph: Graph | None = None
+) -> dict[str, int]:
+    """Per-host component counts for the JSON stats `components_by_host` key.
+
+    Counts every ref passed in (mirrors `ScanStats.component_count`'s
+    population), keyed by `_ref_host`."""
+    counts: dict[str, int] = {}
+    for ref in refs:
+        host = _ref_host(ref, graph)
+        counts[host] = counts.get(host, 0) + 1
+    return counts
+
+
+def hosts_from_refs(refs: list[ComponentRef], graph: Graph | None = None) -> list[str]:
+    """Fallback host-list derivation for BOM round-trips that lack the
+    `openaca:scanned_hosts` metadata property: the distinct hosts `_ref_host`
+    attributes across `refs` (own `runtime_hosts`, else ancestry, else the
+    default host), ordered by host-registry registration order for
+    determinism."""
+    present = {_ref_host(ref, graph) for ref in refs}
+    return [host_id for host_id in all_host_ids() if host_id in present]
 
 
 @dataclass
@@ -813,6 +873,7 @@ def render_json(
             "parse_failed": stats.parse_failed,
             "high_confidence": sum(1 for f in findings if f.confidence == "high"),
             "sources": sorted(stats.sources),
+            "components_by_host": stats.components_by_host,
         },
     }
     if target is not None:
@@ -1345,12 +1406,16 @@ def _build_plugin_node(
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
     view: Optional["_GraphView"] = None,
+    show_host: bool = False,
 ) -> _TreeNode:
     sha = plugin_ref.extra.get("gitCommitSha")
     context: list[str] = []
     if isinstance(sha, str) and sha:
         context.append(f"sha: {sha[:8]}")
     context_note = f" ({', '.join(context)})" if context else ""
+    host_note = (
+        f" [{_ref_host(plugin_ref, view.graph if view is not None else None)}]" if show_host else ""
+    )
     scope = plugin_ref.extra.get("scope")
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
     marker = _finding_marker(direct_ids, use_color)
@@ -1390,7 +1455,8 @@ def _build_plugin_node(
             categories, tier2, findings_by_ref, exclude=set(direct_ids)
         )
     containment = _containment_marker(bundled_ids, use_color)
-    header = f"{display_id}{context_note} [scope={scope}]{marker}{containment}"
+    scope_note = f" [scope={scope}]" if scope else ""
+    header = f"{display_id}{context_note}{host_note}{scope_note}{marker}{containment}"
     root = _TreeNode(label=header)
 
     _append_category_nodes(
@@ -1436,6 +1502,7 @@ def _build_direct_node(
     use_color: bool,
     source_note_root: Path | None = None,
     view: Optional["_GraphView"] = None,
+    show_host: bool = False,
 ) -> _TreeNode | None:
     cats = _direct_categories(refs)
     if not cats:
@@ -1454,8 +1521,11 @@ def _build_direct_node(
             if leaf_label in duplicate_labels and r.source_manifest and not source_note:
                 leaf_label = f"{leaf_label} (from {r.source_manifest})"
             leaf_label = f"{leaf_label}{_source_provenance_note(r)}{source_note}"
+            host_note = (
+                f" [{_ref_host(r, view.graph if view is not None else None)}]" if show_host else ""
+            )
             leaf_marker = _finding_marker(findings_by_ref.get(_ref_key(r), []), use_color)
-            leaf = _TreeNode(label=f"{leaf_label}{leaf_marker}")
+            leaf = _TreeNode(label=f"{leaf_label}{host_note}{leaf_marker}")
             # Graph mode: a direct component may bundle its own deps/sub-components
             # (e.g. a standalone skill bundling a package). Nest them under it.
             gnode = view.node_for(r) if view is not None else None
@@ -1507,6 +1577,7 @@ def render_inventory_tree(
     use_color: bool = False,
     use_unicode: bool = True,
     graph: Graph | None = None,
+    hosts: list[str] | None = None,
 ) -> str:
     """Render the active-plugin and direct-component inventory as a tree.
 
@@ -1524,10 +1595,22 @@ def render_inventory_tree(
 
     `use_unicode=False` swaps box-drawing characters for ASCII (`|--`, `\\`--`),
     useful on terminals or CI logs that mangle UTF-8.
+
+    `hosts` is the scan's selected host list. With 2+ hosts it turns on
+    per-host display: a `(host: N, ...)` breakdown on the header line and a
+    `[<host>]` tag on each top-level plugin/direct-component entry (never on
+    their bundled children, which inherit the parent's host visually). Single-
+    host callers (or omitting `hosts`) get today's output, unchanged.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
     view = _GraphView.build(graph, refs) if graph is not None else None
+    show_host = hosts is not None and len(hosts) > 1
+    # ADR-0045 Decision #7, shared with bom_cli.py's `bom endpoint` via tools.hosts: a
+    # presence-only host (Cursor) in the selection means the count can't
+    # claim "active". Callers that don't pass `hosts` (repo mode, an
+    # ingested BOM with no host list) keep today's "active plugin" wording.
+    plugin_unit = plugin_unit_label(hosts) if hosts is not None else "active plugin"
 
     plugins = sorted(
         (r for r in refs if _is_plugin_ref(r)),
@@ -1539,21 +1622,32 @@ def render_inventory_tree(
         direct_refs = view.direct_component_refs()
     else:
         direct_refs = refs
-    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, view=view)
+    direct_node = _build_direct_node(
+        direct_refs, findings_by_ref, use_color, view=view, show_host=show_host
+    )
     n_plugins = len(plugins)
     n_direct = sum(len(v) for v in _direct_categories(direct_refs).values())
     # Total components = everything minus the plugin self-identity refs.
-    n_total = sum(1 for r in refs if not _is_plugin_ref(r))
+    non_plugin_refs = [r for r in refs if not _is_plugin_ref(r)]
+    n_total = len(non_plugin_refs)
 
     out: list[str] = []
-    out.append(
-        f"{_pluralize(n_plugins, 'active plugin')}, "
+    header = (
+        f"{_pluralize(n_plugins, plugin_unit)}, "
         f"{_pluralize(n_direct, 'direct component')}, "
         f"{_pluralize(n_total, 'total component')}"
     )
+    if show_host:
+        assert hosts is not None
+        counts = compute_components_by_host(non_plugin_refs, graph)
+        breakdown = ", ".join(f"{host}: {counts.get(host, 0)}" for host in hosts)
+        header = f"{header} ({breakdown})"
+    out.append(header)
     out.append("")
     for plugin_ref in plugins:
-        node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color, view=view)
+        node = _build_plugin_node(
+            plugin_ref, refs, findings_by_ref, use_color, view=view, show_host=show_host
+        )
         out.extend(_format_tree_lines(node, chars))
         out.append("")
     if direct_node is not None:

@@ -103,3 +103,28 @@ def test_flat_root_leaves_active_in_empty(tmp_path):
     manifest = {"playwright": {"url": "http://localhost:3000/mcp"}}
     findings = check_insecure_transport([(tmp_path / ".mcp.json", manifest)])
     assert findings[0].active_in == []
+
+
+def test_cursor_mcp_json_sets_cursor_active_in(tmp_path):
+    cursor_dir = tmp_path / ".cursor"
+    manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
+    findings = check_insecure_transport([(cursor_dir / "mcp.json", manifest)])
+    assert findings[0].active_in == ["cursor"]
+
+
+def test_claude_mcp_json_still_sets_claude_code_active_in(tmp_path):
+    # Regression guard alongside the existing test_mcpservers_key_sets_
+    # claude_code_active_in — same assertion, different path, to pin
+    # that a *non*-.cursor path still resolves to claude-code.
+    manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
+    findings = check_insecure_transport([(tmp_path / "some/nested/mcp.json", manifest)])
+    assert findings[0].active_in == ["claude-code"]
+
+
+def test_cursor_cache_mcp_json_active_in_is_claude_code(tmp_path):
+    # Boundary case: nested-under-.cursor/ but not the
+    # exact .cursor/mcp.json shape — must resolve to claude-code, the
+    # same as owning_host resolves it everywhere else.
+    manifest = {"mcpServers": {"x": {"url": "http://x.example/mcp"}}}
+    findings = check_insecure_transport([(tmp_path / ".cursor/cache/mcp.json", manifest)])
+    assert findings[0].active_in == ["claude-code"]

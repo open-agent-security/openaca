@@ -1070,7 +1070,7 @@ def repo(
         unit_count=n_found,
         unit_label="manifest",
         component_count=len(refs),
-        components_by_host=compute_components_by_host(refs, graph),
+        components_by_host=compute_components_by_host(refs, graph, hosts=hosts),
         parse_failed=n_failed,
         sources=_collect_corpus_sources(corpus),
     )
@@ -1305,7 +1305,7 @@ def endpoint(
         unit_count=plugin_count,
         unit_label=plugin_unit,
         component_count=len(refs),
-        components_by_host=compute_components_by_host(refs, graph),
+        components_by_host=compute_components_by_host(refs, graph, hosts=selected_hosts),
         sources=_collect_corpus_sources(corpus),
     )
     if report_kind == "exposure":
@@ -1538,7 +1538,7 @@ def scan_bom(
         unit_count=source_unit_count if source_unit_count is not None else 1,
         unit_label=source_unit_label or "agent BOM",
         component_count=len(refs),
-        components_by_host=compute_components_by_host(refs, graph),
+        components_by_host=compute_components_by_host(refs, graph, hosts=hosts),
         sources=_collect_corpus_sources(corpus),
     )
     if report_kind == "exposure":

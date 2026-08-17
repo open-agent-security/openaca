@@ -1058,6 +1058,21 @@ def test_repo_settings_json_enabled_plugins_are_plugin_nodes(tmp_path):
     assert [n.kind for n in g.lineage(plugins[0])] == ["plugin", "target"]
 
 
+def test_repo_settings_json_excluded_when_claude_code_not_selected(tmp_path):
+    """A `--host cursor` (Claude Code excluded) repo scan must not surface
+    `.claude/settings.json` `enabledPlugins` — that surface is Claude-owned,
+    and Codex flagged the unconditional parse in `_add_repo_standalone_components`
+    as leaking Claude-only plugins into a Cursor-only scan."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"myplugin@marketplace": True}})
+    )
+    g = build_graph(tmp_path, mode="repo", hosts=["cursor"])
+    plugins = [n for n in g.nodes.values() if n.kind == "plugin"]
+    assert plugins == []
+
+
 def test_repo_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_path):
     """Agent frontmatter mcpServers must become mcp_server children of the agent node,
     not agent-kind siblings under the target."""

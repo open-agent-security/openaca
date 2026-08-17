@@ -1897,7 +1897,11 @@ def _add_repo_standalone_components(
     The MCP surface resolves its parser through each selected host's
     `HostAdapter.manifest_registry`, using the same `registry_pattern_matches`
     `parse_repo_grouped` uses — so graph placement and manifest accounting
-    can never independently decide a path belongs to different hosts.
+    can never independently decide a path belongs to different hosts. The
+    `.claude/settings.json` surface is Claude-owned (`claude_settings.parse`
+    is not registered per-host through `manifest_registry`), so it is gated
+    directly on `"claude-code" in hosts`: a `--host cursor` scan must not
+    surface Claude-only `enabledPlugins` entries.
     """
     hosts = hosts if hosts is not None else all_host_ids()
     eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
@@ -1932,7 +1936,11 @@ def _add_repo_standalone_components(
                 node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
-        if path.name == "settings.json" and _is_claude_settings_json(path, directory):
+        if (
+            path.name == "settings.json"
+            and "claude-code" in hosts
+            and _is_claude_settings_json(path, directory)
+        ):
             for ref in _safe_parse(claude_settings.parse, path):
                 if _component_type(ref) != "plugin":
                     continue

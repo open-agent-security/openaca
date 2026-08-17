@@ -23,6 +23,7 @@ from tools.render import (
     _aggregate_fix,
     _fixed_in_for_finding,
     _group_findings,
+    compute_components_by_host,
     render_github,
     render_inventory_tree,
     render_json,
@@ -613,6 +614,32 @@ def test_json_empty_returns_findings_array_and_stats():
     assert parsed["stats"]["units"] == 0
     assert parsed["stats"]["components"] == 0
     assert parsed["stats"]["sources"] == ["openaca.dev"]
+
+
+def test_compute_components_by_host_seeds_zero_count_for_selected_hosts():
+    """A valid scan that finds zero components must still report which
+    selected host(s) came up empty, not an empty map — the
+    `stats.components_by_host` "always has at least one key" contract in
+    `docs/reference/cli.md`."""
+    assert compute_components_by_host([], hosts=["claude-code"]) == {"claude-code": 0}
+    assert compute_components_by_host([], hosts=["claude-code", "cursor"]) == {
+        "claude-code": 0,
+        "cursor": 0,
+    }
+
+
+def test_compute_components_by_host_seeded_hosts_do_not_drop_counted_hosts():
+    """A ref attributed to a host outside the seeded `hosts` list (e.g. via
+    `runtime_hosts`) must still be counted, not discarded."""
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="left-pad",
+        version="1.0.0",
+        source_manifest="mcp.json",
+        extra={"runtime_hosts": ["cursor"]},
+    )
+    counts = compute_components_by_host([ref], hosts=["claude-code"])
+    assert counts == {"claude-code": 0, "cursor": 1}
 
 
 def test_json_finding_contains_full_record():

@@ -116,7 +116,7 @@ def _ref_host_label(ref: ComponentRef, graph: Graph | None = None) -> str:
 
 
 def compute_components_by_host(
-    refs: list[ComponentRef], graph: Graph | None = None
+    refs: list[ComponentRef], graph: Graph | None = None, hosts: list[str] | None = None
 ) -> dict[str, int]:
     """Per-host component counts for the JSON stats `components_by_host` key,
     and the source for the text card's per-host breakdown line.
@@ -129,8 +129,14 @@ def compute_components_by_host(
     reads unconditionally from `.claude/agents/`) increments every host's
     bucket instead of being folded into a single one — it really is present
     under each of those hosts, so `sum(counts.values())` can then exceed the
-    ref count."""
-    counts: dict[str, int] = {}
+    ref count.
+
+    `hosts`, when given, seeds a zero-count entry for every selected/scanned
+    host before counting: a valid scan that discovers zero components must
+    still report which host(s) came up empty, not an empty map (the
+    `stats.components_by_host` "always has at least one key" contract in
+    `docs/reference/cli.md`)."""
+    counts: dict[str, int] = {host: 0 for host in hosts} if hosts else {}
     for ref in refs:
         for host in _ref_hosts(ref, graph):
             counts[host] = counts.get(host, 0) + 1

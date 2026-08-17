@@ -112,8 +112,9 @@ selection that includes a presence-only host (Cursor) reports `"plugin"`
 instead. A 2+-host `bom endpoint` also adds `openaca:scanned_hosts` and
 `openaca:host_config_roots` metadata (see
 [the BOM schema reference](../openaca-bom-schema.md#openaca-properties));
-`openaca:target` itself is unchanged and still names only the first selected
-host's root.
+`openaca:target` itself switches to the neutral locator `endpoint:user-scope`
+for a multi-host selection, since no single host's root is authoritative —
+per-host roots remain available via `openaca:host_config_roots`.
 
 ## Output formats
 

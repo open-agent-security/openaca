@@ -23,6 +23,7 @@ from tools.endpoint_request import (
 )
 from tools.graph import Graph
 from tools.graph_build import build_graph
+from tools.hosts import plugin_unit_label
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 from tools.observations import (
     ObservationFinding,
@@ -122,7 +123,7 @@ def build_endpoint_collection(
             target_type="endpoint",
             target=TARGET_LOCATOR_ENDPOINT,
             source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
-            source_unit_label="active plugin",
+            source_unit_label=plugin_unit_label(selected_hosts),
             graph=graph,
             scanned_hosts=scanned_hosts,
             host_config_roots=host_config_roots_for_bom,

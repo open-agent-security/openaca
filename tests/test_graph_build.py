@@ -2781,6 +2781,28 @@ def test_endpoint_cursor_seed_endpoint_composes_all_surfaces(tmp_path, monkeypat
         assert "package" in dep_kinds, f"{skill_node.ref.name} lost its dep chain"
 
 
+def test_endpoint_cursor_project_skills_honor_project_gitignore(tmp_path, monkeypatch):
+    # Regression guard: Cursor's endpoint project-scoped skill roots
+    # (.cursor/skills, .agents/skills) must honor the project's .gitignore,
+    # parity with Claude's endpoint_seeds.claude_code._add_project_skills call
+    # — a skill under an ignored path (e.g. a worktree) must not be
+    # inventoried just because it's discovered via Cursor instead of Claude.
+    home, cursor_root, project = _cursor_endpoint_fixture(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+    (project / ".gitignore").write_text(".cursor/\n.agents/\n")
+    g = build_graph(
+        cursor_root,
+        mode="endpoint",
+        project_root=project,
+        host_config_roots={"cursor": cursor_root},
+    )
+    skill_names = {n.ref.name for n in g.nodes.values() if n.kind == "skill" and n.ref}
+    assert "proj-skill" not in skill_names
+    assert "proj-shared" not in skill_names
+    # Non-project-scoped skill roots are unaffected by the project's .gitignore.
+    assert {"global-skill", "shared-skill", "bundled-skill", "ap-skill"} <= skill_names
+
+
 def test_endpoint_dev_linked_dual_format_dir_realizes_native_only(tmp_path, monkeypatch):
     # A dev-linked dir carrying BOTH manifests: the native
     # `.cursor-plugin/plugin.json` and a schema-tagged root `plugin.json`.

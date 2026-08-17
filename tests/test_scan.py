@@ -2501,6 +2501,72 @@ def test_scan_repo_cursor_cache_mcp_json_posture_uses_claude_code(tmp_path):
     assert posture == []  # claude-code-owned manifest, not visible under --host cursor
 
 
+def test_scan_repo_cursor_native_plugin_bundled_mcp_posture_uses_cursor(tmp_path):
+    # Regression guard: a Cursor native plugin's bundled MCP manifest lives at
+    # <plugin-root>/mcp.json, not the literal `.cursor/mcp.json` shape
+    # `owning_host` recognizes — so it must not fall back to "claude-code".
+    # Collection provenance (the graph's own runtime_hosts on the parsed
+    # mcp_server ref) must override the path-shape heuristic, parity with
+    # endpoint mode's `manifest_hosts`.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    (plugin_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+
+    cursor_only = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "cursor",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert cursor_only.exit_code == 0, cursor_only.output
+    doc = _scan_json_doc(cursor_only.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1  # not dropped by --host cursor
+    assert posture[0]["active_in"] == ["cursor"]  # not mislabeled claude-code
+
+    multi_host = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "cursor",
+            "--host",
+            "claude-code",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert multi_host.exit_code == 0, multi_host.output
+    doc = _scan_json_doc(multi_host.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1
+    assert posture[0]["active_in"] == ["cursor"]  # not "claude-code"
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

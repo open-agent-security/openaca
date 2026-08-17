@@ -58,7 +58,7 @@ from tools.component_ref import ComponentRef
 from tools.endpoint_request import resolve_endpoint_request
 from tools.graph import Graph
 from tools.graph_build import _TARGET_KEY, build_graph
-from tools.host_paths import owning_host
+from tools.host_paths import resolved_owner
 from tools.hosts import HOSTS, all_host_ids, plugin_unit_label
 from tools.matcher import Finding, match
 from tools.observations import (
@@ -143,6 +143,43 @@ def _component_type(ref: ComponentRef) -> str:
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
     return _component_type(ref) == "plugin"
+
+
+def _repo_manifest_hosts(
+    manifests: list[tuple[Path, dict]], refs: list[ComponentRef]
+) -> dict[Path, str]:
+    """Map each `collect_mcp_manifests`-returned path to the single host the
+    graph parsed its MCP server children as (`ref.extra["runtime_hosts"]`),
+    for `resolved_owner` to prefer over `owning_host`'s directory-shape guess.
+
+    Repo mode has no per-host collector call to record provenance during
+    collection (unlike endpoint mode's `collect_endpoint_posture_inputs`), so
+    this reconstructs it after the fact from the graph's own `mcp_server`
+    refs, matched by resolved path.
+    """
+    by_resolved: dict[Path, str] = {}
+    for ref in refs:
+        extra = ref.extra or {}
+        if extra.get("component_type") != "mcp_server" or not ref.source_manifest:
+            continue
+        runtime_hosts = extra.get("runtime_hosts")
+        if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
+            continue
+        try:
+            resolved = Path(ref.source_manifest).resolve()
+        except (OSError, RuntimeError):
+            continue
+        by_resolved[resolved] = runtime_hosts[0]
+    out: dict[Path, str] = {}
+    for path, _ in manifests:
+        try:
+            resolved = path.resolve()
+        except (OSError, RuntimeError):
+            continue
+        host_id = by_resolved.get(resolved)
+        if host_id is not None:
+            out[path] = host_id
+    return out
 
 
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
@@ -846,14 +883,24 @@ def repo(
     if include_posture:
         posture_findings.extend(scanner_posture_findings)
         manifests = collect_mcp_manifests([target], include_gitignored=include_gitignored)
-        manifests = [(p, d) for p, d in manifests if owning_host(p) in hosts]
+        # `owning_host`'s directory-shape heuristic only recognizes the literal
+        # `.cursor/mcp.json` convention, so a Cursor plugin's bundled
+        # `<plugin-root>/mcp.json` (e.g. `plugins/local/<name>/mcp.json`) would
+        # otherwise misattribute to Claude Code. `manifest_hosts` overrides it
+        # with the graph's own parse provenance (`runtime_hosts` on each
+        # bundled MCP server ref), same as `resolved_owner` already does for
+        # endpoint mode's collection provenance.
+        manifest_hosts = _repo_manifest_hosts(manifests, all_refs)
+        manifests = [(p, d) for p, d in manifests if resolved_owner(p, manifest_hosts) in hosts]
         active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
         settings_manifests = (
             collect_settings_manifests([target], include_gitignored=include_gitignored)
             if _API_ENDPOINT_OVERRIDE_RULE_ID in active_rule_ids
             else []
         )
-        posture_findings.extend(run_posture_rules(refs, manifests, settings_manifests))
+        posture_findings.extend(
+            run_posture_rules(refs, manifests, settings_manifests, manifest_hosts)
+        )
 
     # None means posture was not requested (rendered as "skipped"); [] means it ran and
     # found nothing. Don't collapse the empty-but-ran case to None.

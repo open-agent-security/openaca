@@ -29,6 +29,7 @@ from tools.graph_build import (
 )
 from tools.parsers import claude_command_agent, claude_plugin, mcp_json
 from tools.parsers.agent_plugins import is_agent_plugins_manifest
+from tools.parsers.gitignore import load_gitignore_spec
 
 
 def seed_endpoint(
@@ -64,23 +65,41 @@ def _seed_remote_mcps(graph, target, config_root, project_root, normalize) -> No
             _add_child(graph, target, node)
 
 
-def _skill_roots(config_root: Path, project_root: Optional[Path]) -> list[Path]:
-    # All four Cursor skill roots (spec's Skills section). The shared
-    # `~/.agents/skills` root comes from `shared_agents_root()`
+def _config_skill_roots(config_root: Path) -> list[Path]:
+    # The two config-scoped Cursor skill roots (spec's Skills section). The
+    # shared `~/.agents/skills` root comes from `shared_agents_root()`
     # (tools.endpoint_request) rather than being derived from config_root: it
     # is a cross-tool, home-scoped convention, not Cursor-owned state, so a
-    # `--config-dir` override must not relocate it.
-    roots = [config_root / "skills", shared_agents_root() / "skills"]
-    if project_root is not None:
-        roots.append(project_root / ".cursor" / "skills")
-        roots.append(project_root / ".agents" / "skills")
-    return roots
+    # `--config-dir` override must not relocate it. Neither lives inside a
+    # project's `.gitignore` scope, so no root_dir/root_spec is threaded.
+    return [config_root / "skills", shared_agents_root() / "skills"]
+
+
+def _project_skill_roots(project_root: Path) -> list[Path]:
+    # The two project-scoped Cursor skill roots (spec's Skills section).
+    return [project_root / ".cursor" / "skills", project_root / ".agents" / "skills"]
 
 
 def _seed_direct_skills(graph, target, config_root, project_root, normalize) -> None:
-    for skills_root in _skill_roots(config_root, project_root):
+    for skills_root in _config_skill_roots(config_root):
         _add_skills_from_dir(
             graph, target, skills_root, normalize=normalize, runtime_hosts=["cursor"]
+        )
+    if project_root is None:
+        return
+    # Parity with Claude's endpoint project skills (endpoint_seeds/claude_code.py's
+    # _add_project_skills call): thread the project root's .gitignore so a
+    # skill under an ignored path (e.g. `.worktrees/`) isn't inventoried.
+    project_skill_spec = load_gitignore_spec(project_root)
+    for skills_root in _project_skill_roots(project_root):
+        _add_skills_from_dir(
+            graph,
+            target,
+            skills_root,
+            normalize=normalize,
+            runtime_hosts=["cursor"],
+            root_dir=project_root,
+            root_spec=project_skill_spec,
         )
 
 

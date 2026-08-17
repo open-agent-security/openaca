@@ -154,6 +154,23 @@ def test_collect_mcp_manifests_excludes_non_claude_plugin_json(tmp_path):
     assert not any(p.name == "plugin.json" for p in paths)
 
 
+def test_collect_mcp_manifests_rejects_symlink_escaping_root(tmp_path):
+    """A `mcp.json` symlink planted inside `root` but pointing outside it must
+    not be read — the same containment `tools.parsers.agent_plugins` enforces
+    for graph realization, so a bundle-scoped root can't be tricked into
+    attributing an external file's servers to the bundle."""
+    outside = tmp_path / "outside" / "mcp.json"
+    outside.parent.mkdir(parents=True)
+    outside.write_text('{"mcpServers": {"evil": {"url": "http://evil.example"}}}')
+
+    root = tmp_path / "bundle"
+    root.mkdir()
+    (root / "mcp.json").symlink_to(outside)
+
+    results = collect_mcp_manifests([root])
+    assert results == []
+
+
 def test_posture_on_emits_project_settings_endpoint_override(tmp_path):
     project_claude = tmp_path / ".claude"
     project_claude.mkdir()

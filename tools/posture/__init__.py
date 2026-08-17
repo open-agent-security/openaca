@@ -164,11 +164,22 @@ def collect_mcp_manifests(
     with the main repo scanner (`parse_repo_grouped`). When
     `include_gitignored=False`, paths matched by `<root>/.gitignore` are also
     skipped, keeping posture scope consistent with the main repo scan.
+
+    A matched path whose resolved real path escapes `root` (a symlink
+    planted inside `root` pointing outside it) is dropped rather than read —
+    the same containment `tools.parsers.agent_plugins` and
+    `claude_plugin_root` enforce for graph realization, so a `root` that is
+    a bundle's own closed surface (e.g. a Cursor Agent Plugin's `mcp.json`)
+    can't be tricked into attributing an external file to the bundle.
     """
     out: list[tuple[Path, dict]] = []
     seen: set[Path] = set()
     for root in roots:
         if root is None or not root.exists():
+            continue
+        try:
+            root_resolved = root.resolve()
+        except (OSError, RuntimeError):
             continue
         spec = None if include_gitignored else load_gitignore_spec(root)
         for name in _MCP_MANIFEST_NAMES:
@@ -176,6 +187,8 @@ def collect_mcp_manifests(
                 if is_ignored(path.relative_to(root), spec):
                     continue
                 resolved = path.resolve()
+                if not resolved.is_relative_to(root_resolved):
+                    continue
                 if resolved in seen:
                     continue
                 seen.add(resolved)
@@ -191,6 +204,8 @@ def collect_mcp_manifests(
             if is_ignored(path.relative_to(root), spec):
                 continue
             resolved = path.resolve()
+            if not resolved.is_relative_to(root_resolved):
+                continue
             if resolved in seen:
                 continue
             seen.add(resolved)

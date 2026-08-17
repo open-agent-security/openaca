@@ -2650,6 +2650,51 @@ def test_scan_repo_cursor_native_plugin_bundled_mcp_posture_excluded_when_host_u
     assert posture == []  # cursor-owned bundle, not visible under --host claude-code
 
 
+def test_scan_repo_dual_native_plugin_manifests_posture_follows_realized_manifest(tmp_path):
+    # Regression guard: when a bundle root carries BOTH valid native
+    # manifests, graph realization picks exactly one (Claude-format wins —
+    # see `_find_plugin_roots`). `collect_mcp_manifests` still globs both
+    # `plugin.json` files, so the losing `.cursor-plugin/plugin.json` (with
+    # its own insecure inline `mcpServers`) has no graph provenance and used
+    # to fall back to `owning_host` -> "claude-code", producing a spurious
+    # posture finding for content that was never actually realized as part
+    # of the plugin. Only the winning manifest's content should surface.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    (plugin_root / ".cursor-plugin").mkdir()
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude-code",
+            "--host",
+            "cursor",
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    # The losing Cursor-format manifest's insecure inline server must not
+    # surface at all — it was never realized as part of the plugin.
+    assert posture == []
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

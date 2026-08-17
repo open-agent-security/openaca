@@ -2209,6 +2209,57 @@ def test_repo_dual_native_plugin_manifests_falls_back_when_preferred_is_malforme
     assert parent_of[mcp_nodes[0].key] == plugin_nodes[0].key
 
 
+def test_repo_dual_plugin_manifests_excludes_bundle_selected_malformed_sibling_unselected(
+    tmp_path,
+):
+    # `--host claude-code` only: the selected-host (.claude-plugin) manifest
+    # is malformed, and the only other candidate (.cursor-plugin) belongs to
+    # an unselected host. Neither realizes a plugin node, but the directory
+    # is still a real plugin bundle (for Cursor) — its root mcp.json must NOT
+    # fall through to standalone discovery and get misattributed to Claude
+    # Code, the same as a bundle with only an unselected-host candidate.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text("{not json")
+    (plugin_root / ".cursor-plugin").mkdir()
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "cursor-format"}')
+    (plugin_root / "mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}}'
+    )
+    g = build_graph(tmp_path, mode="repo", hosts=["claude-code"])
+    assert not [n for n in g.nodes.values() if n.kind != "target"]
+    excluded_plugin_roots: list[Path] = []
+    build_graph(
+        tmp_path,
+        mode="repo",
+        hosts=["claude-code"],
+        excluded_plugin_roots=excluded_plugin_roots,
+    )
+    assert [p.resolve() for p in excluded_plugin_roots] == [plugin_root.resolve()]
+
+
+def test_repo_build_graph_reports_realized_plugin_manifest_that_won(tmp_path):
+    # `realized_plugin_manifests` records exactly which candidate manifest
+    # `_descend_into_plugin` actually parsed, so callers doing an independent
+    # filesystem walk (posture collection in tools/scan.py) can tell a
+    # winning manifest apart from a losing sibling in the same bundle root.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text('{"name": "claude-format"}')
+    (plugin_root / ".cursor-plugin").mkdir()
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "cursor-format"}')
+    realized_plugin_manifests: dict[Path, Path] = {}
+    build_graph(
+        tmp_path,
+        mode="repo",
+        hosts=["claude-code", "cursor"],
+        realized_plugin_manifests=realized_plugin_manifests,
+    )
+    assert {p.resolve(): m.resolve() for p, m in realized_plugin_manifests.items()} == {
+        plugin_root.resolve(): (plugin_root / ".claude-plugin" / "plugin.json").resolve()
+    }
+
+
 def test_repo_cursor_plugin_bundled_components_nest_under_plugin_node(tmp_path):
     # The graph-realization contract: bundled components are children of the
     # plugin node, never direct children of target, and every bundled ref

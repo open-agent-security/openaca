@@ -196,6 +196,26 @@ def _is_under_any(path: Path, roots: list[Path]) -> bool:
     return any(resolved.is_relative_to(root) for root in roots)
 
 
+def _is_losing_plugin_manifest(path: Path, realized_manifest_by_root: dict[Path, Path]) -> bool:
+    """True for a native `plugin.json` that lost the realization race to a
+    sibling manifest in the same bundle root (see `realized_plugin_manifests`
+    on `build_graph`). Non-plugin manifests (`mcp.json`, etc.) never collide
+    this way, so they always return False here."""
+    if path.name != "plugin.json" or path.parent.name not in (
+        ".claude-plugin",
+        ".cursor-plugin",
+    ):
+        return False
+    resolved = _safe_resolve(path)
+    if resolved is None:
+        return False
+    root_resolved = _safe_resolve(path.parent.parent)
+    if root_resolved is None:
+        return False
+    winning = realized_manifest_by_root.get(root_resolved)
+    return winning is not None and winning != resolved
+
+
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
     if output_format != "text":
         return None
@@ -857,14 +877,18 @@ def repo(
     # `excluded_plugin_roots` is populated with every native plugin bundle root
     # the graph discovered but declined to realize because its owning host
     # isn't selected — posture manifest collection below needs the same
-    # boundary (see `manifest_hosts` comment).
+    # boundary (see `manifest_hosts` comment). `realized_plugin_manifests` is
+    # populated with the manifest path that actually won realization for
+    # every root that DID realize, for the losing-sibling filter below.
     excluded_plugin_roots: list[Path] = []
+    realized_plugin_manifests: dict[Path, Path] = {}
     graph = build_graph(
         target,
         mode="repo",
         include_gitignored=include_gitignored,
         hosts=hosts,
         excluded_plugin_roots=excluded_plugin_roots,
+        realized_plugin_manifests=realized_plugin_manifests,
     )
     all_refs = _refs_from_graph(graph)
     # Reconstruct the per-manifest `grouped` list the repo renderer expects by
@@ -926,11 +950,27 @@ def repo(
         # fallback.
         excluded_resolved = [_safe_resolve(p) for p in excluded_plugin_roots]
         excluded_resolved = [p for p in excluded_resolved if p is not None]
+        # When a bundle root carries both native manifest formats and both
+        # are valid, graph realization picks exactly one (Claude-format
+        # wins — see `_find_plugin_roots`). The losing sibling produced no
+        # `mcp_server` refs, so it has no `manifest_hosts` entry either, and
+        # `owning_host`'s path-shape fallback doesn't recognize a bundled
+        # `.cursor-plugin/plugin.json` — it would misattribute the loser's
+        # own inline `mcpServers` to whichever host `owning_host` defaults
+        # to. Drop any `plugin.json` manifest that isn't the one that
+        # actually realized its bundle root.
+        realized_manifest_by_root = {
+            resolved_root: resolved_manifest
+            for root, manifest in realized_plugin_manifests.items()
+            if (resolved_root := _safe_resolve(root)) is not None
+            and (resolved_manifest := _safe_resolve(manifest)) is not None
+        }
         manifests = [
             (p, d)
             for p, d in manifests
             if resolved_owner(p, manifest_hosts) in hosts
             and not _is_under_any(p, excluded_resolved)
+            and not _is_losing_plugin_manifest(p, realized_manifest_by_root)
         ]
         active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
         settings_manifests = (

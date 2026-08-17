@@ -262,6 +262,7 @@ def build_graph(
     hosts: list[str] | None = None,
     host_config_roots: dict[str, Path] | None = None,
     excluded_plugin_roots: list[Path] | None = None,
+    realized_plugin_manifests: dict[Path, Path] | None = None,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -334,6 +335,7 @@ def build_graph(
             root_spec=root_spec,
             hosts=hosts,
             excluded_plugin_roots=excluded_plugin_roots,
+            realized_plugin_manifests=realized_plugin_manifests,
         )
         attach_root_dir = root_dir
         attach_root_spec = root_spec
@@ -722,6 +724,7 @@ def descend(
     root_spec: GitIgnoreSpec | None = None,
     hosts: list[str] | None = None,
     excluded_plugin_roots: list[Path] | None = None,
+    realized_plugin_manifests: dict[Path, Path] | None = None,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -758,13 +761,25 @@ def descend(
     this phase — so their recursive calls fall back to its default.
 
     `excluded_plugin_roots`, when given, is extended with every native plugin
-    bundle root discovered but not realized because its owning host isn't
-    selected (the `target` branch's own `unselected_host_plugin_roots`) — the
-    graph excludes their subtree from discovery internally, but callers doing
-    an independent filesystem walk of the same directory (posture manifest
-    collection in `tools/scan.py`) need the same boundary to avoid
+    bundle root discovered but not realized — either because its owning host
+    isn't selected, or a selected-host candidate manifest failed to realize
+    while a sibling unselected-host candidate manifest also exists in the
+    same bundle root (the `target` branch's own `unselected_host_plugin_roots`)
+    — the graph excludes their subtree from discovery internally, but callers
+    doing an independent filesystem walk of the same directory (posture
+    manifest collection in `tools/scan.py`) need the same boundary to avoid
     misattributing an unselected host's bundled manifest via `owning_host`'s
     path-shape fallback.
+
+    `realized_plugin_manifests`, when given, is populated with
+    `{plugin_root: winning_manifest_path}` for every native plugin root that
+    DID realize — the manifest candidate `_descend_into_plugin` actually
+    parsed, as opposed to a sibling native-format manifest in the same
+    directory that lost the realization race (see `_find_plugin_roots`).
+    Callers doing an independent filesystem walk that globs both native
+    manifest names in one pass (posture manifest collection in
+    `tools/scan.py`) need this to avoid treating the losing sibling's content
+    as belonging to the realized plugin.
     """
     hosts = hosts if hosts is not None else all_host_ids()
     if parent.kind == "target":
@@ -790,12 +805,18 @@ def descend(
         unselected_host_plugin_roots: list[Path] = []
         for plugin_root, manifest_candidates in plugin_roots:
             plugin_node = None
-            any_selected_host_candidate = False
+            winning_manifest: Path | None = None
+            any_unselected_host_candidate = False
             for plugin_manifest in manifest_candidates:
                 parser = _plugin_parser_for_path(plugin_manifest, directory, hosts)
                 if parser is None:
+                    # This candidate's owning host isn't selected — content
+                    # validity is never checked for it (no parser is invoked),
+                    # so its mere presence is proof the directory is a bundle
+                    # for that other host, regardless of whether a sibling
+                    # selected-host candidate also fails below.
+                    any_unselected_host_candidate = True
                     continue
-                any_selected_host_candidate = True
                 plugin_node = _descend_into_plugin(
                     graph,
                     parent,
@@ -811,10 +832,20 @@ def descend(
                 # must still produce a plugin node, not silently drop to the
                 # standalone/subagent walks below (see `_find_plugin_roots`).
                 if plugin_node is not None:
+                    winning_manifest = plugin_manifest
                     break
             if plugin_node is not None:
                 realized_roots.append(plugin_root)
-            elif not any_selected_host_candidate:
+                if realized_plugin_manifests is not None and winning_manifest is not None:
+                    realized_plugin_manifests[plugin_root] = winning_manifest
+            elif any_unselected_host_candidate:
+                # Covers both "every candidate belongs to an unselected host"
+                # and "the selected-host candidate is malformed but a sibling
+                # unselected-host candidate also exists" — either way there is
+                # a real plugin bundle here we can't/didn't realize, so its
+                # subtree must still be excluded from the standalone/subagent
+                # walks below, not just directories with zero selected
+                # candidates at all.
                 unselected_host_plugin_roots.append(plugin_root)
         if excluded_plugin_roots is not None:
             excluded_plugin_roots.extend(unselected_host_plugin_roots)

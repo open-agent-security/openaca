@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 from click.testing import CliRunner
 from jsonschema import Draft202012Validator
@@ -1475,3 +1476,161 @@ def test_single_host_endpoint_scan_json_stats_components_by_host_one_key(tmp_pat
     assert result.exit_code == 0, result.output
     doc = _scan_json_doc(result.output)
     assert doc["stats"]["components_by_host"] == {"claude-code": doc["stats"]["components"]}
+
+
+# --- Parser/graph bundle-boundary parity -----------------------------------
+#
+# parse_repo (flat walk) and build_graph (attributed walk) each decide,
+# independently, whether a directory is a foreign plugin-bundle boundary
+# whose contents must be excluded for the selected hosts. Five review
+# rounds on multi-host support each fixed one walk and regressed the
+# other; this matrix pins the invariant itself: for every boundary shape,
+# both walks must agree on what gets inventoried.
+
+_PARITY_MCP = '{"mcpServers": {"bundled": {"command": "npx", "args": ["bundled-mcp@1.0.0"]}}}'
+_PARITY_NATIVE = '{"name": "native-demo"}'
+_PARITY_AGENT_PLUGINS = json.dumps(
+    {"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "open-demo"}
+)
+
+
+def _parity_fixture(root: Path, manifests: dict[str, str]) -> None:
+    """Build `root/bundle` with an inner mcp.json + Claude subagent, plus the
+    given manifests: {relative path: "valid"|"malformed"|"escaping"|"broken"}.
+    Symlink modes point the manifest outside the bundle (escaping) or at a
+    missing target (broken)."""
+    import os
+
+    bundle = root / "bundle"
+    (bundle / ".claude" / "agents").mkdir(parents=True)
+    (bundle / "mcp.json").write_text(_PARITY_MCP)
+    (bundle / ".claude" / "agents" / "helper.md").write_text("---\nname: helper\n---\nbody\n")
+    for rel, mode in manifests.items():
+        target = bundle / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = _PARITY_AGENT_PLUGINS if rel == "plugin.json" else _PARITY_NATIVE
+        if mode == "valid":
+            target.write_text(content)
+        elif mode == "malformed":
+            target.write_text("{not json")
+        elif mode == "escaping":
+            outside = root / f"outside-{rel.replace('/', '-')}"
+            outside.write_text(content)
+            os.symlink(outside, target)
+        elif mode == "broken":
+            os.symlink(f"/nonexistent/{rel}", target)
+
+
+def _parity_signals(root: Path, hosts: list[str]) -> dict[str, tuple[bool, bool]]:
+    """(parser, graph) inventory booleans for the bundle's mcp server and
+    subagent."""
+    from tools.graph_build import build_graph
+    from tools.parsers import parse_repo
+
+    parser_names = {r.name for r in parse_repo(root, hosts=hosts)}
+    graph = build_graph(root, "repo", hosts=hosts)
+    graph_kinds = {
+        (n.kind, n.ref.name if n.ref is not None else None) for n in graph.nodes.values()
+    }
+    return {
+        "mcp": (
+            "bundled-mcp" in parser_names,
+            any(k == "mcp_server" for k, _ in graph_kinds),
+        ),
+        "subagent": (
+            "helper" in parser_names,
+            ("agent", "helper") in graph_kinds,
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("manifests", "hosts", "expected"),
+    [
+        # No foreign manifest: both walks inventory both surfaces.
+        ({}, ["claude-code"], {"mcp": True, "subagent": True}),
+        # Valid/malformed unselected Cursor bundle: presence alone proves a
+        # foreign boundary — both walks exclude the whole subtree.
+        (
+            {".cursor-plugin/plugin.json": "valid"},
+            ["claude-code"],
+            {"mcp": False, "subagent": False},
+        ),
+        (
+            {".cursor-plugin/plugin.json": "malformed"},
+            ["claude-code"],
+            {"mcp": False, "subagent": False},
+        ),
+        # Escaping/broken symlinked foreign manifest is not a candidate in
+        # either walk — no boundary, surfaces stay inventoried.
+        (
+            {".cursor-plugin/plugin.json": "escaping"},
+            ["claude-code"],
+            {"mcp": True, "subagent": True},
+        ),
+        (
+            {".cursor-plugin/plugin.json": "broken"},
+            ["claude-code"],
+            {"mcp": True, "subagent": True},
+        ),
+        # Dual-manifest bundle where the selected-host sibling can't realize:
+        # the valid unselected sibling still proves a foreign boundary.
+        (
+            {".cursor-plugin/plugin.json": "valid", ".claude-plugin/plugin.json": "malformed"},
+            ["claude-code"],
+            {"mcp": False, "subagent": False},
+        ),
+        (
+            {".cursor-plugin/plugin.json": "valid", ".claude-plugin/plugin.json": "escaping"},
+            ["claude-code"],
+            {"mcp": False, "subagent": False},
+        ),
+        # Selected-host manifest escaping alone: dropped as a candidate, no
+        # plugin realizes, surfaces stay target-level in both walks.
+        (
+            {".claude-plugin/plugin.json": "escaping"},
+            ["claude-code"],
+            {"mcp": True, "subagent": True},
+        ),
+        # Agent Plugins bundle under hosts=["claude-code"]: the Agent Plugins
+        # contract is cursor-gated, so neither walk treats it as a boundary.
+        ({"plugin.json": "valid"}, ["claude-code"], {"mcp": True, "subagent": True}),
+        # Escaping/broken Agent Plugins manifest under hosts=["cursor"]: not a
+        # candidate, no bundle realizes; the shared subagent stays inventoried
+        # (Cursor reads .claude/agents), the bare mcp.json matches no
+        # cursor-selected pattern in either walk.
+        ({"plugin.json": "escaping"}, ["cursor"], {"mcp": False, "subagent": True}),
+        ({"plugin.json": "broken"}, ["cursor"], {"mcp": False, "subagent": True}),
+        # Mirror direction: a Claude bundle is the foreign one under
+        # hosts=["cursor"].
+        ({".claude-plugin/plugin.json": "valid"}, ["cursor"], {"mcp": False, "subagent": False}),
+        ({".claude-plugin/plugin.json": "escaping"}, ["cursor"], {"mcp": False, "subagent": True}),
+    ],
+)
+def test_parser_graph_bundle_boundary_parity(tmp_path, manifests, hosts, expected):
+    _parity_fixture(tmp_path, manifests)
+    signals = _parity_signals(tmp_path, hosts)
+    for key, (parser_saw, graph_saw) in signals.items():
+        assert parser_saw == graph_saw, (
+            f"{key}: parse_repo={parser_saw} but build_graph={graph_saw} "
+            f"for manifests={manifests} hosts={hosts}"
+        )
+        assert parser_saw == expected[key], (
+            f"{key}: both walks agree on {parser_saw} but expected {expected[key]} "
+            f"for manifests={manifests} hosts={hosts}"
+        )
+
+
+def test_realized_bundle_flat_vs_attributed_split_is_pinned(tmp_path):
+    """Known, pre-existing asymmetry (reproduces on main with a Claude-only
+    fixture): inside a REALIZED plugin bundle, parse_repo's flat walk still
+    inventories the bare mcp.json and .claude/agents subagents at target
+    level, while build_graph hands the subtree to the plugin node and only
+    inventories plugin-convention surfaces (.mcp.json, agents/) — so neither
+    appears in the graph at all. This pin makes any change to either side a
+    deliberate decision rather than a silent drift; if you break it on
+    purpose, decide which walk is right and update both together."""
+    _parity_fixture(tmp_path, {".claude-plugin/plugin.json": "valid"})
+    signals = _parity_signals(tmp_path, ["claude-code"])
+    assert signals["mcp"] == (True, False)
+    assert signals["subagent"] == (True, False)

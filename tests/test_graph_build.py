@@ -2322,6 +2322,31 @@ def test_target_level_package_json_beside_root_agent_plugin_keeps_dep_nodes(tmp_
     assert parent_of[pkg_nodes[0].key] == g.root.key
 
 
+def test_agent_plugin_host_private_subtree_excluded_from_standalone_discovery(tmp_path):
+    # The closed Agent Plugins contract (`_realize_agent_plugin`) only ever
+    # attaches self/skills/mcp — but the bundle's whole subtree must still be
+    # excluded from the LATER standalone-surface and subagent passes below,
+    # not just the realized nodes. A host-private `.cursor/agents/x.md`
+    # nested in the bundle root would otherwise be picked up as a top-level
+    # target subagent, double-scoping the same file to two surfaces.
+    plugin_root = tmp_path / "my-plugin"
+    plugin_root.mkdir()
+    (plugin_root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "demo",
+            }
+        )
+    )
+    agents_dir = plugin_root / ".cursor" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text("---\nname: reviewer\n---\nreview\n")
+
+    g = build_graph(tmp_path, mode="repo", hosts=["claude-code", "cursor"])
+    assert not [n for n in g.nodes.values() if n.kind == "agent"]
+
+
 @pytest.mark.parametrize("config_dir", [".claude", ".agents", ".cursor"])
 def test_agent_plugin_manifest_in_host_config_dir_is_not_a_bundle_root(tmp_path, config_dir):
     # A schema-tagged plugin.json dropped into a HOST-owned config dir whose

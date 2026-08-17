@@ -784,12 +784,42 @@ def descend(
             )
             if plugin_node is not None:
                 realized_roots.append(plugin_root)
+        # Agent Plugins bundles (content-detected, outside manifest_registry)
+        # realize here too, BEFORE the project-skill and standalone-surface
+        # walks below, so a bundle's whole subtree — a host-private
+        # `.cursor/commands/`, `.claude/agents/`, or `.cursor/skills/` path
+        # nested inside it, not just its root `mcp.json` — is excluded from
+        # them via `exclude_under`, the same single-parent mechanism native
+        # plugin roots already get. Gated on "cursor" like every other Agent
+        # Plugins surface (ADR-0045).
+        #
+        # Collected into a SEPARATE list from `realized_roots`: the closed
+        # Agent Plugins contract never reads the bundle root's own dependency
+        # manifests (`_realize_agent_plugin`'s docstring), so a target-level
+        # `package.json` beside a root Agent Plugins bundle must keep its
+        # target-level dep nodes — unlike a native plugin root, an Agent
+        # Plugins root must NOT gate `_add_dep_manifest_packages` below.
+        standalone_exclude_roots = list(realized_roots)
+        if "cursor" in hosts:
+            for manifest_path in _find_agent_plugin_roots(
+                directory, exclude_under=realized_roots, include_gitignored=include_gitignored
+            ):
+                plugin_node = _realize_agent_plugin(
+                    graph,
+                    parent,
+                    manifest_path,
+                    normalize,
+                    root_dir=root_dir,
+                    root_spec=root_spec,
+                )
+                if plugin_node is not None:
+                    standalone_exclude_roots.append(manifest_path.parent)
         _add_project_skills(
             graph,
             parent,
             directory,
             normalize=normalize,
-            exclude_under=realized_roots,
+            exclude_under=standalone_exclude_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -815,7 +845,7 @@ def descend(
             parent,
             directory,
             normalize,
-            exclude_under=realized_roots,
+            exclude_under=standalone_exclude_roots,
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
@@ -1259,6 +1289,43 @@ _SKILL_REGISTRY_PATTERNS = frozenset(
 _SKILL_ROOT_CONFIG_DIRS = frozenset(pattern.split("/")[1] for pattern in _SKILL_REGISTRY_PATTERNS)
 
 
+def _find_agent_plugin_roots(
+    directory: Path,
+    *,
+    exclude_under: list[Path] | None = None,
+    include_gitignored: bool = False,
+) -> list[Path]:
+    """Agent Plugins bundle roots: dirs with a bare `plugin.json` (ANY depth)
+    that content-detects as an Agent Plugins manifest (ADR-0045 Decision #3).
+    Unlike `_find_plugin_roots` there's no registry pattern to dispatch on —
+    detection is schema-content-based, so a native `.claude-plugin/plugin.json`
+    or `.cursor-plugin/plugin.json` (`_PLUGIN_MANIFEST_CONFIG_DIRS`) and a bare
+    plugin.json sitting directly in a host skill-config dir
+    (`_SKILL_ROOT_CONFIG_DIRS`) are never candidates.
+
+    `exclude_under` (native plugin roots already realized by the caller) keeps
+    a native plugin's own bundled example/fixture content from being picked up
+    as a second, independent Agent Plugins bundle. Returns manifest paths
+    sorted for determinism.
+    """
+    spec = None if include_gitignored else load_gitignore_spec(directory)
+    exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
+    manifests: list[Path] = []
+    for path in iter_unignored_files(directory, spec):
+        if path.name != "plugin.json" or path.parent.name in _PLUGIN_MANIFEST_CONFIG_DIRS:
+            continue
+        if path.parent.name in _SKILL_ROOT_CONFIG_DIRS:
+            continue
+        resolved = path.resolve()
+        if any(resolved.is_relative_to(root) for root in exclude_resolved):
+            continue
+        if not agent_plugins.is_agent_plugins_manifest(path):
+            continue
+        manifests.append(path)
+    manifests.sort()
+    return manifests
+
+
 def _skill_parser_for_path(path: Path, root: Path, hosts: list[str]) -> ParserFn | None:
     """First selected host's manifest_registry entry whose pattern is
     skill-shaped and matches `path`, or None.
@@ -1689,9 +1756,10 @@ def _add_repo_standalone_components(
     commands/agents discovered at any depth (parity with the parser REGISTRY),
     each a child of the target.
 
-    Files inside a plugin subtree are skipped (`exclude_under` = the plugin
-    roots already descended from the target) so a plugin's bundled MCP/command
-    surfaces stay under the plugin node (single-parent).
+    Files inside a plugin subtree are skipped (`exclude_under` = the native
+    and Agent Plugins bundle roots already descended from the target, per
+    `descend`) so a plugin's bundled MCP/command surfaces stay under the
+    plugin node (single-parent).
 
     The MCP surface resolves its parser through each selected host's
     `HostAdapter.manifest_registry`, using the same `registry_pattern_matches`
@@ -1711,48 +1779,16 @@ def _add_repo_standalone_components(
 
     paths = [path for path in iter_unignored_files(directory, walk_spec) if not _skip(path)]
 
-    # Agent Plugins (content-detected, outside manifest_registry) realize in
-    # their own pass BEFORE the standalone-surface loop below, so a bundle's
-    # root `mcp.json` — already nested under the plugin node by
-    # `_realize_agent_plugin` — is claimed before the bare-`mcp.json` branch
-    # can reach it independently. `iter_unignored_files` yields filenames
-    # alphabetically ("mcp.json" sorts before "plugin.json"), so a single
-    # forward pass over one directory's files would hit the MCP file first
-    # and double-parent it; a repo-order guarantee this function otherwise
-    # doesn't need.
-    #
-    # `own_mcp` is only claimed when `_realize_agent_plugin` actually created
-    # a plugin node: a schema-tagged manifest that yields no self ref (e.g.
-    # missing `name`) attaches nothing, so its sibling `mcp.json` is a real,
-    # unclaimed standalone surface and must still be discovered below.
-    claimed_agent_plugin_mcp: set[Path] = set()
-    if "cursor" in hosts:
-        for path in paths:
-            if path.name != "plugin.json" or path.parent.name in _PLUGIN_MANIFEST_CONFIG_DIRS:
-                continue
-            if path.parent.name in _SKILL_ROOT_CONFIG_DIRS:
-                # Host config dir, not a bundle root — see
-                # `_SKILL_ROOT_CONFIG_DIRS`. Its `skills/` belongs to the
-                # registry-driven project-skill walk that already ran.
-                continue
-            if not agent_plugins.is_agent_plugins_manifest(path):
-                continue
-            plugin_node = _realize_agent_plugin(
-                graph, parent, path, normalize, root_dir=root_dir, root_spec=root_spec
-            )
-            if plugin_node is None:
-                continue
-            own_mcp = path.parent / "mcp.json"
-            if own_mcp.is_file():
-                claimed_agent_plugin_mcp.add(own_mcp.resolve())
-
     for path in paths:
         if path.name == "plugin.json" and path.parent.name not in _PLUGIN_MANIFEST_CONFIG_DIRS:
-            # Already handled by the Agent Plugins pass above (realized, or
-            # rejected there by the schema check) — never a command/agent/
-            # mcp/settings surface itself.
-            continue
-        if path.resolve() in claimed_agent_plugin_mcp:
+            # Agent Plugins bundle roots realize in the caller (`descend`,
+            # target branch) before this function runs at all, and their
+            # whole subtree — including this manifest and its sibling
+            # `mcp.json` — is already excluded via `exclude_under`. A bare
+            # plugin.json that reaches this point either belongs to a bundle
+            # that failed to realize (schema/name check) or isn't an Agent
+            # Plugins manifest at all; either way it is never a command/
+            # agent/mcp/settings surface itself.
             continue
 
         mcp_parser = _mcp_parser_for_path(path, directory, hosts)

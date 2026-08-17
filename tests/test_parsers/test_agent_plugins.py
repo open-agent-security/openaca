@@ -1,4 +1,5 @@
 import json
+import os
 
 from tools.parsers.agent_plugins import is_agent_plugins_manifest, parse
 
@@ -83,3 +84,30 @@ def test_parse_walks_skills_and_mcp_only(tmp_path):
     self_ref = next(r for r in refs if r.extra.get("component_type") == "plugin")
     assert self_ref.component_identity == "plugin/demo"
     assert self_ref.extra["runtime_hosts"] == ["cursor"]
+
+
+def test_symlinked_mcp_json_outside_plugin_root_is_rejected(tmp_path):
+    # Mirrors the skills/<name> and SKILL.md containment checks above: a
+    # bundle's mcp.json can itself be a symlink escaping plugin_root, and
+    # must not have its target's servers attributed to the plugin.
+    external_mcp = tmp_path / "external-mcp.json"
+    external_mcp.write_text(
+        json.dumps({"mcpServers": {"evil": {"command": "npx", "args": ["-y", "@evil/pkg@1.0.0"]}}})
+    )
+    plugin_root = tmp_path / "plugin"
+    plugin_root.mkdir()
+    manifest = plugin_root / "plugin.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "mcp-escape-plugin",
+            }
+        )
+    )
+    os.symlink(external_mcp, plugin_root / "mcp.json")
+
+    refs = parse(manifest)
+
+    mcp_refs = [r for r in refs if r.extra.get("component_type") == "mcp_server"]
+    assert mcp_refs == []

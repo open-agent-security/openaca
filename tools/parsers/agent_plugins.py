@@ -16,6 +16,7 @@ from typing import Optional
 
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_skill, mcp_json
+from tools.parsers.claude_plugin_root import resolve_within
 
 # The complete authoritative URL shape, not an origin prefix: detection runs
 # against every bare plugin.json in a tree (Step 6), so anything looser than
@@ -65,33 +66,33 @@ def parse(path: Path, runtime_hosts: Optional[list[str]] = None) -> list[Compone
         )
 
     plugin_root = path.parent
-    skills_dir = plugin_root / "skills"
-    if skills_dir.is_dir():
-        try:
-            plugin_root_resolved = plugin_root.resolve()
-        except (OSError, RuntimeError):
-            plugin_root_resolved = None
-        if plugin_root_resolved is not None:
-            for skill_subdir in sorted(skills_dir.iterdir()):
-                try:
-                    subdir_resolved = skill_subdir.resolve()
-                except (OSError, RuntimeError):
-                    continue
-                if not subdir_resolved.is_relative_to(plugin_root_resolved):
-                    continue
-                skill_md = skill_subdir / "SKILL.md"
-                if not skill_md.is_file():
-                    continue
-                try:
-                    skill_md_resolved = skill_md.resolve()
-                except (OSError, RuntimeError):
-                    continue
-                if not skill_md_resolved.is_relative_to(plugin_root_resolved):
-                    continue
-                refs.extend(claude_skill.parse(skill_md, runtime_hosts=runtime_hosts))
+    try:
+        plugin_root_resolved = plugin_root.resolve()
+    except (OSError, RuntimeError):
+        plugin_root_resolved = None
 
-    mcp_json_path = plugin_root / "mcp.json"
-    if mcp_json_path.is_file():
+    skills_dir = plugin_root / "skills"
+    if skills_dir.is_dir() and plugin_root_resolved is not None:
+        for skill_subdir in sorted(skills_dir.iterdir()):
+            try:
+                subdir_resolved = skill_subdir.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not subdir_resolved.is_relative_to(plugin_root_resolved):
+                continue
+            skill_md = skill_subdir / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            try:
+                skill_md_resolved = skill_md.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not skill_md_resolved.is_relative_to(plugin_root_resolved):
+                continue
+            refs.extend(claude_skill.parse(skill_md, runtime_hosts=runtime_hosts))
+
+    mcp_json_path = resolve_within(plugin_root, "mcp.json")
+    if mcp_json_path is not None and mcp_json_path.is_file():
         refs.extend(mcp_json.parse(mcp_json_path, runtime_hosts=runtime_hosts))
 
     return refs

@@ -128,6 +128,22 @@ jobs:
           export HOME=/tmp/smoke-home
           mkdir -p "$HOME"
           OPENACA_REMOTE_TOKEN=ot_SMOKE "$openaca" remote configure --api-url http://127.0.0.1:9
+
+          # With an empty $HOME no agent host is detected, so sync must fail
+          # fast (exit 1) with the host-detection message, never a traceback.
+          set +e
+          out=$("$openaca" remote sync endpoint 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 1 ] || ! printf '%s' "$out" | grep -q "no agent host detected"; then
+            echo "expected exit 1 with host-detection error on empty HOME, got $code" >&2
+            exit 1
+          fi
+
+          # With a detectable host root, sync proceeds past host resolution
+          # and endpoint collection to the HTTP call, which fails cleanly.
+          mkdir -p "$HOME/.claude"
           set +e
           out=$("$openaca" remote sync endpoint 2>&1)
           code=$?

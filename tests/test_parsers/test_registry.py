@@ -386,6 +386,38 @@ def test_both_plugin_formats_in_same_directory_both_parsed(tmp_path):
     assert n_found == 2
 
 
+def test_agent_plugins_root_mcp_json_not_double_claimed_by_claude_bare_pattern(tmp_path):
+    # An Agent Plugins bundle's own root mcp.json (ADR-0045 Decision #3) is
+    # also a bare filename Claude's registry pattern would independently
+    # match. Both routes discover the same file with the same dedup key
+    # (flatten_grouped doesn't look at runtime_hosts), so whichever route's
+    # group got appended first used to win arbitrarily — sometimes
+    # attributing the server to claude-code instead of cursor. The bare
+    # pattern must yield to the Agent Plugin route so the ref is always
+    # tagged cursor.
+    (tmp_path / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "open-demo",
+            }
+        )
+    )
+    (tmp_path / "mcp.json").write_text(
+        '{"mcpServers": {"bundled": {"command": "npx", "args": ["bundled-mcp@1.0.0"]}}}'
+    )
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code", "cursor"])
+    # One event: the Agent Plugin fallback branch claims plugin.json and its
+    # mcp.json together; the bare claude-code mcp.json pattern must not also
+    # count the same file a second time.
+    assert n_found == 1
+    assert [str(p) for p, _ in grouped] == [str(tmp_path / "plugin.json")]
+    refs = parse_repo(tmp_path, hosts=["claude-code", "cursor"])
+    mcp_refs = [r for r in refs if r.name == "bundled-mcp"]
+    assert len(mcp_refs) == 1
+    assert mcp_refs[0].extra.get("runtime_hosts") == ["cursor"]
+
+
 def _write_cursor_native_bundle(root: Path, dirname: str = "cbundle") -> Path:
     bundle = root / dirname
     (bundle / ".cursor-plugin").mkdir(parents=True)

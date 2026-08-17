@@ -284,6 +284,18 @@ def build_graph(
             if host_config_roots
             else {"claude-code": Path(target)}
         )
+        # Same unknown-ID rejection repo mode gets from `resolve_host_selection`:
+        # without it, a typo'd host_config_roots key (e.g. "curser") reaches the
+        # seeding loop below, silently `continue`s past the missing adapter, and
+        # returns a graph containing only the target node — indistinguishable
+        # from a legitimate "this host has nothing to report" result. The CLI
+        # (`resolve_endpoint_request`) already rejects unknown host values
+        # before it gets here, but a direct caller bypassing the CLI needs the
+        # same guarantee build_graph itself gives repo mode.
+        unknown = [host_id for host_id in endpoint_roots if host_id not in HOSTS]
+        if unknown:
+            known = ", ".join(sorted(HOSTS))
+            raise ValueError(f"unknown host(s) {unknown!r}; known hosts: {known}")
         first_root = next(iter(endpoint_roots.values()))
         # `target` stays the API-compatibility anchor and the BOM target string.
         if Path(target) != first_root:

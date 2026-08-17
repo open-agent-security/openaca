@@ -1952,6 +1952,19 @@ def test_build_graph_rejects_unknown_host(tmp_path):
         build_graph(tmp_path, mode="repo", hosts=["typo"])
 
 
+def test_build_graph_endpoint_rejects_unknown_host_config_root(tmp_path):
+    # A typo'd host_config_roots key (e.g. "curser" instead of "cursor") must
+    # fail loudly, the same way repo mode's resolve_host_selection rejects an
+    # unknown --host value — not silently skip the adapter lookup and return
+    # a graph containing only the target node, which looks like a clean,
+    # complete "nothing found" scan rather than a caller error. The CLI
+    # already validates via resolve_endpoint_request; this covers a direct
+    # build_graph caller that bypasses it.
+    (tmp_path / "mcp.json").write_text('{"mcpServers": {}}')
+    with pytest.raises(ValueError, match="curser"):
+        build_graph(tmp_path, mode="endpoint", host_config_roots={"curser": tmp_path})
+
+
 def test_repo_cursor_skills_dir_found(tmp_path):
     skill_dir = tmp_path / ".cursor" / "skills" / "deploy"
     skill_dir.mkdir(parents=True)

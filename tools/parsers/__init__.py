@@ -180,6 +180,36 @@ def _unselected_native_bundle_roots(root: Path, spec, selected_hosts: list[str])
     return roots
 
 
+def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> list[Path]:
+    """Resolved roots of Agent Plugins bundles the inline fallback below will
+    claim (same gate: `cursor` selected, containment holds, schema detects).
+
+    A bundle's root-level `mcp.json` must not ALSO match the bare Claude Code
+    `mcp.json` pattern in the registry loop: `flatten_grouped`'s dedup key
+    doesn't include `runtime_hosts`, so whichever route appends its group
+    first would silently win, and the walk order between a `plugin.json` and
+    its sibling `mcp.json` isn't something either the registry loop or the
+    dedup step normalizes. Precomputing which bundles will claim their own
+    `mcp.json` lets the registry loop skip it up front, so only the
+    Cursor-tagged Agent Plugin route ever appends a group for that file.
+    """
+    if "cursor" not in selected_hosts:
+        return []
+    roots: list[Path] = []
+    for path in iter_unignored_files(root, spec):
+        if path.name != "plugin.json" or path.parent.name in _NATIVE_PLUGIN_CONFIG_DIRS:
+            continue
+        if resolve_within(path.parent, "plugin.json") is None:
+            continue
+        if not agent_plugins.is_agent_plugins_manifest(path):
+            continue
+        try:
+            roots.append(path.parent.resolve())
+        except OSError:
+            continue
+    return roots
+
+
 def resolve_host_selection(hosts: list[str] | None) -> list[str]:
     """Resolve `hosts` to a concrete, order-preserving, duplicate-free
     list of *known* host IDs, and raise if two of them claim the
@@ -427,6 +457,17 @@ def parse_repo_grouped(
             return False
         return any(resolved.is_relative_to(r) for r in excluded_bundle_roots)
 
+    agent_plugin_bundle_roots = set(_agent_plugin_bundle_roots(root, spec, selected_hosts))
+
+    def _is_agent_plugin_bundle_root_mcp(path: Path) -> bool:
+        if not agent_plugin_bundle_roots or path.name != "mcp.json":
+            return False
+        try:
+            resolved_parent = path.parent.resolve()
+        except OSError:
+            return False
+        return resolved_parent in agent_plugin_bundle_roots
+
     for path in iter_unignored_files(root, spec):
         if _under_excluded_bundle(path):
             continue
@@ -443,6 +484,12 @@ def parse_repo_grouped(
         matched = False
         for pattern, parser in registry:
             if not registry_pattern_matches(path, root, pattern):
+                continue
+            # An Agent Plugins bundle's own root mcp.json is claimed below by
+            # the Cursor-tagged fallback branch — the bare Claude Code
+            # pattern must not also claim it (see
+            # `_agent_plugin_bundle_roots`).
+            if pattern == "mcp.json" and _is_agent_plugin_bundle_root_mcp(path):
                 continue
             matched = True
             n_found += 1

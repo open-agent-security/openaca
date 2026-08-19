@@ -177,6 +177,8 @@ wraps the scanner in slash commands:
 /plugin install openaca@openaca
 ```
 
+- `/openaca:inventory` - generate a fast local Agent BOM inventory without
+  advisory lookups
 - `/openaca:scan` - run an endpoint or repo scan
 - `/openaca:bom` - generate an Agent BOM
 - `/openaca:explain` - explain a finding in conversation

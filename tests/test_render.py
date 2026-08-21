@@ -1824,6 +1824,65 @@ def test_repo_tree_shows_direct_components_and_suppressed_software(tmp_path):
     assert "left-pad" not in out
 
 
+def test_repo_tree_shows_no_host_tags_for_single_host_selection(tmp_path):
+    """A single selected host must not turn on per-host display: repo-mode
+    text output stays unchanged from before `--host` existed."""
+    mcp_json = tmp_path / ".mcp.json"
+    mcp = ComponentRef(
+        ecosystem="npm",
+        name="@example/mcp",
+        version="2.0.0",
+        source_manifest=str(mcp_json),
+        scope="agent-component",
+        extra={"runtime_hosts": ["claude-code"]},
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(mcp_json, [mcp])],
+        [],
+        use_unicode=True,
+        hosts=["claude-code"],
+    )
+
+    assert "[claude-code]" not in out
+
+
+def test_repo_tree_shows_per_host_tags_for_direct_components_and_plugins(tmp_path):
+    """`scan repo --host claude-code --host cursor` must tag top-level direct
+    components and plugins with their host, matching endpoint mode's
+    `render_inventory_tree` behavior (Codex review, PR #158)."""
+    claude_mcp_json = tmp_path / ".mcp.json"
+    cursor_plugin_json = tmp_path / ".cursor-plugin" / "plugin.json"
+
+    claude_mcp = ComponentRef(
+        ecosystem="npm",
+        name="@example/claude-mcp",
+        version="1.0.0",
+        source_manifest=str(claude_mcp_json),
+        scope="agent-component",
+        extra={"runtime_hosts": ["claude-code"]},
+    )
+    cursor_plugin = ComponentRef(
+        name="demo",
+        version="1.0.0",
+        component_identity="plugin/demo",
+        source_manifest=str(cursor_plugin_json),
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(claude_mcp_json, [claude_mcp]), (cursor_plugin_json, [cursor_plugin])],
+        [],
+        use_unicode=True,
+        hosts=["claude-code", "cursor"],
+    )
+
+    assert "@example/claude-mcp@1.0.0 (from .mcp.json) [claude-code]" in out
+    assert "plugin/demo@1.0.0 [cursor]" in out
+
+
 def test_repo_tree_attributed_refs_scoped_to_plugin_dir(tmp_path):
     """Two plugins with the same name and version must not cross-contaminate.
 

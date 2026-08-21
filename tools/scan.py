@@ -1009,6 +1009,7 @@ def repo(
             use_color=_use_color(no_color, output_format),
             use_unicode=_use_unicode(no_color),
             graph=graph,
+            hosts=hosts,
         )
     card_target = RenderTarget(host_surface="repository", rows=[("path", str(target))])
     card_next = [
@@ -1031,6 +1032,7 @@ def repo(
                     use_color=_use_color(no_color, output_format),
                     use_unicode=_use_unicode(no_color),
                     graph=graph,
+                    hosts=hosts,
                 )
                 if tree:
                     click.echo(tree, err=True)

@@ -1754,6 +1754,7 @@ def render_repo_inventory_tree(
     use_color: bool = False,
     use_unicode: bool = True,
     graph: Graph | None = None,
+    hosts: list[str] | None = None,
 ) -> str:
     """Render repo-mode inventory as a composition tree.
 
@@ -1762,14 +1763,24 @@ def render_repo_inventory_tree(
     plugin root; agent-dependency refs declared by manifests in `<dir>` render
     below that plugin, while direct agent components render under a final
     `direct components/` block.
+
+    `hosts` is the scan's selected host list (ADR-0044/0045: repo mode now has
+    a host concept too, via `scan repo --host`). With 2+ hosts this mirrors
+    `render_inventory_tree`'s per-host display: a `[<host>]` tag on each
+    top-level plugin/direct-component entry and host-major ordering. Single-
+    host callers (or omitting `hosts`) get today's output, unchanged.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
     all_refs = _dedupe_repo_tree_refs([r for _, refs in grouped for r in refs])
     view = _GraphView.build(graph, all_refs) if graph is not None else None
+    show_host = hosts is not None and len(hosts) > 1
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
-        key=lambda r: _plugin_display_identity(r).lower(),
+        key=lambda r: (
+            _host_sort_key(r, graph) if show_host else (),
+            _plugin_display_identity(r).lower(),
+        ),
     )
 
     root_node = _TreeNode(label=f"repo {root}")
@@ -1782,6 +1793,7 @@ def render_repo_inventory_tree(
             use_color,
             root,
             view=view,
+            show_host=show_host,
         )
         assigned_keys.update(assigned)
         root_node.children.append(node)
@@ -1798,7 +1810,9 @@ def render_repo_inventory_tree(
             and r.scope == "agent-component"
             and _ref_key(r) not in assigned_keys
         ]
-    direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, root, view=view)
+    direct_node = _build_direct_node(
+        direct_refs, findings_by_ref, use_color, root, view=view, show_host=show_host
+    )
     if direct_node is not None:
         root_node.children.append(direct_node)
 
@@ -1853,6 +1867,7 @@ def _build_repo_plugin_node(
     use_color: bool,
     source_note_root: Path | None = None,
     view: Optional["_GraphView"] = None,
+    show_host: bool = False,
 ) -> tuple[_TreeNode, set[tuple]]:
     direct_ids = findings_by_ref.get(_ref_key(plugin_ref), [])
     plugin_identity = _plugin_display_identity(plugin_ref)
@@ -1862,15 +1877,23 @@ def _build_repo_plugin_node(
     plugin_node = view.node_for(plugin_ref) if view is not None else None
     if view is not None and plugin_node is not None:
         return _build_repo_plugin_node_from_graph(
-            plugin_ref, plugin_node, view, findings_by_ref, use_color, source_note_root, display_id
+            plugin_ref,
+            plugin_node,
+            view,
+            findings_by_ref,
+            use_color,
+            source_note_root,
+            display_id,
+            show_host=show_host,
         )
 
     # Flat-BOM fallback (no graph supplied): composition edges are unavailable,
     # so a plugin has no derivable bundled set — everything renders flat under
     # `direct components/`. Emit the plugin header with no children and claim no
     # refs (empty `assigned`).
+    host_note = f" [{_ref_host_label(plugin_ref)}]" if show_host else ""
     marker = _finding_marker(direct_ids, use_color)
-    root = _TreeNode(label=f"{display_id}{marker}")
+    root = _TreeNode(label=f"{display_id}{host_note}{marker}")
     root.children.append(_TreeNode(label="(no declared components)"))
     return root, set()
 
@@ -1940,6 +1963,7 @@ def _build_repo_plugin_node_from_graph(
     use_color: bool,
     source_note_root: Path | None,
     display_id: str,
+    show_host: bool = False,
 ) -> tuple[_TreeNode, set[tuple]]:
     """Graph-based repo plugin node: children come from graph edges, which are
     unambiguous even for same-named / nested plugins (each occurrence is a
@@ -1954,7 +1978,10 @@ def _build_repo_plugin_node_from_graph(
         plugin_node, view, findings_by_ref, exclude=set(direct_ids)
     )
     marker = _finding_marker(direct_ids, use_color)
-    root = _TreeNode(label=f"{display_id}{marker}{_containment_marker(bundled_ids, use_color)}")
+    host_note = f" [{_ref_host_label(plugin_ref, view.graph)}]" if show_host else ""
+    root = _TreeNode(
+        label=f"{display_id}{host_note}{marker}{_containment_marker(bundled_ids, use_color)}"
+    )
 
     if packages:
         root.children.append(

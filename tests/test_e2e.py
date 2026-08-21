@@ -1634,3 +1634,34 @@ def test_realized_bundle_flat_vs_attributed_split_is_pinned(tmp_path):
     signals = _parity_signals(tmp_path, ["claude-code"])
     assert signals["mcp"] == (True, False)
     assert signals["subagent"] == (True, False)
+
+
+def test_two_host_repo_scan_shows_per_host_attribution(tmp_path):
+    """Codex review (PR #158): `scan repo`'s JSON stats already broke out
+    `components_by_host` per selected host, but the default text-format
+    inventory tree never threaded `hosts` into `render_repo_inventory_tree`,
+    so a two-host repo scan showed no `[host]` tags at all — unlike endpoint
+    mode's equivalent (`test_two_host_endpoint_scan_shows_per_host_attribution`).
+    This pins the fix end to end through the CLI."""
+    from tools.cli import main as cli_main
+
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    plugin_dir = tmp_path / "demo" / ".cursor-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text('{"name": "demo"}')
+
+    runner = CliRunner()
+
+    text_result = runner.invoke(cli_main, ["scan", "repo", "--target", str(tmp_path)])
+    assert text_result.exit_code == 0, text_result.output
+    assert "http://example.com/mcp (HTTP) (from .mcp.json) [claude-code]" in text_result.output
+    assert "plugin/demo [cursor]" in text_result.output
+
+    json_result = runner.invoke(
+        cli_main, ["scan", "repo", "--target", str(tmp_path), "--format", "json"]
+    )
+    assert json_result.exit_code == 0, json_result.output
+    doc = _scan_json_doc(json_result.output)
+    assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}

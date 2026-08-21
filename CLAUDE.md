@@ -101,8 +101,16 @@ V0 ships:
 1. Overlay-only schema (`database_specific.openaca`: taxonomies, evidence level,
    threat_kind on MAL records); `type: exposure` and `type: config` reserved
    but rejected.
-2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
-   `.claude/settings.json`. Cursor/Windsurf manifests are V1.
+2. Manifest parsers, registered per host (ADR-0044): host-agnostic dependency
+   manifests (`package.json`, `pyproject.toml`, and the lockfiles), Claude
+   Code's surfaces (`mcp.json`, `.claude-plugin/plugin.json`,
+   `.claude/settings.json`, `.claude/skills/`, `.claude/commands/`), and
+   Cursor's surfaces (`.cursor/mcp.json`, `.cursor-plugin/plugin.json`,
+   `.cursor/skills/`, `.agents/skills/`, `.cursor/commands/`). **Cursor
+   manifests moved from V1 into V0** — see ADR-0044, ADR-0045, and ADR-0046
+   for the amendment and its rationale; a repo scan with `--host` omitted
+   selects every registered host. Windsurf and ChatGPT-style plugin
+   manifests remain V1.
 3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream OSV record
    IDs (GHSA / CVE / OSV / PYSEC / MAL), adding agent-context taxonomies and
    evidence level. Scans query OSV.dev and merge overlays into the returned

@@ -237,3 +237,7 @@ candidates/*
 candidates/ready_for_review/*
 !candidates/ready_for_review/*.yaml
 .superpowers/
+
+# Editor workspace files (multi-root VS Code workspaces reference local
+# sibling checkout paths, so they are per-machine, not shared config).
+*.code-workspace

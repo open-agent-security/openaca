@@ -196,24 +196,90 @@ def _is_under_any(path: Path, roots: list[Path]) -> bool:
     return any(resolved.is_relative_to(root) for root in roots)
 
 
-def _is_losing_plugin_manifest(path: Path, realized_manifest_by_root: dict[Path, Path]) -> bool:
-    """True for a native `plugin.json` that lost the realization race to a
-    sibling manifest in the same bundle root (see `realized_plugin_manifests`
-    on `build_graph`). Non-plugin manifests (`mcp.json`, etc.) never collide
-    this way, so they always return False here."""
-    if path.name != "plugin.json" or path.parent.name not in (
-        ".claude-plugin",
-        ".cursor-plugin",
-    ):
-        return False
+def _repo_realized_plugin_bundle_roots(refs: list[ComponentRef]) -> dict[Path, Path]:
+    """Map each realized plugin bundle's root (resolved) to the manifest that
+    actually realized it (resolved) — native (`.claude-plugin`/
+    `.cursor-plugin`) and Agent Plugins (bare root `plugin.json`) bundles
+    alike, for every host. Built from the plugin self refs the graph already
+    emitted (`component_type == "plugin"`), mirroring
+    `hosts._cursor_plugin_bundle_realized_manifests` generalized to repo
+    mode's multi-host, multi-format case. Unlike endpoint mode, repo mode has
+    no manifest-less synthesized ref (that fallback is endpoint-only, ADR-0045
+    Decision #7 point 4), so every realized plugin ref carries a real
+    `source_manifest`.
+    """
+    out: dict[Path, Path] = {}
+    for ref in refs:
+        extra = ref.extra or {}
+        if extra.get("component_type") != "plugin" or not ref.source_manifest:
+            continue
+        manifest_path = Path(ref.source_manifest)
+        if manifest_path.name == "plugin.json" and manifest_path.parent.name in (
+            ".claude-plugin",
+            ".cursor-plugin",
+        ):
+            # Native manifest under a `.cursor-plugin`/`.claude-plugin` dir:
+            # the bundle root is two levels up.
+            root = manifest_path.parent.parent
+        else:
+            # Agent Plugins root manifest directly at the bundle root.
+            root = manifest_path.parent
+        resolved_root = _safe_resolve(root)
+        resolved_manifest = _safe_resolve(manifest_path)
+        if resolved_root is None or resolved_manifest is None:
+            continue
+        out[resolved_root] = resolved_manifest
+    return out
+
+
+def _repo_plugin_bundle_mcp_manifest_paths(
+    refs: list[ComponentRef], realized_manifest_by_root: dict[Path, Path]
+) -> set[Path]:
+    """Resolved paths of the standalone MCP-shaped manifests actually read
+    while realizing each bundle in `realized_manifest_by_root` — the default
+    `.mcp.json`/`mcp.json` at the bundle root, or a custom `mcpServers`
+    string path (`claude_plugin_root._parse_manifest_refs`/
+    `_parse_default_mcp`, `agent_plugins.parse`). Derived from the
+    `mcp_server` refs those parsers already produced, not a directory walk —
+    mirrors `hosts._cursor_plugin_bundle_mcp_manifest_paths` — so a fixture
+    the bundle never actually read (e.g. a nested `examples/demo/mcp.json`)
+    can't surface as posture just because it sits somewhere under a realized
+    bundle root. Excludes any ref whose `source_manifest` IS the bundle's own
+    winning manifest — that's an inline `mcpServers` entry, already covered
+    by loading that manifest directly.
+    """
+    winning_manifests = set(realized_manifest_by_root.values())
+    tracked_roots = list(realized_manifest_by_root.keys())
+    paths: set[Path] = set()
+    for ref in refs:
+        extra = ref.extra or {}
+        if extra.get("component_type") != "mcp_server" or not ref.source_manifest:
+            continue
+        resolved = _safe_resolve(Path(ref.source_manifest))
+        if resolved is None or resolved in winning_manifests:
+            continue
+        if not any(resolved.is_relative_to(root) for root in tracked_roots):
+            continue
+        paths.add(resolved)
+    return paths
+
+
+def _is_orphaned_under_realized_bundle(
+    path: Path, realized_roots: list[Path], allowed_manifests: set[Path]
+) -> bool:
+    """True for a manifest the recursive collector found somewhere under a
+    realized plugin bundle root that ISN'T one the bundle's own realization
+    actually read (`allowed_manifests` — the winning manifest plus the MCP-
+    shaped manifests from `_repo_plugin_bundle_mcp_manifest_paths`). Catches
+    a losing sibling native manifest, a nested fixture several levels deep in
+    an examples/fixtures dir, or any other stray file the recursive
+    collector's rglob happens to match — none of it was ever loaded by
+    either host, so posture must not evaluate it. A manifest outside every
+    realized bundle root is untouched by this check (returns False)."""
     resolved = _safe_resolve(path)
-    if resolved is None:
+    if resolved is not None and resolved in allowed_manifests:
         return False
-    root_resolved = _safe_resolve(path.parent.parent)
-    if root_resolved is None:
-        return False
-    winning = realized_manifest_by_root.get(root_resolved)
-    return winning is not None and winning != resolved
+    return _is_under_any(path, realized_roots)
 
 
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
@@ -880,18 +946,18 @@ def repo(
     # `excluded_plugin_roots` is populated with every native plugin bundle root
     # the graph discovered but declined to realize because its owning host
     # isn't selected — posture manifest collection below needs the same
-    # boundary (see `manifest_hosts` comment). `realized_plugin_manifests` is
-    # populated with the manifest path that actually won realization for
-    # every root that DID realize, for the losing-sibling filter below.
+    # boundary (see `manifest_hosts` comment). The realized-bundle boundary
+    # (winning manifest per root, both native and Agent Plugins) is derived
+    # below from the graph's own refs (`_repo_realized_plugin_bundle_roots`)
+    # rather than a second `build_graph` out-param, so it covers every bundle
+    # format the graph can realize, not just native ones.
     excluded_plugin_roots: list[Path] = []
-    realized_plugin_manifests: dict[Path, Path] = {}
     graph = build_graph(
         target,
         mode="repo",
         include_gitignored=include_gitignored,
         hosts=hosts,
         excluded_plugin_roots=excluded_plugin_roots,
-        realized_plugin_manifests=realized_plugin_manifests,
     )
     all_refs = _refs_from_graph(graph)
     # Reconstruct the per-manifest `grouped` list the repo renderer expects by
@@ -960,20 +1026,28 @@ def repo(
         # `owning_host`'s path-shape fallback doesn't recognize a bundled
         # `.cursor-plugin/plugin.json` — it would misattribute the loser's
         # own inline `mcpServers` to whichever host `owning_host` defaults
-        # to. Drop any `plugin.json` manifest that isn't the one that
-        # actually realized its bundle root.
-        realized_manifest_by_root = {
-            resolved_root: resolved_manifest
-            for root, manifest in realized_plugin_manifests.items()
-            if (resolved_root := _safe_resolve(root)) is not None
-            and (resolved_manifest := _safe_resolve(manifest)) is not None
-        }
+        # to. The recursive `collect_mcp_manifests` walk also can't tell a
+        # bundle's actually-realized `mcp.json` apart from an unrelated one
+        # nested several levels deeper in the same bundle (e.g. an
+        # examples/fixtures dir) — both match the same bare filename. Derive
+        # the realized bundle boundary and the manifests each bundle's own
+        # realization actually read from the graph's own refs (`all_refs`),
+        # and drop anything under a realized bundle root that isn't one of
+        # them, covering both failure modes with one check.
+        realized_manifest_by_root = _repo_realized_plugin_bundle_roots(all_refs)
+        bundle_mcp_paths = _repo_plugin_bundle_mcp_manifest_paths(
+            all_refs, realized_manifest_by_root
+        )
+        allowed_bundle_manifests = set(realized_manifest_by_root.values()) | bundle_mcp_paths
+        realized_bundle_roots = list(realized_manifest_by_root.keys())
         manifests = [
             (p, d)
             for p, d in manifests
             if resolved_owner(p, manifest_hosts) in hosts
             and not _is_under_any(p, excluded_resolved)
-            and not _is_losing_plugin_manifest(p, realized_manifest_by_root)
+            and not _is_orphaned_under_realized_bundle(
+                p, realized_bundle_roots, allowed_bundle_manifests
+            )
         ]
         active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
         settings_manifests = (

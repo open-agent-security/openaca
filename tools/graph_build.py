@@ -800,10 +800,11 @@ def descend(
     DID realize — the manifest candidate `_descend_into_plugin` actually
     parsed, as opposed to a sibling native-format manifest in the same
     directory that lost the realization race (see `_find_plugin_roots`).
-    Callers doing an independent filesystem walk that globs both native
-    manifest names in one pass (posture manifest collection in
-    `tools/scan.py`) need this to avoid treating the losing sibling's content
-    as belonging to the realized plugin.
+    Repo-mode posture manifest collection (`tools/scan.py`) derives the same
+    realized-bundle boundary itself from the graph's own refs instead
+    (`scan._repo_realized_plugin_bundle_roots`), since that also covers
+    Agent Plugins bundles this out-param doesn't track; this stays available
+    for a future caller that only needs the native-format subset.
     """
     hosts = hosts if hosts is not None else all_host_ids()
     if parent.kind == "target":

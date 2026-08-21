@@ -163,7 +163,10 @@ def collect_mcp_manifests(
     native manifest in the same bundle, so collecting it would report posture
     findings (e.g. inline `mcpServers` URLs) from a manifest the host was
     never shown to load. Repo mode keeps the full default set and instead
-    filters losing siblings via `scan._is_losing_plugin_manifest`.
+    filters out manifests under a realized plugin bundle root that the
+    bundle's own realization never actually read (a losing sibling native
+    manifest, a nested fixture several levels deep, etc.) via
+    `scan._is_orphaned_under_realized_bundle`.
 
     Used by URL-shape rules that need the raw manifest to inspect
     `mcpServers[*].url` and adjacent fields. Parse failures are silently

@@ -2695,6 +2695,94 @@ def test_scan_repo_dual_native_plugin_manifests_posture_follows_realized_manifes
     assert posture == []
 
 
+def test_scan_repo_realized_plugin_bundle_nested_unrelated_mcp_excluded_from_posture(tmp_path):
+    # Regression guard (Codex, tools/scan.py:976 on commit 9b9e7ee): in the
+    # default all-host repo scan, a realized bundle's own subtree can
+    # contain an unrelated nested `mcp.json` several levels deep (e.g. an
+    # examples/fixtures dir) that `claude_plugin_root.walk_plugin_root`
+    # never reads — it only reads the bundle-root default/custom MCP path.
+    # The graph itself correctly produces no ref for this file (confirmed:
+    # it's excluded from the standalone walk by `standalone_exclude_roots`),
+    # but the recursive `collect_mcp_manifests([target])` posture walk still
+    # matched it by bare filename with no graph provenance, so
+    # `resolved_owner` fell back to `owning_host` -> "claude-code" — which
+    # IS in the default all-host selection, so it leaked through unfiltered.
+    # (`--host cursor` alone wouldn't reproduce this: the old fallback's
+    # "claude-code" guess would already be excluded by the `hosts` filter
+    # for an unrelated reason, masking the bug.)
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    nested = plugin_root / "examples" / "demo"
+    nested.mkdir(parents=True)
+    (nested / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    # Never read by Cursor's realization of this bundle — must not surface.
+    assert posture == []
+
+
+def test_scan_repo_nested_but_independently_realized_plugin_still_surfaces_posture(tmp_path):
+    # Companion to the regression guard above: a nested `.cursor-plugin/
+    # plugin.json` (unlike a bare `mcp.json`) is discovered by
+    # `_find_plugin_roots` at ANY depth and realizes as its OWN, genuinely
+    # separate plugin node (parented at target, not nested under the outer
+    # plugin — single-parent invariant) whenever its own `name` is valid.
+    # The fix must not treat "nested under another bundle's directory" as
+    # reason enough to drop it — only content the graph never actually
+    # realized should be excluded.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    nested = plugin_root / "examples" / "demo" / ".cursor-plugin"
+    nested.mkdir(parents=True)
+    (nested / "plugin.json").write_text(
+        json.dumps({"name": "fixture", "mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    # `fixture` genuinely realized as its own plugin — its finding must survive.
+    assert len(posture) == 1
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

@@ -282,6 +282,30 @@ def _is_orphaned_under_realized_bundle(
     return _is_under_any(path, realized_roots)
 
 
+def _is_unrealized_native_plugin_manifest(path: Path, winning_manifests: set[Path]) -> bool:
+    """True for a `.claude-plugin/plugin.json` or `.cursor-plugin/plugin.json`
+    candidate that isn't the winning manifest of any bundle the graph
+    actually realized.
+
+    `_is_orphaned_under_realized_bundle` only catches a losing/orphaned
+    manifest when its bundle root DID realize (via some other candidate).
+    It misses the case where a native bundle root never realizes at all —
+    e.g. a valid-JSON `plugin.json` with no (or an empty) `name`, no
+    fallback manifest, and no unselected-host sibling to add its root to
+    `excluded_plugin_roots` (`_descend_into_plugin` returns `None`, so
+    neither `realized_roots` nor `unselected_host_plugin_roots` ever see
+    this root). `collect_mcp_manifests`'s recursive walk still matches the
+    file by bare name regardless, so without this check its inline
+    `mcpServers` would surface as posture for content no host ever loaded.
+    Checking every native manifest candidate against the realized-winner
+    set directly, independent of bundle-root tracking, catches this case
+    too."""
+    if path.name != "plugin.json" or path.parent.name not in (".claude-plugin", ".cursor-plugin"):
+        return False
+    resolved = _safe_resolve(path)
+    return resolved is None or resolved not in winning_manifests
+
+
 def _osv_progress_reporter(output_format: str) -> OsvProgressCallback | None:
     if output_format != "text":
         return None
@@ -1040,6 +1064,7 @@ def repo(
         )
         allowed_bundle_manifests = set(realized_manifest_by_root.values()) | bundle_mcp_paths
         realized_bundle_roots = list(realized_manifest_by_root.keys())
+        native_winning_manifests = set(realized_manifest_by_root.values())
         manifests = [
             (p, d)
             for p, d in manifests
@@ -1048,6 +1073,12 @@ def repo(
             and not _is_orphaned_under_realized_bundle(
                 p, realized_bundle_roots, allowed_bundle_manifests
             )
+            # Catches a native `plugin.json` candidate whose bundle root never
+            # realized at all (see `_is_unrealized_native_plugin_manifest`) —
+            # a gap `_is_orphaned_under_realized_bundle` doesn't cover since
+            # it only fires under a root that DID realize via some other
+            # candidate.
+            and not _is_unrealized_native_plugin_manifest(p, native_winning_manifests)
         ]
         active_rule_ids = frozenset().union(*(HOSTS[h].posture_rule_ids for h in hosts))
         settings_manifests = (

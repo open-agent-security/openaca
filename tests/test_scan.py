@@ -2783,6 +2783,89 @@ def test_scan_repo_nested_but_independently_realized_plugin_still_surfaces_postu
     assert len(posture) == 1
 
 
+def test_scan_repo_never_realized_native_plugin_manifest_excluded_from_posture(tmp_path):
+    # Regression guard (Codex, tools/scan.py:1042 on commit 457e3f7): a valid
+    # JSON `.claude-plugin/plugin.json` with no (or an empty) `name` never
+    # produces a plugin self ref (`claude_plugin.parse`'s `if name:` gate),
+    # so `_descend_into_plugin` returns `None` and the graph adds nothing —
+    # no plugin node, no child refs, and (with no fallback manifest and no
+    # unselected-host sibling candidate) this bundle root never lands in
+    # EITHER `realized_roots` or `unselected_host_plugin_roots`. It is
+    # therefore absent from both `excluded_plugin_roots` and
+    # `_repo_realized_plugin_bundle_roots`'s output, so the existing
+    # `_is_orphaned_under_realized_bundle` check (which only fires under a
+    # root that DID realize via some other candidate) never catches it.
+    # `collect_mcp_manifests`'s recursive walk still matches the file by
+    # bare name, so its insecure inline `mcpServers` used to leak through as
+    # a posture finding for a manifest no host ever actually loaded.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    # Never realized as a plugin by any host — must not surface.
+    assert posture == []
+
+
+def test_scan_repo_sibling_mcp_json_beside_never_realized_plugin_still_surfaces(tmp_path):
+    # Companion to the guard above: when a bundle root never realizes at all,
+    # the directory is NOT treated as an owned plugin subtree (the graph
+    # comment at `graph_build.py`'s `descend` explicitly requires this — "A
+    # malformed/empty `plugin.json` yields no node, so its dir must NOT be
+    # excluded from sibling discovery"). A genuinely standalone `mcp.json`
+    # sitting right beside the never-realized `plugin.json` is real content
+    # some host could still load as an ordinary standalone manifest, so the
+    # new check must not blanket-exclude the whole directory — only the
+    # native `plugin.json` candidate itself.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(json.dumps({}))
+    (plugin_root / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-insecure-transport"
+    ]
+    assert len(posture) == 1
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

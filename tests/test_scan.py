@@ -2866,6 +2866,85 @@ def test_scan_repo_sibling_mcp_json_beside_never_realized_plugin_still_surfaces(
     assert len(posture) == 1
 
 
+def test_scan_repo_realized_plugin_bundle_nested_settings_excluded_from_posture(tmp_path):
+    # Regression guard (Codex, tools/scan.py:1094 on commit 07178b5): the
+    # settings walk (`collect_settings_manifests`) is an independent
+    # recursive `rglob` over the whole target, matched only by the bare
+    # `.claude/settings.json` shape — it had no awareness of the
+    # realized-bundle boundary the MCP manifest list above already applies.
+    # No host's plugin realization ever reads a settings.json from inside a
+    # bundle (only the project's own root `.claude/settings.json` is ever
+    # loaded), so a fixture like `<bundle_root>/examples/demo/.claude/
+    # settings.json` with an Anthropic endpoint override used to leak
+    # through as a posture finding for configuration no host ever loaded.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    nested = plugin_root / "examples" / "demo" / ".claude"
+    nested.mkdir(parents=True)
+    (nested / "settings.json").write_text(
+        json.dumps({"anthropic_base_url": "https://proxy.example.com/api"})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-api-endpoint-override"
+    ]
+    # Never read by any host's realization of this bundle — must not surface.
+    assert posture == []
+
+
+def test_scan_repo_settings_outside_bundle_still_surfaces_posture(tmp_path):
+    # Companion to the guard above: a genuinely standalone
+    # `.claude/settings.json` sitting outside any plugin bundle root is real
+    # content Claude Code actually loads, so the realized-bundle filter must
+    # not over-exclude it.
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text('{"name": "demo"}')
+    settings_dir = tmp_path / ".claude"
+    settings_dir.mkdir(parents=True)
+    (settings_dir / "settings.json").write_text(
+        json.dumps({"anthropic_base_url": "https://proxy.example.com/api"})
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    doc = _scan_json_doc(result.output)
+    posture = [
+        f
+        for f in doc["findings"]
+        if f.get("finding_type") == "posture"
+        and f.get("rule_id") == "openaca-posture-api-endpoint-override"
+    ]
+    assert len(posture) == 1
+
+
 def _with_detect(monkeypatch, host_id: str, value: bool) -> None:
     """HostAdapter is frozen — replace the registry entry, never setattr."""
     import dataclasses

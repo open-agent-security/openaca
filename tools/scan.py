@@ -1089,9 +1089,19 @@ def repo(
         # The settings walk is an independent filesystem pass of the same
         # tree — it must honor the unselected-host bundle boundary the MCP
         # manifest list above already does, or a `.claude/settings.json`
-        # inside an excluded bundle still produces posture findings.
+        # inside an excluded bundle still produces posture findings. It must
+        # also honor the realized-bundle boundary: no host's plugin
+        # realization ever reads a settings.json from inside a bundle (only
+        # the project's own root `.claude/settings.json` is ever loaded as
+        # settings), so a fixture like `<bundle_root>/examples/demo/.claude/
+        # settings.json` under a realized bundle is orphaned the same way a
+        # nested `mcp.json` is — `allowed_manifests=set()` since no
+        # settings.json is ever part of a bundle's own realization.
         settings_manifests = [
-            (p, d) for p, d in settings_manifests if not _is_under_any(p, excluded_resolved)
+            (p, d)
+            for p, d in settings_manifests
+            if not _is_under_any(p, excluded_resolved)
+            and not _is_orphaned_under_realized_bundle(p, realized_bundle_roots, set())
         ]
         posture_findings.extend(
             run_posture_rules(refs, manifests, settings_manifests, manifest_hosts)

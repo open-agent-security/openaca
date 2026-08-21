@@ -180,10 +180,46 @@ def _unselected_native_bundle_roots(root: Path, spec, selected_hosts: list[str])
     return roots
 
 
-def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> list[Path]:
+def _realized_native_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> list[Path]:
+    """Resolved roots of native plugin bundles that DID realize under a
+    SELECTED host (valid `name`).
+
+    Mirror of `build_graph`'s `realized_roots`, for the Agent Plugins
+    pre-pass below: a realized native bundle can carry bundled example/
+    fixture content (e.g. `examples/demo/plugin.json`) that itself
+    schema-detects as an Agent Plugins manifest. `_find_agent_plugin_roots`
+    excludes a realized native root's whole subtree via `exclude_under` so
+    that fixture never realizes as a second, independent bundle on the
+    graph side; the parser's pre-pass needs the same boundary.
+    """
+    roots: list[Path] = []
+    for path in iter_unignored_files(root, spec):
+        if path.name != "plugin.json":
+            continue
+        owner = _NATIVE_PLUGIN_MANIFEST_OWNERS.get(path.parent.name)
+        if owner is None or owner not in selected_hosts:
+            continue
+        bundle_root = path.parent.parent
+        if resolve_within(bundle_root, f"{path.parent.name}/plugin.json") is None:
+            continue
+        if not _plugin_manifest_realizes(path):
+            continue
+        try:
+            roots.append(bundle_root.resolve())
+        except OSError:
+            continue
+    return roots
+
+
+def _agent_plugin_bundle_roots(
+    root: Path,
+    spec,
+    selected_hosts: list[str],
+    native_bundle_roots: list[Path] | None = None,
+) -> list[Path]:
     """Resolved roots of Agent Plugins bundles the inline fallback below will
     claim (same gate: `cursor` selected, containment holds, schema detects,
-    manifest realizes).
+    manifest realizes, not nested under a native bundle boundary).
 
     A bundle's root-level `mcp.json` must not ALSO match the bare Claude Code
     `mcp.json` pattern in the registry loop: `flatten_grouped`'s dedup key
@@ -204,9 +240,18 @@ def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> l
     inline fallback below still called `agent_plugins.parse` and produced a
     Cursor-tagged ref for the same file — reintroducing the two-route
     dedup race this function exists to prevent, just for the malformed case.
+
+    `native_bundle_roots` (an unselected-host bundle's root, or a realized
+    selected-host bundle's root — the caller's union of
+    `_unselected_native_bundle_roots` and `_realized_native_bundle_roots`)
+    excludes any candidate nested under one of those boundaries: a native
+    bundle's own bundled example/fixture content must not realize as an
+    independent Agent Plugins bundle just because it schema-detects, matching
+    `_find_agent_plugin_roots`'s `exclude_under` on the graph side.
     """
     if "cursor" not in selected_hosts:
         return []
+    excluded = native_bundle_roots or []
     roots: list[Path] = []
     for path in iter_unignored_files(root, spec):
         if path.name != "plugin.json" or path.parent.name in _NATIVE_PLUGIN_CONFIG_DIRS:
@@ -218,9 +263,19 @@ def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> l
         if not _plugin_manifest_realizes(path):
             continue
         try:
-            roots.append(path.parent.resolve())
+            resolved_parent = path.parent.resolve()
         except OSError:
             continue
+        # Strict nesting only: a bundle's OWN root-level plugin.json (sibling
+        # of its `.claude-plugin`/`.cursor-plugin` config dir, resolved_parent
+        # == r) is a deliberate dual-format directory, not fixture content —
+        # `parse_repo_grouped` counts both manifests independently by design
+        # (see test_both_plugin_formats_in_same_directory_both_parsed); only
+        # bundled content genuinely BELOW the bundle root (e.g.
+        # `examples/demo/plugin.json`) is excluded here.
+        if any(resolved_parent != r and resolved_parent.is_relative_to(r) for r in excluded):
+            continue
+        roots.append(resolved_parent)
     return roots
 
 
@@ -471,10 +526,33 @@ def parse_repo_grouped(
             return False
         return any(resolved.is_relative_to(r) for r in excluded_bundle_roots)
 
-    agent_plugin_bundle_roots = set(_agent_plugin_bundle_roots(root, spec, selected_hosts))
+    # Native bundle boundaries the Agent Plugins pre-pass must not cross
+    # (ADR-0045 parity with `_find_agent_plugin_roots`'s `exclude_under` on
+    # the graph side): a realized native bundle (selected host, valid name)
+    # or an unselected host's bundle can carry bundled example/fixture
+    # content that itself schema-detects as an Agent Plugins manifest; that
+    # content must not realize as an independent bundle.
+    native_bundle_roots: list[Path] = []
+    if "cursor" in selected_hosts:
+        native_bundle_roots = excluded_bundle_roots + _realized_native_bundle_roots(
+            root, spec, selected_hosts
+        )
+
+    agent_plugin_bundle_roots = set(
+        _agent_plugin_bundle_roots(root, spec, selected_hosts, native_bundle_roots)
+    )
 
     def _is_agent_plugin_bundle_root_mcp(path: Path) -> bool:
         if not agent_plugin_bundle_roots or path.name != "mcp.json":
+            return False
+        try:
+            resolved_parent = path.parent.resolve()
+        except OSError:
+            return False
+        return resolved_parent in agent_plugin_bundle_roots
+
+    def _is_agent_plugin_bundle_root(path: Path) -> bool:
+        if not agent_plugin_bundle_roots or path.name != "plugin.json":
             return False
         try:
             resolved_parent = path.parent.resolve()
@@ -513,23 +591,11 @@ def parse_repo_grouped(
                 grouped.append((path, refs))
             except Exception:
                 continue
-        if (
-            not matched
-            and path.name == "plugin.json"
-            and path.parent.name not in _NATIVE_PLUGIN_CONFIG_DIRS
-            and "cursor" in selected_hosts
-            # A symlinked plugin.json escaping its own bundle root (the
-            # manifest's parent) must not be schema-detected or parsed —
-            # same containment as graph dispatch's _find_agent_plugin_roots.
-            and resolve_within(path.parent, "plugin.json") is not None
-            and agent_plugins.is_agent_plugins_manifest(path)
-            # Realization parity with `_realize_agent_plugin`/
-            # `_agent_plugin_bundle_roots`: a schema-tagged manifest missing
-            # `name` must not claim the bundle at all, including its sibling
-            # `mcp.json` — that file is left for the bare Claude Code pattern
-            # above, matching what the graph builder falls through to.
-            and _plugin_manifest_realizes(path)
-        ):
+        # Same predicate `_agent_plugin_bundle_roots` computed above (cursor
+        # selected, containment holds, schema detects, manifest realizes, not
+        # nested under a native bundle boundary) — checked here via the
+        # precomputed set instead of re-deriving it, so the two can't drift.
+        if not matched and _is_agent_plugin_bundle_root(path):
             n_found += 1
             try:
                 refs = agent_plugins.parse(path, runtime_hosts=["cursor"])

@@ -443,6 +443,35 @@ def test_malformed_agent_plugins_manifest_does_not_claim_sibling_mcp_json(tmp_pa
     assert mcp_refs[0].extra.get("runtime_hosts") == ["claude-code"]
 
 
+def test_realized_native_bundle_excludes_nested_agent_plugins_fixture(tmp_path):
+    # Parity with test_graph_build.py's
+    # test_unselected_host_bundle_excludes_nested_agent_plugins_fixture (the
+    # selected/realized half of that test): a realized native plugin's own
+    # bundled example/fixture content must not be picked up by the Cursor
+    # fallback branch as a second, independent Agent Plugins bundle just
+    # because it schema-detects — `_find_agent_plugin_roots`'s
+    # `exclude_under` already drops it on the graph side via the realized
+    # native root; the parser walk needs the same boundary.
+    bundle = tmp_path / "pkg"
+    (bundle / ".claude-plugin").mkdir(parents=True)
+    (bundle / ".claude-plugin" / "plugin.json").write_text('{"name": "claude-plugin"}')
+    fixture = bundle / "examples" / "demo"
+    fixture.mkdir(parents=True)
+    (fixture / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "demo-fixture",
+            }
+        )
+    )
+
+    refs = parse_repo(tmp_path, hosts=["claude-code", "cursor"])
+    identities = {r.component_identity for r in refs if r.component_identity}
+    assert "plugin/claude-plugin" in identities
+    assert "plugin/demo-fixture" not in identities
+
+
 def _write_cursor_native_bundle(root: Path, dirname: str = "cbundle") -> Path:
     bundle = root / dirname
     (bundle / ".cursor-plugin").mkdir(parents=True)

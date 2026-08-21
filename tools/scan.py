@@ -736,13 +736,16 @@ def _render_bom_inventory_tree(
     hosts: list[str] | None = None,
 ) -> str:
     if target_type == "repo":
-        # Repo mode has no endpoint host concept (Cursor/Windsurf manifests
-        # are V1 for repo mode too), so `hosts` is intentionally not threaded
-        # here even when the round-tripped BOM carries scanned_hosts.
         root = Path(target) if target else input_path.parent
         grouped = _group_refs_for_repo_tree(refs)
         return render_repo_inventory_tree(
-            root, grouped, findings, use_color=use_color, use_unicode=use_unicode, graph=graph
+            root,
+            grouped,
+            findings,
+            use_color=use_color,
+            use_unicode=use_unicode,
+            graph=graph,
+            hosts=hosts,
         )
     return render_inventory_tree(
         refs, findings, use_color=use_color, use_unicode=use_unicode, graph=graph, hosts=hosts

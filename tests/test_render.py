@@ -1848,6 +1848,34 @@ def test_repo_tree_shows_no_host_tags_for_single_host_selection(tmp_path):
     assert "[claude-code]" not in out
 
 
+def test_repo_tree_shows_host_tag_for_explicit_single_non_default_host(tmp_path):
+    """`scan repo --host cursor` alone must still tag its output `[cursor]`.
+
+    Unlike endpoint mode (whose Target block names the host via
+    `_host_surface_label` even for a single selection), repo mode's Target
+    block always reads `repository` regardless of `--host`, so the tree tag
+    is the only signal distinguishing this from a Claude Code-only scan
+    (Codex review, PR #158)."""
+    cursor_plugin_json = tmp_path / ".cursor-plugin" / "plugin.json"
+    cursor_plugin = ComponentRef(
+        name="demo",
+        version="1.0.0",
+        component_identity="plugin/demo",
+        source_manifest=str(cursor_plugin_json),
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    out = render_repo_inventory_tree(
+        tmp_path,
+        [(cursor_plugin_json, [cursor_plugin])],
+        [],
+        use_unicode=True,
+        hosts=["cursor"],
+    )
+
+    assert "plugin/demo@1.0.0 [cursor]" in out
+
+
 def test_repo_tree_shows_per_host_tags_for_direct_components_and_plugins(tmp_path):
     """`scan repo --host claude-code --host cursor` must tag top-level direct
     components and plugins with their host, matching endpoint mode's

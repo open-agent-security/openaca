@@ -1767,14 +1767,21 @@ def render_repo_inventory_tree(
     `hosts` is the scan's selected host list (ADR-0044/0045: repo mode now has
     a host concept too, via `scan repo --host`). With 2+ hosts this mirrors
     `render_inventory_tree`'s per-host display: a `[<host>]` tag on each
-    top-level plugin/direct-component entry and host-major ordering. Single-
-    host callers (or omitting `hosts`) get today's output, unchanged.
+    top-level plugin/direct-component entry and host-major ordering.
+
+    Unlike endpoint mode, repo mode's Target block always reads `repository`
+    regardless of which host(s) were selected (there's no per-host config
+    root to show), so an explicitly-selected single non-default host (e.g.
+    `scan repo --host cursor`) still gets tagged here — it's the only signal
+    in the text output that the scan wasn't Claude Code's default. Only the
+    legacy no-`--host` / default-only-host case (`hosts` omitted or exactly
+    `["claude-code"]`) keeps today's untagged output.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
     all_refs = _dedupe_repo_tree_refs([r for _, refs in grouped for r in refs])
     view = _GraphView.build(graph, all_refs) if graph is not None else None
-    show_host = hosts is not None and len(hosts) > 1
+    show_host = hosts is not None and hosts != [_DEFAULT_HOST]
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
         key=lambda r: (

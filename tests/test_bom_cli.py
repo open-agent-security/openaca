@@ -223,6 +223,36 @@ def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     assert expected in from_bom.output
 
 
+def test_scan_bom_repo_cursor_only_components_tag_host_in_reconstructed_tree(tmp_path):
+    """A repo BOM whose only components are Cursor-attributed must still show
+    a `[cursor]` tag when reconstructed through `scan bom`.
+
+    `bom repo` has no `--host` flag (it always walks every registered host),
+    so the BOM here carries no `openaca:scanned_hosts` metadata (repo target
+    type never does -- that property is endpoint-only); `scan bom` derives
+    the host list via `hosts_from_refs` fallback, landing on the single
+    non-default host actually present (`["cursor"]`). `_render_bom_inventory_tree`
+    must thread that derived list into `render_repo_inventory_tree` the same
+    way the endpoint branch already threads its own `hosts` (Codex review,
+    PR #158) -- otherwise the reconstructed text output is indistinguishable
+    from a Claude Code-only scan."""
+    plugin_root = tmp_path / "my-plugin"
+    (plugin_root / ".cursor-plugin").mkdir(parents=True)
+    (plugin_root / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+
+    bom_path = tmp_path / "openaca.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "repo", "--target", str(tmp_path), "--output", str(bom_path)],
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+    assert "openaca:scanned_hosts" not in bom_path.read_text()
+
+    from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path)])
+    assert from_bom.exit_code == 0, from_bom.output
+    assert "plugin/demo [cursor]" in from_bom.output
+
+
 def test_scan_bom_verbose_renders_endpoint_inventory_from_bom(tmp_path):
     config_dir = tmp_path / "claude"
     config_dir.mkdir()

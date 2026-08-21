@@ -221,3 +221,73 @@ def test_claude_endpoint_posture_skips_never_realized_cursor_sibling_manifest(tm
     parents = {path.parent.name for path, _ in result}
     assert ".cursor-plugin" not in parents
     assert ".claude-plugin" in parents
+
+
+def test_cursor_posture_skips_native_manifest_that_lost_to_agent_plugins_fallback(tmp_path):
+    # A `.cursor-plugin/plugin.json` with no `name` can't produce a plugin
+    # self ref, so `_realize_plugin_bundle` falls back to the bundle's Agent
+    # Plugins root manifest — Cursor's own realization never loads the
+    # nameless native manifest. Its inline `mcpServers` (an `http://` entry)
+    # must not surface as Cursor posture even though the file is still on
+    # disk under the bundle root the winning ref resolves to.
+    bundle = tmp_path / "plugins" / "local" / "demo"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    bundle_root_manifest = bundle / "plugin.json"
+    bundle_root_manifest.write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "demo",
+            }
+        )
+    )
+    config_root = tmp_path
+    winning_ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest=str(bundle_root_manifest),
+        source_locator="$",
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [winning_ref])
+
+    assert result == []
+
+
+def test_cursor_posture_skips_native_manifest_under_manifest_less_bundle(tmp_path):
+    # A bundle that ships neither manifest format realizes as a
+    # manifest-less presence-only ref (ADR-0045 Decision #7 point 4). A
+    # `.cursor-plugin/plugin.json` still physically present under that
+    # bundle root (e.g. left over, or itself unrealizable) was never loaded
+    # by Cursor either, so it must not surface as posture.
+    version_dir = tmp_path / "plugins" / "cache" / "acme" / "granola" / "1.0.0"
+    version_dir.mkdir(parents=True)
+    (version_dir / ".cache-complete").write_text("")
+    (version_dir / ".cursor-plugin").mkdir()
+    (version_dir / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    config_root = tmp_path
+    manifest_less_ref = ComponentRef(
+        name="granola",
+        component_identity="plugin/granola",
+        source_manifest=str(version_dir / ".cache-complete"),
+        source_locator="$",
+        extra={
+            "component_type": "plugin",
+            "runtime_hosts": ["cursor"],
+            "manifest": "absent",
+        },
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [manifest_less_ref])
+
+    assert result == []

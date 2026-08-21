@@ -178,17 +178,25 @@ def _cursor_seed_endpoint(
     seed_endpoint(graph, target, config_root, project_root, normalize, warnings=warnings)
 
 
-def _cursor_plugin_bundle_roots(refs: list[ComponentRef]) -> list[Path]:
-    """Derive each seeded Cursor plugin ref's bundle root directory from its
-    self ref's `source_manifest`, mirroring how Claude's collector derives
-    plugin install roots from `installPath` — Cursor has no lockfile-backed
-    install-state, so the manifest path itself is the only source. Both
-    dev-linked and marketplace-cached refs count (ADR-0045 Decision #7 point 5); the
-    manifest-less synthesized ref's `source_manifest` (the bundle's
-    `.cache-complete` sentinel) resolves to its version-dir bundle root via
-    the final `else` branch.
+def _cursor_plugin_bundle_realized_manifests(
+    refs: list[ComponentRef],
+) -> dict[Path, Optional[Path]]:
+    """Map each seeded Cursor plugin ref's bundle root (resolved) to the
+    manifest that actually won its realization (resolved), mirroring how
+    Claude's collector derives plugin install roots from `installPath` —
+    Cursor has no lockfile-backed install-state, so the manifest path itself
+    is the only source. Both dev-linked and marketplace-cached refs count
+    (ADR-0045 Decision #7 point 5).
+
+    A root maps to `None` when nothing realized a manifest at all — the
+    manifest-less synthesized ref (ADR-0045 Decision #7 point 4, `extra["manifest"]
+    == "absent"`), whose `source_manifest` is the bundle's `.cache-complete`
+    sentinel. This lets the recursive collector below (which walks the whole
+    bundle root and would otherwise find a `.cursor-plugin/plugin.json` that
+    `_realize_plugin_bundle` tried and rejected, e.g. one with no `name`)
+    tell that manifest apart from the one Cursor actually loaded.
     """
-    roots: list[Path] = []
+    out: dict[Path, Optional[Path]] = {}
     for ref in refs:
         extra = ref.extra or {}
         if extra.get("component_type") != "plugin" or extra.get("runtime_hosts") != ["cursor"]:
@@ -202,13 +210,42 @@ def _cursor_plugin_bundle_roots(refs: list[ComponentRef]) -> list[Path]:
         ):
             # Native or Agent Plugins root manifest under a `.cursor-plugin`/
             # `.claude-plugin` dir: the bundle root is two levels up.
-            roots.append(manifest_path.parent.parent)
+            root = manifest_path.parent.parent
         else:
             # Agent Plugins root manifest directly at the bundle root, or the
             # manifest-less synthesized ref's `.cache-complete` sentinel —
             # either way the bundle root is the manifest's own parent.
-            roots.append(manifest_path.parent)
-    return roots
+            root = manifest_path.parent
+        try:
+            resolved_root = root.resolve()
+            resolved_manifest = manifest_path.resolve()
+        except (OSError, RuntimeError):
+            continue
+        winning = None if extra.get("manifest") == "absent" else resolved_manifest
+        out[resolved_root] = winning
+    return out
+
+
+def _is_losing_cursor_plugin_manifest(
+    path: Path, realized_manifest_by_root: dict[Path, Optional[Path]]
+) -> bool:
+    """True for a `.cursor-plugin/plugin.json` the recursive collector below
+    found under a tracked bundle root that either realized a *different*
+    manifest (e.g. this one failed to produce a plugin self ref — no `name`
+    — and realization fell back to the bundle's Agent Plugins root
+    manifest) or realized no manifest at all (the manifest-less synthesized
+    ref). Either way Cursor never loaded this file, so posture must not
+    evaluate it as if it had."""
+    if path.name != "plugin.json" or path.parent.name != ".cursor-plugin":
+        return False
+    try:
+        resolved = path.resolve()
+        root_resolved = path.parent.parent.resolve()
+    except (OSError, RuntimeError):
+        return False
+    if root_resolved not in realized_manifest_by_root:
+        return False
+    return realized_manifest_by_root[root_resolved] != resolved
 
 
 def _cursor_collect_endpoint_posture_manifests(
@@ -226,14 +263,21 @@ def _cursor_collect_endpoint_posture_manifests(
     out = load_manifest_files(paths)
     seen = {path.resolve() for path, _ in out}
 
+    realized_by_root = _cursor_plugin_bundle_realized_manifests(refs)
+
     # Cursor realization only ever reads `.cursor-plugin/plugin.json` (or the
     # Agent Plugins root plugin.json, which posture never collects) — a
     # `.claude-plugin/plugin.json` sibling in the same bundle is never loaded
-    # by Cursor, so it must not be collected as Cursor posture.
+    # by Cursor, so it must not be collected as Cursor posture. Nor is a
+    # `.cursor-plugin/plugin.json` that lost its own bundle's realization
+    # race or a bundle root that realized manifest-less (see
+    # `_is_losing_cursor_plugin_manifest`).
     for path, data in collect_mcp_manifests(
-        _cursor_plugin_bundle_roots(refs),
+        list(realized_by_root.keys()),
         plugin_manifest_parent_dirs=frozenset({".cursor-plugin"}),
     ):
+        if _is_losing_cursor_plugin_manifest(path, realized_by_root):
+            continue
         resolved = path.resolve()
         if resolved in seen:
             continue

@@ -190,16 +190,24 @@ def _agent_frontmatter_child_refs(
 def _hook_identity_scheme_for_agent_path(md_path: Path) -> str:
     """`"cursor-hook"` for a file under a `.cursor/agents` directory, else
     `"claude-hook"` — mirrors `hooks_json.hook_identity_scheme_for_manifest`'s
-    directory-name keying. Walks all ancestors (not just the immediate
-    parent) so a subagent nested under `agents/` (`agents.rglob("*.md")`
-    allows subdirectories) still resolves to its owning `agents` dir rather
-    than an intermediate one.
+    directory-name keying.
+
+    Scans ancestors from `md_path` upward (not `parts.index("agents")`,
+    which always grabs the FIRST `agents` segment in the whole path) so a
+    subagent nested under `agents/` (`agents.rglob("*.md")` allows
+    subdirectories), or a checkout that merely happens to sit under an
+    ancestor directory also named `agents`, still resolves to its OWNING
+    `.cursor/agents`/`.claude/agents` pair — the one closest to the file —
+    rather than an unrelated, more distant `agents` segment.
     """
     parts = md_path.parts
-    if "agents" in parts:
-        idx = parts.index("agents")
-        if idx > 0 and parts[idx - 1] == ".cursor":
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i] != "agents":
+            continue
+        if parts[i - 1] == ".cursor":
             return "cursor-hook"
+        if parts[i - 1] == ".claude":
+            return "claude-hook"
     return "claude-hook"
 
 

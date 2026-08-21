@@ -294,6 +294,70 @@ def test_cursor_posture_skips_nested_manifest_under_untracked_bundle_root(tmp_pa
     assert result == [(bundle / ".cursor-plugin" / "plugin.json", {"name": "demo"})]
 
 
+def test_cursor_posture_skips_nested_standalone_mcp_manifest_never_read_by_bundle(tmp_path):
+    # Regression guard (Codex finding on commit 21a7be8257): a nested
+    # `examples/demo/mcp.json` fixture under a real, tracked bundle root is
+    # never read by `_realize_plugin_bundle` (which only reads the bundle's
+    # default `mcp.json` or a manifest-declared custom path) and so never
+    # produces an `mcp_server` ref. It must not surface as Cursor posture
+    # just because it happens to exist on disk somewhere under the bundle.
+    bundle = tmp_path / "plugins" / "local" / "demo"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    nested = bundle / "examples" / "demo"
+    nested.mkdir(parents=True)
+    (nested / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    config_root = tmp_path
+    winning_ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest=str(bundle / ".cursor-plugin" / "plugin.json"),
+        source_locator="$",
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [winning_ref])
+
+    assert result == [(bundle / ".cursor-plugin" / "plugin.json", {"name": "demo"})]
+
+
+def test_cursor_posture_includes_bundle_default_mcp_manifest_that_was_actually_realized(tmp_path):
+    # The counterpart to the regression above: a bundle's default `mcp.json`
+    # DID get realized into an `mcp_server` ref (as real seeding would
+    # produce), so its content must still surface as Cursor posture.
+    bundle = tmp_path / "plugins" / "local" / "demo"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    bundle_mcp = bundle / "mcp.json"
+    bundle_mcp.write_text(json.dumps({"mcpServers": {"tool": {"url": "http://insecure/mcp"}}}))
+    config_root = tmp_path
+    plugin_ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest=str(bundle / ".cursor-plugin" / "plugin.json"),
+        source_locator="$",
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+    mcp_ref = ComponentRef(
+        name="tool",
+        component_identity="mcp-server/tool",
+        source_manifest=str(bundle_mcp),
+        source_locator="$.mcpServers.tool",
+        extra={"component_type": "mcp_server", "runtime_hosts": ["cursor"]},
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [plugin_ref, mcp_ref])
+
+    by_path = dict(result)
+    assert by_path[bundle_mcp]["mcpServers"]["tool"]["url"] == "http://insecure/mcp"
+
+
 def test_cursor_posture_skips_native_manifest_under_manifest_less_bundle(tmp_path):
     # A bundle that ships neither manifest format realizes as a
     # manifest-less presence-only ref (ADR-0045 Decision #7 point 4). A

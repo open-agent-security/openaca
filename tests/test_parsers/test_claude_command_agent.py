@@ -370,6 +370,32 @@ def test_claude_agent_inline_hook_keeps_claude_scheme_when_only_cursor_selected(
     assert (hook.component_identity or "").startswith("claude-hook/")
 
 
+def test_cursor_agent_inline_hook_scheme_ignores_unrelated_ancestor_named_agents(tmp_path):
+    # Regression guard (Codex finding on commit 21a7be8257): the checkout
+    # root itself sits under an ancestor directory literally named `agents`
+    # (e.g. `/work/agents/repo/...`), unrelated to the subagent's own
+    # `.cursor/agents` directory. `parts.index("agents")` always grabs the
+    # FIRST `agents` segment in the whole path — that unrelated ancestor —
+    # and, finding its predecessor isn't `.cursor`, wrongly falls back to
+    # claude-hook. The scheme must be derived from the OWNING `.cursor/agents`
+    # pair closest to the file, not the first `agents` segment anywhere in
+    # the path.
+    md = _write(
+        tmp_path / "agents" / "repo" / ".cursor" / "agents" / "guard.md",
+        "---\n"
+        "name: cursor-agent\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n",
+    )
+    refs = parse_file(md, kind="agent", runtime_hosts=["cursor"])
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
+    assert (hook.component_identity or "").startswith("cursor-hook/")
+
+
 def test_enumerate_dir_contain_within_rejects_symlink_escape(tmp_path):
     import os
 

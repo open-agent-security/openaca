@@ -226,34 +226,46 @@ def _cursor_plugin_bundle_realized_manifests(
     return out
 
 
-def _is_losing_cursor_plugin_manifest(
-    path: Path, realized_manifest_by_root: dict[Path, Optional[Path]]
-) -> bool:
-    """True for a `.cursor-plugin/plugin.json` the recursive collector below
-    found under a tracked bundle root that either realized a *different*
-    manifest (e.g. this one failed to produce a plugin self ref — no `name`
-    — and realization fell back to the bundle's Agent Plugins root
-    manifest) or realized no manifest at all (the manifest-less synthesized
-    ref). Either way Cursor never loaded this file, so posture must not
-    evaluate it as if it had.
+def _cursor_plugin_bundle_mcp_manifest_paths(
+    refs: list[ComponentRef],
+    realized_manifest_by_root: dict[Path, Optional[Path]],
+) -> list[Path]:
+    """Resolved paths of the standalone MCP-shaped manifests actually read
+    while realizing a Cursor plugin bundle — the default `mcp.json` at the
+    bundle root, or a custom `mcpServers` string path
+    (`claude_plugin_root._parse_manifest_refs`/`_parse_default_mcp`,
+    `agent_plugins.parse`).
 
-    Also true when this manifest's own bundle root (`path.parent.parent`)
-    isn't a tracked key at all — e.g. a nested fixture such as
-    `<bundle_root>/examples/demo/.cursor-plugin/plugin.json` that the
-    recursive `rglob` below finds several levels under a real bundle root.
-    `_realize_plugin_bundle` only ever reads the bundle-root manifest, so an
-    untracked root means Cursor never loaded this file either — the same
-    `.get()`-defaults-to-None comparison that already drops the
-    manifest-less-bundle case below also drops this one.
+    Derived from the `mcp_server` refs those parsers already produced for
+    each realized bundle, not a directory walk, so a fixture the bundle
+    never actually read (e.g. a nested `examples/demo/mcp.json`, or a
+    losing sibling manifest's own bundled `mcp.json`) can never be
+    attributed to Cursor posture — only a bundle whose root is a tracked
+    key in `realized_manifest_by_root` (i.e. it actually realized a plugin
+    node) contributes any path at all. Excludes any ref whose
+    `source_manifest` IS the bundle's own winning native manifest — that's
+    an inline `mcpServers` entry, already covered by loading that manifest
+    directly.
     """
-    if path.name != "plugin.json" or path.parent.name != ".cursor-plugin":
-        return False
-    try:
-        resolved = path.resolve()
-        root_resolved = path.parent.parent.resolve()
-    except (OSError, RuntimeError):
-        return False
-    return realized_manifest_by_root.get(root_resolved) != resolved
+    winning_manifests = {m for m in realized_manifest_by_root.values() if m is not None}
+    tracked_roots = list(realized_manifest_by_root.keys())
+    paths: set[Path] = set()
+    for ref in refs:
+        extra = ref.extra or {}
+        if extra.get("component_type") != "mcp_server" or extra.get("runtime_hosts") != ["cursor"]:
+            continue
+        if not ref.source_manifest:
+            continue
+        try:
+            resolved = Path(ref.source_manifest).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if resolved in winning_manifests:
+            continue
+        if not any(resolved.is_relative_to(root) for root in tracked_roots):
+            continue
+        paths.add(resolved)
+    return sorted(paths)
 
 
 def _cursor_collect_endpoint_posture_manifests(
@@ -263,7 +275,7 @@ def _cursor_collect_endpoint_posture_manifests(
 ) -> list[tuple[Path, dict]]:
     # Deferred import: same cycle-avoidance rule as the Claude Code binding
     # above — hosts.py must not import tools.posture at module init.
-    from tools.posture import collect_mcp_manifests, load_manifest_files
+    from tools.posture import load_manifest_files
 
     paths = [config_root / "mcp.json"]
     if project_root is not None:
@@ -273,19 +285,32 @@ def _cursor_collect_endpoint_posture_manifests(
 
     realized_by_root = _cursor_plugin_bundle_realized_manifests(refs)
 
-    # Cursor realization only ever reads `.cursor-plugin/plugin.json` (or the
-    # Agent Plugins root plugin.json, which posture never collects) — a
-    # `.claude-plugin/plugin.json` sibling in the same bundle is never loaded
-    # by Cursor, so it must not be collected as Cursor posture. Nor is a
-    # `.cursor-plugin/plugin.json` that lost its own bundle's realization
-    # race or a bundle root that realized manifest-less (see
-    # `_is_losing_cursor_plugin_manifest`).
-    for path, data in collect_mcp_manifests(
-        list(realized_by_root.keys()),
-        plugin_manifest_parent_dirs=frozenset({".cursor-plugin"}),
-    ):
-        if _is_losing_cursor_plugin_manifest(path, realized_by_root):
+    # Native `.cursor-plugin/plugin.json` manifests, loaded from the exact
+    # winning path tracked above — never a directory walk — so a losing
+    # sibling manifest or an untracked nested fixture several levels under
+    # the bundle root (both previously reached via a recursive `rglob` and
+    # had to be filtered back out after the fact) can never be picked up.
+    # The Agent Plugins root plugin.json is deliberately excluded here —
+    # posture never collects it (see `collect_mcp_manifests`'s docstring).
+    native_manifests = sorted(
+        manifest
+        for manifest in realized_by_root.values()
+        if manifest is not None
+        and manifest.name == "plugin.json"
+        and manifest.parent.name == ".cursor-plugin"
+    )
+    for path, data in load_manifest_files(native_manifests):
+        resolved = path.resolve()
+        if resolved in seen:
             continue
+        seen.add(resolved)
+        out.append((path, data))
+
+    # Standalone MCP-shaped manifests actually read while realizing each
+    # bundle (see _cursor_plugin_bundle_mcp_manifest_paths).
+    for path, data in load_manifest_files(
+        _cursor_plugin_bundle_mcp_manifest_paths(refs, realized_by_root)
+    ):
         resolved = path.resolve()
         if resolved in seen:
             continue

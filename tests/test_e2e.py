@@ -1103,7 +1103,7 @@ def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
         assert curated[name]["execution_locus"] == "local"
 
     meta_props = _props_by_name(doc["metadata"])
-    assert meta_props["openaca:schema_version"] == "0.4"
+    assert meta_props["openaca:schema_version"] == "0.5"
 
 
 def test_cursor_repo_scan_end_to_end(tmp_path):
@@ -1352,9 +1352,9 @@ def test_two_host_endpoint_scan_shared_subagent_attributes_to_both_hosts(tmp_pat
     """A `.claude/agents/*.md` subagent with no `.cursor/agents/` override is
     genuinely shared (Cursor's unconditional compatibility read, ADR-0045
     Decision #4): `subagent_precedence.py` tags it `runtime_hosts=["claude-code",
-    "cursor"]`. `tools.bom.agent_host` deliberately returns `None` for that
-    (single-value derivation, ambiguous when shared) — but the render layer
-    must not collapse that ambiguity into "claude-code" by default: the host
+    "cursor"]`. `openaca:runtime_hosts` carries both (ADR-0044
+    Decision #2 — there is no derived singular companion property) and the
+    render layer must not collapse them into "claude-code" by default: the host
     tag must show both hosts, and `components_by_host` must count the
     subagent under both, not silently drop its Cursor ownership."""
     from tools.cli import main as cli_main

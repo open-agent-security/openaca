@@ -83,9 +83,18 @@ project's ADR-immutability convention exists to protect.
    `manifest_registry` at all. No class hierarchy for `HostAdapter`
    itself — the fields that vary per host are data (callables, sets,
    lists), not behavior needing inheritance.
-2. Host is provenance (`runtime_hosts` / `openaca:agent_host`), never
-   part of `openaca:identity` or any match coordinate — reaffirms
-   ADR-0029/0042. **A specific trap to watch for, found and corrected
+2. Host is provenance, never part of `openaca:identity` or any match
+   coordinate — reaffirms ADR-0029/0042. Provenance is carried in exactly
+   one place: `ComponentRef.extra["runtime_hosts"]`, emitted as the
+   `openaca:runtime_hosts` BOM property (a JSON array). There is no
+   derived singular companion property — an earlier draft of this design
+   also emitted `openaca:agent_host`, a scalar projection present only
+   when `runtime_hosts` named exactly one host and omitted otherwise;
+   it is removed, and Agent BOM schema version is `0.5`. Consumers that
+   want the scalar derive it: a length-1 array yields it, any other
+   length means the component genuinely belongs to that many hosts (a
+   `.claude/agents/*.md` subagent Cursor reads unconditionally is tagged
+   `["claude-code", "cursor"]` — see ADR-0045 Decision #4). **A specific trap to watch for, found and corrected
    once already (see ADR-0045 for the concrete incident):**
    `tools/identity.py`'s `canonical_component_identity` grants a `plugin`
    ref real, cross-BOM `openaca:identity` either from
@@ -166,13 +175,27 @@ project's ADR-immutability convention exists to protect.
    filled in; repo-mode-only support is a valid intermediate state for a
    new host.
 7. Any remote consumer's per-host ingest change (persisting
-   `openaca:agent_host`/`openaca:runtime_hosts`, excluded from any
+   `openaca:runtime_hosts`, excluded from any
    cross-BOM join key) is a coordinated, separate change in that
    consumer's own repository; this design has no aggregated-view payoff
    until one lands, independent of which hosts are registered.
 
 ## Alternatives considered
 
+- **A derived singular host property alongside the array**
+  (`openaca:agent_host`, emitted only when unambiguous): rejected — two
+  properties encoding one fact, free to drift, and its absence meant two
+  different things (no host known vs. several hosts known), a worse signal
+  than the array it was derived from. An audit found no consumer: nothing
+  imported the accessor, the `openaca/core/bom.py` facade did not
+  re-export it, `render._ref_hosts` read `runtime_hosts` directly, and the
+  CycloneDX round-trip stamped an `extra["agent_host"]` nothing read.
+- **Pluralizing it to `openaca:agent_hosts`** once one component could
+  belong to several hosts: rejected — `openaca:runtime_hosts` already *is*
+  that field, so this adds a synonym, not a capability.
+- **Keeping the singular but emitting the first host when several apply**:
+  rejected — that is the fail-wrong behavior the omit-when-ambiguous rule
+  existed to prevent, and it would silently misattribute shared subagents.
 - **Single install-model shape shared across hosts**: force every host's
   endpoint adapter to implement the same settings-merge-plus-lockfile
   machinery Claude Code has. Rejected — that shape is Claude-specific by

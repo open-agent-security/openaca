@@ -122,7 +122,13 @@ per-host roots remain available via `openaca:host_config_roots`.
 
 - **`text`** *(default)* - grouped human-readable output. One block per
   affected package, severity per finding, ANSI-colored when stdout is a TTY.
-  Add `-v` for per-finding component/source/container context.
+  Add `-v` for per-finding component/source/container context. When 2+ hosts
+  are scanned, the inventory tree tags each top-level entry `[<host>]` and
+  orders host-major — plugin blocks and each direct-component category
+  cluster by host in registry order (`claude-code` before `cursor`) rather
+  than interleaving, so the listing reads one host at a time. A component
+  genuinely shared across hosts (tagged `[claude-code + cursor]`) sorts after
+  the first host it names. Single-host scans keep purely alphabetical order.
 - **`github`** - GitHub workflow annotation lines (`::error file=...::`).
   Auto-selected when `GITHUB_ACTIONS=true`; can also be selected explicitly.
 - **`json`** - structured per-finding records plus a `stats` block for

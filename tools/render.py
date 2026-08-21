@@ -68,12 +68,11 @@ _DEFAULT_HOST = "claude-code"
 def _ref_hosts(ref: ComponentRef, graph: Graph | None = None) -> list[str]:
     """Every host a component belongs to, for per-host stats/tags.
 
-    Unlike `agent_host` (the BOM's `openaca:agent_host` property — a single
-    value, `None` when a ref's `runtime_hosts` names more than one host),
-    this always returns the full set: a genuinely shared component (e.g. a
-    `.claude/agents/*.md` subagent Cursor also reads unconditionally, tagged
-    `runtime_hosts=["claude-code", "cursor"]`) must attribute to every host
-    it belongs to, not collapse to a single default.
+    `openaca:runtime_hosts` is the sole host-provenance property (ADR-0044
+    Decision #2); this returns the full set it names: a genuinely shared
+    component (e.g. a `.claude/agents/*.md` subagent Cursor reads
+    unconditionally, tagged `runtime_hosts=["claude-code", "cursor"]`) must
+    attribute to every host it belongs to, not collapse to a single default.
 
     Tries the ref's own `runtime_hosts` first. A dependency-manifest
     `package` node never carries its own `runtime_hosts` —
@@ -113,6 +112,31 @@ def _ref_host_label(ref: ComponentRef, graph: Graph | None = None) -> str:
     style as `stats.sources`) when a ref genuinely belongs to more than one
     host, rather than showing only the first/default one."""
     return " + ".join(_ref_hosts(ref, graph))
+
+
+def _host_sort_key(ref: ComponentRef, graph: Graph | None = None) -> tuple[int, ...]:
+    """Sort key that groups a listing by host while keeping it deterministic.
+
+    Ranks each host by `tools.hosts` registration order, so entries cluster
+    per host in registry order rather than interleaving. A ref shared across
+    hosts (multi-entry `runtime_hosts`, ADR-0044 Decision #2) sorts by its
+    full tuple, landing next to the first host it names — `("claude-code",)`
+    then `("claude-code", "cursor")` then `("cursor",)` — rather than in a
+    group of its own. An unregistered host sorts last instead of raising.
+
+    The index tuple is sorted and deduped so the key depends on the host
+    *set*, not the order the array happened to be written in. In-repo
+    producers emit registry order, but `openaca:runtime_hosts` is loaded
+    verbatim from an ingested BOM (`bom._extra_from_properties`), so a
+    `scan bom` run can see `["cursor", "claude-code"]`; without this it
+    would key `(1, 0)` and sort after every cursor-only entry instead of
+    between the two groups."""
+    order = all_host_ids()
+    return tuple(
+        sorted(
+            {order.index(host) if host in order else len(order) for host in _ref_hosts(ref, graph)}
+        )
+    )
 
 
 def compute_components_by_host(
@@ -1552,7 +1576,15 @@ def _build_direct_node(
         cat = _TreeNode(label=f"{label}/ ({len(items)})")
         base_labels = [_leaf_label(r) for r in items]
         duplicate_labels = {x for x in base_labels if base_labels.count(x) > 1}
-        for r in sorted(items, key=lambda x: (_leaf_label(x).lower(), x.source_manifest)):
+        graph_for_hosts = view.graph if view is not None else None
+        for r in sorted(
+            items,
+            key=lambda x: (
+                _host_sort_key(x, graph_for_hosts) if show_host else (),
+                _leaf_label(x).lower(),
+                x.source_manifest,
+            ),
+        ):
             leaf_label = _leaf_label(r)
             source_note = _repo_source_note(r, source_note_root)
             if leaf_label in duplicate_labels and r.source_manifest and not source_note:
@@ -1636,10 +1668,14 @@ def render_inventory_tree(
     useful on terminals or CI logs that mangle UTF-8.
 
     `hosts` is the scan's selected host list. With 2+ hosts it turns on
-    per-host display: a `(host: N, ...)` breakdown on the header line and a
+    per-host display: a `(host: N, ...)` breakdown on the header line, a
     `[<host>]` tag on each top-level plugin/direct-component entry (never on
-    their bundled children, which inherit the parent's host visually). Single-
-    host callers (or omitting `hosts`) get today's output, unchanged.
+    their bundled children, which inherit the parent's host visually), and
+    host-major ordering — plugin blocks and each direct-component category
+    cluster by host (registry order) instead of interleaving, so a listing
+    reads one host at a time. Single-host callers (or omitting `hosts`) get
+    today's output, unchanged: the host key is skipped entirely, so ordering
+    stays purely alphabetical.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
@@ -1653,7 +1689,10 @@ def render_inventory_tree(
 
     plugins = sorted(
         (r for r in refs if _is_plugin_ref(r)),
-        key=lambda r: _plugin_display_identity(r).lower(),
+        key=lambda r: (
+            _host_sort_key(r, graph) if show_host else (),
+            _plugin_display_identity(r).lower(),
+        ),
     )
     if view is not None:
         # Graph-based: direct components are the target root's category-kind

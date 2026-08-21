@@ -933,6 +933,119 @@ def test_tree_shows_per_host_breakdown_and_top_level_tags_only(tmp_path):
     assert "bundled-skill [claude-code]" not in out
 
 
+def _host_tagged_plugin(name: str, hosts: list[str]) -> ComponentRef:
+    return ComponentRef(
+        name=name,
+        version="1.0.0",
+        component_identity=f"plugin/{name}",
+        source_manifest=f"{name}-manifest",
+        extra={"component_type": "plugin", "scope": "user", "runtime_hosts": hosts},
+    )
+
+
+def _host_tagged_skill(name: str, hosts: list[str]) -> ComponentRef:
+    return ComponentRef(
+        name=name,
+        component_identity=f"skill/{name}",
+        source_manifest=f"{name}-manifest",
+        extra={"component_type": "skill", "runtime_hosts": hosts},
+    )
+
+
+def test_tree_groups_plugins_and_direct_components_by_host():
+    """2+ hosts order host-major, not alphabetical: a listing whose names
+    alphabetically interleave the hosts must still read one host at a time,
+    in `tools.hosts` registration order (claude-code before cursor)."""
+    refs = [
+        _host_tagged_plugin("a-cursor-plugin", ["cursor"]),
+        _host_tagged_plugin("b-claude-plugin", ["claude-code"]),
+        _host_tagged_plugin("c-cursor-plugin", ["cursor"]),
+        _host_tagged_plugin("d-claude-plugin", ["claude-code"]),
+        _host_tagged_skill("a-cursor-skill", ["cursor"]),
+        _host_tagged_skill("b-claude-skill", ["claude-code"]),
+        _host_tagged_skill("c-cursor-skill", ["cursor"]),
+        _host_tagged_skill("d-claude-skill", ["claude-code"]),
+    ]
+
+    out = render_inventory_tree(
+        refs,
+        [],
+        use_unicode=True,
+        graph=_graph_from_refs(refs),
+        hosts=["claude-code", "cursor"],
+    )
+
+    def order(names: list[str]) -> list[int]:
+        return [out.index(name) for name in names]
+
+    plugin_order = order(
+        ["b-claude-plugin", "d-claude-plugin", "a-cursor-plugin", "c-cursor-plugin"]
+    )
+    assert plugin_order == sorted(plugin_order)
+    skill_order = order(["b-claude-skill", "d-claude-skill", "a-cursor-skill", "c-cursor-skill"])
+    assert skill_order == sorted(skill_order)
+
+
+def test_tree_shared_host_entry_sorts_after_the_first_host_it_names():
+    """A ref shared across hosts (`runtime_hosts=["claude-code", "cursor"]`,
+    e.g. a subagent Cursor reads unconditionally) has no group of its own: it
+    sorts by its full host tuple, landing after claude-code-only entries and
+    before cursor-only ones."""
+    refs = [
+        _host_tagged_skill("zzz-claude", ["claude-code"]),
+        _host_tagged_skill("aaa-shared", ["claude-code", "cursor"]),
+        _host_tagged_skill("mmm-cursor", ["cursor"]),
+    ]
+
+    out = render_inventory_tree(
+        refs,
+        [],
+        use_unicode=True,
+        graph=_graph_from_refs(refs),
+        hosts=["claude-code", "cursor"],
+    )
+
+    assert out.index("zzz-claude") < out.index("aaa-shared") < out.index("mmm-cursor")
+    assert "aaa-shared [claude-code + cursor]" in out
+
+
+def test_tree_host_grouping_is_independent_of_runtime_hosts_array_order():
+    """`openaca:runtime_hosts` is loaded verbatim from an ingested BOM, so a
+    `scan bom` run can see it written in non-registry order. Grouping keys on
+    the host *set*: a ref declared `["cursor", "claude-code"]` sorts with the
+    shared entries, not after every cursor-only one."""
+    refs = [
+        _host_tagged_skill("zzz-claude", ["claude-code"]),
+        _host_tagged_skill("aaa-reversed", ["cursor", "claude-code"]),
+        _host_tagged_skill("mmm-cursor", ["cursor"]),
+    ]
+
+    out = render_inventory_tree(
+        refs,
+        [],
+        use_unicode=True,
+        graph=_graph_from_refs(refs),
+        hosts=["claude-code", "cursor"],
+    )
+
+    assert out.index("zzz-claude") < out.index("aaa-reversed") < out.index("mmm-cursor")
+
+
+def test_tree_single_host_ordering_stays_alphabetical():
+    """The host key is skipped entirely below 2 hosts, so single-host output
+    keeps today's purely alphabetical ordering."""
+    refs = [
+        _host_tagged_skill("zebra", ["claude-code"]),
+        _host_tagged_skill("apple", ["claude-code"]),
+    ]
+
+    out = render_inventory_tree(
+        refs, [], use_unicode=True, graph=_graph_from_refs(refs), hosts=["claude-code"]
+    )
+
+    assert out.index("apple") < out.index("zebra")
+
+
 def test_tree_header_counts_plugins_direct_total():
     refs = [
         _plugin_ref("a", "1.0.0"),

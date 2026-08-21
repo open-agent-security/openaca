@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - POSIX-only manifest parsing (ADR-0005) — no Windows path handling.
-- `openaca:identity` never includes host; host is provenance only, carried in `ComponentRef.extra["runtime_hosts"]` / emitted as `openaca:agent_host` / `openaca:runtime_hosts` (ADR-0029, ADR-0042, ADR-0044 Decision #2). **Plugins specifically:** use the unqualified `plugin/{name}` identity string for both Cursor plugin formats — never `plugin/cursor/{name}` or any string with 2+ slashes unless `extra["marketplace"]` is genuinely set from verified install-state. A 2-or-more-slash `component_identity` with no `marketplace` extra is silently accepted as real cross-BOM identity by `tools/identity.py`'s `canonical_component_identity` fallback branch — ADR-0044 Decision #2 documents this trap generically; ADR-0045 Decision #2 is the concrete Cursor-plugin mistake it was found from and corrects; do not reintroduce it.
+- `openaca:identity` never includes host; host is provenance only, carried in `ComponentRef.extra["runtime_hosts"]` / emitted as `openaca:runtime_hosts` (ADR-0029, ADR-0042, ADR-0044 Decision #2 — one property, no derived singular companion). **Plugins specifically:** use the unqualified `plugin/{name}` identity string for both Cursor plugin formats — never `plugin/cursor/{name}` or any string with 2+ slashes unless `extra["marketplace"]` is genuinely set from verified install-state. A 2-or-more-slash `component_identity` with no `marketplace` extra is silently accepted as real cross-BOM identity by `tools/identity.py`'s `canonical_component_identity` fallback branch — ADR-0044 Decision #2 documents this trap generically; ADR-0045 Decision #2 is the concrete Cursor-plugin mistake it was found from and corrects; do not reintroduce it.
 - No OpenACA-minted vulnerability IDs, no new severity taxonomy, no commercial/competitive framing in any file (CLAUDE.md).
 - Default to no comments in new code; add one only when the *why* is non-obvious (a hidden constraint, a subtle invariant) — matches existing style in every file this plan touches.
 - Every new/changed public function keeps its existing call sites working unless a step explicitly updates them. Two distinct parameters, two distinct defaults: `hosts` (which hosts to look for — `build_graph`, `parse_repo_grouped`) defaults to *every registered host*, consistently across both functions; `runtime_hosts` (which host a parser stamps onto a ref it's emitting — `mcp_json.parse`, `claude_skill.parse`, `claude_command_agent.parse_file`/`enumerate_dir`, `claude_plugin.parse`) defaults to `["claude-code"]`, preserving each function's exact pre-existing output when called with no new argument.
@@ -41,7 +41,7 @@ Use `docs/adrs/TEMPLATE.md`'s structure. Content sourced from `docs/specs/multi-
 Insert alphabetically after the ADR-0043 entry in the `## Active` section of `docs/adrs/INDEX.md`:
 
 ```markdown
-- [ADR-0044 — Host abstraction for multi-host support; Cursor as the first new host](0044-multi-host-support.md): `HostAdapter` frozen dataclass + `tools/hosts.py` registry; host is provenance (`runtime_hosts`/`openaca:agent_host`) never identity; repo mode's `--host` defaults to every registered host (machine-state-independent) while endpoint mode's default will depend on `detect()`; two pre-existing posture-rule bugs (`insecure_transport.py`/`mcp_auto_approve.py` guessing host from manifest shape) fixed as part of this work, independent of Cursor.
+- [ADR-0044 — Host abstraction for multi-host support; Cursor as the first new host](0044-multi-host-support.md): `HostAdapter` frozen dataclass + `tools/hosts.py` registry; host is provenance never identity, carried in exactly one place (`runtime_hosts`, emitted as the `openaca:runtime_hosts` array); repo mode's `--host` defaults to every registered host (machine-state-independent) while endpoint mode's default will depend on `detect()`; two pre-existing posture-rule bugs (`insecure_transport.py`/`mcp_auto_approve.py` guessing host from manifest shape) fixed as part of this work, independent of Cursor.
 ```
 
 - [x] **Step 3: Commit**
@@ -2501,7 +2501,7 @@ graph → BOM → posture, together, per this repo's `tests/test_e2e.py`
 convention. It combines two verification paths already established
 elsewhere in this file: the BOM round-trip pattern (`build_agent_bom(...)
 .to_cyclonedx()` → `component_refs_from_cyclonedx(bom)`, used at
-`tests/test_e2e.py:993-998` for `runtime_hosts`/`agent_host` provenance)
+`tests/test_e2e.py:993-998` for `runtime_hosts` provenance)
 and the CLI JSON `findings` array (confirmed shape from Task 8) for the
 posture-labeling half.
 
@@ -4402,7 +4402,7 @@ def test_endpoint_posture_claude_settings_layer_unchanged(tmp_path, monkeypatch)
 
 In `tools/bom_cli.py`'s `endpoint` command: add the same `--host` option, resolve through `resolve_endpoint_request`, pass `host_config_roots` to `build_graph`. `target` in the emitted BOM stays the first selected host's root string.
 
-Test the *plumbing*, not real Cursor components — those can't exist until Task 17 registers `HOSTS["cursor"].seed_endpoint` (the per-host loop skips seedless adapters, so a bare `bom endpoint --host cursor` here would legitimately emit zero Cursor components): replace the registry entry with a stubbed adapter (`monkeypatch.setitem(HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=<stub adding one mcp_server node>))`), then assert `bom endpoint --host cursor --config-dir <fixture>` exits 0 and emits a CycloneDX doc whose stub component carries `openaca:agent_host` `cursor` and an `endpoint-cursor/`-prefixed bom-ref — proving the request resolution, root map, and BOM emit are wired. The real-component acceptance (dev-linked plugin, no `enabled`/`active` property) runs in Task 17's BOM/remote acceptance step, after the seed exists.
+Test the *plumbing*, not real Cursor components — those can't exist until Task 17 registers `HOSTS["cursor"].seed_endpoint` (the per-host loop skips seedless adapters, so a bare `bom endpoint --host cursor` here would legitimately emit zero Cursor components): replace the registry entry with a stubbed adapter (`monkeypatch.setitem(HOSTS, "cursor", dataclasses.replace(HOSTS["cursor"], seed_endpoint=<stub adding one mcp_server node>))`), then assert `bom endpoint --host cursor --config-dir <fixture>` exits 0 and emits a CycloneDX doc whose stub component carries `openaca:runtime_hosts` `["cursor"]` and an `endpoint-cursor/`-prefixed bom-ref — proving the request resolution, root map, and BOM emit are wired. The real-component acceptance (dev-linked plugin, no `enabled`/`active` property) runs in Task 17's BOM/remote acceptance step, after the seed exists.
 
 - [ ] **Step 4: `--host` on `remote sync endpoint` and host-aware collection in the remote collector**
 
@@ -4804,7 +4804,7 @@ Uses conftest's offline-OSV fixture map (`@cyanheads/git-mcp-server@1.1.0` → `
 
 Task 16 proved the `bom endpoint`/`remote sync endpoint` plumbing with a stubbed Cursor seed; now the seed is real, land the component-level acceptance it deferred:
 
-- `bom endpoint --host cursor --config-dir <fixture>` against a dev-linked plugin fixture emits a CycloneDX doc whose plugin component carries `openaca:agent_host` `cursor` and **no** `enabled`/`active` property (the Task 16 Step 3 assertion, now against real output).
+- `bom endpoint --host cursor --config-dir <fixture>` against a dev-linked plugin fixture emits a CycloneDX doc whose plugin component carries `openaca:runtime_hosts` `["cursor"]` and **no** `enabled`/`active` property (the Task 16 Step 3 assertion, now against real output).
 - `build_endpoint_collection` for a Cursor-only request through an explicit root not named `.cursor` produces a payload containing the Cursor graph components (MCP + plugin bom-refs present, `endpoint-cursor/`-prefixed) alongside the Cursor-attributed posture findings Task 16 already asserted — real components and findings reaching one upload payload together.
 
 - [ ] **Step 8: Run the full test suite**
@@ -4919,11 +4919,11 @@ host concept.
 
 ## Downstream contracts
 
-- **Remote ingest consumers don't persist
-  `openaca:agent_host`/`openaca:runtime_hosts` today.** A consumer that
-  wants per-host rollups needs its own coordinated change (persist the
-  property, keep it out of any cross-BOM join key exactly the way
-  `openaca:agent_host` is already kept out of `openaca:identity`);
+- **Remote ingest consumers don't persist `openaca:runtime_hosts`
+  today.** A consumer that wants per-host rollups needs its own
+  coordinated change (persist the property, keep it out of any cross-BOM
+  join key exactly the way host is already kept out of
+  `openaca:identity`);
   until one lands, this design's aggregated-view payoff — "which
   endpoints run this server in Cursor vs. Claude Code" — is unrealized.
   That consumer-side change lives in its own repository, not here.
@@ -4956,19 +4956,25 @@ host concept.
 
 ## Migration
 
-`openaca:runtime_hosts`/`openaca:agent_host` already exist in the current
-BOM schema (`docs/openaca-bom-schema.md`) — this design populates an
-existing optional field more completely and fixes the `_infer_hosts` bug,
-it doesn't change field semantics. No BOM schema major-version bump —
-unlike ADR-0042's 0.3→0.4 (which changed what `openaca:identity`
-meant), populating an existing optional field is additive under the
-schema doc's versioning policy.
+`openaca:runtime_hosts` already exists in the current BOM schema
+(`docs/openaca-bom-schema.md`) — this design populates an existing
+optional field more completely and fixes the `_infer_hosts` bug, it
+doesn't change that field's semantics.
 
-`openaca:agent_host` is derived, not independently stored, so absence on
-old BOMs is already meaningful (consistent with ADR-0042's "absent is
-meaningful" stance). **Don't backfill old rows to `claude-code`** — that
-invents provenance that was never actually recorded distinctly, even
-though it happens to be true today.
+The BOM schema does bump `0.4` → `0.5`, for a separate reason: this work
+removed the derived singular `openaca:agent_host` companion property
+(ADR-0044 Decision #2), leaving `openaca:runtime_hosts` as the sole
+host-provenance property. Removing a property from the `openaca:*`
+vocabulary is what `openaca:schema_version` exists to signal.
+`schema/openaca-bom.schema.json` accepts `0.1`-`0.5`, so BOMs emitted at
+earlier versions still validate, and CycloneDX `specVersion` stays `1.7`
+— it names the upstream format, which is unchanged.
+
+Host provenance is derived from what was parsed, not independently
+stored, so absence on old BOMs is already meaningful (consistent with
+ADR-0042's "absent is meaningful" stance). **Don't backfill old rows to
+`claude-code`** — that invents provenance that was never actually
+recorded distinctly, even though it happens to be true today.
 
 ## Testing
 
@@ -4978,7 +4984,7 @@ Mirrors `composition-graph.md`'s per-layout-assertion style:
   `runtime_hosts=["cursor"]`, top-level children of `target`.
 - Same npm MCP server in both `~/.claude/.mcp.json` and
   `~/.cursor/mcp.json` → two occurrences, one `openaca:identity`, distinct
-  `bom-ref`/`agent_host`.
+  `bom-ref`, each with its own single-element `runtime_hosts`.
 - `insecure_transport` against a Cursor manifest → `active_in=["cursor"]`,
   not `["claude-code"]`.
 - `mcp_auto_approve` against a Cursor manifest → no finding at all, not
@@ -5093,4 +5099,4 @@ Then the `smoke-install` job's equivalent: `uv build --wheel`, install into a fr
 1. `openaca --version`; `openaca scan repo` and `openaca bom repo` against a fixture repo containing both hosts' manifests (`.cursor/mcp.json` + `.claude/skills/`) — output must name both hosts.
 2. Endpoint two-host detection: create a fixture home dir containing both `.claude/` (settings.json + empty plugins lockfile) and `.cursor/` (mcp.json), run `HOME=<fixture-home> CLAUDE_CONFIG_DIR=<fixture-home>/.claude openaca scan endpoint --format json` — assert (by inspecting the JSON) that both hosts appear in the scanned-hosts output and that at least one component from each host's root is present. Cursor's default root derives from the home directory, so the `HOME` override is what makes `detect()` find the fixture's `.cursor`.
 3. `HOME=<fixture-home> openaca scan endpoint --host cursor --config-dir <fixture-home>/.cursor --format json` — exit 0, cursor-only output (the `HOME` override keeps the home-scoped `~/.agents/skills` root inside the fixture instead of the runner's real home).
-4. `HOME=<fixture-home> openaca bom endpoint --host cursor --config-dir <fixture-home>/.cursor` — valid CycloneDX, components carry `openaca:agent_host` `cursor`.
+4. `HOME=<fixture-home> openaca bom endpoint --host cursor --config-dir <fixture-home>/.cursor` — valid CycloneDX, components carry `openaca:runtime_hosts` `["cursor"]`.

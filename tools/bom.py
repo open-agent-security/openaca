@@ -25,7 +25,7 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
-OPENACA_BOM_SCHEMA_VERSION = "0.4"
+OPENACA_BOM_SCHEMA_VERSION = "0.5"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 _PURL_TO_ECOSYSTEM = {
@@ -512,7 +512,6 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
-    _append_prop(props, "openaca:agent_host", agent_host(ref))
     _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
     _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))
     _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
@@ -603,9 +602,6 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     match_coordinate = props.get("openaca:match_coordinate")
     if match_coordinate:
         extra["match_coordinate"] = match_coordinate
-    agent_host = props.get("openaca:agent_host")
-    if agent_host:
-        extra["agent_host"] = agent_host
     for prop_name, extra_key in (
         ("openaca:runtime_hosts", "runtime_hosts"),
         ("openaca:declared_by", "declared_by"),
@@ -663,18 +659,6 @@ def _restore_capabilities(props: dict[str, str], extra: dict[str, Any]) -> None:
         return
     extra["capabilities"] = capabilities
     extra["capability_coverage"] = coverage
-
-
-def agent_host(ref: ComponentRef) -> str | None:
-    """The single host a ref's `runtime_hosts` names, or `None` when absent,
-    empty, or shared across more than one host. Public: `tools.render`'s
-    `_ref_hosts` falls back to this same field for the multi-host-aware,
-    always-a-list derivation it needs for per-host stats/tags."""
-    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
-    if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
-        return None
-    value = runtime_hosts[0]
-    return value if isinstance(value, str) and value else None
 
 
 def _parse_purl(purl: str) -> dict[str, str]:

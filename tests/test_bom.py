@@ -269,7 +269,7 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
     package = _component(doc, "mcp-server/npm/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
@@ -585,9 +585,12 @@ def test_cyclonedx_round_trips_output_context_metadata():
     refs = component_refs_from_cyclonedx(encoded)
     component = encoded["components"][0]
 
-    assert _property(component, "openaca:agent_host") == "claude-code"
+    assert _property(component, "openaca:runtime_hosts") == '["claude-code"]'
+    # ADR-0044 Decision #2: `openaca:runtime_hosts` is the sole host-provenance
+    # property; there is no derived singular companion (schema 0.5).
+    assert _property(component, "openaca:agent_host") is None
     assert refs[0].extra["runtime_hosts"] == ["claude-code"]
-    assert refs[0].extra["agent_host"] == "claude-code"
+    assert "agent_host" not in refs[0].extra
     assert refs[0].extra["declared_by"] == {
         "kind": "manifest",
         "path": "/repo/sample-mcp/mcp.json",
@@ -650,7 +653,7 @@ def test_cursor_endpoint_plugin_bom_carries_plugin_scope_property():
 
     component = _component(doc, "plugin/cursor-public/1password")
     assert _property(component, "openaca:plugin_scope") == "user"
-    assert _property(component, "openaca:agent_host") == "cursor"
+    assert _property(component, "openaca:runtime_hosts") == '["cursor"]'
 
 
 def test_cyclonedx_round_trips_cursor_marketplace_dir():
@@ -985,7 +988,7 @@ def test_bom_emits_capability_descriptors():
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
     assert props["openaca:capability_coverage"] == "partial"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
 
 
 def test_bom_emits_coverage_for_uncovered_component():

@@ -547,7 +547,7 @@ dispatch, and endpoint mode's per-host composition functions.
 **The host adapter.** Everything that varies by host lives in one
 frozen `HostAdapter` record, registered in `tools/hosts.py`: the host
 id (the same string carried as `runtime_hosts` provenance and emitted
-as `openaca:agent_host`), detection (config root exists on disk,
+as `openaca:runtime_hosts`), detection (config root exists on disk,
 nothing fancier), config-root resolution (explicit-override aware), the
 host-tagged manifest registry (patterns paired with parsers pre-bound
 to stamp that host), endpoint posture-manifest collection, the
@@ -649,18 +649,18 @@ host-surface label and config rows.
 ## Identity
 
 `openaca:identity` stays host-free — this was already ADR law before this
-design started (ADR-0029, carried forward by ADR-0042: `openaca:agent_host`
-is "provenance/execution context... not part of `openaca:identity`") and
+design started (ADR-0029, carried forward by ADR-0042: host is
+"provenance/execution context... not part of `openaca:identity`") and
 nothing in the surface audit forces a change. The same npm MCP server
 installed under both hosts on one laptop is **one logical component, two
 occurrences**: same `openaca:identity` (e.g. `mcp-server/npm/<pkg>`),
 different `bom-ref` (different `source_manifest`), each carrying its own
-single-element `runtime_hosts`. `_agent_host()` in `tools/bom.py` already
-refuses to emit a singular `openaca:agent_host` when `runtime_hosts` has
-more than one entry — evidence this occurrence-per-host shape, not a
-merged multi-host component, is the intended model. `bom-ref` uniqueness
-is unaffected without any host-specific handling, since `source_manifest`
-already differs across hosts.
+single-element `runtime_hosts`. Occurrence-per-host, not a merged
+multi-host component, is the intended model: cross-host grouping happens
+by `openaca:identity`, and `bom-ref` uniqueness is unaffected without any
+host-specific handling since `source_manifest` already differs across
+hosts. `openaca:runtime_hosts` is the sole host-provenance property
+(ADR-0044 Decision #2); there is no derived singular companion.
 
 **Subagents are the one confirmed exception.** Because Cursor can load
 `.claude/agents/*.md` directly with no second file — confirmed

@@ -667,7 +667,7 @@ def test_bom_endpoint_host_cursor_stub_component_wires_request_and_root_map(tmp_
     stub_components = [c for c in doc["components"] if c.get("name") == "stub-server"]
     assert len(stub_components) == 1
     component = stub_components[0]
-    assert {"name": "openaca:agent_host", "value": "cursor"} in component["properties"]
+    assert {"name": "openaca:runtime_hosts", "value": '["cursor"]'} in component["properties"]
     assert component["bom-ref"].startswith("endpoint-cursor/")
 
 
@@ -691,7 +691,7 @@ def test_bom_endpoint_cursor_dev_linked_plugin_has_no_enabled_property(tmp_path)
     plugin_components = [c for c in doc["components"] if c.get("name") == "demo"]
     assert len(plugin_components) == 1
     component = plugin_components[0]
-    assert {"name": "openaca:agent_host", "value": "cursor"} in component["properties"]
+    assert {"name": "openaca:runtime_hosts", "value": '["cursor"]'} in component["properties"]
     prop_names = {p["name"] for p in component["properties"]}
     assert not any(name.endswith(":enabled") or name.endswith(":active") for name in prop_names)
 

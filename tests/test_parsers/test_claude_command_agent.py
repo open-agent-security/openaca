@@ -309,8 +309,8 @@ def test_parse_file_propagates_runtime_hosts_to_inline_mcp_child(tmp_path):
 
 
 def test_cursor_agent_inline_hook_uses_cursor_identity_scheme(tmp_path):
-    md = tmp_path / "guard.md"
-    md.write_text(
+    md = _write(
+        tmp_path / ".cursor" / "agents" / "guard.md",
         "---\n"
         "name: cursor-agent\n"
         "hooks:\n"
@@ -318,7 +318,7 @@ def test_cursor_agent_inline_hook_uses_cursor_identity_scheme(tmp_path):
         "    - type: command\n"
         "      command: echo guard\n"
         "---\n"
-        "body\n"
+        "body\n",
     )
     refs = parse_file(md, kind="agent", runtime_hosts=["cursor"])
     hook = next(r for r in refs if r.extra.get("component_type") == "hook")
@@ -329,8 +329,8 @@ def test_shared_agent_inline_hook_keeps_claude_identity_scheme(tmp_path):
     # The compat case (.claude/agents file Cursor also reads) stays
     # claude-hook: the file is Claude's, and identity must not fork on host
     # selection.
-    md = tmp_path / "guard.md"
-    md.write_text(
+    md = _write(
+        tmp_path / ".claude" / "agents" / "guard.md",
         "---\n"
         "name: shared-agent\n"
         "hooks:\n"
@@ -338,9 +338,34 @@ def test_shared_agent_inline_hook_keeps_claude_identity_scheme(tmp_path):
         "    - type: command\n"
         "      command: echo guard\n"
         "---\n"
-        "body\n"
+        "body\n",
     )
     refs = parse_file(md, kind="agent", runtime_hosts=["claude-code", "cursor"])
+    hook = next(r for r in refs if r.extra.get("component_type") == "hook")
+    assert (hook.component_identity or "").startswith("claude-hook/")
+
+
+def test_claude_agent_inline_hook_keeps_claude_scheme_when_only_cursor_selected(tmp_path):
+    # Regression guard (Codex finding on commit 9a8af75172): a
+    # `.claude/agents/*.md` file scanned via subagent_precedence's
+    # cursor-only-selected branch also gets runtime_hosts=["cursor"] —
+    # identical to a genuine `.cursor/agents/*.md` file. The scheme must
+    # still follow the file's own directory (claude-hook), not the
+    # runtime_hosts list, or the same physical hook declaration would
+    # report a different identity scheme purely because host selection
+    # changed.
+    md = _write(
+        tmp_path / ".claude" / "agents" / "guard.md",
+        "---\n"
+        "name: claude-only-agent\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - type: command\n"
+        "      command: echo guard\n"
+        "---\n"
+        "body\n",
+    )
+    refs = parse_file(md, kind="agent", runtime_hosts=["cursor"])
     hook = next(r for r in refs if r.extra.get("component_type") == "hook")
     assert (hook.component_identity or "").startswith("claude-hook/")
 

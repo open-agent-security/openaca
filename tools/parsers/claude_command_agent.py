@@ -165,12 +165,15 @@ def _agent_frontmatter_child_refs(
 
     hooks_block = frontmatter.get("hooks")
     if isinstance(hooks_block, dict):
-        # Identity scheme follows the OWNING host of the subagent file, not
-        # the default: a Cursor-only subagent's inline hook is a Cursor hook.
-        # The shared ["claude-code", "cursor"] compat case stays "claude-hook"
-        # deliberately — the file is Claude's (.claude/agents), Cursor merely
-        # also reads it, and identity must not fork on host selection.
-        identity_scheme = "cursor-hook" if runtime_hosts == ["cursor"] else "claude-hook"
+        # Identity scheme follows the OWNING host directory the file lives
+        # under (`.claude/agents` vs `.cursor/agents`), not `runtime_hosts`:
+        # a `.claude/agents/*.md` file scanned with only Cursor selected
+        # (subagent_precedence's cross-host compat-read branch) also gets
+        # runtime_hosts=["cursor"] — identical to a genuine
+        # `.cursor/agents/*.md` file — so runtime_hosts alone can't tell
+        # "Cursor-owned" from "Claude-owned, Cursor merely also reads it"
+        # apart. The path can.
+        identity_scheme = _hook_identity_scheme_for_agent_path(md_path)
         refs.extend(
             hooks_json.parse_plugin_hooks_inline(
                 hooks_block=hooks_block,
@@ -182,6 +185,22 @@ def _agent_frontmatter_child_refs(
         )
 
     return refs
+
+
+def _hook_identity_scheme_for_agent_path(md_path: Path) -> str:
+    """`"cursor-hook"` for a file under a `.cursor/agents` directory, else
+    `"claude-hook"` — mirrors `hooks_json.hook_identity_scheme_for_manifest`'s
+    directory-name keying. Walks all ancestors (not just the immediate
+    parent) so a subagent nested under `agents/` (`agents.rglob("*.md")`
+    allows subdirectories) still resolves to its owning `agents` dir rather
+    than an intermediate one.
+    """
+    parts = md_path.parts
+    if "agents" in parts:
+        idx = parts.index("agents")
+        if idx > 0 and parts[idx - 1] == ".cursor":
+            return "cursor-hook"
+    return "claude-hook"
 
 
 def _inline_mcp_servers(value: object) -> dict:

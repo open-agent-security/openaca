@@ -172,10 +172,22 @@ def hosts_from_refs(refs: list[ComponentRef], graph: Graph | None = None) -> lis
     `openaca:scanned_hosts` metadata property: the distinct hosts `_ref_hosts`
     attributes across `refs` (own `runtime_hosts`, else ancestry, else the
     default host) — a shared ref contributes every host it names, not just
-    one — ordered by host-registry registration order for determinism."""
+    one — ordered by host-registry registration order for determinism.
+
+    An empty `refs` list (a valid, empty single-host BOM) falls back to
+    `_DEFAULT_HOST` rather than `[]`: `_ref_hosts` never returns an empty list
+    for any individual ref (its own last resort is the same default), so this
+    mirrors that per-ref guarantee at the whole-list level instead of losing
+    it purely because there happened to be zero refs to apply it to — the
+    caller (`scan bom`'s `components_by_host` seeding) needs a real host to
+    seed, not silently the empty map the "always has at least one key"
+    contract in `docs/reference/cli.md` rules out.
+    """
     present: set[str] = set()
     for ref in refs:
         present.update(_ref_hosts(ref, graph))
+    if not present:
+        return [_DEFAULT_HOST]
     return [host_id for host_id in all_host_ids() if host_id in present]
 
 

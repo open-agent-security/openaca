@@ -910,6 +910,29 @@ def test_scan_bom_two_host_shows_per_host_tags_and_breakdown(tmp_path, monkeypat
     assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}
 
 
+def test_scan_bom_empty_single_host_bom_seeds_default_host(tmp_path):
+    """A valid, empty single-host BOM (no manifests found, so no
+    `openaca:scanned_hosts` metadata either -- that property is
+    multi-host-gated) must still report a real host in `components_by_host`,
+    not `{}` -- the "always has at least one key" contract in
+    `docs/reference/cli.md` applies to `scan bom` round-trips too, not just
+    live scans."""
+    bom_path = tmp_path / "empty.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main, ["bom", "repo", "--target", str(tmp_path), "--output", str(bom_path)]
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+    doc = json.loads(bom_path.read_text(encoding="utf-8"))
+    assert "openaca:scanned_hosts" not in {p["name"] for p in doc["metadata"]["properties"]}
+
+    json_result = CliRunner().invoke(
+        scan_main, ["bom", "--input", str(bom_path), "--format", "json"]
+    )
+    assert json_result.exit_code == 0, json_result.output
+    result_doc = json.loads("\n".join(json_result.output.splitlines()[:-1]))
+    assert result_doc["stats"]["components_by_host"] == {"claude-code": 0}
+
+
 def test_scan_bom_multi_host_refs_without_scanned_hosts_falls_back(tmp_path, monkeypatch):
     """A BOM whose `openaca:scanned_hosts` metadata property is missing (pre-
     Stage-4 BOM, or the property stripped) but whose components still carry

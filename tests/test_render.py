@@ -24,6 +24,7 @@ from tools.render import (
     _fixed_in_for_finding,
     _group_findings,
     compute_components_by_host,
+    hosts_from_refs,
     render_github,
     render_inventory_tree,
     render_json,
@@ -640,6 +641,15 @@ def test_compute_components_by_host_seeded_hosts_do_not_drop_counted_hosts():
     )
     counts = compute_components_by_host([ref], hosts=["claude-code"])
     assert counts == {"claude-code": 0, "cursor": 1}
+
+
+def test_hosts_from_refs_empty_list_falls_back_to_default_host():
+    """An empty `refs` list (a valid, empty single-host BOM round-trip) must
+    still resolve to a real host, not `[]` — `scan bom`'s `components_by_host`
+    seeding (tools/scan.py) relies on this to keep the "always has at least
+    one key" contract (`docs/reference/cli.md`) for an empty BOM that carries
+    no `openaca:scanned_hosts` metadata (single-host BOMs never set it)."""
+    assert hosts_from_refs([]) == ["claude-code"]
 
 
 def test_json_finding_contains_full_record():

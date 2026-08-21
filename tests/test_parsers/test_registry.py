@@ -418,6 +418,31 @@ def test_agent_plugins_root_mcp_json_not_double_claimed_by_claude_bare_pattern(t
     assert mcp_refs[0].extra.get("runtime_hosts") == ["cursor"]
 
 
+def test_malformed_agent_plugins_manifest_does_not_claim_sibling_mcp_json(tmp_path):
+    # Parity with test_graph_build.py's
+    # test_malformed_agent_plugin_does_not_swallow_sibling_mcp_json: a
+    # schema-tagged plugin.json missing `name` is detected but never emits a
+    # plugin self ref (agent_plugins.parse's `if name:` guard), so it must
+    # not claim the bundle root either — otherwise this pre-pass would skip
+    # the bare claude-code mcp.json pattern for a file the Cursor fallback
+    # branch (gated the same way) never actually claims, silently dropping
+    # the ref from both routes... or, before this fix, letting the fallback
+    # branch claim it anyway and reintroducing the two-route dedup race.
+    (tmp_path / "plugin.json").write_text(
+        json.dumps({"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"})
+    )
+    (tmp_path / "mcp.json").write_text(
+        '{"mcpServers": {"weather": {"command": "npx", "args": ["weather-mcp@1.0.0"]}}}'
+    )
+    grouped, n_found = parse_repo_grouped(tmp_path, hosts=["claude-code", "cursor"])
+    assert n_found == 1
+    assert [str(p) for p, _ in grouped] == [str(tmp_path / "mcp.json")]
+    refs = parse_repo(tmp_path, hosts=["claude-code", "cursor"])
+    mcp_refs = [r for r in refs if r.name == "weather-mcp"]
+    assert len(mcp_refs) == 1
+    assert mcp_refs[0].extra.get("runtime_hosts") == ["claude-code"]
+
+
 def _write_cursor_native_bundle(root: Path, dirname: str = "cbundle") -> Path:
     bundle = root / dirname
     (bundle / ".cursor-plugin").mkdir(parents=True)

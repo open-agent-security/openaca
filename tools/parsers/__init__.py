@@ -182,7 +182,8 @@ def _unselected_native_bundle_roots(root: Path, spec, selected_hosts: list[str])
 
 def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> list[Path]:
     """Resolved roots of Agent Plugins bundles the inline fallback below will
-    claim (same gate: `cursor` selected, containment holds, schema detects).
+    claim (same gate: `cursor` selected, containment holds, schema detects,
+    manifest realizes).
 
     A bundle's root-level `mcp.json` must not ALSO match the bare Claude Code
     `mcp.json` pattern in the registry loop: `flatten_grouped`'s dedup key
@@ -192,6 +193,17 @@ def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> l
     dedup step normalizes. Precomputing which bundles will claim their own
     `mcp.json` lets the registry loop skip it up front, so only the
     Cursor-tagged Agent Plugin route ever appends a group for that file.
+
+    Requires `_plugin_manifest_realizes` (a non-empty string `name`), not just
+    schema detection: a schema-tagged manifest missing `name` never emits a
+    plugin self ref (`agent_plugins.parse`'s `if name:` guard), and the graph
+    builder's `_realize_agent_plugin` attaches nothing for it — including its
+    sibling `mcp.json` — falling through to the standalone Claude Code walk.
+    Without this check, this pre-pass claimed the bundle root purely on
+    schema match, so the bare pattern's `mcp.json` was skipped here while the
+    inline fallback below still called `agent_plugins.parse` and produced a
+    Cursor-tagged ref for the same file — reintroducing the two-route
+    dedup race this function exists to prevent, just for the malformed case.
     """
     if "cursor" not in selected_hosts:
         return []
@@ -202,6 +214,8 @@ def _agent_plugin_bundle_roots(root: Path, spec, selected_hosts: list[str]) -> l
         if resolve_within(path.parent, "plugin.json") is None:
             continue
         if not agent_plugins.is_agent_plugins_manifest(path):
+            continue
+        if not _plugin_manifest_realizes(path):
             continue
         try:
             roots.append(path.parent.resolve())
@@ -509,6 +523,12 @@ def parse_repo_grouped(
             # same containment as graph dispatch's _find_agent_plugin_roots.
             and resolve_within(path.parent, "plugin.json") is not None
             and agent_plugins.is_agent_plugins_manifest(path)
+            # Realization parity with `_realize_agent_plugin`/
+            # `_agent_plugin_bundle_roots`: a schema-tagged manifest missing
+            # `name` must not claim the bundle at all, including its sibling
+            # `mcp.json` — that file is left for the bare Claude Code pattern
+            # above, matching what the graph builder falls through to.
+            and _plugin_manifest_realizes(path)
         ):
             n_found += 1
             try:

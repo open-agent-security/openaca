@@ -56,6 +56,7 @@ from tools.bom import (
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
 from tools.graph_build import _TARGET_KEY, build_graph
+from tools.host_detection import HostConfigNotFound, resolve_endpoint_host
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
@@ -958,7 +959,11 @@ def endpoint(
     _validate_report_options(
         report_kind=report_kind, output_path=output_path, output_format=output_format
     )
-    config_dir = _resolve_endpoint_config_dir(config_dir)
+    try:
+        endpoint_host = resolve_endpoint_host(config_dir)
+    except HostConfigNotFound as exc:
+        raise click.ClickException(str(exc)) from exc
+    config_dir = endpoint_host.config_dir
 
     # Scan-scope transparency. For the default text card the Target block owns
     # this, so the stderr preamble would just precede (and duplicate) the card;
@@ -1012,7 +1017,7 @@ def endpoint(
     # Inventory tree for the text card (default stdout). Machine formats keep the
     # tree as a verbose-stderr diagnostic only (below).
     card_target = RenderTarget(
-        host_surface="Claude Code",
+        host_surface=endpoint_host.host_surface,
         rows=[
             ("config", str(config_dir)),
             ("project", str(project) if project is not None else "not included"),
@@ -1321,20 +1326,6 @@ def scan_bom(
         output_format,
     )
     _exit_for_findings(fail_on, findings)
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    """Resolve endpoint config directory defaults.
-
-    Explicit `--config-dir` wins. Otherwise use `$CLAUDE_CONFIG_DIR` when set,
-    then fall back to Claude Code's default user config directory.
-    """
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 if __name__ == "__main__":

@@ -346,6 +346,16 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
     assert "Traceback" not in result.output
 
 
+def test_collect_endpoint_cli_rejects_missing_claude_config_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "missing"))
+
+    result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
+
+    assert result.exit_code != 0
+    assert "CLAUDE_CONFIG_DIR" in result.output
+    assert "does not exist or is not a directory" in result.output
+
+
 def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch):
     calls: list[dict] = []
 

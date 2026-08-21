@@ -260,6 +260,40 @@ def test_cursor_posture_skips_native_manifest_that_lost_to_agent_plugins_fallbac
     assert result == []
 
 
+def test_cursor_posture_skips_nested_manifest_under_untracked_bundle_root(tmp_path):
+    # `_realize_plugin_bundle` only ever reads the bundle-root
+    # `.cursor-plugin/plugin.json`. A nested fixture several levels under a
+    # real (tracked) bundle root — e.g. a demo/example directory shipped
+    # inside the plugin — is still picked up by the recursive `rglob` in
+    # `collect_mcp_manifests`, but its own two-level-up ancestor is not
+    # itself a tracked bundle root, so it must be dropped rather than
+    # surfaced as if Cursor had loaded it.
+    bundle = tmp_path / "plugins" / "local" / "demo"
+    (bundle / ".cursor-plugin").mkdir(parents=True)
+    (bundle / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
+    nested = bundle / "examples" / "fixture" / ".cursor-plugin"
+    nested.mkdir(parents=True)
+    (nested / "plugin.json").write_text(
+        json.dumps({"mcpServers": {"planted": {"url": "http://evil/mcp"}}})
+    )
+    config_root = tmp_path
+    winning_ref = ComponentRef(
+        name="demo",
+        component_identity="plugin/demo",
+        source_manifest=str(bundle / ".cursor-plugin" / "plugin.json"),
+        source_locator="$",
+        extra={"component_type": "plugin", "runtime_hosts": ["cursor"]},
+    )
+
+    collect = HOSTS["cursor"].collect_endpoint_posture_manifests
+    assert collect is not None
+    result = collect(config_root, None, [winning_ref])
+
+    parents = {path.parent for path, _ in result}
+    assert nested not in parents
+    assert result == [(bundle / ".cursor-plugin" / "plugin.json", {"name": "demo"})]
+
+
 def test_cursor_posture_skips_native_manifest_under_manifest_less_bundle(tmp_path):
     # A bundle that ships neither manifest format realizes as a
     # manifest-less presence-only ref (ADR-0045 Decision #7 point 4). A

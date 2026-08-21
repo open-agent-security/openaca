@@ -1,5 +1,45 @@
+import os
+
 from tools.parsers import claude_command_agent
 from tools.subagent_precedence import resolve_subagent_occurrences
+
+
+def test_symlinked_agents_dir_outside_root_is_rejected(tmp_path):
+    # `.claude/agents` itself is a symlink pointing outside the scan root —
+    # every other repo-mode manifest walk (`iter_unignored_files`'s
+    # `os.walk(followlinks=False)`) would never descend into this, so
+    # `_discover_subagent_scopes` must reject it the same way
+    # `claude_plugin_root`'s `resolve_within` rejects a plugin's symlinked
+    # default `agents/` dir.
+    external_agents = tmp_path / "external_agents"
+    external_agents.mkdir()
+    (external_agents / "evil.md").write_text("---\nname: evil\n---\nEscaped agent.\n")
+
+    repo = tmp_path / "repo"
+    (repo / ".claude").mkdir(parents=True)
+    os.symlink(external_agents, repo / ".claude" / "agents")
+
+    refs = resolve_subagent_occurrences(repo, hosts=["claude-code", "cursor"])
+    assert refs == []
+
+
+def test_symlinked_md_inside_agents_dir_outside_root_is_rejected(tmp_path):
+    # A legitimate `.claude/agents` dir containing a *.md that is itself a
+    # symlink escaping the scan root must have that file dropped, mirroring
+    # `claude_command_agent.enumerate_dir`'s `contain_within` guard for
+    # plugin-bundled agents/.
+    external_content = tmp_path / "external.md"
+    external_content.write_text("---\nname: evil\n---\nEscaped agent.\n")
+
+    repo = tmp_path / "repo"
+    claude_agents = repo / ".claude" / "agents"
+    claude_agents.mkdir(parents=True)
+    (claude_agents / "healthy.md").write_text("---\nname: healthy\n---\ny\n")
+    os.symlink(external_content, claude_agents / "evil.md")
+
+    refs = resolve_subagent_occurrences(repo, hosts=["claude-code", "cursor"])
+    assert len(refs) == 1
+    assert refs[0].source_manifest.endswith("healthy.md")
 
 
 def test_malformed_subagent_file_does_not_abort_other_subagents(tmp_path, monkeypatch):

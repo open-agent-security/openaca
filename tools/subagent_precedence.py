@@ -20,16 +20,30 @@ from pathlib import Path
 
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_command_agent
+from tools.parsers.claude_plugin_root import resolve_within
 
 
 def _discover_subagent_scopes(root: Path) -> dict[Path, dict[str, dict[Path, Path]]]:
     """Map each scope dir (the directory containing `.claude`/`.cursor`) to
     {host_dir_name: {relative_path: absolute_file}}. Pure discovery — walks
     every depth, independent of host selection (Cursor's compatibility read
-    means `.claude/agents/` files are part of Cursor's surface too)."""
+    means `.claude/agents/` files are part of Cursor's surface too).
+
+    An `agents_dir` match that is itself a symlink escaping `root` (or has a
+    symlinked ancestor, e.g. `.claude` itself) is dropped via `resolve_within`
+    — the same containment `claude_plugin_root` applies to a plugin's default
+    `agents/` dir, and `iter_unignored_files` gets for free from `os.walk`'s
+    `followlinks=False` default used by every other repo-mode manifest walk.
+    """
     scopes: dict[Path, dict[str, dict[Path, Path]]] = {}
     for host_dir in (".claude", ".cursor"):
         for agents_dir in sorted(root.glob(f"**/{host_dir}/agents")):
+            try:
+                rel = agents_dir.relative_to(root)
+            except ValueError:
+                continue
+            if resolve_within(root, str(rel)) is None:
+                continue
             files = _agent_files(agents_dir)
             if files:
                 scope = agents_dir.parent.parent
@@ -100,9 +114,26 @@ def resolve_subagent_occurrences(root: Path, hosts: list[str]) -> list[Component
 def _agent_files(agents_dir: Path | None) -> dict[Path, Path]:
     if agents_dir is None or not agents_dir.is_dir():
         return {}
-    return {
-        md.relative_to(agents_dir): md for md in sorted(agents_dir.rglob("*.md")) if md.is_file()
-    }
+    try:
+        agents_dir_resolved = agents_dir.resolve()
+    except (OSError, RuntimeError):
+        return {}
+    files: dict[Path, Path] = {}
+    for md in sorted(agents_dir.rglob("*.md")):
+        if not md.is_file():
+            continue
+        try:
+            md_resolved = md.resolve()
+        except (OSError, RuntimeError):
+            continue
+        # A nested *.md that is itself a symlink (or under a symlinked
+        # subdir) escaping agents_dir must not be attributed as a subagent
+        # occurrence here — same containment claude_command_agent.enumerate_dir
+        # applies via its `contain_within` param for plugin-bundled agents/.
+        if not md_resolved.is_relative_to(agents_dir_resolved):
+            continue
+        files[md.relative_to(agents_dir)] = md
+    return files
 
 
 def resolve_subagent_occurrences_for_dirs(

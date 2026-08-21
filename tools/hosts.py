@@ -235,7 +235,17 @@ def _is_losing_cursor_plugin_manifest(
     — and realization fell back to the bundle's Agent Plugins root
     manifest) or realized no manifest at all (the manifest-less synthesized
     ref). Either way Cursor never loaded this file, so posture must not
-    evaluate it as if it had."""
+    evaluate it as if it had.
+
+    Also true when this manifest's own bundle root (`path.parent.parent`)
+    isn't a tracked key at all — e.g. a nested fixture such as
+    `<bundle_root>/examples/demo/.cursor-plugin/plugin.json` that the
+    recursive `rglob` below finds several levels under a real bundle root.
+    `_realize_plugin_bundle` only ever reads the bundle-root manifest, so an
+    untracked root means Cursor never loaded this file either — the same
+    `.get()`-defaults-to-None comparison that already drops the
+    manifest-less-bundle case below also drops this one.
+    """
     if path.name != "plugin.json" or path.parent.name != ".cursor-plugin":
         return False
     try:
@@ -243,9 +253,7 @@ def _is_losing_cursor_plugin_manifest(
         root_resolved = path.parent.parent.resolve()
     except (OSError, RuntimeError):
         return False
-    if root_resolved not in realized_manifest_by_root:
-        return False
-    return realized_manifest_by_root[root_resolved] != resolved
+    return realized_manifest_by_root.get(root_resolved) != resolved
 
 
 def _cursor_collect_endpoint_posture_manifests(

@@ -105,13 +105,18 @@ def build_endpoint_collection(
     graph, refs = _collect_endpoint_components(config_dir, project, host_config_roots)
     roots = host_config_roots or {"claude-code": config_dir}
     selected_hosts = list(roots)
+    # `scanned_hosts` is unconditional for the same reason as `bom endpoint`:
+    # an empty single-host collection carries no `runtime_hosts` to infer
+    # from, so without it the receiving end attributes the collection to the
+    # default host. Host ids are registry constants, never paths, so this
+    # adds nothing for the redaction pass below to catch.
+    scanned_hosts = selected_hosts
     # Mirror how openaca:target is kept remote-safe: it's never given the real
     # absolute config_dir, only the synthetic TARGET_LOCATOR_ENDPOINT. So
     # host_config_roots gets each host's discovery label (`endpoint`,
     # `endpoint-cursor`, ...) instead of its real root — no absolute path is
     # ever constructed into this BOM, so there is nothing for the redaction
     # pass below to catch or miss.
-    scanned_hosts = selected_hosts if len(selected_hosts) > 1 else None
     host_config_roots_for_bom = (
         {host_id: endpoint_normalization_label(host_id) for host_id in selected_hosts}
         if len(selected_hosts) > 1

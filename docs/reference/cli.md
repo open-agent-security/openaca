@@ -109,12 +109,15 @@ enabled/disabled state is not observable and is never reported (see
 endpoint`'s `openaca:source_unit_label` metadata reflects this: it stays
 `"active plugin"` only when every selected host asserts enabled state; a
 selection that includes a presence-only host (Cursor) reports `"plugin"`
-instead. A 2+-host `bom endpoint` also adds `openaca:scanned_hosts` and
-`openaca:host_config_roots` metadata (see
-[the BOM schema reference](../openaca-bom-schema.md#openaca-properties));
-`openaca:target` itself switches to the neutral locator `endpoint:user-scope`
-for a multi-host selection, since no single host's root is authoritative —
-per-host roots remain available via `openaca:host_config_roots`.
+instead. Every BOM records the hosts it covered in `openaca:scanned_hosts` metadata,
+single-host selections included — it is what keeps a `scan bom` round trip at
+parity with a live scan of the same target, and the only way an empty BOM can
+say which host came up empty. A 2+-host `bom endpoint` additionally adds
+`openaca:host_config_roots` (see
+[the BOM schema reference](../openaca-bom-schema.md#openaca-properties)), and
+`openaca:target` switches to the neutral locator `endpoint:user-scope` for a
+multi-host selection, since no single host's root is authoritative — per-host
+roots remain available via `openaca:host_config_roots`.
 
 ## Output formats
 

@@ -38,7 +38,7 @@ from tools.finding_output import (
     posture_to_output,
 )
 from tools.graph import Graph, Node, ref_occurrence_key
-from tools.hosts import all_host_ids, plugin_unit_label
+from tools.hosts import DEFAULT_HOST_ID, all_host_ids, plugin_unit_label
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
@@ -60,9 +60,6 @@ class ScanStats:
     parse_failed: int = 0
     sources: set[str] = field(default_factory=set)
     components_by_host: dict[str, int] = field(default_factory=dict)
-
-
-_DEFAULT_HOST = "claude-code"
 
 
 def _ref_hosts(ref: ComponentRef, graph: Graph | None = None) -> list[str]:
@@ -104,7 +101,7 @@ def _ref_hosts(ref: ComponentRef, graph: Graph | None = None) -> list[str]:
                     ancestor_hosts = _own_hosts(ancestor.ref)
                     if ancestor_hosts is not None:
                         return ancestor_hosts
-    return [_DEFAULT_HOST]
+    return [DEFAULT_HOST_ID]
 
 
 def _ref_host_label(ref: ComponentRef, graph: Graph | None = None) -> str:
@@ -175,7 +172,7 @@ def hosts_from_refs(refs: list[ComponentRef], graph: Graph | None = None) -> lis
     one — ordered by host-registry registration order for determinism.
 
     An empty `refs` list (a valid, empty single-host BOM) falls back to
-    `_DEFAULT_HOST` rather than `[]`: `_ref_hosts` never returns an empty list
+    `DEFAULT_HOST_ID` rather than `[]`: `_ref_hosts` never returns an empty list
     for any individual ref (its own last resort is the same default), so this
     mirrors that per-ref guarantee at the whole-list level instead of losing
     it purely because there happened to be zero refs to apply it to — the
@@ -187,7 +184,7 @@ def hosts_from_refs(refs: list[ComponentRef], graph: Graph | None = None) -> lis
     for ref in refs:
         present.update(_ref_hosts(ref, graph))
     if not present:
-        return [_DEFAULT_HOST]
+        return [DEFAULT_HOST_ID]
     return [host_id for host_id in all_host_ids() if host_id in present]
 
 
@@ -1775,13 +1772,13 @@ def render_repo_inventory_tree(
     `scan repo --host cursor`) still gets tagged here — it's the only signal
     in the text output that the scan wasn't Claude Code's default. Only the
     legacy no-`--host` / default-only-host case (`hosts` omitted or exactly
-    `["claude-code"]`) keeps today's untagged output.
+    `[DEFAULT_HOST_ID]`) keeps today's untagged output.
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
     all_refs = _dedupe_repo_tree_refs([r for _, refs in grouped for r in refs])
     view = _GraphView.build(graph, all_refs) if graph is not None else None
-    show_host = hosts is not None and hosts != [_DEFAULT_HOST]
+    show_host = hosts is not None and hosts != [DEFAULT_HOST_ID]
     plugin_refs = sorted(
         (r for r in all_refs if _is_plugin_ref(r)),
         key=lambda r: (

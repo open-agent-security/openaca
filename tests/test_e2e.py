@@ -1665,3 +1665,75 @@ def test_two_host_repo_scan_shows_per_host_attribution(tmp_path):
     assert json_result.exit_code == 0, json_result.output
     doc = _scan_json_doc(json_result.output)
     assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}
+
+
+def test_bom_round_trip_preserves_host_attribution_shown_by_a_live_scan(tmp_path):
+    """Codex review (PR #158): the host tags a live scan shows and the tags
+    the same tree shows after a `bom` → `scan bom` round trip must match.
+
+    They kept diverging in both directions because a BOM recorded no host
+    selection, leaving the reader to infer one from the components it
+    happened to contain: a two-host walk that found only Claude Code
+    components reconstructed as a Claude-Code-only scan (tags dropped), and a
+    Cursor-only endpoint reconstructed as Claude Code (host invented). The
+    fix is provenance at the write side — `openaca:scanned_hosts` on every
+    BOM — so this pins the round trip itself rather than either symptom."""
+    from tools.bom_cli import main as bom_main
+    from tools.cli import main as cli_main
+
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"api": {"url": "http://example.com/mcp"}}})
+    )
+    runner = CliRunner()
+
+    live = runner.invoke(cli_main, ["scan", "repo", "--target", str(tmp_path)])
+    assert live.exit_code == 0, live.output
+
+    bom_path = tmp_path / "openaca.bom.json"
+    bom_result = runner.invoke(
+        bom_main, ["repo", "--target", str(tmp_path), "--output", str(bom_path)]
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+    from_bom = runner.invoke(cli_main, ["scan", "bom", "--input", str(bom_path)])
+    assert from_bom.exit_code == 0, from_bom.output
+
+    component_line = "http://example.com/mcp (HTTP) (from .mcp.json) [claude-code]"
+    assert component_line in live.output
+    assert component_line in from_bom.output
+
+
+def test_cursor_endpoint_bom_round_trip_keeps_cursor_out_of_claude_codes_name(tmp_path):
+    """The endpoint half of the same round-trip promise: a Cursor-only
+    endpoint BOM must never be reported as Claude Code, with or without
+    components to infer from. The empty case is the one no amount of
+    per-component attribution can recover."""
+    from tools.bom_cli import main as bom_main
+    from tools.cli import main as cli_main
+
+    cursor_root = tmp_path / "cursor-cfg"
+    (cursor_root / "skills" / "recon").mkdir(parents=True)
+    (cursor_root / "skills" / "recon" / "SKILL.md").write_text(
+        "---\nname: recon\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+    empty_root = tmp_path / "empty-cfg"
+    empty_root.mkdir()
+    runner = CliRunner()
+
+    for root, expected in ((cursor_root, {"cursor": 1}), (empty_root, {"cursor": 0})):
+        bom_path = tmp_path / f"{root.name}.bom.json"
+        bom_result = runner.invoke(
+            bom_main,
+            ["endpoint", "--host", "cursor", "--config-dir", str(root), "--output", str(bom_path)],
+        )
+        assert bom_result.exit_code == 0, bom_result.output
+
+        text_result = runner.invoke(cli_main, ["scan", "bom", "--input", str(bom_path)])
+        assert text_result.exit_code == 0, text_result.output
+        assert "hosts: cursor" in text_result.output
+        assert "claude-code" not in text_result.output
+
+        json_result = runner.invoke(
+            cli_main, ["scan", "bom", "--input", str(bom_path), "--format", "json"]
+        )
+        assert json_result.exit_code == 0, json_result.output
+        assert _scan_json_doc(json_result.output)["stats"]["components_by_host"] == expected

@@ -224,18 +224,16 @@ def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
 
 
 def test_scan_bom_repo_cursor_only_components_tag_host_in_reconstructed_tree(tmp_path):
-    """A repo BOM whose only components are Cursor-attributed must still show
-    a `[cursor]` tag when reconstructed through `scan bom`.
+    """A repo BOM whose only components are Cursor-attributed must show a
+    `[cursor]` tag when reconstructed through `scan bom`, by both routes.
 
-    `bom repo` has no `--host` flag (it always walks every registered host),
-    so the BOM here carries no `openaca:scanned_hosts` metadata (repo target
-    type never does -- that property is endpoint-only); `scan bom` derives
-    the host list via `hosts_from_refs` fallback, landing on the single
-    non-default host actually present (`["cursor"]`). `_render_bom_inventory_tree`
-    must thread that derived list into `render_repo_inventory_tree` the same
-    way the endpoint branch already threads its own `hosts` (Codex review,
-    PR #158) -- otherwise the reconstructed text output is indistinguishable
-    from a Claude Code-only scan."""
+    `bom repo` has no `--host` flag -- it always walks every registered host,
+    and records exactly that in `openaca:scanned_hosts`, which is what keeps
+    the reconstructed tree at parity with a live `scan repo` of the same tree
+    (both see a 2-host selection, so both tag). Stripping the property
+    exercises the `hosts_from_refs` fallback older BOMs land on: it recovers
+    `["cursor"]` from the components' own attribution, which is a single
+    non-default host and so still tags."""
     plugin_root = tmp_path / "my-plugin"
     (plugin_root / ".cursor-plugin").mkdir(parents=True)
     (plugin_root / ".cursor-plugin" / "plugin.json").write_text(json.dumps({"name": "demo"}))
@@ -246,11 +244,23 @@ def test_scan_bom_repo_cursor_only_components_tag_host_in_reconstructed_tree(tmp
         ["bom", "repo", "--target", str(tmp_path), "--output", str(bom_path)],
     )
     assert bom_result.exit_code == 0, bom_result.output
-    assert "openaca:scanned_hosts" not in bom_path.read_text()
+    doc = json.loads(bom_path.read_text(encoding="utf-8"))
+    assert json.loads(_bom_metadata_properties(doc)["openaca:scanned_hosts"]) == [
+        "claude-code",
+        "cursor",
+    ]
 
     from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path)])
     assert from_bom.exit_code == 0, from_bom.output
     assert "plugin/demo [cursor]" in from_bom.output
+
+    doc["metadata"]["properties"] = [
+        p for p in doc["metadata"]["properties"] if p["name"] != "openaca:scanned_hosts"
+    ]
+    bom_path.write_text(json.dumps(doc), encoding="utf-8")
+    from_legacy_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path)])
+    assert from_legacy_bom.exit_code == 0, from_legacy_bom.output
+    assert "plugin/demo [cursor]" in from_legacy_bom.output
 
 
 def test_scan_bom_verbose_renders_endpoint_inventory_from_bom(tmp_path):
@@ -730,11 +740,14 @@ def _bom_metadata_properties(doc: dict) -> dict[str, str]:
     return {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
 
 
-def test_bom_endpoint_claude_only_metadata_is_byte_identical_pinned(tmp_path):
-    """Claude-only `bom endpoint` must keep emitting exactly today's metadata
-    property set (no `openaca:scanned_hosts`/`openaca:host_config_roots`, and
-    `source_unit_label` stays `"active plugin"`). Pinned as an exact-set
-    assertion so a future change can't silently widen single-host output."""
+def test_bom_endpoint_claude_only_metadata_exact_property_set_pinned(tmp_path):
+    """Claude-only `bom endpoint` records `openaca:scanned_hosts` like every
+    other selection -- host provenance is unconditional so that "absent"
+    means "written before hosts existed" rather than "single host, guess" --
+    but still no `openaca:host_config_roots` (one host has one authoritative
+    root, already in `openaca:target`) and `source_unit_label` stays
+    `"active plugin"`. Pinned as an exact-set assertion so a future change
+    can't silently widen single-host output."""
     config_dir = tmp_path / "claude"
     config_dir.mkdir()
     (config_dir / "settings.json").write_text("{}", encoding="utf-8")
@@ -750,13 +763,17 @@ def test_bom_endpoint_claude_only_metadata_is_byte_identical_pinned(tmp_path):
         "openaca:target": str(config_dir),
         "openaca:source_unit_count": "0",
         "openaca:source_unit_label": "active plugin",
+        "openaca:scanned_hosts": '["claude-code"]',
     }
 
 
 def test_bom_endpoint_cursor_only_metadata_labels_plugin_not_active(tmp_path):
     """Cursor is presence-only (ADR-0045 Decision #7): a Cursor-only endpoint BOM must not
-    claim "active plugin", and single-host output carries no scanned_hosts/
-    host_config_roots (those are multi-host-gated)."""
+    claim "active plugin". It records `openaca:scanned_hosts` as `["cursor"]`
+    -- the only durable record that Cursor was what got scanned, since an
+    endpoint with no components has no per-component attribution to infer it
+    from -- and still no `host_config_roots` (single host, root already in
+    `openaca:target`)."""
     cursor_root = tmp_path / "cursor"
     cursor_root.mkdir()
 
@@ -769,7 +786,7 @@ def test_bom_endpoint_cursor_only_metadata_labels_plugin_not_active(tmp_path):
     props = _bom_metadata_properties(doc)
     assert props["openaca:source_unit_label"] == "plugin"
     assert props["openaca:target"] == str(cursor_root)
-    assert "openaca:scanned_hosts" not in props
+    assert json.loads(props["openaca:scanned_hosts"]) == ["cursor"]
     assert "openaca:host_config_roots" not in props
 
 
@@ -940,27 +957,97 @@ def test_scan_bom_two_host_shows_per_host_tags_and_breakdown(tmp_path, monkeypat
     assert doc["stats"]["components_by_host"] == {"claude-code": 1, "cursor": 1}
 
 
-def test_scan_bom_empty_single_host_bom_seeds_default_host(tmp_path):
-    """A valid, empty single-host BOM (no manifests found, so no
-    `openaca:scanned_hosts` metadata either -- that property is
-    multi-host-gated) must still report a real host in `components_by_host`,
-    not `{}` -- the "always has at least one key" contract in
-    `docs/reference/cli.md` applies to `scan bom` round-trips too, not just
-    live scans."""
+def test_scan_bom_empty_repo_bom_seeds_every_walked_host(tmp_path):
+    """A valid, empty repo BOM must report a zero bucket for every host the
+    walk covered, not just the default one: `bom repo` walks every registered
+    host, so "found nothing" is a statement about all of them. The "always
+    has at least one key" contract in `docs/reference/cli.md` applies to
+    `scan bom` round-trips too, not just live scans."""
     bom_path = tmp_path / "empty.bom.json"
     bom_result = CliRunner().invoke(
         openaca_main, ["bom", "repo", "--target", str(tmp_path), "--output", str(bom_path)]
     )
     assert bom_result.exit_code == 0, bom_result.output
-    doc = json.loads(bom_path.read_text(encoding="utf-8"))
-    assert "openaca:scanned_hosts" not in {p["name"] for p in doc["metadata"]["properties"]}
 
     json_result = CliRunner().invoke(
         scan_main, ["bom", "--input", str(bom_path), "--format", "json"]
     )
     assert json_result.exit_code == 0, json_result.output
     result_doc = json.loads("\n".join(json_result.output.splitlines()[:-1]))
-    assert result_doc["stats"]["components_by_host"] == {"claude-code": 0}
+    assert result_doc["stats"]["components_by_host"] == {"claude-code": 0, "cursor": 0}
+
+
+def test_scan_bom_empty_cursor_endpoint_bom_reports_cursor_not_default_host(tmp_path):
+    """An empty Cursor endpoint BOM must not be reported as Claude Code.
+
+    With no components there is no `runtime_hosts` to infer from, so before
+    `openaca:scanned_hosts` became unconditional the ingest fallback
+    attributed the scan to the default host and emitted
+    `{"claude-code": 0}` -- inventing a host that was never scanned (Codex
+    review, PR #158). Both the machine breakdown and the text card must name
+    Cursor."""
+    cursor_root = tmp_path / "cursor"
+    cursor_root.mkdir()
+    bom_path = tmp_path / "cursor.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main,
+        [
+            "bom",
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--output",
+            str(bom_path),
+        ],
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+
+    json_result = CliRunner().invoke(
+        scan_main, ["bom", "--input", str(bom_path), "--format", "json"]
+    )
+    assert json_result.exit_code == 0, json_result.output
+    result_doc = json.loads("\n".join(json_result.output.splitlines()[:-1]))
+    assert result_doc["stats"]["components_by_host"] == {"cursor": 0}
+
+    text_result = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "--no-color"])
+    assert text_result.exit_code == 0, text_result.output
+    assert "hosts: cursor" in text_result.output
+
+
+def test_scan_bom_cursor_only_endpoint_bom_names_host_in_target_card(tmp_path):
+    """A Cursor-only endpoint BOM's text card must name Cursor somewhere.
+
+    A live `scan endpoint --host cursor` says `host surface: Cursor`; a BOM's
+    Target block says `Agent BOM`, and the inventory tree's `[<host>]` tags
+    are 2+-host-gated, so a single-host BOM used to render with no indication
+    of its host at all -- and `--config-dir` means the path can't be relied
+    on to hint it (Codex review, PR #158)."""
+    cursor_root = tmp_path / "elsewhere"
+    (cursor_root / "skills" / "recon").mkdir(parents=True)
+    (cursor_root / "skills" / "recon" / "SKILL.md").write_text(
+        "---\nname: recon\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+    bom_path = tmp_path / "cursor.bom.json"
+    bom_result = CliRunner().invoke(
+        openaca_main,
+        [
+            "bom",
+            "endpoint",
+            "--host",
+            "cursor",
+            "--config-dir",
+            str(cursor_root),
+            "--output",
+            str(bom_path),
+        ],
+    )
+    assert bom_result.exit_code == 0, bom_result.output
+
+    result = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "--no-color"])
+    assert result.exit_code == 0, result.output
+    assert "hosts: cursor" in result.output
 
 
 def test_scan_bom_multi_host_refs_without_scanned_hosts_falls_back(tmp_path, monkeypatch):

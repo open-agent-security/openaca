@@ -59,7 +59,7 @@ from tools.endpoint_request import resolve_endpoint_request
 from tools.graph import Graph
 from tools.graph_build import _TARGET_KEY, build_graph
 from tools.host_paths import resolved_owner
-from tools.hosts import HOSTS, all_host_ids, plugin_unit_label
+from tools.hosts import DEFAULT_HOST_ID, HOSTS, all_host_ids, plugin_unit_label
 from tools.matcher import Finding, match
 from tools.observations import (
     ObservationFinding,
@@ -1472,14 +1472,14 @@ def scan_bom(
     advisory_index = {a["id"]: a for a in corpus}
 
     # The scanned host list, for per-host tags/breakdown. Primary source is
-    # the `openaca:scanned_hosts` metadata property (multi-host-endpoint-
-    # gated, so single-host and pre-Stage-4 BOMs don't carry it); fallback
-    # derives the distinct hosts `_ref_hosts` attributes across `refs` the
-    # same way the live endpoint path does (ancestry via `graph` when
-    # graph-backed, else each ref's own `runtime_hosts`/default). Either way
-    # this is a real (never-None) list, same as `selected_hosts` on the live
-    # path: single-host BOMs get a length-1 list, which the render/stats
-    # gating (`len(hosts) > 1`) treats identically to today's output.
+    # the `openaca:scanned_hosts` metadata property, which every BOM this
+    # version writes carries; the fallback is for BOMs written before it was
+    # unconditional and derives the distinct hosts `_ref_hosts` attributes
+    # across `refs` (ancestry via `graph` when graph-backed, else each ref's
+    # own `runtime_hosts`/default). The fallback cannot distinguish "scanned
+    # Cursor, found nothing" from "scanned Claude Code, found nothing" — an
+    # empty BOM has no components to infer from — which is exactly why the
+    # property is no longer gated on multi-host at the write side.
     hosts = scanned_hosts_from_cyclonedx(doc)
     if hosts is None:
         hosts = hosts_from_refs(refs, graph)
@@ -1490,6 +1490,16 @@ def scan_bom(
     if target_type:
         orig = f"{target_type} {target}".strip() if target else target_type
         bom_rows.append(("original target", orig))
+    # A BOM's Target block says "Agent BOM" where a live endpoint scan says
+    # "host surface: Cursor", so nothing else in the text card names the
+    # host(s) the BOM captured: the inventory tree's `[<host>]` tags are
+    # 2+-host-gated (with one host they'd be noise on every line), and a BOM
+    # with zero components has no tree entries to tag at all. State it here
+    # instead, on the same "explicitly not the legacy default" condition the
+    # repo tree's tags use, so the one case that reads as Claude Code by
+    # default is the only one left unlabeled.
+    if hosts != [DEFAULT_HOST_ID]:
+        bom_rows.append(("hosts", ", ".join(hosts)))
     card_target = RenderTarget(host_surface="Agent BOM", rows=bom_rows)
     card_tree: str | None = None
     if is_text:

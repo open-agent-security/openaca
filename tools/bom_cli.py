@@ -81,6 +81,14 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
         source_unit_count=n_found,
         source_unit_label="manifest",
         graph=graph,
+        # `build_graph(mode="repo")` with no host filter walks every registered
+        # host, so that's what this BOM covered. Recording it is what lets a
+        # reader tell "only claude-code was scanned" (a pre-Cursor BOM) from
+        # "both were scanned and only claude-code had components" — a
+        # distinction no amount of per-component `runtime_hosts` can recover,
+        # and the reason a repo BOM round-trip used to lose the host tags a
+        # live `scan repo` shows for the very same tree.
+        scanned_hosts=all_host_ids(),
     )
     _emit_bom_json(bom.to_cyclonedx(), output_path)
 
@@ -131,14 +139,16 @@ def endpoint(
     for w in warnings:
         click.echo(f"warning: {w}", err=True)
     refs = _refs_from_graph(graph)
-    # Multi-host-gated: single-host selections keep today's byte-identical
-    # metadata (no scanned_hosts/host_config_roots keys at all, and
-    # `openaca:target` stays the single host's config root). Multi-host
-    # selections have no single authoritative root, so `openaca:target` is
-    # the same neutral locator the remote wire uses; the per-host roots are
-    # still available via `openaca:host_config_roots`.
+    # `scanned_hosts` is unconditional: it's the only record of which hosts
+    # the scan looked at, and a reader cannot reconstruct it from components
+    # (an empty Cursor endpoint has no `runtime_hosts` to infer from, so
+    # ingestion used to report it as Claude Code — inventing a host that was
+    # never scanned). `host_config_roots` and the neutral `openaca:target`
+    # stay multi-host-gated for the reason they always were: a single-host
+    # selection has exactly one authoritative root, already in
+    # `openaca:target`, so a per-host map would only restate it.
     is_multi_host = len(selected_hosts) > 1
-    scanned_hosts = selected_hosts if is_multi_host else None
+    scanned_hosts = selected_hosts
     host_config_roots = (
         {host_id: str(host_roots[host_id]) for host_id in selected_hosts} if is_multi_host else None
     )

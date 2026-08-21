@@ -258,6 +258,14 @@ HOSTS: dict[str, HostAdapter] = {
 }
 
 
+# The host a scan or BOM meant before hosts were a concept: anything that
+# predates ADR-0044 (a `--host`-less invocation, a BOM with no
+# `openaca:scanned_hosts`) is Claude Code by construction. Callers use it to
+# tell "explicitly the legacy default" from "explicitly some other host",
+# which is what decides whether host provenance needs stating in output.
+DEFAULT_HOST_ID = "claude-code"
+
+
 def all_host_ids() -> list[str]:
     """Every registered host, in registration order."""
     return list(HOSTS.keys())

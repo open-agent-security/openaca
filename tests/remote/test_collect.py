@@ -95,6 +95,33 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     ]
 
 
+def test_build_endpoint_collection_records_single_host_provenance(tmp_path, monkeypatch):
+    """The wire BOM records `openaca:scanned_hosts` for a single-host
+    collection too, not just 2+ (Codex review, PR #158). A Cursor-only
+    endpoint that happens to be empty carries no per-component attribution,
+    so without this the receiving end attributes the collection to the
+    default host. Host ids are registry constants, so this adds no path for
+    the redaction pass to miss -- `host_config_roots`, which does carry
+    per-host labels, stays 2+-host-gated."""
+    monkeypatch.setattr(
+        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [])
+    )
+    monkeypatch.setattr(
+        "tools.remote.collector.collect_endpoint_posture_inputs",
+        lambda host_config_roots, project, refs: ([], {}, []),
+    )
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *a, **k: [])
+
+    collection = build_endpoint_collection(
+        config_dir=tmp_path, project=None, host_config_roots={"cursor": tmp_path}
+    )
+
+    props = {p["name"]: p["value"] for p in collection.bom["metadata"]["properties"]}
+    assert props["openaca:scanned_hosts"] == '["cursor"]'
+    assert "openaca:host_config_roots" not in props
+    assert str(tmp_path) not in json.dumps(collection.bom)
+
+
 def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, monkeypatch):
     ref = ComponentRef(
         component_identity="skill/deploy-helper",

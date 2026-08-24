@@ -7,6 +7,16 @@
 # quality — bots and humans fix lint/type/test failures BEFORE pushing rather
 # than declaring "done" and leaving a red PR for the next person to notice.
 #
+# The gates run against a clean `git archive` extraction of the commit being
+# pushed, NOT the working tree. CI only ever sees committed files, so anything
+# on disk that is not in the commit — an untracked fixture, a file matched by a
+# gitignore rule (including a *global* ~/.config/git/ignore rule), a forgotten
+# `git add` of a new module — must not be able to make this gate pass. That is
+# not hypothetical: a test fixture named `.claude/settings.local.json` was
+# excluded by a global ignore rule, so the suite passed here and failed in CI
+# with `declares no agent`. Testing the extracted commit removes the whole
+# class structurally instead of enumerating patterns to distrust.
+#
 # Bypass: git push --no-verify (use sparingly — typically when test
 # infrastructure is broken locally and you're pushing the fix).
 
@@ -14,6 +24,10 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 ZERO_SHA="0000000000000000000000000000000000000000"
+
+WORKDIR=""
+cleanup() { [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ] && rm -rf "$WORKDIR"; }
+trap cleanup EXIT
 
 fail() {
   echo ""
@@ -26,15 +40,15 @@ fail() {
 
 # Read pushed refs from stdin once. Pure deletions (local_sha is zero-SHA)
 # skip the check — there's no code to validate.
-pushed_any=0
+PUSHED_SHAS=""
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [ "$local_sha" = "$ZERO_SHA" ]; then
     continue
   fi
-  pushed_any=1
+  PUSHED_SHAS="$PUSHED_SHAS $local_sha"
 done
 
-if [ "$pushed_any" = "0" ]; then
+if [ -z "${PUSHED_SHAS// /}" ]; then
   exit 0
 fi
 
@@ -49,63 +63,133 @@ cd "$REPO_ROOT"
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
       GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_INTERNAL_GETTEXT_SH_SCHEME
 
-# Refuse on dirty worktree. The hook reads files from disk; uncommitted edits
-# or relevant untracked files would let the gate validate code that isn't in
-# the pushed commit (false-positive pass).
+# Refuse on a dirty worktree. The gates below test the *committed* code, so a
+# dirty tree can no longer produce a false pass — but pushing while holding
+# uncommitted edits still means the thing you validated is not the thing you
+# are working on, which is worth stopping for.
 if ! git diff --quiet HEAD; then
-  fail "working tree has uncommitted changes — pre-push would
-    validate uncommitted code, not the commit being pushed.
+  fail "working tree has uncommitted changes — the commit being pushed
+    is not what you have on disk.
     To fix: git commit (or git stash) before pushing."
 fi
 untracked="$(git ls-files --others --exclude-standard)"
 if [ -n "$untracked" ]; then
-  fail "untracked, gitignore-eligible files present — pre-push
-    would validate them locally but they won't be in the pushed
-    commit, so a passing run would be a false positive.
+  fail "untracked, gitignore-eligible files present — they won't be in
+    the pushed commit.
     Files:
 $(echo "$untracked" | sed 's/^/      /')
     To fix: git add+commit, remove the files, or add them to .gitignore."
 fi
 
-# ---------- CI-parity local gates ----------
+# Ignored files under tests/ are the specific trap this hook exists to surface:
+# they are invisible to `--exclude-standard` above, and a test that reads one
+# passes here and fails in CI. The clean-checkout gates below would catch the
+# consequence as a test failure, but naming the cause up front turns a puzzling
+# red suite into an obvious fix. A warning, not a failure — local scratch
+# fixtures are legitimate, and build artifacts are filtered out.
+ignored_tests="$(git ls-files --others --ignored --exclude-standard -- tests/ 2>/dev/null |
+  grep -vE '(^|/)(__pycache__/|\.DS_Store$|.*\.pyc$)' || true)"
+if [ -n "$ignored_tests" ]; then
+  echo ""
+  echo "  ⚠ gitignored files under tests/ — CI will NOT have these:"
+  echo "$ignored_tests" | sed 's/^/      /'
+  echo "    If a test reads one of these, it passes here and fails in CI."
+  echo ""
+fi
 
-echo "  → ruff check"
-if ! uv run ruff check . > /tmp/openaca-pre-push-ruff-check.log 2>&1; then
-  tail -40 /tmp/openaca-pre-push-ruff-check.log
-  fail "ruff check failed.
+# ---------- CI-parity gates, against the pushed commit ----------
+
+for sha in $PUSHED_SHAS; do
+  WORKDIR="$(mktemp -d)"
+  CLEAN="$WORKDIR/repo"
+  mkdir -p "$CLEAN"
+  if ! git archive "$sha" | tar -x -C "$CLEAN"; then
+    fail "could not extract commit $sha for validation."
+  fi
+
+  short_sha="$(git rev-parse --short "$sha")"
+  echo "  → validating $short_sha (clean checkout, not the working tree)"
+  cd "$CLEAN"
+
+  run_gate() {
+    local label="$1" logfile="$2"
+    shift 2
+    echo "  → $label"
+    if ! "$@" > "$logfile" 2>&1; then
+      tail -40 "$logfile"
+      return 1
+    fi
+  }
+
+  run_gate "uv sync --frozen" /tmp/openaca-pre-push-sync.log \
+    uv sync --frozen || fail "uv sync --frozen failed.
+    uv.lock is missing or stale vs pyproject.toml in the pushed commit.
+    To fix: uv lock (then commit uv.lock)"
+
+  run_gate "ruff check" /tmp/openaca-pre-push-ruff-check.log \
+    uv run ruff check . || fail "ruff check failed.
     To fix: uv run ruff check --fix . (then re-stage and re-push)"
-fi
 
-echo "  → ruff format --check"
-if ! uv run ruff format --check . > /tmp/openaca-pre-push-ruff-format.log 2>&1; then
-  tail -40 /tmp/openaca-pre-push-ruff-format.log
-  fail "ruff format --check failed.
+  run_gate "ruff format --check" /tmp/openaca-pre-push-ruff-format.log \
+    uv run ruff format --check . || fail "ruff format --check failed.
     To fix: uv run ruff format . (then re-stage and re-push)"
-fi
 
-echo "  → pyright"
-if ! uv run pyright > /tmp/openaca-pre-push-pyright.log 2>&1; then
-  tail -40 /tmp/openaca-pre-push-pyright.log
-  fail "pyright failed.
+  run_gate "pyright" /tmp/openaca-pre-push-pyright.log \
+    uv run pyright || fail "pyright failed.
     To fix: uv run pyright (address each error)"
-fi
 
-echo "  → pytest"
-if ! uv run pytest -q > /tmp/openaca-pre-push-pytest.log 2>&1; then
-  tail -40 /tmp/openaca-pre-push-pytest.log
-  fail "pytest failed.
+  run_gate "pytest" /tmp/openaca-pre-push-pytest.log \
+    uv run pytest -q || fail "pytest failed against the COMMITTED tree.
+    If this passes in your working tree but fails here, a file the tests
+    need is not committed — check the gitignored-files warning above.
     To fix: uv run pytest -v (debug failures, then re-stage and re-push)"
-fi
 
-echo "  → openaca lint capabilities/"
-if [ -d capabilities ] && [ "$(find capabilities -name '*.yaml' -print -quit)" ]; then
-  if ! uv run openaca lint capabilities/ > /tmp/openaca-pre-push-cap-lint.log 2>&1; then
-    tail -40 /tmp/openaca-pre-push-cap-lint.log
-    fail "openaca lint capabilities/ failed.
+  if [ -d capabilities ] && [ "$(find capabilities -name '*.yaml' -print -quit)" ]; then
+    run_gate "openaca lint capabilities/" /tmp/openaca-pre-push-cap-lint.log \
+      uv run openaca lint capabilities/ || fail "openaca lint capabilities/ failed.
     To fix: uv run openaca lint capabilities/ (address each error)"
   fi
-fi
 
+  if [ -d overlays ] && [ "$(find overlays -name '*.yaml' -print -quit)" ]; then
+    run_gate "openaca lint overlays/" /tmp/openaca-pre-push-overlay-lint.log \
+      uv run openaca lint overlays/ || fail "openaca lint overlays/ failed.
+    To fix: uv run openaca lint overlays/ (address each error)"
+  fi
+
+  # CLI surface smoke, mirroring the assertions of CI's smoke-install job
+  # without its wheel build. The build only catches dependency-resolution
+  # problems; these steps catch behaviour changes that leave a user-facing
+  # command emitting nothing — which is how a repo that declares no agent
+  # (ADR-0044) broke `bom repo --output` and its `test -s` in CI.
+  echo "  → cli smoke (scan repo, bom repo)"
+  smoke_target="$WORKDIR/smoke-target"
+  mkdir -p "$smoke_target"
+  # `.mcp.json`, not `mcp.json`: a bare `mcp.json` is owned by no runtime
+  # exclusively, so it declares no agent and the repo emits no document.
+  cat > "$smoke_target/.mcp.json" <<'FIXTURE'
+{"mcpServers": {"remote": {"type": "http", "url": "https://api.example.test/mcp"}}}
+FIXTURE
+  if ! uv run openaca scan repo --target "$smoke_target" --include-posture \
+       --fail-on none > /tmp/openaca-pre-push-smoke.log 2>&1; then
+    tail -40 /tmp/openaca-pre-push-smoke.log
+    fail "openaca scan repo failed on the smoke fixture.
+    To fix: run the command above and debug it."
+  fi
+  if ! uv run openaca bom repo --target "$smoke_target" \
+       --output "$WORKDIR/smoke-bom.json" >> /tmp/openaca-pre-push-smoke.log 2>&1; then
+    tail -40 /tmp/openaca-pre-push-smoke.log
+    fail "openaca bom repo failed on the smoke fixture."
+  fi
+  if [ ! -s "$WORKDIR/smoke-bom.json" ]; then
+    fail "openaca bom repo wrote no document for a target that declares an
+    agent — CI's smoke-install job asserts \`test -s\` on this file.
+    To fix: check discovery/emission for the declared path."
+  fi
+
+  cd "$REPO_ROOT"
+  cleanup
+  WORKDIR=""
+done
 
 echo "  ✓ pre-push checks ok"
 exit 0

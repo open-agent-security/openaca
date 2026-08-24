@@ -82,6 +82,13 @@ identity, BOM reference, digest, glob, regular expression, or display-name
 match. A policy can therefore be written before the component appears in an
 endpoint inventory.
 
+A command target is a non-empty array of literal strings. It matches the full
+command and argument array token by token, in order, with case-sensitive string
+comparison. The compiler does not resolve executable paths, canonicalize
+equivalent flags, or expand environment variables in policy values. The same
+array becomes the host-native restriction, so a policy author can see exactly
+what is being matched.
+
 A marketplace entry is a plugin admission target, not a fourth component
 category. Allowing a marketplace permits the plugins obtained from that
 marketplace; it does not separately trust selected contents of a plugin. A
@@ -157,7 +164,7 @@ For this target, the compiler can express:
 | MCP admission | exact managed MCP allow/block settings, with the managed-only lock when default is blocked |
 | Plugin block | managed plugin disablement for an exact `plugin@marketplace` ID |
 | Marketplace admission | managed source restriction for marketplace add, install, update, and refresh |
-| Standalone skill block | category-wide managed restriction for direct user/project skills only |
+| Standalone skill block | `strictPluginOnlyCustomization` restricted to direct user/project skills |
 
 Claude does not document a managed plugin allowlist that prevents every
 unlisted installed plugin from running. Therefore a plugin policy with
@@ -193,6 +200,15 @@ containment as evidence, but policies never attach to `bom-ref` or
 `openaca:identity`: both are observations that may change with scans or be
 absent. The durable policy target is the source/configuration value the host
 can itself recognize.
+
+The host adapter retains each discovered component’s native configuration
+target alongside its `bom-ref`. A risk finding first identifies an occurrence.
+If that occurrence belongs to a plugin, the owning plugin is always the target;
+plugin containment takes precedence over a child MCP command or URL. Otherwise
+the compiler uses the occurrence’s observed command, URL, plugin identifier, or
+marketplace source. If any step lacks an exact target, the result is
+`not_enforceable`; the compiler must not guess from identity, name, or a
+normalized equivalent.
 
 ## Deferred
 

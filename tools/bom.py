@@ -28,21 +28,24 @@ from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 OPENACA_BOM_SCHEMA_VERSION = "0.5"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
-# `0.5` means agent-rooted (ADR-0044): `metadata.component` is the agent,
-# keyed `root/<kind>`. The remote collector (`tools/remote/collector.py`)
-# still calls `build_agent_bom` with a graph but no `agent_kind` — the
-# pre-0.5, place-rooted shape (`metadata.component` keyed on the synthetic
-# target, `openaca:target_type`/`openaca:target` properties) — so its
-# documents must keep claiming `0.4`, the version that shape actually is, or
-# a version-aware consumer reads `0.5` and expects the new shape it isn't
-# getting. This is the only place that shape is still produced; see
-# `_metadata_component`'s "Legacy place-rooted document" branch.
+# `0.5` means agent-rooted (ADR-0044): `metadata.component` is present and keyed
+# `root/<kind>[/<id>]`. Any document that isn't in that shape — a graphless call
+# (`build_agent_bom(refs, ...)` with no `graph=`, so there is no `metadata.component`
+# at all) or the remote collector's still-place-rooted graph (`tools/remote/
+# collector.py` calls `build_agent_bom` with a graph but no `agent_kind`, so
+# `target_bom_ref` is the synthetic target key, not a `root/`-prefixed one) — must
+# keep claiming `0.4`, the version its shape actually is, or a version-aware
+# consumer reads `0.5` and expects a `metadata.component` it isn't getting.
 _LEGACY_PLACE_ROOTED_SCHEMA_VERSION = "0.4"
 
 # The `metadata.component` bom-ref prefix marking an agent-rooted document
 # (ADR-0045). Not `agent/`: the closed component-type set already uses that for a
 # subagent, and a `startswith` test on this prefix decides whether a stored BOM is
-# graph-backed.
+# graph-backed. `AgentInstance.bom_ref` (tools/agent_kinds/__init__.py) is the only
+# producer of a `target_bom_ref` in this shape, so it is also the single source of
+# truth `to_cyclonedx()` uses to decide 0.5-vs-0.4 below — not a second, independent
+# `agent_kind is None` check, which a graphless call (`target_bom_ref is None`) can
+# satisfy vacuously while still emitting no `metadata.component` at all.
 AGENT_ROOT_PREFIX = "root/"
 
 _PURL_TO_ECOSYSTEM = {
@@ -84,11 +87,11 @@ class AgentBOM:
         return [component.ref for component in self.components]
 
     def to_cyclonedx(self) -> dict[str, Any]:
-        is_legacy_place_rooted = self.target_bom_ref is not None and self.agent_kind is None
+        is_agent_rooted = self.target_bom_ref is not None and self.target_bom_ref.startswith(
+            AGENT_ROOT_PREFIX
+        )
         schema_version = (
-            _LEGACY_PLACE_ROOTED_SCHEMA_VERSION
-            if is_legacy_place_rooted
-            else OPENACA_BOM_SCHEMA_VERSION
+            OPENACA_BOM_SCHEMA_VERSION if is_agent_rooted else _LEGACY_PLACE_ROOTED_SCHEMA_VERSION
         )
         metadata_properties = [
             {"name": "openaca:schema_version", "value": schema_version},

@@ -442,6 +442,39 @@ def test_lint_still_accepts_stored_0_4_target_type(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_lint_rejects_schema_0_5_without_an_agent_root(tmp_path):
+    """`check_agent_metadata` only fires once `metadata.component` already has a
+    `root/`-prefixed bom-ref, so a `0.5` document missing `metadata.component`
+    entirely — the shape a graphless `build_agent_bom(...).to_cyclonedx()` call
+    would have produced before it was made to fall back to `0.4` — must be
+    rejected some other way, since schema `0.5` is defined as the agent-rooted
+    shape (ADR-0044/0045)."""
+    doc = _agent_doc()
+    del doc["metadata"]["component"]
+    doc["dependencies"] = []
+    path = tmp_path / "no-root.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "root/" in result.output
+
+
+def test_lint_rejects_schema_0_5_with_a_non_agent_root(tmp_path):
+    doc = _agent_doc(bom_ref="openaca:target", dep_ref="openaca:target")
+    doc["metadata"]["component"]["properties"] = [
+        {"name": "openaca:component_type", "value": "target"}
+    ]
+    path = tmp_path / "place-root.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "root/" in result.output
+
+
 def test_lint_rejects_bad_composition_source(tmp_path):
     doc = _agent_doc(metadata_component_props={"openaca:composition_source": "sandbox"})
     path = tmp_path / "bad.cdx.json"

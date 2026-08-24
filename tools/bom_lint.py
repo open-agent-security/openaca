@@ -11,7 +11,7 @@ import click
 from jsonschema import Draft202012Validator
 
 from tools.agent_kinds import REGISTRY
-from tools.bom import AGENT_ROOT_PREFIX
+from tools.bom import AGENT_ROOT_PREFIX, OPENACA_BOM_SCHEMA_VERSION
 from tools.capability import COVERAGE_LEVELS, Capability
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -103,6 +103,7 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
                 )
 
     errors.extend(check_agent_metadata(doc))
+    errors.extend(_check_agent_root_required(doc, schema_version=schema_version))
     if isinstance(metadata, dict) and isinstance(metadata.get("component"), dict):
         errors.extend(
             _check_duplicate_openaca_properties(metadata["component"], "metadata.component")
@@ -174,6 +175,27 @@ def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
                 "openaca:agent_id is required"
             )
     return errors
+
+
+def _check_agent_root_required(doc: dict[str, Any], *, schema_version: str | None) -> list[str]:
+    """`check_agent_metadata` only fires once `metadata.component` already has a
+    `root/`-prefixed bom-ref — it has no opinion on a document that is missing one
+    entirely. Schema `0.5` is *defined* as the agent-rooted shape (ADR-0044,
+    ADR-0045), so a `0.5` document without that root — no `metadata.component`,
+    or one whose bom-ref doesn't start with `AGENT_ROOT_PREFIX` — is malformed:
+    reject it here rather than silently accepting a document that claims a shape
+    it doesn't have."""
+    if schema_version != OPENACA_BOM_SCHEMA_VERSION:
+        return []
+    metadata = doc.get("metadata")
+    component = metadata.get("component") if isinstance(metadata, dict) else None
+    bom_ref = component.get("bom-ref") if isinstance(component, dict) else None
+    if isinstance(bom_ref, str) and bom_ref.startswith(AGENT_ROOT_PREFIX):
+        return []
+    return [
+        f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref is required "
+        f"when openaca:schema_version is {OPENACA_BOM_SCHEMA_VERSION!r}"
+    ]
 
 
 def _kind_cardinality(agent_kind: str) -> str | None:

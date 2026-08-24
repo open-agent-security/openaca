@@ -54,6 +54,33 @@ def test_output_dir_writes_one_file_per_agent(monkeypatch, tmp_path):
     ]
 
 
+def test_output_dir_manifest_write_does_not_follow_a_planted_symlink(monkeypatch, tmp_path):
+    """A checked-out repository could contain a symlink at the well-known
+    `.openaca-bom-manifest.json` name pointing outside `--output-dir`. Writing
+    the ownership manifest must not follow that symlink and truncate its
+    target — the manifest write has to replace the directory entry itself,
+    the same way the emitted `*.cdx.json` documents already do via
+    temp-file-then-replace."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    outside_target = tmp_path / "outside.txt"
+    outside_target.write_text("do not touch", encoding="utf-8")
+    (out / _MANIFEST_NAME).symlink_to(outside_target)
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert outside_target.read_text(encoding="utf-8") == "do not touch"
+    manifest_path = out / _MANIFEST_NAME
+    assert not manifest_path.is_symlink()
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == [
+        "synthetic--researcher.cdx.json"
+    ]
+
+
 def test_output_dir_drops_a_stale_file_it_previously_wrote(monkeypatch, tmp_path):
     """A consumer reading `--output-dir` after a rerun must not see an agent
     that no longer resolves — the directory holds this run's `*.cdx.json`
@@ -247,7 +274,7 @@ def test_output_dir_normal_manifest_write_failure_is_reported(monkeypatch, tmp_p
     real_write_text = Path.write_text
 
     def flaky_write_text(self, *args, **kwargs):
-        if self.name == _MANIFEST_NAME:
+        if self.name == f"{_MANIFEST_NAME}.tmp":
             raise OSError("disk full")
         return real_write_text(self, *args, **kwargs)
 
@@ -287,7 +314,7 @@ def test_output_dir_publish_failure_reports_when_recovery_manifest_write_also_fa
     real_write_text = Path.write_text
 
     def flaky_write_text(self, *args, **kwargs):
-        if self.name == _MANIFEST_NAME:
+        if self.name == f"{_MANIFEST_NAME}.tmp":
             raise OSError("disk full")
         return real_write_text(self, *args, **kwargs)
 
@@ -324,7 +351,7 @@ def test_output_dir_stale_cleanup_failure_reports_when_recovery_manifest_write_a
     real_write_text = Path.write_text
 
     def flaky_write_text(self, *args, **kwargs):
-        if self.name == _MANIFEST_NAME:
+        if self.name == f"{_MANIFEST_NAME}.tmp":
             raise OSError("disk full")
         return real_write_text(self, *args, **kwargs)
 

@@ -2056,7 +2056,7 @@ def test_golden_card_endpoint():
         inventory_tree=tree,
         next_actions=[
             "include project-local config: openaca scan endpoint --project .",
-            "emit Agent BOM: openaca bom endpoint --output openaca-bom.json",
+            "emit Agent BOM: openaca bom endpoint --output-dir boms/",
         ],
     )
     _assert_golden(out, "card-endpoint.txt")
@@ -2331,7 +2331,7 @@ def test_render_text_cards_separate_agents_and_dedupe_next_actions():
     twice; per-agent actions that genuinely differ survive."""
     from tools.render import AgentCard, RenderTarget, ScanStats, render_text
 
-    shared = "emit Agent BOM: openaca bom endpoint --output openaca-bom.json"
+    shared = "emit Agent BOM: openaca bom endpoint --output-dir boms/"
     card_a = AgentCard(
         target=RenderTarget(host_surface="Claude Code", rows=[("config", "/a")]),
         next_actions=[shared, "sync to remote: openaca remote sync endpoint"],

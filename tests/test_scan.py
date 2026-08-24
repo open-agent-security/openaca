@@ -275,7 +275,12 @@ def test_repo_default_output_is_inventory_card_with_findings():
     assert "GHSA-3q26-f695-pp76" in result.output
     # Summary recaps the advisory count; Next guides the user onward.
     assert "advisories: 1" in result.output
+    # `--output-dir`, not `--output`: `--output` errors whenever discovery
+    # resolves more than one agent, so the auto-generated hint must recommend
+    # the sink that works regardless of how many agents this scan finds.
     assert "openaca bom repo --target" in result.output
+    assert "--output-dir boms/" in result.output
+    assert "--output openaca-bom.json" not in result.output
 
 
 def test_scan_verbose_lists_each_manifest_and_matched_component(tmp_path):
@@ -778,6 +783,10 @@ def test_endpoint_omits_project_by_default_and_emits_note(tmp_path, monkeypatch)
     # guidance is a Next action (the legacy stderr note is verbose/non-text only).
     assert "project: not included" in result.output
     assert "include project-local config" in result.output
+    # `--output-dir`, not `--output`: see the equivalent `repo`-mode assertion
+    # in test_repo_default_output_is_inventory_card_with_findings.
+    assert "openaca bom endpoint --output-dir boms/" in result.output
+    assert "--output openaca-bom.json" not in result.output
     assert "--project" in result.output
 
 
@@ -2336,6 +2345,47 @@ def test_scan_repo_with_no_declaration_reports_no_agent(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "declares no agent" in result.output
+
+
+def test_scan_repo_with_no_declaration_still_writes_valid_sarif(tmp_path):
+    """`action.yml` always passes `--sarif` and publishes the path as an output
+    unconditionally, regardless of whether the repo declares an agent — so a
+    zero-agent repo must still leave a valid (empty) SARIF file behind, not
+    skip the write and leave the published path dangling."""
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+    sarif_out = tmp_path / "out.sarif"
+
+    result = CliRunner().invoke(
+        main, ["repo", "--target", str(tmp_path), "--sarif", str(sarif_out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "declares no agent" in result.output
+    sarif = json.loads(sarif_out.read_text())
+    assert sarif["runs"][0]["results"] == []
+
+
+def test_scan_endpoint_with_no_installed_agent_still_writes_valid_sarif(monkeypatch, tmp_path):
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+
+    register_synthetic_kind(monkeypatch, agent_ids=[])
+    sarif_out = tmp_path / "out.sarif"
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(tmp_path),
+            "--sarif",
+            str(sarif_out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "no installed agent found" in result.output
+    sarif = json.loads(sarif_out.read_text())
+    assert sarif["runs"][0]["results"] == []
 
 
 def test_scan_repo_reports_declared_agent_with_repo_shaped_target(tmp_path):

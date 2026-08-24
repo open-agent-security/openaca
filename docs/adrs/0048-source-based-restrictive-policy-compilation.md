@@ -65,8 +65,8 @@ meaningful for risk attribution: a finding in bundled content blocks the owning
 plugin rather than inventing a child-level exception.
 
 The tradeoff is intentionally limited expressiveness. Policy cannot name every
-observed artifact, individual standalone skills may only receive a category-wide
-restriction, and a component with no host-native coordinate can be reported but
+observed artifact, individual skills installed outside plugins may only receive
+a category-wide restriction, and a component with no host-native coordinate can be reported but
 not blocked by the compiler. More expressive selectors or runtime enforcement
 need a new decision with clear host semantics.
 

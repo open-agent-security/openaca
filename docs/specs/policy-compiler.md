@@ -185,6 +185,12 @@ obtained or evaluated, compilation fails and does not replace a previous
 artifact. A fresh admission result must not be combined with stale risk data.
 An unidentified or non-queryable component is not evidence that it is clean.
 
+Compilation also fails, without replacing a previous artifact, when a
+generated key already exists in another file at the target (see Claude Code
+target). Writing into a key another file already governs risks silently
+loosening that file's own restriction through the host's merge rules, not just
+overwriting it.
+
 The compiler emits a concise report with the policy result for every discovered
 component and, for matches that cannot be represented by the host, an explicit
 `not_enforceable` result. Successful compilation never implies that every
@@ -221,6 +227,15 @@ unlisted installed plugin from running. Therefore a plugin policy with
 prospective controls: they govern marketplace add, install, update, and refresh,
 not a claim that an already-installed plugin is disabled. Exact plugin blocks
 remain enforceable through managed plugin disablement.
+
+When a discovered plugin is blocked because its marketplace is blocked under
+block-precedence (see Admission), the discovery pass emits an exact
+`plugin@marketplace` disablement for that installed plugin, the same
+enforceable mechanism as an explicit plugin block, instead of relying on the
+prospective marketplace restriction alone. The marketplace-level restriction by
+itself governs only plugins the compiler has not discovered; once a plugin
+sourced from that marketplace is discovered, its own exact block is what
+disables it.
 
 The standalone-skill setting names only `skills`, so it does not request the
 same restriction for agents, hooks, or MCP servers. It still does not govern
@@ -266,6 +281,24 @@ merge with each other, so a same-named key from another drop-in can override
 OpenACA's generated value while the file-based source is still selected overall.
 `verified` requires comparing the post-merge value, not the source selection
 alone.
+
+The reverse direction is also possible. Claude merges `managed-settings.json`
+first, then every `managed-settings.d/*.json` file in alphabetical order: a
+scalar key takes the later file's value, and a list key unions across files
+with duplicates removed. A union on an admission allowlist, such as
+`allowedMcpServers`, can only add entries relative to any other drop-in's list
+for that key, never remove them. If another drop-in already narrows that key —
+for example, a stricter hand-written allowlist — merging OpenACA's own
+generated list into it widens the effective allowlist beyond what that other
+drop-in states, even though OpenACA's own policy document only adds
+restrictions relative to itself. Before writing, `compile` reads the target
+host's existing file-based configuration, excluding any prior OpenACA output.
+If a generated key already appears in another file, compilation reports the
+collision and does not write the artifact; it must not merge speculatively
+into a key another file already governs. A compilation that reports a
+collision produces no artifact and therefore has no expected policy to verify.
+An administrator resolves the collision by consolidating the key into one
+file.
 
 For Claude, `/status` reports the selected managed source and `claude doctor`
 reports generated settings that Claude dropped. An observed source alone is not

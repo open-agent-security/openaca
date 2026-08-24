@@ -268,6 +268,48 @@ def test_output_dir_publish_failure_keeps_manifest_consistent_with_disk(monkeypa
     assert not list(out.glob("*.tmp"))
 
 
+def test_output_dir_publish_failure_with_unchanged_agent_set_keeps_old_file_owned(
+    monkeypatch, tmp_path
+):
+    """A publish failure on a rerun that resolves the *same* agent set (so the
+    failing name was already owned from the previous run) must not drop that
+    untouched, still-current file from the recovery manifest — its old content
+    is still on disk. Dropping it would make the next run see its own,
+    previously-written file as an unowned collision and refuse to overwrite it
+    forever."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    writer_before = (out / "synthetic--writer.cdx.json").read_text(encoding="utf-8")
+
+    real_replace = Path.replace
+    calls = {"n": 0}
+
+    def flaky_replace(self, target):
+        if self.suffix == ".tmp":
+            calls["n"] += 1
+            if calls["n"] == 2:  # the second document staged is "writer"
+                raise OSError("permission denied")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    assert result.exit_code != 0
+    manifest = json.loads((out / _MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert "synthetic--writer.cdx.json" in manifest
+    assert (out / "synthetic--writer.cdx.json").read_text(encoding="utf-8") == writer_before
+
+    monkeypatch.setattr(Path, "replace", real_replace)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+
+
 def test_output_dir_write_failure_preserves_the_prior_complete_set(monkeypatch, tmp_path):
     """If serializing the new set fails partway through, the previous run's
     complete set must still be on disk afterward — never a mix of old and
@@ -605,6 +647,37 @@ def test_bom_diff_single_document_output_is_unchanged(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert result.output.startswith("BOM diff:")
+
+
+def test_bom_diff_single_document_each_side_but_different_agents_reports_add_and_remove(tmp_path):
+    """One document each side is not automatically "the same agent" — pair on
+    identity first. Replacing `synthetic/a` with `synthetic/b` must report one
+    agent removed and one added, not component churn between unrelated
+    agents."""
+    before, after = tmp_path / "before.json", tmp_path / "after.json"
+    before.write_text(json.dumps(_agent_doc("synthetic", "a", "git")), encoding="utf-8")
+    after.write_text(json.dumps(_agent_doc("synthetic", "b", "git")), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["diff", "--before", str(before), "--after", str(after)])
+
+    assert result.exit_code == 0, result.output
+    assert not result.output.startswith("BOM diff:")
+    assert "removed agent synthetic/a" in result.output
+    assert "added agent synthetic/b" in result.output
+
+
+def test_bom_diff_accepts_an_empty_snapshot(tmp_path):
+    """`bom endpoint`/`bom repo` write nothing to stdout when they resolve zero
+    agents, so an empty file is a valid (empty) snapshot for `bom diff`, not a
+    malformed input."""
+    before, after = tmp_path / "before.ndjson", tmp_path / "after.ndjson"
+    before.write_text("", encoding="utf-8")
+    _write_ndjson(after, [_agent_doc("synthetic", "a", "git")])
+
+    result = CliRunner().invoke(bom_main, ["diff", "--before", str(before), "--after", str(after)])
+
+    assert result.exit_code == 0, result.output
+    assert "added agent synthetic/a" in result.output
 
 
 def test_output_dir_distrusts_a_manifest_in_a_sticky_shared_directory(tmp_path, monkeypatch):

@@ -87,7 +87,8 @@ command and argument array token by token, in order, with case-sensitive string
 comparison. The compiler does not resolve executable paths, canonicalize
 equivalent flags, or expand environment variables in policy values. The same
 array becomes the host-native restriction, so a policy author can see exactly
-what is being matched.
+what is being matched. Functionally equivalent invocations are separate targets
+and must be listed separately when they need the same policy result.
 
 A marketplace entry is a plugin admission target, not a fourth component
 category. Allowing a marketplace permits the plugins obtained from that
@@ -163,8 +164,8 @@ For this target, the compiler can express:
 |---|---|
 | MCP admission | exact managed MCP allow/block settings, with the managed-only lock when default is blocked |
 | Plugin block | managed plugin disablement for an exact `plugin@marketplace` ID |
-| Marketplace admission | managed source restriction for marketplace add, install, update, and refresh |
-| Standalone skill block | `strictPluginOnlyCustomization` restricted to direct user/project skills |
+| Marketplace admission | prospective managed source restriction for marketplace add, install, update, and refresh |
+| Standalone skill block | `strictPluginOnlyCustomization: ["skills"]` for direct user/project skills |
 
 Claude does not document a managed plugin allowlist that prevents every
 unlisted installed plugin from running. Therefore a plugin policy with
@@ -173,6 +174,10 @@ unlisted installed plugin from running. Therefore a plugin policy with
 prospective controls: they govern marketplace add, install, update, and refresh,
 not a claim that an already-installed plugin is disabled. Exact plugin blocks
 remain enforceable through managed plugin disablement.
+
+The standalone-skill setting names only `skills`, so it does not request the
+same restriction for agents, hooks, or MCP servers. It still does not govern
+skills bundled inside a plugin; those follow the plugin’s admission result.
 
 The generated report records the intended artifact path and the limitations of
 each result. A file-based drop-in is not a supported enforcement path when a
@@ -208,7 +213,9 @@ plugin containment takes precedence over a child MCP command or URL. Otherwise
 the compiler uses the occurrence’s observed command, URL, plugin identifier, or
 marketplace source. If any step lacks an exact target, the result is
 `not_enforceable`; the compiler must not guess from identity, name, or a
-normalized equivalent.
+normalized equivalent. A plugin block suppresses all generated child-level
+allow output for that plugin, even if an individual child also appears in an
+admission allowlist.
 
 ## Deferred
 

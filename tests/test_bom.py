@@ -1026,6 +1026,26 @@ def test_agent_bom_metadata_component_is_the_agent(tmp_path):
     assert any(c["bom-ref"].startswith("claude-code/") for c in doc["components"])
 
 
+def test_legacy_place_rooted_bom_keeps_schema_version_0_4():
+    """The remote collector (`tools/remote/collector.py`) still builds a
+    graph-backed BOM without `agent_kind`, which `_metadata_component`
+    serializes via its legacy branch: `metadata.component` keyed on the
+    synthetic target rather than `root/<kind>`, plus `openaca:target_type`/
+    `openaca:target` properties. Schema `0.5` is defined as the agent-rooted
+    shape (ADR-0044), so a document in this pre-0.5 shape must keep claiming
+    `0.4` — the version its shape actually is — or a version-aware consumer
+    reads `0.5` and expects a shape it isn't getting."""
+    root = Node(key="openaca:target", kind="target", ref=None)
+    graph = Graph(nodes={root.key: root})
+
+    doc = build_agent_bom(
+        [], target_type="endpoint", target="endpoint:user-scope", graph=graph
+    ).to_cyclonedx()
+
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    assert doc["metadata"]["component"]["bom-ref"] == "openaca:target"
+
+
 def test_agent_bom_stops_writing_agent_host_and_runtime_hosts(tmp_path):
     root = tmp_path / ".claude"
     root.mkdir()

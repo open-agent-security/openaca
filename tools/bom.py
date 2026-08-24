@@ -28,6 +28,17 @@ from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 OPENACA_BOM_SCHEMA_VERSION = "0.5"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
+# `0.5` means agent-rooted (ADR-0044): `metadata.component` is the agent,
+# keyed `root/<kind>`. The remote collector (`tools/remote/collector.py`)
+# still calls `build_agent_bom` with a graph but no `agent_kind` — the
+# pre-0.5, place-rooted shape (`metadata.component` keyed on the synthetic
+# target, `openaca:target_type`/`openaca:target` properties) — so its
+# documents must keep claiming `0.4`, the version that shape actually is, or
+# a version-aware consumer reads `0.5` and expects the new shape it isn't
+# getting. This is the only place that shape is still produced; see
+# `_metadata_component`'s "Legacy place-rooted document" branch.
+_LEGACY_PLACE_ROOTED_SCHEMA_VERSION = "0.4"
+
 # The `metadata.component` bom-ref prefix marking an agent-rooted document
 # (ADR-0045). Not `agent/`: the closed component-type set already uses that for a
 # subagent, and a `startswith` test on this prefix decides whether a stored BOM is
@@ -73,8 +84,14 @@ class AgentBOM:
         return [component.ref for component in self.components]
 
     def to_cyclonedx(self) -> dict[str, Any]:
+        is_legacy_place_rooted = self.target_bom_ref is not None and self.agent_kind is None
+        schema_version = (
+            _LEGACY_PLACE_ROOTED_SCHEMA_VERSION
+            if is_legacy_place_rooted
+            else OPENACA_BOM_SCHEMA_VERSION
+        )
         metadata_properties = [
-            {"name": "openaca:schema_version", "value": OPENACA_BOM_SCHEMA_VERSION},
+            {"name": "openaca:schema_version", "value": schema_version},
         ]
         if self.target_type is not None:
             metadata_properties.append({"name": "openaca:target_type", "value": self.target_type})

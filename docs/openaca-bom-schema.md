@@ -11,10 +11,13 @@ The external interchange format is CycloneDX JSON. OpenACA emits CycloneDX with
 OpenACA-owned metadata in `properties[]` entries whose names start with
 `openaca:`.
 
-The current OpenACA Agent BOM schema version is `0.4`. It makes
-`openaca:identity` optional and source-stable while retaining `bom-ref` as the
-exact occurrence key (ADR-0042). `openaca bom lint` accepts `0.1`, `0.2`,
-`0.3`, and `0.4`; the emitter always produces `0.4`.
+The current OpenACA Agent BOM schema version is `0.5`. It roots the document on
+the agent rather than the place it was scanned from (ADR-0044): `metadata.component`
+is the agent, and `bom-ref` is the exact occurrence key (ADR-0042). `openaca bom
+lint` accepts `0.1` through `0.5`; the emitter produces `0.5` for every
+agent-rooted document. The one exception is the remote collector
+(`tools/remote/collector.py`), which still emits the pre-`0.5`, place-rooted
+shape and stamps it `0.4` to match.
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:

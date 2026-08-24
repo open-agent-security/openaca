@@ -260,6 +260,7 @@ def repo(
     )
     if not agents:
         click.echo(f"{target} declares no agent", err=True)
+        emit_bom_documents([], output_path=output_path, output_dir=output_dir)
         return
     basenames = output_basenames(agents)
     documents: list[tuple[str, dict]] = []
@@ -337,6 +338,7 @@ def endpoint(
     )
     if not agents:
         click.echo("no installed agent found", err=True)
+        emit_bom_documents([], output_path=output_path, output_dir=output_dir)
         return
     basenames = output_basenames(agents)
     documents: list[tuple[str, dict]] = []

@@ -82,7 +82,7 @@ step "smoke-install (wheel, deps resolved fresh)"
 SMOKE="$(mktemp -d)"
 trap 'cleanup; rm -rf "$SMOKE"' EXIT
 
-uv build --wheel --out-dir "$SMOKE/dist" >/dev/null || fail "uv build --wheel"
+uv build --wheel --out-dir "$SMOKE/dist" "$TEST_DIR" >/dev/null || fail "uv build --wheel"
 uv venv "$SMOKE/venv" >/dev/null
 uv pip install --python "$SMOKE/venv/bin/python" --prerelease=explicit \
   "$SMOKE"/dist/*.whl >/dev/null                    || fail "uv pip install (dep constraint too loose?)"

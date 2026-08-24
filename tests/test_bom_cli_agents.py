@@ -360,6 +360,46 @@ def test_repo_with_no_declaration_emits_no_document(tmp_path):
     assert result.stdout.strip() == ""
 
 
+def test_repo_output_dir_clears_prior_boms_when_no_agent_resolves(monkeypatch, tmp_path):
+    """A rerun that resolves zero agents must not leave a previous run's
+    `--output-dir` contents behind for a consumer to misread as current."""
+    target = tmp_path / "target"
+    target.mkdir()
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
+    first = CliRunner().invoke(
+        bom_main, ["repo", "--target", str(target), "--output-dir", str(out)]
+    )
+    assert first.exit_code == 0, first.output
+    assert (out / "synthetic--researcher.cdx.json").exists()
+
+    register_synthetic_kind(monkeypatch, agent_ids=[])
+    second = CliRunner().invoke(
+        bom_main, ["repo", "--target", str(target), "--output-dir", str(out)]
+    )
+
+    assert second.exit_code == 0, second.output
+    assert sorted(p.name for p in out.iterdir()) == [_MANIFEST_NAME]
+
+
+def test_endpoint_output_dir_clears_prior_boms_when_no_agent_resolves(monkeypatch, tmp_path):
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
+    first = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    assert first.exit_code == 0, first.output
+    assert (out / "synthetic--researcher.cdx.json").exists()
+
+    register_synthetic_kind(monkeypatch, agent_ids=[])
+    second = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert second.exit_code == 0, second.output
+    assert sorted(p.name for p in out.iterdir()) == [_MANIFEST_NAME]
+
+
 def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch):
     """`bom repo` must walk each agent's own `manifest_patterns`, not always the
     global registry — otherwise a repo declaring two different kinds counts one

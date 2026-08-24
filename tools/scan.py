@@ -1579,7 +1579,20 @@ def scan_bom(
             ).component_refs()
         docs_built.append((doc, agent_info, doc_graph, doc_refs))
 
-    source_unit_count, source_unit_label = source_unit_from_cyclonedx(documents[0])
+    # Each NDJSON document carries its own openaca:source_unit_count/label (one
+    # per agent); sum the counts so the reported total covers every document's
+    # components, not just the first agent's. A document missing a count (a
+    # stored pre-agent-metadata BOM) contributes 1, mirroring the single-BOM
+    # fallback used everywhere else this value is consumed. A shared label is
+    # kept as-is; a mix of labels (a repo declaring more than one agent kind)
+    # falls back to "unit" rather than misreporting one agent's units as
+    # another's.
+    unit_pairs = [source_unit_from_cyclonedx(doc) for doc in documents]
+    source_unit_count = sum(count if count is not None else 1 for count, _label in unit_pairs)
+    unit_labels = {label for _count, label in unit_pairs if label}
+    source_unit_label = (
+        next(iter(unit_labels)) if len(unit_labels) == 1 else ("unit" if unit_labels else None)
+    )
     refs = [ref for _d, _i, _g, doc_refs in docs_built for ref in doc_refs]
     corpus, fed_warnings, overlay_count, overlay_id_map = _load_osv_with_overlays(
         refs, progress=_osv_progress_reporter(output_format)

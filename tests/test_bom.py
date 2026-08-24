@@ -1,6 +1,8 @@
 import json
 
+from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
 from tools.bom import (
+    agent_info_from_cyclonedx,
     bom_components_from_cyclonedx,
     build_agent_bom,
     component_refs_from_cyclonedx,
@@ -269,7 +271,7 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
     package = _component(doc, "mcp-server/npm/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
@@ -585,9 +587,8 @@ def test_cyclonedx_round_trips_output_context_metadata():
     refs = component_refs_from_cyclonedx(encoded)
     component = encoded["components"][0]
 
-    assert _property(component, "openaca:agent_host") == "claude-code"
-    assert refs[0].extra["runtime_hosts"] == ["claude-code"]
-    assert refs[0].extra["agent_host"] == "claude-code"
+    assert _property(component, "openaca:agent_host") is None
+    assert _property(component, "openaca:runtime_hosts") is None
     assert refs[0].extra["declared_by"] == {
         "kind": "manifest",
         "path": "/repo/sample-mcp/mcp.json",
@@ -903,7 +904,7 @@ def test_bom_emits_capability_descriptors():
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
     assert props["openaca:capability_coverage"] == "partial"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
+    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
 
 
 def test_bom_emits_coverage_for_uncovered_component():
@@ -989,3 +990,116 @@ def _component(doc: dict, bom_ref: str) -> dict:
         if component["bom-ref"] == bom_ref:
             return component
     raise AssertionError(f"missing component {bom_ref}")
+
+
+def test_agent_bom_metadata_component_is_the_agent(tmp_path):
+    root = tmp_path / ".claude"
+    (root / "skills" / "deploy").mkdir(parents=True)
+    (root / "skills" / "deploy" / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: d\n---\n", encoding="utf-8"
+    )
+    agent = discover_agents(DiscoveryContext(source="installed", config_dir=root))[0]
+    graph = build_agent_graph(agent)
+
+    doc = build_agent_bom(
+        [],
+        graph=graph,
+        target=str(root),
+        agent_kind=agent.kind_id,
+        agent_name=agent.display_name,
+        composition_source=agent.source,
+        composition_coverage="complete",
+    ).to_cyclonedx()
+
+    component = doc["metadata"]["component"]
+    assert component["bom-ref"] == "root/claude-code"
+    assert component["name"] == "Claude Code"
+    props = {p["name"]: p["value"] for p in component["properties"]}
+    assert props == {
+        "openaca:agent_kind": "claude-code",
+        "openaca:composition_source": "installed",
+        "openaca:composition_coverage": "complete",
+    }
+    metadata_props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    assert metadata_props["openaca:schema_version"] == "0.5"
+    assert "openaca:target_type" not in metadata_props
+    assert any(c["bom-ref"].startswith("claude-code/") for c in doc["components"])
+
+
+def test_agent_bom_stops_writing_agent_host_and_runtime_hosts(tmp_path):
+    root = tmp_path / ".claude"
+    root.mkdir()
+    (root / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+    agent = discover_agents(DiscoveryContext(source="installed", config_dir=root))[0]
+    doc = build_agent_bom(
+        [],
+        graph=build_agent_graph(agent),
+        agent_kind="claude-code",
+        agent_name="Claude Code",
+        composition_source="installed",
+        composition_coverage="complete",
+    ).to_cyclonedx()
+
+    names = {p["name"] for c in doc["components"] for p in c.get("properties", [])}
+    assert "openaca:agent_host" not in names
+    assert "openaca:runtime_hosts" not in names
+
+
+def test_agent_info_round_trips():
+    doc = {
+        "metadata": {
+            "component": {
+                "bom-ref": "root/claude-code",
+                "name": "Claude Code",
+                "properties": [
+                    {"name": "openaca:agent_kind", "value": "claude-code"},
+                    {"name": "openaca:composition_source", "value": "installed"},
+                    {"name": "openaca:composition_coverage", "value": "complete"},
+                ],
+            }
+        }
+    }
+
+    info = agent_info_from_cyclonedx(doc)
+
+    assert info is not None
+    assert (info.kind, info.agent_id, info.source, info.coverage) == (
+        "claude-code",
+        None,
+        "installed",
+        "complete",
+    )
+
+
+def test_agent_info_is_none_for_a_stored_0_4_document():
+    doc = {"metadata": {"component": {"bom-ref": "openaca:target", "name": "/home/u/.claude"}}}
+
+    assert agent_info_from_cyclonedx(doc) is None
+
+
+def test_stored_0_4_runtime_hosts_are_still_restored():
+    """Removing a property means stopping the write, not the read: a stored 0.4
+    document still carries both, and `component_refs_from_cyclonedx` restores
+    them into `extra` for `scan bom`."""
+    stored = {
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": "mcp-server/npm/@x/gh",
+                "name": "@x/gh",
+                "properties": [
+                    {"name": "openaca:component_type", "value": "mcp_server"},
+                    {"name": "openaca:agent_host", "value": "claude-code"},
+                    {"name": "openaca:runtime_hosts", "value": '["claude-code"]'},
+                ],
+            }
+        ]
+    }
+
+    refs = component_refs_from_cyclonedx(stored)
+
+    assert refs[0].extra["runtime_hosts"] == ["claude-code"]
+    assert refs[0].extra["agent_host"] == "claude-code"

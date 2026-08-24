@@ -32,6 +32,9 @@ class ObservationFinding:
     component_path: list[dict[str, str]] = field(default_factory=list)
     finding_type: str = "observation"
     bom_ref: str | None = None
+    # The agent this row belongs to (ADR-0044), mirroring `matcher.Finding`.
+    agent_kind: str | None = None
+    agent_id: str | None = None
 
     @property
     def component_label(self) -> str:

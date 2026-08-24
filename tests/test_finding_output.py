@@ -268,3 +268,45 @@ def test_finding_to_output_omits_taxonomies_key_without_overlay():
     )
     out = finding_to_output(Finding("GHSA-X", ref, "high"), {"id": "GHSA-X"})
     assert "taxonomies" not in out
+
+
+def test_graph_for_prefers_the_finding_s_own_agent_graph():
+    from tools.finding_output import graph_for
+    from tools.graph import Graph, Node
+    from tools.matcher import Finding
+
+    a = Graph(nodes={"root/k/a": Node(key="root/k/a", kind="target", ref=None)})
+    b = Graph(nodes={"root/k/b": Node(key="root/k/b", kind="target", ref=None)})
+    finding = Finding(
+        advisory_id="X",
+        component=ComponentRef(ecosystem="npm", name="x"),
+        confidence="high",
+        agent_kind="k",
+        agent_id="b",
+    )
+
+    assert graph_for(finding, a, {("k", "a"): a, ("k", "b"): b}) is b
+    assert graph_for(finding, a, None) is a
+    assert graph_for(finding, None, {}) is None
+
+
+def test_active_in_prefers_the_scanning_agent():
+    from tools.active_in import active_in
+
+    ref = ComponentRef(ecosystem="npm", name="x", extra={"runtime_hosts": ["stale"]})
+
+    assert active_in(ref, agent_kind="claude-code") == ["claude-code"]
+
+
+def test_active_in_falls_back_to_a_stored_0_4_document():
+    from tools.active_in import active_in
+
+    ref = ComponentRef(ecosystem="npm", name="x", extra={"runtime_hosts": ["claude-code"]})
+
+    assert active_in(ref) == ["claude-code"]
+
+
+def test_active_in_is_empty_when_nothing_says():
+    from tools.active_in import active_in
+
+    assert active_in(ComponentRef(ecosystem="npm", name="x")) == []

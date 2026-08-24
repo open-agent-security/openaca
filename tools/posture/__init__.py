@@ -26,6 +26,7 @@ from tools.posture.rules import (
 )
 
 __all__ = [
+    "KNOWN_RULE_IDS",
     "PostureFinding",
     "Standards",
     "collect_endpoint_mcp_manifests",
@@ -35,6 +36,19 @@ __all__ = [
     "run_posture_rules",
 ]
 
+
+# Every rule id `run_posture_rules` can emit. A kind's `posture_rules` allowlist
+# is validated against this at kind-construction time, so a typo fails loudly
+# instead of silently disabling an intended rule.
+KNOWN_RULE_IDS: frozenset[str] = frozenset(
+    {
+        mutable_install.RULE_ID,
+        insecure_transport.RULE_ID,
+        mcp_auto_approve.RULE_ID,
+        api_endpoint_override.RULE_ID,
+        skill_capability.RULE_ID,
+    }
+)
 
 _MCP_MANIFEST_NAMES: frozenset[str] = frozenset(
     {"mcp.json", ".mcp.json", "claude_desktop_config.json"}
@@ -47,15 +61,27 @@ def run_posture_rules(
     refs: list[ComponentRef],
     manifests: list[tuple[Path, dict]],
     settings_manifests: list[tuple[Path, dict]] | None = None,
+    *,
+    allowed_rules: frozenset[str] | None = None,
+    agent_kind: str | None = None,
+    agent_id: str | None = None,
 ) -> list[PostureFinding]:
-    """Run all V0 posture rules and concatenate their findings."""
+    """Run all V0 posture rules and concatenate their findings.
+
+    Rule *reach* is structural — an agent's graph holds only its own manifests —
+    but *applicability* is declared, because a settings key can mean something
+    different, or nothing, in another runtime. `allowed_rules=None` means every
+    rule applies.
+    """
     settings_manifests = settings_manifests or []
     findings: list[PostureFinding] = []
-    findings.extend(mutable_install.check_mutable_install(refs))
+    findings.extend(mutable_install.check_mutable_install(refs, agent_kind=agent_kind))
     findings.extend(insecure_transport.check_insecure_transport(manifests))
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
-    findings.extend(skill_capability.check_skill_executable_tools(refs))
+    findings.extend(skill_capability.check_skill_executable_tools(refs, agent_kind=agent_kind))
+    findings = [f for f in findings if allowed_rules is None or f.rule_id in allowed_rules]
+    findings = [replace(f, agent_kind=agent_kind, agent_id=agent_id) for f in findings]
     return [_attach_bom_ref(finding, refs) for finding in findings]
 
 

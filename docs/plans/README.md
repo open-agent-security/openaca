@@ -43,6 +43,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 036 | [Triage command and exposure reports](036-triage-and-exposure-reports.md) | ⏸ Pending | 033, 035 |
 | 037 | [Agent component capability extraction](037-capability-extraction.md) | ⏸ Pending | 033 |
 | 038 | [Source-stable component identity](038-source-stable-component-identity.md) | ✅ Done | 033, 034, 037 |
+| 040 | [Multi-agent support](040-multi-agent-support.md) | ✅ Done | 038 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

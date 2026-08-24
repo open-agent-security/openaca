@@ -33,7 +33,7 @@ as evidence/documentation but aren't the matching mechanism in V0.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -57,6 +57,10 @@ class Finding:
     component: ComponentRef
     confidence: str  # "high" | "low" | "unknown"
     reason: str = ""
+    # The agent this occurrence belongs to (ADR-0044). A component loaded by two
+    # agents is two occurrences and therefore two findings, one per agent.
+    agent_kind: str | None = None
+    agent_id: str | None = None
 
 
 def _parse_version(value: Optional[str]) -> Optional[Version]:
@@ -327,6 +331,8 @@ def match(
     advisories: list[dict[str, Any]],
     *,
     graph: Graph | None = None,
+    agent_kind: str | None = None,
+    agent_id: str | None = None,
 ) -> list[Finding]:
     # `graph` is threaded by scan as the source of truth for attribution; it is
     # consumed at output time (sarif/finding_output/render map a finding's
@@ -335,4 +341,6 @@ def match(
     findings: list[Finding] = []
     for ref in refs:
         findings.extend(_match_one(ref, advisories))
-    return findings
+    if agent_kind is None:
+        return findings
+    return [replace(f, agent_kind=agent_kind, agent_id=agent_id) for f in findings]

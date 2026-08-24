@@ -2216,3 +2216,163 @@ def test_package_leaf_label_without_subdirectory_unchanged():
 
     ref = ComponentRef(ecosystem="npm", name="@x/mcp", version="1.0.0")
     assert _package_leaf_label(ref) == "@x/mcp@1.0.0"
+
+
+def test_render_text_cards_attribute_each_row_to_its_own_agent():
+    """A posture row and an observation row belong to exactly one agent's card:
+    each renders once, under its own Target block, not twice and not under the
+    other agent's heading (ADR-0047)."""
+    from tools.observations.finding import ObservationFinding
+    from tools.posture.finding import PostureFinding, Standards
+    from tools.render import AgentCard, RenderTarget, ScanStats, render_text
+
+    posture = PostureFinding(
+        rule_id="openaca-posture-mutable-install-reference",
+        title="mutable install for agent-a-skill",
+        severity="medium",
+        confidence="high",
+        component={"type": "skill", "name": "agent-a-skill"},
+        active_in=["synthetic"],
+        declared_by=None,
+        component_path=[],
+        standards=Standards(),
+        remediation="pin agent-a-skill",
+        agent_kind="synthetic",
+        agent_id="a",
+    )
+    observation = ObservationFinding(
+        source="skillspector",
+        source_version="1.0.0",
+        observation_id="OBS-1",
+        title="agent-b-skill reads secrets",
+        severity="medium",
+        confidence="high",
+        component={"type": "skill", "name": "agent-b-skill"},
+        subject_coordinate="skill/agent-b-skill",
+        agent_kind="synthetic",
+        agent_id="b",
+    )
+    card_a = AgentCard(
+        target=RenderTarget(host_surface="Synthetic a", rows=[("config", "/a")]),
+        posture_findings=[posture],
+    )
+    card_b = AgentCard(
+        target=RenderTarget(host_surface="Synthetic b", rows=[("config", "/b")]),
+        observations=[observation],
+    )
+
+    out = render_text(
+        [],
+        {},
+        ScanStats(),
+        posture_findings=[posture],
+        observations=[observation],
+        cards=[card_a, card_b],
+    )
+
+    assert out.count("pin agent-a-skill") == 1
+    assert out.count("agent-b-skill reads secrets") == 1
+    # Each row sits under its own agent's Target block.
+    a_block, b_block = out.split("host surface: Synthetic b")
+    assert "pin agent-a-skill" in a_block
+    assert "agent-b-skill reads secrets" not in a_block
+    assert "agent-b-skill reads secrets" in b_block
+
+
+def test_inventory_tree_roots_every_block_under_the_agent():
+    """Without a root the blocks are top-level and anonymous, which says nothing
+    about who owns which once a scan renders a card per agent."""
+    from tools.render import render_inventory_tree
+
+    refs = [
+        ComponentRef(
+            ecosystem="npm",
+            name="@x/gh",
+            version="1.0.0",
+            source_manifest=".mcp.json",
+            source_locator="$.mcpServers.gh",
+            scope="agent-component",
+            extra={"component_type": "mcp_server", "install_source": "npx @x/gh@1.0.0"},
+        )
+    ]
+
+    rooted = render_inventory_tree(refs, [], use_unicode=False, root_label="Claude Code")
+    rootless = render_inventory_tree(refs, [], use_unicode=False)
+
+    assert "Claude Code" in rooted
+    # Every block hangs off the root rather than sitting at column zero.
+    assert "\nClaude Code\n`-- direct components/" in rooted
+    assert "Claude Code" not in rootless
+    assert "\ndirect components/" in rootless
+
+
+def test_endpoint_card_tree_is_rooted_at_the_agent(tmp_path):
+    from click.testing import CliRunner
+
+    from tools.scan import main as scan_main
+
+    root = tmp_path / ".claude"
+    root.mkdir()
+    (root / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(scan_main, ["endpoint", "--config-dir", str(root), "--no-color"])
+
+    assert result.exit_code == 0, result.output
+    inventory = result.output.split("Inventory", 1)[1]
+    assert "\nClaude Code\n" in inventory
+
+
+def test_render_text_cards_separate_agents_and_dedupe_next_actions():
+    """Section headings repeat per card, so a rule marks where one agent ends.
+    Generic next actions are identical across agents and must not be listed
+    twice; per-agent actions that genuinely differ survive."""
+    from tools.render import AgentCard, RenderTarget, ScanStats, render_text
+
+    shared = "emit Agent BOM: openaca bom endpoint --output openaca-bom.json"
+    card_a = AgentCard(
+        target=RenderTarget(host_surface="Claude Code", rows=[("config", "/a")]),
+        next_actions=[shared, "sync to remote: openaca remote sync endpoint"],
+    )
+    card_b = AgentCard(
+        target=RenderTarget(host_surface="Runtime B", rows=[("config", "/b")]),
+        next_actions=[shared],
+    )
+
+    two = render_text([], {}, ScanStats(), cards=[card_a, card_b])
+    one = render_text([], {}, ScanStats(), cards=[card_a])
+
+    assert two.count(shared) == 1
+    assert two.count("sync to remote: openaca remote sync endpoint") == 1
+    assert "─" * 60 in two
+    # A single card renders exactly as it did before agents became the root.
+    assert "─" * 60 not in one
+
+
+def test_repo_inventory_tree_roots_at_the_agent_when_one_is_named():
+    """Two agents declared over one repository would otherwise both root at the
+    same scan path, saying nothing about who owns which — the same anonymity the
+    endpoint tree had. The scan path is in the card's Target block either way."""
+    from tools.render import render_repo_inventory_tree
+
+    manifest = Path("/repo/.mcp.json")
+    ref = ComponentRef(
+        ecosystem="npm",
+        name="@x/gh",
+        version="1.0.0",
+        source_manifest=str(manifest),
+        source_locator="$.mcpServers.gh",
+        scope="agent-component",
+        extra={"component_type": "mcp_server"},
+    )
+
+    named = render_repo_inventory_tree(
+        Path("/repo"), [(manifest, [ref])], [], use_unicode=False, root_label="Claude Code"
+    )
+    default = render_repo_inventory_tree(Path("/repo"), [(manifest, [ref])], [], use_unicode=False)
+
+    assert named.startswith("Claude Code")
+    # No label to name (a stored 0.4 document, or a direct call) keeps the path.
+    assert default.startswith("repo /repo")

@@ -288,7 +288,7 @@ def test_openaca_scan_json_carries_exposure_triage_contract():
         {"type": "package", "name": "@cyanheads/git-mcp-server"},
     ]
     assert finding["declared_by"]["path"].endswith("package.json")
-    assert scan_doc["target"]["host_surface"] == "repository"
+    assert scan_doc["target"]["host_surface"] == "Claude Code"
 
 
 def test_openaca_scan_bun_lock_surfaces_bundled_finding():
@@ -1087,4 +1087,67 @@ def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
         assert curated[name]["execution_locus"] == "local"
 
     meta_props = _props_by_name(doc["metadata"])
-    assert meta_props["openaca:schema_version"] == "0.4"
+    assert meta_props["openaca:schema_version"] == "0.5"
+
+
+def test_endpoint_scan_emits_the_migrated_agent_document(tmp_path):
+    """The spec's `Migrating Claude Code` diff table, asserted row by row.
+    Anything else in this document's diff is a regression."""
+    from tools.bom_cli import main as bom_main
+
+    root = tmp_path / ".claude"
+    (root / "skills" / "deploy").mkdir(parents=True)
+    (root / "skills" / "deploy" / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: d\n---\n", encoding="utf-8"
+    )
+    (root / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+
+    out = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(root)])
+    assert out.exit_code == 0, out.output
+    doc = json.loads(out.output.strip())
+
+    metadata_props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    assert metadata_props["openaca:schema_version"] == "0.5"
+    assert "openaca:target_type" not in metadata_props
+
+    component = doc["metadata"]["component"]
+    assert component["bom-ref"] == "root/claude-code"
+    assert component["name"] == "Claude Code"
+    assert {p["name"] for p in component["properties"]} == {
+        "openaca:agent_kind",
+        "openaca:composition_source",
+        "openaca:composition_coverage",
+    }
+
+    refs = [c["bom-ref"] for c in doc["components"]]
+    assert refs and all(r.startswith("claude-code/") or r.startswith("project/") for r in refs)
+    names = {p["name"] for c in doc["components"] for p in c.get("properties", [])}
+    assert {"openaca:agent_host", "openaca:runtime_hosts"} & names == set()
+
+    lint_path = tmp_path / "agent.cdx.json"
+    lint_path.write_text(json.dumps(doc), encoding="utf-8")
+    from tools.cli import main as openaca_main
+
+    lint = CliRunner().invoke(openaca_main, ["bom", "lint", str(lint_path)])
+    assert lint.exit_code == 0, lint.output
+
+
+def test_declared_repo_scan_keeps_component_bom_refs(tmp_path):
+    """Repo node keys are bare paths under one root, so only the root ref moves."""
+    from tools.bom_cli import main as bom_main
+
+    skill = tmp_path / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\n", encoding="utf-8")
+
+    doc = json.loads(
+        CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)]).output.strip()
+    )
+
+    assert doc["metadata"]["component"]["bom-ref"] == "root/claude-code"
+    props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
+    assert props["openaca:composition_source"] == "declared"
+    assert any(c["bom-ref"].startswith(".claude/skills/deploy/") for c in doc["components"])

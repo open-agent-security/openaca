@@ -454,7 +454,7 @@ def test_install_bundled_skill_carries_container_metadata(tmp_path):
     assert skill.extra["declared_by"]["name"] == "superpowers"
     assert skill.extra["component_path"][0] == {"type": "plugin", "name": "superpowers"}
     assert skill.extra["component_path"][-1] == {"type": "skill", "name": "bootstrap"}
-    assert skill.extra["runtime_hosts"] == ["claude-code"]
+    assert "runtime_hosts" not in skill.extra
 
 
 def test_install_walks_bundled_hooks(tmp_path):

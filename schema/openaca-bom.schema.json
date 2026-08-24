@@ -15,29 +15,38 @@
         "tools": {"type": "array"},
         "properties": {
           "type": "array",
-          "items": {"$ref": "#/$defs/property"},
+          "items": {
+            "allOf": [
+              {"$ref": "#/$defs/property"},
+              {"$ref": "#/$defs/schemaVersionRule"},
+              {"$ref": "#/$defs/targetTypeRule"}
+            ]
+          },
           "allOf": [
             {
               "contains": {
                 "type": "object",
                 "required": ["name", "value"],
-                "properties": {
-                  "name": {"const": "openaca:schema_version"},
-                  "value": {"enum": ["0.1", "0.2", "0.3", "0.4"]}
-                }
-              }
-            },
-            {
-              "contains": {
-                "type": "object",
-                "required": ["name", "value"],
-                "properties": {
-                  "name": {"const": "openaca:target_type"},
-                  "value": {"enum": ["repo", "endpoint", "bom"]}
-                }
+                "properties": {"name": {"const": "openaca:schema_version"}}
               }
             }
           ]
+        },
+        "component": {
+          "type": "object",
+          "properties": {
+            "properties": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {"$ref": "#/$defs/property"},
+                  {"$ref": "#/$defs/agentKindRule"},
+                  {"$ref": "#/$defs/compositionSourceRule"},
+                  {"$ref": "#/$defs/compositionCoverageRule"}
+                ]
+              }
+            }
+          }
         }
       }
     },
@@ -51,6 +60,26 @@
     }
   },
   "$defs": {
+    "schemaVersionRule": {
+      "if": {"properties": {"name": {"const": "openaca:schema_version"}}, "required": ["name"]},
+      "then": {"properties": {"value": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5"]}}}
+    },
+    "targetTypeRule": {
+      "if": {"properties": {"name": {"const": "openaca:target_type"}}, "required": ["name"]},
+      "then": {"properties": {"value": {"enum": ["repo", "endpoint", "bom"]}}}
+    },
+    "agentKindRule": {
+      "if": {"properties": {"name": {"const": "openaca:agent_kind"}}, "required": ["name"]},
+      "then": {"properties": {"value": {"type": "string", "minLength": 1}}}
+    },
+    "compositionSourceRule": {
+      "if": {"properties": {"name": {"const": "openaca:composition_source"}}, "required": ["name"]},
+      "then": {"properties": {"value": {"enum": ["installed", "declared"]}}}
+    },
+    "compositionCoverageRule": {
+      "if": {"properties": {"name": {"const": "openaca:composition_coverage"}}, "required": ["name"]},
+      "then": {"properties": {"value": {"enum": ["unknown", "partial", "complete"]}}}
+    },
     "property": {
       "type": "object",
       "required": ["name", "value"],

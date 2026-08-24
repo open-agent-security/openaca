@@ -53,6 +53,9 @@ class PostureFinding:
     source_version: str = "unknown"
     finding_type: str = "posture"
     bom_ref: str | None = None
+    # The agent this row belongs to (ADR-0044), mirroring `matcher.Finding`.
+    agent_kind: str | None = None
+    agent_id: str | None = None
 
     @property
     def component_label(self) -> str:

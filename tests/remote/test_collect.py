@@ -1868,3 +1868,34 @@ def _posture(rule_id: str) -> PostureFinding:
         standards=Standards(),
         remediation="Pin the install reference.",
     )
+
+
+def test_upload_contract_accepts_an_agent_rooted_document():
+    """An agent id is new content in a document, so it is tested against the
+    redaction contract rather than assumed safe. `build_agent_bom`'s flat
+    (`graph=None`) path never sets `target_bom_ref`, so agent metadata only
+    exists on a graph-rooted document — build one."""
+    from tools.bom import build_agent_bom
+    from tools.graph import Graph, Node
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    root = Node(key="root/synthetic/payments-triage", kind="target", ref=None)
+    graph = Graph(nodes={root.key: root})
+
+    doc = build_agent_bom(
+        [],
+        target_type=None,
+        graph=graph,
+        agent_kind="synthetic",
+        agent_id="payments-triage",
+        agent_name="payments-triage",
+        composition_source="installed",
+        composition_coverage="partial",
+    ).to_cyclonedx()
+
+    props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
+    assert doc["metadata"]["component"]["bom-ref"] == "root/synthetic/payments-triage"
+    assert props["openaca:agent_kind"] == "synthetic"
+    assert props["openaca:agent_id"] == "payments-triage"
+
+    enforce_remote_upload_contract({"bom": doc})  # must not raise

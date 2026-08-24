@@ -8,6 +8,40 @@ Every graph node has a `bom-ref` that is unique inside one Agent BOM. Graph
 edges, findings, posture, and observations attach to this exact occurrence.
 Containment belongs in these edges rather than in a second occurrence ID.
 
+## The agent: `(asset, kind, agent id)`
+
+A BOM's subject is one agent, and identifying it takes two layers, because the
+document is deliberately de-identified (ADR-0045):
+
+| Part | Where it comes from |
+|---|---|
+| asset | the upload envelope; for a document read off disk, wherever the file came from |
+| `openaca:agent_kind` | the document |
+| `openaca:agent_id` | the document, **when present** — absent for a kind with one agent per place, where asset plus kind already resolve |
+
+Two documents agreeing on all three describe the same agent at two points in
+time and are comparable. Differing in any one, they are different agents. Nothing
+else is part of the key: not `openaca:composition_source`, not the
+`openaca:target` path, not the content hash.
+
+The agent's `bom-ref` is prefixed `root/` — **not** `agent/`, which the closed
+component-type set already uses for a subagent the runtime loads
+(`openaca:identity: agent/reviewer`). The two never collide: the subject is
+`metadata.component` carrying `openaca:agent_kind`, while a subagent is a
+`components[]` row carrying `openaca:component_type: agent`.
+
+An agent's kind is **not** its identity. `openaca:identity` means one specific
+logical component; a runtime kind is a category, and two agents of one kind are
+two different agents rather than two occurrences of one. `openaca:identity` is
+unchanged by the agent root.
+
+Two workstations with identical configuration are separate instances whose
+compositions are *comparable*: the path normaliser strips machine-specific roots,
+so the same config yields byte-identical `bom-ref`s. Comparable is not identical
+— node-key equality covers the components a BOM carries, and says nothing about
+settings that are not components (a model selection, permission rules,
+environment, system instructions).
+
 ## Cross-BOM identity: `openaca:identity`
 
 `openaca:identity` is an optional source-stable join key for the same logical

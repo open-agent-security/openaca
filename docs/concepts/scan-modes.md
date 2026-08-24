@@ -3,10 +3,14 @@
 OpenACA scans two distinct observation contexts. The same component and
 advisory can appear in both, but the result answers a different question.
 
-| Mode | Question | Common use |
-|---|---|---|
-| `openaca scan repo` | What agent components are declared in this repository? | CI gates, PR checks, source review |
-| `openaca scan endpoint` | What agent components are installed on this machine right now? | Developer laptop scans, managed runner scans, local inventory |
+| Mode | Question | Composition source | Common use |
+|---|---|---|---|
+| `openaca scan repo` | What agents does this repository declare, and what do they load? | `declared` | CI gates, PR checks, source review |
+| `openaca scan endpoint` | What agents are installed on this machine right now, and what do they load? | `installed` | Developer laptop scans, managed runner scans, local inventory |
+
+A subcommand names *where to look*, and each produces the composition source
+rather than restating it: `endpoint` yields `installed`, `repo` yields `declared`.
+Both emit one document per agent discovered, which is one document today.
 
 ## Repository scans
 
@@ -25,6 +29,16 @@ Repository findings mean: this repository declares a component or dependency
 that OpenACA can inventory, assess, or match. They do not prove the deployed
 application loaded that component at runtime.
 
+**A repo declaring no agent produces no document.** Evidence of a declared agent
+is a *file* the runtime owns — `.claude/settings.json`, a skill, a command, a
+subagent, `.claude-plugin/plugin.json`, or the project `.mcp.json`. An empty
+`.claude/` directory is not evidence (Git does not preserve one, so it is not a
+portable declaration), and neither is a bare `mcp.json`, which no runtime owns
+exclusively. A repository of ordinary package manifests declares no agent, so
+`scan repo` reports that and exits `0` — this is the deliberate asymmetry with
+`endpoint`, where an installed runtime with no configuration is a real agent
+with zero components.
+
 ## Endpoint scans
 
 `openaca scan endpoint` reads installed local state for the active agent host.
@@ -33,6 +47,9 @@ For Claude Code, that means user-level config under `~/.claude` by default, or
 
 Endpoint scans are closer to installed ground truth because they can see
 resolved local state such as installed plugins and configured MCP servers.
+
+An installed runtime with **no configuration at all** is still a real agent: it
+is reported with zero components rather than being invisible.
 
 ## Project context
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from tools.active_in import active_in
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.observations.finding import (
     Confidence,
@@ -173,6 +174,7 @@ def collect_skillspector_findings(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     run_command: RunCommand | None = None,
     progress: ProgressCallback | None = None,
+    agent_kind: str | None = None,
 ) -> SkillSpectorFindings:
     if run_command is None and shutil.which(command) is None:
         raise SkillSpectorCommandNotFound(f"SkillSpector command not found: {command}")
@@ -216,7 +218,7 @@ def collect_skillspector_findings(
                     )
                 continue
             _apply_severity_overrides(sarif, _SEVERITY_MAP)
-            ref_findings = _findings_from_sarif(ref, sarif, scan_path)
+            ref_findings = _findings_from_sarif(ref, sarif, scan_path, agent_kind=agent_kind)
             observations.extend(ref_findings.observations)
             posture_findings.extend(ref_findings.posture_findings)
 
@@ -277,6 +279,8 @@ def _findings_from_sarif(
     ref: ComponentRef,
     sarif: dict[str, Any],
     scan_path: Path,
+    *,
+    agent_kind: str | None = None,
 ) -> SkillSpectorFindings:
     observations: list[ObservationFinding] = []
     posture_findings: list[PostureFinding] = []
@@ -292,7 +296,9 @@ def _findings_from_sarif(
             if rule_id in _SKIP_RULE_IDS:
                 continue
             if rule_id in _POSTURE_RULE_IDS:
-                posture = _posture_from_result(ref, result, rule_id, scan_path, source_version)
+                posture = _posture_from_result(
+                    ref, result, rule_id, scan_path, source_version, agent_kind=agent_kind
+                )
                 if posture is not None:
                     posture_findings.append(posture)
                 continue
@@ -339,6 +345,8 @@ def _posture_from_result(
     rule_id: str,
     scan_path: Path,
     source_version: str,
+    *,
+    agent_kind: str | None = None,
 ) -> PostureFinding | None:
     message = _message_text(result.get("message")) or rule_id
     location = _first_location(result, scan_path)
@@ -355,7 +363,7 @@ def _posture_from_result(
         severity=_posture_severity(result),
         confidence=_confidence(result),
         component=_finding_component(ref),
-        active_in=_active_in(ref),
+        active_in=active_in(ref, agent_kind=agent_kind),
         declared_by=declared_by,
         component_path=_component_path(ref),
         standards=Standards(),
@@ -495,13 +503,6 @@ def _first_location(result: dict[str, Any], scan_path: Path) -> dict[str, Any]:
 
 def _is_absolute_uri(uri: str) -> bool:
     return uri.startswith(("/", "file://", "http://", "https://"))
-
-
-def _active_in(ref: ComponentRef) -> list[str]:
-    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
-    if isinstance(runtime_hosts, list):
-        return [h for h in runtime_hosts if isinstance(h, str)]
-    return []
 
 
 def _apply_severity_overrides(

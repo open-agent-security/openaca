@@ -25,7 +25,9 @@ def test_direct_mcp_ref_carries_output_metadata():
     assert len(refs) == 1
     ref = refs[0]
     assert ref.extra["component_type"] == "mcp_server"
-    assert ref.extra["runtime_hosts"] == ["claude-code"]
+    # The parser no longer names the runtime: which agent loads this file is a
+    # property of the agent that read it (ADR-0044).
+    assert "runtime_hosts" not in ref.extra
     assert ref.extra["declared_by"] == {"kind": "manifest", "path": ".mcp.json"}
 
 
@@ -676,7 +678,7 @@ def test_vscode_servers_root_key(tmp_path):
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40scope/server@1.2.3"
     assert refs[0].source_locator == "$.servers.git"
-    assert refs[0].extra["runtime_hosts"] == []
+    assert "runtime_hosts" not in refs[0].extra
 
 
 def test_top_level_array_does_not_raise(tmp_path):
@@ -866,7 +868,7 @@ def test_parse_flat_shape_has_no_runtime_host(tmp_path):
 
     assert len(refs) == 1
     assert refs[0].purl == "pkg:npm/%40playwright/mcp@1.2.3"
-    assert refs[0].extra["runtime_hosts"] == []
+    assert "runtime_hosts" not in refs[0].extra
 
 
 def test_parse_flat_shape_multiple_servers(tmp_path):
@@ -982,3 +984,18 @@ def test_format_install_source_shell_quotes_spaced_args():
     install_source = refs[0].extra["install_source"]
     # shlex.split must recover the original single-path token, not split on space.
     assert shlex.split(install_source) == ["node", "./my server/index.js"]
+
+
+def test_vs_code_servers_block_no_longer_carries_runtime_hosts(tmp_path):
+    """A `servers` block used to be parsed with `runtime_hosts=[]` — "host cannot
+    be inferred from this file shape" — so it rendered `active_in: []`. Under the
+    agent model the file is in the scanning agent's composition, so `active_in`
+    comes from the agent instead. A stronger and correct claim: the agent, not
+    the file shape, decides."""
+    path = tmp_path / "mcp.json"
+    path.write_text('{"servers": {"gh": {"command": "npx", "args": ["@x/gh"]}}}', encoding="utf-8")
+
+    refs = parse(path)
+
+    assert refs
+    assert "runtime_hosts" not in (refs[0].extra or {})

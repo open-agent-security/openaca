@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 from collections import OrderedDict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,7 @@ from packaging.version import InvalidVersion, Version
 from tools.component_ref import ComponentRef, canonical_ecosystem, is_package_source_ref
 from tools.finding_output import (
     finding_to_output,
+    graph_for,
     observation_to_output,
     overlay_taxonomies,
     posture_to_output,
@@ -73,6 +75,48 @@ class RenderTarget:
     rows: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class AgentSummary:
+    """One discovered agent, as machine output reports it (ADR-0047).
+
+    `kind` is `None` only for a stored `0.4` document read back by `scan bom`,
+    which carries no agent metadata at all.
+    """
+
+    kind: str | None
+    agent_id: str | None
+    source: str
+    coverage: str
+    host_surface: str
+
+    def to_json(self) -> dict[str, str | None]:
+        return {
+            "kind": self.kind,
+            "agent_id": self.agent_id,
+            "source": self.source,
+            "coverage": self.coverage,
+            "host_surface": self.host_surface,
+        }
+
+
+@dataclass
+class AgentCard:
+    """One agent's slice of a scan, as the text renderer prints it (ADR-0047).
+
+    `posture_findings` and `observations` are this agent's own rows, not the
+    scan-wide lists: a component flagged in two agents must render two
+    attributed rows rather than one duplicated pair.
+    """
+
+    target: RenderTarget
+    findings: list[Finding] = field(default_factory=list)
+    posture_findings: list[PostureFinding] | None = None
+    observations: list[ObservationFinding] = field(default_factory=list)
+    inventory_tree: str | None = None
+    next_actions: list[str] = field(default_factory=list)
+    graph: Graph | None = None
+
+
 _SEVERITY_RANK = {
     "CRITICAL": 5,
     "HIGH": 4,
@@ -91,6 +135,10 @@ _SEVERITY_COLOR = {
     "UNKNOWN": "\x1b[2m",
 }
 _RESET = "\x1b[0m"
+
+# Between per-agent cards only (ADR-0047). A single-card scan renders exactly as
+# it did before agents became the document root.
+_CARD_SEPARATOR = "\n\n" + "─" * 60 + "\n\n"
 
 # Edition marker on the default agentic line, mirroring the `[osv.dev]` source
 # marker on the finding line above it. Tracks docs/frameworks/.
@@ -276,6 +324,7 @@ def render_text(
     inventory_tree: str | None = None,
     next_actions: list[str] | None = None,
     graph: Graph | None = None,
+    cards: list[AgentCard] | None = None,
 ) -> str:
     """Human-readable scan output.
 
@@ -286,6 +335,17 @@ def render_text(
     always supply all three, so real first-run output is the full inventory-first
     card: Target -> Inventory -> Findings -> Posture -> Summary -> Next.
     """
+    if cards is not None:
+        return _render_text_cards(
+            findings,
+            advisory_index,
+            stats,
+            use_color=use_color,
+            verbose=verbose,
+            posture_findings=posture_findings,
+            observations=observations,
+            cards=cards,
+        )
     card_mode = target is not None or inventory_tree is not None or next_actions is not None
     if not card_mode:
         return _render_text_legacy(
@@ -480,16 +540,19 @@ def _render_text_card(
     inventory_tree: str | None,
     next_actions: list[str] | None,
     graph: Graph | None = None,
+    include_summary: bool = True,
 ) -> str:
     """Inventory-first first-run card: Target -> Inventory -> Findings ->
     Posture -> Summary -> Next. `posture_findings is None` means posture was not
-    requested (`posture: skipped`); `[]` means it ran and found nothing."""
-    posture_skipped = posture_findings is None
-    observations_ran = observations is not None
+    requested (`posture: skipped`); `[]` means it ran and found nothing.
+
+    `include_summary=False` omits the scan-wide Summary and Next tail, so a
+    per-agent loop can render one card per agent and print that tail once
+    (ADR-0047)."""
+    posture_findings_arg = posture_findings
+    observations_arg = observations
     posture_findings = posture_findings or []
     observations = observations or []
-    unit_phrase = _pluralize(stats.unit_count, stats.unit_label)
-    component_phrase = _pluralize(stats.component_count, "component")
 
     sections: list[str] = []
 
@@ -530,23 +593,112 @@ def _render_text_card(
     if observations:
         sections.append(_render_observation_section(observations, use_color))
 
+    if include_summary:
+        sections.append(
+            _render_summary_section(
+                findings,
+                stats,
+                posture_findings=posture_findings_arg,
+                observations=observations_arg,
+            )
+        )
+        if next_actions:
+            sections.append("Next\n" + "\n".join(f"  {a}" for a in next_actions))
+
+    return "\n\n".join(sections)
+
+
+def _render_summary_section(
+    findings: list[Finding],
+    stats: ScanStats,
+    *,
+    posture_findings: list[PostureFinding] | None,
+    observations: list[ObservationFinding] | None,
+) -> str:
+    """The scan-wide Summary block. Scan-wide even with many cards: `stats` and
+    the evidence counts describe the scan, not one agent (ADR-0047)."""
+    posture_skipped = posture_findings is None
+    observations_ran = observations is not None
     sources_str = " + ".join(sorted(stats.sources)) if stats.sources else "(none)"
     parse_note = f" ({stats.parse_failed} failed to parse)" if stats.parse_failed else ""
-    posture_count = "skipped" if posture_skipped else str(len(posture_findings))
+    posture_count = "skipped" if posture_skipped else str(len(posture_findings or []))
     evidence_counts = f"advisories: {len(findings)} · posture: {posture_count}"
     if observations_ran:
-        evidence_counts += f" · observations: {len(observations)}"
-    sections.append(
+        evidence_counts += f" · observations: {len(observations or [])}"
+    return (
         "Summary\n"
-        f"  Scanned {unit_phrase}, {component_phrase}{parse_note} · "
+        f"  Scanned {_pluralize(stats.unit_count, stats.unit_label)}, "
+        f"{_pluralize(stats.component_count, 'component')}{parse_note} · "
         f"{evidence_counts}\n"
         f"  sources: {sources_str}"
     )
 
-    if next_actions:
-        sections.append("Next\n" + "\n".join(f"  {a}" for a in next_actions))
 
-    return "\n\n".join(sections)
+def _render_text_cards(
+    findings: list[Finding],
+    advisory_index: dict[str, dict],
+    stats: ScanStats,
+    *,
+    use_color: bool,
+    verbose: bool,
+    posture_findings: list[PostureFinding] | None,
+    observations: list[ObservationFinding] | None,
+    cards: list[AgentCard],
+) -> str:
+    """One card per agent, then one scan-wide Summary and Next tail.
+
+    Each card renders its *own* findings, posture rows, observations, and graph,
+    so a component flagged in two agents produces two attributed rows under two
+    headings rather than one duplicated pair. With a single card the output is
+    byte-identical to the single-target path.
+    """
+    rendered = [
+        _render_text_card(
+            card.findings,
+            advisory_index,
+            stats,
+            use_color=use_color,
+            verbose=verbose,
+            posture_findings=card.posture_findings,
+            observations=card.observations,
+            target=card.target,
+            inventory_tree=card.inventory_tree,
+            next_actions=None,
+            graph=card.graph,
+            include_summary=False,
+        )
+        for card in cards
+    ]
+    # With more than one card the section headings repeat, so a rule between
+    # cards marks where one agent ends and the next begins. The agent's own name
+    # is not repeated here — the Target block leads each card with it and the
+    # inventory tree is rooted at it.
+    blocks = [_CARD_SEPARATOR.join(rendered)] if len(rendered) > 1 else list(rendered)
+    blocks.append(
+        _render_summary_section(
+            findings, stats, posture_findings=posture_findings, observations=observations
+        )
+    )
+    next_actions = _dedupe_preserving_order(
+        action for card in cards for action in card.next_actions
+    )
+    if next_actions:
+        blocks.append("Next\n" + "\n".join(f"  {a}" for a in next_actions))
+    return "\n\n".join(blocks)
+
+
+def _dedupe_preserving_order(actions: Iterable[str]) -> list[str]:
+    """Two agents of one kind emit the same generic next actions verbatim, and a
+    footer that lists them twice reads as a bug. Actions that genuinely differ
+    per agent (a `bom repo --target <root>` naming its own root) survive."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for action in actions:
+        if action in seen:
+            continue
+        seen.add(action)
+        out.append(action)
+    return out
 
 
 # ── Posture findings section (configuration hygiene) ─────────────────────────
@@ -732,6 +884,7 @@ def render_github(
     observations: list[ObservationFinding] | None = None,
     *,
     graph: Graph | None = None,
+    graphs: Mapping[tuple[str | None, str | None], Graph] | None = None,
 ) -> str:
     """Emit one workflow-annotation line per finding. Matcher `confidence`
     maps to `::error` (high) or `::warning` (low/unknown). Posture findings
@@ -744,7 +897,10 @@ def render_github(
         file_param = _esc_param(str(f.component.source_manifest))
         title_param = _esc_param(f.advisory_id)
         message = f.reason or f.advisory_id
-        attributed_to = graph.attribution_for_ref(f.component) if graph is not None else None
+        finding_graph = graph_for(f, graph, graphs)
+        attributed_to = (
+            finding_graph.attribution_for_ref(f.component) if finding_graph is not None else None
+        )
         if attributed_to:
             message = f"{message} (via {attributed_to})"
         lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
@@ -785,7 +941,9 @@ def render_json(
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
     graph: Graph | None = None,
+    graphs: Mapping[tuple[str | None, str | None], Graph] | None = None,
     target: RenderTarget | None = None,
+    agents: list[AgentSummary] | None = None,
 ) -> str:
     """Structured per-finding records + scan-level stats. The schema is
     documented in README; consumers should treat unknown keys as forward-
@@ -793,7 +951,7 @@ def render_json(
     out_findings = []
     for f in findings:
         adv = advisory_index.get(f.advisory_id) or {}
-        entry = finding_to_output(f, adv, graph=graph)
+        entry = finding_to_output(f, adv, graph=graph_for(f, graph, graphs))
         entry["severity"] = derive_severity_label(adv)
         entry["score"] = derive_severity_score(adv)
         entry["fixed_in"] = _fixed_in_for_finding(f, adv)
@@ -820,6 +978,10 @@ def render_json(
             "host_surface": target.host_surface,
             "rows": [{"label": label, "value": value} for label, value in target.rows],
         }
+    if agents is not None:
+        # One entry per discovered agent, so an agent with zero components still
+        # appears in machine output (ADR-0047).
+        document["agents"] = [a.to_json() for a in agents]
     return json.dumps(document, indent=2, sort_keys=False)
 
 
@@ -1507,6 +1669,7 @@ def render_inventory_tree(
     use_color: bool = False,
     use_unicode: bool = True,
     graph: Graph | None = None,
+    root_label: str | None = None,
 ) -> str:
     """Render the active-plugin and direct-component inventory as a tree.
 
@@ -1524,6 +1687,13 @@ def render_inventory_tree(
 
     `use_unicode=False` swaps box-drawing characters for ASCII (`|--`, `\\`--`),
     useful on terminals or CI logs that mangle UTF-8.
+
+    `root_label` joins every block under one root node — the agent that loads
+    this composition. Without it the blocks are top-level and anonymous, which
+    reads fine for a single agent and not at all once a scan renders a card per
+    agent: `direct components/` twice over says nothing about who owns which.
+    `None` keeps the rootless shape for callers that have no agent to name (a
+    stored BOM with no agent metadata).
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
@@ -1552,12 +1722,18 @@ def render_inventory_tree(
         f"{_pluralize(n_total, 'total component')}"
     )
     out.append("")
-    for plugin_ref in plugins:
-        node = _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color, view=view)
-        out.extend(_format_tree_lines(node, chars))
-        out.append("")
+    blocks = [
+        _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color, view=view)
+        for plugin_ref in plugins
+    ]
     if direct_node is not None:
-        out.extend(_format_tree_lines(direct_node, chars))
+        blocks.append(direct_node)
+    if root_label is not None:
+        root = _TreeNode(label=root_label, children=blocks)
+        out.extend(_format_tree_lines(root, chars))
+        return "\n".join(out).rstrip()
+    for block in blocks:
+        out.extend(_format_tree_lines(block, chars))
         out.append("")
     return "\n".join(out).rstrip()
 
@@ -1570,6 +1746,7 @@ def render_repo_inventory_tree(
     use_color: bool = False,
     use_unicode: bool = True,
     graph: Graph | None = None,
+    root_label: str | None = None,
 ) -> str:
     """Render repo-mode inventory as a composition tree.
 
@@ -1578,6 +1755,13 @@ def render_repo_inventory_tree(
     plugin root; agent-dependency refs declared by manifests in `<dir>` render
     below that plugin, while direct agent components render under a final
     `direct components/` block.
+
+    `root_label` names the agent that loads this composition, matching the
+    endpoint tree. Two agents declared over one repository would otherwise both
+    root at the same scan path and say nothing about who owns which — the scan
+    path is in the card's Target block either way. `None` keeps the
+    `repo <path>` label for callers with no agent to name (a stored `0.4`
+    document, or a direct call).
     """
     chars = _TREE_UNICODE if use_unicode else _TREE_ASCII
     findings_by_ref = _findings_by_ref(findings)
@@ -1588,7 +1772,7 @@ def render_repo_inventory_tree(
         key=lambda r: _plugin_display_identity(r).lower(),
     )
 
-    root_node = _TreeNode(label=f"repo {root}")
+    root_node = _TreeNode(label=root_label or f"repo {root}")
     assigned_keys: set[tuple] = set()
     for plugin_ref in plugin_refs:
         node, assigned = _build_repo_plugin_node(

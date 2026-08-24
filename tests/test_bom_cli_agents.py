@@ -1,0 +1,393 @@
+import json
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from tests.fixtures.agent_kinds import register_synthetic_kind
+from tools.bom_cli import main as bom_main
+
+
+def test_single_agent_stdout_is_one_json_line(tmp_path):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert len(lines) == 1
+    doc = json.loads(lines[0])
+    assert doc["metadata"]["component"]["bom-ref"] == "root/claude-code"
+
+
+def test_many_agents_stream_as_ndjson(monkeypatch, tmp_path):
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer", "critic"])
+
+    result = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    docs = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    assert [d["metadata"]["component"]["bom-ref"] for d in docs] == [
+        "root/synthetic/researcher",
+        "root/synthetic/writer",
+        "root/synthetic/critic",
+    ]
+    props = {p["name"]: p["value"] for p in docs[0]["metadata"]["component"]["properties"]}
+    assert props["openaca:agent_id"] == "researcher"
+
+
+_MANIFEST_NAME = ".openaca-bom-manifest.json"
+
+
+def test_output_dir_writes_one_file_per_agent(monkeypatch, tmp_path):
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    out = tmp_path / "boms"
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert sorted(p.name for p in out.iterdir()) == [
+        _MANIFEST_NAME,
+        "synthetic--researcher.cdx.json",
+        "synthetic--writer.cdx.json",
+    ]
+
+
+def test_output_dir_drops_a_stale_file_it_previously_wrote(monkeypatch, tmp_path):
+    """A consumer reading `--output-dir` after a rerun must not see an agent
+    that no longer resolves — the directory holds this run's `*.cdx.json`
+    set, not every set this tool has ever written to it. A non-`.cdx.json`
+    file the user placed there is left alone."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    (out / "notes.txt").write_text("kept", encoding="utf-8")
+
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert sorted(p.name for p in out.iterdir()) == [
+        _MANIFEST_NAME,
+        "notes.txt",
+        "synthetic--writer.cdx.json",
+    ]
+    assert (out / "notes.txt").read_text(encoding="utf-8") == "kept"
+
+
+def test_output_dir_leaves_a_foreign_cdx_json_file_alone(monkeypatch, tmp_path):
+    """A `*.cdx.json` file this tool never wrote — hand-authored, produced by
+    another tool, or left by a previous scan pointed at this directory by a
+    different invocation — is not owned data and must survive a rerun even
+    though its name matches the extension this tool emits."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    (out / "third-party.cdx.json").write_text("{}", encoding="utf-8")
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "third-party.cdx.json").read_text(encoding="utf-8") == "{}"
+    assert sorted(p.name for p in out.iterdir()) == [
+        _MANIFEST_NAME,
+        "synthetic--writer.cdx.json",
+        "third-party.cdx.json",
+    ]
+
+
+def test_output_dir_ignores_a_manifest_entry_that_traverses_out_of_the_directory(
+    monkeypatch, tmp_path
+):
+    """A manifest entry like `../important.cdx.json` (or an absolute path) must
+    never become a deletion candidate outside `--output-dir` — whether it got
+    there from a hand-edited manifest or a planted one."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    sibling = tmp_path / "important.cdx.json"
+    sibling.write_text("keep me", encoding="utf-8")
+    (out / _MANIFEST_NAME).write_text(
+        json.dumps(["../important.cdx.json", "/etc/passwd"]), encoding="utf-8"
+    )
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert sibling.read_text(encoding="utf-8") == "keep me"
+    assert sorted(p.name for p in out.iterdir()) == [
+        _MANIFEST_NAME,
+        "synthetic--writer.cdx.json",
+    ]
+
+
+def test_output_dir_ignores_a_manifest_entry_that_is_not_a_bom_filename(monkeypatch, tmp_path):
+    """A manifest entry naming a direct child of `--output-dir` that this
+    emitter could never itself have produced (a non-`.cdx.json` name, or the
+    manifest's own filename) must not become a deletion candidate — a
+    hand-edited or planted manifest containing `["notes.txt"]` must not cause
+    an unrelated `notes.txt` to be deleted on the next run."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    (out / "notes.txt").write_text("keep me", encoding="utf-8")
+    (out / _MANIFEST_NAME).write_text(json.dumps(["notes.txt", _MANIFEST_NAME]), encoding="utf-8")
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out / "notes.txt").read_text(encoding="utf-8") == "keep me"
+    assert sorted(p.name for p in out.iterdir()) == [
+        _MANIFEST_NAME,
+        "notes.txt",
+        "synthetic--writer.cdx.json",
+    ]
+
+
+def test_output_dir_refuses_to_overwrite_an_unowned_name_collision(monkeypatch, tmp_path):
+    """A foreign file whose name happens to match a basename this run would
+    generate is not owned data and must not be silently overwritten."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    (out / "synthetic--writer.cdx.json").write_text("not ours", encoding="utf-8")
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert "refusing to overwrite" in result.output
+    assert (out / "synthetic--writer.cdx.json").read_text(encoding="utf-8") == "not ours"
+
+
+def test_output_dir_publish_failure_keeps_manifest_consistent_with_disk(monkeypatch, tmp_path):
+    """A failure during the publish (replace) phase — after staging succeeded —
+    must not leave a manifest that claims a file is current when it wasn't
+    published, or that a stale file was removed when it wasn't touched."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+    real_replace = Path.replace
+    calls = {"n": 0}
+
+    def flaky_replace(self, target):
+        if self.suffix == ".tmp":
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("permission denied")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    manifest = json.loads((out / _MANIFEST_NAME).read_text(encoding="utf-8"))
+    on_disk = {p.name for p in out.iterdir() if p.name != _MANIFEST_NAME}
+    assert set(manifest) == on_disk
+    assert not list(out.glob("*.tmp"))
+
+
+def test_output_dir_write_failure_preserves_the_prior_complete_set(monkeypatch, tmp_path):
+    """If serializing the new set fails partway through, the previous run's
+    complete set must still be on disk afterward — never a mix of old and
+    new files, and never an empty directory."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+    before = sorted(p.name for p in out.iterdir())
+
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b", "c"])
+    real_write_text = Path.write_text
+    calls = {"n": 0}
+
+    def flaky_write_text(self, *args, **kwargs):
+        if self.suffix == ".tmp":
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("disk full")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert sorted(p.name for p in out.iterdir()) == before
+    assert not list(out.glob("*.tmp"))
+
+
+def test_output_dir_normal_manifest_write_failure_is_reported(monkeypatch, tmp_path):
+    """If every document publishes cleanly but the final manifest write itself
+    fails, the CLI must report a `ClickException`, not let a raw `OSError`
+    escape — the successfully written BOMs are real; only the ownership
+    record failed to update."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+    real_write_text = Path.write_text
+
+    def flaky_write_text(self, *args, **kwargs):
+        if self.name == _MANIFEST_NAME:
+            raise OSError("disk full")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert "manifest" in result.output
+    assert (out / "synthetic--writer.cdx.json").exists()
+
+
+def test_output_dir_publish_failure_reports_when_recovery_manifest_write_also_fails(
+    monkeypatch, tmp_path
+):
+    """A publish failure followed by a failure to write the recovery manifest
+    must still surface a `ClickException` describing both problems, not let
+    the second `OSError` mask the first or escape unhandled."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+    real_replace = Path.replace
+    replace_calls = {"n": 0}
+
+    def flaky_replace(self, target):
+        if self.suffix == ".tmp":
+            replace_calls["n"] += 1
+            if replace_calls["n"] == 2:
+                raise OSError("permission denied")
+        return real_replace(self, target)
+
+    real_write_text = Path.write_text
+
+    def flaky_write_text(self, *args, **kwargs):
+        if self.name == _MANIFEST_NAME:
+            raise OSError("disk full")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert "failed to publish" in result.output
+    assert "manifest" in result.output
+
+
+def test_output_dir_stale_cleanup_failure_reports_when_recovery_manifest_write_also_fails(
+    monkeypatch, tmp_path
+):
+    """A stale-file removal failure followed by a failure to write the recovery
+    manifest must still surface a `ClickException` describing both problems."""
+    out = tmp_path / "boms"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
+    CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, missing_ok=False):
+        if self.name == "synthetic--researcher.cdx.json":
+            raise OSError("permission denied")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    real_write_text = Path.write_text
+
+    def flaky_write_text(self, *args, **kwargs):
+        if self.name == _MANIFEST_NAME:
+            raise OSError("disk full")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert "failed to remove stale" in result.output
+    assert "manifest" in result.output
+
+
+def test_output_errors_only_when_more_than_one_agent_resolves(monkeypatch, tmp_path):
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+
+    result = CliRunner().invoke(
+        bom_main,
+        ["endpoint", "--config-dir", str(tmp_path), "--output", str(tmp_path / "one.json")],
+    )
+
+    assert result.exit_code != 0
+    assert "--output-dir" in result.output
+
+
+def test_repo_with_no_declaration_emits_no_document(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == ""
+
+
+def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch):
+    """`bom repo` must walk each agent's own `manifest_patterns`, not always the
+    global registry — otherwise a repo declaring two different kinds counts one
+    kind's manifests against the other's evidence gaps."""
+    from dataclasses import replace
+
+    import tools.agent_kinds as agent_kinds
+    import tools.parsers
+    from tools.parsers.mcp_json import parse as parse_mcp
+
+    kind = register_synthetic_kind(monkeypatch, agent_ids=["a"])
+    # `AgentKind` is frozen — build the surface-bearing kind directly rather
+    # than mutating the fixture's instance, then re-register it.
+    kind = replace(kind, manifest_patterns=((".mcp.json", parse_mcp),))
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (kind,))
+
+    seen_registries = []
+    real_parse_repo_grouped = tools.parsers.parse_repo_grouped
+
+    def spy(root, include_gitignored=False, *, registry=tools.parsers.REGISTRY):
+        seen_registries.append(registry)
+        return real_parse_repo_grouped(
+            root, include_gitignored=include_gitignored, registry=registry
+        )
+
+    monkeypatch.setattr("tools.bom_cli.parse_repo_grouped", spy)
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert seen_registries == [kind.manifest_patterns]

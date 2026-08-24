@@ -52,6 +52,8 @@ def test_scan_finds_exposed_mcp(tmp_path):
 def test_scan_clean_repo_exits_zero(tmp_path):
     clean = tmp_path / "clean"
     clean.mkdir()
+    (clean / ".claude").mkdir()
+    (clean / ".claude" / "settings.local.json").write_text("{}", encoding="utf-8")
     (clean / "package.json").write_text('{"name":"clean","version":"0","dependencies":{}}')
     sarif_out = tmp_path / "out.sarif"
     runner = CliRunner()
@@ -162,7 +164,11 @@ def test_scan_default_output_reports_manifest_and_component_counts(tmp_path):
 def test_scan_reports_parse_failure_not_no_manifests(tmp_path):
     """A target containing only malformed manifests must surface the parse
     failure rather than silently reporting no findings on zero manifests."""
-    (tmp_path / "package.json").write_text("{invalid json !!!")
+    # `.claude/settings.json` is both a declared-agent evidence file (ADR-0044,
+    # matched by path) and a registry manifest, so one malformed file gives a
+    # declared agent with exactly one manifest, all of which failed to parse.
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text("{invalid json !!!")
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -188,7 +194,7 @@ def test_scan_partial_parse_failures_noted_in_summary(tmp_path):
     (tmp_path / "package.json").write_text(
         '{"name":"ok","version":"0","dependencies":{"left-pad":"1.3.0"}}'
     )
-    (tmp_path / "mcp.json").write_text("{invalid json !!!")
+    (tmp_path / ".mcp.json").write_text("{invalid json !!!")
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -209,7 +215,7 @@ def test_scan_parsed_but_empty_manifest_not_reported_as_parse_failure(tmp_path):
     """A manifest that parses cleanly but emits zero refs (an empty
     `package.json`) contributes no graph-projected refs, but it parsed fine.
     The machine-format stderr summary must not claim a parse failure."""
-    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / ".mcp.json").write_text("{}")
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -227,6 +233,12 @@ def test_scan_parsed_but_empty_manifest_not_reported_as_parse_failure(tmp_path):
 
 
 def test_scan_default_output_reports_no_manifests_when_target_is_empty(tmp_path):
+    # `.claude/settings.local.json` is declared-agent evidence but is not a
+    # registry manifest pattern, so this is a declared agent over a tree with
+    # zero manifests to visit. An *empty* tree declares no agent at all now
+    # (ADR-0044) — see `test_scan_repo_with_no_declaration_reports_no_agent`.
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.local.json").write_text("{}", encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(
         main,
@@ -255,7 +267,7 @@ def test_repo_default_output_is_inventory_card_with_findings():
     )
     assert result.exit_code == 1, result.output
     # Card sections present.
-    assert "host surface: repository" in result.output
+    assert "host surface: Claude Code" in result.output
     assert "Inventory" in result.output
     assert "Summary" in result.output
     # Inventory tree shows the bundled component, flagged with its advisory id.
@@ -297,6 +309,10 @@ def test_scan_verbose_clean_repo_still_lists_manifests(tmp_path):
     duplicating the stdout inventory card."""
     clean = tmp_path / "clean"
     clean.mkdir()
+    # Declared-agent evidence that is not itself a registry manifest, so the
+    # manifest count stays 1 (ADR-0044: a tree declaring no agent emits nothing).
+    (clean / ".claude").mkdir()
+    (clean / ".claude" / "settings.local.json").write_text("{}", encoding="utf-8")
     (clean / "package.json").write_text('{"name":"clean","version":"0","dependencies":{}}')
     runner = CliRunner()
     result = runner.invoke(
@@ -609,7 +625,7 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
         edges=[Edge(parent=root.key, child=plugin.key)],
     )
     graph.validate()
-    monkeypatch.setattr("tools.scan.build_graph", lambda *_args, **_kwargs: graph)
+    monkeypatch.setattr("tools.scan.build_agent_graph", lambda *_args, **_kwargs: graph)
 
     config_dir = REPO_ROOT / "tests" / "fixtures" / "installs" / "minimal"
     runner = CliRunner()
@@ -1244,7 +1260,8 @@ def test_repo_subcommand_verbose_renders_inventory_tree(tmp_path):
         )
 
     assert result.exit_code == 0, result.output
-    assert f"repo {tmp_path}" in result.output
+    # The declared agent, not the scan path, roots the tree.
+    assert "\nClaude Code\n" in result.output
     assert "plugin/demo-plugin@1.0.0" in result.output
     assert "package deps/ (1)" in result.output
     assert "lodash@4.17.20" in result.output
@@ -1669,7 +1686,7 @@ def test_repo_scanner_skillspector_adds_external_findings(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    def fake_collect(refs, *, progress=None):
+    def fake_collect(refs, *, progress=None, agent_kind=None):
         from tools.observations.finding import ObservationFinding
         from tools.observations.skillspector import SkillSpectorFindings
         from tools.posture.finding import PostureFinding, Standards
@@ -1780,7 +1797,7 @@ def test_repo_scanner_skillspector_reports_progress_for_text_output(tmp_path, mo
         encoding="utf-8",
     )
 
-    def fake_collect(_refs, *, progress=None):
+    def fake_collect(_refs, *, progress=None, agent_kind=None):
         from tools.observations.skillspector import SkillSpectorFindings
 
         assert progress is not None
@@ -1817,7 +1834,7 @@ def test_repo_scanner_skillspector_missing_command_aborts(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    def missing_collect(_refs, *, progress=None):
+    def missing_collect(_refs, *, progress=None, agent_kind=None):
         from tools.observations.skillspector import SkillSpectorCommandNotFound
 
         raise SkillSpectorCommandNotFound("SkillSpector command not found: skillspector")
@@ -1848,6 +1865,10 @@ def test_repo_scanner_skillspector_missing_command_aborts_no_skills(tmp_path, mo
     import shutil
 
     monkeypatch.setattr(shutil, "which", lambda _cmd: None)
+    # A declared agent with no skill refs — an empty tree declares no agent and
+    # would return before the scanner is probed at all.
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.local.json").write_text("{}", encoding="utf-8")
 
     result = CliRunner().invoke(
         main,
@@ -1948,6 +1969,8 @@ def test_repo_software_dep_in_non_plugin_repo_is_suppressed(tmp_path):
     (GITHUB_ACTIONS auto-promotion is suppressed by the autouse fixture in
     conftest.py — the footer only renders in `text` format.)
     """
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.local.json").write_text("{}", encoding="utf-8")
     (tmp_path / "package.json").write_text(
         json.dumps(
             {
@@ -2249,3 +2272,307 @@ def test_scan_report_ignores_github_actions_auto_promotion(tmp_path, monkeypatch
     assert result.exit_code == 0, result.output
     assert "Exposure report" in result.output
     assert "does not support --format github" not in result.output
+
+
+# ── Per-agent scan pipeline (ADR-0047) ──────────────────────────────────────
+
+
+def test_scan_json_carries_agents_and_per_finding_agent(tmp_path):
+    root = tmp_path / ".claude"
+    root.mkdir()
+    (root / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(root), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)  # ONE document, still json.load-able
+    assert doc["agents"] == [
+        {
+            "kind": "claude-code",
+            "agent_id": None,
+            "source": "installed",
+            "coverage": "complete",
+            "host_surface": "Claude Code",
+        }
+    ]
+    assert doc["target"]["host_surface"] == "Claude Code"
+    for finding in doc["findings"]:
+        assert finding["agent"] == {"kind": "claude-code", "agent_id": None}
+
+
+def test_scan_reports_a_zero_component_agent(tmp_path):
+    root = tmp_path / ".claude"
+    root.mkdir()
+
+    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(root), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["findings"] == []
+    assert len(doc["agents"]) == 1  # the agent exists even with nothing configured
+
+
+def test_scan_prints_one_card_per_agent(monkeypatch, tmp_path):
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+
+    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("host surface: Synthetic a") == 1
+    assert result.output.count("host surface: Synthetic b") == 1
+    # One scan-wide Summary, not one per card.
+    assert result.output.count("Summary") == 1
+
+
+def test_scan_repo_with_no_declaration_reports_no_agent(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "declares no agent" in result.output
+
+
+def test_scan_repo_reports_declared_agent_with_repo_shaped_target(tmp_path):
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text(
+        '{"permissions": {"allow": ["Bash(git:*)"]}}', encoding="utf-8"
+    )
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["repo", "--target", str(tmp_path), "--include-posture", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["agents"] == [
+        {
+            "kind": "claude-code",
+            "agent_id": None,
+            "source": "declared",
+            "coverage": "complete",
+            "host_surface": "Claude Code",
+        }
+    ]
+    assert doc["target"]["rows"] == [
+        {"label": "path", "value": str(tmp_path)},
+        {"label": "coverage", "value": "complete"},
+    ]
+    assert doc["stats"]["parse_failed"] == 0
+    for finding in doc["findings"]:
+        assert finding.get("agent") == {"kind": "claude-code", "agent_id": None}
+
+
+def test_scan_repo_downgrades_coverage_on_a_repo_parse_failure(tmp_path):
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text("not json", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["agents"][0]["coverage"] == "partial"
+    assert doc["stats"]["parse_failed"] == 1
+
+
+def test_scan_repo_text_keeps_the_manifest_grouped_inventory_tree(tmp_path):
+    # `scan repo` renders `render_repo_inventory_tree` — grouped by manifest,
+    # rooted at the scanned path — not the endpoint composition tree. The agent
+    # loop must select the renderer per composition source.
+    skill = tmp_path / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\n", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--no-color"])
+
+    assert result.exit_code == 0, result.output
+    assert ".claude/skills/deploy/SKILL.md" in result.output
+
+
+def test_scan_repo_stats_keep_the_manifest_unit_count(tmp_path):
+    # The walk that produced `unit_count` moved into `_agent_scan_prep`; it must
+    # still reach `ScanStats`, or the summary line loses its manifest count.
+    skill = tmp_path / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\n", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    doc = json.loads(result.stdout)
+    assert doc["stats"]["unit"] == "manifest"
+    assert doc["stats"]["units"] >= 1
+
+
+def test_scan_endpoint_stats_keep_the_active_plugin_unit_label(tmp_path):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, ["endpoint", "--config-dir", str(tmp_path), "--format", "json"]
+    )
+
+    doc = json.loads(result.stdout)
+    assert doc["stats"]["unit"] == "active plugin"
+
+
+def test_exposure_report_carries_agents(tmp_path):
+    # An exposure report is a machine document (ADR-0047), so a zero-component
+    # agent must appear in it too.
+    root = tmp_path / ".claude"
+    root.mkdir()
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--config-dir",
+            str(root),
+            "--report",
+            "exposure",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report["report_type"] == "exposure"
+    assert report["agents"] == [
+        {
+            "kind": "claude-code",
+            "agent_id": None,
+            "source": "installed",
+            "coverage": "complete",
+            "host_surface": "Claude Code",
+        }
+    ]
+
+
+def test_scan_repo_counts_a_shared_parse_failure_once_across_same_kind_agents(
+    monkeypatch, tmp_path
+):
+    # Two declared agents of the same synthetic kind share one `scan_root`. One
+    # malformed manifest in that root must contribute exactly one parse failure
+    # scan-wide, not one per agent discovered there.
+    from dataclasses import replace
+
+    import tools.agent_kinds as agent_kinds
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+    from tools.parsers import REGISTRY
+
+    kind = register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+    kind = replace(kind, manifest_patterns=tuple(REGISTRY))
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (kind,))
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "settings.json").write_text("not json", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert len(doc["agents"]) == 2
+    assert doc["stats"]["parse_failed"] == 1
+    assert all(agent["coverage"] == "partial" for agent in doc["agents"])
+
+
+def test_scan_bom_reads_ndjson_from_bom_endpoint(monkeypatch, tmp_path):
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+    from tools.bom_cli import main as bom_main
+
+    register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
+    ndjson = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)]).output
+    path = tmp_path / "boms.ndjson"
+    path.write_text(ndjson, encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["bom", "--input", str(path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert len(json.loads(result.stdout)["agents"]) == 2
+
+
+def test_scan_bom_keeps_each_legacy_document_s_own_target(tmp_path):
+    # Two stored 0.4 documents with distinct `openaca:target` values — each card
+    # must report the target embedded in *its own* document, not whichever
+    # document the loading loop last read.
+    def _legacy_doc(target: str) -> dict:
+        return {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "metadata": {
+                "properties": [
+                    {"name": "openaca:target_type", "value": "endpoint"},
+                    {"name": "openaca:target", "value": target},
+                ]
+            },
+            "components": [],
+        }
+
+    path = tmp_path / "boms.ndjson"
+    path.write_text(
+        json.dumps(_legacy_doc("/one")) + "\n" + json.dumps(_legacy_doc("/two")) + "\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(main, ["bom", "--input", str(path)])
+
+    assert result.exit_code == 0, result.output
+    assert "endpoint /one" in result.output
+    assert "endpoint /two" in result.output
+
+
+def test_scan_bom_rejects_a_non_object_ndjson_line(tmp_path):
+    path = tmp_path / "boms.ndjson"
+    path.write_text('{"bomFormat": "CycloneDX", "components": []}\n[1, 2]\n', encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["bom", "--input", str(path), "--format", "json"])
+
+    assert result.exit_code != 0
+    assert "boms.ndjson:2" in result.output + str(result.exception)
+
+
+def test_scan_bom_renders_a_stored_0_4_document_without_agent_metadata(tmp_path):
+    # A pre-agent-metadata flat CycloneDX BOM: no metadata.component at all,
+    # matching what `openaca bom endpoint` emitted before this feature.
+    doc = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "npm:@x/gh@1.0.0",
+                "name": "@x/gh",
+                "version": "1.0.0",
+                "purl": "pkg:npm/%40x/gh@1.0.0",
+                "properties": [{"name": "openaca:scope", "value": "software-dependency"}],
+            }
+        ],
+    }
+    path = tmp_path / "legacy.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["bom", "--input", str(path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.stdout)
+    assert out["agents"] == [
+        {
+            "kind": None,
+            "agent_id": None,
+            "source": "bom",
+            "coverage": "unknown",
+            "host_surface": "stored BOM",
+        }
+    ]

@@ -2,10 +2,12 @@ import json
 
 from click.testing import CliRunner
 
+from tools.agent_kinds import AgentKind
 from tools.bom import build_agent_bom
 from tools.bom_cli import main as bom_main
 from tools.cli import main as openaca_main
 from tools.component_ref import ComponentRef
+from tools.graph import Graph
 
 
 def test_bom_lint_accepts_generated_bom(tmp_path):
@@ -378,3 +380,151 @@ def test_bom_lint_handles_non_dict_metadata_without_crashing():
     for bad_metadata in ([], "bad", 42):
         doc = {"metadata": bad_metadata, "components": [], "dependencies": []}
         assert isinstance(check_semantics(doc), list)  # no raise
+
+
+def _agent_doc(**overrides):
+    """A minimal 0.5 agent-rooted document."""
+    props = {
+        "openaca:agent_kind": "claude-code",
+        "openaca:composition_source": "installed",
+        "openaca:composition_coverage": "complete",
+    }
+    props.update(overrides.pop("metadata_component_props", {}))
+    for key in overrides.pop("drop", ()):
+        props.pop(key, None)
+    bom_ref = overrides.pop("bom_ref", "root/claude-code")
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "tools": [{"vendor": "OpenACA", "name": "openaca"}],
+            "properties": [{"name": "openaca:schema_version", "value": "0.5"}],
+            "component": {
+                "type": "application",
+                "bom-ref": bom_ref,
+                "name": "Claude Code",
+                "properties": [{"name": k, "value": v} for k, v in props.items()],
+            },
+        },
+        "components": [],
+        "dependencies": [{"ref": overrides.pop("dep_ref", bom_ref), "dependsOn": []}],
+    }
+
+
+def test_lint_accepts_agent_rooted_bom(tmp_path):
+    path = tmp_path / "agent.cdx.json"
+    path.write_text(json.dumps(_agent_doc()), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_lint_still_accepts_stored_0_4_target_type(tmp_path):
+    doc = _agent_doc()
+    doc["metadata"]["properties"] = [
+        {"name": "openaca:schema_version", "value": "0.4"},
+        {"name": "openaca:target_type", "value": "endpoint"},
+    ]
+    doc["metadata"]["component"] = {
+        "type": "application",
+        "bom-ref": "openaca:target",
+        "name": "/home/u/.claude",
+        "properties": [{"name": "openaca:component_type", "value": "target"}],
+    }
+    doc["dependencies"] = [{"ref": "openaca:target", "dependsOn": []}]
+    path = tmp_path / "legacy.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_lint_rejects_bad_composition_source(tmp_path):
+    doc = _agent_doc(metadata_component_props={"openaca:composition_source": "sandbox"})
+    path = tmp_path / "bad.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "openaca:composition_source" in result.output
+
+
+def test_lint_rejects_duplicate_openaca_property(tmp_path):
+    doc = _agent_doc()
+    doc["components"] = [
+        {
+            "type": "application",
+            "bom-ref": "claude-code/x#y#skill/x",
+            "name": "x",
+            "properties": [
+                {"name": "openaca:identity", "value": "skill/x"},
+                {"name": "openaca:identity", "value": "skill/x"},
+            ],
+        }
+    ]
+    doc["dependencies"].append({"ref": "claude-code/x#y#skill/x", "dependsOn": []})
+    path = tmp_path / "dup.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "appears more than once" in result.output
+
+
+def test_lint_rejects_agent_id_on_a_singleton_kind(tmp_path):
+    doc = _agent_doc(
+        bom_ref="root/claude-code/x",
+        metadata_component_props={"openaca:agent_id": "x"},
+    )
+    path = tmp_path / "singleton.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "is singleton" in result.output
+
+
+def test_lint_rejects_missing_agent_id_on_a_multiplicity_kind(tmp_path, monkeypatch):
+    # Inline stand-in for a many-per-place kind — the shared synthetic-kind
+    # fixture in `tests/fixtures/agent_kinds.py` does not exist until Task 7,
+    # and this task's test suite must not depend forward on it.
+    fake_kind = AgentKind(
+        id="synthetic",
+        display_name="Synthetic",
+        cardinality="many_per_place",
+        root_label="synthetic",
+        coverage_baseline={"installed": "partial", "declared": "partial"},
+        discover=lambda ctx: [],
+        compose=lambda agent, **_: Graph(nodes={}),
+    )
+    monkeypatch.setattr("tools.bom_lint.REGISTRY", (fake_kind,))
+    doc = _agent_doc(
+        bom_ref="root/synthetic",
+        metadata_component_props={"openaca:agent_kind": "synthetic"},
+    )
+    path = tmp_path / "missing_id.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "same-kind multiplicity" in result.output
+
+
+def test_lint_accepts_an_unknown_kind_without_a_cardinality_opinion(tmp_path):
+    doc = _agent_doc(
+        bom_ref="root/third-party-kind",
+        metadata_component_props={"openaca:agent_kind": "third-party-kind"},
+    )
+    path = tmp_path / "unknown_kind.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 0, result.output

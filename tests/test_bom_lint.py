@@ -154,6 +154,33 @@ def test_bom_lint_rejects_metadata_component_missing_name_and_type(tmp_path):
     assert "schema:" in result.output
 
 
+def test_bom_lint_accepts_legacy_metadata_component_missing_bom_ref(tmp_path):
+    """`type`/`bom-ref`/`name` are only required on `metadata.component` for the
+    agent-rooted `0.5` shape (ADR-0044/0045). `openaca bom lint` documents
+    accepting `0.1` through `0.5` (docs/openaca-bom-schema.md); a stored legacy
+    document can carry an ordinary CycloneDX `metadata.component` — a standard
+    field unrelated to OpenACA's graph encoding (see `_is_graph_backed_bom` in
+    tools/scan.py) — that never had a `bom-ref` at all. That must still lint
+    clean rather than being rejected by a requirement scoped to `0.5`."""
+    doc = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "properties": [{"name": "openaca:schema_version", "value": "0.3"}],
+            "component": {"type": "application", "name": "SomeExternalTool"},
+        },
+        "components": [],
+        "dependencies": [],
+    }
+    path = tmp_path / "legacy-flat.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 0, result.output
+
+
 def _valid_bom_doc() -> dict:
     return {
         "bomFormat": "CycloneDX",

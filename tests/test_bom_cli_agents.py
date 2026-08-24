@@ -472,6 +472,29 @@ def test_endpoint_output_dir_clears_prior_boms_when_no_agent_resolves(monkeypatc
     assert sorted(p.name for p in out.iterdir()) == [_MANIFEST_NAME]
 
 
+def test_repo_output_clears_stale_file_when_no_agent_resolves(monkeypatch, tmp_path):
+    """A rerun that resolves zero agents must not leave a previous `--output`
+    file's document behind for a consumer to misread as current — the same
+    contract `--output-dir` already enforces via its ownership manifest."""
+    target = tmp_path / "target"
+    target.mkdir()
+    output_path = tmp_path / "openaca-bom.json"
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
+    first = CliRunner().invoke(
+        bom_main, ["repo", "--target", str(target), "--output", str(output_path)]
+    )
+    assert first.exit_code == 0, first.output
+    assert output_path.exists()
+
+    register_synthetic_kind(monkeypatch, agent_ids=[])
+    second = CliRunner().invoke(
+        bom_main, ["repo", "--target", str(target), "--output", str(output_path)]
+    )
+
+    assert second.exit_code == 0, second.output
+    assert not output_path.exists()
+
+
 def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch):
     """`bom repo` must walk each agent's own `manifest_patterns`, not always the
     global registry — otherwise a repo declaring two different kinds counts one

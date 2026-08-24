@@ -77,6 +77,17 @@ Each MCP server and plugin category has an optional `allowed` list, optional
 list. Validation rejects an overlap rather than assigning surprising
 precedence. A component not in either list follows `default`.
 
+A plugin identifier target and a marketplace target can independently match
+the same plugin — for example, an explicit `plugin` entry naming a plugin
+whose marketplace is separately listed under `blocked`. These are different
+target types, so the single-list overlap check above does not catch this
+case. When a plugin's exact identifier and its marketplace source resolve to
+different admission results, block takes precedence: a block on either
+target blocks the plugin. A plugin admission list therefore cannot be used to
+carve an allowed exception out of a blocked marketplace; it can only add
+narrower blocks. This keeps the more specific target from ever loosening the
+broader one, consistent with compilation only adding restrictions.
+
 `skills` deliberately has only `default`. It means skills installed outside a
 plugin; plugin-bundled skills inherit the plugin’s policy. Current hosts do not
 offer a portable, managed way to block or allow individual skills in this
@@ -259,14 +270,33 @@ managed-settings documentation before release.
 
 ## Policy evaluation
 
-For each discovered component, the evaluator applies the following order:
+Compilation happens in two passes.
+
+**Admission pass.** For every explicit `allowed`/`blocked` entry in the policy
+document, and for each category `default`, the compiler emits the
+corresponding host-native restriction directly from the policy document. This
+pass does not depend on endpoint discovery: a blocked MCP command that is not
+yet installed still becomes a host blocklist entry, a blocked marketplace
+still becomes a prospective source restriction, and a `default: blocked`
+category still becomes a managed-only lock, whether or not any matching
+component is currently discovered. This is what lets a policy precede an
+endpoint inventory (see Admission) and lets marketplace restrictions stay
+prospective (see Claude Code target).
+
+**Discovery pass.** For each component the scan discovers, the evaluator
+applies the following order:
 
 1. Resolve its admission category and exact source target, when one exists.
-2. Apply the category’s explicit list or default.
+2. Apply the category’s explicit list or default (from the admission pass).
 3. Evaluate configured risk gates against the fresh scan findings.
 4. If a risk gate matches, change the result to blocked.
 5. Map the result to a host-native target. If no exact target exists, preserve
    the finding and report it as not enforceable.
+
+A risk gate can only add a restriction to a component the compiler has
+discovered: unlike an explicit admission entry, risk evidence is inherently
+scan-specific. The discovery pass never removes or loosens a restriction the
+admission pass already emitted; it can only add narrower blocks on top of it.
 
 Risk gates only add restrictions. No policy result grants access beyond the
 host’s own configuration. The evaluator uses Agent BOM occurrences and graph

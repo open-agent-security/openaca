@@ -2783,6 +2783,76 @@ def test_scan_bom_keeps_legacy_graphs_distinct_per_document(tmp_path):
         assert "attributed_to" not in finding
 
 
+def test_scan_bom_drops_ambiguous_graph_for_mixed_legacy_graph_and_flat_documents(tmp_path):
+    # One graph-backed legacy document (agent_info is None, so it keys the
+    # `graphs` map under (None, None)) alongside one flat legacy document,
+    # which also carries the (None, None) key despite having no graph of its
+    # own. The flat document's findings must not inherit the graph document's
+    # unrelated attribution — that would previously happen because the
+    # ambiguity check only fired when a *second graph* showed up, not when a
+    # graphless document shared the same key.
+    from tools.bom import build_agent_bom
+    from tools.component_ref import ComponentRef
+    from tools.graph import Edge, Graph, Node
+
+    plugin_ref = ComponentRef(
+        name="bundle-a",
+        version="1.0.0",
+        component_identity="plugin/bundle-a",
+        source_manifest=".claude-plugin/plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="@cyanheads/git-mcp-server",
+        version="1.1.0",
+        component_identity="package/npm/@cyanheads/git-mcp-server",
+        source_manifest="package-lock.json",
+        source_locator="$.packages",
+    )
+    root = Node(key="openaca:target", kind="target", ref=None)
+    plugin_node = Node(key="plugin#0", kind="plugin", ref=plugin_ref)
+    pkg_node = Node(key="package#0", kind="package", ref=pkg_ref)
+    graph = Graph(
+        nodes={root.key: root, plugin_node.key: plugin_node, pkg_node.key: pkg_node},
+        edges=[
+            Edge(parent=root.key, child=plugin_node.key),
+            Edge(parent=plugin_node.key, child=pkg_node.key),
+        ],
+    )
+    graph.validate()
+    graph_doc = build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()
+
+    flat_doc = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "components": [
+            {
+                "type": "library",
+                "bom-ref": "npm:mcp-remote@0.1.0",
+                "name": "mcp-remote",
+                "version": "0.1.0",
+                "purl": "pkg:npm/mcp-remote@0.1.0",
+            }
+        ],
+    }
+
+    path = tmp_path / "boms.ndjson"
+    path.write_text(f"{json.dumps(graph_doc)}\n{json.dumps(flat_doc)}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, ["bom", "--input", str(path), "--format", "json", "--fail-on", "none"]
+    )
+
+    assert result.exit_code == 0, result.output
+    findings = json.loads(result.stdout)["findings"]
+    finding_ids = {f["id"] for f in findings}
+    assert finding_ids == {"GHSA-3q26-f695-pp76", "GHSA-6xpm-ggf7-wc3p"}
+    for finding in findings:
+        assert "attributed_to" not in finding
+
+
 def test_scan_bom_renders_a_stored_0_4_document_without_agent_metadata(tmp_path):
     # A pre-agent-metadata flat CycloneDX BOM: no metadata.component at all,
     # matching what `openaca bom endpoint` emitted before this feature.

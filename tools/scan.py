@@ -1611,15 +1611,20 @@ def scan_bom(
     cards: list[AgentCard] = []
     summaries: list[AgentSummary] = []
     graphs: dict[tuple[str | None, str | None], Graph] = {}
-    # A second graph-backed document sharing an agent_key (most often two
-    # legacy pre-agent-metadata documents, which all carry the (None, None)
-    # key) can't be told apart by `graph_for` (tools/finding_output.py), since
-    # it resolves purely from a Finding's own (agent_kind, agent_id). Rather
-    # than let the later document's graph silently win and mis-attribute the
-    # earlier one's findings, drop the key from `graphs` entirely once it's
-    # known ambiguous — machine output falls back to no graph-derived
-    # attribution for those findings instead of a wrong one.
-    ambiguous_graph_keys: set[tuple[str | None, str | None]] = set()
+    # `graph_for` (tools/finding_output.py) resolves a finding's graph purely
+    # from the finding's own (agent_kind, agent_id) — it has no way to know
+    # which source document produced the finding. So whenever two or more
+    # documents share an agent_key (most often two legacy pre-agent-metadata
+    # documents, which all carry the (None, None) key), any graph stored under
+    # that key would be wrongly applied to the *other* document(s)' findings
+    # too, whether or not those other documents are themselves graph-backed.
+    # Precomputing per-key document counts up front — rather than reacting
+    # only when a second graph shows up — catches every collision shape:
+    # graph+graph, graph+flat, and flat+graph, regardless of order.
+    agent_key_counts: dict[tuple[str | None, str | None], int] = {}
+    for _doc, agent_info, _doc_graph, _doc_refs in docs_built:
+        key = (agent_info.kind, agent_info.agent_id) if agent_info else (None, None)
+        agent_key_counts[key] = agent_key_counts.get(key, 0) + 1
     for doc, agent_info, doc_graph, doc_refs in docs_built:
         doc_findings = match(
             doc_refs,
@@ -1637,14 +1642,8 @@ def scan_bom(
         # regardless of `agent_info` keeps `graph_for` (tools/finding_output.py)
         # able to resolve a legacy graph-backed BOM's lineage/attribution for the
         # JSON/SARIF/github/exposure paths, not just the text card below.
-        if doc_graph is not None:
-            if agent_key in ambiguous_graph_keys:
-                pass
-            elif agent_key in graphs:
-                del graphs[agent_key]
-                ambiguous_graph_keys.add(agent_key)
-            else:
-                graphs[agent_key] = doc_graph
+        if doc_graph is not None and agent_key_counts[agent_key] == 1:
+            graphs[agent_key] = doc_graph
         if agent_info is not None:
             bom_rows.append(("agent", f"{agent_info.kind} ({agent_info.source or 'unknown'})"))
             bom_rows.append(("coverage", agent_info.coverage or "unknown"))

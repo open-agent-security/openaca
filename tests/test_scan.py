@@ -2614,6 +2614,62 @@ def test_scan_bom_keeps_each_legacy_document_s_own_target(tmp_path):
     assert "endpoint /two" in result.output
 
 
+def test_scan_bom_preserves_legacy_graph_for_machine_output(tmp_path):
+    """A graph-backed 0.4 BOM has `metadata.component.bom-ref ==
+    "openaca:target"` (the legacy logical target key), not an agent-rooted
+    `root/...` key, so `agent_info_from_cyclonedx` returns None for it and
+    `scan_bom` has no agent to key the reconstructed graph under. The JSON,
+    SARIF, github, and exposure paths all resolve a finding's lineage via
+    `graphs`, not the singular `graph` — the graph must still be registered
+    (under the (None, None) key) or those paths lose `attributed_to` even
+    though the graph round-tripped successfully for the text card.
+    """
+    from tools.bom import build_agent_bom
+    from tools.component_ref import ComponentRef
+    from tools.graph import Edge, Graph, Node
+
+    plugin_ref = ComponentRef(
+        name="vuln-bundle",
+        version="1.0.0",
+        component_identity="plugin/vuln-bundle",
+        source_manifest=".claude-plugin/plugin.json",
+        source_locator="$",
+        extra={"component_type": "plugin"},
+    )
+    pkg_ref = ComponentRef(
+        ecosystem="npm",
+        name="@cyanheads/git-mcp-server",
+        version="1.1.0",
+        component_identity="package/npm/@cyanheads/git-mcp-server",
+        source_manifest="package-lock.json",
+        source_locator="$.packages",
+    )
+    root = Node(key="openaca:target", kind="target", ref=None)
+    plugin_node = Node(key="plugin#0", kind="plugin", ref=plugin_ref)
+    pkg_node = Node(key="package#0", kind="package", ref=pkg_ref)
+    graph = Graph(
+        nodes={root.key: root, plugin_node.key: plugin_node, pkg_node.key: pkg_node},
+        edges=[
+            Edge(parent=root.key, child=plugin_node.key),
+            Edge(parent=plugin_node.key, child=pkg_node.key),
+        ],
+    )
+    graph.validate()
+
+    doc = build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()
+    path = tmp_path / "legacy.bom.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, ["bom", "--input", str(path), "--format", "json", "--fail-on", "none"]
+    )
+
+    assert result.exit_code == 0, result.output
+    output = json.loads(result.stdout)
+    (finding,) = [f for f in output["findings"] if f["id"] == "GHSA-3q26-f695-pp76"]
+    assert finding["attributed_to"] == "plugin/vuln-bundle@1.0.0"
+
+
 def test_scan_bom_sums_unit_counts_across_documents(tmp_path):
     # Two documents (one per agent) each carrying their own
     # openaca:source_unit_count — the reported total must cover both agents'

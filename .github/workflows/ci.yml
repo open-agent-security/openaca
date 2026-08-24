@@ -111,8 +111,15 @@ jobs:
 
           # scan repo: parsers + matcher + renderer wiring. The remote-MCP
           # fixture yields a real component but no OSV-queryable PURL.
+          #
+          # `.mcp.json`, not `mcp.json`: a BOM describes one agent (ADR-0044),
+          # and a *bare* `mcp.json` is a manifest no runtime owns exclusively,
+          # so on its own it declares no agent and the repo emits no document
+          # at all. `.mcp.json` is Claude Code's project MCP file, so it is
+          # both declared-agent evidence and the one manifest this smoke
+          # target needs.
           mkdir -p /tmp/smoke-target
-          cat > /tmp/smoke-target/mcp.json <<'FIXTURE'
+          cat > /tmp/smoke-target/.mcp.json <<'FIXTURE'
           {"mcpServers": {"remote": {"type": "http", "url": "https://api.example.test/mcp"}}}
           FIXTURE
           "$openaca" scan repo --target /tmp/smoke-target --include-posture --fail-on none

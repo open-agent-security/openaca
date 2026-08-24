@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import click
@@ -90,17 +92,35 @@ def _read_bom_manifest(manifest_path: Path, output_dir: Path) -> set[str]:
     }
 
 
+def _write_new_temp_file(directory: Path, content: str) -> Path:
+    """Write `content` to a fresh file in `directory` and return its path.
+
+    A predictable `.tmp` name plus `write_text` still follows a symlink an
+    attacker pre-planted at that exact name — `write_text` opens (and follows)
+    whatever is already there before this function's own `Path.replace` ever
+    runs, so the atomic-replace step arrives too late to help.
+    `tempfile.mkstemp` opens with `O_CREAT | O_EXCL` on an unpredictable
+    name, so it fails on any existing path entry (including a symlink)
+    instead of opening through it."""
+    fd, name = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    temp_path = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    return temp_path
+
+
 def _write_bom_manifest(manifest_path: Path, names: list[str]) -> None:
     """Write the ownership manifest via write-temp-then-replace, the same
-    pattern `emit_bom_documents` already uses for the `*.cdx.json` documents
-    themselves. A direct `manifest_path.write_text(...)` opens (and follows)
-    whatever is at that path, so a symlink planted at the well-known
-    `.openaca-bom-manifest.json` name would have its target truncated instead
-    of the manifest. `Path.replace` renames onto the destination instead of
+    pattern `emit_bom_documents` uses for the `*.cdx.json` documents
+    themselves. `Path.replace` renames onto the destination instead of
     opening through it, so a planted symlink is swapped out for a real file
-    rather than dereferenced."""
-    temp_path = manifest_path.with_name(f"{manifest_path.name}.tmp")
-    temp_path.write_text(json.dumps(names), encoding="utf-8")
+    rather than dereferenced; `_write_new_temp_file` keeps the same guarantee
+    for the temp file itself."""
+    temp_path = _write_new_temp_file(manifest_path.parent, json.dumps(names))
     temp_path.replace(manifest_path)
 
 
@@ -161,8 +181,7 @@ def emit_bom_documents(
         try:
             for name, (_, document) in zip(current_names, documents, strict=True):
                 final_path = output_dir / name
-                temp_path = output_dir / f"{name}.tmp"
-                temp_path.write_text(f"{json.dumps(document, indent=2)}\n", encoding="utf-8")
+                temp_path = _write_new_temp_file(output_dir, f"{json.dumps(document, indent=2)}\n")
                 staged.append((temp_path, final_path))
         except OSError as exc:
             for temp_path, _ in staged:

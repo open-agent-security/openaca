@@ -4,6 +4,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from tests.fixtures.agent_kinds import register_synthetic_kind
+from tools.bom_cli import _write_new_temp_file
 from tools.bom_cli import main as bom_main
 
 
@@ -74,6 +75,41 @@ def test_output_dir_manifest_write_does_not_follow_a_planted_symlink(monkeypatch
 
     assert result.exit_code == 0, result.output
     assert outside_target.read_text(encoding="utf-8") == "do not touch"
+    manifest_path = out / _MANIFEST_NAME
+    assert not manifest_path.is_symlink()
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == [
+        "synthetic--researcher.cdx.json"
+    ]
+
+
+def test_output_dir_temp_file_write_does_not_follow_a_planted_symlink(monkeypatch, tmp_path):
+    """Before this fix, the write-then-replace temp files (the per-document
+    `<name>.cdx.json.tmp` and `.openaca-bom-manifest.json.tmp`) had
+    predictable names, so a symlink planted at one of those exact names was
+    followed by `write_text` and its target truncated -- before the atomic
+    `Path.replace` that made the *previous* symlink fix work ever ran.
+    Exercise both temp files this command creates."""
+    out = tmp_path / "boms"
+    out.mkdir()
+    outside_doc_target = tmp_path / "outside-doc.txt"
+    outside_doc_target.write_text("do not touch (doc)", encoding="utf-8")
+    outside_manifest_target = tmp_path / "outside-manifest.txt"
+    outside_manifest_target.write_text("do not touch (manifest)", encoding="utf-8")
+    (out / "synthetic--researcher.cdx.json.tmp").symlink_to(outside_doc_target)
+    (out / f"{_MANIFEST_NAME}.tmp").symlink_to(outside_manifest_target)
+    register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
+
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert outside_doc_target.read_text(encoding="utf-8") == "do not touch (doc)"
+    assert outside_manifest_target.read_text(encoding="utf-8") == "do not touch (manifest)"
+    doc_path = out / "synthetic--researcher.cdx.json"
+    assert not doc_path.is_symlink()
+    doc = json.loads(doc_path.read_text(encoding="utf-8"))
+    assert doc["metadata"]["component"]["bom-ref"] == "root/synthetic/researcher"
     manifest_path = out / _MANIFEST_NAME
     assert not manifest_path.is_symlink()
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == [
@@ -244,17 +280,20 @@ def test_output_dir_write_failure_preserves_the_prior_complete_set(monkeypatch, 
     before = sorted(p.name for p in out.iterdir())
 
     register_synthetic_kind(monkeypatch, agent_ids=["a", "b", "c"])
-    real_write_text = Path.write_text
+    real_write = _write_new_temp_file
     calls = {"n": 0}
 
-    def flaky_write_text(self, *args, **kwargs):
-        if self.suffix == ".tmp":
+    def flaky_write(directory, content):
+        # A document's serialized content is a JSON object; the manifest's is
+        # a JSON list of names (`json.dumps(names)`) — that leading character
+        # is what distinguishes the two without depending on call order.
+        if content.startswith("{"):
             calls["n"] += 1
             if calls["n"] == 2:
                 raise OSError("disk full")
-        return real_write_text(self, *args, **kwargs)
+        return real_write(directory, content)
 
-    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
         bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
     )
@@ -271,14 +310,16 @@ def test_output_dir_normal_manifest_write_failure_is_reported(monkeypatch, tmp_p
     record failed to update."""
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
-    real_write_text = Path.write_text
+    real_write = _write_new_temp_file
 
-    def flaky_write_text(self, *args, **kwargs):
-        if self.name == f"{_MANIFEST_NAME}.tmp":
+    def flaky_write(directory, content):
+        # The manifest's serialized content is a JSON list of names
+        # (`json.dumps(names)`); a document's is a JSON object.
+        if content.startswith("["):
             raise OSError("disk full")
-        return real_write_text(self, *args, **kwargs)
+        return real_write(directory, content)
 
-    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
         bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
     )
@@ -311,15 +352,17 @@ def test_output_dir_publish_failure_reports_when_recovery_manifest_write_also_fa
                 raise OSError("permission denied")
         return real_replace(self, target)
 
-    real_write_text = Path.write_text
+    real_write = _write_new_temp_file
 
-    def flaky_write_text(self, *args, **kwargs):
-        if self.name == f"{_MANIFEST_NAME}.tmp":
+    def flaky_write(directory, content):
+        # The manifest's serialized content is a JSON list of names
+        # (`json.dumps(names)`); a document's is a JSON object.
+        if content.startswith("["):
             raise OSError("disk full")
-        return real_write_text(self, *args, **kwargs)
+        return real_write(directory, content)
 
     monkeypatch.setattr(Path, "replace", flaky_replace)
-    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
         bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
     )
@@ -348,15 +391,17 @@ def test_output_dir_stale_cleanup_failure_reports_when_recovery_manifest_write_a
             raise OSError("permission denied")
         return real_unlink(self, missing_ok=missing_ok)
 
-    real_write_text = Path.write_text
+    real_write = _write_new_temp_file
 
-    def flaky_write_text(self, *args, **kwargs):
-        if self.name == f"{_MANIFEST_NAME}.tmp":
+    def flaky_write(directory, content):
+        # The manifest's serialized content is a JSON list of names
+        # (`json.dumps(names)`); a document's is a JSON object.
+        if content.startswith("["):
             raise OSError("disk full")
-        return real_write_text(self, *args, **kwargs)
+        return real_write(directory, content)
 
     monkeypatch.setattr(Path, "unlink", flaky_unlink)
-    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
         bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
     )

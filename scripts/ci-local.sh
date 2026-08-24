@@ -22,7 +22,15 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 WORK=""
-cleanup() { [[ -n "$WORK" && -d "$WORK" ]] && rm -rf "$WORK"; }
+# `return 0` is load-bearing — see the same note in scripts/git-hooks/pre-push:
+# an EXIT trap's final status overrides the script's exit status, so a bare
+# `&&` chain makes a successful run exit non-zero once WORK is empty.
+cleanup() {
+  if [[ -n "$WORK" && -d "$WORK" ]]; then
+    rm -rf "$WORK"
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
@@ -80,7 +88,7 @@ cd "$REPO_ROOT"
 # rather than the locked dev env, then the user-facing CLI surfaces.
 step "smoke-install (wheel, deps resolved fresh)"
 SMOKE="$(mktemp -d)"
-trap 'cleanup; rm -rf "$SMOKE"' EXIT
+trap 'cleanup; rm -rf "$SMOKE"; true' EXIT
 
 uv build --wheel --out-dir "$SMOKE/dist" "$TEST_DIR" >/dev/null || fail "uv build --wheel"
 uv venv "$SMOKE/venv" >/dev/null

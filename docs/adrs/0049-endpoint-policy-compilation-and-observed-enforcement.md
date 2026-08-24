@@ -45,12 +45,18 @@ Claude's remote settings, macOS configuration profiles, or Windows registry
 policy in V1.
 
 OpenACA records host observations separately from compilation. The reported
-enforcement status is `verified` only when the host selected the expected source
-and accepted the generated settings; it is `mismatch` when a higher-priority
-source was selected or a generated setting was dropped; otherwise it is
-`not_verified`. A policy consumer compares expected policy against this
-read-only host observation. It must not reconstruct or label a full effective
-host policy from compilation alone.
+enforcement status is `verified` only when the host selected the file-based
+source and the merged file-based configuration — the base file plus every
+drop-in, combined under the host's documented merge rules — matches the
+generated artifact for every generated key; it is `mismatch` when a
+higher-priority source was selected, a generated setting was dropped, or
+another file drop-in overrode a generated key in the merged configuration;
+otherwise it is `not_verified`. Selecting the file-based source is not
+sufficient on its own: file drop-ins merge with each other, so a same-named
+key from another drop-in can override a generated value while the file-based
+source is still selected overall. A policy consumer compares expected policy
+against this read-only host observation. It must not reconstruct or label a
+full effective host policy from compilation alone.
 
 For Claude, `/status` is the source-selection evidence and `claude doctor` is
 the invalid-or-dropped-settings evidence. A full effective-policy display is

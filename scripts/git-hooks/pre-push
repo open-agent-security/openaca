@@ -26,7 +26,17 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 WORKDIR=""
-cleanup() { [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ] && rm -rf "$WORKDIR"; }
+# `return 0` is load-bearing: this runs as an EXIT trap, and a trap's final
+# status overrides the script's own exit status. Written as a bare
+# `[ -n "$WORKDIR" ] && ...` chain it returns 1 whenever WORKDIR is empty, so
+# the hook printed success and exited 1 — which git reports only as
+# "failed to push some refs", with no hint that a hook rejected it.
+cleanup() {
+  if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ]; then
+    rm -rf "$WORKDIR"
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 fail() {

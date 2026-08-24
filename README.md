@@ -121,7 +121,7 @@ Found 1 vulnerability in 1 package.
         owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]
 
 Next
-  emit Agent BOM: openaca bom repo --target . --output openaca-bom.json
+  emit Agent BOM: openaca bom repo --target . --output-dir boms/
 ```
 
 For clean scans, posture examples, and expected output, clone the

@@ -60,10 +60,14 @@ Repository mode is the right default for CI and PR checks.
 ## Generate an Agent BOM
 
 ```bash
-openaca bom repo --target /path/to/repo --output openaca-bom.json
+openaca bom repo --target /path/to/repo --output-dir boms/
 ```
 
 The Agent BOM is a portable snapshot of the agent composition OpenACA observed.
+One document is emitted per agent the target declares, so `--output-dir` is the
+sink that holds any number of them; stdout is NDJSON, one document per line.
+`--output` still writes a single file and is fine while one agent resolves, but
+it errors once more than one does.
 
 ## Include posture findings
 

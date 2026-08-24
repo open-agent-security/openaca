@@ -243,8 +243,21 @@ stderr — a repo of ordinary package manifests is not an agent. Likewise
 `bom endpoint` reports `no installed agent found` and exits `0` when the config
 root does not exist.
 
-`openaca scan bom --input <file>` reads either shape: a single JSON object, or
-NDJSON with one document per line.
+`openaca scan bom --input <file>` and `openaca bom diff` both read either shape:
+a single JSON object, or NDJSON with one document per line.
+
+`bom diff` with many documents per side pairs them on `(agent_kind, agent_id)`
+and diffs each pair, reporting an unpaired document as an added or removed
+agent; the diff primitive itself stays singular. One document each side keeps
+the single-diff output unchanged. The asset — the third part of an agent's
+instance key (ADR-0045) — is deliberately absent from a document, so diffing
+two files asserts they came from the same asset.
+
+`--output-dir` ignores its ownership manifest when the directory is sticky and
+writable by other users (`/tmp` and friends): there a planted manifest could
+get this tool to delete a file its planter could not, so nothing is treated as
+stale. Everywhere else, writing that manifest requires the same directory
+permission needed to destroy the files it names, so it grants no new capability.
 
 Compare two Agent BOMs without running advisory lookups:
 

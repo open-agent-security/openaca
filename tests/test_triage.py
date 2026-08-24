@@ -235,3 +235,59 @@ def test_low_confidence_observation_defaults_to_review():
     assert cards[0].action == "review"
     assert cards[0].confidence == "low"
     assert cards[0].evidence[0].provenance == "external-scanner-derived"
+
+
+def _agent_finding(agent_id: str) -> dict:
+    """One vulnerability on the same component, attributed to one agent."""
+    return {
+        "finding_type": "vulnerability",
+        "id": "GHSA-test",
+        "title": "Package vulnerability",
+        "severity": "HIGH",
+        "confidence": "high",
+        "fixed_in": "2.0.0",
+        "source": "osv.dev",
+        "component": {"type": "mcp_server", "name": "git"},
+        "component_path": [{"type": "mcp_server", "name": "git"}],
+        "active_in": ["synthetic"],
+        "agent": {"kind": "synthetic", "agent_id": agent_id},
+    }
+
+
+def test_same_component_in_two_agents_yields_one_card_each():
+    """A component loaded by two agents is two occurrences and therefore two
+    things to remediate (ADR-0044). Collapsing them into one card would make
+    "which agent is affected" unanswerable — the question the agent-rooted
+    design exists to answer — and for two agents of the *same* kind `active_in`
+    is identical, so nothing else distinguishes them."""
+    cards = build_triage_cards({"findings": [_agent_finding("a"), _agent_finding("b")]})
+
+    assert len(cards) == 2
+    agents = sorted((c.agent_kind, c.agent_id) for c in cards)
+    assert agents == [("synthetic", "a"), ("synthetic", "b")]
+    for card in cards:
+        assert card.to_dict()["agent"] == {"kind": card.agent_kind, "agent_id": card.agent_id}
+
+
+def test_one_agent_still_yields_one_card_per_component():
+    """Two findings on one component within a single agent still group."""
+    first = _agent_finding("a")
+    second = _agent_finding("a") | {"id": "GHSA-other"}
+
+    cards = build_triage_cards({"findings": [first, second]})
+
+    assert len(cards) == 1
+    assert len(cards[0].evidence) == 2
+
+
+def test_legacy_scan_json_without_agent_still_groups_and_omits_the_key():
+    """A scan document produced before findings carried an agent must still
+    group by component, and must not grow a null agent key."""
+    finding = _agent_finding("a")
+    del finding["agent"]
+
+    cards = build_triage_cards({"findings": [finding, finding]})
+
+    assert len(cards) == 1
+    assert cards[0].agent_kind is None
+    assert "agent" not in cards[0].to_dict()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from tools.agent_kinds import (
     output_basenames,
     resolve_coverage,
 )
-from tools.bom import build_agent_bom
+from tools.bom import agent_info_from_cyclonedx, build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
 from tools.parsers import parse_repo_grouped
@@ -71,6 +72,27 @@ def _is_safe_manifest_name(name: str, output_dir: Path) -> bool:
     if Path(name).name != name:
         return False
     return (output_dir / name).parent == output_dir
+
+
+def _is_shared_sticky_dir(output_dir: Path) -> bool:
+    """Is this a sticky directory other users can write to (`/tmp` and friends)?
+
+    Planting an ownership manifest normally grants an attacker nothing: writing
+    it requires write access to the directory, and on POSIX that is exactly the
+    permission needed to unlink or replace the files it names, so they could
+    destroy them directly. The manifest is not a new capability.
+
+    A sticky directory shared with other users is the one configuration where
+    that reasoning fails: a non-owner may create their own files but may *not*
+    unlink or rename anyone else's. There a planted manifest does escalate —
+    it gets the owner's own tool to destroy the owner's file. So in that
+    configuration the manifest is not treated as ownership proof.
+    """
+    try:
+        mode = output_dir.stat().st_mode
+    except OSError:
+        return False
+    return bool(mode & stat.S_ISVTX) and bool(mode & (stat.S_IWGRP | stat.S_IWOTH))
 
 
 def _read_bom_manifest(manifest_path: Path, output_dir: Path) -> set[str]:
@@ -162,7 +184,18 @@ def emit_bom_documents(
         except OSError as exc:
             raise click.ClickException(f"failed to prepare {output_dir}: {exc}") from exc
         manifest_path = output_dir / _BOM_MANIFEST_NAME
-        previously_owned = _read_bom_manifest(manifest_path, output_dir)
+        if _is_shared_sticky_dir(output_dir):
+            # Distrust the manifest entirely here: with no owned set, nothing is
+            # deleted as stale and any colliding name is refused rather than
+            # overwritten. The run still writes its own new documents.
+            previously_owned: set[str] = set()
+            click.echo(
+                f"warning: {output_dir} is a sticky directory writable by other users; "
+                "ignoring the ownership manifest, so stale files are left in place",
+                err=True,
+            )
+        else:
+            previously_owned = _read_bom_manifest(manifest_path, output_dir)
         current_names = [f"{basename}.cdx.json" for basename, _ in documents]
         current_name_set = set(current_names)
 
@@ -247,6 +280,13 @@ def emit_bom_documents(
             ) from exc
         return
     if output_path is not None:
+        # Written with a plain `write_text`, deliberately unlike `--output-dir`
+        # above. The hardening there exists because this tool *chooses*
+        # predictable names inside a directory it also scans, so a pre-planted
+        # symlink at a name we are about to write is a path we picked, not one
+        # the caller did. A single `--output` path is named by the caller, who
+        # may legitimately point it at a symlink into an artifacts directory;
+        # replacing that symlink with a regular file would be the surprise.
         if len(documents) > 1:
             raise click.ClickException(
                 f"{len(documents)} agents resolved; --output holds one document. "
@@ -426,15 +466,138 @@ def endpoint(
     help="Output format.",
 )
 def diff_command(before_path: Path, after_path: Path, output_format: str) -> None:
-    """Compare two Agent BOMs by component occurrence and composition edge."""
+    """Compare two Agent BOMs by component occurrence and composition edge.
+
+    Accepts either shape `bom endpoint`/`bom repo` emit: one JSON object, or
+    NDJSON with one document per agent. With many documents the **caller pairs
+    and the diff primitive stays singular** — pair on (kind, agent id) from
+    metadata, diff each pair with the same function a single pair uses, and
+    report an unpaired document as an added or removed agent.
+    """
     try:
-        result = diff_boms(_read_json_bom(before_path), _read_json_bom(after_path))
+        before_docs = _read_bom_documents(before_path)
+        after_docs = _read_bom_documents(after_path)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    if output_format == "json":
-        click.echo(json.dumps(result.to_json(), indent=2))
+
+    # A single document each side keeps today's exact output: no agent headings,
+    # so existing consumers see no change.
+    if len(before_docs) == 1 and len(after_docs) == 1:
+        try:
+            result = diff_boms(before_docs[0], after_docs[0])
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        if output_format == "json":
+            click.echo(json.dumps(result.to_json(), indent=2))
+            return
+        click.echo(_render_diff_text(result))
         return
-    click.echo(_render_diff_text(result))
+
+    before_by_agent = _documents_by_agent_key(before_docs, before_path)
+    after_by_agent = _documents_by_agent_key(after_docs, after_path)
+
+    paired = sorted(set(before_by_agent) & set(after_by_agent))
+    removed = sorted(set(before_by_agent) - set(after_by_agent))
+    added = sorted(set(after_by_agent) - set(before_by_agent))
+
+    if output_format == "json":
+        agent_entries: list[dict[str, object]] = []
+        for key in paired:
+            try:
+                result = diff_boms(before_by_agent[key], after_by_agent[key])
+            except ValueError as exc:
+                raise click.ClickException(str(exc)) from exc
+            agent_entries.append({"agent": _agent_key_label(key), "diff": result.to_json()})
+        click.echo(
+            json.dumps(
+                {
+                    "agents": agent_entries,
+                    "added_agents": [_agent_key_label(k) for k in added],
+                    "removed_agents": [_agent_key_label(k) for k in removed],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    lines: list[str] = []
+    for key in paired:
+        try:
+            result = diff_boms(before_by_agent[key], after_by_agent[key])
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        lines.append(f"agent {_agent_key_label(key)}")
+        lines.append(_render_diff_text(result))
+        lines.append("")
+    for key in added:
+        lines.append(f"added agent {_agent_key_label(key)}")
+    for key in removed:
+        lines.append(f"removed agent {_agent_key_label(key)}")
+    click.echo("\n".join(lines).rstrip())
+
+
+def _agent_key_label(key: tuple[str, str]) -> str:
+    kind, agent_id = key
+    return kind if not agent_id else f"{kind}/{agent_id}"
+
+
+def _documents_by_agent_key(documents: list[dict], path: Path) -> dict[tuple[str, str], dict]:
+    """Index documents by the (kind, agent id) half of the instance key.
+
+    The asset — the third part of the key (ADR-0045) — is not in a document by
+    design, so a caller diffing two files is asserting they came from the same
+    asset. Two documents in one file sharing a key means the producer emitted
+    the same agent twice, which is a malformed input rather than something to
+    silently pick a winner from.
+    """
+    indexed: dict[tuple[str, str], dict] = {}
+    for index, doc in enumerate(documents):
+        info = agent_info_from_cyclonedx(doc)
+        if info is None:
+            raise ValueError(
+                f"{path}: document {index + 1} carries no agent metadata, so it cannot be "
+                "paired by agent. Diff single-document files individually."
+            )
+        key = (info.kind, info.agent_id or "")
+        if key in indexed:
+            raise ValueError(
+                f"{path}: two documents describe the same agent "
+                f"{_agent_key_label(key)!r}; cannot pair."
+            )
+        indexed[key] = doc
+    return indexed
+
+
+def _read_bom_documents(path: Path) -> list[dict]:
+    """One JSON object, or NDJSON with one document per line."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path} is not valid UTF-8") from exc
+    except OSError as exc:
+        raise ValueError(f"failed to read BOM from {path}: {exc}") from exc
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:
+        documents: list[dict] = []
+        for number, line in enumerate(raw.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{number}: invalid JSON — {exc.msg}") from exc
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    f"{path}:{number}: BOM must be a JSON object, got {type(parsed).__name__}"
+                )
+            documents.append(parsed)
+        if not documents:
+            raise ValueError(f"{path}: no BOM documents found")
+        return documents
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: BOM must be a JSON object, got {type(doc).__name__}")
+    return [doc]
 
 
 def _read_json_bom(path: Path) -> object:

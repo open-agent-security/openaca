@@ -60,9 +60,13 @@ class TriageCard:
     why_it_matters: str
     scope_limits: list[str]
     active_in: list[str] = field(default_factory=list)
+    # The agent this exposure belongs to (ADR-0044). `None` for a scan document
+    # produced before findings carried one.
+    agent_kind: str | None = None
+    agent_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "component_id": self.component_id,
             "component_label": self.component_label,
             "component_type": self.component_type,
@@ -76,6 +80,11 @@ class TriageCard:
             "scope_limits": self.scope_limits,
             "active_in": self.active_in,
         }
+        if self.agent_kind is not None:
+            # Omitted rather than null for a pre-agent scan document, so a
+            # consumer can tell "no agent recorded" from "agent unknown".
+            payload["agent"] = {"kind": self.agent_kind, "agent_id": self.agent_id}
+        return payload
 
 
 def build_triage_cards(scan_doc: dict[str, Any]) -> list[TriageCard]:
@@ -88,7 +97,7 @@ def build_triage_cards(scan_doc: dict[str, Any]) -> list[TriageCard]:
     if not isinstance(findings, list):
         raise ValueError("scan JSON must contain findings[]")
 
-    grouped: dict[str, _CardDraft] = {}
+    grouped: dict[tuple[str, str | None, str | None], _CardDraft] = {}
     for raw in findings:
         if not isinstance(raw, dict):
             continue
@@ -96,14 +105,22 @@ def build_triage_cards(scan_doc: dict[str, Any]) -> list[TriageCard]:
         if evidence is None:
             continue
         selected = _select_component(raw)
+        # Keyed on the agent as well as the component: a component loaded by two
+        # agents is two occurrences and therefore two things to remediate
+        # (ADR-0044). Collapsing them would make "which agent is affected"
+        # unanswerable, and for two agents of one kind `active_in` is identical
+        # so nothing else would tell the cards apart.
+        agent_kind, agent_id = _agent_of(raw)
         draft = grouped.setdefault(
-            selected.component_id,
+            (selected.component_id, agent_kind, agent_id),
             _CardDraft(
                 component_id=selected.component_id,
                 component_label=selected.component_label,
                 component_type=selected.component_type,
                 composition_path=selected.composition_path,
                 active_in=_active_in(raw),
+                agent_kind=agent_kind,
+                agent_id=agent_id,
             ),
         )
         draft.evidence.append(evidence)
@@ -129,6 +146,8 @@ def build_triage_cards(scan_doc: dict[str, Any]) -> list[TriageCard]:
                 why_it_matters=_why_it_matters(draft, action),
                 scope_limits=_scope_limits(draft),
                 active_in=draft.active_in,
+                agent_kind=draft.agent_kind,
+                agent_id=draft.agent_id,
             )
         )
     return cards
@@ -150,6 +169,15 @@ class _CardDraft:
     composition_path: list[dict[str, str]]
     active_in: list[str] = field(default_factory=list)
     evidence: list[TriageEvidence] = field(default_factory=list)
+    agent_kind: str | None = None
+    agent_id: str | None = None
+
+
+def _agent_of(raw: dict[str, Any]) -> tuple[str | None, str | None]:
+    agent = raw.get("agent")
+    if not isinstance(agent, dict):
+        return None, None
+    return _as_str(agent.get("kind")), _as_str(agent.get("agent_id"))
 
 
 def _evidence_from_finding(raw: dict[str, Any]) -> TriageEvidence | None:

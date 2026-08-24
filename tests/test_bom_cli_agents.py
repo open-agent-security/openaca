@@ -526,3 +526,144 @@ def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch)
 
     assert result.exit_code == 0, result.output
     assert seen_registries == [kind.manifest_patterns]
+
+
+def _agent_doc(kind: str, agent_id: str | None, component: str) -> dict:
+    ref = f"root/{kind}" if agent_id is None else f"root/{kind}/{agent_id}"
+    props = [
+        {"name": "openaca:agent_kind", "value": kind},
+        {"name": "openaca:composition_source", "value": "installed"},
+        {"name": "openaca:composition_coverage", "value": "complete"},
+    ]
+    if agent_id is not None:
+        props.insert(1, {"name": "openaca:agent_id", "value": agent_id})
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "version": 1,
+        "metadata": {
+            "properties": [{"name": "openaca:schema_version", "value": "0.5"}],
+            "component": {"type": "application", "bom-ref": ref, "name": kind, "properties": props},
+        },
+        "components": [
+            {
+                "type": "application",
+                "bom-ref": f"{kind}/x#y#mcp-server/{component}",
+                "name": component,
+                "properties": [{"name": "openaca:identity", "value": f"mcp-server/{component}"}],
+            }
+        ],
+        "dependencies": [{"ref": ref, "dependsOn": [f"{kind}/x#y#mcp-server/{component}"]}],
+    }
+
+
+def _write_ndjson(path, docs):
+    path.write_text("".join(json.dumps(d) + "\n" for d in docs), encoding="utf-8")
+
+
+def test_bom_diff_reads_ndjson_and_pairs_on_the_agent_key(tmp_path):
+    """`bom endpoint` emits NDJSON by default, so `bom endpoint > before.json`
+    then `bom diff --before before.json` is the natural workflow. The diff
+    primitive stays singular: the caller pairs on (kind, agent id) and diffs
+    each pair."""
+    before, after = tmp_path / "before.ndjson", tmp_path / "after.ndjson"
+    _write_ndjson(
+        before, [_agent_doc("synthetic", "a", "git"), _agent_doc("synthetic", "b", "keep")]
+    )
+    _write_ndjson(
+        after, [_agent_doc("synthetic", "a", "git2"), _agent_doc("synthetic", "b", "keep")]
+    )
+
+    result = CliRunner().invoke(bom_main, ["diff", "--before", str(before), "--after", str(after)])
+
+    assert result.exit_code == 0, result.output
+    # Agent a changed; agent b did not.
+    assert "synthetic/a" in result.output
+    assert "git2" in result.output
+
+
+def test_bom_diff_reports_an_unpaired_document_as_an_added_or_removed_agent(tmp_path):
+    before, after = tmp_path / "before.ndjson", tmp_path / "after.ndjson"
+    _write_ndjson(before, [_agent_doc("synthetic", "a", "git")])
+    _write_ndjson(after, [_agent_doc("synthetic", "a", "git"), _agent_doc("synthetic", "b", "new")])
+
+    result = CliRunner().invoke(bom_main, ["diff", "--before", str(before), "--after", str(after)])
+
+    assert result.exit_code == 0, result.output
+    assert "added agent" in result.output.lower()
+    assert "synthetic/b" in result.output
+
+
+def test_bom_diff_single_document_output_is_unchanged(tmp_path):
+    """One document each side keeps today's exact output — no per-agent
+    headings, so existing consumers are unaffected."""
+    before, after = tmp_path / "before.json", tmp_path / "after.json"
+    before.write_text(json.dumps(_agent_doc("claude-code", None, "git")), encoding="utf-8")
+    after.write_text(json.dumps(_agent_doc("claude-code", None, "git2")), encoding="utf-8")
+
+    result = CliRunner().invoke(bom_main, ["diff", "--before", str(before), "--after", str(after)])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("BOM diff:")
+
+
+def test_output_dir_distrusts_a_manifest_in_a_sticky_shared_directory(tmp_path, monkeypatch):
+    """A planted ownership manifest normally grants an attacker nothing: writing
+    it requires write access to the directory, and on POSIX that is exactly the
+    permission needed to unlink or replace the files it names — so they could
+    destroy them directly.
+
+    The exception is a sticky-bit directory shared with other users (`/tmp` and
+    friends), where a non-owner may create their own files but may *not* unlink
+    anyone else's. There a planted manifest does escalate: it gets the owner's
+    own tool to destroy the owner's file. In that configuration the manifest is
+    not treated as ownership proof, so nothing is deleted and a colliding name
+    is refused rather than overwritten.
+    """
+    import os
+    import stat
+
+    out = tmp_path / "shared"
+    out.mkdir()
+    os.chmod(out, 0o1777)  # world-writable + sticky, like /tmp
+    assert os.stat(out).st_mode & stat.S_ISVTX
+
+    victim = out / "synthetic--victim.cdx.json"
+    victim.write_text("important", encoding="utf-8")
+    (out / ".openaca-bom-manifest.json").write_text(
+        json.dumps(["synthetic--victim.cdx.json"]), encoding="utf-8"
+    )
+
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert victim.read_text(encoding="utf-8") == "important"
+    assert "synthetic--writer.cdx.json" in [p.name for p in out.iterdir()]
+
+
+def test_output_dir_refuses_a_planted_collision_in_a_sticky_shared_directory(tmp_path, monkeypatch):
+    """Same configuration, the overwrite half: a manifest naming the file we are
+    about to write must not license overwriting it."""
+    import os
+
+    out = tmp_path / "shared"
+    out.mkdir()
+    os.chmod(out, 0o1777)
+
+    target = out / "synthetic--writer.cdx.json"
+    target.write_text("important", encoding="utf-8")
+    (out / ".openaca-bom-manifest.json").write_text(
+        json.dumps(["synthetic--writer.cdx.json"]), encoding="utf-8"
+    )
+
+    register_synthetic_kind(monkeypatch, agent_ids=["writer"])
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code != 0
+    assert "not written by a previous run" in result.output
+    assert target.read_text(encoding="utf-8") == "important"

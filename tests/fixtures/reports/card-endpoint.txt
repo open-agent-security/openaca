@@ -27,4 +27,4 @@ Summary
 
 Next
   include project-local config: openaca scan endpoint --project .
-  emit Agent BOM: openaca bom endpoint --output openaca-bom.json
+  emit Agent BOM: openaca bom endpoint --output-dir boms/

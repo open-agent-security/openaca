@@ -687,7 +687,7 @@ def _next_actions_for(agent: AgentInstance) -> list[str]:
     actions: list[str] = []
     if agent.project_root is None:
         actions.append("include project-local config: openaca scan endpoint --project .")
-    actions.append("emit Agent BOM: openaca bom endpoint --output openaca-bom.json")
+    actions.append("emit Agent BOM: openaca bom endpoint --output-dir boms/")
     actions.append("sync to remote: openaca remote sync endpoint")
     return actions
 
@@ -755,8 +755,7 @@ def _agent_scan_prep(
         ),
         target_rows=[("path", str(agent.scan_root))],
         next_actions=[
-            f"emit Agent BOM: openaca bom repo --target {agent.scan_root} "
-            "--output openaca-bom.json",
+            f"emit Agent BOM: openaca bom repo --target {agent.scan_root} --output-dir boms/",
         ],
         unit_count=n_found,
         unit_label="manifest",
@@ -1019,6 +1018,17 @@ def _stderr_summary(
     )
 
 
+def _write_empty_sarif(sarif: Path) -> None:
+    """`--sarif` is a promise to the caller — `action.yml` always passes it and
+    publishes the path as an output unconditionally — that a valid SARIF file
+    exists once the scan exits 0. Discovery resolving zero agents (an agentless
+    repo, no installed runtime) means there is nothing to report, not that the
+    promise is void."""
+    sarif_doc = to_sarif([], {}, {})
+    sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
+    click.echo(f"sarif: wrote {sarif}", err=True)
+
+
 @main.command()
 @click.pass_context
 @_target_option_required
@@ -1083,6 +1093,8 @@ def repo(
     )
     if not agents:
         click.echo(f"{target} declares no agent", err=True)
+        if sarif is not None:
+            _write_empty_sarif(sarif)
         return
 
     # The composition graph is the single source of truth (Stage 3): scope and
@@ -1300,6 +1312,8 @@ def endpoint(
     )
     if not agents:
         click.echo("no installed agent found", err=True)
+        if sarif is not None:
+            _write_empty_sarif(sarif)
         return
 
     built: list[tuple[AgentInstance, Graph, list[ComponentRef], list[ComponentRef], list[str]]] = []

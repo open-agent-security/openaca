@@ -90,6 +90,20 @@ def _read_bom_manifest(manifest_path: Path, output_dir: Path) -> set[str]:
     }
 
 
+def _write_bom_manifest(manifest_path: Path, names: list[str]) -> None:
+    """Write the ownership manifest via write-temp-then-replace, the same
+    pattern `emit_bom_documents` already uses for the `*.cdx.json` documents
+    themselves. A direct `manifest_path.write_text(...)` opens (and follows)
+    whatever is at that path, so a symlink planted at the well-known
+    `.openaca-bom-manifest.json` name would have its target truncated instead
+    of the manifest. `Path.replace` renames onto the destination instead of
+    opening through it, so a planted symlink is swapped out for a real file
+    rather than dereferenced."""
+    temp_path = manifest_path.with_name(f"{manifest_path.name}.tmp")
+    temp_path.write_text(json.dumps(names), encoding="utf-8")
+    temp_path.replace(manifest_path)
+
+
 def emit_bom_documents(
     documents: list[tuple[str, dict]],
     *,
@@ -171,9 +185,8 @@ def emit_bom_documents(
             # accounting reflects reality instead of a manifest that lies in
             # either direction.
             try:
-                manifest_path.write_text(
-                    json.dumps(sorted(published | (previously_owned - current_name_set))),
-                    encoding="utf-8",
+                _write_bom_manifest(
+                    manifest_path, sorted(published | (previously_owned - current_name_set))
                 )
             except OSError as manifest_exc:
                 raise click.ClickException(
@@ -195,9 +208,7 @@ def emit_bom_documents(
         except OSError as exc:
             still_stale = previously_owned - current_name_set - removed
             try:
-                manifest_path.write_text(
-                    json.dumps(sorted(current_name_set | still_stale)), encoding="utf-8"
-                )
+                _write_bom_manifest(manifest_path, sorted(current_name_set | still_stale))
             except OSError as manifest_exc:
                 raise click.ClickException(
                     f"failed to remove stale BOM(s) from {output_dir}: {exc}; "
@@ -209,7 +220,7 @@ def emit_bom_documents(
             ) from exc
 
         try:
-            manifest_path.write_text(json.dumps(current_names), encoding="utf-8")
+            _write_bom_manifest(manifest_path, current_names)
         except OSError as exc:
             raise click.ClickException(
                 f"wrote {len(current_names)} BOM(s) to {output_dir} but failed to "

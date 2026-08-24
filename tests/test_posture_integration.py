@@ -535,6 +535,26 @@ def test_posture_rules_stamp_agent_id_for_same_kind_agents():
     assert all(f.active_in == ["synthetic"] for f in a)
 
 
+def test_manifest_inferred_active_in_is_overridden_by_the_scanning_agent():
+    """`insecure_transport`/`mcp_auto_approve` infer `active_in` from manifest
+    shape and hardcode it to `["claude-code"]` (they predate agent-kind
+    awareness). Once the scanning agent is known, its `active_in` must match
+    `agent_kind` rather than the rule's manifest-shape guess — this was
+    previously true only for the `mutable_install`/`skill_capability` rules."""
+    from pathlib import Path
+
+    from tools.posture import run_posture_rules
+
+    manifest = {"mcpServers": {"insecure": {"url": "http://insecure.example/mcp"}}}
+
+    findings = run_posture_rules(
+        [], [(Path("mcp.json"), manifest)], agent_kind="synthetic", agent_id="a"
+    )
+
+    assert findings and any(f.rule_id == "openaca-posture-insecure-transport" for f in findings)
+    assert all(f.active_in == ["synthetic"] for f in findings)
+
+
 def _kind_with_posture_collectors(mcp_result, settings_result, kind_id, *, installed=False):
     from tools.agent_kinds import AgentKind
     from tools.graph import Graph

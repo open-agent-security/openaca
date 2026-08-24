@@ -6,7 +6,7 @@ Status: proposed
 
 Let an administrator describe which agent components may be used and which
 known risks must block them, then turn that policy into a host-managed
-configuration file.
+configuration artifact for one endpoint.
 
 The same policy file works locally and with a hosted control plane. OpenACA
 owns the policy schema, validation, scan-backed evaluation, and host compiler.
@@ -14,6 +14,10 @@ It does not own a long-running enforcement service.
 
 The first compiler target is Claude Code. Other hosts may add compilers only
 when OpenACA can produce a precise host-native restriction and verify it.
+A host compiler has one narrow contract: given an evaluated endpoint policy, it
+emits a host artifact, the component decisions behind it, and the limits on
+those decisions. This is a contract, not a compiler plugin framework or a
+commitment to additional hosts.
 
 ## Non-goals
 
@@ -128,6 +132,7 @@ restriction.
 ```text
 openaca policy validate policy.yaml
 openaca policy compile policy.yaml --target ~/.claude --host claude --output managed-settings.json
+openaca policy compile policy.yaml --target ~/.claude --host claude --dry-run
 ```
 
 `validate` checks the document only. It exits `0` when valid and `1` when
@@ -137,6 +142,14 @@ invalid, writes diagnostics to stderr, and has no success output.
 data needed by configured risk gates, evaluates the policy, and writes a
 host-specific artifact. There is no separate public `check` command: an
 endpoint scan is the evidence-gathering operation.
+
+`--dry-run` performs that same validation, scan, advisory lookup, and policy
+evaluation, but writes no artifact. It prints the complete expected policy:
+the rendered host settings, every component decision and its reason, and every
+`not_enforceable` result. It is the preview an administrator uses before
+deploying a policy. A policy-management UI may present the same report from a
+recent scan, but must label it with that scan time; only endpoint compilation
+uses fresh endpoint evidence.
 
 If no risk gates are configured, compilation does not require advisory
 queries. If risk gates are configured and required advisory data cannot be
@@ -151,13 +164,18 @@ matching risk was blocked.
 
 The compiler writes an artifact but does not install it into a protected host
 configuration location. A local administrator or device-management tool owns
-that final atomic write.
+that final atomic write. The artifact and report together are the endpoint's
+**expected policy**: the settings OpenACA intends the host to enforce for that
+endpoint. The logical policy document is an input to this result, not a second
+policy to compare in the user interface.
 
 ## Claude Code target
 
-The Claude compiler emits a system-managed settings drop-in, intended for a
-dedicated file such as `managed-settings.d/50-openaca-policy.json`. It must not
-overwrite an organization’s other managed settings.
+The Claude compiler emits an endpoint-specific, system-managed settings
+drop-in, intended for a dedicated file such as
+`managed-settings.d/50-openaca-policy.json`. It must not overwrite an
+organization’s other managed settings. A device-management tool may distribute
+that file, but Claude still treats it as a file-based managed source.
 
 For this target, the compiler can express:
 
@@ -180,10 +198,47 @@ The standalone-skill setting names only `skills`, so it does not request the
 same restriction for agents, hooks, or MCP servers. It still does not govern
 skills bundled inside a plugin; those follow the plugin’s admission result.
 
-The generated report records the intended artifact path and the limitations of
-each result. A file-based drop-in is not a supported enforcement path when a
-higher-priority managed Claude configuration source controls the same settings;
-that state is reported as a source conflict, not as enforcement.
+### Delivery and verification
+
+[Claude accepts managed policy keys](https://code.claude.com/docs/en/managed-settings)
+through remote settings, MDM or OS-level policy, a managed settings file, and
+the Windows HKCU registry. Those are separate sources, not delivery aliases:
+Claude selects the first source that contains a policy key and ignores the
+others for ordinary policy keys. The order is remote settings, MDM or OS-level
+policy, managed settings files, then HKCU. File drop-ins merge with the base
+file and other file drop-ins, but do not merge with a selected remote or MDM
+source. Claude documents a small set of source-exception keys with their own
+cross-source behavior; V1 does not rely on them for policy enforcement.
+
+V1 produces a file-based artifact only. It does not write a macOS configuration
+profile, a Windows registry policy, or a remote Claude policy. An organization
+using MDM to copy the generated file is still using the file-based source.
+
+Risk-gate results can differ between endpoints, so the compiler combines
+admission and risk gates into one complete endpoint artifact. It must not split
+admission policy into a remote source and risk-gate restrictions into a local
+file: a selected remote source would ignore the file. An organization with a
+higher-priority Claude policy may still use OpenACA for scanning and reporting,
+but the compiler reports the generated file as `mismatch` rather than
+claiming native enforcement.
+
+The generated report records the artifact digest, policy document digest, scan
+time, intended file path, component decisions, and each limitation. A policy
+consumer compares that **expected policy** with the host's read-only observed
+state:
+
+| Observed state | Meaning |
+|---|---|
+| `verified` | Claude selected the file-based source containing the generated artifact and accepted the generated settings. |
+| `mismatch` | Claude selected a higher-priority source, or dropped a generated setting. |
+| `not_verified` | OpenACA has no host observation; compilation and installation alone are not proof of enforcement. |
+
+For Claude, `/status` reports the selected managed source and `claude doctor`
+reports generated settings that Claude dropped. An observed source alone is not
+a full dump of Claude's effective configuration. A consumer may show a full
+read-only effective policy only when its host adapter can read the selected
+source and apply that source's documented merge rules; otherwise it shows the
+expected policy and the observed status separately.
 
 The exact emitted keys and their verification tests belong with the Claude
 compiler implementation. They must be checked against the current Claude Code

@@ -253,6 +253,12 @@ def emit_bom_documents(
                 "Use --output-dir instead."
             )
         if not documents:
+            try:
+                output_path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise click.ClickException(
+                    f"failed to remove stale BOM at {output_path}: {exc}"
+                ) from exc
             return
         try:
             output_path.write_text(f"{json.dumps(documents[0][1], indent=2)}\n", encoding="utf-8")

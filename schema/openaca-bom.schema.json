@@ -34,7 +34,6 @@
         },
         "component": {
           "type": "object",
-          "required": ["type", "bom-ref", "name"],
           "properties": {
             "type": {"enum": ["application", "library"]},
             "bom-ref": {"type": "string", "minLength": 1},
@@ -52,7 +51,34 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["properties"],
+            "properties": {
+              "properties": {
+                "contains": {
+                  "type": "object",
+                  "required": ["name", "value"],
+                  "properties": {
+                    "name": {"const": "openaca:schema_version"},
+                    "value": {"const": "0.5"}
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "component": {
+                "type": "object",
+                "required": ["type", "bom-ref", "name"]
+              }
+            }
+          }
+        }
+      ]
     },
     "components": {
       "type": "array",

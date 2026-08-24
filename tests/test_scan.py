@@ -2533,6 +2533,34 @@ def test_scan_bom_keeps_each_legacy_document_s_own_target(tmp_path):
     assert "endpoint /two" in result.output
 
 
+def test_scan_bom_sums_unit_counts_across_documents(tmp_path):
+    # Two documents (one per agent) each carrying their own
+    # openaca:source_unit_count — the reported total must cover both agents'
+    # units, not just the first document's, and the shared label is kept.
+    def _doc(count: int) -> dict:
+        return {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "metadata": {
+                "properties": [
+                    {"name": "openaca:source_unit_count", "value": str(count)},
+                    {"name": "openaca:source_unit_label", "value": "manifest"},
+                ]
+            },
+            "components": [],
+        }
+
+    path = tmp_path / "boms.ndjson"
+    path.write_text(f"{json.dumps(_doc(3))}\n{json.dumps(_doc(5))}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["bom", "--input", str(path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    stats = json.loads(result.stdout)["stats"]
+    assert stats["units"] == 8
+    assert stats["unit"] == "manifest"
+
+
 def test_scan_bom_rejects_a_non_object_ndjson_line(tmp_path):
     path = tmp_path / "boms.ndjson"
     path.write_text('{"bomFormat": "CycloneDX", "components": []}\n[1, 2]\n', encoding="utf-8")

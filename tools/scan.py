@@ -1440,7 +1440,14 @@ def _load_bom_documents(path: Path, raw: str) -> list[dict]:
 
     `openaca bom endpoint > bom.json` emits NDJSON now (one document per agent),
     so the consumer of that file has to read it.
+
+    An empty or whitespace-only file is an empty document list, not an error:
+    it's the exact shape `bom endpoint`/`bom repo` write to stdout when they
+    resolve zero agents, and `scan bom` needs to accept that snapshot rather
+    than reject the documented emitter-to-scanner workflow.
     """
+    if not raw.strip():
+        return []
     try:
         doc = json.loads(raw)
     except json.JSONDecodeError:
@@ -1604,6 +1611,15 @@ def scan_bom(
     cards: list[AgentCard] = []
     summaries: list[AgentSummary] = []
     graphs: dict[tuple[str | None, str | None], Graph] = {}
+    # A second graph-backed document sharing an agent_key (most often two
+    # legacy pre-agent-metadata documents, which all carry the (None, None)
+    # key) can't be told apart by `graph_for` (tools/finding_output.py), since
+    # it resolves purely from a Finding's own (agent_kind, agent_id). Rather
+    # than let the later document's graph silently win and mis-attribute the
+    # earlier one's findings, drop the key from `graphs` entirely once it's
+    # known ambiguous — machine output falls back to no graph-derived
+    # attribution for those findings instead of a wrong one.
+    ambiguous_graph_keys: set[tuple[str | None, str | None]] = set()
     for doc, agent_info, doc_graph, doc_refs in docs_built:
         doc_findings = match(
             doc_refs,
@@ -1622,7 +1638,13 @@ def scan_bom(
         # able to resolve a legacy graph-backed BOM's lineage/attribution for the
         # JSON/SARIF/github/exposure paths, not just the text card below.
         if doc_graph is not None:
-            graphs[agent_key] = doc_graph
+            if agent_key in ambiguous_graph_keys:
+                pass
+            elif agent_key in graphs:
+                del graphs[agent_key]
+                ambiguous_graph_keys.add(agent_key)
+            else:
+                graphs[agent_key] = doc_graph
         if agent_info is not None:
             bom_rows.append(("agent", f"{agent_info.kind} ({agent_info.source or 'unknown'})"))
             bom_rows.append(("coverage", agent_info.coverage or "unknown"))

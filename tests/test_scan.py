@@ -2708,6 +2708,81 @@ def test_scan_bom_rejects_a_non_object_ndjson_line(tmp_path):
     assert "boms.ndjson:2" in result.output + str(result.exception)
 
 
+def test_scan_bom_accepts_an_empty_snapshot(tmp_path):
+    # `openaca bom endpoint`/`bom repo` write nothing to stdout when zero
+    # agents resolve, so redirecting that output produces an empty file. That
+    # is a valid zero-agent snapshot, not malformed input.
+    path = tmp_path / "boms.ndjson"
+    path.write_text("", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, ["bom", "--input", str(path), "--format", "json", "--fail-on", "none"]
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["findings"] == []
+    assert doc["agents"] == []
+
+
+def test_scan_bom_keeps_legacy_graphs_distinct_per_document(tmp_path):
+    # Two graph-backed 0.4 documents both have `agent_info_from_cyclonedx() is
+    # None` (the legacy root key isn't agent-rooted), so both would key the
+    # `graphs` map under the same (None, None) entry. The second document's
+    # graph must not silently overwrite the first's and mis-attribute its
+    # findings — the attribution should be dropped for both rather than wrong
+    # for one of them.
+    from tools.bom import build_agent_bom
+    from tools.component_ref import ComponentRef
+    from tools.graph import Edge, Graph, Node
+
+    def _legacy_graph_doc(plugin_id: str, pkg_name: str, pkg_version: str) -> dict:
+        plugin_ref = ComponentRef(
+            name=plugin_id,
+            version="1.0.0",
+            component_identity=f"plugin/{plugin_id}",
+            source_manifest=".claude-plugin/plugin.json",
+            source_locator="$",
+            extra={"component_type": "plugin"},
+        )
+        pkg_ref = ComponentRef(
+            ecosystem="npm",
+            name=pkg_name,
+            version=pkg_version,
+            component_identity=f"package/npm/{pkg_name}",
+            source_manifest="package-lock.json",
+            source_locator="$.packages",
+        )
+        root = Node(key="openaca:target", kind="target", ref=None)
+        plugin_node = Node(key="plugin#0", kind="plugin", ref=plugin_ref)
+        pkg_node = Node(key="package#0", kind="package", ref=pkg_ref)
+        graph = Graph(
+            nodes={root.key: root, plugin_node.key: plugin_node, pkg_node.key: pkg_node},
+            edges=[
+                Edge(parent=root.key, child=plugin_node.key),
+                Edge(parent=plugin_node.key, child=pkg_node.key),
+            ],
+        )
+        graph.validate()
+        return build_agent_bom([], target_type="endpoint", target="x", graph=graph).to_cyclonedx()
+
+    doc_a = _legacy_graph_doc("bundle-a", "@cyanheads/git-mcp-server", "1.1.0")
+    doc_b = _legacy_graph_doc("bundle-b", "mcp-remote", "0.1.0")
+    path = tmp_path / "boms.ndjson"
+    path.write_text(f"{json.dumps(doc_a)}\n{json.dumps(doc_b)}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main, ["bom", "--input", str(path), "--format", "json", "--fail-on", "none"]
+    )
+
+    assert result.exit_code == 0, result.output
+    findings = json.loads(result.stdout)["findings"]
+    finding_ids = {f["id"] for f in findings}
+    assert finding_ids == {"GHSA-3q26-f695-pp76", "GHSA-6xpm-ggf7-wc3p"}
+    for finding in findings:
+        assert "attributed_to" not in finding
+
+
 def test_scan_bom_renders_a_stored_0_4_document_without_agent_metadata(tmp_path):
     # A pre-agent-metadata flat CycloneDX BOM: no metadata.component at all,
     # matching what `openaca bom endpoint` emitted before this feature.

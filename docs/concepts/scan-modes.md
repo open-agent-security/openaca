@@ -10,7 +10,9 @@ advisory can appear in both, but the result answers a different question.
 
 A subcommand names *where to look*, and each produces the composition source
 rather than restating it: `endpoint` yields `installed`, `repo` yields `declared`.
-Both emit one document per agent discovered, which is one document today.
+`--format json`/`exposure` emit one document per scan — the findings list stays
+flat and each agent appears in its `agents[]` entry — while text emits one card
+per agent (ADR-0047). That is one document and one card today.
 
 ## Repository scans
 

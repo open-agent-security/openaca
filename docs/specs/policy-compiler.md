@@ -120,6 +120,13 @@ Each configured condition independently blocks. For example, a component with
 one listed advisory blocks even if its severity is below the configured
 threshold.
 
+A configured vulnerability ID matches an advisory's primary ID or any of its
+aliases (for example, a configured CVE ID matches a GHSA-primary record that
+lists the CVE as an alias). The evaluator must compare against the full set of
+identifiers OSV records for the match, not only the ID surfaced as the
+finding's primary advisory ID; comparing the primary ID alone would silently
+fail to block an advisory reached under an alternate identifier.
+
 When a finding is on a component contained by a plugin, the compiler blocks the
 owning plugin. It must not attempt to allow a plugin while blocking one of its
 bundled contents. When a finding is on an MCP server, the compiler blocks that
@@ -229,9 +236,15 @@ state:
 
 | Observed state | Meaning |
 |---|---|
-| `verified` | Claude selected the file-based source containing the generated artifact and accepted the generated settings. |
-| `mismatch` | Claude selected a higher-priority source, or dropped a generated setting. |
-| `not_verified` | OpenACA has no host observation; compilation and installation alone are not proof of enforcement. |
+| `verified` | Claude selected the file-based source, and the merged file-based configuration — the base file plus every drop-in, combined under Claude's documented merge rules — matches the generated artifact for every generated key. |
+| `mismatch` | Claude selected a higher-priority source, dropped a generated setting, or another file drop-in overrode a generated key in the merged file-based configuration. |
+| `not_verified` | OpenACA has no host observation, or cannot resolve the merged file-based value for a generated key; compilation and installation alone are not proof of enforcement. |
+
+Selecting the file-based source is not sufficient on its own: file drop-ins
+merge with each other, so a same-named key from another drop-in can override
+OpenACA's generated value while the file-based source is still selected overall.
+`verified` requires comparing the post-merge value, not the source selection
+alone.
 
 For Claude, `/status` reports the selected managed source and `claude doctor`
 reports generated settings that Claude dropped. An observed source alone is not

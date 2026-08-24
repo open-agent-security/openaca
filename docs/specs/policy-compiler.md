@@ -150,6 +150,7 @@ restriction.
 ```text
 openaca policy validate policy.yaml
 openaca policy compile policy.yaml --target ~/.claude --host claude --output managed-settings.json
+openaca policy compile policy.yaml --target ~/.claude --host claude --project . --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --dry-run
 ```
 
@@ -160,6 +161,15 @@ invalid, writes diagnostics to stderr, and has no success output.
 data needed by configured risk gates, evaluates the policy, and writes a
 host-specific artifact. There is no separate public `check` command: an
 endpoint scan is the evidence-gathering operation.
+
+`compile` accepts the same `--project` option as `openaca scan endpoint`
+(ADR-0017): project-local skills, MCPs, and plugin manifests are scanned only
+when `--project` is passed. Without it, compilation scopes to user-level
+config only, and a component that exists solely in project-local config is
+absent from both admission and risk-gate evaluation — the report is not a
+complete endpoint policy in that case. As with `scan endpoint`, omitting
+`--project` prints a reminder note rather than failing or defaulting to the
+current directory.
 
 `--dry-run` performs that same validation, scan, advisory lookup, and policy
 evaluation, but writes no artifact. It prints the complete expected policy:
@@ -282,6 +292,14 @@ category still becomes a managed-only lock, whether or not any matching
 component is currently discovered. This is what lets a policy precede an
 endpoint inventory (see Admission) and lets marketplace restrictions stay
 prospective (see Claude Code target).
+
+When the target host cannot express a given admission entry, the admission
+pass reports `not_enforceable` for that entry instead of inventing an
+unsupported restriction. For example, Claude has no managed plugin allowlist,
+so a plugin policy with `default: blocked` and allowed-plugin exceptions is
+`not_enforceable` for the `default` and for each `allowed` entry, even though
+explicit `blocked` plugin entries remain enforceable through managed plugin
+disablement (see Claude Code target).
 
 **Discovery pass.** For each component the scan discovers, the evaluator
 applies the following order:

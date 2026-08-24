@@ -30,7 +30,7 @@ file; both encodings represent the same document.
 version: 1
 
 admission:
-  mcp_servers:
+  mcps:
     default: blocked
     allowed:
       - command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
@@ -44,7 +44,7 @@ admission:
       - plugin: "unreviewed@third-party"
       - marketplace: "https://github.com/example/untrusted-marketplace.git"
 
-  standalone_skills:
+  skills:
     default: allowed
 
 risk_gates:
@@ -64,18 +64,19 @@ component categories:
 
 | Category | Exact targets | Default |
 |---|---|---|
-| `mcp_servers` | One exact command array or URL | `allowed` or `blocked` |
+| `mcps` | One exact command array or URL | `allowed` or `blocked` |
 | `plugins` | One exact `plugin@marketplace` identifier or canonical marketplace source | `allowed` or `blocked` |
-| `standalone_skills` | None in V1 | `allowed` or `blocked` |
+| `skills` | None in V1 | `allowed` or `blocked` |
 
 Each MCP server and plugin category has an optional `allowed` list, optional
 `blocked` list, and required `default`. A target must appear in at most one
 list. Validation rejects an overlap rather than assigning surprising
 precedence. A component not in either list follows `default`.
 
-`standalone_skills` deliberately has only `default`. Current hosts do not
-offer a portable, managed way to block or allow individual standalone skills;
-claiming otherwise would make the policy look more precise than it is.
+`skills` deliberately has only `default`. It means skills installed outside a
+plugin; plugin-bundled skills inherit the plugin’s policy. Current hosts do not
+offer a portable, managed way to block or allow individual skills in this
+category; claiming otherwise would make the policy look more precise than it is.
 
 All targets are exact source/configuration values. V1 accepts no component
 identity, BOM reference, digest, glob, regular expression, or display-name
@@ -118,8 +119,8 @@ threshold.
 When a finding is on a component contained by a plugin, the compiler blocks the
 owning plugin. It must not attempt to allow a plugin while blocking one of its
 bundled contents. When a finding is on an MCP server, the compiler blocks that
-exact MCP server. A finding on a standalone skill is reported as not
-enforceable unless the selected host can express the category-wide skill
+exact MCP server. A finding on a skill installed outside a plugin is reported
+as not enforceable unless the selected host can express the category-wide skill
 restriction.
 
 ## Compile

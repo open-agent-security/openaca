@@ -1018,17 +1018,6 @@ def _stderr_summary(
     )
 
 
-def _write_empty_sarif(sarif: Path) -> None:
-    """`--sarif` is a promise to the caller — `action.yml` always passes it and
-    publishes the path as an output unconditionally — that a valid SARIF file
-    exists once the scan exits 0. Discovery resolving zero agents (an agentless
-    repo, no installed runtime) means there is nothing to report, not that the
-    promise is void."""
-    sarif_doc = to_sarif([], {}, {})
-    sarif.write_text(json.dumps(sarif_doc, indent=2) + "\n", encoding="utf-8")
-    click.echo(f"sarif: wrote {sarif}", err=True)
-
-
 @main.command()
 @click.pass_context
 @_target_option_required
@@ -1093,9 +1082,6 @@ def repo(
     )
     if not agents:
         click.echo(f"{target} declares no agent", err=True)
-        if sarif is not None:
-            _write_empty_sarif(sarif)
-        return
 
     # The composition graph is the single source of truth (Stage 3): scope and
     # attribution are derived from graph structure, not path heuristics.
@@ -1312,9 +1298,6 @@ def endpoint(
     )
     if not agents:
         click.echo("no installed agent found", err=True)
-        if sarif is not None:
-            _write_empty_sarif(sarif)
-        return
 
     built: list[tuple[AgentInstance, Graph, list[ComponentRef], list[ComponentRef], list[str]]] = []
     for agent in agents:

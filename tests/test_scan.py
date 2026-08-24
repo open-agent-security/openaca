@@ -2388,6 +2388,37 @@ def test_scan_endpoint_with_no_installed_agent_still_writes_valid_sarif(monkeypa
     assert sarif["runs"][0]["results"] == []
 
 
+def test_scan_repo_with_no_declaration_emits_valid_json(tmp_path):
+    """Before this fix, the zero-agent early return only covered `--sarif`
+    (see the sibling `_still_writes_valid_sarif` test above) — a machine sink
+    like `--format json` was left with nothing written to stdout, which is not
+    parseable as the single JSON document machine consumers expect."""
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["findings"] == []
+    assert doc["agents"] == []
+    assert "target" not in doc
+
+
+def test_scan_endpoint_with_no_installed_agent_emits_valid_exposure_report(monkeypatch, tmp_path):
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+
+    register_synthetic_kind(monkeypatch, agent_ids=[])
+
+    result = CliRunner().invoke(
+        main,
+        ["endpoint", "--config-dir", str(tmp_path), "--report", "exposure", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["cards"] == []
+
+
 def test_scan_repo_reports_declared_agent_with_repo_shaped_target(tmp_path):
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()

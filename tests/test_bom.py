@@ -271,7 +271,10 @@ def test_cyclonedx_serializes_package_and_openaca_identity_components():
 
     assert doc["bomFormat"] == "CycloneDX"
     assert doc["specVersion"] == "1.7"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
+    # Graphless: no `graph=`, so there is no `metadata.component` at all. Schema
+    # `0.5` is defined as the agent-rooted shape (ADR-0044/0045); a document with
+    # no agent root must keep claiming `0.4`, the version its shape actually is.
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
     package = _component(doc, "mcp-server/npm/@mcpjam/inspector")
     assert package["type"] == "application"
     assert package["purl"] == "pkg:npm/%40mcpjam/inspector@1.4.2"
@@ -904,7 +907,9 @@ def test_bom_emits_capability_descriptors():
     props = _props(doc["components"][0])
     assert json.loads(props["openaca:capabilities"])[0]["name"] == "shell_exec"
     assert props["openaca:capability_coverage"] == "partial"
-    assert _metadata_property(doc, "openaca:schema_version") == "0.5"
+    # Graphless: no agent root, so this stays `0.4` (see the identically-reasoned
+    # assertion in test_cyclonedx_serializes_package_and_openaca_identity_components).
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
 
 
 def test_bom_emits_coverage_for_uncovered_component():
@@ -1044,6 +1049,20 @@ def test_legacy_place_rooted_bom_keeps_schema_version_0_4():
 
     assert _metadata_property(doc, "openaca:schema_version") == "0.4"
     assert doc["metadata"]["component"]["bom-ref"] == "openaca:target"
+
+
+def test_graphless_bom_keeps_schema_version_0_4_even_with_agent_kind():
+    """`target_bom_ref` (and therefore `metadata.component`) is only set by the
+    graph-backed path (`_build_agent_bom_from_graph`); a graphless call has no
+    `metadata.component` regardless of what else it's told. Gating schema
+    `0.5` on `agent_kind is not None` alone — rather than on the actual
+    agent-rooted shape (`target_bom_ref` present and `root/`-prefixed, ADR-0045)
+    — would let this vacuously satisfy the old check and still claim `0.5` with
+    no agent root at all."""
+    doc = build_agent_bom([], target_type="repo", agent_kind="claude-code").to_cyclonedx()
+
+    assert "component" not in doc["metadata"]
+    assert _metadata_property(doc, "openaca:schema_version") == "0.4"
 
 
 def test_agent_bom_stops_writing_agent_host_and_runtime_hosts(tmp_path):

@@ -237,9 +237,14 @@ def emit_bom_documents(
             # accounting reflects reality instead of a manifest that lies in
             # either direction.
             try:
-                _write_bom_manifest(
-                    manifest_path, sorted(published | (previously_owned - current_name_set))
-                )
+                # A name that was previously owned and part of this run's target
+                # set but did not get republished (its `Path.replace` never ran,
+                # or ran after the one that failed) still holds its old,
+                # previously-owned content on disk — dropping it here would make
+                # the next run see it as an unowned collision and refuse to
+                # overwrite it forever. Keep every previously-owned name plus
+                # everything freshly published.
+                _write_bom_manifest(manifest_path, sorted(published | previously_owned))
             except OSError as manifest_exc:
                 raise click.ClickException(
                     f"failed to publish BOM to {output_dir}: {exc}; "
@@ -480,18 +485,27 @@ def diff_command(before_path: Path, after_path: Path, output_format: str) -> Non
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    # A single document each side keeps today's exact output: no agent headings,
-    # so existing consumers see no change.
+    # A single document each side keeps today's exact output — no agent
+    # headings — but only when the two documents are the same agent (or both
+    # legacy, pre-agent-metadata documents): a single-document diff across two
+    # different agents (e.g. `synthetic/a` replaced by `synthetic/b`) must go
+    # through the pairing logic below so it reports an added and a removed
+    # agent instead of component churn between unrelated agents.
     if len(before_docs) == 1 and len(after_docs) == 1:
-        try:
-            result = diff_boms(before_docs[0], after_docs[0])
-        except ValueError as exc:
-            raise click.ClickException(str(exc)) from exc
-        if output_format == "json":
-            click.echo(json.dumps(result.to_json(), indent=2))
+        before_info = agent_info_from_cyclonedx(before_docs[0])
+        after_info = agent_info_from_cyclonedx(after_docs[0])
+        before_key = (before_info.kind, before_info.agent_id or "") if before_info else None
+        after_key = (after_info.kind, after_info.agent_id or "") if after_info else None
+        if before_key == after_key:
+            try:
+                result = diff_boms(before_docs[0], after_docs[0])
+            except ValueError as exc:
+                raise click.ClickException(str(exc)) from exc
+            if output_format == "json":
+                click.echo(json.dumps(result.to_json(), indent=2))
+                return
+            click.echo(_render_diff_text(result))
             return
-        click.echo(_render_diff_text(result))
-        return
 
     before_by_agent = _documents_by_agent_key(before_docs, before_path)
     after_by_agent = _documents_by_agent_key(after_docs, after_path)
@@ -569,13 +583,21 @@ def _documents_by_agent_key(documents: list[dict], path: Path) -> dict[tuple[str
 
 
 def _read_bom_documents(path: Path) -> list[dict]:
-    """One JSON object, or NDJSON with one document per line."""
+    """One JSON object, or NDJSON with one document per line.
+
+    An empty or whitespace-only file is an empty document list, not an error:
+    it's the exact shape `bom endpoint`/`bom repo` write to stdout when they
+    resolve zero agents, and the diff command needs to accept that snapshot
+    rather than reject the documented emitter-to-diff workflow.
+    """
     try:
         raw = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError(f"{path} is not valid UTF-8") from exc
     except OSError as exc:
         raise ValueError(f"failed to read BOM from {path}: {exc}") from exc
+    if not raw.strip():
+        return []
     try:
         doc = json.loads(raw)
     except json.JSONDecodeError:

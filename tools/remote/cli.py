@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import click
 import httpx
 
+from tools.host_detection import HostConfigNotFound, resolve_endpoint_host
 from tools.remote.client import RemoteClient, RemoteClientError
 from tools.remote.collector import (
     CollectError,
@@ -128,8 +128,13 @@ def endpoint(
 ) -> None:
     """Sync endpoint composition to the configured remote."""
     try:
+        endpoint_host = resolve_endpoint_host(config_dir)
+    except HostConfigNotFound as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    try:
         result = collect_endpoint(
-            config_dir=_resolve_endpoint_config_dir(config_dir),
+            config_dir=endpoint_host.config_dir,
             project=project,
             quiet=quiet,
             allow_offline_cache=allow_offline_cache,
@@ -149,15 +154,6 @@ def _print_upload_result(result) -> None:
     click.echo(f"Findings: {result.finding_count}")
     click.echo(f"Policy violations: {result.policy_violation_count}")
     click.echo(f"Dashboard: {result.dashboard_url}")
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 def _mask_token(token: str) -> str:

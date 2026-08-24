@@ -711,6 +711,32 @@ def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
     assert "mode=endpoint" in result.output
 
 
+def test_endpoint_missing_explicit_claude_config_is_an_error(tmp_path, monkeypatch):
+    missing = tmp_path / "missing-claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(missing))
+
+    result = CliRunner().invoke(main, ["endpoint", "--format", "json"])
+
+    assert result.exit_code != 0
+    assert "CLAUDE_CONFIG_DIR" in result.output
+    assert "does not exist or is not a directory" in result.output
+    assert '"summary"' not in result.output
+
+
+def test_endpoint_without_detected_host_is_an_error(tmp_path, monkeypatch):
+    fake_home = tmp_path / "empty-home"
+    fake_home.mkdir()
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.host_detection.Path.home", lambda: fake_home)
+
+    result = CliRunner().invoke(main, ["endpoint"])
+
+    assert result.exit_code != 0
+    assert "no supported agent host config found" in result.output
+    assert "Scanned 0" not in result.output
+    assert "host surface: Claude Code" not in result.output
+
+
 def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     config_dir = fake_home / ".claude"
@@ -818,6 +844,23 @@ def test_endpoint_scan_scope_visible_in_default_card(tmp_path, monkeypatch):
     assert result_v.exit_code == 0, result_v.output
     assert f"detected config_dir={config_dir}" in result_v.output
     assert "mode=endpoint" in result_v.output
+
+
+def test_endpoint_card_uses_detected_host_surface(tmp_path, monkeypatch):
+    from tools.host_detection import EndpointHost
+
+    config_dir = tmp_path / "detected-host"
+    config_dir.mkdir()
+    monkeypatch.setattr(
+        "tools.scan.resolve_endpoint_host",
+        lambda _config_dir: EndpointHost("test-host", "Detected Test Host", config_dir),
+    )
+
+    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(config_dir)])
+
+    assert result.exit_code == 0, result.output
+    assert "host surface: Detected Test Host" in result.output
+    assert "host surface: Claude Code" not in result.output
 
 
 def test_fs_subcommand_is_not_kept_as_alias():

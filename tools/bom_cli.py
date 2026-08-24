@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import click
@@ -12,6 +11,7 @@ from tools.bom import build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
 from tools.graph_build import build_graph
+from tools.host_detection import HostConfigNotFound, resolve_endpoint_host
 from tools.parsers import parse_repo_grouped
 from tools.scan import _filter_agent_scope_refs, _is_plugin_ref, _refs_from_graph
 
@@ -100,9 +100,14 @@ def repo(target: Path, include_gitignored: bool, output_path: Path | None) -> No
 @_output_option
 def endpoint(config_dir: Path | None, project: Path | None, output_path: Path | None) -> None:
     """Generate an Agent BOM from active endpoint composition."""
-    config_dir = _resolve_endpoint_config_dir(config_dir)
+    try:
+        endpoint_host = resolve_endpoint_host(config_dir)
+    except HostConfigNotFound as exc:
+        raise click.ClickException(str(exc)) from exc
     warnings: list[str] = []
-    graph = build_graph(config_dir, mode="endpoint", project_root=project, warnings=warnings)
+    graph = build_graph(
+        endpoint_host.config_dir, mode="endpoint", project_root=project, warnings=warnings
+    )
     for w in warnings:
         click.echo(f"warning: {w}", err=True)
     refs = _refs_from_graph(graph)
@@ -150,15 +155,6 @@ def diff_command(before_path: Path, after_path: Path, output_format: str) -> Non
         click.echo(json.dumps(result.to_json(), indent=2))
         return
     click.echo(_render_diff_text(result))
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 def _read_json_bom(path: Path) -> object:

@@ -178,24 +178,30 @@ def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
 
 
 def _check_agent_root_required(doc: dict[str, Any], *, schema_version: str | None) -> list[str]:
-    """`check_agent_metadata` only fires once `metadata.component` already has a
-    `root/`-prefixed bom-ref — it has no opinion on a document that is missing one
-    entirely. Schema `0.5` is *defined* as the agent-rooted shape (ADR-0044,
-    ADR-0045), so a `0.5` document without that root — no `metadata.component`,
-    or one whose bom-ref doesn't start with `AGENT_ROOT_PREFIX` — is malformed:
-    reject it here rather than silently accepting a document that claims a shape
-    it doesn't have."""
-    if schema_version != OPENACA_BOM_SCHEMA_VERSION:
-        return []
+    """The agent-rooted shape and schema `0.5` imply each other (ADR-0044,
+    ADR-0045): `check_agent_metadata` only fires once `metadata.component`
+    already has a `root/`-prefixed bom-ref, so it has no opinion on a `0.5`
+    document that is missing one entirely, and nothing elsewhere checks the
+    reverse — a document with a valid agent root but a `0.4` (or earlier)
+    `openaca:schema_version` would otherwise be accepted as if it were the
+    legacy place-rooted shape it explicitly is not. Reject both directions of
+    the mismatch here."""
     metadata = doc.get("metadata")
     component = metadata.get("component") if isinstance(metadata, dict) else None
     bom_ref = component.get("bom-ref") if isinstance(component, dict) else None
-    if isinstance(bom_ref, str) and bom_ref.startswith(AGENT_ROOT_PREFIX):
-        return []
-    return [
-        f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref is required "
-        f"when openaca:schema_version is {OPENACA_BOM_SCHEMA_VERSION!r}"
-    ]
+    is_agent_rooted = isinstance(bom_ref, str) and bom_ref.startswith(AGENT_ROOT_PREFIX)
+    if schema_version == OPENACA_BOM_SCHEMA_VERSION and not is_agent_rooted:
+        return [
+            f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref is required "
+            f"when openaca:schema_version is {OPENACA_BOM_SCHEMA_VERSION!r}"
+        ]
+    is_other_version = schema_version is not None and schema_version != OPENACA_BOM_SCHEMA_VERSION
+    if is_other_version and is_agent_rooted:
+        return [
+            f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref requires "
+            f"openaca:schema_version {OPENACA_BOM_SCHEMA_VERSION!r}, got {schema_version!r}"
+        ]
+    return []
 
 
 def _kind_cardinality(agent_kind: str) -> str | None:

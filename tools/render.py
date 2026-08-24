@@ -878,6 +878,17 @@ def _esc_data(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
+def _agent_suffix(agent_kind: str | None, agent_id: str | None) -> str:
+    """A GitHub annotation has no properties bag (unlike JSON/SARIF, which carry
+    `agent.kind`/`agent.agent_id` as structured fields) — the only place to
+    disambiguate two agents' findings on the same component is the message
+    text itself."""
+    if not agent_kind:
+        return ""
+    label = agent_kind if not agent_id else f"{agent_kind}/{agent_id}"
+    return f" (agent: {label})"
+
+
 def render_github(
     findings: list[Finding],
     posture_findings: list[PostureFinding] | None = None,
@@ -903,6 +914,7 @@ def render_github(
         )
         if attributed_to:
             message = f"{message} (via {attributed_to})"
+        message = f"{message}{_agent_suffix(f.agent_kind, f.agent_id)}"
         lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
     if posture_findings:
         posture_level = {"high": "error", "medium": "warning", "low": "notice"}
@@ -910,9 +922,8 @@ def render_github(
             kind = posture_level.get(p.severity, "warning")
             file_param = _esc_param(p.location or "")
             title_param = _esc_param(p.rule_id)
-            lines.append(
-                f"::{kind} file={file_param},title={title_param}::{_esc_data(p.remediation)}"
-            )
+            message = f"{p.remediation}{_agent_suffix(p.agent_kind, p.agent_id)}"
+            lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
     if observations:
         observation_level = {
             "critical": "error",
@@ -926,6 +937,7 @@ def render_github(
             file_param = _esc_param(observation.location or "")
             title_param = _esc_param(observation.observation_id)
             message = f"{observation.source} observed: {observation.title}"
+            message = f"{message}{_agent_suffix(observation.agent_kind, observation.agent_id)}"
             lines.append(f"::{kind} file={file_param},title={title_param}::{_esc_data(message)}")
     return "\n".join(lines)
 

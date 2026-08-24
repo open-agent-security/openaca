@@ -81,7 +81,22 @@ def run_posture_rules(
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs, agent_kind=agent_kind))
     findings = [f for f in findings if allowed_rules is None or f.rule_id in allowed_rules]
-    findings = [replace(f, agent_kind=agent_kind, agent_id=agent_id) for f in findings]
+    # `active_in` is the answer to "which agent is this active in" (ADR-0044:
+    # "the agent doing the scanning is the answer" — see `tools.active_in`).
+    # Individual rules infer it from manifest shape (`insecure_transport`,
+    # `mcp_auto_approve`) or hardcode it (`api_endpoint_override`) because they
+    # predate agent-kind awareness; once the scanning agent is known, it
+    # overrides whatever a rule guessed, so a finding's `active_in` never
+    # disagrees with its own `agent_kind`.
+    findings = [
+        replace(
+            f,
+            agent_kind=agent_kind,
+            agent_id=agent_id,
+            active_in=[agent_kind] if agent_kind else f.active_in,
+        )
+        for f in findings
+    ]
     return [_attach_bom_ref(finding, refs) for finding in findings]
 
 

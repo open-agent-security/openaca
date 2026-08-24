@@ -603,6 +603,25 @@ def test_github_posture_omitted_when_not_passed():
     assert "posture" not in out
 
 
+def test_github_annotation_includes_agent_kind_for_findings_and_posture():
+    """A GitHub annotation has no properties bag, unlike JSON/SARIF — the agent
+    must be visible in the message text itself so two agents' findings on the
+    same component aren't indistinguishable to annotation consumers."""
+    import dataclasses
+
+    finding = dataclasses.replace(_finding("A", "p", "1"), agent_kind="synthetic", agent_id="a")
+    posture = dataclasses.replace(_posture(), agent_kind="synthetic", agent_id="a")
+    out = render_github([finding], posture_findings=[posture])
+    lines = out.splitlines()
+    assert "(agent: synthetic/a)" in lines[0]
+    assert "(agent: synthetic/a)" in lines[1]
+
+
+def test_github_annotation_omits_agent_suffix_when_agent_kind_unset():
+    out = render_github([_finding("A", "p", "1")], posture_findings=[_posture()])
+    assert "(agent:" not in out
+
+
 # ── render_json ──────────────────────────────────────────────────────────────
 
 

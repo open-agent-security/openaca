@@ -82,11 +82,11 @@ exploitability.
 
 ### Try it on a sample project
 
-Drop a sample `mcp.json` in any empty directory and scan it:
+Drop a sample `.mcp.json` in any empty directory and scan it:
 
 ```bash
 mkdir openaca-demo && cd openaca-demo
-cat > mcp.json <<'EOF'
+cat > .mcp.json <<'EOF'
 {
   "mcpServers": {
     "git": {
@@ -107,14 +107,14 @@ Inventory
 repo .
 └── direct components/
     └── MCPs/ (1)
-        └── @cyanheads/git-mcp-server@1.1.0 (stdio via npx) (from mcp.json)  [! GHSA-3q26-f695-pp76]
+        └── @cyanheads/git-mcp-server@1.1.0 (stdio via npx) (from .mcp.json)  [! GHSA-3q26-f695-pp76]
 
 Findings
 
 Found 1 vulnerability in 1 package.
 
 @cyanheads/git-mcp-server 1.1.0
-  location: mcp.json
+  location: .mcp.json
   fix:      upgrade to >=2.1.5
 
   HIGH  GHSA-3q26-f695-pp76  fixed in 2.1.5  @cyanheads/git-mcp-server vulnerable to command injection in several tools  [osv.dev]

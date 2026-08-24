@@ -10,6 +10,8 @@ from typing import Any
 import click
 from jsonschema import Draft202012Validator
 
+from tools.agent_kinds import REGISTRY
+from tools.bom import AGENT_ROOT_PREFIX
 from tools.capability import COVERAGE_LEVELS, Capability
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -26,6 +28,7 @@ _COMPONENT_TYPES = {
     "skill",
 }
 _SCOPES = {"agent-component", "agent-dependency", "software-dependency"}
+_COMPOSITION_SOURCES = {"installed", "declared"}
 
 
 def load_schema() -> dict[str, Any]:
@@ -98,7 +101,104 @@ def check_semantics(doc: dict[str, Any]) -> list[str]:
                     f"dependencies[{index}]: dependency target {target!r} "
                     "does not match any component bom-ref"
                 )
+
+    errors.extend(check_agent_metadata(doc))
+    if isinstance(metadata, dict) and isinstance(metadata.get("component"), dict):
+        errors.extend(
+            _check_duplicate_openaca_properties(metadata["component"], "metadata.component")
+        )
+    for index, component in enumerate(components):
+        errors.extend(_check_duplicate_openaca_properties(component, f"components[{index}]"))
     return errors
+
+
+def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
+    """Invariants for an agent-rooted document.
+
+    The gate is `metadata.component`'s bom-ref prefix (ADR-0045), not
+    `openaca:target_type` — which agent BOMs no longer carry.
+    """
+    metadata = doc.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+    component = metadata.get("component")
+    if not isinstance(component, dict):
+        return []
+    bom_ref = component.get("bom-ref")
+    if not isinstance(bom_ref, str) or not bom_ref.startswith(AGENT_ROOT_PREFIX):
+        return []
+
+    errors: list[str] = []
+    props = _properties_by_name(component)
+
+    agent_kind = props.get("openaca:agent_kind")
+    if not agent_kind:
+        errors.append("metadata.component: openaca:agent_kind is required on an agent BOM")
+
+    coverage = props.get("openaca:composition_coverage")
+    if coverage not in COVERAGE_LEVELS:
+        errors.append(
+            "metadata.component: openaca:composition_coverage must be one of "
+            f"{sorted(COVERAGE_LEVELS)}, got {coverage!r}"
+        )
+
+    source = props.get("openaca:composition_source")
+    if source not in _COMPOSITION_SOURCES:
+        errors.append(
+            "metadata.component: openaca:composition_source must be one of "
+            f"{sorted(_COMPOSITION_SOURCES)}, got {source!r}"
+        )
+
+    if agent_kind:
+        agent_id = props.get("openaca:agent_id")
+        expected = (
+            f"{AGENT_ROOT_PREFIX}{agent_kind}"
+            if agent_id is None
+            else f"{AGENT_ROOT_PREFIX}{agent_kind}/{agent_id}"
+        )
+        if bom_ref != expected:
+            errors.append(
+                f"metadata.component: bom-ref {bom_ref!r} is inconsistent with "
+                f"openaca:agent_kind/openaca:agent_id (expected {expected!r})"
+            )
+
+        cardinality = _kind_cardinality(agent_kind)
+        if cardinality == "singleton" and agent_id is not None:
+            errors.append(
+                f"metadata.component: kind {agent_kind!r} is singleton; "
+                "openaca:agent_id must be absent"
+            )
+        elif cardinality == "many_per_place" and not agent_id:
+            errors.append(
+                f"metadata.component: kind {agent_kind!r} has same-kind multiplicity; "
+                "openaca:agent_id is required"
+            )
+    return errors
+
+
+def _kind_cardinality(agent_kind: str) -> str | None:
+    """`None` means the kind is unknown to this build's registry — third-party
+    kinds this scanner has never registered are not a lint failure; there is
+    nothing to check the discriminator against."""
+    for kind in REGISTRY:
+        if kind.id == agent_kind:
+            return kind.cardinality
+    return None
+
+
+def _check_duplicate_openaca_properties(component: dict[str, Any], label: str) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for prop in component.get("properties") or []:
+        if not isinstance(prop, dict):
+            continue
+        name = prop.get("name")
+        if not isinstance(name, str) or not name.startswith("openaca:"):
+            continue
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    return [f"{label}: {name!r} appears more than once" for name in sorted(duplicates)]
 
 
 def _check_component(

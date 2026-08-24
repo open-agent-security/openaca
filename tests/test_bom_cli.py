@@ -213,8 +213,10 @@ def test_scan_bom_verbose_renders_repo_inventory_from_bom(tmp_path):
     # The inventory tree (root + component leaf) and the count now live in the
     # default stdout card; the BOM-sourced scan reconstructs the same tree as a
     # direct repo scan.
-    assert f"repo {tmp_path}" in direct.output
-    assert f"repo {tmp_path}" in from_bom.output
+    # Both trees root at the agent that loads the composition, not the scan
+    # path — so the BOM-sourced scan reconstructs the same root as the direct one.
+    assert "\nClaude Code\n" in direct.output
+    assert "\nClaude Code\n" in from_bom.output
     assert "Scanned 1 manifest, 1 component" in direct.output
     assert "Scanned 1 manifest, 1 component" in from_bom.output
     assert expected in direct.output
@@ -489,6 +491,10 @@ def test_scan_bom_rejects_include_posture(tmp_path):
 
 def test_bom_repo_excludes_bare_package_json_as_software_dependency(tmp_path):
     """bom repo must not include bare package.json deps (software-dependency scope)."""
+    # A repo declaring no agent emits no document at all (ADR-0044), so declare
+    # one — the exclusion under test is about scope, not about discovery.
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text("{}", encoding="utf-8")
     (tmp_path / "package.json").write_text(
         '{"name":"app","version":"1.0.0","dependencies":{"lodash":"4.17.20"}}',
         encoding="utf-8",

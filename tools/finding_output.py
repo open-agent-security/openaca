@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
+from tools.active_in import active_in
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
 from tools.matcher import Finding
@@ -11,6 +13,30 @@ from tools.observations.finding import ObservationFinding
 from tools.posture.finding import PostureFinding
 
 _PACKAGE_ECOSYSTEMS = {"npm", "PyPI", "pypi", "docker", "Docker"}
+
+
+def graph_for(
+    finding: object,
+    graph: Graph | None = None,
+    graphs: Mapping[tuple[str | None, str | None], Graph] | None = None,
+) -> Graph | None:
+    """A finding's lineage comes from its own agent's graph.
+
+    With N agents there is no single scan-wide graph to derive an introduction
+    path or attribution from, and resolving a finding against another agent's
+    graph yields a wrong or empty answer. `graphs` is empty or absent for
+    `scan bom` on a stored document and for any caller that has one graph, in
+    which case this is exactly today's behaviour.
+    """
+    if graphs:
+        key = (
+            getattr(finding, "agent_kind", None),
+            getattr(finding, "agent_id", None),
+        )
+        found = graphs.get(key)
+        if found is not None:
+            return found
+    return graph
 
 
 def component_type_for(ref: ComponentRef) -> str:
@@ -105,13 +131,6 @@ def _component_path_from_graph(ref: ComponentRef, graph: Graph) -> list[dict[str
     return path if path else None
 
 
-def _active_in_for(ref: ComponentRef) -> list[str]:
-    active_in = (ref.extra or {}).get("runtime_hosts")
-    if isinstance(active_in, list):
-        return [v for v in active_in if isinstance(v, str)]
-    return []
-
-
 def _matched_advisory_for(advisory_id: str, advisory: dict | None) -> dict[str, Any]:
     matched: dict[str, Any] = {"id": advisory_id}
     if not isinstance(advisory, dict):
@@ -168,7 +187,7 @@ def finding_to_output(
             "name": component_name_for(ref),
             "source": source_for(ref),
         },
-        "active_in": _active_in_for(ref),
+        "active_in": active_in(ref, agent_kind=finding.agent_kind),
         "component_path": graph_path if graph_path is not None else component_path_for(ref),
         "matched_advisory": _matched_advisory_for(finding.advisory_id, advisory),
     }
@@ -178,6 +197,7 @@ def finding_to_output(
     attributed_to = graph.attribution_for_ref(ref) if graph is not None else None
     if attributed_to:
         out["attributed_to"] = attributed_to
+    out["agent"] = {"kind": finding.agent_kind, "agent_id": finding.agent_id}
     if graph is not None:
         node = graph.node_for_ref(ref)
         if node is not None:
@@ -208,6 +228,7 @@ def posture_to_output(finding: PostureFinding) -> dict[str, Any]:
         "remediation": finding.remediation,
         "evidence": finding.evidence,
     }
+    out["agent"] = {"kind": finding.agent_kind, "agent_id": finding.agent_id}
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by
     if finding.bom_ref is not None:
@@ -232,6 +253,7 @@ def observation_to_output(finding: ObservationFinding) -> dict[str, Any]:
     }
     if finding.remediation is not None:
         out["remediation"] = finding.remediation
+    out["agent"] = {"kind": finding.agent_kind, "agent_id": finding.agent_id}
     if finding.declared_by is not None:
         out["declared_by"] = finding.declared_by
     if finding.bom_ref is not None:

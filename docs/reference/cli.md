@@ -171,6 +171,25 @@ resolved 14 active plugin(s):
   ...
 ```
 
+## Scan output and agents
+
+Text output prints **one card per agent**, each with that agent's Target block
+(including its `coverage` row), inventory tree, and next actions. The inventory
+tree is rooted at the agent that loads the composition — in both `repo` and
+`endpoint` mode — so every block says who owns it and the scan path stays in the
+Target block; with more than one agent a rule separates the cards, since the
+section headings repeat. Next actions are deduplicated across agents — two agents of one
+kind emit the same generic actions, while an action naming its own root (a
+`bom repo --target <root>`) survives per agent. `stats` and the Summary stay
+scan-wide.
+
+Machine formats stay one payload per scan (ADR-0047). `--format json` emits a
+single document whose `findings[]` stays a flat list — each finding carrying the
+agent it belongs to under `agent` — plus an `agents[]` array with one entry per
+discovered agent, so an installed agent with nothing configured still appears.
+`stats` remains scan-wide. `--format github` is an annotation stream and gains no
+`agents[]` block; the agent travels on each annotated finding.
+
 ## Exit codes
 
 - `0` - scan completed and no findings met the `--fail-on` threshold.
@@ -180,17 +199,52 @@ Use `openaca scan --help` for the complete generated option list.
 
 ## Agent BOM commands
 
-Generate an Agent BOM for a repository:
+A BOM describes one **agent**, and each command emits one document per agent it
+discovers — one, today, because Claude Code is the only registered kind.
+
+Generate an Agent BOM for each agent a repository declares:
 
 ```bash
-openaca bom repo --target . --output openaca-agent-bom.json
+openaca bom repo --target . --output-dir boms/
 ```
 
-Generate an Agent BOM from the local endpoint configuration:
+Generate an Agent BOM for each agent installed on this endpoint:
 
 ```bash
-openaca bom endpoint --output openaca-agent-bom.json
+openaca bom endpoint --output-dir boms/
 ```
+
+**Output shapes.** A consumer never needs to know the agent count in advance:
+
+| Sink | Behaviour |
+|---|---|
+| stdout (default) | **NDJSON** — one CycloneDX document per line. One agent is a single line, so `jq` and `json.load` keep working; many agents are line-wise and self-describing. |
+| `--output-dir <dir>` | One file per agent, named `<kind>[--<agent-id>].cdx.json`. Uniform for one agent or many. |
+| `--output <file>` | **Deprecated.** Still writes a single document, and errors with a pointer to `--output-dir` only when more than one agent resolves. |
+
+`--output-dir` tracks the files it wrote in `.openaca-bom-manifest.json` inside
+that directory: a rerun that resolves fewer agents removes only the previously
+written files that no longer resolve, so a stale file is never left behind to
+be misread as current. A `.cdx.json` file the tool didn't write — hand-authored,
+from another tool, or from a scan that predates this manifest — is left alone,
+including when its name collides with a basename the current run would
+generate; the command refuses to overwrite it and exits non-zero instead. A
+manifest entry that isn't itself a plain `<kind>[--<agent-id>].cdx.json` basename
+(a path with separators, `.`/`..`, or a name this emitter could never have
+produced) is never treated as owned, whether it got there from hand-editing or
+a planted file. If publishing or cleaning up a run's files fails partway
+through, the command tries to rewrite the manifest to describe exactly what
+ended up on disk before exiting non-zero; if that rewrite itself fails, the
+command still exits non-zero and reports it, since the manifest may now be
+stale.
+
+A tree that declares no agent emits **no document** and exits `0` with a note on
+stderr — a repo of ordinary package manifests is not an agent. Likewise
+`bom endpoint` reports `no installed agent found` and exits `0` when the config
+root does not exist.
+
+`openaca scan bom --input <file>` reads either shape: a single JSON object, or
+NDJSON with one document per line.
 
 Compare two Agent BOMs without running advisory lookups:
 

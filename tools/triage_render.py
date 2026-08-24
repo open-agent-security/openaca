@@ -23,16 +23,19 @@ def render_triage_report(
 
 
 def render_triage_json(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:
-    return json.dumps(
-        {
-            "report_type": "exposure",
-            "target": scan_doc.get("target") or {},
-            "stats": scan_doc.get("stats") or {},
-            "cards": [card.to_dict() for card in cards],
-            "scope_limits": _report_scope_limits(cards),
-        },
-        indent=2,
-    )
+    report: dict[str, Any] = {
+        "report_type": "exposure",
+        "target": scan_doc.get("target") or {},
+        "stats": scan_doc.get("stats") or {},
+        "cards": [card.to_dict() for card in cards],
+        "scope_limits": _report_scope_limits(cards),
+    }
+    agents = scan_doc.get("agents")
+    if isinstance(agents, list):
+        # ADR-0047: a machine document reports every discovered agent, so an
+        # agent with zero components (and therefore no cards) still appears.
+        report["agents"] = agents
+    return json.dumps(report, indent=2)
 
 
 def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str:

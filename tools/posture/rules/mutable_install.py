@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from tools.active_in import active_in
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.immutability import is_mutable_reference
@@ -32,7 +33,9 @@ _BASE_STANDARDS = Standards(
 )
 
 
-def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
+def check_mutable_install(
+    refs: list[ComponentRef], *, agent_kind: str | None = None
+) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for ref in refs:
         install_source = _mutable_install_source_for(ref)
@@ -45,7 +48,7 @@ def check_mutable_install(refs: list[ComponentRef]) -> list[PostureFinding]:
                 severity=SEVERITY,
                 confidence=CONFIDENCE,
                 component=_component_for(ref, install_source),
-                active_in=_active_in_for(ref),
+                active_in=active_in(ref, agent_kind=agent_kind),
                 declared_by=_declared_by_for(ref),
                 component_path=_component_path_for(ref, install_source),
                 standards=_standards_for(ref),
@@ -98,13 +101,6 @@ def _component_for(ref: ComponentRef, install_source: str) -> dict[str, Any]:
     if ref.purl:
         component["source"] = {"purl": ref.purl}
     return component
-
-
-def _active_in_for(ref: ComponentRef) -> list[str]:
-    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
-    if isinstance(runtime_hosts, list):
-        return [h for h in runtime_hosts if isinstance(h, str)]
-    return []
 
 
 def _declared_by_for(ref: ComponentRef) -> dict | None:

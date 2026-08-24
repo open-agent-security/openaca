@@ -14,9 +14,15 @@ Confidence → SARIF level mapping:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from tools.finding_output import finding_to_output, observation_to_output, posture_to_output
+from tools.finding_output import (
+    finding_to_output,
+    graph_for,
+    observation_to_output,
+    posture_to_output,
+)
 from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -107,6 +113,11 @@ def _identity_properties(output: dict[str, Any]) -> dict[str, Any]:
     active_in = output.get("active_in")
     if isinstance(active_in, list) and active_in:
         props["active_in"] = active_in
+    agent = output.get("agent")
+    if isinstance(agent, dict) and agent.get("kind"):
+        props["agent_kind"] = agent["kind"]
+        if agent.get("agent_id"):
+            props["agent_id"] = agent["agent_id"]
     return props
 
 
@@ -118,6 +129,7 @@ def to_sarif(
     posture_findings: list[PostureFinding] | None = None,
     observations: list[ObservationFinding] | None = None,
     graph: Graph | None = None,
+    graphs: Mapping[tuple[str | None, str | None], Graph] | None = None,
 ) -> dict[str, Any]:
     rule_ids = sorted({f.advisory_id for f in findings})
     rules: list[dict[str, Any]] = []
@@ -162,7 +174,7 @@ def to_sarif(
                 }
             ],
         }
-        props = _properties_for(f, advisory_index.get(f.advisory_id), graph)
+        props = _properties_for(f, advisory_index.get(f.advisory_id), graph_for(f, graph, graphs))
         if props:
             result["properties"] = props
         results.append(result)

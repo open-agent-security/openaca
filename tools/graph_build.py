@@ -136,7 +136,11 @@ def _identity_normalizer(abs_path: str) -> str:
 
 
 def _make_normalizer(
-    mode: str, target: Path, install_root: Path, project_root: Path | None
+    mode: str,
+    target: Path,
+    install_root: Path,
+    project_root: Path | None,
+    root_label: str = "endpoint",
 ) -> SourceNormalizer:
     """Build the `source_manifest`-path normalizer for a scan.
 
@@ -196,7 +200,7 @@ def _make_normalizer(
                 return f"project/{rel}"
         rel = _rel(abs_path, install_root, install_r)
         if rel is not None:
-            return f"endpoint/{rel}"
+            return f"{root_label}/{rel}"
         return abs_path
 
     return normalize
@@ -234,16 +238,40 @@ def build_graph(
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
 ) -> Graph:
+    """Legacy place-rooted graph. Retained for `tools/remote/collector.py`, whose
+    upload contract keeps `endpoint/` labels and the `openaca:target` root ref
+    until the collector is migrated to agent discovery."""
+    return build_rooted_graph(
+        target,
+        mode,
+        root_key=_TARGET_KEY,
+        root_label="endpoint",
+        project_root=project_root,
+        include_gitignored=include_gitignored,
+        warnings=warnings,
+    )
+
+
+def build_rooted_graph(
+    target: Path,
+    mode: str,
+    *,
+    root_key: str,
+    root_label: str = "endpoint",
+    project_root: Path | None = None,
+    include_gitignored: bool = False,
+    warnings: list[str] | None = None,
+) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
 
-    root = Node(key=_TARGET_KEY, kind="target", ref=None)
+    root = Node(key=root_key, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
     # The node-key path normalizer (Stage 4): strips the machine-specific scan
     # root so node keys — which become CycloneDX bom-refs — are reproducible.
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
-    normalize = _make_normalizer(mode, Path(target), Path(target), project_root)
+    normalize = _make_normalizer(mode, Path(target), Path(target), project_root, root_label)
     # ADR-0039 launch resolution context, set per-branch below.
     attach_root_dir: Path | None = None
     attach_root_spec: GitIgnoreSpec | None = None
@@ -442,7 +470,6 @@ def _seed_active_plugins(
             source_locator=f"$.plugins.{plugin_key}[{index}]",
             extra={
                 "component_type": "plugin",
-                "runtime_hosts": ["claude-code"],
                 "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
                 "component_path": [{"type": "plugin", "name": plugin_name}],
                 "gitCommitSha": entry.get("gitCommitSha"),

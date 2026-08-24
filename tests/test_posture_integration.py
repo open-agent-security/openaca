@@ -490,3 +490,182 @@ def test_posture_json_output_uses_unified_findings_array(tmp_path):
         for f in doc["findings"]
         if f["finding_type"] == "posture"
     )
+
+
+# ── Per-kind rule allowlist and per-agent attribution (ADR-0044/0047) ────────
+
+
+def test_posture_rules_respect_a_kind_allowlist():
+    from tools.component_ref import ComponentRef
+    from tools.posture import run_posture_rules
+
+    refs = [
+        ComponentRef(
+            ecosystem="generic-skill",
+            name="s",
+            extra={"component_type": "skill", "install_source": "local-path"},
+        )
+    ]
+
+    all_rules = run_posture_rules(refs, [])
+    narrowed = run_posture_rules(refs, [], allowed_rules=frozenset())
+
+    assert all_rules != []
+    assert narrowed == []
+
+
+def test_posture_rules_stamp_agent_id_for_same_kind_agents():
+    """Two agents of the same kind must produce distinguishable posture rows."""
+    from tools.component_ref import ComponentRef
+    from tools.posture import run_posture_rules
+
+    refs = [
+        ComponentRef(
+            ecosystem="generic-skill",
+            name="s",
+            extra={"component_type": "skill", "install_source": "local-path"},
+        )
+    ]
+
+    a = run_posture_rules(refs, [], agent_kind="synthetic", agent_id="a")
+    b = run_posture_rules(refs, [], agent_kind="synthetic", agent_id="b")
+
+    assert a and [f.agent_id for f in a] == ["a"] * len(a)
+    assert b and [f.agent_id for f in b] == ["b"] * len(b)
+    assert all(f.active_in == ["synthetic"] for f in a)
+
+
+def _kind_with_posture_collectors(mcp_result, settings_result, kind_id, *, installed=False):
+    from tools.agent_kinds import AgentKind
+    from tools.graph import Graph
+
+    collectors = (lambda *_a, **_k: mcp_result, lambda *_a, **_k: settings_result)
+    return AgentKind(
+        id=kind_id,
+        display_name=kind_id,
+        cardinality="singleton",
+        root_label=kind_id,
+        coverage_baseline={"installed": "partial", "declared": "partial"},
+        discover=lambda ctx: [],
+        compose=lambda agent, **_: Graph(nodes={}),
+        posture_manifest_collectors=None if installed else collectors,
+        installed_posture_collectors=collectors if installed else None,
+    )
+
+
+def test_agent_scan_prep_reads_only_its_own_kind_s_posture_collectors(tmp_path):
+    """A repo declaring two *different* kinds must not have one kind's posture
+    manifests attributed to the other's card."""
+    from tools.agent_kinds import AgentInstance
+    from tools.scan import _agent_scan_prep
+
+    marker_a = (tmp_path / "a.json", {"marker": "a"})
+    marker_b = (tmp_path / "b.json", {"marker": "b"})
+    kind_a = _kind_with_posture_collectors([marker_a], [], "kind-a")
+    kind_b = _kind_with_posture_collectors([], [marker_b], "kind-b")
+    agent_a = AgentInstance(
+        kind_id="kind-a",
+        display_name="Kind A",
+        source="declared",
+        root_label="kind-a",
+        coverage_baseline="partial",
+        scan_root=tmp_path,
+    )
+    agent_b = AgentInstance(
+        kind_id="kind-b",
+        display_name="Kind B",
+        source="declared",
+        root_label="kind-b",
+        coverage_baseline="partial",
+        scan_root=tmp_path,
+    )
+
+    prep_a = _agent_scan_prep(agent_a, kind_a, [], repo_parse_cache={})
+    prep_b = _agent_scan_prep(agent_b, kind_b, [], repo_parse_cache={})
+
+    assert prep_a.manifests == [marker_a] and prep_a.settings_manifests == []
+    assert prep_b.manifests == [] and prep_b.settings_manifests == [marker_b]
+
+
+def test_agent_scan_prep_reads_only_its_own_kind_s_installed_posture_collectors(tmp_path):
+    """The installed-branch counterpart: a second installed kind must not be
+    scanned with Claude Code's endpoint-shaped collectors."""
+    from tools.agent_kinds import AgentInstance
+    from tools.scan import _agent_scan_prep
+
+    marker_a = (tmp_path / "a.json", {"marker": "a"})
+    marker_b = (tmp_path / "b.json", {"marker": "b"})
+    kind_a = _kind_with_posture_collectors([marker_a], [], "kind-a", installed=True)
+    kind_b = _kind_with_posture_collectors([], [marker_b], "kind-b", installed=True)
+    agent_a = AgentInstance(
+        kind_id="kind-a",
+        display_name="Kind A",
+        source="installed",
+        root_label="kind-a",
+        coverage_baseline="partial",
+        config_root=tmp_path,
+    )
+    agent_b = AgentInstance(
+        kind_id="kind-b",
+        display_name="Kind B",
+        source="installed",
+        root_label="kind-b",
+        coverage_baseline="partial",
+        config_root=tmp_path,
+    )
+
+    prep_a = _agent_scan_prep(agent_a, kind_a, [], repo_parse_cache={})
+    prep_b = _agent_scan_prep(agent_b, kind_b, [], repo_parse_cache={})
+
+    assert prep_a.manifests == [marker_a] and prep_a.settings_manifests == []
+    assert prep_b.manifests == [] and prep_b.settings_manifests == [marker_b]
+
+
+def test_agent_scan_prep_counts_each_kind_s_own_manifest_registry_separately(tmp_path):
+    """The declared branch's parse-failure count must key on the kind's own
+    `manifest_patterns`, not the global registry."""
+    from tools.agent_kinds import AgentInstance, AgentKind
+    from tools.graph import Graph
+    from tools.parsers.mcp_json import parse as parse_mcp
+    from tools.parsers.package_json import parse as parse_package
+    from tools.scan import _agent_scan_prep
+
+    (tmp_path / ".mcp.json").write_text("not valid json", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"name": "x", "version": "1.0.0"}', encoding="utf-8")
+
+    def kind_with(patterns, kind_id):
+        return AgentKind(
+            id=kind_id,
+            display_name=kind_id,
+            cardinality="singleton",
+            root_label=kind_id,
+            coverage_baseline={"installed": "partial", "declared": "partial"},
+            discover=lambda ctx: [],
+            compose=lambda agent, **_: Graph(nodes={}),
+            manifest_patterns=patterns,
+        )
+
+    # kind-a's only manifest pattern is the malformed .mcp.json; kind-b's is the
+    # well-formed package.json.
+    kind_a = kind_with(((".mcp.json", parse_mcp),), "kind-a")
+    kind_b = kind_with((("package.json", parse_package),), "kind-b")
+
+    def agent_for(kind_id):
+        return AgentInstance(
+            kind_id=kind_id,
+            display_name=kind_id,
+            source="declared",
+            root_label=kind_id,
+            coverage_baseline="partial",
+            scan_root=tmp_path,
+        )
+
+    cache: dict = {}
+    prep_a = _agent_scan_prep(agent_for("kind-a"), kind_a, [], repo_parse_cache=cache)
+    prep_b = _agent_scan_prep(agent_for("kind-b"), kind_b, [], repo_parse_cache=cache)
+
+    assert prep_a.parse_failed == 1  # kind-a's own malformed .mcp.json
+    assert prep_a.unit_count == 1 and prep_a.unit_label == "manifest"
+    # kind-b's package.json parses fine; kind-a's failure doesn't leak in.
+    assert prep_b.parse_failed == 0
+    assert prep_b.unit_count == 1

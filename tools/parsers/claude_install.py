@@ -197,7 +197,6 @@ def _walk_active_plugins(
                 source_locator=f"$.plugins.{plugin_key}[{index}]",
                 extra={
                     "component_type": "plugin",
-                    "runtime_hosts": ["claude-code"],
                     "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
                     "component_path": [{"type": "plugin", "name": plugin_name}],
                     "gitCommitSha": entry.get("gitCommitSha"),
@@ -566,7 +565,6 @@ def _with_plugin_context(
         child_name = _component_name_for_child(ref)
         extra = dict(ref.extra)
         extra["component_type"] = child_type
-        extra["runtime_hosts"] = ["claude-code"]
         extra["declared_by"] = {
             "kind": "plugin",
             "name": plugin_name,

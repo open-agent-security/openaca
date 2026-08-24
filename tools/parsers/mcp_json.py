@@ -466,13 +466,14 @@ def parse_mcp_servers(
     servers: dict,
     source_manifest: str,
     locator_prefix: str = "$.mcpServers",
-    runtime_hosts: list[str] | None = None,
 ) -> list[ComponentRef]:
-    """Convert an `mcpServers`/`servers` dict into ComponentRefs."""
+    """Convert an `mcpServers`/`servers` dict into ComponentRefs.
+
+    Parsers do not know the runtime: which agent loads this file is a property
+    of the agent that read it, and the BOM's subject carries it (ADR-0044).
+    """
     if not isinstance(servers, dict):
         return []
-    if runtime_hosts is None:
-        runtime_hosts = ["claude-code"]
     refs: list[ComponentRef] = []
     for server_name, entry in servers.items():
         if not isinstance(entry, dict):
@@ -492,7 +493,6 @@ def parse_mcp_servers(
                 server_name=server_name,
                 source_manifest=source_manifest,
                 locator=locator,
-                runtime_hosts=runtime_hosts,
             )
             if remote_ref is not None:
                 refs.append(remote_ref)
@@ -525,9 +525,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
             elif name:
@@ -537,9 +535,7 @@ def parse_mcp_servers(
                         name=name,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
         elif cmd_class == "uvx":
@@ -547,7 +543,7 @@ def parse_mcp_servers(
                 args
             )
             if github_name:
-                extra = _mcp_ref_extra(source_manifest, install_source, server_name, runtime_hosts)
+                extra = _mcp_ref_extra(source_manifest, install_source, server_name)
                 if github_subdirectory is not None:
                     extra["source_subdirectory"] = github_subdirectory
                 if github_ref is not None:
@@ -572,9 +568,7 @@ def parse_mcp_servers(
                             version=version,
                             source_manifest=source_manifest,
                             source_locator=locator,
-                            extra=_mcp_ref_extra(
-                                source_manifest, install_source, server_name, runtime_hosts
-                            ),
+                            extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                         )
                     )
                 elif name:
@@ -584,9 +578,7 @@ def parse_mcp_servers(
                             name=name,
                             source_manifest=source_manifest,
                             source_locator=locator,
-                            extra=_mcp_ref_extra(
-                                source_manifest, install_source, server_name, runtime_hosts
-                            ),
+                            extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                         )
                     )
         elif cmd_class == "bunx":
@@ -599,9 +591,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
             elif name:
@@ -611,9 +601,7 @@ def parse_mcp_servers(
                         name=name,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
         elif cmd_class == "docker":
@@ -626,9 +614,7 @@ def parse_mcp_servers(
                         version=version,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
             else:
@@ -637,9 +623,7 @@ def parse_mcp_servers(
                         component_identity=f"mcp-stdio/binary:{command}",
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
         elif command:
@@ -650,9 +634,7 @@ def parse_mcp_servers(
                         component_identity=local_identity,
                         source_manifest=source_manifest,
                         source_locator=locator,
-                        extra=_mcp_ref_extra(
-                            source_manifest, install_source, server_name, runtime_hosts
-                        ),
+                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                     )
                 )
                 continue
@@ -661,9 +643,7 @@ def parse_mcp_servers(
                     component_identity=f"mcp-stdio/binary:{command}",
                     source_manifest=source_manifest,
                     source_locator=locator,
-                    extra=_mcp_ref_extra(
-                        source_manifest, install_source, server_name, runtime_hosts
-                    ),
+                    extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                 )
             )
     return refs
@@ -673,11 +653,9 @@ def _mcp_ref_extra(
     source_manifest: str,
     install_source: str,
     server_name: str,
-    runtime_hosts: list[str],
 ) -> dict:
     return {
         "component_type": "mcp_server",
-        "runtime_hosts": list(runtime_hosts),
         "declared_by": {"kind": "manifest", "path": source_manifest},
         "component_path": [{"type": "mcp_server", "name": server_name}],
         "install_source": install_source,
@@ -690,7 +668,6 @@ def _make_remote_mcp_ref(
     server_name: str,
     source_manifest: str,
     locator: str,
-    runtime_hosts: list[str],
 ) -> ComponentRef | None:
     """Build a ComponentRef for a URL-bearing (remote) MCP entry per ADR-0020.
 
@@ -705,7 +682,6 @@ def _make_remote_mcp_ref(
         "component_type": "mcp_server",
         "transport": transport,
         "url": url,
-        "runtime_hosts": list(runtime_hosts),
         "declared_by": {"kind": "manifest", "path": source_manifest},
         "component_path": [{"type": "mcp_server", "name": server_name}],
         # Posture rules (plan 014) consume install_source. For remote MCPs
@@ -791,15 +767,13 @@ def parse(path: Path) -> list[ComponentRef]:
             data["mcpServers"],
             source_manifest=str(path),
             locator_prefix="$.mcpServers",
-            runtime_hosts=["claude-code"],
         )
     if isinstance(data.get("servers"), dict):
-        # `servers` is the VS Code convention; host cannot be inferred here.
+        # `servers` is the VS Code convention.
         return parse_mcp_servers(
             data["servers"],
             source_manifest=str(path),
             locator_prefix="$.servers",
-            runtime_hosts=[],
         )
     # Flat shape (no wrapper). Some real Claude Code plugins ship `.mcp.json`
     # as a bare `{server_name: {command, args}}` map without the conventional
@@ -812,7 +786,6 @@ def parse(path: Path) -> list[ComponentRef]:
             data,
             source_manifest=str(path),
             locator_prefix="$",
-            runtime_hosts=[],
         )
     return []
 

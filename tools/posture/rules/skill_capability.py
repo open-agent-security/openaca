@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from tools.active_in import active_in
 from tools.capability_extract import _allowed_tools, _executable_tool_base
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
@@ -25,18 +26,22 @@ EXECUTABLE_TOOLS = {"bash", "shell"}
 _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 
 
-def check_skill_executable_tools(refs: list[ComponentRef]) -> list[PostureFinding]:
+def check_skill_executable_tools(
+    refs: list[ComponentRef], *, agent_kind: str | None = None
+) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for ref in refs:
         if (ref.extra or {}).get("component_type") != "skill":
             continue
-        finding = _allowed_executable_tool_finding(ref)
+        finding = _allowed_executable_tool_finding(ref, agent_kind=agent_kind)
         if finding is not None:
             findings.append(finding)
     return findings
 
 
-def _allowed_executable_tool_finding(ref: ComponentRef) -> PostureFinding | None:
+def _allowed_executable_tool_finding(
+    ref: ComponentRef, *, agent_kind: str | None = None
+) -> PostureFinding | None:
     frontmatter = _read_frontmatter(Path(ref.source_manifest))
     allowed_tools = _allowed_tools(frontmatter)
     executable = sorted(
@@ -58,7 +63,7 @@ def _allowed_executable_tool_finding(ref: ComponentRef) -> PostureFinding | None
         severity=SEVERITY,
         confidence=CONFIDENCE,
         component=component,
-        active_in=_active_in_for(ref),
+        active_in=active_in(ref, agent_kind=agent_kind),
         declared_by=(ref.extra or {}).get("declared_by")
         if isinstance((ref.extra or {}).get("declared_by"), dict)
         else {"kind": "manifest", "path": ref.source_manifest},
@@ -90,13 +95,6 @@ def _read_frontmatter(path: Path) -> dict[str, Any]:
     except yaml.YAMLError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
-
-
-def _active_in_for(ref: ComponentRef) -> list[str]:
-    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
-    if isinstance(runtime_hosts, list):
-        return [h for h in runtime_hosts if isinstance(h, str)]
-    return []
 
 
 def _component_path(ref: ComponentRef) -> list[dict[str, str]]:

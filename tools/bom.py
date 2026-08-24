@@ -25,8 +25,14 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 
-OPENACA_BOM_SCHEMA_VERSION = "0.4"
+OPENACA_BOM_SCHEMA_VERSION = "0.5"
 CYCLONEDX_SPEC_VERSION = "1.7"
+
+# The `metadata.component` bom-ref prefix marking an agent-rooted document
+# (ADR-0045). Not `agent/`: the closed component-type set already uses that for a
+# subagent, and a `startswith` test on this prefix decides whether a stored BOM is
+# graph-backed.
+AGENT_ROOT_PREFIX = "root/"
 
 _PURL_TO_ECOSYSTEM = {
     "npm": "npm",
@@ -52,11 +58,16 @@ class BOMEdge:
 class AgentBOM:
     components: list[BOMComponent]
     edges: list[BOMEdge]
-    target_type: str
+    target_type: str | None = None
     target: str | None = None
     source_unit_count: int | None = None
     source_unit_label: str | None = None
     target_bom_ref: str | None = None
+    agent_kind: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    composition_source: str | None = None
+    composition_coverage: str | None = None
 
     def component_refs(self) -> list[ComponentRef]:
         return [component.ref for component in self.components]
@@ -64,8 +75,9 @@ class AgentBOM:
     def to_cyclonedx(self) -> dict[str, Any]:
         metadata_properties = [
             {"name": "openaca:schema_version", "value": OPENACA_BOM_SCHEMA_VERSION},
-            {"name": "openaca:target_type", "value": self.target_type},
         ]
+        if self.target_type is not None:
+            metadata_properties.append({"name": "openaca:target_type", "value": self.target_type})
         if self.target is not None:
             metadata_properties.append({"name": "openaca:target", "value": self.target})
         if self.source_unit_count is not None:
@@ -92,12 +104,7 @@ class AgentBOM:
             "properties": metadata_properties,
         }
         if self.target_bom_ref is not None:
-            metadata["component"] = {
-                "type": "application",
-                "bom-ref": self.target_bom_ref,
-                "name": self.target or self.target_bom_ref,
-                "properties": [{"name": "openaca:component_type", "value": "target"}],
-            }
+            metadata["component"] = self._metadata_component()
 
         return {
             "bomFormat": "CycloneDX",
@@ -108,6 +115,32 @@ class AgentBOM:
             "dependencies": [
                 {"ref": ref, "dependsOn": depends_on} for ref, depends_on in dependencies.items()
             ],
+        }
+
+    def _metadata_component(self) -> dict[str, Any]:
+        assert self.target_bom_ref is not None
+        if self.agent_kind is None:
+            # Legacy place-rooted document (the remote collector).
+            return {
+                "type": "application",
+                "bom-ref": self.target_bom_ref,
+                "name": self.target or self.target_bom_ref,
+                "properties": [{"name": "openaca:component_type", "value": "target"}],
+            }
+        properties = [{"name": "openaca:agent_kind", "value": self.agent_kind}]
+        if self.agent_id is not None:
+            properties.append({"name": "openaca:agent_id", "value": self.agent_id})
+        properties.append(
+            {"name": "openaca:composition_source", "value": self.composition_source or ""}
+        )
+        properties.append(
+            {"name": "openaca:composition_coverage", "value": self.composition_coverage or ""}
+        )
+        return {
+            "type": "application",
+            "bom-ref": self.target_bom_ref,
+            "name": self.agent_name or self.agent_kind,
+            "properties": properties,
         }
 
 
@@ -138,11 +171,16 @@ def _annotate_capabilities(refs: Iterable[ComponentRef]) -> None:
 def build_agent_bom(
     refs: list[ComponentRef],
     *,
-    target_type: str,
+    target_type: str | None = None,
     target: str | None = None,
     source_unit_count: int | None = None,
     source_unit_label: str | None = None,
     graph: Graph | None = None,
+    agent_kind: str | None = None,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+    composition_source: str | None = None,
+    composition_coverage: str | None = None,
 ) -> AgentBOM:
     if graph is not None:
         return _build_agent_bom_from_graph(
@@ -151,6 +189,11 @@ def build_agent_bom(
             target=target,
             source_unit_count=source_unit_count,
             source_unit_label=source_unit_label,
+            agent_kind=agent_kind,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            composition_source=composition_source,
+            composition_coverage=composition_coverage,
         )
     _annotate_capabilities(refs)
     components = [
@@ -164,6 +207,11 @@ def build_agent_bom(
         target=target,
         source_unit_count=source_unit_count,
         source_unit_label=source_unit_label,
+        agent_kind=agent_kind,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        composition_source=composition_source,
+        composition_coverage=composition_coverage,
     )
 
 
@@ -173,10 +221,15 @@ _AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
 def _build_agent_bom_from_graph(
     graph: Graph,
     *,
-    target_type: str,
+    target_type: str | None,
     target: str | None,
     source_unit_count: int | None,
     source_unit_label: str | None,
+    agent_kind: str | None = None,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+    composition_source: str | None = None,
+    composition_coverage: str | None = None,
 ) -> AgentBOM:
     """Encode the composition graph: node.key == bom-ref (the V1 invariant).
 
@@ -219,6 +272,11 @@ def _build_agent_bom_from_graph(
         source_unit_count=source_unit_count,
         source_unit_label=source_unit_label,
         target_bom_ref=root.key,
+        agent_kind=agent_kind,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        composition_source=composition_source,
+        composition_coverage=composition_coverage,
     )
 
 
@@ -245,6 +303,42 @@ def bom_components_from_cyclonedx(doc: dict[str, Any]) -> list[BOMComponent]:
         ref = replace(ref, extra={**(ref.extra or {}), "bom_ref": bom_ref})
         components.append(BOMComponent(ref=ref, bom_ref=bom_ref))
     return components
+
+
+@dataclass(frozen=True)
+class AgentInfo:
+    kind: str
+    agent_id: str | None
+    source: str | None
+    coverage: str | None
+    name: str | None
+
+
+def agent_info_from_cyclonedx(doc: dict[str, Any]) -> AgentInfo | None:
+    """Agent metadata from an agent-rooted document, else None.
+
+    The `root/` bom-ref prefix is the document-shape signal (ADR-0045), which is
+    what `openaca:target_type` used to answer.
+    """
+    metadata = doc.get("metadata")
+    component = metadata.get("component") if isinstance(metadata, dict) else None
+    if not isinstance(component, dict):
+        return None
+    bom_ref = component.get("bom-ref")
+    if not isinstance(bom_ref, str) or not bom_ref.startswith(AGENT_ROOT_PREFIX):
+        return None
+    props = _properties_by_name(component)
+    kind = props.get("openaca:agent_kind")
+    if not kind:
+        return None
+    name = component.get("name")
+    return AgentInfo(
+        kind=kind,
+        agent_id=props.get("openaca:agent_id"),
+        source=props.get("openaca:composition_source"),
+        coverage=props.get("openaca:composition_coverage"),
+        name=name if isinstance(name, str) else None,
+    )
 
 
 def component_refs_from_cyclonedx(doc: dict[str, Any]) -> list[ComponentRef]:
@@ -466,8 +560,6 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:scope", ref.scope)
     _append_prop(props, "openaca:source_manifest", ref.source_manifest)
     _append_prop(props, "openaca:source_locator", ref.source_locator)
-    _append_prop(props, "openaca:agent_host", _agent_host(ref))
-    _append_json_prop(props, "openaca:runtime_hosts", (ref.extra or {}).get("runtime_hosts"))
     _append_json_prop(props, "openaca:declared_by", (ref.extra or {}).get("declared_by"))
     _append_json_prop(props, "openaca:component_path", (ref.extra or {}).get("component_path"))
     _append_json_prop(props, "openaca:source", (ref.extra or {}).get("source"))
@@ -611,14 +703,6 @@ def _restore_capabilities(props: dict[str, str], extra: dict[str, Any]) -> None:
         return
     extra["capabilities"] = capabilities
     extra["capability_coverage"] = coverage
-
-
-def _agent_host(ref: ComponentRef) -> str | None:
-    runtime_hosts = (ref.extra or {}).get("runtime_hosts")
-    if not isinstance(runtime_hosts, list) or len(runtime_hosts) != 1:
-        return None
-    value = runtime_hosts[0]
-    return value if isinstance(value, str) and value else None
 
 
 def _parse_purl(purl: str) -> dict[str, str]:

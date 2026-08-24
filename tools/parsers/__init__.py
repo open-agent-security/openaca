@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Callable
 
@@ -133,6 +134,8 @@ def _filter_secondary_refs(
 def parse_repo_grouped(
     root: Path,
     include_gitignored: bool = False,
+    *,
+    registry: Sequence[tuple[str, ParserFn]] = REGISTRY,
 ) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
     """Walk `root` and return (per-manifest results, total paths matched).
 
@@ -159,12 +162,18 @@ def parse_repo_grouped(
     when a deduplicated cross-manifest ref list is needed for matching/SARIF;
     those callers want one finding per logical component, not per discovery
     path.
+
+    `registry` defaults to the global flat registry. A caller passes a kind's own
+    `manifest_patterns` instead to walk this tree against just that kind's
+    surface — "the flat manifest registry splits per kind, reached through a
+    surface" — so a repo declaring two kinds counts each kind's own manifests
+    rather than the union.
     """
     spec = None if include_gitignored else load_gitignore_spec(root)
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     for path in iter_unignored_files(root, spec):
-        for pattern, parser in REGISTRY:
+        for pattern, parser in registry:
             if not _registry_pattern_matches(path, root, pattern):
                 continue
             n_found += 1

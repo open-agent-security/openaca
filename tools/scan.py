@@ -1614,9 +1614,16 @@ def scan_bom(
         )
         findings.extend(doc_findings)
         bom_rows: list[tuple[str, str]] = [("file", str(input_path))]
+        agent_key = (agent_info.kind, agent_info.agent_id) if agent_info else (None, None)
+        # `agent_key` matches `match()`'s (agent_kind, agent_id) on each finding
+        # above: an agent-rooted doc's findings carry the agent's (kind, agent_id),
+        # a legacy/pre-agent doc's carry (None, None). Storing under that same key
+        # regardless of `agent_info` keeps `graph_for` (tools/finding_output.py)
+        # able to resolve a legacy graph-backed BOM's lineage/attribution for the
+        # JSON/SARIF/github/exposure paths, not just the text card below.
+        if doc_graph is not None:
+            graphs[agent_key] = doc_graph
         if agent_info is not None:
-            if doc_graph is not None:
-                graphs[(agent_info.kind, agent_info.agent_id)] = doc_graph
             bom_rows.append(("agent", f"{agent_info.kind} ({agent_info.source or 'unknown'})"))
             bom_rows.append(("coverage", agent_info.coverage or "unknown"))
             summaries.append(

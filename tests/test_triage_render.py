@@ -193,6 +193,52 @@ def test_markdown_report_collapses_bare_carriage_returns():
     assert "frontend ## Fake path" in rendered
 
 
+def _agent_scan_doc():
+    scan_doc = _scan_doc()
+    scan_doc["findings"][0]["agent"] = {"kind": "claude_code", "agent_id": "repo-a"}
+    return scan_doc
+
+
+def test_text_report_shows_agent_identity():
+    # Two agents of the same kind loading the same component produce
+    # identical-looking cards (same label, same `active_in`) unless the
+    # human-facing card also states which agent each remediation belongs to.
+    scan_doc = _agent_scan_doc()
+    rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="text")
+
+    assert "   agent: claude_code/repo-a" in rendered
+
+
+def test_markdown_report_shows_agent_identity():
+    scan_doc = _agent_scan_doc()
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "- Agent: `claude_code/repo-a`" in rendered
+
+
+def test_text_report_omits_agent_line_for_pre_agent_scan_document():
+    scan_doc = _scan_doc()
+    rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="text")
+
+    assert "agent:" not in rendered
+
+
+def test_markdown_report_escapes_untrusted_agent_identity():
+    scan_doc = _agent_scan_doc()
+    scan_doc["findings"][0]["agent"] = {
+        "kind": "claude_code",
+        "agent_id": "evil`\n## Fake heading",
+    }
+    rendered = render_triage_report(
+        build_triage_cards(scan_doc), scan_doc, output_format="markdown"
+    )
+
+    assert "\n## Fake heading" not in rendered
+    assert "evil'" in rendered
+
+
 def test_json_report_preserves_evidence_references():
     scan_doc = _scan_doc()
     rendered = render_triage_report(build_triage_cards(scan_doc), scan_doc, output_format="json")

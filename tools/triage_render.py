@@ -52,6 +52,13 @@ def render_triage_text(cards: list[TriageCard], scan_doc: dict[str, Any]) -> str
                 "",
                 f"{card.rank}. {card.priority.upper()} - {card.component_label}",
                 f"   type: {card.component_type}",
+            ]
+        )
+        agent_label = _agent_label(card)
+        if agent_label:
+            lines.append(f"   agent: {agent_label}")
+        lines.extend(
+            [
                 f"   path: {_path_label(card.composition_path)}",
                 f"   evidence: {_evidence_summary(card)}",
                 f"   why: {card.why_it_matters}",
@@ -83,6 +90,13 @@ def render_triage_markdown(cards: list[TriageCard], scan_doc: dict[str, Any]) ->
                 f"### {card.rank}. {card.priority.upper()} - {label}",
                 "",
                 f"- Type: `{_code_span_safe(card.component_type)}`",
+            ]
+        )
+        agent_label = _agent_label(card)
+        if agent_label:
+            lines.append(f"- Agent: `{_code_span_safe(agent_label)}`")
+        lines.extend(
+            [
                 f"- Path: `{_path_label_code_span(card.composition_path)}`",
                 f"- Evidence: {_evidence_summary(card, escape=True)}",
                 f"- Action: `{card.action}`",
@@ -147,6 +161,21 @@ def _evidence_summary(card: TriageCard, *, escape: bool = False) -> str:
     return ", ".join(
         f"{_clean(item.id)} ({item.severity}, {item.provenance})" for item in card.evidence
     )
+
+
+def _agent_label(card: TriageCard) -> str | None:
+    """`kind/agent_id`, or bare `kind` for a singleton agent (ADR-0044).
+
+    Two agents of the same kind produce identical-looking cards otherwise
+    (same component, same `active_in`), so a human card needs this to tell
+    them apart. `None` for a pre-agent scan document, matching
+    `TriageCard.to_dict`'s omit-rather-than-null convention.
+    """
+    if not card.agent_kind:
+        return None
+    if not card.agent_id:
+        return card.agent_kind
+    return f"{card.agent_kind}/{card.agent_id}"
 
 
 def _path_label(path: list[dict[str, str]]) -> str:

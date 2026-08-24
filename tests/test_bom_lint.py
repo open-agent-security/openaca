@@ -137,6 +137,23 @@ def test_bom_lint_rejects_schema_errors(tmp_path):
     assert "'CycloneDX' was expected" in result.output
 
 
+def test_bom_lint_rejects_metadata_component_missing_name_and_type(tmp_path):
+    """`metadata.component` is the named agent root (ADR-0044) and every current
+    emitter writes `type`/`bom-ref`/`name` on it, same as any `components[]`
+    entry — the schema should require them here too rather than only on
+    `components[]`."""
+    doc = _agent_doc()
+    del doc["metadata"]["component"]["type"]
+    del doc["metadata"]["component"]["name"]
+    path = tmp_path / "incomplete-root.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "schema:" in result.output
+
+
 def _valid_bom_doc() -> dict:
     return {
         "bomFormat": "CycloneDX",
@@ -467,6 +484,23 @@ def test_lint_rejects_schema_0_5_with_a_non_agent_root(tmp_path):
         {"name": "openaca:component_type", "value": "target"}
     ]
     path = tmp_path / "place-root.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "root/" in result.output
+
+
+def test_lint_rejects_agent_root_labeled_as_schema_0_4(tmp_path):
+    """The converse of `test_lint_rejects_schema_0_5_without_an_agent_root`: a
+    valid `root/`-prefixed metadata.component with agent properties, but a
+    `openaca:schema_version` of `0.4`, claims the legacy place-rooted shape it
+    does not have (ADR-0044/0045 define `0.5` as the agent-rooted shape,
+    exactly and only)."""
+    doc = _agent_doc()
+    doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": "0.4"}]
+    path = tmp_path / "mislabeled.cdx.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
 
     result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])

@@ -79,13 +79,18 @@ def get_pending_dir() -> Path:
     return Path.home() / ".local" / "state" / "openaca"
 
 
-def _agent_refs(agent: AgentInstance) -> tuple[Graph, list[ComponentRef]]:
+def _agent_refs(agent: AgentInstance, warnings: list[str]) -> tuple[Graph, list[ComponentRef]]:
     """Build the agent's composition graph and return its agent-scope refs.
+
+    `warnings` is populated in place by `build_agent_graph` (malformed or
+    unreadable manifests, invalid install entries) — the same signal the scan
+    path feeds into `resolve_coverage(..., evidence_gaps=len(warnings))` so a
+    partially-composed agent is not uploaded as `complete`.
 
     Isolated as a helper so tests can monkeypatch this single boundary
     rather than every graph-build internal.
     """
-    graph = build_agent_graph(agent)
+    graph = build_agent_graph(agent, warnings=warnings)
     all_refs = [
         replace(
             node.ref,
@@ -138,7 +143,8 @@ def _build_agent_collection(
     *,
     external_scanners: tuple[str, ...],
 ) -> EndpointCollection:
-    graph, refs = _agent_refs(agent)
+    warnings: list[str] = []
+    graph, refs = _agent_refs(agent, warnings)
     bom = _prepare_remote_bom(
         build_agent_bom(
             refs,
@@ -153,7 +159,9 @@ def _build_agent_collection(
             agent_id=agent.agent_id,
             agent_name=agent.display_name,
             composition_source=agent.source,
-            composition_coverage=resolve_coverage(agent.coverage_baseline, evidence_gaps=0),
+            composition_coverage=resolve_coverage(
+                agent.coverage_baseline, evidence_gaps=len(warnings)
+            ),
         ).to_cyclonedx()
     )
     mcp_manifests, settings_manifests = _agent_posture_manifests(agent, refs)

@@ -998,12 +998,19 @@ admission:
         )
     )
     (tmp_path / "plugins").mkdir()
+    install_path = tmp_path / "cache" / "unsafe" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text('{"name": "unsafe"}')
     (tmp_path / "plugins" / "installed_plugins.json").write_text(
         json.dumps(
             {
                 "plugins": {
                     "unsafe@untrusted": [
-                        {"scope": "user", "version": "1.0", "installPath": "/missing"}
+                        {
+                            "scope": "user",
+                            "version": "1.0",
+                            "installPath": str(install_path),
+                        }
                     ]
                 }
             }
@@ -1077,6 +1084,52 @@ admission:
     assert result.exit_code == 1
     assert "missing@nowhere" in result.output
     assert "installed_plugins.json" in result.output
+
+
+def test_policy_cli_fails_when_an_enabled_plugin_install_path_is_unavailable(tmp_path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+"""
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": {"missing@m": True}}))
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "missing@m": [{"scope": "user", "version": "1.0", "installPath": "/missing"}]
+                }
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude",
+            "--dry-run",
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "missing@m" in result.output
+    assert "installPath" in result.output
 
 
 def test_policy_cli_fails_when_an_mcp_manifest_cannot_be_parsed(tmp_path):

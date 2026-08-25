@@ -13,6 +13,7 @@ import yaml
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
 from tools.lint import UPSTREAM_ID_RE
+from tools.marketplace import key as marketplace_key
 from tools.overlays import id_set
 from tools.posture import KNOWN_RULE_IDS
 from tools.severity import derive_severity_label
@@ -43,14 +44,22 @@ def _construct_mapping(
     mapping: dict[Any, Any] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
-        if key in mapping:
+        try:
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key ({key!r})",
+                    key_node.start_mark,
+                )
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        except TypeError as exc:
             raise yaml.constructor.ConstructorError(
                 "while constructing a mapping",
                 node.start_mark,
-                f"found duplicate key ({key!r})",
+                "found an unhashable key",
                 key_node.start_mark,
-            )
-        mapping[key] = loader.construct_object(value_node, deep=deep)
+            ) from exc
     return mapping
 
 
@@ -74,11 +83,11 @@ class PluginTarget:
     plugin: str | None = None
     marketplace: str | None = None
 
-    def key(self) -> tuple[str, str]:
+    def key(self) -> tuple[str, object]:
         if self.plugin is not None:
             return ("plugin", self.plugin)
         assert self.marketplace is not None
-        return ("marketplace", _normalize_marketplace_url(self.marketplace))
+        return ("marketplace", marketplace_key(self.marketplace))
 
 
 @dataclass(frozen=True)
@@ -510,18 +519,8 @@ def _target_matches(ref: ComponentRef, target: McpTarget | PluginTarget) -> bool
     return (
         isinstance(source, str)
         and isinstance(target.marketplace, str)
-        and _normalize_marketplace_url(source) == _normalize_marketplace_url(target.marketplace)
+        and marketplace_key(source) == marketplace_key(target.marketplace)
     )
-
-
-def _normalize_marketplace_url(value: str) -> str:
-    """Strip a trailing ``.git`` so a policy target matches a discovered source.
-
-    ``_marketplace_source`` (``tools.parsers.claude_install``) always appends
-    ``.git`` for a GitHub-sourced marketplace, but a policy author writing the
-    target by hand has no reason to include it.
-    """
-    return value[:-4] if value.endswith(".git") else value
 
 
 def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[str, Any]) -> bool:

@@ -122,6 +122,14 @@ def test_policy_load_rejects_duplicate_mapping_keys(tmp_path, suffix, document):
         load(policy_path)
 
 
+def test_policy_load_rejects_an_unhashable_mapping_key(tmp_path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("? [version]\n: 1\n")
+
+    with pytest.raises(PolicyValidationError, match="unhashable key"):
+        load(policy_path)
+
+
 def test_policy_rejects_target_in_both_lists():
     with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
         parse(
@@ -151,6 +159,24 @@ def test_plugin_marketplace_targets_reject_normalized_overlap():
                         "default": "allowed",
                         "allowed": [{"marketplace": "https://github.com/acme/plugins"}],
                         "blocked": [{"marketplace": "https://github.com/acme/plugins.git"}],
+                    },
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
+def test_plugin_marketplace_targets_reject_renderer_equivalent_overlap():
+    with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {
+                        "default": "allowed",
+                        "allowed": [{"marketplace": "https://github.com/acme/plugins/"}],
+                        "blocked": [{"marketplace": "https://github.com/acme/plugins"}],
                     },
                     "skills": {"default": "allowed"},
                 },

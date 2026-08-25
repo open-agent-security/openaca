@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 def key(value: str) -> tuple[str, str]:
     """Return the host-native comparison key for a marketplace source."""
     parsed = urlparse(value)
+    if parsed.query or parsed.fragment:
+        raise ValueError("marketplace source must not contain a query or fragment")
     if parsed.scheme in {"http", "https"} and parsed.hostname == "github.com":
         repo = parsed.path.strip("/")
         if repo.endswith(".git"):

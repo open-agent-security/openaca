@@ -511,7 +511,7 @@ def _seed_active_plugins(
         )
         # Plugin tier-2 lockfile deps: parity with parse_install — attach as
         # package children of the plugin node (NOT a skill).
-        for ref in claude_install._walk_plugin_implementation_deps(install_dir):
+        for ref in claude_install._walk_plugin_implementation_deps(install_dir, warnings=warnings):
             node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, plugin_node, node)
 

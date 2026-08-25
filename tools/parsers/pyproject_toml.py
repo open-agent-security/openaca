@@ -70,7 +70,7 @@ def _emit_specs(specs: Iterable[object], source_manifest: str, locator: str) -> 
     return refs
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         return []

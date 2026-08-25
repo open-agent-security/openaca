@@ -1119,6 +1119,33 @@ def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
     )
 
 
+def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    install_path.mkdir(parents=True)
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+    (install_path / "package-lock.json").write_text("not valid json")
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any("package-lock.json" in warning for warning in warnings), warnings
+
+
 def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):
     """Direct endpoint skills whose SKILL.md appears in a .skill-lock.json
     must carry source_provenance in their ref's extra dict (parity with the

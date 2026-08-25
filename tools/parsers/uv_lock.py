@@ -17,11 +17,13 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError):
+        if strict:
+            raise
         return []
     if not isinstance(data, dict):
         return []

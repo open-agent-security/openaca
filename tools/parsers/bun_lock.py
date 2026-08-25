@@ -32,14 +32,13 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     try:
         raw = path.read_text()
-    except (OSError, UnicodeDecodeError):
-        return []
-    try:
         data = json.loads(_strip_trailing_commas(raw))
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        if strict:
+            raise
         return []
     if not isinstance(data, dict):
         return []

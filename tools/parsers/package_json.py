@@ -10,7 +10,7 @@ from tools.component_ref import ComponentRef
 DEP_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
     if not isinstance(data, dict):

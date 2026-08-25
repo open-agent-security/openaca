@@ -57,6 +57,12 @@ def test_policy_requires_exact_v1_shape():
         parse({"version": 1, "admission": {}, "unknown": True})
 
 
+@pytest.mark.parametrize("field", [1, True])
+def test_policy_rejects_non_string_fields_cleanly(field):
+    with pytest.raises(PolicyValidationError, match="field names must be strings"):
+        parse({"version": 1, "admission": {}, field: True})
+
+
 def test_policy_requires_a_version_field():
     with pytest.raises(PolicyValidationError, match="policy.version must be 1"):
         parse(
@@ -185,6 +191,30 @@ def test_plugin_marketplace_targets_reject_renderer_equivalent_overlap():
                         "default": "allowed",
                         "allowed": [{"marketplace": "https://github.com/acme/plugins/"}],
                         "blocked": [{"marketplace": "https://github.com/acme/plugins"}],
+                    },
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "marketplace",
+    [
+        "https://github.com/acme/plugins?ref=reviewed",
+        "https://github.com/acme/plugins#reviewed",
+    ],
+)
+def test_plugin_marketplace_targets_reject_urls_with_selectors(marketplace):
+    with pytest.raises(PolicyValidationError, match="query or fragment"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {
+                        "default": "allowed",
+                        "allowed": [{"marketplace": marketplace}],
                     },
                     "skills": {"default": "allowed"},
                 },

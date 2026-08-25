@@ -11,7 +11,7 @@ from typing import Any, Literal
 import yaml
 
 from tools.component_ref import ComponentRef
-from tools.graph import Graph
+from tools.graph import Graph, ref_occurrence_key
 from tools.overlays import id_set
 from tools.severity import derive_severity_label
 
@@ -152,7 +152,7 @@ def to_document(policy: Policy) -> dict[str, Any]:
 
 def evaluate_admission(policy: Policy, components: list[EndpointComponent]) -> list[Decision]:
     """Evaluate admission only; risk findings are applied by ``apply_risk_gates``."""
-    return [_admission_decision(policy, component.ref) for component in components]
+    return [_admission_decision(policy, component.ref, component.graph) for component in components]
 
 
 def apply_risk_gates(
@@ -169,8 +169,13 @@ def apply_risk_gates(
     based. A plugin child resolves to its owning plugin before the restriction
     is added, preserving the plugin trust boundary.
     """
-    decisions = {id(c.ref): _admission_decision(policy, c.ref) for c in components}
+    decisions = {id(c.ref): _admission_decision(policy, c.ref, c.graph) for c in components}
     component_by_ref = {id(c.ref): c for c in components}
+    # `_restriction_target` resolves a finding to a graph node's own `ref`,
+    # which is a distinct object from the `dataclasses.replace` copy scan
+    # projects into `components` (see `_refs_from_graph`). This index maps
+    # that occurrence back to the copy actually keyed in `decisions`.
+    component_by_occurrence = {ref_occurrence_key(c.ref): c for c in components}
     advisory_by_id = {
         record.get("id"): record for record in advisories if isinstance(record.get("id"), str)
     }
@@ -181,13 +186,13 @@ def apply_risk_gates(
             policy.risk_gates.vulnerabilities, advisory
         ):
             continue
-        target = _restriction_target(ref, component_by_ref.get(id(ref)))
+        target = _restriction_target(ref, component_by_ref.get(id(ref)), component_by_occurrence)
         _block_decision(decisions, target, f"vulnerability {advisory_id}")
 
     for ref, rule_id in posture_matches:
         if rule_id not in policy.risk_gates.posture_rule_ids:
             continue
-        target = _restriction_target(ref, component_by_ref.get(id(ref)))
+        target = _restriction_target(ref, component_by_ref.get(id(ref)), component_by_occurrence)
         _block_decision(decisions, target, f"posture {rule_id}")
 
     return [decisions[id(c.ref)] for c in components]
@@ -360,11 +365,20 @@ def _category(ref: ComponentRef) -> ComponentCategory | None:
     return None
 
 
-def _admission_decision(policy: Policy, ref: ComponentRef) -> Decision:
+def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None = None) -> Decision:
     category = _category(ref)
     if category is None:
         return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
     if category == "skills":
+        plugin_ref = _owning_plugin_ref(ref, graph)
+        if plugin_ref is not None:
+            plugin_decision = _admission_decision(policy, plugin_ref, graph)
+            return Decision(
+                ref=ref,
+                category=category,
+                blocked=plugin_decision.blocked,
+                reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
+            )
         blocked = policy.skills_default == "blocked"
         return Decision(
             ref=ref,
@@ -427,14 +441,27 @@ def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[s
     return _SEVERITY_ORDER.get(severity, -1) >= _SEVERITY_ORDER[gate.severity_at_least]
 
 
-def _restriction_target(ref: ComponentRef, component: EndpointComponent | None) -> ComponentRef:
-    if component is None or component.graph is None:
-        return ref
-    node = component.graph.node_for_ref(ref)
+def _owning_plugin_ref(ref: ComponentRef, graph: Graph | None) -> ComponentRef | None:
+    if graph is None:
+        return None
+    node = graph.node_for_ref(ref)
     if node is None:
+        return None
+    plugin = graph.nearest_plugin_ancestor(node)
+    return plugin.ref if plugin is not None else None
+
+
+def _restriction_target(
+    ref: ComponentRef,
+    component: EndpointComponent | None,
+    component_by_occurrence: dict[tuple[str, ...], EndpointComponent],
+) -> ComponentRef:
+    graph = component.graph if component is not None else None
+    plugin_ref = _owning_plugin_ref(ref, graph)
+    if plugin_ref is None:
         return ref
-    plugin = component.graph.nearest_plugin_ancestor(node)
-    return plugin.ref if plugin is not None and plugin.ref is not None else ref
+    owner = component_by_occurrence.get(ref_occurrence_key(plugin_ref))
+    return owner.ref if owner is not None else ref
 
 
 def _block_decision(decisions: dict[int, Decision], ref: ComponentRef, reason: str) -> None:

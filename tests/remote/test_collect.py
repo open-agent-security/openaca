@@ -173,8 +173,7 @@ def test_composition_coverage_reflects_graph_warnings(tmp_path, monkeypatch):
 
     assert len(collections) == 1
     props = {
-        p["name"]: p["value"]
-        for p in collections[0].bom["metadata"]["component"]["properties"]
+        p["name"]: p["value"] for p in collections[0].bom["metadata"]["component"]["properties"]
     }
     assert props["openaca:composition_coverage"] == "partial"
 

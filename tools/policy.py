@@ -267,7 +267,18 @@ def _parse_targets(
                     f"{target_label} must contain exactly one of plugin or marketplace"
                 )
             if plugin is not None:
-                if not isinstance(plugin, str) or not plugin or "@" not in plugin:
+                if not isinstance(plugin, str) or not plugin:
+                    raise PolicyValidationError(
+                        f"{target_label}.plugin must be a non-empty plugin@marketplace string"
+                    )
+                # Matches the `<plugin>@<marketplace>` key format
+                # `installed_plugins.json` itself uses (see
+                # `tools.parsers.claude_install._split_plugin_key`): split on
+                # the last "@" so a scoped plugin name (`@scope/plugin`) stays
+                # intact while `foo@`, `@marketplace`, and other malformed
+                # inputs are rejected instead of silently admitted.
+                name, _, marketplace_part = plugin.rpartition("@")
+                if not name or not marketplace_part:
                     raise PolicyValidationError(
                         f"{target_label}.plugin must be a non-empty plugin@marketplace string"
                     )

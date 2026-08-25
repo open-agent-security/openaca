@@ -36,6 +36,18 @@ def compile_policy(policy: Policy, decisions: list[Decision]) -> ClaudeCompilati
                 f"{_component_label(decision)}: direct skill risk block is "
                 "not enforceable by Claude"
             )
+        elif decision.category == "other" and decision.blocked:
+            # A risk finding on a component outside mcps/plugins/skills (for
+            # example an agent-dependency package beneath a standalone MCP
+            # server) has no plugin owner and no host-native command/URL/
+            # plugin identifier of its own. Per spec ("If no exact target
+            # exists, preserve the finding and report it as not enforceable"),
+            # this must surface, not silently disappear because "other"
+            # decisions are never rendered into managed settings.
+            limitations.append(
+                f"{_component_label(decision)}: risk block has no host-native "
+                "target and is not enforceable by Claude"
+            )
     return ClaudeCompilation(settings=settings, limitations=tuple(_dedupe(limitations)))
 
 

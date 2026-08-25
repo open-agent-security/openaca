@@ -421,6 +421,90 @@ def test_mcp_bundled_in_an_allowed_plugin_is_not_blocked_by_mcps_default():
     assert decisions[1].blocked is False
 
 
+def test_mcp_bundled_in_a_blocked_plugin_is_not_added_to_the_global_denylist():
+    """A blocked plugin's bundled MCP already loses capability through that
+    plugin's `enabledPlugins: false` entry. Compiling its command into the
+    identity-agnostic `deniedMcpServers` list would also block an unrelated
+    standalone server sharing the same command — this must not happen."""
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "blocked"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    shared_command = ["npx", "-y", "shared-mcp"]
+    bundled_mcp = _mcp(shared_command)
+    graph = _graph_with_plugin_child(plugin, bundled_mcp, "mcp_server")
+    standalone_mcp = _mcp(shared_command)
+
+    decisions = apply_risk_gates(
+        policy,
+        [
+            EndpointComponent(plugin, graph),
+            EndpointComponent(bundled_mcp, graph),
+            EndpointComponent(standalone_mcp),
+        ],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[1].blocked is True
+    assert decisions[2].blocked is False
+    assert compilation.settings["enabledPlugins"] == {"bundle@internal": False}
+    assert "deniedMcpServers" not in compilation.settings
+
+
+def test_package_bundled_in_a_blocked_plugin_inherits_the_plugin_decision():
+    """Spec: a plugin remains the trust boundary for "bundled MCP servers,
+    skills, and other contents" — including a component outside the
+    mcps/plugins/skills taxonomy, such as a dependency package. It must
+    reflect the real, plugin-enforced block rather than being reported as
+    unconditionally outside policy scope, but since `enabledPlugins: false`
+    already covers it, compile_policy must not also report it as an
+    unenforceable risk block."""
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {
+                    "default": "allowed",
+                    "blocked": [{"plugin": "bundle@internal"}],
+                },
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    package = ComponentRef(name="left-pad", version="1.0.0")
+    graph = _graph_with_plugin_child(plugin, package, "package")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(package, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[1].category == "other"
+    assert decisions[1].blocked is True
+    assert decisions[1].reasons == ("owning plugin: admission blocked",)
+    assert compilation.limitations == ()
+
+
 def test_standalone_skill_still_follows_skills_default():
     policy = _policy()
     skill = ComponentRef(name="helper", extra={"component_type": "skill"})

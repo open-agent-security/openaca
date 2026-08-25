@@ -396,22 +396,25 @@ def _category(ref: ComponentRef) -> ComponentCategory | None:
 
 def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None = None) -> Decision:
     category = _category(ref)
-    if category is None:
-        return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
     # Spec: "A plugin remains the trust boundary for its bundled MCP servers,
-    # skills, and other contents." A component contained by a plugin inherits
-    # the plugin's own admission decision outright rather than being evaluated
-    # independently against `mcps`/`skills` targets or defaults.
+    # skills, and other contents." Any non-plugin component contained by a
+    # plugin — including one outside the mcps/plugins/skills taxonomy, such
+    # as a hook, command, agent, or dependency package — inherits the
+    # plugin's own admission decision outright rather than being evaluated
+    # independently against `mcps`/`skills` targets/defaults, or reported as
+    # unconditionally outside policy scope.
     if category != "plugins":
         plugin_ref = _owning_plugin_ref(ref, graph)
         if plugin_ref is not None:
             plugin_decision = _admission_decision(policy, plugin_ref, graph)
             return Decision(
                 ref=ref,
-                category=category,
+                category=category or "other",
                 blocked=plugin_decision.blocked,
                 reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
             )
+    if category is None:
+        return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
     if category == "skills":
         blocked = policy.skills_default == "blocked"
         return Decision(

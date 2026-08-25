@@ -40,14 +40,21 @@ def compile_policy(policy: Policy, decisions: list[Decision]) -> ClaudeCompilati
                 f"{_component_label(decision)}: direct skill risk block is "
                 "not enforceable by Claude"
             )
-        elif decision.category == "other" and decision.blocked:
+        elif (
+            decision.category == "other"
+            and decision.blocked
+            and not _blocked_via_owning_plugin(decision)
+        ):
             # A risk finding on a component outside mcps/plugins/skills (for
             # example an agent-dependency package beneath a standalone MCP
             # server) has no plugin owner and no host-native command/URL/
             # plugin identifier of its own. Per spec ("If no exact target
             # exists, preserve the finding and report it as not enforceable"),
             # this must surface, not silently disappear because "other"
-            # decisions are never rendered into managed settings.
+            # decisions are never rendered into managed settings. A component
+            # blocked solely because its owning plugin is blocked is already
+            # covered by that plugin's `enabledPlugins: false` entry, so no
+            # limitation is needed there.
             limitations.append(
                 f"{_component_label(decision)}: risk block has no host-native "
                 "target and is not enforceable by Claude"
@@ -60,7 +67,11 @@ def _compile_mcps(policy: Policy, decisions: list[Decision], settings: dict) -> 
     allowed = [_mcp_setting(target) for target in rule.allowed if isinstance(target, McpTarget)]
     blocked = [_mcp_setting(target) for target in rule.blocked if isinstance(target, McpTarget)]
     for decision in decisions:
-        if decision.category == "mcps" and decision.blocked:
+        if (
+            decision.category == "mcps"
+            and decision.blocked
+            and not _blocked_via_owning_plugin(decision)
+        ):
             target = _mcp_setting_from_ref(decision)
             if target is not None:
                 blocked.append(target)
@@ -174,6 +185,24 @@ def _marketplace_setting(value: str) -> dict:
         if repo.count("/") == 1:
             return {"source": "github", "repo": repo}
     return {"source": "git", "url": value}
+
+
+def _blocked_via_owning_plugin(decision: Decision) -> bool:
+    """A component blocked purely because its owning plugin is blocked.
+
+    ``tools.policy._admission_decision`` prefixes every reason with
+    ``"owning plugin: "`` when a decision is entirely inherited from the
+    owning plugin, and never appends an unprefixed reason afterward (risk
+    gates on a plugin child redirect the block to the plugin's own decision
+    via ``_restriction_target``). Such a component already loses capability
+    through that plugin's ``enabledPlugins: false`` entry; compiling its own
+    command/URL into a global, identity-agnostic deny list would also block
+    unrelated occurrences of the same command/URL (e.g. a different, allowed
+    plugin, or a standalone server).
+    """
+    return bool(decision.reasons) and all(
+        reason.startswith("owning plugin: ") for reason in decision.reasons
+    )
 
 
 def _component_label(decision: Decision) -> str:

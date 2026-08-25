@@ -8,7 +8,13 @@ from click.testing import CliRunner
 
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
-from tools.policy import EndpointComponent, PolicyValidationError, apply_risk_gates, parse
+from tools.policy import (
+    EndpointComponent,
+    PluginTarget,
+    PolicyValidationError,
+    apply_risk_gates,
+    parse,
+)
 from tools.policy_claude import compile_policy
 from tools.policy_cli import main as policy_main
 
@@ -80,6 +86,41 @@ def test_policy_rejects_an_unknown_posture_rule_id():
                 "risk_gates": {"posture": {"rules": ["openaca-posture-does-not-exist"]}},
             }
         )
+
+
+@pytest.mark.parametrize("plugin", ["@scope/plugin", "foo@", "@marketplace"])
+def test_plugin_target_rejects_identifiers_without_a_valid_marketplace_separator(plugin):
+    with pytest.raises(PolicyValidationError, match="plugin@marketplace"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {"default": "allowed", "blocked": [{"plugin": plugin}]},
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
+def test_plugin_target_accepts_a_scoped_plugin_name():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {
+                    "default": "allowed",
+                    "blocked": [{"plugin": "@scope/plugin@internal"}],
+                },
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+
+    target = policy.plugins.blocked[0]
+    assert isinstance(target, PluginTarget)
+    assert target.plugin == "@scope/plugin@internal"
 
 
 def test_exact_mcp_command_is_allowed_and_other_command_follows_default():
@@ -159,6 +200,45 @@ def test_risk_gate_on_plugin_child_blocks_the_owning_plugin():
     assert decisions[0].reasons[-1] == "vulnerability GHSA-1234"
     assert decisions[1].category == "mcps"
     assert decisions[1].blocked is False
+
+
+def test_risk_gate_on_a_standalone_mcp_dependency_is_reported_not_enforceable():
+    """A vulnerability on an agent-dependency package beneath a standalone MCP
+    server (no owning plugin) has no host-native target of its own: it isn't
+    the MCP server's own command/URL, and the spec defines containment
+    resolution only for plugin ancestors ("If that occurrence belongs to a
+    plugin, the owning plugin is always the target... If any step lacks an
+    exact target, the result is not_enforceable"). The finding must surface as
+    a not-enforceable limitation, not silently vanish as an unblocked "other"
+    decision that compile_policy never renders."""
+    policy = _policy(vulnerabilities={"ids": ["CVE-2026-12345"]})
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+    package = ComponentRef(name="left-pad", version="1.0.0")
+    root = Node(key="target", kind="target", ref=None)
+    mcp_node = Node(key="mcp", kind="mcp_server", ref=mcp)
+    package_node = Node(key="package", kind="package", ref=package)
+    graph = Graph(
+        nodes={"target": root, "mcp": mcp_node, "package": package_node},
+        edges=[Edge(parent="target", child="mcp"), Edge(parent="mcp", child="package")],
+    )
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(mcp, graph), EndpointComponent(package, graph)],
+        advisories=[{"id": "GHSA-1234", "aliases": ["CVE-2026-12345"]}],
+        advisory_matches=[(package, "GHSA-1234")],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[0].category == "mcps"
+    assert decisions[0].blocked is False
+    assert decisions[1].category == "other"
+    assert decisions[1].blocked is True
+    assert any(
+        "left-pad" in limitation and "not enforceable" in limitation
+        for limitation in compilation.limitations
+    )
 
 
 def test_skill_bundled_in_an_allowed_plugin_is_not_blocked_by_skills_default():

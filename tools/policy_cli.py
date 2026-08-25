@@ -311,10 +311,10 @@ def _report(
                 "source_manifest": decision.ref.source_manifest,
                 "source_locator": decision.ref.source_locator,
                 "result": (
-                    "not_applicable"
-                    if decision.category == "other"
-                    else "blocked"
+                    "blocked"
                     if decision.blocked
+                    else "not_applicable"
+                    if decision.category == "other"
                     else "allowed"
                 ),
                 "reasons": list(decision.reasons),

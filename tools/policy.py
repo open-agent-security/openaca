@@ -12,6 +12,7 @@ import yaml
 
 from tools.component_ref import ComponentRef
 from tools.graph import Graph, ref_occurrence_key
+from tools.lint import UPSTREAM_ID_RE
 from tools.overlays import id_set
 from tools.posture import KNOWN_RULE_IDS
 from tools.severity import derive_severity_label
@@ -327,6 +328,12 @@ def _parse_risk_gates(value: object) -> RiskGates:
         ):
             raise PolicyValidationError(
                 "policy.risk_gates.vulnerabilities.ids must be a string list"
+            )
+        malformed_ids = [item for item in raw_ids if not UPSTREAM_ID_RE.match(item)]
+        if malformed_ids:
+            raise PolicyValidationError(
+                f"policy.risk_gates.vulnerabilities.ids contains malformed id(s): "
+                f"{', '.join(malformed_ids)} (expected GHSA-*, CVE-*, OSV-*, PYSEC-*, or MAL-*)"
             )
         if severity is None and not raw_ids:
             raise PolicyValidationError(

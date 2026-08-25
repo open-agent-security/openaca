@@ -14,6 +14,7 @@ from tools.policy import (
     PolicyEvaluationError,
     PolicyValidationError,
     apply_risk_gates,
+    load,
     parse,
 )
 from tools.policy_claude import compile_policy
@@ -56,6 +57,19 @@ def test_policy_requires_exact_v1_shape():
         parse({"version": 1, "admission": {}, "unknown": True})
 
 
+def test_policy_requires_a_version_field():
+    with pytest.raises(PolicyValidationError, match="policy.version must be 1"):
+        parse(
+            {
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                }
+            }
+        )
+
+
 @pytest.mark.parametrize("version", [True, 1.0, "1"])
 def test_policy_requires_an_integer_version(version):
     with pytest.raises(PolicyValidationError, match="policy.version must be 1"):
@@ -71,6 +85,43 @@ def test_policy_requires_an_integer_version(version):
         )
 
 
+@pytest.mark.parametrize(
+    ("suffix", "document"),
+    [
+        (
+            "yaml",
+            """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+risk_gates:
+  vulnerabilities:
+    ids: [CVE-2026-12345]
+risk_gates: {}
+""",
+        ),
+        (
+            "json",
+            '{"version": 1, "admission": {"mcps": {"default": "allowed"}, '
+            '"plugins": {"default": "allowed"}, "skills": {"default": "allowed"}}, '
+            '"risk_gates": {"vulnerabilities": {"ids": ["CVE-2026-12345"]}}, '
+            '"risk_gates": {}}',
+        ),
+    ],
+)
+def test_policy_load_rejects_duplicate_mapping_keys(tmp_path, suffix, document):
+    policy_path = tmp_path / f"policy.{suffix}"
+    policy_path.write_text(document)
+
+    with pytest.raises(PolicyValidationError, match="duplicate key"):
+        load(policy_path)
+
+
 def test_policy_rejects_target_in_both_lists():
     with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
         parse(
@@ -83,6 +134,24 @@ def test_policy_rejects_target_in_both_lists():
                         "blocked": [{"url": "https://example.com/mcp"}],
                     },
                     "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
+def test_plugin_marketplace_targets_reject_normalized_overlap():
+    with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {
+                        "default": "allowed",
+                        "allowed": [{"marketplace": "https://github.com/acme/plugins"}],
+                        "blocked": [{"marketplace": "https://github.com/acme/plugins.git"}],
+                    },
                     "skills": {"default": "allowed"},
                 },
             }

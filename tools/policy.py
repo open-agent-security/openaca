@@ -13,6 +13,7 @@ import yaml
 from tools.component_ref import ComponentRef
 from tools.graph import Graph, ref_occurrence_key
 from tools.overlays import id_set
+from tools.posture import KNOWN_RULE_IDS
 from tools.severity import derive_severity_label
 
 AdmissionDefault = Literal["allowed", "blocked"]
@@ -334,6 +335,12 @@ def _parse_risk_gates(value: object) -> RiskGates:
         ):
             raise PolicyValidationError(
                 "policy.risk_gates.posture.rules must be a non-empty string list"
+            )
+        unknown = set(rules) - KNOWN_RULE_IDS
+        if unknown:
+            raise PolicyValidationError(
+                f"policy.risk_gates.posture.rules contains unknown rule id(s): "
+                f"{', '.join(sorted(unknown))}"
             )
         posture_rule_ids = frozenset(rules)
     return RiskGates(vulnerabilities=vulnerabilities, posture_rule_ids=posture_rule_ids)

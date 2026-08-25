@@ -83,8 +83,8 @@ def compile(
         raise click.UsageError("--output is required unless --dry-run is set")
     try:
         policy = load(policy_path)
-        components, advisory_matches, advisories, posture_matches = _evaluate_endpoint(
-            policy, target, project
+        components, advisory_matches, advisories, posture_matches, unmapped_posture = (
+            _evaluate_endpoint(policy, target, project)
         )
         decisions = apply_risk_gates(
             policy,
@@ -102,6 +102,12 @@ def compile(
     except PolicyValidationError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    # Endpoint-level posture findings (no discovered component to attribute the
+    # restriction to, e.g. `openaca-posture-api-endpoint-override`) cannot be
+    # mapped to a `Decision` at all; per spec ("Map the result to a host-native
+    # target. If no exact target exists, preserve the finding and report it as
+    # not enforceable") they must still surface, not silently disappear.
+    limitations = (*rendered.limitations, *unmapped_posture)
     artifact_json = json.dumps(rendered.settings, indent=2, sort_keys=True) + "\n"
     artifact_digest = hashlib.sha256(artifact_json.encode()).hexdigest()
     report = _report(
@@ -109,7 +115,7 @@ def compile(
         decisions,
         rendered.settings,
         artifact_digest,
-        rendered.limitations,
+        limitations,
         output,
         directory / "managed-settings.d" / _OPENACA_FILENAME,
         dry_run,
@@ -132,6 +138,7 @@ def _evaluate_endpoint(
     list[tuple[ComponentRef, str]],
     list[dict[str, Any]],
     list[tuple[ComponentRef, str]],
+    list[str],
 ]:
     agents = discover_agents(
         DiscoveryContext(source="installed", config_dir=target, project_root=project)
@@ -142,13 +149,21 @@ def _evaluate_endpoint(
     components: list[EndpointComponent] = []
     findings: list[tuple[ComponentRef, str]] = []
     posture: list[tuple[ComponentRef, str]] = []
+    unmapped_posture: list[str] = []
     refs_by_agent: list[tuple[AgentInstance, Graph, list[ComponentRef]]] = []
+    graph_warnings: list[str] = []
     for agent in agents:
-        warnings: list[str] = []
-        graph = build_agent_graph(agent, warnings=warnings)
+        graph = build_agent_graph(agent, warnings=graph_warnings)
         refs = _filter_agent_scope_refs(_refs_from_graph(graph))
         components.extend(EndpointComponent(ref, graph) for ref in refs)
         refs_by_agent.append((agent, graph, refs))
+    if graph_warnings:
+        # A dropped or malformed inventory entry means `components` is an
+        # incomplete endpoint inventory: admission and risk gates would be
+        # evaluated as if the missing component didn't exist, silently
+        # implying a complete policy artifact (spec: compilation fails and
+        # does not replace a previous artifact when evaluation is incomplete).
+        raise click.ClickException("; ".join(graph_warnings))
 
     advisories: list[dict[str, Any]] = []
     if policy.risk_gates.vulnerabilities is not None:
@@ -192,9 +207,16 @@ def _evaluate_endpoint(
                 agent_kind=agent.kind_id,
                 agent_id=agent.agent_id,
             ):
+                if finding.rule_id not in policy.risk_gates.posture_rule_ids:
+                    continue
                 if finding.bom_ref and finding.bom_ref in findings_by_ref:
                     posture.append((findings_by_ref[finding.bom_ref], finding.rule_id))
-    return components, findings, advisories, posture
+                else:
+                    unmapped_posture.append(
+                        f"{finding.component_label}: posture {finding.rule_id} is not "
+                        "enforceable (no discovered component target)"
+                    )
+    return components, findings, advisories, posture, unmapped_posture
 
 
 def _default_managed_settings_dir() -> Path:

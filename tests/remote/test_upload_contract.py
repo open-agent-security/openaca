@@ -762,3 +762,70 @@ def _payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+# --- bom.metadata (ADR-0051) -------------------------------------------------
+
+
+def test_rejects_absolute_path_in_metadata_component_properties():
+    payload = {
+        "bom": {
+            "metadata": {
+                "component": {
+                    "properties": [{"name": "openaca:agent_id", "value": "/Users/alex/agents/a"}]
+                }
+            }
+        }
+    }
+
+    with pytest.raises(RemoteUploadContractError, match=r"metadata\.component"):
+        enforce_remote_upload_contract(payload)
+
+
+def test_rejects_absolute_path_in_bom_metadata_properties():
+    payload = {
+        "bom": {"metadata": {"properties": [{"name": "openaca:target", "value": "/Users/alex"}]}}
+    }
+
+    with pytest.raises(RemoteUploadContractError, match=r"metadata\.properties"):
+        enforce_remote_upload_contract(payload)
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("file:///Users/alex/agents/a", r"file://"),
+        ("https://host/agents/a", r"path or query"),
+        ("https://user:pass@host", r"userinfo"),
+    ],
+)
+def test_rejects_other_metadata_component_property_violations(value, match):
+    """`_check_openaca_properties` shares its full rule set (not just the
+    absolute-path check) across every call site, including the two new
+    metadata locations."""
+    payload = {
+        "bom": {
+            "metadata": {
+                "component": {"properties": [{"name": "openaca:agent_id", "value": value}]}
+            }
+        }
+    }
+
+    with pytest.raises(RemoteUploadContractError, match=match):
+        enforce_remote_upload_contract(payload)
+
+
+def test_rejects_absolute_path_in_metadata_component_name():
+    """Not `openaca:`-prefixed, so this proves the enforcer reaches the name
+    by name rather than by prefix filter (ADR-0051)."""
+    payload = {"bom": {"metadata": {"component": {"name": "/Users/alex/agents/payments"}}}}
+
+    with pytest.raises(RemoteUploadContractError, match=r"metadata\.component\.name"):
+        enforce_remote_upload_contract(payload)
+
+
+def test_accepts_a_slash_bearing_display_label():
+    """A legitimate label containing a slash is not a path and must pass."""
+    payload = {"bom": {"metadata": {"component": {"name": "my-org/agent"}}}}
+
+    enforce_remote_upload_contract(payload)

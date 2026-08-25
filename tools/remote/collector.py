@@ -14,10 +14,17 @@ from typing import Any, Mapping
 import click
 import httpx
 
+from tools.agent_kinds import (
+    AgentInstance,
+    DiscoveryContext,
+    build_agent_graph,
+    discover_agents,
+    kind_for,
+    resolve_coverage,
+)
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
 from tools.graph import Graph
-from tools.graph_build import build_graph
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 from tools.observations import (
     ObservationFinding,
@@ -25,13 +32,14 @@ from tools.observations import (
     collect_skill_observations,
     collect_skillspector_findings,
 )
-from tools.posture import (
-    PostureFinding,
-    collect_endpoint_mcp_manifests,
-    collect_endpoint_settings_manifests,
-    run_posture_rules,
+from tools.posture import PostureFinding, run_posture_rules
+from tools.remote.client import (
+    BomUploadResult,
+    RemoteAuthError,
+    RemoteClient,
+    RemoteClientError,
+    RemoteServerError,
 )
-from tools.remote.client import BomUploadResult, RemoteClient, RemoteClientError, RemoteServerError
 from tools.remote.config import (
     RemoteConfig,
     get_config_path,
@@ -45,11 +53,16 @@ from tools.remote.upload_contract import (
 
 JsonObject = dict[str, Any]
 TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
+# A dry run precedes registration, so there may be no asset id yet. Say so
+# explicitly rather than omitting the key or inventing a plausible id: the
+# payload is being shown to a human deciding whether it is safe to send.
+DRY_RUN_UNREGISTERED_ASSET_ID = "(unregistered)"
 _AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
 
 
 @dataclass(frozen=True)
 class EndpointCollection:
+    agent: AgentInstance
     bom: JsonObject
     posture_findings: list[JsonObject]
     observations: list[JsonObject]
@@ -66,15 +79,13 @@ def get_pending_dir() -> Path:
     return Path.home() / ".local" / "state" / "openaca"
 
 
-def _collect_endpoint_components(
-    config_dir: Path, project: Path | None
-) -> tuple[Graph, list[ComponentRef]]:
-    """Build the endpoint composition graph and return agent-scope refs.
+def _agent_refs(agent: AgentInstance) -> tuple[Graph, list[ComponentRef]]:
+    """Build the agent's composition graph and return its agent-scope refs.
 
     Isolated as a helper so tests can monkeypatch this single boundary
     rather than every graph-build internal.
     """
-    graph = build_graph(config_dir, mode="endpoint", project_root=project)
+    graph = build_agent_graph(agent)
     all_refs = [
         replace(
             node.ref,
@@ -87,39 +98,89 @@ def _collect_endpoint_components(
     return graph, [r for r in all_refs if r.scope in _AGENT_SCOPES]
 
 
-def build_endpoint_collection(
+def build_endpoint_collections(
+    *,
     config_dir: Path,
     project: Path | None,
-    *,
     external_scanners: tuple[str, ...] = (),
+) -> list[EndpointCollection]:
+    agents = discover_agents(
+        DiscoveryContext(source="installed", config_dir=config_dir, project_root=project)
+    )
+    return [_build_agent_collection(agent, external_scanners=external_scanners) for agent in agents]
+
+
+def _no_manifests(*_args: object, **_kwargs: object) -> list[tuple[Path, dict]]:
+    return []
+
+
+def _agent_posture_manifests(
+    agent: AgentInstance, refs: list[ComponentRef]
+) -> tuple[list[tuple[Path, dict]], list[tuple[Path, dict]]]:
+    """Read the kind's own installed posture surface, not a Claude-Code-shaped
+    collector called unconditionally for every kind.
+
+    Isolated as a helper for the same reason as `_agent_refs`: tests
+    monkeypatch this single boundary.
+    """
+    mcp_collector, settings_collector = kind_for(agent.kind_id).installed_posture_collectors or (
+        _no_manifests,
+        _no_manifests,
+    )
+    return (
+        mcp_collector(agent.config_root, agent.project_root, refs),
+        settings_collector(agent.config_root, agent.project_root),
+    )
+
+
+def _build_agent_collection(
+    agent: AgentInstance,
+    *,
+    external_scanners: tuple[str, ...],
 ) -> EndpointCollection:
-    graph, refs = _collect_endpoint_components(config_dir, project)
+    graph, refs = _agent_refs(agent)
     bom = _prepare_remote_bom(
         build_agent_bom(
             refs,
-            target_type="endpoint",
-            target=TARGET_LOCATOR_ENDPOINT,
+            # Not the scan path's `str(agent.config_root)`: that is an absolute
+            # path, correct locally under ADR-0003 and a redaction-contract
+            # violation across the upload boundary. The upload names no place.
+            target=None,
             source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
             source_unit_label="active plugin",
             graph=graph,
+            agent_kind=agent.kind_id,
+            agent_id=agent.agent_id,
+            agent_name=agent.display_name,
+            composition_source=agent.source,
+            composition_coverage=resolve_coverage(agent.coverage_baseline, evidence_gaps=0),
         ).to_cyclonedx()
     )
-    mcp_manifests = collect_endpoint_mcp_manifests(config_dir, project, refs)
-    settings_manifests = collect_endpoint_settings_manifests(config_dir, project)
+    mcp_manifests, settings_manifests = _agent_posture_manifests(agent, refs)
     posture_findings = [
-        _posture_finding_to_payload(finding)
-        for finding in run_posture_rules(refs, mcp_manifests, settings_manifests)
+        _posture_finding_to_payload(replace(f, agent_kind=agent.kind_id, agent_id=agent.agent_id))
+        for f in run_posture_rules(
+            refs,
+            mcp_manifests,
+            settings_manifests,
+            allowed_rules=kind_for(agent.kind_id).posture_rules,
+        )
     ]
-    observations, scanner_posture_findings = _collect_scanner_findings(
+    observations, scanner_posture = _collect_scanner_findings(
         refs, external_scanners=external_scanners
     )
     posture_findings.extend(
-        _posture_finding_to_payload(finding) for finding in scanner_posture_findings
+        _posture_finding_to_payload(replace(f, agent_kind=agent.kind_id, agent_id=agent.agent_id))
+        for f in scanner_posture
     )
     return EndpointCollection(
+        agent=agent,
         bom=bom,
         posture_findings=posture_findings,
-        observations=[_observation_to_payload(finding) for finding in observations],
+        observations=[
+            _observation_to_payload(replace(o, agent_kind=agent.kind_id, agent_id=agent.agent_id))
+            for o in observations
+        ],
         component_count=len(bom.get("components") or []),
     )
 
@@ -150,7 +211,7 @@ def collect_endpoint(
     quiet: bool = False,
     allow_offline_cache: bool = False,
     external_scanners: tuple[str, ...] = (),
-) -> BomUploadResult:
+) -> list[BomUploadResult]:
     config_path = get_config_path()
     config = load_remote_config(config_path)
     if config.token is None:
@@ -160,14 +221,11 @@ def collect_endpoint(
     if config.asset_id is not None:
         _replay_pending_uploads(client, config.asset_id)
 
-    if external_scanners:
-        collection = build_endpoint_collection(
-            config_dir=config_dir,
-            project=project,
-            external_scanners=external_scanners,
-        )
-    else:
-        collection = build_endpoint_collection(config_dir=config_dir, project=project)
+    collections = build_endpoint_collections(
+        config_dir=config_dir, project=project, external_scanners=external_scanners
+    )
+    if not collections:
+        click.echo("no installed agent found", err=True)
     asset_id = config.asset_id
     if asset_id is None:
         try:
@@ -181,6 +239,65 @@ def collect_endpoint(
         config = RemoteConfig(api_url=config.api_url, token=config.token, asset_id=asset_id)
         save_remote_config(config, config_path)
 
+    results: list[BomUploadResult] = []
+    cached_failed_agents: list[str] = []
+    rejected_failed_agents: list[str] = []
+    for collection in collections:
+        payload = _prepare_upload_payload(
+            asset_id=asset_id,
+            collection=collection,
+            config_dir=config_dir,
+            project=project,
+        )
+        try:
+            results.append(client.upload_bom(payload))
+        except RemoteAuthError as exc:
+            # One token authenticates every upload in this loop, so a rejected
+            # token rejects every remaining agent too. Continuing would only
+            # spend requests to relearn the same fact.
+            raise CollectError(str(exc)) from exc
+        except (RemoteServerError, httpx.TransportError):
+            path = _write_pending_payload(payload)
+            cached_failed_agents.append(collection.agent.bom_ref)
+            if not quiet:
+                click.echo(
+                    f"saved to {path}; upload failed for {collection.agent.bom_ref} (network)",
+                    err=True,
+                )
+        except RemoteClientError as exc:
+            # Rejects this agent's document, not the connection or the token.
+            # Not cached: retrying an invalid payload unchanged is rejected again.
+            rejected_failed_agents.append(f"{collection.agent.bom_ref} ({exc})")
+            if not quiet:
+                click.echo(f"upload rejected for {collection.agent.bom_ref}: {exc}", err=True)
+    if rejected_failed_agents or (cached_failed_agents and not (quiet or allow_offline_cache)):
+        messages = []
+        if rejected_failed_agents:
+            messages.append(f"upload rejected for: {'; '.join(rejected_failed_agents)}")
+        if cached_failed_agents:
+            messages.append(
+                f"upload failed for: {', '.join(cached_failed_agents)} (network); cached for retry"
+            )
+        raise CollectError(
+            "; ".join(messages),
+            exit_code=1 if rejected_failed_agents else 2,
+        )
+    return results
+
+
+def _prepare_upload_payload(
+    *,
+    asset_id: str,
+    collection: EndpointCollection,
+    config_dir: Path,
+    project: Path | None,
+) -> JsonObject:
+    """Build, redact, hash, and validate one upload payload.
+
+    Shared with the dry-run path so a preview is the wire payload itself
+    rather than a reconstruction of it — a preview assembled separately
+    would drift from what is sent, which is the one thing it must not do.
+    """
     payload = _upload_payload(
         asset_id=asset_id,
         source="endpoint",
@@ -207,16 +324,31 @@ def collect_endpoint(
     # uploads because the redaction is deterministic.
     payload["content_hash"] = _content_hash(payload["bom"])
     enforce_remote_upload_contract(payload)
-    try:
-        return client.upload_bom(payload)
-    except (RemoteServerError, httpx.TransportError) as exc:
-        path = _write_pending_payload(payload)
-        exit_code = 0 if quiet or allow_offline_cache else 2
-        raise CollectError(
-            f"saved to {path}; upload failed (network)", exit_code=exit_code
-        ) from exc
-    except RemoteClientError as exc:
-        raise CollectError(str(exc)) from exc
+    return payload
+
+
+def build_endpoint_dry_run_payloads(
+    *,
+    config_dir: Path,
+    project: Path | None,
+    external_scanners: tuple[str, ...] = (),
+) -> list[JsonObject]:
+    """Build the upload payloads a sync would send, without sending them."""
+    config = load_remote_config(get_config_path())
+    collections = build_endpoint_collections(
+        config_dir=config_dir,
+        project=project,
+        external_scanners=external_scanners,
+    )
+    return [
+        _prepare_upload_payload(
+            asset_id=config.asset_id or DRY_RUN_UNREGISTERED_ASSET_ID,
+            collection=collection,
+            config_dir=config_dir,
+            project=project,
+        )
+        for collection in collections
+    ]
 
 
 # Unix absolute path segment embedded within a larger string (e.g. inside Bash filter syntax).
@@ -563,6 +695,34 @@ def _redact_bom_refs_in_bom(
     return ref_map
 
 
+def _redact_property_list(
+    properties: object,
+    *,
+    config_dir: Path,
+    project: Path | None,
+) -> None:
+    if not isinstance(properties, list):
+        return
+    for prop in properties:
+        if not isinstance(prop, dict):
+            continue
+        prop_name = prop.get("name")
+        if not isinstance(prop_name, str) or not prop_name.startswith("openaca:"):
+            continue
+        value = prop.get("value")
+        if not isinstance(value, str):
+            continue
+        # openaca:source_manifest feeds the graph occurrence key, so redact
+        # it identically to the bom-ref path portion (relativize + out-of-root
+        # digest) — keeping two out-of-root same-basename manifests distinct.
+        if prop_name == "openaca:source_manifest":
+            prop["value"] = _redact_source_path(value, config_dir=config_dir, project=project)
+        else:
+            prop["value"] = _redact_property_value_for_remote(
+                value, config_dir=config_dir, project=project
+            )
+
+
 def _redact_payload_for_remote(
     payload: JsonObject,
     *,
@@ -588,29 +748,30 @@ def _redact_payload_for_remote(
     ref_map: dict[str, str] = {}
     if isinstance(bom, dict):
         ref_map = _redact_bom_refs_in_bom(bom, config_dir=config_dir, project=project)
+        metadata = bom.get("metadata")
+        if isinstance(metadata, dict):
+            _redact_property_list(
+                metadata.get("properties"), config_dir=config_dir, project=project
+            )
+            metadata_component = metadata.get("component")
+            if isinstance(metadata_component, dict):
+                _redact_property_list(
+                    metadata_component.get("properties"), config_dir=config_dir, project=project
+                )
+                # The agent's display label, not an `openaca:*` property — the
+                # prefix filter cannot reach it, and `display_name` is an
+                # unconstrained str (ADR-0051).
+                name = metadata_component.get("name")
+                if isinstance(name, str):
+                    metadata_component["name"] = _redact_property_value_for_remote(
+                        name, config_dir=config_dir, project=project
+                    )
         for component in bom.get("components", []) or []:
             if not isinstance(component, dict):
                 continue
-            for prop in component.get("properties", []) or []:
-                if not isinstance(prop, dict):
-                    continue
-                prop_name = prop.get("name")
-                if not isinstance(prop_name, str) or not prop_name.startswith("openaca:"):
-                    continue
-                value = prop.get("value")
-                if not isinstance(value, str):
-                    continue
-                # openaca:source_manifest feeds the graph occurrence key, so redact
-                # it identically to the bom-ref path portion (relativize + out-of-root
-                # digest) — keeping two out-of-root same-basename manifests distinct.
-                if prop_name == "openaca:source_manifest":
-                    prop["value"] = _redact_source_path(
-                        value, config_dir=config_dir, project=project
-                    )
-                else:
-                    prop["value"] = _redact_property_value_for_remote(
-                        value, config_dir=config_dir, project=project
-                    )
+            _redact_property_list(
+                component.get("properties"), config_dir=config_dir, project=project
+            )
 
     for finding in payload.get("posture_findings", []) or []:
         if not isinstance(finding, dict):

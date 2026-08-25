@@ -883,21 +883,20 @@ The expensive part of this change is not Claude Code. It is Fleet.
 `bom-ref`, so the first scan after upgrade reports every component removed and
 re-added, and earlier diff history is not comparable across the boundary.
 
-This does **not** yet apply to uploaded BOMs. The remote collector still calls
-`build_graph(config_dir, mode="endpoint")`, so an upload keeps `endpoint/`
-labels, the `openaca:target` root, and — as the one remaining emitter of it —
-`target_type: endpoint`, while carrying `schema_version: 0.5` like every other
-document. Locally emitted and uploaded
-`bom-ref`s therefore do not agree, and drift computed on the hosted side is not
-comparable with a local diff. Migrating the collector to agent discovery is the
-follow-up gate; until it lands, the two surfaces are on different key schemes.
+This does not yet apply to uploaded BOMs. The remote collector still calls
+`build_graph(config_dir, mode="endpoint")`, so an upload keeps `endpoint/` labels, the
+`openaca:target` root, and — as the one remaining emitter of it — `target_type:
+endpoint`. Locally emitted and uploaded `bom-ref`s therefore do not agree, and drift
+computed on the hosted side is not comparable with a local diff. Migrating the collector
+takes the same one-time break; it is specified separately in
+[Collector Agent-Rooted Uploads](collector-agent-rooted-uploads.md).
 
 A version-aware diff shim was considered and rejected: it is migration code to
 carry and later retire, in order to suppress a one-time event that is noisy
 rather than harmful — no data is lost, and the hosted side is not yet operating
 at scale. Document it in release notes instead.
 
-### Does not work yet, and gates the second kind
+### The hosted displacement window
 
 An asset's *latest BOM* is a single column, set on every upload, and it anchors
 all three current-state queries plus four dashboard queries. Uploading two agent
@@ -908,22 +907,16 @@ one agent and no error is raised anywhere.
 So "agent BOMs ingest under the existing asset types" is true of ingestion and
 false of current state.
 
-**Phasing.** Uploads keep today's contract: one BOM per sync, `source:
-endpoint`, one endpoint asset. Local output changes; the hosted contract does
-not. That is honest while one kind ships, since a Claude-Code-only machine has
-exactly one agent.
+**Phasing.** While one kind ships, a machine has exactly one agent, so a sync
+sends one upload and nothing is displaced. The problem above is reachable only once a
+second kind exists.
 
-**Fail closed, do not rely on release sequencing.** The collector should refuse
-to upload more than one agent BOM until the server advertises support, rather
-than trusting that the hosted change ships first. A silent overwrite is the
-failure this guards against, and an explicit refusal is recoverable where a
-quietly missing agent is not.
-
-**Hard trigger.** Latest-per-kind has to be resolved before a second kind can
-sync. Shipping a second kind against today's schema would make the console
-quietly wrong, which is worse than not showing the second kind at all. The
-options — latest per (asset, kind), or one asset per agent — belong in a
-hosted-side ADR, not here.
+**Resolution.** Per-agent current state is being built on the hosted side in parallel
+with the collector's migration, so the two arrive together and neither waits on the
+other. The collector therefore sends one upload per discovered agent with no guard
+against the displacement window — [ADR-0050](../adrs/0050-collector-upload-cardinality.md)
+records why a guard was rejected. How the hosted side keys per-agent current state is
+its own decision and belongs in a hosted-side ADR, not here.
 
 ### Gated by kind shape
 
@@ -983,10 +976,10 @@ parts of this mechanism, gated by kind *shape* rather than kind count — see
   action's source; it decides whether a CI runner is scannable in place or only
   from the repo that seeds it. Neither matters while only installed and declared
   sources ship.
-- Fleet re-rooting. Uploads keep today's contract — one BOM per sync, `source:
-  endpoint`, one endpoint asset — so the hosted side sees one agent per machine.
-  That holds while one kind ships; a second kind requires latest-per-kind to be
-  resolved first (see [Backward compatibility](#backward-compatibility)).
+- Hosted re-rooting — agent rows, latest-BOM-per-agent, and per-agent current state.
+  Built in parallel on the hosted side; neither it nor the collector waits on the other.
+- The collector's own migration to agent discovery and agent-rooted uploads, specified
+  separately in [Collector Agent-Rooted Uploads](collector-agent-rooted-uploads.md).
 - Any kind beyond Claude Code. This change migrates the one kind that exists;
   adding a second is a separate change that amends the parser set in `CLAUDE.md`
   and the thesis roadmap then. Managed and framework agents appear here only as

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import httpx
 from tools.remote.client import RemoteClient, RemoteClientError
 from tools.remote.collector import (
     CollectError,
+    build_endpoint_dry_run_payloads,
     clear_pending_uploads,
     collect_endpoint,
 )
@@ -20,6 +22,7 @@ from tools.remote.config import (
     load_remote_config,
     save_remote_config,
 )
+from tools.remote.upload_contract import RemoteUploadContractError
 
 
 @click.group()
@@ -105,6 +108,12 @@ def sync() -> None:
     default=None,
     help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the payload that would be uploaded, as NDJSON, and exit without uploading.",
+)
 @click.option("--quiet", is_flag=True, default=False, help="Minimize scheduled-run output.")
 @click.option(
     "--allow-offline-cache",
@@ -122,13 +131,21 @@ def sync() -> None:
 def endpoint(
     config_dir: Path | None,
     project: Path | None,
+    dry_run: bool,
     quiet: bool,
     allow_offline_cache: bool,
     external_scanners: tuple[str, ...],
 ) -> None:
     """Sync endpoint composition to the configured remote."""
+    if dry_run:
+        _dry_run_endpoint(
+            config_dir=_resolve_endpoint_config_dir(config_dir),
+            project=project,
+            external_scanners=external_scanners,
+        )
+        return
     try:
-        result = collect_endpoint(
+        results = collect_endpoint(
             config_dir=_resolve_endpoint_config_dir(config_dir),
             project=project,
             quiet=quiet,
@@ -139,7 +156,42 @@ def endpoint(
         if not quiet:
             click.echo(str(exc), err=True)
         raise click.exceptions.Exit(exc.exit_code) from exc
-    _print_upload_result(result)
+    _print_upload_results(results)
+
+
+def _dry_run_endpoint(
+    *,
+    config_dir: Path,
+    project: Path | None,
+    external_scanners: tuple[str, ...],
+) -> None:
+    """Print what a sync would upload, one payload per line.
+
+    NDJSON rather than a wrapper object: one payload is a single line and
+    therefore still whole JSON for `jq` and `json.load`, and the shape does
+    not change when a scan resolves several agents. Nothing else goes to
+    stdout, so the preview stays pipeable.
+    """
+    try:
+        payloads = build_endpoint_dry_run_payloads(
+            config_dir=config_dir,
+            project=project,
+            external_scanners=external_scanners,
+        )
+    except CollectError as exc:
+        click.echo(str(exc), err=True)
+        raise click.exceptions.Exit(exc.exit_code) from exc
+    except (ConfigError, RemoteUploadContractError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for payload in payloads:
+        click.echo(json.dumps(payload, sort_keys=True))
+
+
+def _print_upload_results(results) -> None:
+    for index, result in enumerate(results):
+        if index:
+            click.echo("")
+        _print_upload_result(result)
 
 
 def _print_upload_result(result) -> None:

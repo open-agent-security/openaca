@@ -129,7 +129,7 @@ def parse(document: object) -> Policy:
     """Validate a decoded policy document and return its typed form."""
     root = _mapping(document, "policy")
     _require_exact_keys(root, {"version", "admission", "risk_gates"}, "policy")
-    if root.get("version") != 1:
+    if type(root["version"]) is not int or root["version"] != 1:
         raise PolicyValidationError("policy.version must be 1")
 
     admission = _mapping(root.get("admission"), "policy.admission")

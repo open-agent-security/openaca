@@ -62,7 +62,7 @@ def validate(policy_path: Path) -> None:
 @main.command()
 @click.argument("policy_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--target", type=click.Path(file_okay=False, path_type=Path), required=True)
-@click.option("--project", type=click.Path(file_okay=False, path_type=Path))
+@click.option("--project", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--host", type=click.Choice(["claude"]), required=True)
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--managed-settings-dir", type=click.Path(file_okay=False, path_type=Path))

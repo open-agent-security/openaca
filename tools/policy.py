@@ -452,7 +452,22 @@ def _target_matches(ref: ComponentRef, target: McpTarget | PluginTarget) -> bool
             and isinstance(marketplace, str)
             and f"{ref.name}@{marketplace}" == target.plugin
         )
-    return extra.get("marketplace_source") == target.marketplace
+    source = extra.get("marketplace_source")
+    return (
+        isinstance(source, str)
+        and isinstance(target.marketplace, str)
+        and _normalize_marketplace_url(source) == _normalize_marketplace_url(target.marketplace)
+    )
+
+
+def _normalize_marketplace_url(value: str) -> str:
+    """Strip a trailing ``.git`` so a policy target matches a discovered source.
+
+    ``_marketplace_source`` (``tools.parsers.claude_install``) always appends
+    ``.git`` for a GitHub-sourced marketplace, but a policy author writing the
+    target by hand has no reason to include it.
+    """
+    return value[:-4] if value.endswith(".git") else value
 
 
 def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[str, Any]) -> bool:

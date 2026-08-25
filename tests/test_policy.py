@@ -190,6 +190,44 @@ def test_plugin_marketplace_block_wins_over_exact_allow():
     assert decision.reasons == ("admission allowed", "admission blocked")
 
 
+def test_plugin_marketplace_target_matches_a_discovered_source_missing_the_git_suffix():
+    """`_marketplace_source` (tools.parsers.claude_install) always appends
+    `.git` for a GitHub-sourced marketplace, but a policy author writing the
+    target by hand has no reason to include it. The match must normalize
+    both sides rather than compare raw strings."""
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {
+                    "default": "allowed",
+                    "blocked": [{"marketplace": "https://github.com/acme/untrusted-plugins"}],
+                },
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="unsafe",
+        extra={
+            "component_type": "plugin",
+            "marketplace": "untrusted",
+            "marketplace_source": "https://github.com/acme/untrusted-plugins.git",
+        },
+    )
+
+    decision = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )[0]
+
+    assert decision.blocked is True
+
+
 def test_risk_gate_on_plugin_child_blocks_the_owning_plugin():
     policy = _policy(vulnerabilities={"ids": ["CVE-2026-12345"]})
     plugin = ComponentRef(
@@ -348,6 +386,60 @@ def test_vulnerability_gate_matches_an_advisory_alias():
     assert decision.reasons[-1] == "vulnerability GHSA-1234"
 
 
+def test_standalone_skill_risk_block_is_reported_unenforceable_when_skills_default_allowed():
+    policy = _policy(vulnerabilities={"ids": ["CVE-2026-12345"]})
+    skill = ComponentRef(name="helper", extra={"component_type": "skill"})
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(skill)],
+        advisories=[{"id": "GHSA-1234", "aliases": ["CVE-2026-12345"]}],
+        advisory_matches=[(skill, "GHSA-1234")],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[0].blocked is True
+    assert "strictPluginOnlyCustomization" not in compilation.settings
+    assert any(
+        "direct skill risk block is not enforceable" in limitation
+        for limitation in compilation.limitations
+    )
+
+
+def test_standalone_skill_risk_block_is_not_reported_unenforceable_when_skills_default_blocked():
+    """When `skills.default: blocked`, `strictPluginOnlyCustomization: ["skills"]`
+    already blocks every standalone skill category-wide (see the "Standalone
+    skill block" row in docs/specs/policy-compiler.md). Reporting an
+    already-blocked skill's risk finding as "not enforceable" would falsely
+    claim an enforcement gap that doesn't exist."""
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "blocked"},
+            },
+            "risk_gates": {"vulnerabilities": {"ids": ["CVE-2026-12345"]}},
+        }
+    )
+    skill = ComponentRef(name="helper", extra={"component_type": "skill"})
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(skill)],
+        advisories=[{"id": "GHSA-1234", "aliases": ["CVE-2026-12345"]}],
+        advisory_matches=[(skill, "GHSA-1234")],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[0].blocked is True
+    assert compilation.settings["strictPluginOnlyCustomization"] == ["skills"]
+    assert not any("not enforceable" in limitation for limitation in compilation.limitations)
+
+
 def test_posture_gate_adds_an_exact_mcp_block():
     policy = _policy(posture={"rules": ["openaca-posture-insecure-transport"]})
     mcp = _mcp(["npx", "-y", "safe-mcp"])
@@ -451,6 +543,45 @@ admission:
     report = json.loads(result.stdout)
     assert report["artifact"]["written"] is False
     assert report["expected_policy"]["allowManagedMcpServersOnly"] is True
+
+
+def test_policy_cli_rejects_a_nonexistent_project_directory(tmp_path):
+    """Without `exists=True`, click's `Path` type silently skips existence
+    checking (see click's own docs), so a mistyped `--project` would scan an
+    empty tree instead of failing loudly — dropping every project-local
+    component from the compiled policy with no error and no warning."""
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+"""
+    )
+    (tmp_path / "settings.json").write_text("{}")
+
+    result = CliRunner().invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--target",
+            str(tmp_path),
+            "--project",
+            str(tmp_path / "does-not-exist"),
+            "--host",
+            "claude",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "does not exist" in result.output
 
 
 def test_policy_cli_refuses_to_merge_a_generated_managed_key(tmp_path):

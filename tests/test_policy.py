@@ -253,8 +253,12 @@ def test_risk_gate_on_plugin_child_blocks_the_owning_plugin_and_its_reported_chi
     assert decisions[0].category == "plugins"
     assert decisions[0].blocked is True
     assert decisions[0].reasons[-1] == "vulnerability GHSA-1234"
+    assert decisions[0].controlled_by_plugin is False
     assert decisions[1].category == "mcps"
     assert decisions[1].blocked is True
+    assert decisions[1].controlled_by_plugin is True
+    assert decisions[1].subject.ref is plugin_copy
+    assert decisions[1].risk_reasons == ("vulnerability GHSA-1234",)
     assert decisions[1].reasons == (
         "owning plugin: plugins default: allowed",
         "owning plugin: vulnerability GHSA-1234",

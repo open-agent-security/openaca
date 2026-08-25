@@ -95,6 +95,16 @@ def test_load_silently_skips_malformed_json(tmp_path):
     assert layers.user == {}
 
 
+def test_load_reports_malformed_json_when_requested(tmp_path):
+    (tmp_path / "settings.json").write_text("{not json")
+    warnings: list[str] = []
+
+    load(install_root=tmp_path, warnings=warnings)
+
+    assert len(warnings) == 1
+    assert "settings.json" in warnings[0]
+
+
 def test_load_silently_skips_non_object_user_settings(tmp_path):
     """Valid JSON that isn't a dict should not crash merged()."""
     (tmp_path / "settings.json").write_text("[1, 2, 3]")

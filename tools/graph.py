@@ -52,6 +52,7 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
 class Graph:
     nodes: dict[str, Node]
     edges: list[Edge] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list, repr=False)
 
     @property
     def root(self) -> Node:

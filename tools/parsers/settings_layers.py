@@ -108,48 +108,50 @@ def _deep_merge(target: dict, source: dict) -> None:
         target[key] = value
 
 
-def load(install_root: Path, project_root: Optional[Path] = None) -> SettingsLayers:
+def load(
+    install_root: Path,
+    project_root: Optional[Path] = None,
+    *,
+    warnings: list[str] | None = None,
+) -> SettingsLayers:
     """Read settings files from disk.
 
     `install_root` is typically `~/.claude` (the user-scope home). When
     `project_root` is given, also read its `.claude/settings.json` (project
     scope) and `.claude/settings.local.json` (local scope).
 
-    Files that don't exist, fail JSON parsing, or contain a non-object top
-    level are silently skipped — we'd rather scan with partial settings than
-    abort the whole resolver on one malformed file.
+    Files that don't exist are skipped. Malformed, unreadable, and non-object
+    settings are skipped; callers that need a complete inventory can pass a
+    warnings list and decide whether to continue.
     """
     layers = SettingsLayers()
     user_file = install_root / "settings.json"
-    if user_file.exists():
-        try:
-            parsed = json.loads(user_file.read_text())
-            if isinstance(parsed, dict):
-                layers.user = parsed
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            # JSON syntax errors, read errors (PermissionError,
-            # IsADirectoryError, etc.), and decode errors (non-UTF-8 bytes)
-            # all fall through silently. Per module docstring: scan with
-            # partial settings rather than abort on one bad file.
-            pass
+    if (parsed := _load_object(user_file, warnings)) is not None:
+        layers.user = parsed
 
     if project_root is not None:
         project_file = project_root / ".claude" / "settings.json"
-        if project_file.exists():
-            try:
-                parsed = json.loads(project_file.read_text())
-                if isinstance(parsed, dict):
-                    layers.project = parsed
-            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-                pass
+        if (parsed := _load_object(project_file, warnings)) is not None:
+            layers.project = parsed
         local_file = project_root / ".claude" / "settings.local.json"
-        if local_file.exists():
-            try:
-                parsed = json.loads(local_file.read_text())
-                if isinstance(parsed, dict):
-                    layers.local = parsed
-            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-                pass
+        if (parsed := _load_object(local_file, warnings)) is not None:
+            layers.local = parsed
 
     # Managed scope (system policy) — not loaded in V0.
     return layers
+
+
+def _load_object(path: Path, warnings: list[str] | None) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        parsed = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        if warnings is not None:
+            warnings.append(f"could not parse settings file {path}: {exc}")
+        return None
+    if not isinstance(parsed, dict):
+        if warnings is not None:
+            warnings.append(f"settings file {path} must contain an object")
+        return None
+    return parsed

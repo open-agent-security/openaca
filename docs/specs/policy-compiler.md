@@ -113,6 +113,11 @@ plugin remains the trust boundary for its bundled MCP servers, skills, and
 other contents. This policy does not define marketplace trust for standalone
 MCP servers or skills.
 
+V1 represents a marketplace source as its exact URL without a branch or tag
+selector. A registered Claude marketplace source that includes a `ref` cannot
+be matched by this document shape, so the compiler does not flatten it into a
+broader URL match.
+
 ### Risk gates
 
 Risk gates answer: **does a known risk block an otherwise admitted component?**
@@ -152,6 +157,7 @@ openaca policy validate policy.yaml
 openaca policy compile policy.yaml --target ~/.claude --host claude --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --project . --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --dry-run
+openaca policy compile policy.yaml --target ~/.claude --host claude --managed-settings-dir /etc/claude-code --dry-run
 ```
 
 `validate` checks the document only. It exits `0` when valid and `1` when
@@ -161,6 +167,13 @@ invalid, writes diagnostics to stderr, and has no success output.
 data needed by configured risk gates, evaluates the policy, and writes a
 host-specific artifact. There is no separate public `check` command: an
 endpoint scan is the evidence-gathering operation.
+
+`--target` is the endpoint's agent configuration location to scan. It is not
+the system-managed settings location. `--managed-settings-dir` separately
+selects the host directory whose existing managed settings files are inspected
+for generated-key collisions; it defaults to Claude's operating-system-specific
+system directory. An absent directory has no file-based policy to collide with;
+an existing directory or drop-in that cannot be read fails compilation.
 
 `compile` accepts the same `--project` option as `openaca scan endpoint`
 (ADR-0017): project-local skills, MCPs, and plugin manifests are scanned only

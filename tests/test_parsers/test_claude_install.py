@@ -44,6 +44,68 @@ def test_install_skips_disabled_plugins(tmp_path):
     assert warnings == []
 
 
+def test_install_records_registered_marketplace_source(tmp_path):
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {"foo@internal": True},
+                "extraKnownMarketplaces": {
+                    "internal": {"source": {"source": "github", "repo": "acme/internal-plugins"}}
+                },
+            }
+        )
+    )
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "foo@internal": [{"scope": "user", "version": "1.0", "installPath": "/x"}]
+                }
+            }
+        )
+    )
+
+    refs, warnings = parse_install(install_root=tmp_path)
+
+    assert warnings == []
+    assert refs[0].extra["marketplace_source"] == "https://github.com/acme/internal-plugins.git"
+
+
+def test_install_does_not_flatten_a_ref_qualified_marketplace_source(tmp_path):
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {"foo@internal": True},
+                "extraKnownMarketplaces": {
+                    "internal": {
+                        "source": {
+                            "source": "github",
+                            "repo": "acme/internal-plugins",
+                            "ref": "release-1",
+                        }
+                    }
+                },
+            }
+        )
+    )
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "foo@internal": [{"scope": "user", "version": "1.0", "installPath": "/x"}]
+                }
+            }
+        )
+    )
+
+    refs, warnings = parse_install(install_root=tmp_path)
+
+    assert warnings == []
+    assert "marketplace_source" not in refs[0].extra
+
+
 def test_install_warns_when_plugin_enabled_but_missing_from_lockfile(tmp_path):
     (tmp_path / "settings.json").write_text(
         json.dumps({"enabledPlugins": {"missing@nowhere": True}})

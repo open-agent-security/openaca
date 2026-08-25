@@ -424,9 +424,51 @@ def test_mcp_bundled_in_an_allowed_plugin_is_not_blocked_by_mcps_default():
         advisory_matches=[],
         posture_matches=[],
     )
+    compilation = compile_policy(policy, decisions)
 
     assert decisions[0].blocked is False
     assert decisions[1].blocked is False
+    assert compilation.settings["allowManagedMcpServersOnly"] is True
+    assert compilation.settings["allowedMcpServers"] == [
+        {"serverCommand": ["npx", "-y", "bundled-mcp"]}
+    ]
+
+
+def test_plugin_admitted_mcp_conflicting_with_a_global_block_is_reported():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "blocked",
+                    "blocked": [{"command": ["npx", "-y", "shared-mcp"]}],
+                },
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    mcp = _mcp(["npx", "-y", "shared-mcp"])
+    graph = _graph_with_plugin_child(plugin, mcp, "mcp_server")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(mcp, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+    compilation = compile_policy(policy, decisions)
+
+    assert decisions[1].blocked is False
+    assert compilation.settings["deniedMcpServers"] == [
+        {"serverCommand": ["npx", "-y", "shared-mcp"]}
+    ]
+    assert compilation.settings["allowedMcpServers"] == []
+    assert any("conflicts with a global MCP block" in item for item in compilation.limitations)
 
 
 def test_mcp_bundled_in_a_blocked_plugin_is_not_added_to_the_global_denylist():

@@ -29,8 +29,12 @@ def compile_policy(policy: Policy, decisions: list[Decision]) -> ClaudeCompilati
     if policy.skills_default == "blocked":
         settings["strictPluginOnlyCustomization"] = ["skills"]
     for decision in decisions:
-        if decision.category == "skills" and any(
-            reason.startswith(("vulnerability ", "posture ")) for reason in decision.reasons
+        if (
+            decision.category == "skills"
+            and policy.skills_default != "blocked"
+            and any(
+                reason.startswith(("vulnerability ", "posture ")) for reason in decision.reasons
+            )
         ):
             limitations.append(
                 f"{_component_label(decision)}: direct skill risk block is "

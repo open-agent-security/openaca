@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
+from tools.marketplace import setting as marketplace_setting
 from tools.policy import Decision, McpTarget, PluginTarget, Policy
 
 
@@ -136,12 +136,12 @@ def _compile_plugins(
         settings["enabledPlugins"] = {plugin: False for plugin in sorted(set(blocked_plugins))}
     if blocked_marketplaces:
         settings["blockedMarketplaces"] = [
-            _marketplace_setting(value) for value in _dedupe(blocked_marketplaces)
+            marketplace_setting(value) for value in _dedupe(blocked_marketplaces)
         ]
     if rule.default == "blocked":
         if allowed_marketplaces:
             settings["strictKnownMarketplaces"] = [
-                _marketplace_setting(value) for value in _dedupe(allowed_marketplaces)
+                marketplace_setting(value) for value in _dedupe(allowed_marketplaces)
             ]
         limitations.append(
             "plugin default block is not enforceable for installed plugins in Claude"
@@ -201,17 +201,6 @@ def _plugin_key(decision: Decision) -> str | None:
     if not isinstance(marketplace, str) or not marketplace:
         return None
     return f"{decision.ref.name}@{marketplace}"
-
-
-def _marketplace_setting(value: str) -> dict:
-    parsed = urlparse(value)
-    if parsed.scheme in {"http", "https"} and parsed.hostname == "github.com":
-        repo = parsed.path.strip("/")
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-        if repo.count("/") == 1:
-            return {"source": "github", "repo": repo}
-    return {"source": "git", "url": value}
 
 
 def _component_label(decision: Decision) -> str:

@@ -161,3 +161,10 @@ def test_nearest_plugin_ancestor_returns_nearest_of_several():
     g = Graph(nodes, edges)
     nearest = g.nearest_plugin_ancestor(g.nodes["pkg"])
     assert nearest is not None and nearest.key == "pi"  # nearest, not "po"
+
+
+def test_node_for_ref_prefers_the_stamped_bom_ref():
+    graph = _build()
+    copied = ComponentRef(extra={"bom_ref": "s"})
+
+    assert graph.node_for_ref(copied) is graph.nodes["s"]

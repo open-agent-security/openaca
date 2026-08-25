@@ -11,7 +11,7 @@ from typing import Any, Literal
 import yaml
 
 from tools.component_ref import ComponentRef
-from tools.graph import Graph, ref_occurrence_key
+from tools.graph import Graph
 from tools.lint import UPSTREAM_ID_RE
 from tools.overlays import id_set
 from tools.posture import KNOWN_RULE_IDS
@@ -90,11 +90,30 @@ class EndpointComponent:
 
 
 @dataclass(frozen=True)
+class PolicySubject:
+    """A component evaluated once for policy purposes."""
+
+    ref: ComponentRef
+    category: DecisionCategory
+
+
+@dataclass(frozen=True)
 class Decision:
     ref: ComponentRef
     category: DecisionCategory
+    subject: PolicySubject
+    controlled_by_plugin: bool
     blocked: bool
     reasons: tuple[str, ...]
+    risk_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _ResolvedComponent:
+    component: EndpointComponent
+    category: DecisionCategory
+    subject_index: int
+    controlled_by_plugin: bool
 
 
 def load(path: Path) -> Policy:
@@ -158,7 +177,9 @@ def to_document(policy: Policy) -> dict[str, Any]:
 
 def evaluate_admission(policy: Policy, components: list[EndpointComponent]) -> list[Decision]:
     """Evaluate admission only; risk findings are applied by ``apply_risk_gates``."""
-    return [_admission_decision(policy, component.ref, component.graph) for component in components]
+    subjects, resolved = _resolve_policy_subjects(components)
+    decisions = [_admission_decision(policy, subject) for subject in subjects]
+    return _component_decisions(resolved, decisions)
 
 
 def apply_risk_gates(
@@ -171,17 +192,12 @@ def apply_risk_gates(
 ) -> list[Decision]:
     """Evaluate admission and add blocks for matching fresh risk evidence.
 
-    ``advisory_matches`` and ``posture_matches`` are deliberately occurrence
-    based. A plugin child resolves to its owning plugin before the restriction
-    is added, preserving the plugin trust boundary.
+    Every observation resolves to one host-controllable policy subject before
+    admission and risk evaluation. Plugin contents share their owning plugin's
+    subject, so a risk block has one target and one decision.
     """
-    decisions = {id(c.ref): _admission_decision(policy, c.ref, c.graph) for c in components}
-    component_by_ref = {id(c.ref): c for c in components}
-    # `_restriction_target` resolves a finding to a graph node's own `ref`,
-    # which is a distinct object from the `dataclasses.replace` copy scan
-    # projects into `components` (see `_refs_from_graph`). This index maps
-    # that occurrence back to the copy actually keyed in `decisions`.
-    component_by_occurrence = {ref_occurrence_key(c.ref): c for c in components}
+    subjects, resolved = _resolve_policy_subjects(components)
+    decisions = [_admission_decision(policy, subject) for subject in subjects]
     advisory_by_id = {
         record.get("id"): record for record in advisories if isinstance(record.get("id"), str)
     }
@@ -192,17 +208,18 @@ def apply_risk_gates(
             policy.risk_gates.vulnerabilities, advisory
         ):
             continue
-        target = _restriction_target(ref, component_by_ref.get(id(ref)), component_by_occurrence)
-        _block_decision(decisions, target, f"vulnerability {advisory_id}")
+        subject_index = _subject_index_for_ref(ref, resolved)
+        if subject_index is not None:
+            _block_subject(decisions, subject_index, f"vulnerability {advisory_id}")
 
     for ref, rule_id in posture_matches:
         if rule_id not in policy.risk_gates.posture_rule_ids:
             continue
-        target = _restriction_target(ref, component_by_ref.get(id(ref)), component_by_occurrence)
-        _block_decision(decisions, target, f"posture {rule_id}")
+        subject_index = _subject_index_for_ref(ref, resolved)
+        if subject_index is not None:
+            _block_subject(decisions, subject_index, f"posture {rule_id}")
 
-    _propagate_plugin_decisions(decisions, components, component_by_occurrence)
-    return [decisions[id(c.ref)] for c in components]
+    return _component_decisions(resolved, decisions)
 
 
 def _mapping(value: object, label: str) -> dict[str, Any]:
@@ -395,39 +412,43 @@ def _category(ref: ComponentRef) -> ComponentCategory | None:
     return None
 
 
-def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None = None) -> Decision:
-    category = _category(ref)
-    # Spec: "A plugin remains the trust boundary for its bundled MCP servers,
-    # skills, and other contents." Any non-plugin component contained by a
-    # plugin — including one outside the mcps/plugins/skills taxonomy, such
-    # as a hook, command, agent, or dependency package — inherits the
-    # plugin's own admission decision outright rather than being evaluated
-    # independently against `mcps`/`skills` targets/defaults, or reported as
-    # unconditionally outside policy scope.
-    if category != "plugins":
-        plugin_ref = _owning_plugin_ref(ref, graph)
-        if plugin_ref is not None:
-            plugin_decision = _admission_decision(policy, plugin_ref, graph)
-            return _inherited_plugin_decision(ref, category or "other", plugin_decision)
-    if category is None:
-        return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
+def _admission_decision(policy: Policy, subject: PolicySubject) -> Decision:
+    category = subject.category
+    if category == "other":
+        return Decision(
+            ref=subject.ref,
+            category=category,
+            subject=subject,
+            controlled_by_plugin=False,
+            blocked=False,
+            reasons=("outside policy scope",),
+        )
     if category == "skills":
         blocked = policy.skills_default == "blocked"
         return Decision(
-            ref=ref,
+            ref=subject.ref,
             category=category,
+            subject=subject,
+            controlled_by_plugin=False,
             blocked=blocked,
             reasons=(f"skills default: {policy.skills_default}",),
         )
     rule = policy.mcps if category == "mcps" else policy.plugins
-    matches = _matching_targets(ref, rule)
+    matches = _matching_targets(subject.ref, rule)
     blocked = any(state == "blocked" for state in matches) or (
         not matches and rule.default == "blocked"
     )
     reasons = tuple(f"admission {state}" for state in matches) or (
         f"{category} default: {rule.default}",
     )
-    return Decision(ref=ref, category=category, blocked=blocked, reasons=reasons)
+    return Decision(
+        ref=subject.ref,
+        category=category,
+        subject=subject,
+        controlled_by_plugin=False,
+        blocked=blocked,
+        reasons=reasons,
+    )
 
 
 def _matching_targets(ref: ComponentRef, rule: AdmissionRule) -> list[AdmissionDefault]:
@@ -499,70 +520,112 @@ def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[s
     return _SEVERITY_ORDER[severity] >= _SEVERITY_ORDER[gate.severity_at_least]
 
 
-def _owning_plugin_ref(ref: ComponentRef, graph: Graph | None) -> ComponentRef | None:
-    if graph is None:
-        return None
-    node = graph.node_for_ref(ref)
-    if node is None:
-        return None
-    plugin = graph.nearest_plugin_ancestor(node)
-    return plugin.ref if plugin is not None else None
-
-
-def _restriction_target(
-    ref: ComponentRef,
-    component: EndpointComponent | None,
-    component_by_occurrence: dict[tuple[str, ...], EndpointComponent],
-) -> ComponentRef:
-    graph = component.graph if component is not None else None
-    plugin_ref = _owning_plugin_ref(ref, graph)
-    if plugin_ref is None:
-        return ref
-    owner = component_by_occurrence.get(ref_occurrence_key(plugin_ref))
-    return owner.ref if owner is not None else ref
-
-
-def _propagate_plugin_decisions(
-    decisions: dict[int, Decision],
+def _resolve_policy_subjects(
     components: list[EndpointComponent],
-    component_by_occurrence: dict[tuple[str, ...], EndpointComponent],
-) -> None:
-    """Refresh bundled-component reports after a risk gate blocks their plugin."""
+) -> tuple[list[PolicySubject], list[_ResolvedComponent]]:
+    subjects: list[PolicySubject] = []
+    node_subjects: dict[tuple[int, str], int] = {}
+    contexts: list[
+        tuple[EndpointComponent, DecisionCategory, int | None, str | None, str | None]
+    ] = []
+    graphs: list[Graph] = []
+
     for component in components:
-        current = decisions[id(component.ref)]
-        if current.category == "plugins":
+        category = _category(component.ref) or "other"
+        graph_index: int | None = None
+        node_key: str | None = None
+        owner_key: str | None = None
+        if component.graph is not None:
+            for index, graph in enumerate(graphs):
+                if graph is component.graph:
+                    graph_index = index
+                    break
+            else:
+                graph_index = len(graphs)
+                graphs.append(component.graph)
+            node = component.graph.node_for_ref(component.ref)
+            if node is not None:
+                node_key = node.key
+                owner = component.graph.nearest_plugin_ancestor(node)
+                owner_key = owner.key if owner is not None else None
+        contexts.append((component, category, graph_index, node_key, owner_key))
+
+    for component, category, graph_index, node_key, owner_key in contexts:
+        if category != "plugins" and owner_key is not None:
             continue
-        plugin_ref = _owning_plugin_ref(component.ref, component.graph)
-        if plugin_ref is None:
-            continue
-        owner = component_by_occurrence.get(ref_occurrence_key(plugin_ref))
-        if owner is None:
-            continue
-        decisions[id(component.ref)] = _inherited_plugin_decision(
-            component.ref,
-            current.category,
-            decisions[id(owner.ref)],
+        subject_index = len(subjects)
+        subjects.append(PolicySubject(ref=component.ref, category=category))
+        if graph_index is not None and node_key is not None:
+            node_subjects[(graph_index, node_key)] = subject_index
+
+    resolved: list[_ResolvedComponent] = []
+    for component, category, graph_index, node_key, owner_key in contexts:
+        owner_index = (
+            node_subjects.get((graph_index, owner_key))
+            if category != "plugins" and graph_index is not None and owner_key is not None
+            else None
         )
+        if owner_index is not None:
+            resolved.append(
+                _ResolvedComponent(component, category, owner_index, controlled_by_plugin=True)
+            )
+            continue
+        if graph_index is not None and node_key is not None:
+            subject_index = node_subjects.get((graph_index, node_key))
+            if subject_index is None:
+                subject_index = len(subjects)
+                subjects.append(PolicySubject(ref=component.ref, category=category))
+                node_subjects[(graph_index, node_key)] = subject_index
+        else:
+            subject_index = next(
+                index for index, subject in enumerate(subjects) if subject.ref is component.ref
+            )
+        resolved.append(_ResolvedComponent(component, category, subject_index, False))
+    return subjects, resolved
 
 
-def _inherited_plugin_decision(
-    ref: ComponentRef, category: DecisionCategory, plugin_decision: Decision
-) -> Decision:
-    return Decision(
-        ref=ref,
-        category=category,
-        blocked=plugin_decision.blocked,
-        reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
-    )
+def _subject_index_for_ref(ref: ComponentRef, resolved: list[_ResolvedComponent]) -> int | None:
+    bom_ref = ref.extra.get("bom_ref")
+    for component in resolved:
+        candidate = component.component.ref
+        if candidate is ref:
+            return component.subject_index
+        if isinstance(bom_ref, str) and bom_ref and candidate.extra.get("bom_ref") == bom_ref:
+            return component.subject_index
+    return None
 
 
-def _block_decision(decisions: dict[int, Decision], ref: ComponentRef, reason: str) -> None:
-    current = decisions.get(id(ref))
-    if current is None:
-        return
-    decisions[id(ref)] = Decision(
+def _component_decisions(
+    resolved: list[_ResolvedComponent], subject_decisions: list[Decision]
+) -> list[Decision]:
+    result: list[Decision] = []
+    for component in resolved:
+        subject_decision = subject_decisions[component.subject_index]
+        reasons = subject_decision.reasons
+        if component.controlled_by_plugin:
+            reasons = tuple(f"owning plugin: {reason}" for reason in reasons)
+        result.append(
+            Decision(
+                ref=component.component.ref,
+                category=component.category,
+                subject=subject_decision.subject,
+                controlled_by_plugin=component.controlled_by_plugin,
+                blocked=subject_decision.blocked,
+                reasons=reasons,
+                risk_reasons=subject_decision.risk_reasons,
+            )
+        )
+    return result
+
+
+def _block_subject(decisions: list[Decision], subject_index: int, reason: str) -> None:
+    current = decisions[subject_index]
+    decisions[subject_index] = Decision(
         ref=current.ref,
         category=current.category,
+        subject=current.subject,
+        controlled_by_plugin=False,
         blocked=True,
         reasons=(*current.reasons, reason),
+        risk_reasons=(*current.risk_reasons, reason),
     )

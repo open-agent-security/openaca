@@ -146,8 +146,14 @@ class Graph:
 
     def node_for_ref(self, ref: ComponentRef) -> Optional[Node]:
         """Map an output-time `ComponentRef` (a finding's component) back to its
-        graph `Node` by occurrence key. None when the ref has no matching node
-        (e.g. a flat-BOM ref scanned without a reconstructable graph)."""
+        graph `Node` by its stamped BOM reference when present, then by
+        occurrence key. None when the ref has no matching node (e.g. a
+        flat-BOM ref scanned without a reconstructable graph)."""
+        bom_ref = ref.extra.get("bom_ref")
+        if isinstance(bom_ref, str):
+            node = self.nodes.get(bom_ref)
+            if node is not None:
+                return node
         return self._node_by_ref_key().get(ref_occurrence_key(ref))
 
     def attribution_for_ref(self, ref: ComponentRef) -> Optional[str]:

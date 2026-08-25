@@ -26,19 +26,29 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
             raise
         return []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("uv.lock must contain an object")
         return []
     packages = data.get("package")
     if not isinstance(packages, list):
+        if strict:
+            raise ValueError("uv.lock package must be an array")
         return []
     refs: list[ComponentRef] = []
     for i, entry in enumerate(packages):
         if not isinstance(entry, dict):
+            if strict:
+                raise ValueError(f"uv.lock package[{i}] must be an object")
             continue
         name = entry.get("name")
         version = entry.get("version")
         if not isinstance(name, str) or not name:
+            if strict:
+                raise ValueError(f"uv.lock package[{i}] has no name")
             continue
         if not isinstance(version, str) or not version:
+            if strict:
+                raise ValueError(f"uv.lock package[{i}] has no version")
             continue
         refs.append(
             ComponentRef(

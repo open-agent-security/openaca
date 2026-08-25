@@ -2,6 +2,8 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from tools.graph_build import build_graph, build_manifest_name_index
 
 
@@ -1119,7 +1121,15 @@ def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
     )
 
 
-def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path):
+@pytest.mark.parametrize(
+    ("filename", "contents"),
+    [
+        ("package-lock.json", '{"lockfileVersion": 3, "packages": []}'),
+        ("bun.lock", '{"packages": []}'),
+        ("uv.lock", "version = 1\npackage = {}"),
+    ],
+)
+def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path, filename, contents):
     install_root = tmp_path / "claude"
     install_path = install_root / "cache" / "plugin" / "1.0"
     install_path.mkdir(parents=True)
@@ -1138,12 +1148,44 @@ def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path):
             }
         )
     )
-    (install_path / "package-lock.json").write_text("not valid json")
+    (install_path / filename).write_text(contents)
 
     warnings: list[str] = []
     build_graph(install_root, mode="endpoint", warnings=warnings)
 
-    assert any("package-lock.json" in warning for warning in warnings), warnings
+    assert any(filename in warning for warning in warnings), warnings
+
+
+@pytest.mark.parametrize("relative_path", [".mcp.json", "hooks/hooks.json"])
+def test_endpoint_plugin_surface_parse_failures_are_reported(tmp_path, relative_path):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text('{"name": "plugin"}')
+    (install_root / "settings.json").parent.mkdir(parents=True, exist_ok=True)
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+    malformed = install_path / relative_path
+    malformed.parent.mkdir(parents=True, exist_ok=True)
+    malformed.write_text("not valid json")
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any(relative_path in warning for warning in warnings), warnings
 
 
 def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):

@@ -26,21 +26,29 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
             raise
         return []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("package-lock.json must contain an object")
         return []
     packages = data.get("packages")
     if not isinstance(packages, dict):
+        if strict and data.get("lockfileVersion") not in {1, 2}:
+            raise ValueError("package-lock.json packages must be an object")
         return []
     refs: list[ComponentRef] = []
     for key, entry in packages.items():
         if not key:
             continue  # host package
         if not isinstance(entry, dict):
+            if strict:
+                raise ValueError(f"package-lock.json package {key!r} must be an object")
             continue
         if entry.get("dev") is True:
             continue
         name = _name_from_key(key)
         version = entry.get("version")
         if not name or not isinstance(version, str) or not version:
+            if strict and name and entry.get("link") is not True:
+                raise ValueError(f"package-lock.json package {key!r} has no version")
             continue
         refs.append(
             ComponentRef(

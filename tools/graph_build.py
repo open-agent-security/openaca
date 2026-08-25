@@ -1514,10 +1514,13 @@ def _add_bundled_plugin_surfaces(
         plugin_data,
         plugin_json_path=plugin_manifest_path,
         plugin_root=plugin_root,
+        warnings=graph.warnings,
     )
     refs.extend(manifest_refs)
-    refs.extend(_parse_default_mcp(plugin_root, manifest_refs))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
+    refs.extend(_parse_default_mcp(plugin_root, manifest_refs, warnings=graph.warnings))
+    refs.extend(
+        _parse_bundled_hooks(plugin_root, plugin_data, plugin_name, warnings=graph.warnings)
+    )
     refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
     refs = [r for r in refs if _component_type(r) != "skill"]
     # Stamp plugin-container context (declared_by.kind=plugin + a

@@ -41,9 +41,13 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
             raise
         return []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("bun.lock must contain an object")
         return []
     packages = data.get("packages")
     if not isinstance(packages, dict):
+        if strict:
+            raise ValueError("bun.lock packages must be an object")
         return []
     workspaces = data.get("workspaces")
     runtime_keys: set[str] | None = None
@@ -56,14 +60,20 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         if runtime_keys is not None and key not in runtime_keys:
             continue  # devDependencies-only; not shipped at plugin runtime
         if not isinstance(entry, list) or not entry:
+            if strict:
+                raise ValueError(f"bun.lock package {key!r} must be a non-empty array")
             continue
         spec = entry[0]
         if not isinstance(spec, str):
+            if strict:
+                raise ValueError(f"bun.lock package {key!r} must start with a name@version string")
             continue
         # "@scope/name@1.2.3" -> ("@scope/name", "@", "1.2.3");
         # "name@1.2.3" -> ("name", "@", "1.2.3").
         name, _, version = spec.rpartition("@")
         if not name or not version:
+            if strict:
+                raise ValueError(f"bun.lock package {key!r} has an invalid name@version")
             continue
         refs.append(
             ComponentRef(

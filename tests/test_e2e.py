@@ -27,6 +27,7 @@ from tools.component_ref import ComponentRef
 from tools.export import build
 from tools.osv_federation import collect_osv_queries
 from tools.parsers.mcp_json import parse as parse_mcp
+from tools.policy_cli import main as policy_main
 from tools.remote.collector import _prepare_remote_bom, build_endpoint_dry_run_payloads
 from tools.remote.upload_contract import enforce_remote_upload_contract
 from tools.render import render_inventory_tree
@@ -650,6 +651,83 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
     properties = [r.get("properties") or {} for r in sarif["runs"][0]["results"]]
     attributions = [p.get("attributed_to") for p in properties if "attributed_to" in p]
     assert "plugin/m/vuln-plugin@1.0.0" in attributions
+
+
+def test_policy_compile_blocks_a_vulnerable_standalone_mcp_server(tmp_path):
+    """policy compiler E2E: agent discovery, graph construction, OSV/overlay
+    lookup, advisory matching, a vulnerability risk gate, and Claude
+    managed-settings compilation wire up together against a real endpoint
+    layout. A standalone MCP server (declared in `.mcp.json`, no owning
+    plugin) is pinned to a vulnerable npm package version; the vulnerability
+    gate must block that exact MCP server in the compiled artifact."""
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "evil": {
+                        "command": "npx",
+                        "args": ["-y", "@evil/mcp@0.9.0"],
+                    }
+                }
+            }
+        )
+    )
+
+    advisory = {
+        "id": "CVE-2026-9002",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "@evil/mcp"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
+                ],
+            }
+        ],
+    }
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+risk_gates:
+  vulnerabilities:
+    ids: ["CVE-2026-9002"]
+"""
+    )
+
+    runner = CliRunner()
+    with patch(
+        "tools.policy_cli._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([advisory], [], 0, {}),
+    ):
+        result = runner.invoke(
+            policy_main,
+            [
+                "compile",
+                str(policy_path),
+                "--target",
+                str(tmp_path),
+                "--host",
+                "claude",
+                "--dry-run",
+                "--format",
+                "json",
+                "--managed-settings-dir",
+                str(tmp_path / "managed"),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report["expected_policy"]["deniedMcpServers"] == [
+        {"serverCommand": ["npx", "-y", "@evil/mcp@0.9.0"]}
+    ]
 
 
 def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):

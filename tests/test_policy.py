@@ -73,6 +73,22 @@ def test_policy_rejects_target_in_both_lists():
         )
 
 
+@pytest.mark.parametrize("vulnerability_id", ["cve-2026-12345", "not-an-id", "  ", "GHSA-1234"])
+def test_policy_rejects_a_malformed_vulnerability_gate_id(vulnerability_id):
+    with pytest.raises(PolicyValidationError, match="malformed id"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                },
+                "risk_gates": {"vulnerabilities": {"ids": [vulnerability_id]}},
+            }
+        )
+
+
 def test_policy_rejects_an_unknown_posture_rule_id():
     with pytest.raises(PolicyValidationError, match="unknown rule id"):
         parse(

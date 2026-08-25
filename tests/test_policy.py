@@ -56,6 +56,21 @@ def test_policy_requires_exact_v1_shape():
         parse({"version": 1, "admission": {}, "unknown": True})
 
 
+@pytest.mark.parametrize("version", [True, 1.0, "1"])
+def test_policy_requires_an_integer_version(version):
+    with pytest.raises(PolicyValidationError, match="policy.version must be 1"):
+        parse(
+            {
+                "version": version,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
 def test_policy_rejects_target_in_both_lists():
     with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
         parse(

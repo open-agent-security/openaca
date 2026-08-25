@@ -24,7 +24,7 @@ def compile_policy(policy: Policy, decisions: list[Decision]) -> ClaudeCompilati
     settings: dict = {}
     limitations: list[str] = []
 
-    _compile_mcps(policy, decisions, settings)
+    _compile_mcps(policy, decisions, settings, limitations)
     _compile_plugins(policy, decisions, settings, limitations)
     if policy.skills_default == "blocked":
         settings["strictPluginOnlyCustomization"] = ["skills"]
@@ -62,7 +62,12 @@ def compile_policy(policy: Policy, decisions: list[Decision]) -> ClaudeCompilati
     return ClaudeCompilation(settings=settings, limitations=tuple(_dedupe(limitations)))
 
 
-def _compile_mcps(policy: Policy, decisions: list[Decision], settings: dict) -> None:
+def _compile_mcps(
+    policy: Policy,
+    decisions: list[Decision],
+    settings: dict,
+    limitations: list[str],
+) -> None:
     rule = policy.mcps
     allowed = [_mcp_setting(target) for target in rule.allowed if isinstance(target, McpTarget)]
     blocked = [_mcp_setting(target) for target in rule.blocked if isinstance(target, McpTarget)]
@@ -71,6 +76,22 @@ def _compile_mcps(policy: Policy, decisions: list[Decision], settings: dict) -> 
             target = _mcp_setting_from_ref(decision)
             if target is not None:
                 blocked.append(target)
+    blocked_keys = {_mcp_setting_key(target) for target in blocked}
+    for decision in decisions:
+        if decision.category != "mcps" or not decision.controlled_by_plugin or decision.blocked:
+            continue
+        target = _mcp_setting_from_ref(decision)
+        if target is None:
+            limitations.append(
+                f"{_component_label(decision)}: plugin-admitted MCP lacks an exact host target"
+            )
+        elif _mcp_setting_key(target) in blocked_keys:
+            limitations.append(
+                f"{_component_label(decision)}: plugin-admitted MCP conflicts with "
+                "a global MCP block"
+            )
+        else:
+            allowed.append(target)
     if rule.default == "blocked":
         settings["allowManagedMcpServersOnly"] = True
         settings["allowedMcpServers"] = _dedupe_dicts(allowed)
@@ -161,6 +182,16 @@ def _mcp_setting_from_ref(decision: Decision) -> dict | None:
     except ValueError:
         return None
     return {"serverCommand": command} if command else None
+
+
+def _mcp_setting_key(setting: dict) -> tuple[str, tuple[str, ...] | str]:
+    if "serverCommand" in setting:
+        command = setting["serverCommand"]
+        assert isinstance(command, list)
+        return ("serverCommand", tuple(command))
+    url = setting["serverUrl"]
+    assert isinstance(url, str)
+    return ("serverUrl", url)
 
 
 def _plugin_key(decision: Decision) -> str | None:

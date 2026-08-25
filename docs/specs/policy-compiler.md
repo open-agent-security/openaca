@@ -254,6 +254,13 @@ The standalone-skill setting names only `skills`, so it does not request the
 same restriction for agents, hooks, or MCP servers. It still does not govern
 skills bundled inside a plugin; those follow the plugin’s admission result.
 
+Claude applies its MCP allowlist to plugin-provided MCP servers as well as
+standalone servers. When `mcps.default` is `blocked`, the compiler therefore
+adds each observed MCP from an admitted plugin to `allowedMcpServers`. If that
+exact command or URL is also globally blocked, Claude cannot preserve both
+results; the compiler leaves the global block in place and reports the
+plugin-admitted MCP as not enforceable.
+
 ### Delivery and verification
 
 [Claude accepts managed policy keys](https://code.claude.com/docs/en/managed-settings)

@@ -466,6 +466,8 @@ def parse_mcp_servers(
     servers: dict,
     source_manifest: str,
     locator_prefix: str = "$.mcpServers",
+    *,
+    strict: bool = False,
 ) -> list[ComponentRef]:
     """Convert an `mcpServers`/`servers` dict into ComponentRefs.
 
@@ -473,10 +475,16 @@ def parse_mcp_servers(
     of the agent that read it, and the BOM's subject carries it (ADR-0044).
     """
     if not isinstance(servers, dict):
+        if strict:
+            raise ValueError("MCP servers must be an object")
         return []
     refs: list[ComponentRef] = []
     for server_name, entry in servers.items():
+        if strict and not isinstance(server_name, str):
+            raise ValueError("MCP server names must be strings")
         if not isinstance(entry, dict):
+            if strict:
+                raise ValueError(f"MCP server {server_name!r} must be an object")
             continue
         if entry.get("disabled") is True:
             continue
@@ -496,15 +504,23 @@ def parse_mcp_servers(
             )
             if remote_ref is not None:
                 refs.append(remote_ref)
+            elif strict:
+                raise ValueError(f"MCP server {server_name!r} has an invalid URL")
             continue
         raw_command = entry.get("command")
         raw_args = entry.get("args") or []
         if not isinstance(raw_args, list):
+            if strict:
+                raise ValueError(f"MCP server {server_name!r} args must be an array")
             raw_args = []
+        if strict and any(not isinstance(arg, str) for arg in raw_args):
+            raise ValueError(f"MCP server {server_name!r} args must be strings")
         # Drop any non-string elements: `_extract_flag_value` and
         # `_positional_args` call `.startswith()` on each arg, so a stray
         # `null`, integer, or nested object would AttributeError mid-scan.
         raw_args = [a for a in raw_args if isinstance(a, str)]
+        if strict and (not isinstance(raw_command, str) or not raw_command):
+            raise ValueError(f"MCP server {server_name!r} must have a command or URL")
         command, args = _command_dispatch(
             raw_command if isinstance(raw_command, str) else None,
             raw_args,
@@ -755,25 +771,37 @@ def _format_install_source(raw_command: object, raw_args: list[str]) -> str:
     return shlex.join([raw_command, *raw_args])
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("MCP manifest must contain an object")
         return []
     # `mcpServers` (Claude Code/Desktop/Cursor) and `servers` (VS Code) are
     # two names for the same shape. Prefer mcpServers when both exist —
     # only relevant if a config file straddles host conventions.
-    if isinstance(data.get("mcpServers"), dict):
+    if "mcpServers" in data:
+        if not isinstance(data["mcpServers"], dict):
+            if strict:
+                raise ValueError("MCP manifest mcpServers must be an object")
+            return []
         return parse_mcp_servers(
             data["mcpServers"],
             source_manifest=str(path),
             locator_prefix="$.mcpServers",
+            strict=strict,
         )
-    if isinstance(data.get("servers"), dict):
+    if "servers" in data:
+        if not isinstance(data["servers"], dict):
+            if strict:
+                raise ValueError("MCP manifest servers must be an object")
+            return []
         # `servers` is the VS Code convention.
         return parse_mcp_servers(
             data["servers"],
             source_manifest=str(path),
             locator_prefix="$.servers",
+            strict=strict,
         )
     # Flat shape (no wrapper). Some real Claude Code plugins ship `.mcp.json`
     # as a bare `{server_name: {command, args}}` map without the conventional
@@ -786,7 +814,10 @@ def parse(path: Path) -> list[ComponentRef]:
             data,
             source_manifest=str(path),
             locator_prefix="$",
+            strict=strict,
         )
+    if strict:
+        raise ValueError("MCP manifest has no recognized server declaration")
     return []
 
 

@@ -49,10 +49,20 @@ def parse_plugin_hooks(
             raise
         return []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("plugin hooks file must contain an object")
         return []
     hooks_block = data.get("hooks")
     if not isinstance(hooks_block, dict):
+        if strict:
+            raise ValueError("plugin hooks file hooks must be an object")
         return []
+    if strict:
+        for event, entries in hooks_block.items():
+            if not isinstance(event, str) or not isinstance(entries, list):
+                raise ValueError("plugin hook events must map strings to arrays")
+            if any(not isinstance(entry, dict) for entry in entries):
+                raise ValueError("plugin hook event entries must be objects")
     return _walk_events(
         hooks_block,
         source_manifest=str(hooks_json_path),

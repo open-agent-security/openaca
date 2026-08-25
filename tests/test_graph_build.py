@@ -1156,8 +1156,14 @@ def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path, filena
     assert any(filename in warning for warning in warnings), warnings
 
 
-@pytest.mark.parametrize("relative_path", [".mcp.json", "hooks/hooks.json"])
-def test_endpoint_plugin_surface_parse_failures_are_reported(tmp_path, relative_path):
+@pytest.mark.parametrize(
+    ("relative_path", "contents"),
+    [
+        (".mcp.json", '{"mcpServers": []}'),
+        ("hooks/hooks.json", '{"hooks": []}'),
+    ],
+)
+def test_endpoint_plugin_surface_parse_failures_are_reported(tmp_path, relative_path, contents):
     install_root = tmp_path / "claude"
     install_path = install_root / "cache" / "plugin" / "1.0"
     (install_path / ".claude-plugin").mkdir(parents=True)
@@ -1180,12 +1186,43 @@ def test_endpoint_plugin_surface_parse_failures_are_reported(tmp_path, relative_
     )
     malformed = install_path / relative_path
     malformed.parent.mkdir(parents=True, exist_ok=True)
-    malformed.write_text("not valid json")
+    malformed.write_text(contents)
 
     warnings: list[str] = []
     build_graph(install_root, mode="endpoint", warnings=warnings)
 
     assert any(relative_path in warning for warning in warnings), warnings
+
+
+@pytest.mark.parametrize("field", ["mcpServers", "hooks"])
+def test_endpoint_plugin_inline_surface_shape_failures_are_reported(tmp_path, field):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "plugin", field: []})
+    )
+    (install_root / "settings.json").parent.mkdir(parents=True, exist_ok=True)
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any("plugin.json" in warning for warning in warnings), warnings
 
 
 def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):

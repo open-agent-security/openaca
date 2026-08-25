@@ -89,25 +89,35 @@ def _parse_manifest_refs(
                     )
                 )
 
-    servers = data.get("mcpServers")
-    if isinstance(servers, dict):
-        refs.extend(
-            parse_mcp_servers(
-                servers,
-                source_manifest=str(plugin_json_path),
-                locator_prefix="$.mcpServers (inlined)",
-            )
-        )
-    elif isinstance(servers, str):
-        referenced = resolve_within(plugin_root, servers)
-        if referenced is not None and referenced.exists():
+    if "mcpServers" in data:
+        servers = data["mcpServers"]
+        if isinstance(servers, dict):
             try:
-                file_refs = mcp_json.parse(referenced)
-            except Exception as exc:
+                refs.extend(
+                    parse_mcp_servers(
+                        servers,
+                        source_manifest=str(plugin_json_path),
+                        locator_prefix="$.mcpServers (inlined)",
+                        strict=warnings is not None,
+                    )
+                )
+            except ValueError as exc:
                 if warnings is not None:
-                    warnings.append(f"could not parse {referenced}: {exc}")
-                file_refs = []
-            refs.extend(file_refs)
+                    warnings.append(f"could not parse {plugin_json_path}: {exc}")
+        elif isinstance(servers, str):
+            referenced = resolve_within(plugin_root, servers)
+            if referenced is not None and referenced.exists():
+                try:
+                    file_refs = mcp_json.parse(referenced, strict=warnings is not None)
+                except Exception as exc:
+                    if warnings is not None:
+                        warnings.append(f"could not parse {referenced}: {exc}")
+                    file_refs = []
+                refs.extend(file_refs)
+        elif warnings is not None:
+            warnings.append(
+                f"could not parse {plugin_json_path}: mcpServers must be an object or path"
+            )
     return refs
 
 
@@ -119,7 +129,7 @@ def _parse_default_mcp(
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}
     try:
-        mcp_refs = mcp_json.parse(default_mcp)
+        mcp_refs = mcp_json.parse(default_mcp, strict=warnings is not None)
     except Exception as exc:
         if warnings is not None:
             warnings.append(f"could not parse {default_mcp}: {exc}")
@@ -238,6 +248,8 @@ def _parse_bundled_hooks(
                 except Exception as exc:
                     if warnings is not None:
                         warnings.append(f"could not parse {custom_hooks_file}: {exc}")
+    elif "hooks" in data and warnings is not None:
+        warnings.append(f"could not parse {plugin_json_path}: hooks must be an object or path")
     return refs
 
 

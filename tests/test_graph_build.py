@@ -1127,6 +1127,8 @@ def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
         ("package-lock.json", '{"lockfileVersion": 3, "packages": []}'),
         ("bun.lock", '{"packages": []}'),
         ("uv.lock", "version = 1\npackage = {}"),
+        ("package.json", '{"dependencies": []}'),
+        ("pyproject.toml", "[project]\ndependencies = {}"),
     ],
 )
 def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path, filename, contents):
@@ -1154,6 +1156,18 @@ def test_endpoint_plugin_dependency_parse_failures_are_reported(tmp_path, filena
     build_graph(install_root, mode="endpoint", warnings=warnings)
 
     assert any(filename in warning for warning in warnings), warnings
+
+
+def test_endpoint_standalone_mcp_shape_failures_are_reported(tmp_path):
+    (tmp_path / "settings.json").write_text("{}")
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text('{"plugins": {}}')
+    (tmp_path / ".mcp.json").write_text('{"mcpServers": []}')
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any(".mcp.json" in warning for warning in warnings), warnings
 
 
 @pytest.mark.parametrize(

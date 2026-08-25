@@ -263,6 +263,8 @@ def _mapping(value: object, label: str) -> dict[str, Any]:
 
 
 def _require_exact_keys(value: dict[str, Any], permitted: set[str], label: str) -> None:
+    if any(not isinstance(key, str) for key in value):
+        raise PolicyValidationError(f"{label} field names must be strings")
     unknown = sorted(set(value) - permitted)
     if unknown:
         raise PolicyValidationError(f"{label} has unsupported field(s): {', '.join(unknown)}")
@@ -345,6 +347,10 @@ def _parse_targets(
                     f"{target_label}.marketplace must be a non-empty string"
                 )
             else:
+                try:
+                    marketplace_key(marketplace)
+                except ValueError as exc:
+                    raise PolicyValidationError(f"{target_label}.marketplace {exc}") from exc
                 targets.append(PluginTarget(marketplace=marketplace))
     if len({target.key() for target in targets}) != len(targets):
         raise PolicyValidationError(f"{label} contains a duplicate target")

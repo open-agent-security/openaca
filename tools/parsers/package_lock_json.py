@@ -18,10 +18,12 @@ from pathlib import Path
 from tools.component_ref import ComponentRef
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     try:
         data = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        if strict:
+            raise
         return []
     if not isinstance(data, dict):
         return []

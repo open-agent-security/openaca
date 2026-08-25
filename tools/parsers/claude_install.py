@@ -221,7 +221,7 @@ def _walk_active_plugins(
                 warnings.append(f"{plugin_key}: {w}")
 
             if include_transitive:
-                tier2_refs = _walk_plugin_implementation_deps(Path(install_path))
+                tier2_refs = _walk_plugin_implementation_deps(Path(install_path), warnings=warnings)
                 refs.extend(tier2_refs)
 
     return refs, warnings
@@ -507,7 +507,9 @@ _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
 }
 
 
-def _walk_plugin_implementation_deps(install_path: Path) -> list[ComponentRef]:
+def _walk_plugin_implementation_deps(
+    install_path: Path, *, warnings: list[str] | None = None
+) -> list[ComponentRef]:
     """Tier-2 walk: parse every supported lockfile at the installPath, then
     manifest-fall-back for ecosystems not covered by a lockfile.
 
@@ -529,8 +531,10 @@ def _walk_plugin_implementation_deps(install_path: Path) -> list[ComponentRef]:
         if not lockfile.is_file():
             continue
         try:
-            lock_refs = parser(lockfile)  # type: ignore[operator]
-        except Exception:
+            lock_refs = parser(lockfile, strict=True)  # type: ignore[operator]
+        except Exception as exc:
+            if warnings is not None:
+                warnings.append(f"{lockfile}: failed to parse ({exc})")
             continue
         for r in lock_refs:
             refs.append(replace(r, scope="agent-dependency"))
@@ -543,8 +547,10 @@ def _walk_plugin_implementation_deps(install_path: Path) -> list[ComponentRef]:
         if not manifest.is_file():
             continue
         try:
-            manifest_refs = parser(manifest)  # type: ignore[operator]
-        except Exception:
+            manifest_refs = parser(manifest, strict=True)  # type: ignore[operator]
+        except Exception as exc:
+            if warnings is not None:
+                warnings.append(f"{manifest}: failed to parse ({exc})")
             continue
         runtime_locators = _RUNTIME_MANIFEST_LOCATORS.get(ecosystem)
         for r in manifest_refs:

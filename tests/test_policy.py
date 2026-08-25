@@ -229,7 +229,7 @@ def test_plugin_marketplace_target_matches_a_discovered_source_missing_the_git_s
     assert decision.blocked is True
 
 
-def test_risk_gate_on_plugin_child_blocks_the_owning_plugin():
+def test_risk_gate_on_plugin_child_blocks_the_owning_plugin_and_its_reported_child():
     policy = _policy(vulnerabilities={"ids": ["CVE-2026-12345"]})
     plugin = ComponentRef(
         name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
@@ -254,7 +254,11 @@ def test_risk_gate_on_plugin_child_blocks_the_owning_plugin():
     assert decisions[0].blocked is True
     assert decisions[0].reasons[-1] == "vulnerability GHSA-1234"
     assert decisions[1].category == "mcps"
-    assert decisions[1].blocked is False
+    assert decisions[1].blocked is True
+    assert decisions[1].reasons == (
+        "owning plugin: plugins default: allowed",
+        "owning plugin: vulnerability GHSA-1234",
+    )
 
 
 def test_risk_gate_on_a_standalone_mcp_dependency_is_reported_not_enforceable():

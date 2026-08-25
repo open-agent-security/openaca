@@ -1053,6 +1053,43 @@ admission:
     assert "installed_plugins.json" in result.output
 
 
+def test_policy_cli_fails_when_an_mcp_manifest_cannot_be_parsed(tmp_path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+"""
+    )
+    (tmp_path / "settings.json").write_text("{}")
+    (tmp_path / ".mcp.json").write_text("{not json")
+
+    result = CliRunner().invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude",
+            "--dry-run",
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert ".mcp.json" in result.output
+    assert "could not parse" in result.output
+
+
 def test_policy_cli_reports_an_endpoint_posture_finding_without_a_component_target(tmp_path):
     """`openaca-posture-api-endpoint-override` is an endpoint-level finding with
     no discovered component to attribute a block to (tools.posture._attach_bom_ref

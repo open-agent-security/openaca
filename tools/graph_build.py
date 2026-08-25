@@ -277,7 +277,7 @@ def build_rooted_graph(
     attach_root_spec: GitIgnoreSpec | None = None
     attach_include_gitignored = include_gitignored
     if mode == "endpoint":
-        _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=warnings)
+        _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=graph.warnings)
         # Endpoint has no single repo root; installed artifacts are not
         # gitignore-filtered (parity with the descent's root_dir=None behavior).
         attach_include_gitignored = True
@@ -328,6 +328,8 @@ def build_rooted_graph(
         root_spec=attach_root_spec,
     )
     graph.validate()
+    if warnings is not None:
+        warnings.extend(graph.warnings)
     return graph
 
 
@@ -361,7 +363,7 @@ def _seed_endpoint(
       hooks. All children of the target (attribution None — direct, not
       plugin-bundled). See `_seed_direct_components`.
     """
-    layers = load_settings(install_root, project_root=project_root)
+    layers = load_settings(install_root, project_root=project_root, warnings=warnings)
     effective = layers.merged("endpoint")
     by_scope = layers.by_scope()
 
@@ -492,7 +494,13 @@ def _seed_active_plugins(
             # the tier-2 lockfile walk below (lockfile-preferred). Emitting both
             # would double-count a direct dep present in package.json AND
             # package-lock.json. Bundled skills and their own deps still descend.
-            descend(graph, plugin_node, Path(install_path), normalize, emit_own_root_deps=False)
+            descend(
+                graph,
+                plugin_node,
+                Path(install_path),
+                normalize,
+                emit_own_root_deps=False,
+            )
             # Plugin tier-2 lockfile deps: parity with parse_install — attach as
             # package children of the plugin node (NOT a skill).
             for ref in claude_install._walk_plugin_implementation_deps(Path(install_path)):
@@ -546,7 +554,7 @@ def _seed_remote_mcps(
     for mcp_path in mcp_paths:
         if not mcp_path.is_file():
             continue
-        for ref in _safe_parse(mcp_json.parse, mcp_path):
+        for ref in _safe_parse(graph, mcp_json.parse, mcp_path):
             if _component_type(ref) != "mcp_server":
                 continue
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
@@ -593,10 +601,18 @@ def _seed_direct_components(
     # Project commands/agents under `.claude/`.
     if project_root is not None:
         _add_endpoint_command_agents(
-            graph, target, project_root / ".claude" / "commands", normalize, kind="command"
+            graph,
+            target,
+            project_root / ".claude" / "commands",
+            normalize,
+            kind="command",
         )
         _add_endpoint_command_agents(
-            graph, target, project_root / ".claude" / "agents", normalize, kind="agent"
+            graph,
+            target,
+            project_root / ".claude" / "agents",
+            normalize,
+            kind="agent",
         )
 
     # Settings-scoped hooks, per scope (no cross-scope merging — parity with
@@ -651,7 +667,7 @@ def _add_direct_endpoint_skills(
         skill_md = skill_subdir / "SKILL.md"
         if not skill_md.is_file():
             continue
-        for ref in _safe_parse(claude_skill.parse, skill_md):
+        for ref in _safe_parse(graph, claude_skill.parse, skill_md):
             if ref.name:
                 provenance = skill_lock.provenance_for_skill(
                     skill_md, ref.name, project_root=project_root
@@ -664,7 +680,11 @@ def _add_direct_endpoint_skills(
 
 
 def _add_endpoint_command_agents(
-    graph: Graph, target: Node, dir_path: Path, normalize: SourceNormalizer, kind: Kind
+    graph: Graph,
+    target: Node,
+    dir_path: Path,
+    normalize: SourceNormalizer,
+    kind: Kind,
 ) -> None:
     """Walk `dir_path/**/*.md` per-file so agent frontmatter mcpServers/hooks
     attach under their agent node rather than the target (parity with the `.md`
@@ -676,7 +696,8 @@ def _add_endpoint_command_agents(
             continue
         try:
             refs = claude_command_agent.parse_file(md_path, kind=kind, scope_owner=None)
-        except Exception:
+        except Exception as exc:
+            graph.warnings.append(f"could not parse agent definition {md_path}: {exc}")
             refs = []
         if not refs:
             continue
@@ -1020,7 +1041,7 @@ def _descend_into_plugin(
     or yields no self-ref. A `None` return means the directory is NOT an owned
     plugin subtree, so the caller must not exclude it from sibling discovery.
     """
-    parsed = _safe_parse(claude_plugin.parse, plugin_manifest)
+    parsed = _safe_parse(graph, claude_plugin.parse, plugin_manifest)
     self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
         return None
@@ -1141,6 +1162,8 @@ def _add_bundled_skills(
 
 def _plugin_custom_skills_field(plugin_root: Path) -> object:
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    if not manifest.is_file():
+        return None
     try:
         data = json.loads(manifest.read_text())
     except (OSError, ValueError, UnicodeDecodeError):
@@ -1224,7 +1247,7 @@ def _add_skill_node(
     plugin-bundled skills (old `walk_plugin_root`, no stamp) leave it False.
     """
     skill_md = skill_subdir / "SKILL.md"
-    for ref in _safe_parse(claude_skill.parse, skill_md):
+    for ref in _safe_parse(graph, claude_skill.parse, skill_md):
         if stamp_provenance and ref.name:
             provenance = skill_lock.provenance_for_skill(
                 skill_md, ref.name, project_root=project_root
@@ -1240,8 +1263,8 @@ def _component_type(ref: ComponentRef) -> object:
     return (ref.extra or {}).get("component_type")
 
 
-def _safe_parse(parse, manifest: Path) -> list[ComponentRef]:
-    """Run a leaf parser, swallowing per-manifest parse failures.
+def _safe_parse(graph: Graph, parse, manifest: Path) -> list[ComponentRef]:
+    """Run a leaf parser, recording and swallowing per-manifest failures.
 
     These parsers run against arbitrary user repos; one malformed file (bad
     JSON, unreadable bytes) must not abort the whole graph build. This mirrors
@@ -1250,7 +1273,8 @@ def _safe_parse(parse, manifest: Path) -> list[ComponentRef]:
     """
     try:
         return parse(manifest)
-    except Exception:
+    except Exception as exc:
+        graph.warnings.append(f"could not parse {manifest}: {exc}")
         return []
 
 
@@ -1297,7 +1321,7 @@ def _add_dep_manifest_packages(
         if manifest is None:
             continue
         emitted = False
-        for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
+        for ref in _safe_parse(graph, _DEP_MANIFEST_PARSERS[filename], manifest):
             node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, parent, node)
             emitted = True
@@ -1309,7 +1333,7 @@ def _add_dep_manifest_packages(
         manifest = _present(filename)
         if manifest is None:
             continue
-        for ref in _safe_parse(_DEP_MANIFEST_PARSERS[filename], manifest):
+        for ref in _safe_parse(graph, _DEP_MANIFEST_PARSERS[filename], manifest):
             node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, parent, node)
 
@@ -1391,14 +1415,14 @@ def _add_repo_standalone_components(
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
         if path.name in _STANDALONE_MCP_FILENAMES:
-            for ref in _safe_parse(mcp_json.parse, path):
+            for ref in _safe_parse(graph, mcp_json.parse, path):
                 if _component_type(ref) != "mcp_server":
                     continue
                 node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
         if path.name == "settings.json" and _is_claude_settings_json(path, directory):
-            for ref in _safe_parse(claude_settings.parse, path):
+            for ref in _safe_parse(graph, claude_settings.parse, path):
                 if _component_type(ref) != "plugin":
                     continue
                 node = Node(key=occurrence_key(ref, normalize), kind="plugin", ref=ref)
@@ -1474,7 +1498,7 @@ def _add_bundled_plugin_surfaces(
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    plugin_data = _plugin_manifest_data(plugin_root)
+    plugin_data = _plugin_manifest_data(graph, plugin_root)
     plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
 
     refs: list[ComponentRef] = []
@@ -1510,10 +1534,16 @@ def _add_bundled_plugin_surfaces(
         _add_child(graph, plugin_node, node)
 
 
-def _plugin_manifest_data(plugin_root: Path) -> dict:
+def _plugin_manifest_data(graph: Graph, plugin_root: Path) -> dict:
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    if not manifest.is_file():
+        return {}
     try:
         data = json.loads(manifest.read_text())
-    except (OSError, ValueError, UnicodeDecodeError):
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        graph.warnings.append(f"could not parse {manifest}: {exc}")
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        graph.warnings.append(f"plugin manifest {manifest} must contain an object")
+        return {}
+    return data

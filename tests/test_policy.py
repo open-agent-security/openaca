@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from click.testing import CliRunner
 
 from tools.component_ref import ComponentRef
+from tools.graph import Edge, Graph, Node
 from tools.policy import EndpointComponent, PolicyValidationError, apply_risk_gates, parse
 from tools.policy_claude import compile_policy
 from tools.policy_cli import main as policy_main
+
+
+def _graph_with_plugin_child(plugin: ComponentRef, child: ComponentRef, child_kind: str) -> Graph:
+    root = Node(key="target", kind="target", ref=None)
+    plugin_node = Node(key="plugin", kind="plugin", ref=plugin)
+    child_node = Node(key="child", kind=child_kind, ref=child)
+    return Graph(
+        nodes={"target": root, "plugin": plugin_node, "child": child_node},
+        edges=[Edge(parent="target", child="plugin"), Edge(parent="plugin", child="child")],
+    )
 
 
 def _policy(**risk_gates: object):
@@ -104,6 +116,109 @@ def test_plugin_marketplace_block_wins_over_exact_allow():
 
     assert decision.blocked is True
     assert decision.reasons == ("admission allowed", "admission blocked")
+
+
+def test_risk_gate_on_plugin_child_blocks_the_owning_plugin():
+    policy = _policy(vulnerabilities={"ids": ["CVE-2026-12345"]})
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+    graph = _graph_with_plugin_child(plugin, mcp, "mcp_server")
+
+    # Mirror `_refs_from_graph`: the scan's flat ref list holds
+    # `dataclasses.replace` copies, not the graph's own Node.ref objects.
+    plugin_copy = replace(plugin, extra={**plugin.extra, "bom_ref": "plugin"})
+    mcp_copy = replace(mcp, extra={**mcp.extra, "bom_ref": "child"})
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin_copy, graph), EndpointComponent(mcp_copy, graph)],
+        advisories=[{"id": "GHSA-1234", "aliases": ["CVE-2026-12345"]}],
+        advisory_matches=[(mcp_copy, "GHSA-1234")],
+        posture_matches=[],
+    )
+
+    assert decisions[0].category == "plugins"
+    assert decisions[0].blocked is True
+    assert decisions[0].reasons[-1] == "vulnerability GHSA-1234"
+    assert decisions[1].category == "mcps"
+    assert decisions[1].blocked is False
+
+
+def test_skill_bundled_in_an_allowed_plugin_is_not_blocked_by_skills_default():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "blocked"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    skill = ComponentRef(name="helper", extra={"component_type": "skill"})
+    graph = _graph_with_plugin_child(plugin, skill, "skill")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(skill, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+
+    assert decisions[0].blocked is False
+    assert decisions[1].blocked is False
+    assert decisions[1].reasons == ("owning plugin: plugins default: allowed",)
+
+
+def test_skill_bundled_in_a_blocked_plugin_is_blocked_despite_allowed_skills_default():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "blocked"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    skill = ComponentRef(name="helper", extra={"component_type": "skill"})
+    graph = _graph_with_plugin_child(plugin, skill, "skill")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(skill, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+
+    assert decisions[0].blocked is True
+    assert decisions[1].blocked is True
+
+
+def test_standalone_skill_still_follows_skills_default():
+    policy = _policy()
+    skill = ComponentRef(name="helper", extra={"component_type": "skill"})
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(skill)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+
+    assert decisions[0].blocked is False
+    assert decisions[0].reasons == ("skills default: allowed",)
 
 
 def test_vulnerability_gate_matches_an_advisory_alias():

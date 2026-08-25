@@ -130,6 +130,55 @@ def test_build_endpoint_collections_respects_the_kind_posture_allowlist(tmp_path
     assert collections[0].posture_findings == []
 
 
+def test_composition_coverage_reflects_graph_warnings(tmp_path, monkeypatch):
+    """`build_agent_graph` warnings (malformed/unreadable manifests, invalid
+    install entries) must lower `openaca:composition_coverage` to `partial`,
+    exactly as `tools/scan.py` already does with
+    `evidence_gaps=len(warnings)` — otherwise the uploaded BOM overstates
+    coverage the local scan already downgrades."""
+    import tools.agent_kinds as agent_kinds
+    from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+    from tools.graph import Graph, Node
+
+    def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
+        return [
+            AgentInstance(
+                kind_id="synthetic",
+                display_name="Synthetic",
+                source=ctx.source,
+                root_label="synthetic",
+                coverage_baseline="complete",
+                config_root=ctx.config_dir or tmp_path,
+            )
+        ]
+
+    def compose(agent, *, include_gitignored=False, warnings=None) -> Graph:
+        if warnings is not None:
+            warnings.append("unreadable manifest: bad/plugin.json")
+        root = Node(key=agent.bom_ref, kind="target", ref=None)
+        return Graph(nodes={root.key: root})
+
+    kind = AgentKind(
+        id="synthetic",
+        display_name="Synthetic",
+        cardinality="singleton",
+        root_label="synthetic",
+        coverage_baseline={"installed": "complete", "declared": "complete"},
+        discover=discover,
+        compose=compose,
+    )
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (kind,))
+
+    collections = build_endpoint_collections(config_dir=tmp_path, project=None)
+
+    assert len(collections) == 1
+    props = {
+        p["name"]: p["value"]
+        for p in collections[0].bom["metadata"]["component"]["properties"]
+    }
+    assert props["openaca:composition_coverage"] == "partial"
+
+
 def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, monkeypatch):
     ref = ComponentRef(
         component_identity="skill/deploy-helper",

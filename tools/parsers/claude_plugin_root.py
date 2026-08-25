@@ -60,6 +60,7 @@ def _parse_manifest_refs(
     *,
     plugin_json_path: Path,
     plugin_root: Path,
+    warnings: list[str] | None = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     deps = data.get("dependencies")
@@ -102,20 +103,26 @@ def _parse_manifest_refs(
         if referenced is not None and referenced.exists():
             try:
                 file_refs = mcp_json.parse(referenced)
-            except Exception:
+            except Exception as exc:
+                if warnings is not None:
+                    warnings.append(f"could not parse {referenced}: {exc}")
                 file_refs = []
             refs.extend(file_refs)
     return refs
 
 
-def _parse_default_mcp(plugin_root: Path, existing_refs: list[ComponentRef]) -> list[ComponentRef]:
+def _parse_default_mcp(
+    plugin_root: Path, existing_refs: list[ComponentRef], *, warnings: list[str] | None = None
+) -> list[ComponentRef]:
     default_mcp = resolve_within(plugin_root, ".mcp.json")
     if default_mcp is None or not default_mcp.is_file():
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}
     try:
         mcp_refs = mcp_json.parse(default_mcp)
-    except Exception:
+    except Exception as exc:
+        if warnings is not None:
+            warnings.append(f"could not parse {default_mcp}: {exc}")
         return []
     out: list[ComponentRef] = []
     for ref in mcp_refs:
@@ -182,18 +189,29 @@ def _parse_bundled_skills(plugin_root: Path, data: dict) -> list[ComponentRef]:
     return refs
 
 
-def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> list[ComponentRef]:
+def _parse_bundled_hooks(
+    plugin_root: Path,
+    data: dict,
+    plugin_name: str,
+    *,
+    warnings: list[str] | None = None,
+) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
     default_hooks = resolve_within(plugin_root, "hooks/hooks.json")
     if default_hooks is not None and default_hooks.is_file():
         walked_hook_files.add(default_hooks.resolve())
-        refs.extend(
-            hooks_json.parse_plugin_hooks(
-                default_hooks,
-                plugin_name=plugin_name,
+        try:
+            refs.extend(
+                hooks_json.parse_plugin_hooks(
+                    default_hooks,
+                    plugin_name=plugin_name,
+                    strict=True,
+                )
             )
-        )
+        except Exception as exc:
+            if warnings is not None:
+                warnings.append(f"could not parse {default_hooks}: {exc}")
     inline_hooks = data.get("hooks")
     plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
     if isinstance(inline_hooks, dict):
@@ -209,12 +227,17 @@ def _parse_bundled_hooks(plugin_root: Path, data: dict, plugin_name: str) -> lis
         if custom_hooks_file is not None and custom_hooks_file.is_file():
             resolved = custom_hooks_file.resolve()
             if resolved not in walked_hook_files:
-                refs.extend(
-                    hooks_json.parse_plugin_hooks(
-                        custom_hooks_file,
-                        plugin_name=plugin_name,
+                try:
+                    refs.extend(
+                        hooks_json.parse_plugin_hooks(
+                            custom_hooks_file,
+                            plugin_name=plugin_name,
+                            strict=True,
+                        )
                     )
-                )
+                except Exception as exc:
+                    if warnings is not None:
+                        warnings.append(f"could not parse {custom_hooks_file}: {exc}")
     return refs
 
 

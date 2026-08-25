@@ -28,7 +28,9 @@ from typing import Optional
 from tools.component_ref import ComponentRef
 
 
-def parse_plugin_hooks(hooks_json_path: Path, plugin_name: str) -> list[ComponentRef]:
+def parse_plugin_hooks(
+    hooks_json_path: Path, plugin_name: str, *, strict: bool = False
+) -> list[ComponentRef]:
     """Walk a plugin's `hooks/hooks.json` file.
 
     Returns [] for any read/parse error or shape violation (non-object root,
@@ -37,10 +39,14 @@ def parse_plugin_hooks(hooks_json_path: Path, plugin_name: str) -> list[Componen
     try:
         raw = hooks_json_path.read_text()
     except (OSError, UnicodeDecodeError):
+        if strict:
+            raise
         return []
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
+        if strict:
+            raise
         return []
     if not isinstance(data, dict):
         return []

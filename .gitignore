@@ -235,4 +235,9 @@ candidates/*
 !candidates/ready_for_review/
 candidates/ready_for_review/*
 !candidates/ready_for_review/*.yaml
+# Per-agent local harness config — skills, hooks, and scratch belonging to
+# whichever coding agent a contributor happens to run. Local to a machine,
+# not part of the project.
 .superpowers/
+.agents/
+.codex/

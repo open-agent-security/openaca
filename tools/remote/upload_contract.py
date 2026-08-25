@@ -97,36 +97,55 @@ def _validate_no_absolute_paths(payload: dict[str, Any]) -> None:
     """
     bom = payload.get("bom")
     if isinstance(bom, dict):
+        metadata = bom.get("metadata")
+        if isinstance(metadata, dict):
+            _check_openaca_properties(metadata.get("properties"), "$.bom.metadata.properties")
+            metadata_component = metadata.get("component")
+            if isinstance(metadata_component, dict):
+                _check_openaca_properties(
+                    metadata_component.get("properties"),
+                    "$.bom.metadata.component.properties",
+                )
+                # Covered by name, not by prefix filter — see ADR-0051.
+                # `_check_evidence_string_at` already applies the full rule set
+                # to a bare string.
+                name = metadata_component.get("name")
+                if isinstance(name, str):
+                    _check_evidence_string_at(name, "$.bom.metadata.component.name")
         for c_idx, component in enumerate(bom.get("components", []) or []):
             if not isinstance(component, dict):
                 continue
-            for p_idx, prop in enumerate(component.get("properties", []) or []):
-                if not isinstance(prop, dict):
-                    continue
-                name = prop.get("name")
-                if not isinstance(name, str) or not name.startswith("openaca:"):
-                    continue
-                value = prop.get("value")
-                if not isinstance(value, str):
-                    continue
-                location = f"$.bom.components[{c_idx}].properties[{p_idx}].value"
-                if _is_absolute_path(value):
-                    raise RemoteUploadContractError(f"{location} is an absolute path ({name!r})")
-                if value.lower().startswith("file://"):
-                    raise RemoteUploadContractError(
-                        f"{location} is a file:// URI (local path) ({name!r})"
-                    )
-                if _is_url_with_path_or_query(value):
-                    raise RemoteUploadContractError(
-                        f"{location} is a URL with a path or query ({name!r})"
-                    )
-                if _is_url_with_userinfo(value):
-                    raise RemoteUploadContractError(
-                        f"{location} is a URL with credentials in userinfo ({name!r})"
-                    )
+            _check_openaca_properties(
+                component.get("properties"), f"$.bom.components[{c_idx}].properties"
+            )
 
     _validate_evidence_strings(payload, "posture_findings")
     _validate_evidence_strings(payload, "observations")
+
+
+def _check_openaca_properties(properties: object, location: str) -> None:
+    if not isinstance(properties, list):
+        return
+    for index, prop in enumerate(properties):
+        if not isinstance(prop, dict):
+            continue
+        name = prop.get("name")
+        if not isinstance(name, str) or not name.startswith("openaca:"):
+            continue
+        value = prop.get("value")
+        if not isinstance(value, str):
+            continue
+        at = f"{location}[{index}].value"
+        if _is_absolute_path(value):
+            raise RemoteUploadContractError(f"{at} is an absolute path ({name!r})")
+        if value.lower().startswith("file://"):
+            raise RemoteUploadContractError(f"{at} is a file:// URI (local path) ({name!r})")
+        if _is_url_with_path_or_query(value):
+            raise RemoteUploadContractError(f"{at} is a URL with a path or query ({name!r})")
+        if _is_url_with_userinfo(value):
+            raise RemoteUploadContractError(
+                f"{at} is a URL with credentials in userinfo ({name!r})"
+            )
 
 
 def _validate_evidence_strings(payload: dict[str, Any], key: str) -> None:

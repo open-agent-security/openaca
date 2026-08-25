@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 from click.testing import CliRunner
 
+from tools.agent_kinds import AgentInstance
 from tools.cli import main as openaca_main
 from tools.remote.client import BomUploadResult, DriftResult
+from tools.remote.collector import EndpointCollection
 from tools.remote.config import load_remote_config
 
 
@@ -351,7 +355,7 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
 
     def fake_collect_endpoint(**kwargs):
         calls.append(kwargs)
-        return _upload_result(asset_id="asset-123")
+        return [_upload_result(asset_id="asset-123")]
 
     monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
@@ -367,7 +371,7 @@ def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
 
     def fake_collect_endpoint(**kwargs):
         calls.append(kwargs)
-        return _upload_result(asset_id="asset-123")
+        return [_upload_result(asset_id="asset-123")]
 
     monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
 
@@ -425,3 +429,66 @@ def _asset_result():
         created_at="2026-05-27T11:00:00Z",
         component_count=14,
     )
+
+
+def test_sync_endpoint_dry_run_prints_the_payload_as_one_json_line(tmp_path, monkeypatch):
+    """stdout stays machine-readable so the preview can be piped to jq."""
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text(
+        '[remote]\napi_url = "http://remote.test"\ntoken = "ot_TEST"\nasset_id = "asset-123"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.build_endpoint_collections", _fake_collection)
+
+    def fail(**kwargs):
+        raise AssertionError("dry run must not take the upload path")
+
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fail)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["asset_id"] == "asset-123"
+    assert payload["bom"]["bomFormat"] == "CycloneDX"
+    assert "Uploaded BOM" not in result.output
+
+
+def test_sync_endpoint_dry_run_runs_without_remote_configuration(tmp_path, monkeypatch):
+    """The upload path stops here with "Remote is not configured". A preview
+    of what would be sent has nothing to configure, so it must not."""
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: tmp_path / "absent.toml")
+    monkeypatch.setattr("tools.remote.collector.build_endpoint_collections", _fake_collection)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert "not configured" not in result.output
+    assert json.loads(result.output.strip())["asset_id"] == "(unregistered)"
+
+
+def _fake_collection(**kwargs) -> list[EndpointCollection]:
+    return [
+        EndpointCollection(
+            agent=AgentInstance(
+                kind_id="claude-code",
+                display_name="Claude Code",
+                source="installed",
+                root_label="claude-code",
+                coverage_baseline="complete",
+            ),
+            bom={"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+            posture_findings=[],
+            observations=[],
+            component_count=0,
+        )
+    ]

@@ -721,3 +721,85 @@ def test_redact_payload_source_manifest_property_matches_bom_ref_disambiguation(
     # source_manifest property's redaction matches the bom-ref's path portion
     assert comps[0]["bom-ref"].split("#", 1)[0] == sm_a
     assert comps[1]["bom-ref"].split("#", 1)[0] == sm_b
+
+
+# --- bom.metadata (ADR-0051) -------------------------------------------------
+
+
+def test_redacts_absolute_path_in_bom_metadata_properties(tmp_path):
+    payload = {
+        "bom": {
+            "metadata": {
+                "properties": [
+                    {"name": "openaca:target", "value": str(tmp_path / "skills" / "a.md")}
+                ]
+            }
+        }
+    }
+
+    _redact_payload_for_remote(payload, config_dir=tmp_path, project=None)
+
+    assert payload["bom"]["metadata"]["properties"][0]["value"] == "skills/a.md"
+
+
+def test_redacts_absolute_path_in_metadata_component_properties(tmp_path):
+    """The agent properties land here, and `openaca:agent_id` is not
+    constrained by the scanner's schema (ADR-0051)."""
+    payload = {
+        "bom": {
+            "metadata": {
+                "component": {
+                    "bom-ref": "root/example",
+                    "properties": [
+                        {"name": "openaca:agent_id", "value": str(tmp_path / "agents" / "a")}
+                    ],
+                }
+            }
+        }
+    }
+
+    _redact_payload_for_remote(payload, config_dir=tmp_path, project=None)
+
+    assert payload["bom"]["metadata"]["component"]["properties"][0]["value"] == "agents/a"
+
+
+def test_leaves_non_openaca_metadata_properties_untouched(tmp_path):
+    """Scope is what the collector synthesized, not pass-through CycloneDX."""
+    payload = {
+        "bom": {"metadata": {"properties": [{"name": "vendor:path", "value": "/opt/thing"}]}}
+    }
+
+    _redact_payload_for_remote(payload, config_dir=tmp_path, project=None)
+
+    assert payload["bom"]["metadata"]["properties"][0]["value"] == "/opt/thing"
+
+
+def test_redacts_absolute_path_in_metadata_component_name(tmp_path):
+    """The agent display label carries no `openaca:` prefix, so the prefix
+    filter cannot reach it. It comes from unconstrained
+    `AgentInstance.display_name` (ADR-0051)."""
+    payload = {
+        "bom": {
+            "metadata": {
+                "component": {
+                    "bom-ref": "root/example",
+                    "name": str(tmp_path / "agents" / "payments"),
+                }
+            }
+        }
+    }
+
+    _redact_payload_for_remote(payload, config_dir=tmp_path, project=None)
+
+    assert payload["bom"]["metadata"]["component"]["name"] == "agents/payments"
+
+
+def test_leaves_a_slash_bearing_display_label_untouched(tmp_path):
+    """Redacting a label must not mangle a legitimate name. The embedded-path
+    rule requires the `/` to follow a non-word character, so `my-org/agent`
+    is not a path."""
+    payload = {"bom": {"metadata": {"component": {"name": "my-org/agent"}}}}
+
+    _redact_payload_for_remote(payload, config_dir=tmp_path, project=None)
+
+    assert payload["bom"]["metadata"]["component"]["name"] == "my-org/agent"

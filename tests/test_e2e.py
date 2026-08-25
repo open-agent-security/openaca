@@ -27,7 +27,8 @@ from tools.component_ref import ComponentRef
 from tools.export import build
 from tools.osv_federation import collect_osv_queries
 from tools.parsers.mcp_json import parse as parse_mcp
-from tools.remote.collector import _prepare_remote_bom
+from tools.remote.collector import _prepare_remote_bom, build_endpoint_dry_run_payloads
+from tools.remote.upload_contract import enforce_remote_upload_contract
 from tools.render import render_inventory_tree
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -1151,3 +1152,39 @@ def test_declared_repo_scan_keeps_component_bom_refs(tmp_path):
     props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
     assert props["openaca:composition_source"] == "declared"
     assert any(c["bom-ref"].startswith(".claude/skills/deploy/") for c in doc["components"])
+
+
+def test_remote_upload_payload_is_agent_rooted_and_redacted(tmp_path):
+    """The uploaded document is agent-rooted, names no place, and carries no
+    absolute path. Fails if the collector, the agent registry, the BOM
+    emitter, or the redaction layer regresses."""
+    config_dir = tmp_path / ".claude"
+    (config_dir / "skills" / "demo").mkdir(parents=True)
+    (config_dir / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: demo\n---\n", encoding="utf-8"
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=config_dir, project=None)
+
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["target_locator"] == "endpoint:user-scope"
+    metadata = payload["bom"]["metadata"]
+    props = {p["name"]: p["value"] for p in metadata["properties"]}
+    assert props["openaca:schema_version"] == "0.5"
+    assert "openaca:target" not in props
+    assert "openaca:target_type" not in props
+    component = metadata["component"]
+    assert component["bom-ref"] == "root/claude-code"
+    agent_props = {p["name"]: p["value"] for p in component["properties"]}
+    assert agent_props["openaca:agent_kind"] == "claude-code"
+    assert agent_props["openaca:composition_source"] == "installed"
+    assert "openaca:agent_id" not in agent_props
+    enforce_remote_upload_contract(payload)  # raises if any absolute path survived
+    # The enforcer's scope is itself part of what this change alters, so calling
+    # it alone would be self-referential. Assert the synthesized metadata
+    # strings directly, independent of the enforcer's own idea of its scope.
+    synthesized = [component["name"], *(p["value"] for p in component["properties"])]
+    synthesized += [p["value"] for p in metadata["properties"]]
+    assert not [s for s in synthesized if s.startswith("/") or s.startswith("file://")]
+    assert str(tmp_path) not in json.dumps(payload)

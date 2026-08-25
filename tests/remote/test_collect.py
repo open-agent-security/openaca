@@ -11,6 +11,7 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
+from tools.agent_kinds import AgentInstance
 from tools.cli import main as openaca_main
 from tools.component_ref import ComponentRef
 from tools.observations.finding import ObservationFinding
@@ -21,14 +22,18 @@ from tools.remote.client import (
     DriftResult,
     RegisterAssetResult,
     RemoteAuthError,
+    RemoteValidationError,
 )
 from tools.remote.collector import (
+    DRY_RUN_UNREGISTERED_ASSET_ID,
     CollectError,
     EndpointCollection,
-    build_endpoint_collection,
+    build_endpoint_collections,
+    build_endpoint_dry_run_payloads,
     collect_endpoint,
 )
 from tools.remote.config import load_remote_config
+from tools.remote.upload_contract import RemoteUploadContractError
 
 
 def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path, monkeypatch):
@@ -44,39 +49,33 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     calls: list[tuple[str, object]] = []
 
     def fake_collect_endpoint_components(*args):
-        calls.append(("_collect_endpoint_components", args))
+        calls.append(("_agent_refs", args))
         return None, [ref]
 
-    def fake_run_posture_rules(refs, manifests, settings_manifests):
+    def fake_run_posture_rules(refs, manifests, settings_manifests, *, allowed_rules=None):
         calls.append(("run_posture_rules", refs))
         assert manifests == [("mcp", {})]
         assert settings_manifests == [("settings", {})]
+        assert allowed_rules is None
         return [_posture("openaca-posture-mutable-install-reference")]
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", fake_collect_endpoint_components)
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", fake_collect_endpoint_components
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [("mcp", {})],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [("settings", {})],
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([("mcp", {})], [("settings", {})]),
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", fake_run_posture_rules)
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
-    assert calls[0][0] == "_collect_endpoint_components"
+    assert calls[0][0] == "_agent_refs"
     assert calls[1] == ("run_posture_rules", [ref])
-    assert collection.bom["metadata"]["properties"][1] == {
-        "name": "openaca:target_type",
-        "value": "endpoint",
-    }
-    assert {"name": "openaca:target", "value": "endpoint:user-scope"} in collection.bom["metadata"][
-        "properties"
-    ]
+    metadata_props = {p["name"]: p["value"] for p in collection.bom["metadata"]["properties"]}
+    # The upload names no place: `openaca:target_type` is no longer written at
+    # all, and `openaca:target` is dropped rather than carrying a literal
+    # (plan 041; ADR-0051 covers what is left in metadata).
+    assert "openaca:target_type" not in metadata_props
+    assert "openaca:target" not in metadata_props
     assert collection.posture_findings == [
         {
             "source": "openaca",
@@ -97,6 +96,40 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     ]
 
 
+def test_build_endpoint_collections_respects_the_kind_posture_allowlist(tmp_path, monkeypatch):
+    """A kind that restricts its posture rules must see that restriction
+    honored remotely, exactly as the local `scan endpoint` path already does
+    (`tools/scan.py` passes `allowed_rules=kind.posture_rules`)."""
+    from dataclasses import replace as dc_replace
+
+    import tools.agent_kinds as agent_kinds
+    from tests.fixtures.agent_kinds import register_synthetic_kind
+
+    def mcp_collector(config_root, project_root, refs):
+        return [
+            (
+                config_root / ".mcp.json",
+                {"mcpServers": {"example": {"url": "http://insecure.example"}}},
+            )
+        ]
+
+    def settings_collector(config_root, project_root):
+        return []
+
+    kind = register_synthetic_kind(monkeypatch, agent_ids=["a"])
+    kind = dc_replace(
+        kind,
+        posture_rules=frozenset(),
+        installed_posture_collectors=(mcp_collector, settings_collector),
+    )
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (kind,))
+
+    collections = build_endpoint_collections(config_dir=tmp_path, project=None)
+
+    assert len(collections) == 1
+    assert collections[0].posture_findings == []
+
+
 def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, monkeypatch):
     ref = ComponentRef(
         component_identity="skill/deploy-helper",
@@ -105,18 +138,12 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
         extra={"component_type": "skill", "name": "deploy-helper"},
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     def fake_collect_skillspector_findings(refs):
         assert refs == [ref]
@@ -173,11 +200,11 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
         fake_collect_skillspector_findings,
     )
 
-    collection = build_endpoint_collection(
+    collection = build_endpoint_collections(
         config_dir=tmp_path,
         project=None,
         external_scanners=("nvidia-skillspector",),
-    )
+    )[0]
 
     assert collection.observations == [
         {
@@ -224,18 +251,12 @@ def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, mon
         extra={"component_type": "skill", "name": "deploy-helper"},
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     def missing_collect(_refs):
         from tools.observations.skillspector import SkillSpectorCommandNotFound
@@ -245,7 +266,7 @@ def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, mon
     monkeypatch.setattr("tools.remote.collector.collect_skillspector_findings", missing_collect)
 
     with pytest.raises(CollectError, match="SkillSpector command not found: skillspector"):
-        build_endpoint_collection(
+        build_endpoint_collections(
             config_dir=tmp_path,
             project=None,
             external_scanners=("nvidia-skillspector",),
@@ -260,18 +281,12 @@ def test_build_endpoint_collection_surfaces_scanner_warnings(tmp_path, monkeypat
         extra={"component_type": "skill", "name": "deploy-helper"},
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
     monkeypatch.setattr(
         "tools.remote.collector.collect_skillspector_findings",
@@ -282,7 +297,7 @@ def test_build_endpoint_collection_surfaces_scanner_warnings(tmp_path, monkeypat
         ),
     )
 
-    build_endpoint_collection(
+    build_endpoint_collections(
         config_dir=tmp_path,
         project=None,
         external_scanners=("nvidia-skillspector",),
@@ -303,20 +318,14 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "python"
@@ -335,20 +344,14 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @example/mcp"
@@ -367,20 +370,14 @@ def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monke
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server"
@@ -399,20 +396,14 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @scope/pkg@1.2.3"
@@ -434,19 +425,12 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@playwright/mcp"
@@ -474,19 +458,12 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([(manifest_path, manifest)], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [(manifest_path, manifest)],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-remote/example.com/mcp"
@@ -507,20 +484,14 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
@@ -543,20 +514,14 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (
@@ -585,20 +550,14 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (
@@ -634,20 +593,14 @@ def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == expected
@@ -668,20 +621,14 @@ def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_p
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "docker hashicorp/terraform-mcp-server:0.4.0"
@@ -703,20 +650,14 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (f"docker ghcr.io/github/github-mcp-server@{digest}")
@@ -733,20 +674,14 @@ def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path,
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "bun"
@@ -767,20 +702,14 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_pre
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @scope/pkg@1.2.3"
@@ -801,20 +730,14 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
@@ -834,20 +757,14 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert "openaca:identity" not in props
@@ -867,20 +784,14 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert "openaca:identity" not in props
@@ -907,20 +818,14 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
@@ -943,20 +848,14 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
@@ -978,20 +877,14 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
@@ -1011,20 +904,14 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/weather-mcp"
@@ -1072,20 +959,14 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
         },
     )
 
+    monkeypatch.setattr("tools.remote.collector._agent_refs", lambda *args: (None, [ref]))
     monkeypatch.setattr(
-        "tools.remote.collector._collect_endpoint_components", lambda *args: (None, [ref])
+        "tools.remote.collector._agent_posture_manifests",
+        lambda agent, refs: ([], []),
     )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_mcp_manifests",
-        lambda config_dir, project, refs: [],
-    )
-    monkeypatch.setattr(
-        "tools.remote.collector.collect_endpoint_settings_manifests",
-        lambda config_dir, project: [],
-    )
-    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args: [])
+    monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collection(config_dir=tmp_path, project=None)
+    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
@@ -1101,8 +982,8 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr("tools.remote.collector.socket.gethostname", lambda: "demo-host")
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1121,9 +1002,9 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    result = collect_endpoint(config_dir=tmp_path, project=None)
+    results = collect_endpoint(config_dir=tmp_path, project=None)
 
-    assert result.asset_id == "asset-123"
+    assert results[0].asset_id == "asset-123"
     assert [name for name, _ in calls] == ["init", "register_asset", "upload_bom"]
     assert calls[1][1]["asset_type"] == "endpoint"
     assert calls[1][1]["external_id"] == "demo-host"
@@ -1141,11 +1022,11 @@ def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, mon
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
 
     def fake_build_endpoint_collection(**kwargs):
-        calls.append(("build_endpoint_collection", kwargs))
-        return _collection()
+        calls.append(("build_endpoint_collections", kwargs))
+        return [_collection()]
 
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection", fake_build_endpoint_collection
+        "tools.remote.collector.build_endpoint_collections", fake_build_endpoint_collection
     )
 
     class FakeClient:
@@ -1165,7 +1046,7 @@ def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, mon
     )
 
     assert calls[0] == (
-        "build_endpoint_collection",
+        "build_endpoint_collections",
         {
             "config_dir": tmp_path,
             "project": None,
@@ -1207,8 +1088,8 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
 
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(bom=dirty_bom),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(bom=dirty_bom)],
     )
 
     class FakeClient:
@@ -1376,8 +1257,8 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1404,8 +1285,8 @@ def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1432,8 +1313,8 @@ def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1459,8 +1340,8 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1495,22 +1376,24 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
     inside = tmp_path / "skills" / "x" / "SKILL.md"
     outside = "/Users/alex/.claude/settings.json"
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(
-            bom={
-                "bomFormat": "CycloneDX",
-                "specVersion": "1.7",
-                "components": [
-                    {
-                        "name": "mcp-server/test",
-                        "properties": [
-                            {"name": "openaca:source_manifest", "value": str(inside)},
-                            {"name": "openaca:source_manifest", "value": outside},
-                        ],
-                    }
-                ],
-            }
-        ),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [
+            _collection(
+                bom={
+                    "bomFormat": "CycloneDX",
+                    "specVersion": "1.7",
+                    "components": [
+                        {
+                            "name": "mcp-server/test",
+                            "properties": [
+                                {"name": "openaca:source_manifest", "value": str(inside)},
+                                {"name": "openaca:source_manifest", "value": outside},
+                            ],
+                        }
+                    ],
+                }
+            )
+        ],
     )
 
     class FakeClient:
@@ -1539,8 +1422,8 @@ def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1565,8 +1448,8 @@ def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path,
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1578,10 +1461,12 @@ def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path,
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    with pytest.raises(CollectError) as exc:
-        collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
+    results = collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
 
-    assert exc.value.exit_code == 0
+    # `--quiet` gates only the cached-failure category, so nothing raises and
+    # the CLI still exits 0 — as before, when this raised CollectError(exit_code=0).
+    assert results == []
+    assert len(list((tmp_path / "pending").glob("pending-bom-*.json"))) == 1
 
 
 def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, monkeypatch):
@@ -1594,8 +1479,8 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1626,8 +1511,8 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: (collection_built.append(True), _collection())[1],
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [(collection_built.append(True), _collection())[1]],
     )
 
     class FakeClient:
@@ -1639,10 +1524,11 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    with pytest.raises(CollectError) as exc:
-        collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+    results = collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
 
-    assert exc.value.exit_code == 0
+    # `--allow-offline-cache` gates only the cached-failure category, so this
+    # returns instead of raising CollectError(exit_code=0); the CLI exits 0 either way.
+    assert results == []
     assert collection_built, "current endpoint collection must run even when replay fails"
     assert (pending_dir / "pending-bom-1.json").exists(), "old pending file kept for next attempt"
     assert len(list(pending_dir.glob("pending-bom-*.json"))) == 2, "new pending file written"
@@ -1658,8 +1544,8 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1691,8 +1577,8 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1737,8 +1623,8 @@ def test_collect_endpoint_purges_stale_asset_pending_files_on_replay(tmp_path, m
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collection",
-        lambda config_dir, project: _collection(),
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection()],
     )
 
     class FakeClient:
@@ -1763,7 +1649,7 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
 
     def fake_collect_endpoint(**kwargs):
         calls.append(kwargs)
-        return _upload_result(asset_id="asset-123")
+        return [_upload_result(asset_id="asset-123")]
 
     monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
 
@@ -1809,9 +1695,24 @@ def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
     return config_path
 
 
-def _collection(*, bom: dict[str, Any] | None = None) -> EndpointCollection:
+def _collection(
+    *, agent_kind: str = "claude-code", bom: dict[str, Any] | None = None
+) -> EndpointCollection:
     return EndpointCollection(
-        bom=bom or {"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
+        agent=AgentInstance(
+            kind_id=agent_kind,
+            display_name=agent_kind,
+            source="installed",
+            root_label=agent_kind,
+            coverage_baseline="complete",
+        ),
+        bom=bom
+        or {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.7",
+            "components": [],
+            "metadata": {"component": {"bom-ref": f"root/{agent_kind}"}},
+        },
         posture_findings=[
             {
                 "rule_id": "openaca-posture-insecure-transport",
@@ -1899,3 +1800,452 @@ def test_upload_contract_accepts_an_agent_rooted_document():
     assert props["openaca:agent_id"] == "payments-triage"
 
     enforce_remote_upload_contract({"bom": doc})  # must not raise
+
+
+def test_dry_run_builds_the_payload_that_would_be_uploaded(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["asset_id"] == "asset-existing"
+    assert payload["source"] == "endpoint"
+    assert payload["target_locator"] == "endpoint:user-scope"
+    assert payload["content_hash"] == _content_hash_of(payload["bom"])
+    assert payload["posture_findings"][0]["rule_id"] == "openaca-posture-insecure-transport"
+
+
+def test_dry_run_never_constructs_a_remote_client(tmp_path, monkeypatch):
+    """The point of a dry run is that nothing leaves the machine — including
+    asset registration, which the upload path performs before its first upload."""
+    config_path = _write_config(tmp_path, asset_id=None)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
+    )
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("dry run performed network I/O")
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", fail)
+
+    build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+
+def test_dry_run_marks_an_unregistered_asset_rather_than_inventing_one(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id=None)
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+    assert payloads[0]["asset_id"] == DRY_RUN_UNREGISTERED_ASSET_ID
+
+
+def test_dry_run_works_without_remote_configuration(tmp_path, monkeypatch):
+    """Previewing what a sync would send needs no token: nothing is sent.
+    Requiring one would gate the preview on the step it exists to precede."""
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: tmp_path / "absent.toml")
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+    assert payloads[0]["asset_id"] == DRY_RUN_UNREGISTERED_ASSET_ID
+
+
+def test_dry_run_writes_no_config_and_no_pending_cache(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path, asset_id=None)
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
+    )
+    before = config_path.read_text(encoding="utf-8")
+
+    build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+    assert config_path.read_text(encoding="utf-8") == before
+    assert not pending_dir.exists()
+
+
+def test_dry_run_shows_the_redacted_payload_not_the_raw_one(tmp_path, monkeypatch):
+    """A dry run that printed pre-redaction values would misrepresent what
+    crosses the boundary — the exact thing a user runs it to check."""
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "components": [
+            {
+                "bom-ref": "component-1",
+                "name": "example",
+                "properties": [
+                    {
+                        "name": "openaca:source_manifest",
+                        "value": str(tmp_path / "skills" / "deploy" / "SKILL.md"),
+                    }
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection(bom=bom)]
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+    value = payloads[0]["bom"]["components"][0]["properties"][0]["value"]
+    assert value == "skills/deploy/SKILL.md"
+
+
+def test_dry_run_enforces_the_upload_contract_rather_than_printing_a_violation(
+    tmp_path, monkeypatch
+):
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.7",
+        "components": [
+            {
+                "bom-ref": "component-1",
+                "name": "example",
+                "properties": [{"name": "openaca:env", "value": "anything"}],
+            }
+        ],
+    }
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection(bom=bom)]
+    )
+
+    with pytest.raises(RemoteUploadContractError):
+        build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+
+
+def _content_hash_of(bom: dict[str, Any]) -> str:
+    payload = json.dumps(bom, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+# --- per-agent collection (plan 041 Task 2) ----------------------------------
+
+
+def _endpoint_fixture(root: Path) -> Path:
+    skill = root / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+    (root / ".mcp.json").write_text(
+        '{"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_build_endpoint_collections_emits_one_agent_rooted_bom_per_agent(tmp_path):
+    config_dir = _endpoint_fixture(tmp_path / ".claude")
+
+    collections = build_endpoint_collections(config_dir=config_dir, project=None)
+
+    assert len(collections) == 1
+    assert collections[0].agent.kind_id == "claude-code"
+    metadata = collections[0].bom["metadata"]
+    props = {p["name"]: p["value"] for p in metadata["properties"]}
+    assert props["openaca:schema_version"] == "0.5"
+    assert "openaca:target_type" not in props
+    assert "openaca:target" not in props
+    assert metadata["component"]["bom-ref"] == "root/claude-code"
+    component_props = {p["name"]: p["value"] for p in metadata["component"]["properties"]}
+    assert component_props["openaca:agent_kind"] == "claude-code"
+    assert component_props["openaca:composition_source"] == "installed"
+    assert "openaca:agent_id" not in component_props
+
+
+# --- per-agent upload (plan 041 Task 3) --------------------------------------
+
+
+def test_collect_endpoint_uploads_one_payload_per_agent(tmp_path, monkeypatch):
+    """Same asset_id in every envelope; the agent is named inside the
+    document (ADR-0050)."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(agent_kind="claude-code"), _collection(agent_kind="other")],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    results = collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert len(results) == 2
+    assert [u["asset_id"] for u in uploads] == ["asset-123", "asset-123"]
+    assert [u["target_locator"] for u in uploads] == ["endpoint:user-scope"] * 2
+    assert uploads[0]["content_hash"] != uploads[1]["content_hash"]
+
+
+def test_collect_endpoint_caches_only_the_failing_agent(tmp_path, monkeypatch):
+    """A network failure on one agent must not discard the others (ADR-0050)."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(agent_kind="claude-code"), _collection(agent_kind="other")],
+    )
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            self.calls = 0
+
+        def upload_bom(self, payload):
+            self.calls += 1
+            if self.calls == 1:
+                raise httpx.ConnectError("down")
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    results = collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+
+    assert len(results) == 1
+    assert len(list(pending_dir.glob("pending-bom-*.json"))) == 1
+
+
+def test_collect_endpoint_attempts_every_agent_by_default_and_names_the_failed_one(
+    tmp_path, monkeypatch
+):
+    """Default mode (neither `--quiet` nor `--allow-offline-cache`) must still
+    attempt every discovered agent after an earlier one fails on the network,
+    and the raised error must identify which agent(s) it could not upload
+    (spec: "reports which ones it could not"; ADR-0050: per-agent independence)."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(agent_kind="claude-code"), _collection(agent_kind="other")],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            if len(uploads) == 1:
+                raise httpx.ConnectError("down")
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    with pytest.raises(CollectError) as excinfo:
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert len(uploads) == 2  # the second agent was still attempted
+    assert excinfo.value.exit_code == 2
+    assert "root/claude-code" in str(excinfo.value)
+    assert "root/other" not in str(excinfo.value)
+    assert len(list(pending_dir.glob("pending-bom-*.json"))) == 1
+
+
+def test_collect_endpoint_warns_and_returns_empty_when_no_agent_discovered(tmp_path, monkeypatch):
+    """Matches `scan endpoint`'s convention (`tools/scan.py`) for the same
+    condition, rather than leaving the outcome of zero discovered agents
+    unspecified."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr("tools.remote.collector.build_endpoint_collections", lambda **kwargs: [])
+
+    results = collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert results == []
+
+
+def test_collect_endpoint_attempts_every_agent_after_multiple_network_failures(
+    tmp_path, monkeypatch
+):
+    """Two retryable failures in a three-agent sync must not stop at the
+    first or second — every agent is still attempted, and every failure is
+    cached and named."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [
+            _collection(agent_kind="claude-code"),
+            _collection(agent_kind="other"),
+            _collection(agent_kind="third"),
+        ],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            if len(uploads) in (1, 3):
+                raise httpx.ConnectError("down")
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    with pytest.raises(CollectError) as excinfo:
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert len(uploads) == 3  # every agent was attempted, including after the second failure
+    assert excinfo.value.exit_code == 2
+    assert "root/claude-code" in str(excinfo.value)
+    assert "root/third" in str(excinfo.value)
+    assert "root/other" not in str(excinfo.value)
+    assert len(list(pending_dir.glob("pending-bom-*.json"))) == 2
+
+
+def test_collect_endpoint_continues_past_a_rejected_agent_without_caching_it(tmp_path, monkeypatch):
+    """A 422 or 413 rejects one agent's document, not the connection or the
+    token — the next agent's document is unrelated and must still be
+    attempted, and the rejected one is not cached (`--allow-offline-cache`'s
+    own scope is a pending cache file, and retrying an invalid payload
+    unchanged would only be rejected again)."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(agent_kind="claude-code"), _collection(agent_kind="other")],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            if len(uploads) == 1:
+                raise RemoteValidationError("document too large for one agent", [])
+            return _upload_result(asset_id=payload["asset_id"])
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    with pytest.raises(CollectError) as excinfo:
+        collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+
+    assert len(uploads) == 2  # the second agent was still attempted
+    assert (
+        excinfo.value.exit_code == 1
+    )  # not suppressed by --allow-offline-cache: nothing was cached
+    assert "root/claude-code" in str(excinfo.value)
+    assert "root/other" not in str(excinfo.value)
+    assert list(pending_dir.glob("pending-bom-*.json")) == []
+
+
+def test_collect_endpoint_names_both_a_rejected_and_a_cached_agent_together(tmp_path, monkeypatch):
+    """A rejection and a network failure in the same sync must not lose one
+    of them: the rejected list short-circuiting past the cached list would
+    silently drop whichever agent it didn't raise about. `--quiet` is set
+    here specifically because it suppresses the per-agent echoes above —
+    the final exception is the only place left for either agent's name to
+    appear, so it must name both."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    pending_dir = tmp_path / "pending"
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: pending_dir)
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [
+            _collection(agent_kind="claude-code"),
+            _collection(agent_kind="other"),
+            _collection(agent_kind="third"),
+        ],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            if len(uploads) == 1:
+                return _upload_result(asset_id=payload["asset_id"])
+            if len(uploads) == 2:
+                raise RemoteValidationError("document too large for one agent", [])
+            raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    with pytest.raises(CollectError) as excinfo:
+        collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
+
+    assert len(uploads) == 3  # every agent was attempted despite the rejection
+    assert excinfo.value.exit_code == 1  # a rejection is present, so not suppressed
+    assert "root/claude-code" not in str(excinfo.value)  # the succeeding agent
+    assert "root/other" in str(excinfo.value)  # rejected
+    assert "root/third" in str(excinfo.value)  # cached
+    assert len(list(pending_dir.glob("pending-bom-*.json"))) == 1
+
+
+def test_collect_endpoint_aborts_on_auth_failure_without_attempting_later_agents(
+    tmp_path, monkeypatch
+):
+    """One token authenticates every upload in a sync; a rejected token will
+    reject every remaining agent too, so this stays a global, immediate
+    abort rather than a per-agent failure (unlike the network/validation
+    cases above, which keep attempting the remaining agents)."""
+    config_path = _write_config(tmp_path, asset_id="asset-123")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
+    monkeypatch.setattr(
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(agent_kind="claude-code"), _collection(agent_kind="other")],
+    )
+    uploads: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def upload_bom(self, payload):
+            uploads.append(payload)
+            raise RemoteAuthError("invalid or revoked token")
+
+    monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
+
+    with pytest.raises(CollectError) as excinfo:
+        collect_endpoint(config_dir=tmp_path, project=None)
+
+    assert len(uploads) == 1  # the second agent was never attempted
+    assert excinfo.value.exit_code == 1
+    assert str(excinfo.value) == "invalid or revoked token"

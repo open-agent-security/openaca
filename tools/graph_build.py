@@ -488,24 +488,32 @@ def _seed_active_plugins(
         _add_child(graph, target, plugin_node)
 
         install_path = entry.get("installPath")
-        if isinstance(install_path, str) and install_path:
-            # Reuse the repo-mode plugin descent for bundled skills + their deps,
-            # but suppress the plugin's OWN root dep manifests: those come from
-            # the tier-2 lockfile walk below (lockfile-preferred). Emitting both
-            # would double-count a direct dep present in package.json AND
-            # package-lock.json. Bundled skills and their own deps still descend.
-            descend(
-                graph,
-                plugin_node,
-                Path(install_path),
-                normalize,
-                emit_own_root_deps=False,
-            )
-            # Plugin tier-2 lockfile deps: parity with parse_install — attach as
-            # package children of the plugin node (NOT a skill).
-            for ref in claude_install._walk_plugin_implementation_deps(Path(install_path)):
-                node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
-                _add_child(graph, plugin_node, node)
+        if not isinstance(install_path, str) or not install_path:
+            if warnings is not None:
+                warnings.append(f"plugin {plugin_key}: missing installPath; skipping contents")
+            continue
+        install_dir = Path(install_path)
+        if not install_dir.is_dir():
+            if warnings is not None:
+                warnings.append(f"plugin {plugin_key}: installPath {install_path!r} is unavailable")
+            continue
+        # Reuse the repo-mode plugin descent for bundled skills + their deps,
+        # but suppress the plugin's OWN root dep manifests: those come from
+        # the tier-2 lockfile walk below (lockfile-preferred). Emitting both
+        # would double-count a direct dep present in package.json AND
+        # package-lock.json. Bundled skills and their own deps still descend.
+        descend(
+            graph,
+            plugin_node,
+            install_dir,
+            normalize,
+            emit_own_root_deps=False,
+        )
+        # Plugin tier-2 lockfile deps: parity with parse_install — attach as
+        # package children of the plugin node (NOT a skill).
+        for ref in claude_install._walk_plugin_implementation_deps(install_dir):
+            node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
+            _add_child(graph, plugin_node, node)
 
 
 def _seed_remote_mcps(

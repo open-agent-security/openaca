@@ -201,6 +201,7 @@ def apply_risk_gates(
         target = _restriction_target(ref, component_by_ref.get(id(ref)), component_by_occurrence)
         _block_decision(decisions, target, f"posture {rule_id}")
 
+    _propagate_plugin_decisions(decisions, components, component_by_occurrence)
     return [decisions[id(c.ref)] for c in components]
 
 
@@ -407,12 +408,7 @@ def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None =
         plugin_ref = _owning_plugin_ref(ref, graph)
         if plugin_ref is not None:
             plugin_decision = _admission_decision(policy, plugin_ref, graph)
-            return Decision(
-                ref=ref,
-                category=category or "other",
-                blocked=plugin_decision.blocked,
-                reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
-            )
+            return _inherited_plugin_decision(ref, category or "other", plugin_decision)
     if category is None:
         return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
     if category == "skills":
@@ -524,6 +520,40 @@ def _restriction_target(
         return ref
     owner = component_by_occurrence.get(ref_occurrence_key(plugin_ref))
     return owner.ref if owner is not None else ref
+
+
+def _propagate_plugin_decisions(
+    decisions: dict[int, Decision],
+    components: list[EndpointComponent],
+    component_by_occurrence: dict[tuple[str, ...], EndpointComponent],
+) -> None:
+    """Refresh bundled-component reports after a risk gate blocks their plugin."""
+    for component in components:
+        current = decisions[id(component.ref)]
+        if current.category == "plugins":
+            continue
+        plugin_ref = _owning_plugin_ref(component.ref, component.graph)
+        if plugin_ref is None:
+            continue
+        owner = component_by_occurrence.get(ref_occurrence_key(plugin_ref))
+        if owner is None:
+            continue
+        decisions[id(component.ref)] = _inherited_plugin_decision(
+            component.ref,
+            current.category,
+            decisions[id(owner.ref)],
+        )
+
+
+def _inherited_plugin_decision(
+    ref: ComponentRef, category: DecisionCategory, plugin_decision: Decision
+) -> Decision:
+    return Decision(
+        ref=ref,
+        category=category,
+        blocked=plugin_decision.blocked,
+        reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
+    )
 
 
 def _block_decision(decisions: dict[int, Decision], ref: ComponentRef, reason: str) -> None:

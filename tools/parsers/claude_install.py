@@ -187,6 +187,18 @@ def _walk_active_plugins(
         # consistent whether the plugin was discovered in repo mode (settings.json,
         # no version) or endpoint mode (installed_plugins.json, version known).
         component_identity = _plugin_identity(plugin_name, marketplace)
+        marketplace_source = _marketplace_source(layers, mode, marketplace)
+        extra = {
+            "component_type": "plugin",
+            "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
+            "component_path": [{"type": "plugin", "name": plugin_name}],
+            "gitCommitSha": entry.get("gitCommitSha"),
+            "installPath": entry.get("installPath"),
+            "marketplace": marketplace,
+            "scope": entry.get("scope"),
+        }
+        if marketplace_source is not None:
+            extra["marketplace_source"] = marketplace_source
 
         refs.append(
             ComponentRef(
@@ -195,15 +207,7 @@ def _walk_active_plugins(
                 component_identity=component_identity,
                 source_manifest=str(lockfile_path),
                 source_locator=f"$.plugins.{plugin_key}[{index}]",
-                extra={
-                    "component_type": "plugin",
-                    "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
-                    "component_path": [{"type": "plugin", "name": plugin_name}],
-                    "gitCommitSha": entry.get("gitCommitSha"),
-                    "installPath": entry.get("installPath"),
-                    "marketplace": marketplace,
-                    "scope": entry.get("scope"),
-                },
+                extra=extra,
             )
         )
 
@@ -606,6 +610,42 @@ def _plugin_identity(plugin_name: str, marketplace: Optional[str]) -> str:
     if marketplace:
         return f"plugin/{marketplace}/{plugin_name}"
     return f"plugin/{plugin_name}"
+
+
+def _marketplace_source(
+    layers: SettingsLayers, mode: Mode, marketplace: Optional[str]
+) -> Optional[str]:
+    """Return the source value a managed marketplace policy can match.
+
+    The installed-plugin lockfile records only the marketplace's local name.
+    Claude settings retain the source object that supplied that name, so use
+    the merged active settings rather than guessing from a plugin identity.
+    """
+    if marketplace is None:
+        return None
+    marketplaces = layers.merged(mode).get("extraKnownMarketplaces")
+    if not isinstance(marketplaces, dict):
+        return None
+    entry = marketplaces.get(marketplace)
+    if not isinstance(entry, dict):
+        return None
+    source = entry.get("source")
+    if not isinstance(source, dict):
+        return None
+    source_type = source.get("source")
+    if (
+        source_type == "github"
+        and set(source) == {"source", "repo"}
+        and isinstance(source.get("repo"), str)
+    ):
+        return f"https://github.com/{source['repo']}.git"
+    if (
+        source_type == "git"
+        and set(source) == {"source", "url"}
+        and isinstance(source.get("url"), str)
+    ):
+        return source["url"]
+    return None
 
 
 def _enabling_scope(

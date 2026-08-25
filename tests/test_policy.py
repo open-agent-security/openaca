@@ -130,6 +130,14 @@ def test_policy_load_rejects_an_unhashable_mapping_key(tmp_path):
         load(policy_path)
 
 
+def test_policy_load_rejects_invalid_utf8(tmp_path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(PolicyValidationError):
+        load(policy_path)
+
+
 def test_policy_rejects_target_in_both_lists():
     with pytest.raises(PolicyValidationError, match="both allowed and blocked"):
         parse(

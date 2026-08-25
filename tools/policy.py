@@ -154,7 +154,7 @@ def load(path: Path) -> Policy:
     """Load and validate a YAML or JSON policy document."""
     try:
         document = yaml.load(path.read_text(encoding="utf-8"), Loader=_PolicyLoader)
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise PolicyValidationError(str(exc)) from exc
     return parse(document)
 

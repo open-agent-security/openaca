@@ -11,6 +11,7 @@ from tools.graph import Edge, Graph, Node
 from tools.policy import (
     EndpointComponent,
     PluginTarget,
+    PolicyEvaluationError,
     PolicyValidationError,
     apply_risk_gates,
     parse,
@@ -354,6 +355,72 @@ def test_skill_bundled_in_a_blocked_plugin_is_blocked_despite_allowed_skills_def
     assert decisions[1].blocked is True
 
 
+def test_mcp_bundled_in_a_blocked_plugin_is_blocked_despite_an_exact_mcp_allow():
+    """Spec: "A plugin remains the trust boundary for its bundled MCP
+    servers, skills, and other contents." An MCP server contained by a
+    plugin must inherit the plugin's own admission decision rather than
+    being evaluated independently against `mcps.allowed`/`mcps.default`."""
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "allowed",
+                    "allowed": [{"command": ["npx", "-y", "safe-mcp"]}],
+                },
+                "plugins": {"default": "blocked"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+    graph = _graph_with_plugin_child(plugin, mcp, "mcp_server")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(mcp, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+
+    assert decisions[0].blocked is True
+    assert decisions[1].blocked is True
+    assert decisions[1].reasons == ("owning plugin: plugins default: blocked",)
+
+
+def test_mcp_bundled_in_an_allowed_plugin_is_not_blocked_by_mcps_default():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "blocked"},
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    plugin = ComponentRef(
+        name="bundle", extra={"component_type": "plugin", "marketplace": "internal"}
+    )
+    mcp = _mcp(["npx", "-y", "bundled-mcp"])
+    graph = _graph_with_plugin_child(plugin, mcp, "mcp_server")
+
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, graph), EndpointComponent(mcp, graph)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+
+    assert decisions[0].blocked is False
+    assert decisions[1].blocked is False
+
+
 def test_standalone_skill_still_follows_skills_default():
     policy = _policy()
     skill = ComponentRef(name="helper", extra={"component_type": "skill"})
@@ -384,6 +451,41 @@ def test_vulnerability_gate_matches_an_advisory_alias():
 
     assert decision.blocked is True
     assert decision.reasons[-1] == "vulnerability GHSA-1234"
+
+
+def test_severity_gate_blocks_on_a_derivable_upstream_label():
+    policy = _policy(vulnerabilities={"severity_at_least": "high"})
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+
+    decision = apply_risk_gates(
+        policy,
+        [EndpointComponent(mcp)],
+        advisories=[{"id": "GHSA-1234", "database_specific": {"severity": "HIGH"}}],
+        advisory_matches=[(mcp, "GHSA-1234")],
+        posture_matches=[],
+    )[0]
+
+    assert decision.blocked is True
+
+
+def test_severity_gate_fails_closed_on_an_advisory_with_no_derivable_severity():
+    """An advisory with neither an upstream `database_specific.severity`
+    label nor a parseable CVSS vector derives to severity "UNKNOWN".
+    Treating that as "below threshold" would silently admit a component
+    with a real, matched vulnerability finding just because the severity
+    data happened to be missing — the same "not evidence that it is clean"
+    principle the non-queryable-component check already enforces."""
+    policy = _policy(vulnerabilities={"severity_at_least": "high"})
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+
+    with pytest.raises(PolicyEvaluationError, match="cannot evaluate severity_at_least gate"):
+        apply_risk_gates(
+            policy,
+            [EndpointComponent(mcp)],
+            advisories=[{"id": "GHSA-1234"}],
+            advisory_matches=[(mcp, "GHSA-1234")],
+            posture_matches=[],
+        )
 
 
 def test_standalone_skill_risk_block_is_reported_unenforceable_when_skills_default_allowed():

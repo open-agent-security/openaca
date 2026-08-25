@@ -27,6 +27,7 @@ from tools.policy import (
     Decision,
     EndpointComponent,
     Policy,
+    PolicyEvaluationError,
     PolicyValidationError,
     apply_risk_gates,
     canonical_json,
@@ -99,7 +100,7 @@ def compile(
         if collisions:
             labels = ", ".join(f"{key} in {path}" for key, path in collisions)
             raise click.ClickException(f"managed settings key collision: {labels}")
-    except PolicyValidationError as exc:
+    except (PolicyValidationError, PolicyEvaluationError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     # Endpoint-level posture findings (no discovered component to attribute the

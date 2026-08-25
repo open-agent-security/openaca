@@ -654,36 +654,35 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
 
 
 def test_policy_compile_blocks_a_vulnerable_standalone_mcp_server(tmp_path):
-    """policy compiler E2E: agent discovery, graph construction, OSV/overlay
-    lookup, advisory matching, a vulnerability risk gate, and Claude
-    managed-settings compilation wire up together against a real endpoint
-    layout. A standalone MCP server (declared in `.mcp.json`, no owning
-    plugin) is pinned to a vulnerable npm package version; the vulnerability
-    gate must block that exact MCP server in the compiled artifact."""
+    """policy compiler E2E: agent discovery, graph construction, OSV lookup,
+    the checked-in `overlays/` corpus merge, advisory matching, a
+    vulnerability risk gate, and Claude managed-settings compilation wire up
+    together against a real endpoint layout.
+
+    Unlike a hand-written synthetic advisory, this pins the MCP server to
+    `@akoskm/create-mcp-server-stdio`, one of the packages the autouse
+    `_offline_osv_for_scan_tests` fixture (see `tests/conftest.py`) serves
+    from the real OSV-shaped fixture `tests/fixtures/osv/ghsa-3ch2-jxxc-v4xf.json`
+    instead of hitting the network. `tools.scan._load_osv_with_overlays`
+    still runs for real from there — `load_overlays` and `apply_overlays`
+    merge the actual bundled overlay `overlays/GHSA-3ch2-jxxc-v4xf.yaml` in,
+    so a regression in loading or merging the real overlay corpus, not just
+    a synthetic fixture, fails this test. The policy gates on
+    `CVE-2025-54994`, that overlay's alias, to also exercise alias-based ID
+    matching against the real corpus."""
     (tmp_path / ".mcp.json").write_text(
         json.dumps(
             {
                 "mcpServers": {
                     "evil": {
                         "command": "npx",
-                        "args": ["-y", "@evil/mcp@0.9.0"],
+                        "args": ["-y", "@akoskm/create-mcp-server-stdio@0.9.0"],
                     }
                 }
             }
         )
     )
 
-    advisory = {
-        "id": "CVE-2026-9002",
-        "affected": [
-            {
-                "package": {"ecosystem": "npm", "name": "@evil/mcp"},
-                "ranges": [
-                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.0.0"}]}
-                ],
-            }
-        ],
-    }
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text(
         """\
@@ -697,37 +696,35 @@ admission:
     default: allowed
 risk_gates:
   vulnerabilities:
-    ids: ["CVE-2026-9002"]
+    ids: ["CVE-2025-54994"]
 """
     )
 
     runner = CliRunner()
-    with patch(
-        "tools.policy_cli._load_osv_with_overlays",
-        lambda refs, *, progress=None: ([advisory], [], 0, {}),
-    ):
-        result = runner.invoke(
-            policy_main,
-            [
-                "compile",
-                str(policy_path),
-                "--target",
-                str(tmp_path),
-                "--host",
-                "claude",
-                "--dry-run",
-                "--format",
-                "json",
-                "--managed-settings-dir",
-                str(tmp_path / "managed"),
-            ],
-        )
+    result = runner.invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude",
+            "--dry-run",
+            "--format",
+            "json",
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     report = json.loads(result.stdout)
     assert report["expected_policy"]["deniedMcpServers"] == [
-        {"serverCommand": ["npx", "-y", "@evil/mcp@0.9.0"]}
+        {"serverCommand": ["npx", "-y", "@akoskm/create-mcp-server-stdio@0.9.0"]}
     ]
+    blocked = [d for d in report["decisions"] if d["result"] == "blocked"]
+    assert any("vulnerability GHSA-3ch2-jxxc-v4xf" in d["reasons"] for d in blocked)
 
 
 def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):

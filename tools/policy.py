@@ -28,6 +28,10 @@ class PolicyValidationError(ValueError):
     """A policy document does not match the V1 policy shape."""
 
 
+class PolicyEvaluationError(ValueError):
+    """A configured risk gate could not be evaluated against available evidence."""
+
+
 @dataclass(frozen=True)
 class McpTarget:
     command: tuple[str, ...] | None = None
@@ -394,7 +398,11 @@ def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None =
     category = _category(ref)
     if category is None:
         return Decision(ref=ref, category="other", blocked=False, reasons=("outside policy scope",))
-    if category == "skills":
+    # Spec: "A plugin remains the trust boundary for its bundled MCP servers,
+    # skills, and other contents." A component contained by a plugin inherits
+    # the plugin's own admission decision outright rather than being evaluated
+    # independently against `mcps`/`skills` targets or defaults.
+    if category != "plugins":
         plugin_ref = _owning_plugin_ref(ref, graph)
         if plugin_ref is not None:
             plugin_decision = _admission_decision(policy, plugin_ref, graph)
@@ -404,6 +412,7 @@ def _admission_decision(policy: Policy, ref: ComponentRef, graph: Graph | None =
                 blocked=plugin_decision.blocked,
                 reasons=tuple(f"owning plugin: {reason}" for reason in plugin_decision.reasons),
             )
+    if category == "skills":
         blocked = policy.skills_default == "blocked"
         return Decision(
             ref=ref,
@@ -478,7 +487,17 @@ def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[s
     if gate.severity_at_least is None:
         return False
     severity = derive_severity_label(advisory)
-    return _SEVERITY_ORDER.get(severity, -1) >= _SEVERITY_ORDER[gate.severity_at_least]
+    if severity == "UNKNOWN":
+        # Neither an upstream `database_specific.severity` label nor a
+        # parseable CVSS vector is available. Treating this as "below
+        # threshold" would let a component pass unblocked on missing data,
+        # not evidence of low risk (mirrors the non-queryable-component
+        # fail-closed rule: "not evidence that it is clean").
+        raise PolicyEvaluationError(
+            f"cannot evaluate severity_at_least gate: {advisory.get('id')} has no upstream "
+            "severity label or parseable CVSS vector"
+        )
+    return _SEVERITY_ORDER[severity] >= _SEVERITY_ORDER[gate.severity_at_least]
 
 
 def _owning_plugin_ref(ref: ComponentRef, graph: Graph | None) -> ComponentRef | None:

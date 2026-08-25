@@ -540,14 +540,23 @@ def _seed_remote_mcps(
         if settings_path is None:
             continue
         scope_data = by_scope.get(scope) or {}
-        mcp_servers = scope_data.get("mcpServers")
-        if not isinstance(mcp_servers, dict):
+        if "mcpServers" not in scope_data:
             continue
-        for ref in mcp_json.parse_mcp_servers(
-            mcp_servers,
-            source_manifest=str(settings_path),
-            locator_prefix="$.mcpServers (inlined)",
-        ):
+        mcp_servers = scope_data["mcpServers"]
+        if not isinstance(mcp_servers, dict):
+            graph.warnings.append(f"could not parse {settings_path}: mcpServers must be an object")
+            continue
+        try:
+            refs = mcp_json.parse_mcp_servers(
+                mcp_servers,
+                source_manifest=str(settings_path),
+                locator_prefix="$.mcpServers (inlined)",
+                strict=True,
+            )
+        except ValueError as exc:
+            graph.warnings.append(f"could not parse {settings_path}: {exc}")
+            continue
+        for ref in refs:
             if _component_type(ref) != "mcp_server":
                 continue
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
@@ -562,7 +571,7 @@ def _seed_remote_mcps(
     for mcp_path in mcp_paths:
         if not mcp_path.is_file():
             continue
-        for ref in _safe_parse(graph, mcp_json.parse, mcp_path):
+        for ref in _safe_parse(graph, lambda path: mcp_json.parse(path, strict=True), mcp_path):
             if _component_type(ref) != "mcp_server":
                 continue
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)

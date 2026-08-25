@@ -45,14 +45,20 @@ def _pinned_version(req: Requirement) -> str | None:
     return None
 
 
-def _emit_specs(specs: Iterable[object], source_manifest: str, locator: str) -> list[ComponentRef]:
+def _emit_specs(
+    specs: Iterable[object], source_manifest: str, locator: str, *, strict: bool = False
+) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     for spec in specs:
         if not isinstance(spec, str):
+            if strict:
+                raise ValueError(f"{locator} entries must be strings")
             continue
         try:
             req = Requirement(spec)
-        except InvalidRequirement:
+        except InvalidRequirement as exc:
+            if strict:
+                raise ValueError(f"{locator} contains an invalid requirement") from exc
             continue
         if req.url:
             # Direct URL/VCS/local references (PEP 440 URL reqs) are not
@@ -73,27 +79,48 @@ def _emit_specs(specs: Iterable[object], source_manifest: str, locator: str) -> 
 def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("pyproject.toml must contain an object")
         return []
     refs: list[ComponentRef] = []
     source = str(path)
 
     project = data.get("project") or {}
+    if "project" in data and not isinstance(project, dict):
+        if strict:
+            raise ValueError("pyproject.toml project must be an object")
+        project = {}
     if isinstance(project, dict):
         deps = project.get("dependencies")
         if isinstance(deps, list):
-            refs.extend(_emit_specs(deps, source, "project.dependencies"))
+            refs.extend(_emit_specs(deps, source, "project.dependencies", strict=strict))
+        elif "dependencies" in project and strict:
+            raise ValueError("project.dependencies must be an array")
         optional = project.get("optional-dependencies")
         if isinstance(optional, dict):
             for extra, specs in optional.items():
                 if isinstance(specs, list):
                     refs.extend(
-                        _emit_specs(specs, source, f"project.optional-dependencies.{extra}")
+                        _emit_specs(
+                            specs,
+                            source,
+                            f"project.optional-dependencies.{extra}",
+                            strict=strict,
+                        )
                     )
+                elif strict:
+                    raise ValueError(f"project.optional-dependencies.{extra} must be an array")
+        elif "optional-dependencies" in project and strict:
+            raise ValueError("project.optional-dependencies must be an object")
 
     groups = data.get("dependency-groups")
     if isinstance(groups, dict):
         for group, specs in groups.items():
             if isinstance(specs, list):
-                refs.extend(_emit_specs(specs, source, f"dependency-groups.{group}"))
+                refs.extend(_emit_specs(specs, source, f"dependency-groups.{group}", strict=strict))
+            elif strict:
+                raise ValueError(f"dependency-groups.{group} must be an array")
+    elif "dependency-groups" in data and strict:
+        raise ValueError("dependency-groups must be an object")
 
     return refs

@@ -14,12 +14,22 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     data = json.loads(path.read_text())
     refs: list[ComponentRef] = []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("package.json must contain an object")
         return refs
     for field_name in DEP_FIELDS:
-        deps = data.get(field_name) or {}
+        if field_name not in data:
+            continue
+        deps = data[field_name]
         if not isinstance(deps, dict):
+            if strict:
+                raise ValueError(f"package.json {field_name} must be an object")
             continue
         for name, version in deps.items():
+            if strict and (not isinstance(name, str) or not name):
+                raise ValueError(f"package.json {field_name} names must be non-empty strings")
+            if strict and (not isinstance(version, str) or not version):
+                raise ValueError(f"package.json {field_name} versions must be non-empty strings")
             refs.append(
                 ComponentRef(
                     ecosystem="npm",

@@ -32,6 +32,31 @@ class PolicyEvaluationError(ValueError):
     """A configured risk gate could not be evaluated against available evidence."""
 
 
+class _PolicyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys."""
+
+
+def _construct_mapping(
+    loader: _PolicyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    loader.flatten_mapping(node)
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key ({key!r})",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_PolicyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
+
+
 @dataclass(frozen=True)
 class McpTarget:
     command: tuple[str, ...] | None = None
@@ -53,7 +78,7 @@ class PluginTarget:
         if self.plugin is not None:
             return ("plugin", self.plugin)
         assert self.marketplace is not None
-        return ("marketplace", self.marketplace)
+        return ("marketplace", _normalize_marketplace_url(self.marketplace))
 
 
 @dataclass(frozen=True)
@@ -119,7 +144,7 @@ class _ResolvedComponent:
 def load(path: Path) -> Policy:
     """Load and validate a YAML or JSON policy document."""
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.load(path.read_text(encoding="utf-8"), Loader=_PolicyLoader)
     except (OSError, yaml.YAMLError) as exc:
         raise PolicyValidationError(str(exc)) from exc
     return parse(document)
@@ -129,7 +154,7 @@ def parse(document: object) -> Policy:
     """Validate a decoded policy document and return its typed form."""
     root = _mapping(document, "policy")
     _require_exact_keys(root, {"version", "admission", "risk_gates"}, "policy")
-    if type(root["version"]) is not int or root["version"] != 1:
+    if type(root.get("version")) is not int or root["version"] != 1:
         raise PolicyValidationError("policy.version must be 1")
 
     admission = _mapping(root.get("admission"), "policy.admission")

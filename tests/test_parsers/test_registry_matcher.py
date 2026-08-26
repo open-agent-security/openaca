@@ -29,6 +29,7 @@ from tools.parsers import (
     package_json,
     pyproject_toml,
 )
+from tools.parsers import _parse_repo_agent_plugins as parse_repo_agent_plugins
 from tools.parsers import _parse_repo_cursor_agent as parse_repo_cursor_agent
 from tools.parsers import _parse_repo_cursor_command as parse_repo_cursor_command
 
@@ -82,7 +83,7 @@ def test_cursor_manifest_registry_matches_the_task_brief_table_exactly():
         ("**/.claude/agents/**/*.markdown", parse_repo_cursor_agent),
         ("**/.cursor-plugin/plugin.json", claude_plugin.parse),
         ("**/.claude-plugin/plugin.json", claude_plugin.parse),
-        ("plugin.json", agent_plugins.parse),
+        ("plugin.json", parse_repo_agent_plugins),
     ]
     assert guards[:5] == [None] * 5, "mcp.json and skill rows have no depth guard"
     assert all(callable(g) for g in guards[5:15]), (
@@ -269,6 +270,33 @@ def test_guard_success_parses_and_counts(tmp_path):
 
     assert n_found == 1
     assert len(grouped) == 1
+
+
+def test_guard_success_but_fatal_validation_failure_counts_as_parse_failed(tmp_path):
+    """The guard only confirms `$schema` qualifies — `validate_manifest` can
+    still reject the manifest (e.g. an uppercase `name`). That's a real
+    defect past the guard, not a guard miss, so the registry route must
+    raise (via `_parse_repo_agent_plugins`'s `strict=True`) rather than
+    silently return `[]`: an uncounted `[]` would let `parse_repo_grouped`
+    report a fatally invalid plugin as a clean, empty, successfully-parsed
+    unit."""
+    (tmp_path / "plugin.json").write_text(
+        '{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",'
+        ' "name": "Invalid-Name"}',
+        encoding="utf-8",
+    )
+
+    from tools.parsers import parse_repo_grouped, parse_repo_registry_counts
+
+    grouped, n_found = parse_repo_grouped(tmp_path, registry=(CURSOR_MANIFEST_REGISTRY[-1],))
+    assert n_found == 1
+    assert grouped == []
+
+    per_key, union = parse_repo_registry_counts(
+        tmp_path, {"cursor": (CURSOR_MANIFEST_REGISTRY[-1],)}
+    )
+    assert per_key["cursor"] == (1, 1)
+    assert union == (1, 1)
 
 
 def test_two_tuple_registry_entries_still_work(tmp_path):

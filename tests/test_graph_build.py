@@ -273,6 +273,27 @@ def test_endpoint_project_mcp_npx_self_match_resolves_under_project_root(tmp_pat
     assert any("left-pad" in (p.key or "") for p in pkgs), [p.key for p in pkgs]
 
 
+def test_endpoint_mcp_dependency_manifest_shape_failure_is_reported(tmp_path):
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "package.json").write_text(
+        json.dumps({"name": "@proj/mcp", "dependencies": []})
+    )
+    cdir = project_root / ".claude"
+    cdir.mkdir()
+    (cdir / "settings.json").write_text(
+        json.dumps({"mcpServers": {"proj-mcp": {"command": "npx", "args": ["@proj/mcp"]}}})
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", project_root=project_root, warnings=warnings)
+
+    assert any("package.json" in warning for warning in warnings), warnings
+
+
 def test_endpoint_project_mcp_local_path_attaches_nothing(tmp_path):
     # Phase-1 boundary: a local-path MCP launch is NOT resolved (deferred to
     # Phase 2 cache resolution), so no deps attach — declining beats guessing.

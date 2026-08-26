@@ -1121,6 +1121,17 @@ def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
     )
 
 
+def test_endpoint_enabled_plugins_require_an_install_lockfile(tmp_path):
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("installed_plugins.json" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize(
     ("filename", "contents"),
     [

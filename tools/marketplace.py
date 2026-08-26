@@ -25,6 +25,8 @@ def key(value: str) -> tuple[str, str]:
     ):
         raise ValueError("marketplace source must be a valid source URL")
     if parsed.scheme in {"http", "https"} and parsed.hostname == "github.com":
+        if parsed.netloc != "github.com":
+            raise ValueError("marketplace source must be a valid source URL")
         repo = parsed.path.strip("/")
         if repo.endswith(".git"):
             repo = repo[:-4]

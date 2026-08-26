@@ -243,6 +243,7 @@ def test_plugin_marketplace_targets_reject_urls_with_selectors(marketplace):
         "acme/plugins",
         "https://github.com:8443/acme/plugins",
         "https://github.com:notaport/acme/plugins",
+        "https://git.example.com:notaport/acme/plugins",
     ],
 )
 def test_plugin_marketplace_targets_require_a_source_url(marketplace):

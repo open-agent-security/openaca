@@ -1608,6 +1608,7 @@ def _add_bundled_plugin_surfaces(
 def _plugin_manifest_data(graph: Graph, plugin_root: Path) -> dict:
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     if not manifest.is_file():
+        graph.warnings.append(f"could not parse {manifest}: file is unavailable")
         return {}
     try:
         data = json.loads(manifest.read_text())

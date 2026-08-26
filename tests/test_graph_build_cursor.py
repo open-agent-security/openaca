@@ -474,6 +474,71 @@ def test_ignored_higher_precedence_command_and_subagent_fall_back_to_lower_prece
     assert agents[0].ref.source_manifest.endswith(str(Path(".claude/agents/deploy.md")))
 
 
+def test_gitignored_higher_precedence_plugin_manifest_falls_back_to_lower_precedence(tmp_path):
+    """A gitignored higher-precedence plugin manifest must not win format
+    resolution over an unignored lower-precedence one in the SAME directory.
+
+    `.cursor-plugin/plugin.json` (candidate #1) and `.claude-plugin/plugin.json`
+    (candidate #2) both qualify here; `_resolve_plugin_format` used to check
+    only `manifest.is_file()`, so an ignored `.cursor-plugin/plugin.json`
+    would still win and the plugin would realize using content a default
+    scan (no `--include-gitignored`) was supposed to exclude."""
+    root = tmp_path / "bundle"
+    _write(tmp_path / ".gitignore", "bundle/.cursor-plugin/\n")
+    _write_json(root / ".cursor-plugin" / "plugin.json", {"name": "ignored-native", "author": {}})
+    _write_json(root / ".claude-plugin" / "plugin.json", {"name": "visible-claude-shaped"})
+
+    graph = _build(tmp_path)
+
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert [p.ref.name for p in plugins] == ["visible-claude-shaped"]
+
+    included_graph = build_cursor_graph(
+        _FakeAgent(source="declared", scan_root=tmp_path), include_gitignored=True
+    )
+    included_graph.validate()
+    included_plugins = _nodes_of_kind(included_graph, "plugin")
+    assert [p.ref.name for p in included_plugins] == ["ignored-native"]
+
+
+def test_gitignored_bundled_mcp_filename_falls_back_to_unignored_one(tmp_path):
+    """A gitignored higher-precedence bundled MCP filename must not win the
+    plugin's folder-discovery ordered-candidate selection over an unignored
+    lower-precedence one in the SAME plugin root.
+
+    `CURSOR_SURFACE.bundled.mcp_filenames` tries `mcp.json` before `.mcp.json`.
+    `_parse_default_mcp` used to pick the first EXISTING candidate regardless
+    of gitignore; the later gitignore filter on emitted refs then dropped the
+    ignored `mcp.json`'s servers without ever trying `.mcp.json`, losing the
+    bundled MCP server entirely instead of falling back to the unignored
+    file."""
+    root = tmp_path / "bundle"
+    _write(tmp_path / ".gitignore", "bundle/mcp.json\n")
+    _write_json(root / ".cursor-plugin" / "plugin.json", {"name": "native", "author": {}})
+    _write_json(
+        root / "mcp.json",
+        {"mcpServers": {"ignored-demo": {"command": "npx", "args": ["ignored"]}}},
+    )
+    _write_json(
+        root / ".mcp.json",
+        {"mcpServers": {"visible-demo": {"command": "npx", "args": ["visible"]}}},
+    )
+
+    graph = _build(tmp_path)
+
+    servers = _nodes_of_kind(graph, "mcp_server")
+    assert len(servers) == 1
+    assert Path(servers[0].ref.source_manifest).name == ".mcp.json"
+
+    included_graph = build_cursor_graph(
+        _FakeAgent(source="declared", scan_root=tmp_path), include_gitignored=True
+    )
+    included_graph.validate()
+    included_servers = _nodes_of_kind(included_graph, "mcp_server")
+    assert len(included_servers) == 1
+    assert Path(included_servers[0].ref.source_manifest).name == "mcp.json"
+
+
 # --- Dependency manifests -----------------------------------------------
 
 

@@ -965,15 +965,27 @@ def _same_path(a: Path, b: Path) -> bool:
     return a.resolve() == b.resolve()
 
 
-def _resolve_plugin_format(directory: Path, surface: RepoSurface) -> PluginFormat | None:
+def _resolve_plugin_format(
+    directory: Path,
+    surface: RepoSurface,
+    *,
+    eval_root: Path | None = None,
+    spec: GitIgnoreSpec | None = None,
+) -> PluginFormat | None:
     """The single decider of which `PluginFormat` governs `directory`: the
     first candidate in `surface.plugin_formats` **list order** (precedence,
     not filesystem walk order) whose `<manifest_dir>/<manifest_filename>`
-    exists on disk AND whose content qualifies per `fmt.detect` (ADR-0053:
-    "first qualifying candidate", not first path-shape match — load-bearing
-    once a surface has more than one format sharing a directory, e.g. Cursor's
+    exists on disk, is NOT gitignored (a candidate under `eval_root` that
+    `spec` ignores is treated as absent — otherwise a default scan could pick
+    a manifest `--include-gitignored` was supposed to exclude), AND whose
+    content qualifies per `fmt.detect` (ADR-0053: "first qualifying
+    candidate", not first path-shape match — load-bearing once a surface has
+    more than one format sharing a directory, e.g. Cursor's
     `.cursor-plugin/plugin.json` beside a root `plugin.json`). `None` if no
     candidate both exists and qualifies.
+
+    `eval_root`/`spec` default to `None` (no gitignore filtering), matching
+    endpoint-mode callers (installed artifacts are not repo source).
 
     This is the one routine both plugin-root discovery (`_find_plugin_roots`)
     and manifest-path re-derivation (`_resolve_plugin_manifest`) call, so the
@@ -982,6 +994,8 @@ def _resolve_plugin_format(directory: Path, surface: RepoSurface) -> PluginForma
     for fmt in surface.plugin_formats:
         manifest = directory / fmt.manifest_dir / fmt.manifest_filename
         if not manifest.is_file():
+            continue
+        if eval_root is not None and _is_ignored_under(manifest, eval_root, spec):
             continue
         try:
             data = json.loads(manifest.read_text())
@@ -1028,7 +1042,7 @@ def _find_plugin_roots(
             break
     roots: list[tuple[Path, PluginFormat]] = []
     for root in candidate_roots.values():
-        fmt = _resolve_plugin_format(root, surface)
+        fmt = _resolve_plugin_format(root, surface, eval_root=directory, spec=spec)
         if fmt is not None:
             roots.append((root, fmt))
     return sorted(roots, key=lambda entry: entry[0])
@@ -1326,7 +1340,8 @@ def _add_bundled_skills(
     default_skills = resolve_within(directory, surface.bundled.skills_dir)
     if default_skills is not None and default_skills.is_dir():
         skill_dirs.append(default_skills)
-    custom_skills = _plugin_custom_skills_field(directory, surface)
+    eval_root, spec = _ignore_context(directory, False, root_dir, root_spec)
+    custom_skills = _plugin_custom_skills_field(directory, surface, eval_root=eval_root, spec=spec)
     if isinstance(custom_skills, str):
         custom_dir = resolve_within(directory, custom_skills)
         if custom_dir is not None and custom_dir.is_dir():
@@ -1349,8 +1364,14 @@ def _add_bundled_skills(
         )
 
 
-def _plugin_custom_skills_field(plugin_root: Path, surface: RepoSurface) -> object:
-    manifest = _resolve_plugin_manifest(plugin_root, surface)
+def _plugin_custom_skills_field(
+    plugin_root: Path,
+    surface: RepoSurface,
+    *,
+    eval_root: Path | None = None,
+    spec: GitIgnoreSpec | None = None,
+) -> object:
+    manifest = _resolve_plugin_manifest(plugin_root, surface, eval_root=eval_root, spec=spec)
     if not manifest.is_file():
         return None
     try:
@@ -1688,8 +1709,16 @@ def _add_bundled_plugin_surfaces(
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    plugin_data = _plugin_manifest_data(graph, plugin_root, surface)
-    plugin_manifest_path = _resolve_plugin_manifest(plugin_root, surface)
+    # Computed up front (not just at the final ref-emission filter below) so
+    # a gitignored higher-precedence manifest/MCP candidate never wins format
+    # or default-MCP resolution over an unignored lower-precedence one — the
+    # same "gitignored candidate hides an unignored one" hazard the command/
+    # subagent precedence resolvers guard against.
+    eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
+    plugin_data = _plugin_manifest_data(graph, plugin_root, surface, eval_root=eval_root, spec=spec)
+    plugin_manifest_path = _resolve_plugin_manifest(
+        plugin_root, surface, eval_root=eval_root, spec=spec
+    )
     # `field`, not `surface`: this loop is over manifest field NAMES and would
     # otherwise shadow the `RepoSurface` parameter it sits beside.
     for field in ("skills", "commands", "agents"):
@@ -1721,6 +1750,8 @@ def _add_bundled_plugin_surfaces(
             manifest_refs,
             warnings=graph.warnings,
             mcp_filenames=surface.bundled.mcp_filenames,
+            eval_root=eval_root,
+            spec=spec,
         )
     )
     refs.extend(
@@ -1755,7 +1786,7 @@ def _add_bundled_plugin_surfaces(
     # Endpoint mode passes root_dir=None → _ignore_context returns spec=None so the
     # installed plugin's OWN .gitignore is never applied (parity with the old
     # walk_plugin_root, which did not filter installed-plugin surfaces).
-    eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
+    # (`eval_root`/`spec` computed once, above, before manifest/MCP resolution.)
     agent_nodes_by_source: dict[str, Node] = {}
     for ref in refs:
         component_type = _component_type(ref)
@@ -1778,19 +1809,39 @@ def _add_bundled_plugin_surfaces(
         _add_child(graph, parent, node)
 
 
-def _resolve_plugin_manifest(plugin_root: Path, surface: RepoSurface) -> Path:
+def _resolve_plugin_manifest(
+    plugin_root: Path,
+    surface: RepoSurface,
+    *,
+    eval_root: Path | None = None,
+    spec: GitIgnoreSpec | None = None,
+) -> Path:
     """The manifest path for an already-realized plugin root, via the same
-    `_resolve_plugin_format` decision `_find_plugin_roots` uses — so the two
-    can never disagree about which format governs a root. Falls back to the
-    first candidate's path when none is present on disk (parity with the old
-    unconditional `.claude-plugin/plugin.json` path, whose read is guarded by
-    callers)."""
-    fmt = _resolve_plugin_format(plugin_root, surface) or surface.plugin_formats[0]
+    `_resolve_plugin_format` decision `_find_plugin_roots` uses — including
+    the same `eval_root`/`spec` gitignore filtering, so the two can never
+    disagree about which format governs a root even when a higher-precedence
+    candidate is gitignored. Falls back to the first candidate's path when
+    none is present on disk (parity with the old unconditional
+    `.claude-plugin/plugin.json` path, whose read is guarded by callers)."""
+    fmt = (
+        _resolve_plugin_format(plugin_root, surface, eval_root=eval_root, spec=spec)
+        or surface.plugin_formats[0]
+    )
     return _plugin_manifest_path(plugin_root, fmt)
 
 
-def _plugin_manifest_data(graph: Graph, plugin_root: Path, surface: RepoSurface) -> dict:
-    if _resolve_plugin_format(plugin_root, surface) is None and surface.manifest_optional:
+def _plugin_manifest_data(
+    graph: Graph,
+    plugin_root: Path,
+    surface: RepoSurface,
+    *,
+    eval_root: Path | None = None,
+    spec: GitIgnoreSpec | None = None,
+) -> dict:
+    if (
+        _resolve_plugin_format(plugin_root, surface, eval_root=eval_root, spec=spec) is None
+        and surface.manifest_optional
+    ):
         # No candidate manifest resolved AND this kind permits that: Cursor's
         # marketplace cache ships bundles with no manifest at all, which load
         # entirely by folder discovery (docs/specs/cursor-agent-kind.md,
@@ -1799,7 +1850,7 @@ def _plugin_manifest_data(graph: Graph, plugin_root: Path, surface: RepoSurface)
         # named by an install lockfile that points at a manifest, so a missing
         # one there stays a real defect and still warns below.
         return {}
-    manifest = _resolve_plugin_manifest(plugin_root, surface)
+    manifest = _resolve_plugin_manifest(plugin_root, surface, eval_root=eval_root, spec=spec)
     if not manifest.is_file():
         graph.warnings.append(f"could not parse {manifest}: file is unavailable")
         return {}

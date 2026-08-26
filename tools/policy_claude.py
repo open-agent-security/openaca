@@ -139,10 +139,9 @@ def _compile_plugins(
             marketplace_setting(value) for value in _dedupe(blocked_marketplaces)
         ]
     if rule.default == "blocked":
-        if allowed_marketplaces:
-            settings["strictKnownMarketplaces"] = [
-                marketplace_setting(value) for value in _dedupe(allowed_marketplaces)
-            ]
+        settings["strictKnownMarketplaces"] = [
+            marketplace_setting(value) for value in _dedupe(allowed_marketplaces)
+        ]
         limitations.append(
             "plugin default block is not enforceable for installed plugins in Claude"
         )

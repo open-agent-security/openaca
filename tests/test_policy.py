@@ -952,6 +952,28 @@ def test_claude_compiler_emits_only_restrictions():
     assert compilation.limitations == ()
 
 
+def test_claude_compiler_locks_down_marketplaces_without_marketplace_exceptions():
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {
+                    "default": "blocked",
+                    "allowed": [{"plugin": "approved@internal"}],
+                },
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+
+    compilation = compile_policy(policy, [])
+
+    assert compilation.settings["strictKnownMarketplaces"] == []
+    assert "plugin default block is not enforceable" in compilation.limitations[0]
+    assert "approved@internal" in compilation.limitations[1]
+
+
 def test_policy_cli_validates_and_compiles_dry_run_json(tmp_path):
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text(

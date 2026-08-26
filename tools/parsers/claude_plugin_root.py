@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from pathspec import GitIgnoreSpec
+
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_command_agent, claude_skill, hooks_json, mcp_json
 from tools.parsers.claude_command_agent import Kind
+from tools.parsers.gitignore import is_ignored
 from tools.parsers.mcp_json import parse_mcp_servers
 
 
@@ -154,6 +157,8 @@ def _parse_default_mcp(
     *,
     warnings: list[str] | None = None,
     mcp_filenames: tuple[str, ...] = (".mcp.json",),
+    eval_root: Path | None = None,
+    spec: GitIgnoreSpec | None = None,
 ) -> list[ComponentRef]:
     """Folder discovery for the plugin's bundled MCP manifest.
 
@@ -161,13 +166,29 @@ def _parse_default_mcp(
     folder discovery accepts root `mcp.json` OR `.mcp.json` (both, never
     merged — the first that resolves to a file wins). Claude Code passes a
     one-element tuple, so this is behavior-preserving there.
+
+    `eval_root`/`spec` (default `None` = no filtering, matching endpoint-mode
+    callers) exclude a gitignored candidate from the ordered selection BEFORE
+    a winner is picked: without this, a gitignored higher-precedence filename
+    (e.g. `mcp.json`) would still win here, its refs would then be dropped by
+    the caller's final gitignore filter on `ref.source_manifest`, and the
+    unignored lower-precedence filename (`.mcp.json`) would never be tried —
+    losing the bundled MCP servers entirely instead of falling back to it.
     """
     default_mcp: Path | None = None
     for mcp_filename in mcp_filenames:
         candidate = resolve_within(plugin_root, mcp_filename)
-        if candidate is not None and candidate.is_file():
-            default_mcp = candidate
-            break
+        if candidate is None or not candidate.is_file():
+            continue
+        if eval_root is not None:
+            try:
+                rel = candidate.relative_to(eval_root.resolve())
+            except (OSError, RuntimeError, ValueError):
+                rel = None
+            if rel is not None and is_ignored(rel, spec):
+                continue
+        default_mcp = candidate
+        break
     if default_mcp is None:
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}

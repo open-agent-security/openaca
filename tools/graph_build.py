@@ -747,7 +747,9 @@ def _add_endpoint_command_agents(
         if not md_path.is_file():
             continue
         try:
-            refs = claude_command_agent.parse_file(md_path, kind=kind, scope_owner=None)
+            refs = claude_command_agent.parse_file(
+                md_path, kind=kind, scope_owner=None, strict=kind == "agent"
+            )
         except Exception as exc:
             graph.warnings.append(f"could not parse agent definition {md_path}: {exc}")
             refs = []

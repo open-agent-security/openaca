@@ -38,12 +38,14 @@ def parse_file(
     md_path: Path,
     kind: Kind,
     scope_owner: Optional[str] = None,
+    *,
+    strict: bool = False,
 ) -> list[ComponentRef]:
     """Emit one ref for a single `*.md` file. Used by the repo-mode
     registry where `rglob` discovers paths individually."""
     if not md_path.is_file() or md_path.suffix != ".md":
         return []
-    frontmatter = _read_frontmatter(md_path)
+    frontmatter = _read_frontmatter(md_path, strict=strict)
     name = _resolve_name(md_path, frontmatter)
     ecosystem = f"claude-{kind}"
     identity = (
@@ -58,7 +60,7 @@ def parse_file(
     )
     refs = [parent]
     if kind == "agent" and scope_owner is None:
-        refs.extend(_agent_frontmatter_child_refs(md_path, frontmatter))
+        refs.extend(_agent_frontmatter_child_refs(md_path, frontmatter, strict=strict))
     return refs
 
 
@@ -96,22 +98,30 @@ def _resolve_name(md_path: Path, frontmatter: Optional[dict] = None) -> str:
     return fallback
 
 
-def _read_frontmatter(md_path: Path) -> dict:
+def _read_frontmatter(md_path: Path, *, strict: bool = False) -> dict:
     try:
         text = md_path.read_text()
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as exc:
+        if strict:
+            raise ValueError("could not read frontmatter") from exc
         return {}
     if not text.startswith("---"):
         return {}
     end = text.find("\n---", 3)
     if end == -1:
+        if strict:
+            raise ValueError("frontmatter is not terminated")
         return {}
     block = text[3:end].strip()
     try:
         data = yaml.safe_load(block)
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        if strict:
+            raise ValueError("frontmatter contains invalid YAML") from exc
         return {}
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError("frontmatter must contain an object")
         return {}
     return data
 
@@ -119,41 +129,53 @@ def _read_frontmatter(md_path: Path) -> dict:
 def _agent_frontmatter_child_refs(
     md_path: Path,
     frontmatter: dict,
+    *,
+    strict: bool = False,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
 
-    mcp_servers = _inline_mcp_servers(frontmatter.get("mcpServers"))
+    mcp_servers = _inline_mcp_servers(frontmatter.get("mcpServers"), strict=strict)
     refs.extend(
         mcp_json.parse_mcp_servers(
             mcp_servers,
             source_manifest=str(md_path),
             locator_prefix="$.mcpServers",
+            strict=strict,
         )
     )
 
     hooks_block = frontmatter.get("hooks")
-    if isinstance(hooks_block, dict):
+    if hooks_block is not None:
         refs.extend(
             hooks_json.parse_plugin_hooks_inline(
                 hooks_block=hooks_block,
                 plugin_name="",
                 source_manifest=str(md_path),
+                strict=strict,
             )
         )
 
     return refs
 
 
-def _inline_mcp_servers(value: object) -> dict:
+def _inline_mcp_servers(value: object, *, strict: bool = False) -> dict:
+    if value is None:
+        return {}
     if isinstance(value, dict):
         return value
     if not isinstance(value, list):
+        if strict:
+            raise ValueError("agent mcpServers must be an object or array")
         return {}
     servers: dict = {}
     for entry in value:
         if not isinstance(entry, dict):
+            if strict:
+                raise ValueError("agent mcpServers entries must be objects")
             continue
         for name, config in entry.items():
             if isinstance(name, str) and isinstance(config, dict):
                 servers[name] = config
+            elif strict:
+                raise ValueError("agent mcpServers entries must map strings to objects")
     return servers

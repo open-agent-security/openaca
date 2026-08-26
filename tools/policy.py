@@ -279,7 +279,7 @@ def _parse_admission_rule(
     rule = _mapping(value, label)
     _require_exact_keys(rule, {"default", "allowed", "blocked"}, label)
     default = rule.get("default")
-    if default not in {"allowed", "blocked"}:
+    if default != "allowed" and default != "blocked":
         raise PolicyValidationError(f"{label}.default must be allowed or blocked")
     allowed = _parse_targets(rule.get("allowed", []), f"{label}.allowed", target_type)
     blocked = _parse_targets(rule.get("blocked", []), f"{label}.blocked", target_type)
@@ -377,7 +377,7 @@ def _parse_skills(value: object) -> AdmissionDefault:
     rule = _mapping(value, "policy.admission.skills")
     _require_exact_keys(rule, {"default"}, "policy.admission.skills")
     default = rule.get("default")
-    if default not in {"allowed", "blocked"}:
+    if default != "allowed" and default != "blocked":
         raise PolicyValidationError("policy.admission.skills.default must be allowed or blocked")
     return default
 

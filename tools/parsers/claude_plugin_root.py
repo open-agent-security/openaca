@@ -286,7 +286,11 @@ def _parse_bundled_hooks(
 
 
 def _parse_bundled_command_agents(
-    plugin_root: Path, data: dict, plugin_name: str
+    plugin_root: Path,
+    data: dict,
+    plugin_name: str,
+    *,
+    warnings: list[str] | None = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -319,6 +323,7 @@ def _parse_bundled_command_agents(
                     kind=kind,
                     plugin_name=plugin_name,
                     plugin_root_resolved=plugin_root_resolved,
+                    warnings=warnings,
                 )
             )
     return refs
@@ -330,6 +335,7 @@ def _enumerate_bundled_command_agent_dir(
     kind: Kind,
     plugin_name: str,
     plugin_root_resolved: Path,
+    warnings: list[str] | None = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -343,11 +349,16 @@ def _enumerate_bundled_command_agent_dir(
             continue
         if not child_resolved.is_relative_to(plugin_root_resolved):
             continue
-        refs.extend(
-            claude_command_agent.parse_file(
-                child,
-                kind=kind,
-                scope_owner=plugin_name,
+        try:
+            refs.extend(
+                claude_command_agent.parse_file(
+                    child,
+                    kind=kind,
+                    scope_owner=plugin_name,
+                    strict=warnings is not None and kind == "agent",
+                )
             )
-        )
+        except Exception as exc:
+            if warnings is not None:
+                warnings.append(f"could not parse agent definition {child}: {exc}")
     return refs

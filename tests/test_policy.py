@@ -76,6 +76,20 @@ def test_policy_requires_a_version_field():
         )
 
 
+@pytest.mark.parametrize("section", ["mcps", "plugins", "skills"])
+@pytest.mark.parametrize("default", [[], {}])
+def test_policy_rejects_non_string_admission_defaults(section, default):
+    admission = {
+        "mcps": {"default": "allowed"},
+        "plugins": {"default": "allowed"},
+        "skills": {"default": "allowed"},
+    }
+    admission[section]["default"] = default
+
+    with pytest.raises(PolicyValidationError, match="must be allowed or blocked"):
+        parse({"version": 1, "admission": admission})
+
+
 @pytest.mark.parametrize("version", [True, 1.0, "1"])
 def test_policy_requires_an_integer_version(version):
     with pytest.raises(PolicyValidationError, match="policy.version must be 1"):
@@ -1135,6 +1149,69 @@ admission:
     assert report["expected_policy"]["blockedMarketplaces"] == [
         {"source": "github", "repo": "acme/untrusted-plugins"}
     ]
+
+
+def test_policy_cli_rejects_an_invalid_discovered_marketplace_source(tmp_path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+    blocked:
+      - marketplace: https://github.com/acme/untrusted-plugins.git
+  skills:
+    default: allowed
+"""
+    )
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {"unsafe@untrusted": True},
+                "extraKnownMarketplaces": {"untrusted": {"source": {"source": "git", "url": " "}}},
+            }
+        )
+    )
+    (tmp_path / "plugins").mkdir()
+    install_path = tmp_path / "cache" / "unsafe" / "1.0"
+    install_path.mkdir(parents=True)
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "unsafe@untrusted": [
+                        {
+                            "scope": "user",
+                            "version": "1.0",
+                            "installPath": str(install_path),
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude",
+            "--dry-run",
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "invalid marketplace source" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_policy_cli_fails_when_an_enabled_plugin_is_missing_from_the_lockfile(tmp_path):

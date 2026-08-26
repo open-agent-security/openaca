@@ -1159,6 +1159,36 @@ def test_endpoint_enabled_plugins_require_an_install_lockfile(tmp_path):
     assert any("installed_plugins.json" in warning for warning in warnings), warnings
 
 
+def test_endpoint_invalid_marketplace_source_is_reported(tmp_path):
+    install_path = tmp_path / "cache" / "plugin" / "1.0"
+    install_path.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "enabledPlugins": {"plugin@internal": True},
+                "extraKnownMarketplaces": {"internal": {"source": {"source": "git", "url": " "}}},
+            }
+        )
+    )
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@internal": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("marketplace source" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize("enabled_plugins", [[], "plugin@marketplace"])
 def test_endpoint_malformed_enabled_plugins_are_reported(tmp_path, enabled_plugins):
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": enabled_plugins}))

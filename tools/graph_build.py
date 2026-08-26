@@ -27,6 +27,7 @@ from pathspec import GitIgnoreSpec
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity, finalize_component_identity
+from tools.marketplace import key as marketplace_key
 from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
@@ -468,6 +469,12 @@ def _seed_active_plugins(
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
         marketplace_source = claude_install._marketplace_source(layers, "endpoint", marketplace)
+        if marketplace_source is not None:
+            try:
+                marketplace_key(marketplace_source)
+            except ValueError as exc:
+                if warnings is not None:
+                    warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
         extra = {
             "component_type": "plugin",
             "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},

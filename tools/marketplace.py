@@ -15,6 +15,10 @@ def key(value: str) -> tuple[str, str]:
         raise ValueError("marketplace source must be a valid source URL")
     if parsed.query or parsed.fragment:
         raise ValueError("marketplace source must not contain a query or fragment")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("marketplace source must be a valid source URL") from exc
     if not (
         (
             parsed.scheme in {"git", "http", "https", "ssh", "git+http", "git+https", "git+ssh"}

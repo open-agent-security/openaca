@@ -85,6 +85,25 @@ CLAUDE_CODE_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ManifestPattern("**/.claude/agents/**/*.md", _parse_repo_agent),
 ]
 
+# Extension/root sets mirror `tools/cursor_commands.py`/`tools/cursor_subagents.py`
+# exactly (`.codex`/`.agents` are deliberately excluded — neither resolver reads
+# commands or agents from them), so this registry's (n_found, n_failed) counts
+# never disagree with what composition actually discovers and parses.
+_CURSOR_COMMAND_EXTENSIONS = (".md", ".txt")
+_CURSOR_AGENT_EXTENSIONS = (".md", ".mdc", ".markdown")
+_CURSOR_COMMAND_AGENT_DIRS = (".cursor", ".claude")
+
+
+def _parse_repo_cursor_command(path: Path) -> list[ComponentRef]:
+    return claude_command_agent.parse_file(
+        path, kind="command", extensions=_CURSOR_COMMAND_EXTENSIONS
+    )
+
+
+def _parse_repo_cursor_agent(path: Path) -> list[ComponentRef]:
+    return claude_command_agent.parse_file(path, kind="agent", extensions=_CURSOR_AGENT_EXTENSIONS)
+
+
 # Cursor's manifest surface. Deliberately no bare `mcp.json`/`.mcp.json`:
 # Cursor's direct MCP surface is the path-scoped `.cursor/mcp.json`; bundle
 # roots are reached only through the plugin route. A bare pattern here would
@@ -96,9 +115,16 @@ CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ManifestPattern("**/.agents/skills/*/SKILL.md", claude_skill.parse),
     ManifestPattern("**/.claude/skills/*/SKILL.md", claude_skill.parse),
     ManifestPattern("**/.codex/skills/*/SKILL.md", claude_skill.parse),
-    ManifestPattern("**/.cursor/commands/**/*.md", _parse_repo_command),
-    ManifestPattern("**/.cursor/agents/**/*.md", _parse_repo_agent),
-    ManifestPattern("**/.claude/agents/**/*.md", _parse_repo_agent),
+    *(
+        ManifestPattern(f"**/{dirname}/commands/**/*{ext}", _parse_repo_cursor_command)
+        for dirname in _CURSOR_COMMAND_AGENT_DIRS
+        for ext in _CURSOR_COMMAND_EXTENSIONS
+    ),
+    *(
+        ManifestPattern(f"**/{dirname}/agents/**/*{ext}", _parse_repo_cursor_agent)
+        for dirname in _CURSOR_COMMAND_AGENT_DIRS
+        for ext in _CURSOR_AGENT_EXTENSIONS
+    ),
     ManifestPattern("**/.cursor-plugin/plugin.json", claude_plugin.parse),
     ManifestPattern("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
 ]

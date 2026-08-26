@@ -480,9 +480,25 @@ def collect_cursor_mcp_manifests(
             if is_ignored(path.relative_to(root), spec):
                 continue
             _add(path)
-        for plugin_root, fmt in find_plugin_roots(
-            root, CURSOR_SURFACE, include_gitignored=include_gitignored
-        ):
+        candidates = find_plugin_roots(root, CURSOR_SURFACE, include_gitignored=include_gitignored)
+        # Mirror `graph_build_cursor._realize_plugins`'s nesting filter: an
+        # Agent Plugins root whose own fixture content sits strictly below an
+        # already-realized native (`.cursor-plugin`/`.claude-plugin`) root is
+        # never composed as an independent bundle, so posture must not report
+        # on its MCP surface either.
+        native_resolved = [
+            r.resolve() for r, plugin_fmt in candidates if plugin_fmt is not AGENT_PLUGINS_FORMAT
+        ]
+
+        def _strictly_below_native(plugin_root: Path) -> bool:
+            resolved = plugin_root.resolve()
+            return any(
+                resolved != other and resolved.is_relative_to(other) for other in native_resolved
+            )
+
+        for plugin_root, fmt in candidates:
+            if fmt is AGENT_PLUGINS_FORMAT and _strictly_below_native(plugin_root):
+                continue
             manifest_version = None
             if fmt is AGENT_PLUGINS_FORMAT:
                 manifest_path = plugin_root / "plugin.json"
@@ -512,6 +528,8 @@ def collect_cursor_mcp_manifests(
             for mcp_name in mcp_names:
                 candidate = plugin_root / mcp_name
                 if not candidate.is_file():
+                    continue
+                if is_ignored(candidate.relative_to(root), spec):
                     continue
                 if fmt is AGENT_PLUGINS_FORMAT:
                     # A bundled mcp.json that fails §7.2's envelope check is

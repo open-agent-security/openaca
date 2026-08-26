@@ -29,8 +29,8 @@ from tools.parsers import (
     package_json,
     pyproject_toml,
 )
-from tools.parsers import _parse_repo_agent as parse_repo_agent
-from tools.parsers import _parse_repo_command as parse_repo_command
+from tools.parsers import _parse_repo_cursor_agent as parse_repo_cursor_agent
+from tools.parsers import _parse_repo_cursor_command as parse_repo_cursor_command
 
 
 def test_host_agnostic_registry_is_the_five_dependency_manifests():
@@ -49,16 +49,27 @@ def test_registry_compat_alias_concatenates_host_agnostic_then_claude_code():
 
 
 def test_cursor_manifest_registry_matches_the_task_brief_table_exactly():
-    """Task 3 brief's ten-row table, verbatim: pattern, parser, guard."""
+    """Command/agent rows cover every extension and compat root
+    `tools/cursor_commands.py`/`tools/cursor_subagents.py` actually resolve
+    (`.md`/`.txt` under `.cursor|.claude/commands`, `.md`/`.mdc`/`.markdown`
+    under `.cursor|.claude/agents`) — a narrower table here would undercount
+    `n_found` against files composition does discover."""
     assert [tuple(e) for e in CURSOR_MANIFEST_REGISTRY] == [
         ("**/.cursor/mcp.json", mcp_json.parse, None),
         ("**/.cursor/skills/*/SKILL.md", claude_skill.parse, None),
         ("**/.agents/skills/*/SKILL.md", claude_skill.parse, None),
         ("**/.claude/skills/*/SKILL.md", claude_skill.parse, None),
         ("**/.codex/skills/*/SKILL.md", claude_skill.parse, None),
-        ("**/.cursor/commands/**/*.md", parse_repo_command, None),
-        ("**/.cursor/agents/**/*.md", parse_repo_agent, None),
-        ("**/.claude/agents/**/*.md", parse_repo_agent, None),
+        ("**/.cursor/commands/**/*.md", parse_repo_cursor_command, None),
+        ("**/.cursor/commands/**/*.txt", parse_repo_cursor_command, None),
+        ("**/.claude/commands/**/*.md", parse_repo_cursor_command, None),
+        ("**/.claude/commands/**/*.txt", parse_repo_cursor_command, None),
+        ("**/.cursor/agents/**/*.md", parse_repo_cursor_agent, None),
+        ("**/.cursor/agents/**/*.mdc", parse_repo_cursor_agent, None),
+        ("**/.cursor/agents/**/*.markdown", parse_repo_cursor_agent, None),
+        ("**/.claude/agents/**/*.md", parse_repo_cursor_agent, None),
+        ("**/.claude/agents/**/*.mdc", parse_repo_cursor_agent, None),
+        ("**/.claude/agents/**/*.markdown", parse_repo_cursor_agent, None),
         ("**/.cursor-plugin/plugin.json", claude_plugin.parse, None),
         ("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
     ]
@@ -255,3 +266,28 @@ def test_two_tuple_registry_entries_still_work(tmp_path):
     )
     assert n_found == 1
     assert len(grouped) == 1
+
+
+def test_cursor_registry_counts_non_md_command_and_agent_extensions(tmp_path):
+    """`tools/cursor_commands.py`/`tools/cursor_subagents.py` compose a
+    `.cursor/commands/*.txt` command and a `.cursor/agents/*.mdc` subagent —
+    a registry that only matched `.md` would undercount `n_found` (and thus
+    `openaca:source_unit_count`/scan stats) against what composition actually
+    discovers, and silently drop the parse via `claude_command_agent.parse_file`'s
+    default `.md`-only `extensions`."""
+    from tools.parsers import parse_repo_grouped
+
+    (tmp_path / ".cursor" / "commands").mkdir(parents=True)
+    (tmp_path / ".cursor" / "commands" / "deploy.txt").write_text("deploy", encoding="utf-8")
+    (tmp_path / ".cursor" / "agents").mkdir(parents=True)
+    (tmp_path / ".cursor" / "agents" / "helper.mdc").write_text("helper", encoding="utf-8")
+    (tmp_path / ".claude" / "commands").mkdir(parents=True)
+    (tmp_path / ".claude" / "commands" / "build.md").write_text("build", encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+
+    assert n_found == 3
+    refs_by_path = {path: refs for path, refs in grouped}
+    assert refs_by_path[tmp_path / ".cursor" / "commands" / "deploy.txt"][0].name == "deploy"
+    assert refs_by_path[tmp_path / ".cursor" / "agents" / "helper.mdc"][0].name == "helper"
+    assert refs_by_path[tmp_path / ".claude" / "commands" / "build.md"][0].name == "build"

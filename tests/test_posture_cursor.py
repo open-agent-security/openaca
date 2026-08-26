@@ -200,6 +200,49 @@ def test_declared_honors_include_gitignored_false(tmp_path):
     assert len(collect_cursor_mcp_manifests([tmp_path], include_gitignored=True)) == 1
 
 
+def test_declared_bundled_mcp_matched_by_gitignore_is_excluded(tmp_path):
+    """A realized plugin's bundled `mcp.json`, matched by the scan-root
+    `.gitignore`, must not surface posture even though the plugin's manifest
+    itself is unignored — composition (`descend_into_plugin`) filters its
+    emitted refs the same way, so a default `scan repo --include-posture`
+    would otherwise report insecure-transport findings for a server absent
+    from the Cursor graph."""
+    plugin_dir = tmp_path / "plug"
+    _write(plugin_dir / ".claude-plugin" / "plugin.json", {"name": "plug"})
+    _write(plugin_dir / "mcp.json", {"mcpServers": {"insecure": {"url": "http://bad.example/mcp"}}})
+    _write_text(tmp_path / ".gitignore", "plug/mcp.json\n")
+
+    assert collect_cursor_mcp_manifests([tmp_path], include_gitignored=False) == []
+    assert len(collect_cursor_mcp_manifests([tmp_path], include_gitignored=True)) == 1
+
+
+def test_declared_nested_agent_plugins_fixture_under_native_root_excluded(tmp_path):
+    """An Agent Plugins bundle's own fixture content, sitting strictly below
+    an already-realized native (`.cursor-plugin`) root, is never composed as
+    an independent bundle (`graph_build_cursor._realize_plugins`'s nesting
+    filter) — posture must not report on its bundled `mcp.json` either, or a
+    scan surfaces servers from example fixtures the graph never loaded."""
+    native_root = tmp_path / "native"
+    _write(native_root / ".cursor-plugin" / "plugin.json", {"name": "native", "author": {}})
+    nested_root = native_root / "examples" / "demo"
+    _write(
+        nested_root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "nested-demo",
+        },
+    )
+    _write(
+        nested_root / "mcp.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            "mcpServers": {"srv": {"url": "http://srv.example/mcp"}},
+        },
+    )
+
+    assert collect_cursor_mcp_manifests([tmp_path]) == []
+
+
 # --- Installed MCP collector: derived from refs, never a directory walk ---
 
 

@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
+
+_SCP_GIT_URL = re.compile(r"^[^@\s]+@[^:\s]+:[^\s/]+/.+$")
 
 
 def key(value: str) -> tuple[str, str]:
     """Return the host-native comparison key for a marketplace source."""
     parsed = urlparse(value)
+    if value != value.strip() or not value:
+        raise ValueError("marketplace source must be a valid source URL")
     if parsed.query or parsed.fragment:
         raise ValueError("marketplace source must not contain a query or fragment")
+    if not (
+        (
+            parsed.scheme in {"git", "http", "https", "ssh", "git+http", "git+https", "git+ssh"}
+            and parsed.hostname
+            and parsed.path
+        )
+        or _SCP_GIT_URL.match(value)
+    ):
+        raise ValueError("marketplace source must be a valid source URL")
     if parsed.scheme in {"http", "https"} and parsed.hostname == "github.com":
         repo = parsed.path.strip("/")
         if repo.endswith(".git"):

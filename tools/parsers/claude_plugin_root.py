@@ -63,31 +63,49 @@ def _parse_manifest_refs(
     warnings: list[str] | None = None,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
-    deps = data.get("dependencies")
-    if isinstance(deps, list):
-        for i, dep in enumerate(deps):
-            locator = f"$.dependencies[{i}]"
-            if isinstance(dep, str):
-                refs.append(
-                    ComponentRef(
-                        name=dep,
-                        component_identity=f"plugin-dep/{dep}",
-                        source_manifest=str(plugin_json_path),
-                        source_locator=locator,
+    if "dependencies" in data:
+        deps = data["dependencies"]
+        if not isinstance(deps, list):
+            if warnings is not None:
+                warnings.append(f"could not parse {plugin_json_path}: dependencies must be a list")
+        else:
+            for i, dep in enumerate(deps):
+                locator = f"$.dependencies[{i}]"
+                if isinstance(dep, str) and dep:
+                    refs.append(
+                        ComponentRef(
+                            name=dep,
+                            component_identity=f"plugin-dep/{dep}",
+                            source_manifest=str(plugin_json_path),
+                            source_locator=locator,
+                        )
                     )
-                )
-            elif isinstance(dep, dict) and dep.get("name"):
-                ident = f"plugin-dep/{dep['name']}"
-                if dep.get("version"):
-                    ident = f"{ident}@{dep['version']}"
-                refs.append(
-                    ComponentRef(
-                        name=str(dep["name"]),
-                        component_identity=ident,
-                        source_manifest=str(plugin_json_path),
-                        source_locator=locator,
+                    continue
+                if isinstance(dep, dict):
+                    name = dep.get("name")
+                    version = dep.get("version")
+                    if (
+                        isinstance(name, str)
+                        and name
+                        and (version is None or isinstance(version, str))
+                    ):
+                        ident = f"plugin-dep/{name}"
+                        if version:
+                            ident = f"{ident}@{version}"
+                        refs.append(
+                            ComponentRef(
+                                name=name,
+                                component_identity=ident,
+                                source_manifest=str(plugin_json_path),
+                                source_locator=locator,
+                            )
+                        )
+                        continue
+                if warnings is not None:
+                    warnings.append(
+                        f"could not parse {plugin_json_path}: {locator} must be a "
+                        "dependency string or object with a string name"
                     )
-                )
 
     if "mcpServers" in data:
         servers = data["mcpServers"]
@@ -230,13 +248,18 @@ def _parse_bundled_hooks(
     inline_hooks = data.get("hooks")
     plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
     if isinstance(inline_hooks, dict):
-        refs.extend(
-            hooks_json.parse_plugin_hooks_inline(
-                hooks_block=inline_hooks,
-                plugin_name=plugin_name,
-                source_manifest=str(plugin_json_path),
+        try:
+            refs.extend(
+                hooks_json.parse_plugin_hooks_inline(
+                    hooks_block=inline_hooks,
+                    plugin_name=plugin_name,
+                    source_manifest=str(plugin_json_path),
+                    strict=warnings is not None,
+                )
             )
-        )
+        except ValueError as exc:
+            if warnings is not None:
+                warnings.append(f"could not parse {plugin_json_path}: {exc}")
     elif isinstance(inline_hooks, str):
         custom_hooks_file = resolve_within(plugin_root, inline_hooks)
         if custom_hooks_file is not None and custom_hooks_file.is_file():
@@ -253,6 +276,10 @@ def _parse_bundled_hooks(
                 except Exception as exc:
                     if warnings is not None:
                         warnings.append(f"could not parse {custom_hooks_file}: {exc}")
+        elif warnings is not None:
+            warnings.append(
+                f"could not parse {inline_hooks}: referenced hook manifest is unavailable"
+            )
     elif "hooks" in data and warnings is not None:
         warnings.append(f"could not parse {plugin_json_path}: hooks must be an object or path")
     return refs

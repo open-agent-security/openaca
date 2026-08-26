@@ -58,11 +58,7 @@ def parse_plugin_hooks(
             raise ValueError("plugin hooks file hooks must be an object")
         return []
     if strict:
-        for event, entries in hooks_block.items():
-            if not isinstance(event, str) or not isinstance(entries, list):
-                raise ValueError("plugin hook events must map strings to arrays")
-            if any(not isinstance(entry, dict) for entry in entries):
-                raise ValueError("plugin hook event entries must be objects")
+        _validate_hook_events(hooks_block, "plugin hook")
     return _walk_events(
         hooks_block,
         source_manifest=str(hooks_json_path),
@@ -71,7 +67,7 @@ def parse_plugin_hooks(
 
 
 def parse_plugin_hooks_inline(
-    hooks_block: dict, plugin_name: str, source_manifest: str
+    hooks_block: dict, plugin_name: str, source_manifest: str, *, strict: bool = False
 ) -> list[ComponentRef]:
     """Walk a plugin.json's inline `hooks` key.
 
@@ -80,7 +76,11 @@ def parse_plugin_hooks_inline(
     can coexist on the same plugin — no deduplication is applied.
     """
     if not isinstance(hooks_block, dict):
+        if strict:
+            raise ValueError("plugin hooks must be an object")
         return []
+    if strict:
+        _validate_hook_events(hooks_block, "plugin hook")
     return _walk_events(
         hooks_block,
         source_manifest=source_manifest,
@@ -89,7 +89,7 @@ def parse_plugin_hooks_inline(
 
 
 def parse_settings_hooks(
-    settings_path: Path, hooks_block: object, scope: str
+    settings_path: Path, hooks_block: object, scope: str, *, strict: bool = False
 ) -> list[ComponentRef]:
     """Walk a settings.json's `hooks` block for a specific scope.
 
@@ -98,12 +98,24 @@ def parse_settings_hooks(
     identity; parentage is set by the graph edge.
     """
     if not isinstance(hooks_block, dict):
+        if strict:
+            raise ValueError("settings hooks must be an object")
         return []
+    if strict:
+        _validate_hook_events(hooks_block, "settings hook")
     return _walk_events(
         hooks_block,
         source_manifest=str(settings_path),
         scope=scope,
     )
+
+
+def _validate_hook_events(hooks_block: dict, label: str) -> None:
+    for event, entries in hooks_block.items():
+        if not isinstance(event, str) or not isinstance(entries, list):
+            raise ValueError(f"{label} events must map strings to arrays")
+        if any(not isinstance(entry, dict) for entry in entries):
+            raise ValueError(f"{label} event entries must be objects")
 
 
 def _walk_events(

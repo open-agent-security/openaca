@@ -7,8 +7,12 @@ installed MCP-shaped collectors, the JSONC `permissions.json` merge, and the
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
 from tools.component_ref import ComponentRef
+from tools.graph_build_cursor import build_cursor_graph
 from tools.posture import (
     collect_cursor_endpoint_mcp_manifests,
     collect_cursor_endpoint_permissions_manifests,
@@ -37,6 +41,33 @@ def _write_text(path, text):
 # --- no_manifests consolidation --------------------------------------------
 
 
+@dataclass
+class _FakeAgent:
+    """Minimal `AgentInstance` stand-in — `build_cursor_graph` reads only these."""
+
+    source: str
+    scan_root: Optional[Path] = None
+    config_root: Optional[Path] = None
+    project_root: Optional[Path] = None
+    bom_ref: str = "root/cursor"
+    root_label: str = "cursor"
+
+
+def _declared_refs(repo_root: Path, *, include_gitignored: bool = False) -> list[ComponentRef]:
+    """Compose the declared Cursor graph and return its refs.
+
+    Posture derives from these rather than re-walking (see
+    `collect_cursor_mcp_manifests`), so a posture test that builds the graph
+    first is asserting the property that actually matters: posture reports
+    exactly what composition composed, never more.
+    """
+    graph = build_cursor_graph(
+        _FakeAgent(source="declared", scan_root=repo_root),
+        include_gitignored=include_gitignored,
+    )
+    return [n.ref for n in graph.nodes.values() if n.ref is not None]
+
+
 def test_no_manifests_returns_empty_regardless_of_args():
     assert no_manifests() == []
     assert no_manifests(1, 2, three=3) == []
@@ -61,7 +92,7 @@ def test_declared_collects_scoped_cursor_mcp_json(tmp_path):
         {"mcpServers": {"unsafe": {"url": "http://example.com/mcp"}}},
     )
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     path, data = manifests[0]
@@ -73,7 +104,7 @@ def test_declared_bare_mcp_json_not_matched_by_scoped_surface(tmp_path):
     """`mcp.json` outside a `.cursor/` dir is not Cursor's scoped surface."""
     _write(tmp_path / "mcp.json", {"mcpServers": {"x": {"url": "http://x.example/mcp"}}})
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_bundled_mcp_reached_via_claude_plugin_manifest_only(tmp_path):
@@ -85,7 +116,7 @@ def test_declared_bundled_mcp_reached_via_claude_plugin_manifest_only(tmp_path):
     _write(root / ".claude-plugin" / "plugin.json", {"name": "plug"})
     _write(root / "mcp.json", {"mcpServers": {"insecure": {"url": "http://bad.example/mcp"}}})
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     path, data = manifests[0]
@@ -106,7 +137,7 @@ def test_declared_native_plugin_inline_mcp_servers_collected(tmp_path):
         {"name": "plug", "mcpServers": {"inline": {"url": "http://inline.example/mcp"}}},
     )
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     path, data = manifests[0]
@@ -130,7 +161,7 @@ def test_declared_native_plugin_referenced_mcp_path_collected(tmp_path):
         {"mcpServers": {"referenced": {"url": "http://referenced.example/mcp"}}},
     )
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     path, data = manifests[0]
@@ -153,7 +184,7 @@ def test_declared_native_plugin_missing_name_yields_no_mcp(tmp_path):
     )
     _write(root / "mcp.json", {"mcpServers": {"sibling": {"url": "http://sibling.example/mcp"}}})
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_invalid_agent_plugins_manifest_yields_no_mcp(tmp_path):
@@ -170,7 +201,7 @@ def test_declared_invalid_agent_plugins_manifest_yields_no_mcp(tmp_path):
     )
     _write(root / "mcp.json", {"mcpServers": {"x": {"url": "http://x.example/mcp"}}})
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_valid_agent_plugins_manifest_surfaces_bundled_mcp(tmp_path):
@@ -190,7 +221,7 @@ def test_declared_valid_agent_plugins_manifest_surfaces_bundled_mcp(tmp_path):
         },
     )
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     assert manifests[0][0] == root / "mcp.json"
@@ -211,7 +242,7 @@ def test_declared_agent_plugins_mcp_missing_schema_yields_no_mcp(tmp_path):
     )
     _write(root / "mcp.json", {"mcpServers": {"srv": {"url": "http://srv.example/mcp"}}})
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_agent_plugins_dot_mcp_json_sibling_is_ignored(tmp_path):
@@ -237,7 +268,7 @@ def test_declared_agent_plugins_dot_mcp_json_sibling_is_ignored(tmp_path):
         },
     )
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_directory_with_both_native_and_claude_manifest_reports_once(tmp_path):
@@ -249,7 +280,7 @@ def test_declared_directory_with_both_native_and_claude_manifest_reports_once(tm
     _write(root / "mcp.json", {"mcpServers": {"native": {"url": "http://native.example/mcp"}}})
     _write(root / ".claude-plugin" / "plugin.json", {"name": "dual-claude"})
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     assert len(manifests) == 1
     assert manifests[0][0] == root / "mcp.json"
@@ -259,8 +290,24 @@ def test_declared_honors_include_gitignored_false(tmp_path):
     (tmp_path / ".gitignore").write_text(".cursor/\n")
     _write(tmp_path / ".cursor" / "mcp.json", {"mcpServers": {"x": {"url": "http://x/mcp"}}})
 
-    assert collect_cursor_mcp_manifests([tmp_path], include_gitignored=False) == []
-    assert len(collect_cursor_mcp_manifests([tmp_path], include_gitignored=True)) == 1
+    assert (
+        collect_cursor_mcp_manifests(
+            [tmp_path],
+            include_gitignored=False,
+            refs=_declared_refs(tmp_path, include_gitignored=False),
+        )
+        == []
+    )
+    assert (
+        len(
+            collect_cursor_mcp_manifests(
+                [tmp_path],
+                include_gitignored=True,
+                refs=_declared_refs(tmp_path, include_gitignored=True),
+            )
+        )
+        == 1
+    )
 
 
 def test_declared_bundled_mcp_matched_by_gitignore_is_excluded(tmp_path):
@@ -275,8 +322,24 @@ def test_declared_bundled_mcp_matched_by_gitignore_is_excluded(tmp_path):
     _write(plugin_dir / "mcp.json", {"mcpServers": {"insecure": {"url": "http://bad.example/mcp"}}})
     _write_text(tmp_path / ".gitignore", "plug/mcp.json\n")
 
-    assert collect_cursor_mcp_manifests([tmp_path], include_gitignored=False) == []
-    assert len(collect_cursor_mcp_manifests([tmp_path], include_gitignored=True)) == 1
+    assert (
+        collect_cursor_mcp_manifests(
+            [tmp_path],
+            include_gitignored=False,
+            refs=_declared_refs(tmp_path, include_gitignored=False),
+        )
+        == []
+    )
+    assert (
+        len(
+            collect_cursor_mcp_manifests(
+                [tmp_path],
+                include_gitignored=True,
+                refs=_declared_refs(tmp_path, include_gitignored=True),
+            )
+        )
+        == 1
+    )
 
 
 def test_declared_nested_agent_plugins_fixture_under_native_root_excluded(tmp_path):
@@ -303,7 +366,7 @@ def test_declared_nested_agent_plugins_fixture_under_native_root_excluded(tmp_pa
         },
     )
 
-    assert collect_cursor_mcp_manifests([tmp_path]) == []
+    assert collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path)) == []
 
 
 def test_declared_nested_cursor_mcp_json_inside_native_plugin_excluded(tmp_path):
@@ -326,7 +389,7 @@ def test_declared_nested_cursor_mcp_json_inside_native_plugin_excluded(tmp_path)
         {"mcpServers": {"real": {"url": "http://real.example/mcp"}}},
     )
 
-    manifests = collect_cursor_mcp_manifests([tmp_path])
+    manifests = collect_cursor_mcp_manifests([tmp_path], refs=_declared_refs(tmp_path))
 
     paths = {path for path, _ in manifests}
     assert plugin_dir / ".cursor" / "mcp.json" not in paths

@@ -618,6 +618,45 @@ Claude-only repository. `.agents/skills/` is the exception and *is* evidence,
 because Cursor is currently the only registered kind that reads it — a claim to
 revisit if a Codex kind lands.
 
+## Posture derives from composition
+
+**A posture collector reports what the composition graph composed. It does not
+walk the filesystem to find out.**
+
+This is an invariant, not a preference, and it is the one every kind inherits.
+Cursor's composition applies a long list of exclusions — realized plugin
+subtrees are closed to the direct walk, an Agent Plugins root nested under a
+realized native root never realizes, a bundle whose manifest yields no self-ref
+realizes nothing, gitignored candidates are dropped before selection, and the
+portable format reads only a root `mcp.json`. A collector that re-walks has to
+restate every one of them, and **each rule it misses reports a finding against a
+component the agent never loads.**
+
+That failure mode is not hypothetical: it produced a finding in nearly every
+round of review on this kind, each one a different un-mirrored rule, because the
+supply of rules to mirror is the whole composition builder. Deriving from the
+graph makes the divergence unrepresentable — exclusions are applied once, by
+composition, and posture inherits them by construction.
+
+The rule has one honest exception. `permissions.json` declares no components, so
+it appears in no ref and cannot be derived; it still walks. But it takes the one
+thing it cannot derive — which subtrees composition already claimed — from the
+graph's own `plugin` refs rather than recomputing them from a manifest walk. A
+surface that yields no components may walk; it may not re-derive what
+composition already decided.
+
+Two corollaries worth stating, because both were learned the expensive way:
+
+- **"Qualified" and "realized" are different sets, and only the second confers
+  ownership.** A manifest that qualifies for discovery but produces no self-ref
+  owns no subtree, excludes nothing, and contributes no posture surface.
+- **Ignore filtering belongs before precedence selection, not after.** Filtering
+  a winner after the fact drops it without reconsidering the candidate it beat,
+  so an ignored higher-precedence file silently hides a valid lower-precedence
+  one. The predicate must also compare like with like: a resolved path against
+  an unresolved root fails its containment test and silently returns "not
+  ignored" — the permissive direction.
+
 ## Posture rule applicability
 
 | Rule | Applies | Why |

@@ -2667,6 +2667,28 @@ def test_scan_repo_downgrades_coverage_on_a_repo_parse_failure(tmp_path):
     assert doc["stats"]["parse_failed"] == 1
 
 
+def test_scan_repo_cursor_declared_units_stop_at_the_traversal_depth_limit(tmp_path):
+    """`scan repo`'s declared-agent `stats.units`/`stats.parse_failed` are a
+    direct pass-through of `parse_repo_grouped`'s `(n_found, n_failed)`
+    (`tools/scan.py:750-777`). A command/subagent past the resolvers' 10-
+    segment traversal limit (`tools/cursor_commands.py`,
+    `tools/cursor_subagents.py`) must not inflate that count — pin it at the
+    scan-stat level, not just the registry level."""
+    current = tmp_path / ".cursor" / "commands"
+    for i in range(10):
+        current = current / f"d{i}"
+    current.mkdir(parents=True)
+    (current / "deploy.md").write_text("deploy", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert {a["kind"] for a in doc["agents"]} == {"cursor"}
+    assert doc["stats"]["units"] == 0
+    assert doc["stats"]["parse_failed"] == 0
+
+
 def test_scan_repo_text_keeps_the_manifest_grouped_inventory_tree(tmp_path):
     # `scan repo` renders `render_repo_inventory_tree` — grouped by manifest,
     # rooted at the scanned path — not the endpoint composition tree. The agent

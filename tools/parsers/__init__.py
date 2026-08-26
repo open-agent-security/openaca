@@ -93,6 +93,24 @@ _CURSOR_COMMAND_EXTENSIONS = (".md", ".txt")
 _CURSOR_AGENT_EXTENSIONS = (".md", ".mdc", ".markdown")
 _CURSOR_COMMAND_AGENT_DIRS = (".cursor", ".claude")
 
+# Mirrors `_MAX_TRAVERSAL_DEPTH` in `tools/cursor_commands.py` and
+# `tools/cursor_subagents.py`: both resolvers drop a command/subagent whose
+# path relative to its `commands`/`agents` root exceeds 10 segments. The glob
+# patterns below can't express that limit, so a file past it would otherwise
+# inflate `n_found`/`n_failed` for configuration composition never loads.
+_CURSOR_COMMAND_AGENT_MAX_DEPTH = 10
+
+
+def _within_cursor_traversal_depth(scope_dirname: str, root_dirname: str) -> GuardFn:
+    def guard(path: Path) -> bool:
+        parts = path.parts
+        for i in range(len(parts) - 1, 0, -1):
+            if parts[i] == root_dirname and parts[i - 1] == scope_dirname:
+                return len(parts) - i - 1 <= _CURSOR_COMMAND_AGENT_MAX_DEPTH
+        return True
+
+    return guard
+
 
 def _parse_repo_cursor_command(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(
@@ -111,21 +129,44 @@ def _parse_repo_cursor_agent(path: Path) -> list[ComponentRef]:
 # prevent.
 CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ManifestPattern("**/.cursor/mcp.json", mcp_json.parse),
-    ManifestPattern("**/.cursor/skills/*/SKILL.md", claude_skill.parse),
-    ManifestPattern("**/.agents/skills/*/SKILL.md", claude_skill.parse),
-    ManifestPattern("**/.claude/skills/*/SKILL.md", claude_skill.parse),
-    ManifestPattern("**/.codex/skills/*/SKILL.md", claude_skill.parse),
+    # `**/SKILL.md`, not `*/SKILL.md`: Cursor walks its skill roots
+    # RECURSIVELY (docs/specs/cursor-agent-kind.md, Skills), so a skill at
+    # `.cursor/skills/group/tool/SKILL.md` is composed. Matching only an
+    # immediate child would undercount `source_unit_count` and leave a
+    # malformed nested skill unable to register a parse failure.
+    #
+    # This is the opposite of an Agent Plugins bundle's `skills/`, which the
+    # standard forbids recursing into — that surface is walked by
+    # `agent_plugins.parse`, never by this registry.
+    ManifestPattern("**/.cursor/skills/**/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.agents/skills/**/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.claude/skills/**/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.codex/skills/**/SKILL.md", claude_skill.parse),
     *(
-        ManifestPattern(f"**/{dirname}/commands/**/*{ext}", _parse_repo_cursor_command)
+        ManifestPattern(
+            f"**/{dirname}/commands/**/*{ext}",
+            _parse_repo_cursor_command,
+            _within_cursor_traversal_depth(dirname, "commands"),
+        )
         for dirname in _CURSOR_COMMAND_AGENT_DIRS
         for ext in _CURSOR_COMMAND_EXTENSIONS
     ),
     *(
-        ManifestPattern(f"**/{dirname}/agents/**/*{ext}", _parse_repo_cursor_agent)
+        ManifestPattern(
+            f"**/{dirname}/agents/**/*{ext}",
+            _parse_repo_cursor_agent,
+            _within_cursor_traversal_depth(dirname, "agents"),
+        )
         for dirname in _CURSOR_COMMAND_AGENT_DIRS
         for ext in _CURSOR_AGENT_EXTENSIONS
     ),
     ManifestPattern("**/.cursor-plugin/plugin.json", claude_plugin.parse),
+    # Cursor's ordered candidate list includes Claude Code's manifest, so a
+    # bundle carrying only `.claude-plugin/plugin.json` still realizes in the
+    # Cursor graph. Without this route its manifest never counts toward
+    # Cursor's `source_unit_count` and a malformed one cannot contribute a
+    # parse failure or an evidence gap.
+    ManifestPattern("**/.claude-plugin/plugin.json", claude_plugin.parse),
     ManifestPattern("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
 ]
 

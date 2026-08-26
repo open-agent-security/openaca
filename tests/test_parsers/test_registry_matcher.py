@@ -53,26 +53,43 @@ def test_cursor_manifest_registry_matches_the_task_brief_table_exactly():
     `tools/cursor_commands.py`/`tools/cursor_subagents.py` actually resolve
     (`.md`/`.txt` under `.cursor|.claude/commands`, `.md`/`.mdc`/`.markdown`
     under `.cursor|.claude/agents`) — a narrower table here would undercount
-    `n_found` against files composition does discover."""
-    assert [tuple(e) for e in CURSOR_MANIFEST_REGISTRY] == [
-        ("**/.cursor/mcp.json", mcp_json.parse, None),
-        ("**/.cursor/skills/*/SKILL.md", claude_skill.parse, None),
-        ("**/.agents/skills/*/SKILL.md", claude_skill.parse, None),
-        ("**/.claude/skills/*/SKILL.md", claude_skill.parse, None),
-        ("**/.codex/skills/*/SKILL.md", claude_skill.parse, None),
-        ("**/.cursor/commands/**/*.md", parse_repo_cursor_command, None),
-        ("**/.cursor/commands/**/*.txt", parse_repo_cursor_command, None),
-        ("**/.claude/commands/**/*.md", parse_repo_cursor_command, None),
-        ("**/.claude/commands/**/*.txt", parse_repo_cursor_command, None),
-        ("**/.cursor/agents/**/*.md", parse_repo_cursor_agent, None),
-        ("**/.cursor/agents/**/*.mdc", parse_repo_cursor_agent, None),
-        ("**/.cursor/agents/**/*.markdown", parse_repo_cursor_agent, None),
-        ("**/.claude/agents/**/*.md", parse_repo_cursor_agent, None),
-        ("**/.claude/agents/**/*.mdc", parse_repo_cursor_agent, None),
-        ("**/.claude/agents/**/*.markdown", parse_repo_cursor_agent, None),
-        ("**/.cursor-plugin/plugin.json", claude_plugin.parse, None),
-        ("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
+    `n_found` against files composition does discover.
+
+    Skill rows are `**/SKILL.md`, mirroring composition's RECURSIVE walk of
+    Cursor's skill roots, and the plugin rows include Claude Code's manifest
+    because Cursor's ordered candidate list realizes bundles through it.
+
+    Command/agent rows carry a depth guard (not `None`) — the glob alone
+    can't express the resolvers' 10-segment traversal limit, so a guard
+    keeps `n_found`/`n_failed` from counting a file composition drops."""
+    entries = [tuple(e) for e in CURSOR_MANIFEST_REGISTRY]
+    guards = [e[2] for e in entries]
+    assert [(p, parser) for p, parser, _ in entries] == [
+        ("**/.cursor/mcp.json", mcp_json.parse),
+        ("**/.cursor/skills/**/SKILL.md", claude_skill.parse),
+        ("**/.agents/skills/**/SKILL.md", claude_skill.parse),
+        ("**/.claude/skills/**/SKILL.md", claude_skill.parse),
+        ("**/.codex/skills/**/SKILL.md", claude_skill.parse),
+        ("**/.cursor/commands/**/*.md", parse_repo_cursor_command),
+        ("**/.cursor/commands/**/*.txt", parse_repo_cursor_command),
+        ("**/.claude/commands/**/*.md", parse_repo_cursor_command),
+        ("**/.claude/commands/**/*.txt", parse_repo_cursor_command),
+        ("**/.cursor/agents/**/*.md", parse_repo_cursor_agent),
+        ("**/.cursor/agents/**/*.mdc", parse_repo_cursor_agent),
+        ("**/.cursor/agents/**/*.markdown", parse_repo_cursor_agent),
+        ("**/.claude/agents/**/*.md", parse_repo_cursor_agent),
+        ("**/.claude/agents/**/*.mdc", parse_repo_cursor_agent),
+        ("**/.claude/agents/**/*.markdown", parse_repo_cursor_agent),
+        ("**/.cursor-plugin/plugin.json", claude_plugin.parse),
+        ("**/.claude-plugin/plugin.json", claude_plugin.parse),
+        ("plugin.json", agent_plugins.parse),
     ]
+    assert guards[:5] == [None] * 5, "mcp.json and skill rows have no depth guard"
+    assert all(callable(g) for g in guards[5:15]), (
+        "every command/agent row must carry a depth guard"
+    )
+    assert guards[15:17] == [None, None], "plugin manifest rows have no depth guard"
+    assert guards[17] is agent_plugins.is_agent_plugins_manifest
 
 
 def test_cursor_registry_never_has_a_bare_mcp_json_pattern():
@@ -290,4 +307,75 @@ def test_cursor_registry_counts_non_md_command_and_agent_extensions(tmp_path):
     refs_by_path = {path: refs for path, refs in grouped}
     assert refs_by_path[tmp_path / ".cursor" / "commands" / "deploy.txt"][0].name == "deploy"
     assert refs_by_path[tmp_path / ".cursor" / "agents" / "helper.mdc"][0].name == "helper"
-    assert refs_by_path[tmp_path / ".claude" / "commands" / "build.md"][0].name == "build"
+
+
+def _make_nested_file(root: Path, *, depth: int) -> Path:
+    """Build a path `depth` segments below `root` (depth counts the file
+    itself), matching how `tools/cursor_commands.py`/`tools/cursor_subagents.py`
+    count `relative_path.parts` off their `commands`/`agents` root."""
+    current = root
+    for i in range(depth - 1):
+        current = current / f"d{i}"
+    current.mkdir(parents=True, exist_ok=True)
+    return current
+
+
+@pytest.mark.parametrize("depth", [10, 11])
+def test_cursor_registry_command_depth_matches_resolver_traversal_limit(tmp_path, depth):
+    """`tools/cursor_commands.py`'s `_iter_command_files` drops a command
+    whose path relative to `commands_dir` exceeds 10 segments
+    (`tools/cursor_commands.py:144`). The registry's glob pattern has no way
+    to express that limit on its own, so it must carry a depth guard that
+    agrees with the resolver exactly at the boundary — depth 10 still counts,
+    depth 11 must not."""
+    from tools.cursor_commands import resolve_repo
+    from tools.parsers import parse_repo_grouped
+
+    commands_dir = tmp_path / ".cursor" / "commands"
+    leaf_dir = _make_nested_file(commands_dir, depth=depth)
+    (leaf_dir / "deploy.md").write_text("deploy", encoding="utf-8")
+
+    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    resolved = resolve_repo(tmp_path)
+
+    if depth <= 10:
+        assert n_found == 1
+        assert len(resolved) == 1
+    else:
+        assert n_found == 0
+        assert len(resolved) == 0
+
+
+@pytest.mark.parametrize("depth", [10, 11])
+def test_cursor_registry_agent_depth_matches_resolver_traversal_limit(tmp_path, depth):
+    """Same boundary as the command case above, for
+    `tools/cursor_subagents.py`'s `_MAX_TRAVERSAL_DEPTH` (`tools/cursor_subagents.py:143`)."""
+    from tools.cursor_subagents import resolve_repo
+    from tools.parsers import parse_repo_grouped
+
+    agents_dir = tmp_path / ".cursor" / "agents"
+    leaf_dir = _make_nested_file(agents_dir, depth=depth)
+    (leaf_dir / "helper.md").write_text("helper", encoding="utf-8")
+
+    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    resolved = resolve_repo(tmp_path)
+
+    if depth <= 10:
+        assert n_found == 1
+        assert len(resolved) == 1
+    else:
+        assert n_found == 0
+        assert len(resolved) == 0
+
+
+def test_cursor_registry_depth_guard_also_covers_claude_compat_dirs(tmp_path):
+    """The `.claude/commands` and `.claude/agents` compat routes share the
+    same unrestricted glob shape as the `.cursor` routes, so they need the
+    same depth guard — not just `.cursor`."""
+    from tools.parsers import parse_repo_grouped
+
+    leaf_dir = _make_nested_file(tmp_path / ".claude" / "commands", depth=11)
+    (leaf_dir / "deploy.md").write_text("deploy", encoding="utf-8")
+
+    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    assert n_found == 0

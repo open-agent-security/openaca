@@ -10,6 +10,7 @@ output strictly vulnerability findings.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -29,10 +30,16 @@ __all__ = [
     "KNOWN_RULE_IDS",
     "PostureFinding",
     "Standards",
+    "collect_cursor_endpoint_mcp_manifests",
+    "collect_cursor_endpoint_permissions_manifests",
+    "collect_cursor_mcp_manifests",
+    "collect_cursor_permissions_manifests",
     "collect_endpoint_mcp_manifests",
     "collect_endpoint_settings_manifests",
     "collect_mcp_manifests",
     "collect_settings_manifests",
+    "no_manifests",
+    "resolve_cursor_permissions",
     "run_posture_rules",
 ]
 
@@ -55,6 +62,14 @@ _MCP_MANIFEST_NAMES: frozenset[str] = frozenset(
 )
 _PLUGIN_MANIFEST_NAME = "plugin.json"
 _PLUGIN_MANIFEST_PARENT_DIR = ".claude-plugin"
+
+
+def no_manifests(*_args: object, **_kwargs: object) -> list[tuple[Path, dict]]:
+    """A kind with no filesystem-shaped posture surface yields nothing,
+    rather than falling back to another kind's collectors. Shared by every
+    caller that needs a collector pair for a kind with no posture surface at
+    a given composition source — do not reintroduce a private copy."""
+    return []
 
 
 def run_posture_rules(
@@ -406,3 +421,315 @@ def collect_endpoint_settings_manifests(
             path_to_keys.setdefault(source_path, {})[key] = merged_value
 
     return list(path_to_keys.items())
+
+
+# --- Cursor posture surfaces -----------------------------------------------
+#
+# Cursor's `mcp_auto_approve` posture lives in `permissions.json`, not
+# `mcp.json` (docs/specs/cursor-agent-kind.md "Posture rule applicability").
+# `insecure_transport`/`mutable_install`/`skill_capability` reuse the shared
+# graph and MCP-manifest shapes below unchanged; only the approval surface
+# needs its own collector and merge step.
+
+
+def collect_cursor_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+) -> list[tuple[Path, dict]]:
+    """Cursor's declared MCP-shaped manifest walk: `.cursor/mcp.json` at any
+    depth, plus each realized plugin root's bundled MCP manifest.
+
+    Plugin roots are resolved through the SAME ordered candidate list
+    Cursor's declared composition builder uses (`find_plugin_roots` /
+    `CURSOR_SURFACE.plugin_formats`) rather than a separately hand-rolled
+    walk, so a plugin bundled only as `.claude-plugin/plugin.json` still
+    reaches posture the same way it reaches composition. An Agent Plugins
+    root whose manifest fails Task 2's `validate_manifest` boundary is
+    treated as though it were absent — §7.2's own "reject outright" rule —
+    since `find_plugin_roots` already committed to that candidate winning
+    its directory and there is nothing to fall back to for MCP purposes.
+    """
+    from tools.graph_build import find_plugin_roots
+    from tools.parsers import agent_plugins
+    from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE
+
+    out: list[tuple[Path, dict]] = []
+    seen: set[Path] = set()
+
+    def _add(path: Path) -> None:
+        if not path.is_file():
+            return
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if isinstance(data, dict):
+            out.append((path, data))
+
+    for root in roots:
+        if root is None or not root.exists():
+            continue
+        spec = None if include_gitignored else load_gitignore_spec(root)
+        for path in root.rglob("mcp.json"):
+            if path.parent.name != ".cursor":
+                continue
+            if is_ignored(path.relative_to(root), spec):
+                continue
+            _add(path)
+        for plugin_root, fmt in find_plugin_roots(
+            root, CURSOR_SURFACE, include_gitignored=include_gitignored
+        ):
+            if fmt is AGENT_PLUGINS_FORMAT:
+                manifest_path = plugin_root / "plugin.json"
+                try:
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if not (
+                    isinstance(manifest_data, dict)
+                    and agent_plugins.validate_manifest(manifest_data)
+                ):
+                    continue
+            for mcp_name in CURSOR_SURFACE.bundled.mcp_filenames:
+                candidate = plugin_root / mcp_name
+                if candidate.is_file():
+                    _add(candidate)
+                    break
+    return out
+
+
+def collect_cursor_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Cursor's installed MCP posture surface, derived from the refs the
+    graph already produced — never a directory walk. A walk would attribute
+    a fixture the composition graph never actually loaded (e.g. an Agent
+    Plugins bundle's own test fixtures, or a plugin cache entry missing its
+    completion sentinel).
+    """
+    del config_dir, project_root
+    by_path: dict[str, dict] = {}
+    for ref in refs:
+        if (ref.extra or {}).get("component_type") != "mcp_server":
+            continue
+        source = ref.source_manifest
+        name = _mcp_server_ref_name(ref)
+        if not source or name is None:
+            continue
+        entry: dict = {}
+        url = (ref.extra or {}).get("url")
+        if isinstance(url, str):
+            entry["url"] = url
+        by_path.setdefault(source, {"mcpServers": {}})["mcpServers"][name] = entry
+    return [(Path(source), manifest) for source, manifest in by_path.items()]
+
+
+def _mcp_server_ref_name(ref: ComponentRef) -> str | None:
+    component_path = (ref.extra or {}).get("component_path")
+    if isinstance(component_path, list) and component_path:
+        last = component_path[-1]
+        if isinstance(last, dict) and isinstance(last.get("name"), str):
+            return last["name"]
+    return ref.name
+
+
+_CURSOR_PERMISSIONS_FILENAME = "permissions.json"
+
+
+def _cursor_permissions_config_dir() -> Path:
+    """`permissions.json` relocates independently of every other Cursor
+    surface (docs/specs/cursor-agent-kind.md "Config root"): `CURSOR_CONFIG_DIR`
+    wins when set; otherwise `XDG_CONFIG_HOME` resolves to `<xdg>/cursor`;
+    otherwise `~/.cursor`. Every other Cursor surface (`mcp.json`, skills,
+    plugins, ...) honors neither variable, so this is deliberately its own
+    resolution rather than a shared config-root helper.
+    """
+    override = os.environ.get("CURSOR_CONFIG_DIR")
+    if override:
+        return Path(override)
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "cursor"
+    return Path.home() / ".cursor"
+
+
+def _parse_jsonc(text: str) -> object:
+    """Parse JSON that may carry `//` and `/* */` comments and trailing
+    commas — both documented as supported in `permissions.json`
+    (docs/specs/cursor-agent-kind.md "Precedence"). A plain `json.loads`
+    raises on a documented-valid file, so this strips comments and trailing
+    commas in two string-aware passes (never touching either inside a JSON
+    string literal) before handing the result to `json.loads`.
+    """
+    return json.loads(_strip_trailing_commas(_strip_jsonc_comments(text)))
+
+
+def _strip_jsonc_comments(text: str) -> str:
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            i += 2
+            while i < n and text[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _load_cursor_permissions(path: Path) -> dict:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    try:
+        data = _parse_jsonc(text)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
+    """One effective view of Cursor's `permissions.json`, concatenated field
+    by field across every given path. Both scopes contribute; neither
+    replaces the other — Cursor's own reference: "When both exist, Cursor
+    concatenates the arrays inside every field. Per-user and per-repo entries
+    combine; one does not replace the other." An earlier draft of this
+    project's spec described user scope as first-wins per field; that was
+    wrong (over-generalized from one sampled code path) and is corrected
+    here.
+
+    Returns at most one tuple: `run_posture_rules`' manifest list is
+    per-server, so passing the same server name in two separate raw-file
+    tuples would double-emit a finding for it. Attributed to the first path
+    that actually exists, on the theory that a reader fixing an
+    over-permissive entry looks at the most specific (project) file first
+    when both are present.
+    """
+    merged: dict[str, list] = {}
+    primary: Path | None = None
+    for path in paths:
+        if not path.is_file():
+            continue
+        data = _load_cursor_permissions(path)
+        if not data:
+            continue
+        if primary is None:
+            primary = path
+        for key, value in data.items():
+            if isinstance(value, list):
+                merged.setdefault(key, []).extend(value)
+    if primary is None or not merged:
+        return []
+    return [(primary, {"cursor_permissions": merged})]
+
+
+def collect_cursor_permissions_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+) -> list[tuple[Path, dict]]:
+    """Cursor's declared approval-policy surface: `.cursor/permissions.json`
+    at any depth under the given roots, honouring `include_gitignored`
+    exactly as `collect_mcp_manifests` does. Repo-relative only — like
+    `collect_settings_manifests`, a declared scan reports repo content, never
+    the scanning machine's home directory; the user-scope file is an
+    installed-mode-only concept (`collect_cursor_endpoint_permissions_manifests`).
+    A monorepo can declare more than one workspace folder's `permissions.json`;
+    all of them concatenate into one effective view via `resolve_cursor_permissions`.
+    """
+    paths: list[Path] = []
+    for root in roots:
+        if root is None or not root.exists():
+            continue
+        spec = None if include_gitignored else load_gitignore_spec(root)
+        for path in sorted(root.rglob(_CURSOR_PERMISSIONS_FILENAME)):
+            if path.parent.name != ".cursor":
+                continue
+            if is_ignored(path.relative_to(root), spec):
+                continue
+            paths.append(path)
+    return resolve_cursor_permissions(paths)
+
+
+def collect_cursor_endpoint_permissions_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+) -> list[tuple[Path, dict]]:
+    """Cursor's installed approval-policy surface: the user file (relocated
+    per `_cursor_permissions_config_dir`, never derived from `config_dir` —
+    see that helper's docstring) plus the project file under
+    `project_root/.cursor/permissions.json`, concatenated into one effective
+    view.
+    """
+    del config_dir
+    paths = [_cursor_permissions_config_dir() / _CURSOR_PERMISSIONS_FILENAME]
+    if project_root is not None:
+        paths.append(project_root / ".cursor" / _CURSOR_PERMISSIONS_FILENAME)
+    return resolve_cursor_permissions(paths)

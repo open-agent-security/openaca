@@ -102,7 +102,8 @@ V0 ships:
    threat_kind on MAL records); `type: exposure` and `type: config` reserved
    but rejected.
 2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
-   `.claude/settings.json`. Cursor/Windsurf manifests are V1.
+   `.claude/settings.json`. Cursor manifests are in scope as of plan 042
+   (`cursor` is a registered agent kind); Windsurf manifests remain V1.
 3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream OSV record
    IDs (GHSA / CVE / OSV / PYSEC / MAL), adding agent-context taxonomies and
    evidence level. Scans query OSV.dev and merge overlays into the returned

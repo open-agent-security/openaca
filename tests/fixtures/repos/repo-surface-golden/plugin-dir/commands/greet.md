@@ -1,0 +1,4 @@
+---
+name: greet
+---
+Say hello.

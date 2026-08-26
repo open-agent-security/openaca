@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import click
 import httpx
 
+from tools.cli_kind import kind_option, require_kind_for_config_dir
 from tools.remote.client import RemoteClient, RemoteClientError
 from tools.remote.collector import (
     CollectError,
@@ -96,11 +96,17 @@ def sync() -> None:
 
 
 @sync.command()
+@kind_option
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
+    help=(
+        "Agent host config directory for the kind selected with --kind. "
+        "Requires --kind. Each kind resolves its own default root when "
+        "omitted (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude; Cursor: "
+        "~/.cursor)."
+    ),
 )
 @click.option(
     "--project",
@@ -129,6 +135,7 @@ def sync() -> None:
     help="Run an optional external scanner before upload. May be repeated.",
 )
 def endpoint(
+    kind: str | None,
     config_dir: Path | None,
     project: Path | None,
     dry_run: bool,
@@ -137,16 +144,19 @@ def endpoint(
     external_scanners: tuple[str, ...],
 ) -> None:
     """Sync endpoint composition to the configured remote."""
+    require_kind_for_config_dir(kind, config_dir)
     if dry_run:
         _dry_run_endpoint(
-            config_dir=_resolve_endpoint_config_dir(config_dir),
+            config_dir=config_dir,
+            kind_id=kind,
             project=project,
             external_scanners=external_scanners,
         )
         return
     try:
         results = collect_endpoint(
-            config_dir=_resolve_endpoint_config_dir(config_dir),
+            config_dir=config_dir,
+            kind_id=kind,
             project=project,
             quiet=quiet,
             allow_offline_cache=allow_offline_cache,
@@ -161,7 +171,8 @@ def endpoint(
 
 def _dry_run_endpoint(
     *,
-    config_dir: Path,
+    config_dir: Path | None,
+    kind_id: str | None,
     project: Path | None,
     external_scanners: tuple[str, ...],
 ) -> None:
@@ -175,6 +186,7 @@ def _dry_run_endpoint(
     try:
         payloads = build_endpoint_dry_run_payloads(
             config_dir=config_dir,
+            kind_id=kind_id,
             project=project,
             external_scanners=external_scanners,
         )
@@ -201,15 +213,6 @@ def _print_upload_result(result) -> None:
     click.echo(f"Findings: {result.finding_count}")
     click.echo(f"Policy violations: {result.policy_violation_count}")
     click.echo(f"Dashboard: {result.dashboard_url}")
-
-
-def _resolve_endpoint_config_dir(config_dir: Path | None) -> Path:
-    if config_dir is not None:
-        return config_dir.expanduser()
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".claude"
 
 
 def _mask_token(token: str) -> str:

@@ -11,7 +11,9 @@ from tools.bom_cli import main as bom_main
 def test_single_agent_stdout_is_one_json_line(tmp_path):
     (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
 
-    result = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)])
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(tmp_path)]
+    )
 
     assert result.exit_code == 0, result.output
     lines = [line for line in result.output.splitlines() if line.strip()]
@@ -23,7 +25,9 @@ def test_single_agent_stdout_is_one_json_line(tmp_path):
 def test_many_agents_stream_as_ndjson(monkeypatch, tmp_path):
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer", "critic"])
 
-    result = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)])
+    result = CliRunner().invoke(
+        bom_main, ["endpoint", "--kind", "synthetic", "--config-dir", str(tmp_path)]
+    )
 
     assert result.exit_code == 0, result.output
     docs = [json.loads(line) for line in result.output.splitlines() if line.strip()]
@@ -44,7 +48,16 @@ def test_output_dir_writes_one_file_per_agent(monkeypatch, tmp_path):
     out = tmp_path / "boms"
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -70,7 +83,16 @@ def test_output_dir_manifest_write_does_not_follow_a_planted_symlink(monkeypatch
     register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -100,7 +122,16 @@ def test_output_dir_temp_file_write_does_not_follow_a_planted_symlink(monkeypatc
     register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -125,13 +156,31 @@ def test_output_dir_drops_a_stale_file_it_previously_wrote(monkeypatch, tmp_path
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     (out / "notes.txt").write_text("kept", encoding="utf-8")
 
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -154,7 +203,16 @@ def test_output_dir_leaves_a_foreign_cdx_json_file_alone(monkeypatch, tmp_path):
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -182,7 +240,16 @@ def test_output_dir_ignores_a_manifest_entry_that_traverses_out_of_the_directory
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -206,7 +273,16 @@ def test_output_dir_ignores_a_manifest_entry_that_is_not_a_bom_filename(monkeypa
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -227,7 +303,16 @@ def test_output_dir_refuses_to_overwrite_an_unowned_name_collision(monkeypatch, 
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
 
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -242,7 +327,16 @@ def test_output_dir_publish_failure_keeps_manifest_consistent_with_disk(monkeypa
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
@@ -258,7 +352,16 @@ def test_output_dir_publish_failure_keeps_manifest_consistent_with_disk(monkeypa
 
     monkeypatch.setattr(Path, "replace", flaky_replace)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -280,7 +383,16 @@ def test_output_dir_publish_failure_with_unchanged_agent_set_keeps_old_file_owne
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     writer_before = (out / "synthetic--writer.cdx.json").read_text(encoding="utf-8")
 
@@ -296,7 +408,16 @@ def test_output_dir_publish_failure_with_unchanged_agent_set_keeps_old_file_owne
 
     monkeypatch.setattr(Path, "replace", flaky_replace)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     assert result.exit_code != 0
     manifest = json.loads((out / _MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -305,7 +426,16 @@ def test_output_dir_publish_failure_with_unchanged_agent_set_keeps_old_file_owne
 
     monkeypatch.setattr(Path, "replace", real_replace)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     assert result.exit_code == 0, result.output
 
@@ -317,7 +447,16 @@ def test_output_dir_write_failure_preserves_the_prior_complete_set(monkeypatch, 
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     before = sorted(p.name for p in out.iterdir())
 
@@ -337,7 +476,16 @@ def test_output_dir_write_failure_preserves_the_prior_complete_set(monkeypatch, 
 
     monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -363,7 +511,16 @@ def test_output_dir_normal_manifest_write_failure_is_reported(monkeypatch, tmp_p
 
     monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -380,7 +537,16 @@ def test_output_dir_publish_failure_reports_when_recovery_manifest_write_also_fa
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
@@ -406,7 +572,16 @@ def test_output_dir_publish_failure_reports_when_recovery_manifest_write_also_fa
     monkeypatch.setattr(Path, "replace", flaky_replace)
     monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -422,7 +597,16 @@ def test_output_dir_stale_cleanup_failure_reports_when_recovery_manifest_write_a
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher", "writer"])
     CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
@@ -445,7 +629,16 @@ def test_output_dir_stale_cleanup_failure_reports_when_recovery_manifest_write_a
     monkeypatch.setattr(Path, "unlink", flaky_unlink)
     monkeypatch.setattr("tools.bom_cli._write_new_temp_file", flaky_write)
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0
@@ -458,7 +651,15 @@ def test_output_errors_only_when_more_than_one_agent_resolves(monkeypatch, tmp_p
 
     result = CliRunner().invoke(
         bom_main,
-        ["endpoint", "--config-dir", str(tmp_path), "--output", str(tmp_path / "one.json")],
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "one.json"),
+        ],
     )
 
     assert result.exit_code != 0
@@ -500,14 +701,32 @@ def test_endpoint_output_dir_clears_prior_boms_when_no_agent_resolves(monkeypatc
     out = tmp_path / "boms"
     register_synthetic_kind(monkeypatch, agent_ids=["researcher"])
     first = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
     assert first.exit_code == 0, first.output
     assert (out / "synthetic--researcher.cdx.json").exists()
 
     register_synthetic_kind(monkeypatch, agent_ids=[])
     second = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert second.exit_code == 0, second.output
@@ -544,7 +763,7 @@ def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch)
     from dataclasses import replace
 
     import tools.agent_kinds as agent_kinds
-    import tools.parsers
+    import tools.bom_cli
     from tools.parsers.mcp_json import parse as parse_mcp
 
     kind = register_synthetic_kind(monkeypatch, agent_ids=["a"])
@@ -554,20 +773,88 @@ def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch)
     monkeypatch.setattr(agent_kinds, "REGISTRY", (kind,))
 
     seen_registries = []
-    real_parse_repo_grouped = tools.parsers.parse_repo_grouped
+    real_counts = tools.bom_cli.parse_repo_registry_counts
 
-    def spy(root, include_gitignored=False, *, registry=tools.parsers.REGISTRY):
-        seen_registries.append(registry)
-        return real_parse_repo_grouped(
-            root, include_gitignored=include_gitignored, registry=registry
-        )
+    def spy(root, registries, include_gitignored=False):
+        seen_registries.append(registries)
+        return real_counts(root, registries, include_gitignored=include_gitignored)
 
-    monkeypatch.setattr("tools.bom_cli.parse_repo_grouped", spy)
+    monkeypatch.setattr("tools.bom_cli.parse_repo_registry_counts", spy)
 
     result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
 
     assert result.exit_code == 0, result.output
-    assert seen_registries == [kind.manifest_patterns]
+    assert seen_registries == [{kind.id: kind.manifest_patterns}]
+
+
+def test_bom_repo_two_kinds_share_one_filesystem_walk(tmp_path, monkeypatch):
+    """Task 9 Step 5 (bom_cli parity): two different kinds declared over the
+    same `--target` must be counted from one filesystem walk of that root,
+    not one walk per kind — each kind's own (n_found, n_failed) still comes
+    out of that single walk unmixed with the other kind's."""
+    import tools.agent_kinds as agent_kinds
+    import tools.bom_cli
+    from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+    from tools.graph import Graph, Node
+    from tools.parsers import HOST_AGNOSTIC_REGISTRY, ManifestPattern
+
+    def make_kind(kind_id: str) -> AgentKind:
+        def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
+            if ctx.scan_root is None:
+                return []
+            return [
+                AgentInstance(
+                    kind_id=kind_id,
+                    display_name=kind_id,
+                    source="declared",
+                    root_label=kind_id,
+                    coverage_baseline="complete",
+                    scan_root=ctx.scan_root,
+                )
+            ]
+
+        def compose(agent, *, include_gitignored=False, warnings=None) -> Graph:
+            root = Node(key=agent.bom_ref, kind="target", ref=None)
+            return Graph(nodes={root.key: root})
+
+        own_pattern = ManifestPattern(f"{kind_id}-only.json", lambda _p: [])
+        return AgentKind(
+            id=kind_id,
+            display_name=kind_id,
+            cardinality="singleton",
+            root_label=kind_id,
+            coverage_baseline={"installed": "complete", "declared": "complete"},
+            discover=discover,
+            compose=compose,
+            manifest_patterns=(*HOST_AGNOSTIC_REGISTRY, own_pattern),
+        )
+
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (make_kind("kind-a"), make_kind("kind-b")))
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+
+    walk_calls = []
+    real_counts = tools.bom_cli.parse_repo_registry_counts
+
+    def spy(root, registries, include_gitignored=False):
+        walk_calls.append(registries)
+        return real_counts(root, registries, include_gitignored=include_gitignored)
+
+    monkeypatch.setattr("tools.bom_cli.parse_repo_registry_counts", spy)
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert len(walk_calls) == 1
+    assert set(walk_calls[0]) == {"kind-a", "kind-b"}
+
+    docs = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    assert len(docs) == 2
+    for doc in docs:
+        props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+        # 5 host-agnostic manifests + this kind's own — package.json matches
+        # once (the walker's one-file-one-route rule), the kind's own pattern
+        # matches nothing on disk.
+        assert props["openaca:source_unit_count"] == "1"
 
 
 def _agent_doc(kind: str, agent_id: str | None, component: str) -> dict:
@@ -709,7 +996,16 @@ def test_output_dir_distrusts_a_manifest_in_a_sticky_shared_directory(tmp_path, 
 
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -734,7 +1030,16 @@ def test_output_dir_refuses_a_planted_collision_in_a_sticky_shared_directory(tmp
 
     register_synthetic_kind(monkeypatch, agent_ids=["writer"])
     result = CliRunner().invoke(
-        bom_main, ["endpoint", "--config-dir", str(tmp_path), "--output-dir", str(out)]
+        bom_main,
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(out),
+        ],
     )
 
     assert result.exit_code != 0

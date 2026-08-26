@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "root-mcp": {
+      "command": "uvx",
+      "args": ["root-mcp-tool==0.1.0"]
+    }
+  }
+}

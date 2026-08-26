@@ -17,6 +17,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Literal
 
@@ -24,12 +25,13 @@ from tools.bom import AGENT_ROOT_PREFIX
 from tools.capability import COVERAGE_LEVELS
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
+from tools.parsers import ManifestPattern
 
 Cardinality = Literal["singleton", "many_per_place"]
 CompositionSource = Literal["installed", "declared"]
 # A kind's declared manifest surface (spec: "It declares discovery,
 # composition, its manifest patterns ..."). Same shape as
-# `tools.parsers.REGISTRY` — (glob pattern, parser function) — so a kind can
+# `tools.parsers.REGISTRY` — a `ManifestPattern` per entry — so a kind can
 # hand its patterns straight through without translation.
 ParserFn = Callable[[Path], list[ComponentRef]]
 # `collect_mcp_manifests`/`collect_settings_manifests` take
@@ -96,6 +98,10 @@ class DiscoveryContext:
     project_root: Path | None = None
     scan_root: Path | None = None
     include_gitignored: bool = False
+    # Limits discovery to one kind. `None` (the default) discovers every
+    # registered kind — the single-kind-machine behaviour is unaffected either
+    # way since there is only one kind to find.
+    kind_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,11 +120,19 @@ class AgentKind:
     # fields at all). Empty means the kind resolves its own filesystem lookups
     # entirely inside `compose`/`discover` rather than through this shared
     # declaration.
-    manifest_patterns: tuple[tuple[str, ParserFn], ...] = ()
+    manifest_patterns: tuple[ManifestPattern, ...] = ()
     # (mcp_collector, settings_collector) a *declared* agent's posture prep
     # reads through, instead of `_agent_scan_prep` calling Claude-Code-shaped
     # collectors for every kind unconditionally. `None` means the kind has no
     # filesystem-shaped posture surface.
+    # Why a kind names a root can be *fully* specified by `--config-dir`
+    # (ADR-0054). A kind qualifies only when no part of its composition is
+    # derived from the home directory once a root is named — for Claude Code
+    # home is a default, for Cursor home is an ingredient, and a kind that
+    # reads anything home-derived after a root is named does not qualify
+    # however small that surface is. `None` means the kind accepts an override;
+    # a string is the reason it refuses, surfaced verbatim by the CLI.
+    root_override_refusal: str | None = None
     posture_manifest_collectors: PostureCollectors | None = None
     # (mcp_collector, settings_collector) an *installed* agent's posture prep
     # reads through — the installed-branch counterpart to
@@ -143,10 +157,25 @@ class AgentKind:
             )
 
 
-def _registry() -> tuple[AgentKind, ...]:
-    from tools.agent_kinds import claude_code
+def matches_evidence(rel: str, patterns: tuple[str, ...]) -> bool:
+    """Does `rel` match one of a kind's declared-evidence glob patterns?
 
-    return (claude_code.KIND,)
+    Shared by `claude_code` and `cursor`: a `*/`-prefixed pattern is meant to
+    match at any depth, but `fnmatch` only matches one leading segment for
+    it, so each such pattern is also tried against every suffix of `rel`.
+    """
+    for pattern in patterns:
+        if fnmatch(rel, pattern):
+            return True
+        if pattern.startswith("*/") and fnmatch(rel, f"*/{pattern}"):
+            return True
+    return False
+
+
+def _registry() -> tuple[AgentKind, ...]:
+    from tools.agent_kinds import claude_code, cursor
+
+    return (claude_code.KIND, cursor.KIND)
 
 
 REGISTRY: tuple[AgentKind, ...] = _registry()
@@ -163,6 +192,8 @@ def discover_agents(ctx: DiscoveryContext) -> list[AgentInstance]:
     agents: list[AgentInstance] = []
     seen: set[str] = set()
     for kind in REGISTRY:
+        if ctx.kind_id is not None and kind.id != ctx.kind_id:
+            continue
         for found in kind.discover(ctx):
             agent = found.validate_against(kind)
             if agent.bom_ref in seen:

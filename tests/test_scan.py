@@ -397,6 +397,8 @@ def test_endpoint_subcommand_minimal_install_no_findings():
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(config_dir),
             "--format",
@@ -438,6 +440,8 @@ database_specific:
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(config_dir),
             ],
@@ -487,6 +491,8 @@ def test_endpoint_posture_ignores_uninstalled_plugin_manifests(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "--include-posture",
@@ -532,8 +538,20 @@ def test_endpoint_include_posture_with_no_findings_reports_ran_not_skipped(tmp_p
         ),
         patch("tools.scan.run_posture_rules", lambda *a, **k: []),
     ):
-        ran = runner.invoke(main, ["endpoint", "--config-dir", str(tmp_path), "--include-posture"])
-        skipped = runner.invoke(main, ["endpoint", "--config-dir", str(tmp_path)])
+        ran = runner.invoke(
+            main,
+            [
+                "endpoint",
+                "--kind",
+                "claude-code",
+                "--config-dir",
+                str(tmp_path),
+                "--include-posture",
+            ],
+        )
+        skipped = runner.invoke(
+            main, ["endpoint", "--kind", "claude-code", "--config-dir", str(tmp_path)]
+        )
 
     assert ran.exit_code == 0, ran.output
     assert "posture: 0" in ran.output
@@ -572,6 +590,8 @@ def test_endpoint_posture_flags_unversioned_active_plugin(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "--include-posture",
@@ -590,6 +610,8 @@ def test_endpoint_subcommand_verbose_lists_resolved_plugins():
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(config_dir),
             "-v",
@@ -638,6 +660,8 @@ def test_endpoint_verbose_non_string_git_commit_sha_does_not_crash(monkeypatch):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(config_dir),
             "-v",
@@ -665,6 +689,8 @@ def test_endpoint_subcommand_project_layers_with_config_dir(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(config_dir),
             "--project",
@@ -695,6 +721,8 @@ def test_endpoint_subcommand_project_root_detected_via_local_settings_only(tmp_p
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(config_dir),
             "--project",
@@ -718,6 +746,10 @@ def test_endpoint_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
         json.dumps({"version": 1, "plugins": {}})
     )
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    # Isolate from this machine's real ~/.cursor: Cursor's own default root is
+    # unaffected by CLAUDE_CONFIG_DIR, so a real ~/.cursor would otherwise be
+    # discovered alongside the fixture's Claude Code agent above.
+    monkeypatch.setattr("tools.agent_kinds.cursor.Path.home", lambda: tmp_path / "no-cursor-home")
 
     runner = CliRunner()
     result = runner.invoke(
@@ -755,6 +787,115 @@ def test_endpoint_defaults_to_home_claude_when_env_missing(tmp_path, monkeypatch
     assert result.exit_code == 0, result.output
     assert f"config_dir={config_dir}" in result.output
     assert "mode=endpoint" in result.output
+
+
+def test_endpoint_config_dir_without_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(tmp_path)])
+
+    assert result.exit_code != 0
+    assert "--config-dir requires --kind" in result.output
+
+
+def test_endpoint_config_dir_is_rejected_for_a_kind_that_refuses_it(tmp_path):
+    """ADR-0054: a root override is a per-kind capability. Cursor refuses,
+    because a flag naming a root moves one of its three home-derived groups
+    and the output cannot distinguish the result from a correct scan."""
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "cursor", "--config-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code != 0
+    assert "not supported for --kind cursor" in result.output
+    # The refusal names its own reason rather than inheriting a generic one.
+    assert "three places" in result.output
+
+
+def test_endpoint_config_dir_is_accepted_for_a_kind_that_allows_it(tmp_path):
+    """The refusal is per kind, not a property of the flag: Claude Code's
+    runtime relocates its whole root, so naming one fully specifies the target."""
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "claude-code", "--config-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "not supported" not in result.output
+
+
+def test_endpoint_unknown_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "not-a-real-kind", "--config-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code != 0
+    assert "unknown agent kind" in result.output.lower()
+
+
+def test_endpoint_kind_without_config_dir_resolves_that_kind_s_default_root(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    (fake_home / ".cursor").mkdir(parents=True)
+    monkeypatch.setattr("tools.agent_kinds.cursor.Path.home", lambda: fake_home)
+
+    result = CliRunner().invoke(main, ["endpoint", "--kind", "cursor", "-v"])
+
+    assert result.exit_code == 0, result.output
+    assert f"config_dir={fake_home / '.cursor'}" in result.output
+
+
+def test_endpoint_default_discovery_finds_both_claude_code_and_cursor(tmp_path, monkeypatch):
+    """No `--kind`/`--config-dir` at all: every installed kind whose own
+    default root exists is discovered from one invocation."""
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".cursor").mkdir(parents=True)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    result = CliRunner().invoke(main, ["endpoint", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert {a["kind"] for a in doc["agents"]} == {"claude-code", "cursor"}
+
+
+def test_endpoint_default_discovery_shared_skill_finding_reports_once_per_agent(
+    tmp_path, monkeypatch
+):
+    """Task 9 Step 6's decision, on the finding side: Cursor's `.claude/*`
+    compat read means a skill under `~/.claude/skills/` is genuinely
+    composed by both agents, so a posture finding on it surfaces once per
+    agent — two findings, one per kind — not deduplicated across agents and
+    not doubled within either agent's own scan."""
+    fake_home = tmp_path / "home"
+    skill_dir = fake_home / ".claude" / "skills" / "shared-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: shared-skill\ndescription: Shared between both kinds\n"
+        "allowed-tools: Bash(git:*)\n---\nRun the shared workflow.\n",
+        encoding="utf-8",
+    )
+    (fake_home / ".cursor").mkdir(parents=True)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.scan.Path.home", lambda: fake_home)
+
+    from unittest.mock import patch
+
+    with patch(
+        "tools.scan._load_osv_with_overlays",
+        lambda refs, *, progress=None: ([], [], 0, {}),
+    ):
+        result = CliRunner().invoke(main, ["endpoint", "--include-posture", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert {a["kind"] for a in doc["agents"]} == {"claude-code", "cursor"}
+    skill_findings = [
+        f
+        for f in doc["findings"]
+        if f["finding_type"] == "posture"
+        and f["rule_id"] == "openaca-posture-skill-executable-tool"
+    ]
+    assert len(skill_findings) == 2
+    assert {f["agent"]["kind"] for f in skill_findings} == {"claude-code", "cursor"}
 
 
 def test_endpoint_omits_project_by_default_and_emits_note(tmp_path, monkeypatch):
@@ -1022,6 +1163,8 @@ def test_endpoint_subcommand_queries_osv_by_default(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "-v",
@@ -1091,6 +1234,8 @@ def test_endpoint_subcommand_uses_osv_and_bundled_overlays_by_default(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "--format",
@@ -1144,6 +1289,8 @@ def test_endpoint_subcommand_verbose_lists_queried_purls_and_skips(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "-v",
@@ -1309,6 +1456,8 @@ def test_endpoint_subcommand_federate_osv_verbose_no_queryable_refs(tmp_path):
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "-v",
@@ -1338,6 +1487,8 @@ def test_endpoint_subcommand_federate_osv_failure_prints_warning(tmp_path, capfd
             main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
             ],
@@ -1380,6 +1531,8 @@ def test_endpoint_verbose_shows_per_plugin_tier2_coverage(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "-v",
@@ -1415,6 +1568,8 @@ def test_endpoint_verbose_shows_manifest_fallback_line(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "-v",
@@ -1465,6 +1620,8 @@ def test_bundled_breakdown_excludes_tier2_lockfile_refs(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "-v",
@@ -1497,6 +1654,8 @@ def test_endpoint_verbose_lists_direct_skills_individually(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "-v",
@@ -1528,6 +1687,8 @@ def test_endpoint_verbose_omits_direct_listing_when_no_direct_components(tmp_pat
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "-v",
@@ -2182,6 +2343,8 @@ def test_scan_endpoint_json_contains_triage_contract_fields(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "--format",
@@ -2239,6 +2402,8 @@ def test_scan_endpoint_report_shortcut_writes_markdown_and_keeps_scan_exit(tmp_p
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "--report",
@@ -2260,7 +2425,15 @@ def test_scan_endpoint_report_shortcut_writes_markdown_and_keeps_scan_exit(tmp_p
 def test_scan_report_rejects_markdown_without_report(tmp_path):
     result = CliRunner().invoke(
         main,
-        ["endpoint", "--config-dir", str(tmp_path), "--format", "markdown"],
+        [
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(tmp_path),
+            "--format",
+            "markdown",
+        ],
     )
 
     assert result.exit_code != 0
@@ -2275,7 +2448,15 @@ def test_scan_report_ignores_github_actions_auto_promotion(tmp_path, monkeypatch
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     result = CliRunner().invoke(
         main,
-        ["endpoint", "--config-dir", str(tmp_path), "--report", "exposure"],
+        [
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(tmp_path),
+            "--report",
+            "exposure",
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -2294,7 +2475,9 @@ def test_scan_json_carries_agents_and_per_finding_agent(tmp_path):
         encoding="utf-8",
     )
 
-    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(root), "--format", "json"])
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--format", "json"]
+    )
 
     assert result.exit_code == 0, result.output
     doc = json.loads(result.stdout)  # ONE document, still json.load-able
@@ -2316,7 +2499,9 @@ def test_scan_reports_a_zero_component_agent(tmp_path):
     root = tmp_path / ".claude"
     root.mkdir()
 
-    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(root), "--format", "json"])
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--format", "json"]
+    )
 
     assert result.exit_code == 0, result.output
     doc = json.loads(result.stdout)
@@ -2329,7 +2514,9 @@ def test_scan_prints_one_card_per_agent(monkeypatch, tmp_path):
 
     register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
 
-    result = CliRunner().invoke(main, ["endpoint", "--config-dir", str(tmp_path)])
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "synthetic", "--config-dir", str(tmp_path)]
+    )
 
     assert result.exit_code == 0, result.output
     assert result.output.count("host surface: Synthetic a") == 1
@@ -2375,6 +2562,8 @@ def test_scan_endpoint_with_no_installed_agent_still_writes_valid_sarif(monkeypa
         main,
         [
             "endpoint",
+            "--kind",
+            "synthetic",
             "--config-dir",
             str(tmp_path),
             "--sarif",
@@ -2411,7 +2600,17 @@ def test_scan_endpoint_with_no_installed_agent_emits_valid_exposure_report(monke
 
     result = CliRunner().invoke(
         main,
-        ["endpoint", "--config-dir", str(tmp_path), "--report", "exposure", "--format", "json"],
+        [
+            "endpoint",
+            "--kind",
+            "synthetic",
+            "--config-dir",
+            str(tmp_path),
+            "--report",
+            "exposure",
+            "--format",
+            "json",
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -2500,7 +2699,8 @@ def test_scan_endpoint_stats_keep_the_active_plugin_unit_label(tmp_path):
     (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
 
     result = CliRunner().invoke(
-        main, ["endpoint", "--config-dir", str(tmp_path), "--format", "json"]
+        main,
+        ["endpoint", "--kind", "claude-code", "--config-dir", str(tmp_path), "--format", "json"],
     )
 
     doc = json.loads(result.stdout)
@@ -2517,6 +2717,8 @@ def test_exposure_report_carries_agents(tmp_path):
         main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(root),
             "--report",
@@ -2569,12 +2771,141 @@ def test_scan_repo_counts_a_shared_parse_failure_once_across_same_kind_agents(
     assert all(agent["coverage"] == "partial" for agent in doc["agents"])
 
 
+def test_scan_repo_two_different_kinds_do_not_double_count_shared_manifests(monkeypatch, tmp_path):
+    """Task 9 Step 5 regression: `scan.py` used to key scan-wide totals on
+    `(scan_root, kind.manifest_patterns)`, so two *different* kinds sharing
+    the five host-agnostic dependency manifests counted one malformed
+    `package.json` as `parse_failed == 2`. Each kind's own subset (not
+    exercised here) stays correct — this pins the scan-wide total."""
+    import tools.agent_kinds as agent_kinds
+    from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+    from tools.graph import Graph, Node
+    from tools.parsers import HOST_AGNOSTIC_REGISTRY, ManifestPattern
+
+    def make_kind(kind_id: str) -> AgentKind:
+        # Each kind's own distinct extra pattern makes `manifest_patterns`
+        # differ *by kind* while still sharing the host-agnostic patterns —
+        # the same shape as claude-code's REGISTRY vs cursor's own registry.
+        # Two kinds with byte-identical `manifest_patterns` would dedupe by
+        # accident under the old `(scan_root, kind.manifest_patterns)` key
+        # and not exercise the regression at all.
+        own_pattern = ManifestPattern(f"{kind_id}-only.json", lambda _p: [])
+
+        def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
+            if ctx.scan_root is None:
+                return []
+            return [
+                AgentInstance(
+                    kind_id=kind_id,
+                    display_name=kind_id,
+                    source="declared",
+                    root_label=kind_id,
+                    coverage_baseline="complete",
+                    scan_root=ctx.scan_root,
+                )
+            ]
+
+        def compose(agent, *, include_gitignored=False, warnings=None) -> Graph:
+            root = Node(key=agent.bom_ref, kind="target", ref=None)
+            return Graph(nodes={root.key: root})
+
+        return AgentKind(
+            id=kind_id,
+            display_name=kind_id,
+            cardinality="singleton",
+            root_label=kind_id,
+            coverage_baseline={"installed": "complete", "declared": "complete"},
+            discover=discover,
+            compose=compose,
+            manifest_patterns=(*HOST_AGNOSTIC_REGISTRY, own_pattern),
+        )
+
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (make_kind("kind-a"), make_kind("kind-b")))
+    (tmp_path / "package.json").write_text("not json", encoding="utf-8")
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(tmp_path), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert len(doc["agents"]) == 2
+    # One malformed file shared by both kinds — one scan-wide failure, not
+    # one per kind that declares it.
+    assert doc["stats"]["parse_failed"] == 1
+
+
+def test_scan_repo_two_kinds_sharing_a_component_each_report_the_finding(monkeypatch, tmp_path):
+    """Task 9 Step 6 decision, pinned: a component reachable by two agents
+    yields one finding per agent, not a deduplicated single finding — two
+    agents genuinely both expose the risk, and each agent's own card is
+    where it shows. No shipped kind shares a reachable file today (Cursor's
+    `.claude/*` compat read is gated separately), so this pins the decision
+    with two kinds independently composing the same vulnerable manifest."""
+    import shutil
+
+    import tools.agent_kinds as agent_kinds
+    from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+    from tools.graph_build import build_rooted_graph
+
+    fixture = FIXTURES / "repos" / "exposed-mcp"
+    scan_root = tmp_path / "repo"
+    shutil.copytree(fixture, scan_root)
+
+    def make_kind(kind_id: str) -> AgentKind:
+        def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
+            if ctx.scan_root is None:
+                return []
+            return [
+                AgentInstance(
+                    kind_id=kind_id,
+                    display_name=kind_id,
+                    source="declared",
+                    root_label=kind_id,
+                    coverage_baseline="complete",
+                    scan_root=ctx.scan_root,
+                )
+            ]
+
+        def compose(agent, *, include_gitignored=False, warnings=None):
+            return build_rooted_graph(
+                agent.scan_root,
+                "repo",
+                root_key=agent.bom_ref,
+                root_label=kind_id,
+                include_gitignored=include_gitignored,
+                warnings=warnings,
+            )
+
+        return AgentKind(
+            id=kind_id,
+            display_name=kind_id,
+            cardinality="singleton",
+            root_label=kind_id,
+            coverage_baseline={"installed": "complete", "declared": "complete"},
+            discover=discover,
+            compose=compose,
+        )
+
+    monkeypatch.setattr(agent_kinds, "REGISTRY", (make_kind("kind-a"), make_kind("kind-b")))
+
+    result = CliRunner().invoke(main, ["repo", "--target", str(scan_root), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    doc = json.loads(result.stdout)
+    ghsa_findings = [f for f in doc["findings"] if f["id"] == "GHSA-3q26-f695-pp76"]
+    assert len(ghsa_findings) == 2
+    assert {f["agent"]["kind"] for f in ghsa_findings} == {"kind-a", "kind-b"}
+
+
 def test_scan_bom_reads_ndjson_from_bom_endpoint(monkeypatch, tmp_path):
     from tests.fixtures.agent_kinds import register_synthetic_kind
     from tools.bom_cli import main as bom_main
 
     register_synthetic_kind(monkeypatch, agent_ids=["a", "b"])
-    ndjson = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(tmp_path)]).output
+    ndjson = (
+        CliRunner()
+        .invoke(bom_main, ["endpoint", "--kind", "synthetic", "--config-dir", str(tmp_path)])
+        .output
+    )
     path = tmp_path / "boms.ndjson"
     path.write_text(ndjson, encoding="utf-8")
 

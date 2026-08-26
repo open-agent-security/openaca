@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bundled-mcp": {
+      "command": "npx",
+      "args": ["-y", "@acme/bundled-mcp@1.0.0"]
+    }
+  }
+}

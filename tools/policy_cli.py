@@ -141,8 +141,19 @@ def _evaluate_endpoint(
     list[tuple[ComponentRef, str]],
     list[str],
 ]:
+    # `kind_id` is pinned, not left open: the policy compiler targets a named
+    # root via `--target` and compiles Claude-managed settings (`--host claude`
+    # is a required Choice). Open discovery would additionally return every
+    # other registered kind resolved at ITS own root — Cursor ignores
+    # `config_dir` entirely (ADR-0054) — so a compile aimed at one directory
+    # would silently pull in components from the invoking user's home.
     agents = discover_agents(
-        DiscoveryContext(source="installed", config_dir=target, project_root=project)
+        DiscoveryContext(
+            source="installed",
+            config_dir=target,
+            project_root=project,
+            kind_id="claude-code",
+        )
     )
     if not agents:
         raise click.ClickException(f"no installed agent found at {target}")

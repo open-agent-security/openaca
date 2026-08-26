@@ -40,10 +40,18 @@ def parse_file(
     scope_owner: Optional[str] = None,
     *,
     strict: bool = False,
+    extensions: tuple[str, ...] = (".md",),
 ) -> list[ComponentRef]:
-    """Emit one ref for a single `*.md` file. Used by the repo-mode
-    registry where `rglob` discovers paths individually."""
-    if not md_path.is_file() or md_path.suffix != ".md":
+    """Emit one ref for a single file. Used by the repo-mode registry where
+    `rglob` discovers paths individually.
+
+    `extensions` defaults to Claude Code's `.md`-only surface. Cursor's two
+    surfaces accept disjoint, differently-cased sets (commands: `.md`/`.txt`;
+    subagents: `.md`/`.mdc`/`.markdown` — see `tools/cursor_commands.py` and
+    `tools/cursor_subagents.py`), so callers on that surface pass their own
+    set rather than this function guessing from `kind`.
+    """
+    if not md_path.is_file() or md_path.suffix not in extensions:
         return []
     frontmatter = _read_frontmatter(md_path, strict=strict)
     name = _resolve_name(md_path, frontmatter)

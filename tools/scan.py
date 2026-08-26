@@ -65,6 +65,7 @@ from tools.bom import (
     source_unit_from_cyclonedx,
     target_info_from_cyclonedx,
 )
+from tools.cli_kind import kind_option, require_kind_for_config_dir
 from tools.component_ref import ComponentRef
 from tools.finding_output import graph_for
 from tools.graph import Graph
@@ -78,8 +79,8 @@ from tools.observations import (
 )
 from tools.osv_federation import augment_corpus, collect_osv_query_labels, is_queryable
 from tools.overlays import apply_overlays, build_alias_to_overlay_id_map, load_overlays
-from tools.parsers import parse_repo_grouped
-from tools.posture import PostureFinding, run_posture_rules
+from tools.parsers import parse_repo_grouped, parse_repo_registry_counts
+from tools.posture import PostureFinding, no_manifests, run_posture_rules
 from tools.render import (
     AgentCard,
     AgentSummary,
@@ -301,7 +302,12 @@ _config_dir_option = click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
+    help=(
+        "Agent host config directory for the kind selected with --kind. "
+        "Requires --kind. Each kind resolves its own default root when "
+        "omitted (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude; Cursor: "
+        "~/.cursor)."
+    ),
 )
 _project_option = click.option(
     "--project",
@@ -677,12 +683,6 @@ class AgentScanPrep:
     parse_failed: int
 
 
-def _no_manifests(*_args: object, **_kwargs: object) -> list[tuple[Path, dict]]:
-    """A kind with no filesystem-shaped posture surface yields nothing, rather
-    than falling back to another kind's collectors."""
-    return []
-
-
 def _next_actions_for(agent: AgentInstance) -> list[str]:
     actions: list[str] = []
     if agent.project_root is None:
@@ -710,11 +710,17 @@ def _agent_scan_prep(
         # Read through the *kind's own* installed posture surface, not a
         # Claude-Code-shaped collector called unconditionally for every kind.
         mcp_collector, settings_collector = kind.installed_posture_collectors or (
-            _no_manifests,
-            _no_manifests,
+            no_manifests,
+            no_manifests,
         )
         return AgentScanPrep(
             manifests=mcp_collector(agent.config_root, agent.project_root, refs),
+            # For Cursor, `settings_collector` is
+            # `collect_cursor_endpoint_permissions_manifests`, which accepts
+            # `agent.config_root` but resolves via
+            # CURSOR_CONFIG_DIR/XDG_CONFIG_HOME/home instead — `permissions.json`
+            # is the one Cursor surface those variables relocate, so
+            # `--config-dir` does not relocate it here either.
             settings_manifests=settings_collector(agent.config_root, agent.project_root),
             target_rows=[
                 ("config", str(agent.config_root)),
@@ -733,8 +739,8 @@ def _agent_scan_prep(
     # exactly as `scan repo` does today, so parse failures still count.
     assert agent.scan_root is not None
     mcp_collector, settings_collector = kind.posture_manifest_collectors or (
-        _no_manifests,
-        _no_manifests,
+        no_manifests,
+        no_manifests,
     )
     cache_key = (agent.scan_root, kind.manifest_patterns)
     if cache_key not in repo_parse_cache:
@@ -809,7 +815,31 @@ def _scan_discovered_agents(
     total_unit_count = 0
     unit_label = "manifest"
     repo_parse_cache: dict[tuple[Path, tuple], tuple[int, int]] = {}
-    counted_repo_roots: set[tuple[Path, tuple]] = set()
+    counted_repo_roots: set[Path] = set()
+
+    # One walk per declared scan_root, over every kind declared there, rather
+    # than one walk per (root, kind): a repo declaring both Claude Code and
+    # Cursor shares the five host-agnostic dependency manifests, and walking
+    # once per kind would count a shared `package.json` — and a shared parse
+    # failure — once per kind in the scan-wide totals below. Per-agent
+    # coverage still reads only its own kind's count (`repo_parse_cache`,
+    # populated per (root, kind.manifest_patterns) here and consumed
+    # unchanged by `_agent_scan_prep`) — a Cursor parse failure must not
+    # degrade the Claude agent's coverage.
+    root_union_totals: dict[Path, tuple[int, int]] = {}
+    registries_by_root: dict[Path, dict[str, tuple]] = {}
+    for agent, *_rest in built:
+        if agent.scan_root is None:
+            continue
+        kind = kind_for(agent.kind_id)
+        registries_by_root.setdefault(agent.scan_root, {})[agent.kind_id] = kind.manifest_patterns
+    for scan_root, registries in registries_by_root.items():
+        per_kind_counts, union_counts = parse_repo_registry_counts(
+            scan_root, registries, include_gitignored=include_gitignored
+        )
+        for kind_id, patterns in registries.items():
+            repo_parse_cache[(scan_root, patterns)] = per_kind_counts[kind_id]
+        root_union_totals[scan_root] = union_counts
 
     for agent, graph, agent_all_refs, refs, warnings in built:
         graphs[(agent.kind_id, agent.agent_id)] = graph
@@ -836,18 +866,19 @@ def _scan_discovered_agents(
             repo_parse_cache=repo_parse_cache,
         )
         unit_label = prep.unit_label
-        # `parse_failed` and `unit_count` are per-(root, kind surface), not
-        # per-agent — several same-kind declared agents can share a root, so the
-        # scan-wide totals take that pair's counts once while each agent's own
-        # coverage below still uses the full (shared) failure count for its root.
-        repo_root_key = (
-            None if agent.scan_root is None else (agent.scan_root, kind.manifest_patterns)
-        )
-        if repo_root_key is None or repo_root_key not in counted_repo_roots:
+        # Installed agents have no scan_root to dedupe by — each contributes its
+        # own count. Declared agents' scan-wide totals come from the per-root
+        # union walk above, taken once per root regardless of how many kinds
+        # (or same-kind agents) share it — never from `prep.parse_failed`/
+        # `unit_count`, which are this agent's own kind-scoped subset.
+        if agent.scan_root is None:
             total_parse_failed += prep.parse_failed
             total_unit_count += prep.unit_count
-            if repo_root_key is not None:
-                counted_repo_roots.add(repo_root_key)
+        elif agent.scan_root not in counted_repo_roots:
+            union_found, union_failed = root_union_totals[agent.scan_root]
+            total_parse_failed += union_failed
+            total_unit_count += union_found
+            counted_repo_roots.add(agent.scan_root)
 
         agent_posture: list[PostureFinding] | None = None
         if include_posture:
@@ -1251,6 +1282,7 @@ def repo(
 
 @main.command()
 @click.pass_context
+@kind_option
 @_config_dir_option
 @_project_option
 @_sarif_option
@@ -1264,6 +1296,7 @@ def repo(
 @_output_option
 def endpoint(
     ctx: click.Context,
+    kind: str | None,
     config_dir: Path | None,
     project: Path | None,
     sarif: Path | None,
@@ -1290,11 +1323,14 @@ def endpoint(
     _validate_report_options(
         report_kind=report_kind, output_path=output_path, output_format=output_format
     )
+    require_kind_for_config_dir(kind, config_dir)
     is_text = output_format == "text"
     project_note = str(project) if project is not None else "(none)"
 
     agents = discover_agents(
-        DiscoveryContext(source="installed", config_dir=config_dir, project_root=project)
+        DiscoveryContext(
+            source="installed", config_dir=config_dir, project_root=project, kind_id=kind
+        )
     )
     if not agents:
         click.echo("no installed agent found", err=True)

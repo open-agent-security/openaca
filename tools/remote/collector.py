@@ -32,7 +32,7 @@ from tools.observations import (
     collect_skill_observations,
     collect_skillspector_findings,
 )
-from tools.posture import PostureFinding, run_posture_rules
+from tools.posture import PostureFinding, no_manifests, run_posture_rules
 from tools.remote.client import (
     BomUploadResult,
     RemoteAuthError,
@@ -105,18 +105,17 @@ def _agent_refs(agent: AgentInstance, warnings: list[str]) -> tuple[Graph, list[
 
 def build_endpoint_collections(
     *,
-    config_dir: Path,
+    config_dir: Path | None = None,
+    kind_id: str | None = None,
     project: Path | None,
     external_scanners: tuple[str, ...] = (),
 ) -> list[EndpointCollection]:
     agents = discover_agents(
-        DiscoveryContext(source="installed", config_dir=config_dir, project_root=project)
+        DiscoveryContext(
+            source="installed", config_dir=config_dir, project_root=project, kind_id=kind_id
+        )
     )
     return [_build_agent_collection(agent, external_scanners=external_scanners) for agent in agents]
-
-
-def _no_manifests(*_args: object, **_kwargs: object) -> list[tuple[Path, dict]]:
-    return []
 
 
 def _agent_posture_manifests(
@@ -129,11 +128,16 @@ def _agent_posture_manifests(
     monkeypatch this single boundary.
     """
     mcp_collector, settings_collector = kind_for(agent.kind_id).installed_posture_collectors or (
-        _no_manifests,
-        _no_manifests,
+        no_manifests,
+        no_manifests,
     )
     return (
         mcp_collector(agent.config_root, agent.project_root, refs),
+        # For Cursor, `settings_collector` is `collect_cursor_endpoint_permissions_manifests`,
+        # which accepts `agent.config_root` but resolves via
+        # CURSOR_CONFIG_DIR/XDG_CONFIG_HOME/home instead — `permissions.json` is
+        # the one Cursor surface those variables relocate, so `--config-dir`
+        # does not relocate it here either. Not a bug to fix at this call site.
         settings_collector(agent.config_root, agent.project_root),
     )
 
@@ -214,7 +218,8 @@ def _collect_scanner_findings(
 
 def collect_endpoint(
     *,
-    config_dir: Path,
+    config_dir: Path | None = None,
+    kind_id: str | None = None,
     project: Path | None,
     quiet: bool = False,
     allow_offline_cache: bool = False,
@@ -230,7 +235,7 @@ def collect_endpoint(
         _replay_pending_uploads(client, config.asset_id)
 
     collections = build_endpoint_collections(
-        config_dir=config_dir, project=project, external_scanners=external_scanners
+        config_dir=config_dir, kind_id=kind_id, project=project, external_scanners=external_scanners
     )
     if not collections:
         click.echo("no installed agent found", err=True)
@@ -251,10 +256,17 @@ def collect_endpoint(
     cached_failed_agents: list[str] = []
     rejected_failed_agents: list[str] = []
     for collection in collections:
+        assert collection.agent.config_root is not None
         payload = _prepare_upload_payload(
             asset_id=asset_id,
             collection=collection,
-            config_dir=config_dir,
+            # Each collection's own root, not the CLI's outer config_dir: once
+            # default discovery (no --kind/--config-dir) returns more than one
+            # kind, that outer value can be at most one kind's root, and
+            # redacting the other kind's paths against it would miss both the
+            # config_dir and project branches below and fall back to a bare
+            # basename — leaking that kind's absolute paths into the upload.
+            config_dir=collection.agent.config_root,
             project=project,
         )
         try:
@@ -337,7 +349,8 @@ def _prepare_upload_payload(
 
 def build_endpoint_dry_run_payloads(
     *,
-    config_dir: Path,
+    config_dir: Path | None = None,
+    kind_id: str | None = None,
     project: Path | None,
     external_scanners: tuple[str, ...] = (),
 ) -> list[JsonObject]:
@@ -345,18 +358,24 @@ def build_endpoint_dry_run_payloads(
     config = load_remote_config(get_config_path())
     collections = build_endpoint_collections(
         config_dir=config_dir,
+        kind_id=kind_id,
         project=project,
         external_scanners=external_scanners,
     )
-    return [
-        _prepare_upload_payload(
-            asset_id=config.asset_id or DRY_RUN_UNREGISTERED_ASSET_ID,
-            collection=collection,
-            config_dir=config_dir,
-            project=project,
+    payloads = []
+    for collection in collections:
+        assert collection.agent.config_root is not None
+        payloads.append(
+            _prepare_upload_payload(
+                asset_id=config.asset_id or DRY_RUN_UNREGISTERED_ASSET_ID,
+                collection=collection,
+                # Each collection's own root — see the identical note in
+                # `collect_endpoint`.
+                config_dir=collection.agent.config_root,
+                project=project,
+            )
         )
-        for collection in collections
-    ]
+    return payloads
 
 
 # Unix absolute path segment embedded within a larger string (e.g. inside Bash filter syntax).

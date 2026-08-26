@@ -145,6 +145,18 @@ def test_claude_skills_layout(tmp_path):
     assert skill.ref.component_identity is None
 
 
+@pytest.mark.parametrize("content", ["---\nname: bad\n", "---\nname: ]\n---\nbody\n"])
+def test_malformed_skill_manifest_is_reported(tmp_path, content):
+    skill_dir = tmp_path / "skills" / "bad"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(content)
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("SKILL.md" in warning for warning in warnings), warnings
+
+
 def test_plugin_bundled_skill_layout(tmp_path):
     (tmp_path / ".claude-plugin").mkdir()
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"demo","version":"1"}')

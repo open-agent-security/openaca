@@ -28,12 +28,14 @@ import yaml
 from tools.component_ref import ComponentRef
 
 
-def parse(skill_md_path: Path) -> list[ComponentRef]:
+def parse(skill_md_path: Path, *, strict: bool = False) -> list[ComponentRef]:
     try:
         text = skill_md_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as exc:
+        if strict:
+            raise ValueError("could not read SKILL.md") from exc
         return []
-    frontmatter = _extract_frontmatter(text)
+    frontmatter = _extract_frontmatter(text, strict=strict)
     if frontmatter is None:
         return []
     raw_name = frontmatter.get("name")
@@ -66,7 +68,7 @@ def parse(skill_md_path: Path) -> list[ComponentRef]:
     ]
 
 
-def _extract_frontmatter(text: str) -> Optional[dict]:
+def _extract_frontmatter(text: str, *, strict: bool = False) -> Optional[dict]:
     """Return the YAML mapping at the top of `text`, or None on any failure.
 
     Frontmatter is a `---` block at the very start of the file. Anything
@@ -74,16 +76,26 @@ def _extract_frontmatter(text: str) -> Optional[dict]:
     malformed YAML — returns None so the caller skips the file.
     """
     if not text.startswith("---"):
+        if strict:
+            raise ValueError("SKILL.md must begin with frontmatter")
         return None
     end = text.find("\n---", 3)
     if end == -1:
+        if strict:
+            raise ValueError("SKILL.md frontmatter is not terminated")
         return None
     block = text[3:end].strip()
     try:
         data = yaml.safe_load(block)
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        if strict:
+            raise ValueError("SKILL.md frontmatter contains invalid YAML") from exc
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        if strict:
+            raise ValueError("SKILL.md frontmatter must contain an object")
+        return None
+    return data
 
 
 def _extract_version(frontmatter: dict) -> Optional[str]:

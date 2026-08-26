@@ -719,7 +719,7 @@ def _add_direct_endpoint_skills(
         skill_md = skill_subdir / "SKILL.md"
         if not skill_md.is_file():
             continue
-        for ref in _safe_parse(graph, claude_skill.parse, skill_md):
+        for ref in _safe_parse(graph, lambda path: claude_skill.parse(path, strict=True), skill_md):
             if ref.name:
                 provenance = skill_lock.provenance_for_skill(
                     skill_md, ref.name, project_root=project_root
@@ -1301,7 +1301,7 @@ def _add_skill_node(
     plugin-bundled skills (old `walk_plugin_root`, no stamp) leave it False.
     """
     skill_md = skill_subdir / "SKILL.md"
-    for ref in _safe_parse(graph, claude_skill.parse, skill_md):
+    for ref in _safe_parse(graph, lambda path: claude_skill.parse(path, strict=True), skill_md):
         if stamp_provenance and ref.name:
             provenance = skill_lock.provenance_for_skill(
                 skill_md, ref.name, project_root=project_root

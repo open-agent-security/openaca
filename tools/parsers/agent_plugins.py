@@ -100,7 +100,7 @@ def validate_manifest(data: dict) -> bool:
     return True
 
 
-def parse(path: Path) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     """Parse a root `plugin.json` into its bundled skills and MCP servers.
 
     Returns [] on any manifest-level failure (unreadable, malformed JSON,
@@ -108,21 +108,46 @@ def parse(path: Path) -> list[ComponentRef]:
     is rejected outright and no components are discovered. A malformed
     bundled `mcp.json` is scoped to MCP alone (§7.2.2): it costs the
     servers, not the skills.
+
+    `strict=True` raises `ValueError` instead of returning [] on a
+    manifest-level failure — same contract as `mcp_json.parse`/
+    `claude_skill.parse`'s `strict` flag. The registry-driven route
+    (`tools/parsers/__init__.py`) calls with `strict=False` (its default):
+    the registry's `is_agent_plugins_manifest` guard runs against arbitrary
+    `plugin.json` files, most of which are not Agent Plugins manifests at
+    all, so a guard miss must stay silent. `_realize_agent_plugins_root`
+    (`tools/graph_build_cursor.py`) calls with `strict=True`: by the time it
+    calls `parse`, `_resolve_plugin_format` has already confirmed this exact
+    file's `$schema` qualifies, so a subsequent failure here is a real
+    defect in a manifest the tooling already committed to treating as Agent
+    Plugins — `safe_parse` catches the raise and records it as a warning
+    (evidence gap), rather than the scan silently reporting a clean, empty
+    composition for a plugin.json it could not actually validate.
     """
     try:
         raw = path.read_text()
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as exc:
+        if strict:
+            raise ValueError(f"could not read {path}") from exc
         return []
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        if strict:
+            raise ValueError(f"invalid JSON in {path}") from exc
         return []
     if not isinstance(data, dict):
+        if strict:
+            raise ValueError(f"{path} is not a JSON object")
         return []
     schema = data.get("$schema")
     if not isinstance(schema, str) or schema not in _MANIFEST_SCHEMA_VERSION_BY_URL:
+        if strict:
+            raise ValueError(f"{path} has an unsupported or missing $schema")
         return []
     if not validate_manifest(data):
+        if strict:
+            raise ValueError(f"{path} fails Agent Plugins manifest validation (§5.3/§5.5)")
         return []
 
     plugin_root = path.parent

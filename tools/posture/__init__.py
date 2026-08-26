@@ -646,12 +646,19 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
 
     Returns at most one tuple: `run_posture_rules`' manifest list is
     per-server, so passing the same server name in two separate raw-file
-    tuples would double-emit a finding for it. Attributed to the first path
-    that actually exists, on the theory that a reader fixing an
-    over-permissive entry looks at the most specific (project) file first
-    when both are present.
+    tuples would double-emit a finding for it. The tuple's own path is a
+    fallback only (used when no per-entry source is recorded, e.g. by a
+    caller that hand-builds a `cursor_permissions` manifest). Real
+    remediation targeting instead comes from `cursor_permissions_sources`,
+    a per-field `name -> path` map recording, for every entry, the last
+    path in `paths` that actually declared it — so a project-only entry is
+    never blamed on the user file (or vice versa) just because the user
+    file happens to exist too. "Last path wins attribution" matches the
+    existing precedence: a reader fixing an over-permissive entry looks at
+    the most specific (project) file first when both declare the same name.
     """
     merged: dict[str, list] = {}
+    sources: dict[str, dict[str, Path]] = {}
     primary: Path | None = None
     for path in paths:
         if not path.is_file():
@@ -664,9 +671,13 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
         for key, value in data.items():
             if isinstance(value, list):
                 merged.setdefault(key, []).extend(value)
+                field_sources = sources.setdefault(key, {})
+                for entry in value:
+                    if isinstance(entry, str):
+                        field_sources[entry] = path
     if primary is None or not merged:
         return []
-    return [(primary, {"cursor_permissions": merged})]
+    return [(primary, {"cursor_permissions": merged, "cursor_permissions_sources": sources})]
 
 
 def collect_cursor_permissions_manifests(

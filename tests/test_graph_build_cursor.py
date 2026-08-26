@@ -279,6 +279,29 @@ def test_invalid_agent_plugins_root_falls_back_to_valid_claude_plugin(tmp_path):
     assert [p.ref.name for p in plugins] == ["claude-fallback"]
 
 
+def test_invalid_agent_plugins_root_alone_records_a_warning(tmp_path):
+    """A schema-recognized but `validate_manifest`-failing root `plugin.json`
+    with no other plugin format present realizes zero plugins — but must not
+    do so silently. `_resolve_plugin_format` already confirmed this file's
+    `$schema` qualifies it as Agent Plugins, so a subsequent validation
+    failure is a real defect in a manifest the scan committed to, not a
+    guard miss; it must surface as a `graph.warnings` entry (an evidence
+    gap), the same way a malformed `.mcp.json`/`SKILL.md` does."""
+    root = tmp_path / "invalid-only"
+    _write_json(
+        root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "Invalid Name!",
+        },
+    )
+
+    graph = _build(tmp_path)
+
+    assert _nodes_of_kind(graph, "plugin") == []
+    assert any("plugin.json" in warning for warning in graph.warnings)
+
+
 # --- Skills --------------------------------------------------------------
 
 

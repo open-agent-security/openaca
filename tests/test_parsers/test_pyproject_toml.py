@@ -125,6 +125,14 @@ def test_url_based_deps_are_skipped(tmp_path):
     assert "local-dep" not in names
 
 
+def test_strict_parse_rejects_url_based_deps(tmp_path):
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text('[project]\ndependencies = ["helper @ https://example.com/helper.tar.gz"]\n')
+
+    with pytest.raises(ValueError, match="direct reference"):
+        parse(cfg, strict=True)
+
+
 def test_canonical_name_normalization(tmp_path):
     """PyPI names are case/separator-insensitive; we must emit PEP 503 canonical form.
 

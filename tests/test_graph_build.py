@@ -67,6 +67,33 @@ def test_mcp_npx_self_launch_reparents_root_deps(tmp_path):
         assert g.scope_of(pkg) == "agent-dependency"
 
 
+def test_mcp_dependency_lockfile_shape_failures_are_reported(tmp_path):
+    plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    plugin_dir.joinpath("plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "desktop-commander",
+                "mcpServers": {
+                    "desktop-commander": {
+                        "command": "npx",
+                        "args": ["-y", "@acme/desktop-commander@latest"],
+                    }
+                },
+            }
+        )
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps({"name": "@acme/desktop-commander", "version": "1.0.0"})
+    )
+    (tmp_path / "package-lock.json").write_text(json.dumps({"lockfileVersion": 3, "packages": []}))
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="repo", warnings=warnings)
+
+    assert any("package-lock.json" in warning for warning in warnings), warnings
+
+
 def test_mcp_remote_url_attaches_no_deps(tmp_path):
     plugin_dir = tmp_path / "plugins" / "claude" / ".claude-plugin"
     plugin_dir.mkdir(parents=True)

@@ -1347,7 +1347,9 @@ def _add_dep_manifest_packages(
         if manifest is None:
             continue
         emitted = False
-        for ref in _safe_parse(graph, _DEP_MANIFEST_PARSERS[filename], manifest):
+        for ref in _safe_parse(
+            graph, lambda path: _DEP_MANIFEST_PARSERS[filename](path, strict=True), manifest
+        ):
             node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, parent, node)
             emitted = True

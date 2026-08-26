@@ -415,6 +415,7 @@ def test_install_source_locator_preserves_original_index_after_filtering(tmp_pat
     # Index [1] is the real lockfile slot for the chosen entry, even after
     # the malformed [0] was filtered out of consideration.
     assert refs[0].source_locator == "$.plugins.foo@bar[1]"
+    assert any("invalid install entry" in warning for warning in warnings), warnings
 
 
 def test_install_warns_on_unreadable_lockfile(tmp_path):

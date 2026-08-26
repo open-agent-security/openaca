@@ -449,6 +449,8 @@ def _seed_active_plugins(
                 )
             continue
         entries = [(i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)]
+        if len(entries) != len(raw_entries) and warnings is not None:
+            warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
             if warnings is not None:
                 warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")

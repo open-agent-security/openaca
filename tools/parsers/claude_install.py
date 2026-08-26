@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from tools.component_ref import ComponentRef
+from tools.marketplace import key as marketplace_key
 from tools.parsers import (
     bun_lock,
     claude_command_agent,
@@ -189,7 +190,11 @@ def _walk_active_plugins(
         # consistent whether the plugin was discovered in repo mode (settings.json,
         # no version) or endpoint mode (installed_plugins.json, version known).
         component_identity = _plugin_identity(plugin_name, marketplace)
-        marketplace_source = _marketplace_source(layers, mode, marketplace)
+        try:
+            marketplace_source = _marketplace_source(layers, mode, marketplace)
+        except ValueError as exc:
+            warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
+            marketplace_source = None
         extra = {
             "component_type": "plugin",
             "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
@@ -631,29 +636,41 @@ def _marketplace_source(
     """
     if marketplace is None:
         return None
-    marketplaces = layers.merged(mode).get("extraKnownMarketplaces")
+    settings = layers.merged(mode)
+    marketplaces = settings.get("extraKnownMarketplaces")
+    if marketplaces is None:
+        return None
     if not isinstance(marketplaces, dict):
-        return None
+        raise ValueError("marketplace registrations must be an object")
     entry = marketplaces.get(marketplace)
-    if not isinstance(entry, dict):
+    if entry is None:
         return None
+    if not isinstance(entry, dict):
+        raise ValueError("marketplace registration must be an object")
     source = entry.get("source")
     if not isinstance(source, dict):
-        return None
+        raise ValueError("marketplace registration source must be an object")
     source_type = source.get("source")
-    if (
-        source_type == "github"
-        and set(source) == {"source", "repo"}
-        and isinstance(source.get("repo"), str)
-    ):
-        return f"https://github.com/{source['repo']}.git"
-    if (
-        source_type == "git"
-        and set(source) == {"source", "url"}
-        and isinstance(source.get("url"), str)
-    ):
-        return source["url"]
-    return None
+    if source_type == "github":
+        repo = source.get("repo")
+        if not isinstance(repo, str) or not repo:
+            raise ValueError("GitHub marketplace source must contain a repo")
+        if set(source) != {"source", "repo"}:
+            return None
+        candidate = f"https://github.com/{repo}.git"
+    elif source_type == "git":
+        url = source.get("url")
+        if not isinstance(url, str) or not url:
+            raise ValueError("Git marketplace source must contain a URL")
+        if set(source) != {"source", "url"}:
+            return None
+        candidate = url
+    elif not isinstance(source_type, str) or not source_type:
+        raise ValueError("marketplace registration source must declare a source type")
+    else:
+        return None
+    marketplace_key(candidate)
+    return candidate
 
 
 def _enabling_scope(

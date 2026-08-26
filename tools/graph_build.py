@@ -27,7 +27,6 @@ from pathspec import GitIgnoreSpec
 from tools.component_ref import ComponentRef
 from tools.graph import Edge, Graph, Node
 from tools.identity import canonical_component_identity, finalize_component_identity
-from tools.marketplace import key as marketplace_key
 from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
     bun_lock,
@@ -470,13 +469,12 @@ def _seed_active_plugins(
                 )
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
-        marketplace_source = claude_install._marketplace_source(layers, "endpoint", marketplace)
-        if marketplace_source is not None:
-            try:
-                marketplace_key(marketplace_source)
-            except ValueError as exc:
-                if warnings is not None:
-                    warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
+        try:
+            marketplace_source = claude_install._marketplace_source(layers, "endpoint", marketplace)
+        except ValueError as exc:
+            if warnings is not None:
+                warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
+            marketplace_source = None
         extra = {
             "component_type": "plugin",
             "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
@@ -1544,6 +1542,18 @@ def _add_bundled_plugin_surfaces(
     plugin_name = plugin_ref.name or ""
     plugin_data = _plugin_manifest_data(graph, plugin_root)
     plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
+    for surface in ("skills", "commands", "agents"):
+        if surface not in plugin_data:
+            continue
+        declared_path = plugin_data[surface]
+        resolved = (
+            resolve_within(plugin_root, declared_path) if isinstance(declared_path, str) else None
+        )
+        if resolved is None or not resolved.is_dir():
+            graph.warnings.append(
+                f"could not parse {plugin_manifest_path}: "
+                f"{surface} must name an available directory"
+            )
 
     refs: list[ComponentRef] = []
     manifest_refs = _parse_manifest_refs(

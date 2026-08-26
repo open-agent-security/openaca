@@ -10,6 +10,7 @@ shape the old code special-cased.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -297,6 +298,78 @@ def test_guard_success_but_fatal_validation_failure_counts_as_parse_failed(tmp_p
     )
     assert per_key["cursor"] == (1, 1)
     assert union == (1, 1)
+
+
+def test_registry_excludes_native_plugin_fixture_nested_in_a_realized_plugin_root(tmp_path):
+    """`_realize_plugins` (`tools/graph_build_cursor.py`) excludes a nested
+    plugin candidate strictly below an already-realized root from realizing
+    as its own bundle. The registry-count walk must apply the same
+    exclusion, so a bundled fixture like
+    `examples/demo/.cursor-plugin/plugin.json` neither inflates
+    `source_unit_count` nor can register a `parse_failed` for content Cursor
+    never loads."""
+    from tools.parsers import parse_repo_grouped, parse_repo_registry_counts
+
+    outer = tmp_path / ".claude-plugin"
+    outer.mkdir()
+    (outer / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    nested = tmp_path / "examples" / "demo" / ".cursor-plugin"
+    nested.mkdir(parents=True)
+    (nested / "plugin.json").write_text(json.dumps({"name": "fixture"}), encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    matched_paths = {path for path, _ in grouped}
+    assert (outer / "plugin.json") in matched_paths
+    assert (nested / "plugin.json") not in matched_paths
+    assert n_found == 1
+
+    per_key, union = parse_repo_registry_counts(tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY})
+    assert per_key["cursor"] == (1, 0)
+    assert union == (1, 0)
+
+
+def test_registry_excludes_a_malformed_nested_fixture_rather_than_failing_it(tmp_path):
+    """A malformed nested fixture (invalid JSON) must not register as a
+    `parse_failed` either — Cursor never attempts to load it, so it must be
+    invisible to the count, the same as a valid one."""
+    from tools.parsers import parse_repo_grouped, parse_repo_registry_counts
+
+    outer = tmp_path / ".claude-plugin"
+    outer.mkdir()
+    (outer / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    nested = tmp_path / "examples" / "demo" / ".cursor-plugin"
+    nested.mkdir(parents=True)
+    (nested / "plugin.json").write_text("{not valid json", encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    assert n_found == 1
+    assert len(grouped) == 1
+
+    per_key, union = parse_repo_registry_counts(tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY})
+    assert per_key["cursor"] == (1, 0)
+    assert union == (1, 0)
+
+
+def test_registry_still_counts_a_standalone_native_plugin_not_nested_under_another(tmp_path):
+    """Guards against over-exclusion: a `.cursor-plugin` bundle that is a
+    sibling of an unrelated realized plugin, not nested beneath it, still
+    counts."""
+    from tools.parsers import parse_repo_grouped
+
+    outer = tmp_path / "claude-plugin" / ".claude-plugin"
+    outer.mkdir(parents=True)
+    (outer / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    standalone = tmp_path / "standalone" / ".cursor-plugin"
+    standalone.mkdir(parents=True)
+    (standalone / "plugin.json").write_text(json.dumps({"name": "standalone"}), encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    matched_paths = {path for path, _ in grouped}
+    assert (standalone / "plugin.json") in matched_paths
+    assert n_found == 2
 
 
 def test_two_tuple_registry_entries_still_work(tmp_path):

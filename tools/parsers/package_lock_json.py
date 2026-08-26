@@ -31,7 +31,7 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         return []
     packages = data.get("packages")
     if not isinstance(packages, dict):
-        if strict and data.get("lockfileVersion") not in {1, 2}:
+        if strict:
             raise ValueError("package-lock.json packages must be an object")
         return []
     refs: list[ComponentRef] = []

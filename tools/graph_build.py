@@ -370,8 +370,11 @@ def _seed_endpoint(
     plugins_map, lockfile_path, plugin_warnings = claude_install._load_plugins_map(install_root)
     if warnings is not None:
         warnings.extend(plugin_warnings)
-    enabled = effective.get("enabledPlugins") or {}
-    if isinstance(enabled, dict) and any(value is True for value in enabled.values()):
+    enabled = effective.get("enabledPlugins", {})
+    if not isinstance(enabled, dict):
+        if "enabledPlugins" in effective and warnings is not None:
+            warnings.append("enabledPlugins must be an object")
+    elif any(value is True for value in enabled.values()):
         if plugins_map is None or lockfile_path is None:
             if warnings is not None:
                 warnings.append("enabled plugins but installed_plugins.json is unavailable")
@@ -515,7 +518,9 @@ def _seed_active_plugins(
         )
         # Plugin tier-2 lockfile deps: parity with parse_install — attach as
         # package children of the plugin node (NOT a skill).
-        for ref in claude_install._walk_plugin_implementation_deps(install_dir, warnings=warnings):
+        for ref in claude_install._walk_plugin_implementation_deps(
+            install_dir, warnings=warnings, strict=True
+        ):
             node = Node(key=occurrence_key(ref, normalize), kind="package", ref=ref)
             _add_child(graph, plugin_node, node)
 

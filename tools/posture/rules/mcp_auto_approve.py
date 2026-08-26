@@ -29,7 +29,9 @@ def check_mcp_auto_approve(
     for path, manifest in manifests:
         cursor_permissions = manifest.get("cursor_permissions")
         if isinstance(cursor_permissions, dict):
-            findings.extend(_check_cursor_permissions(path, cursor_permissions))
+            raw_sources = manifest.get("cursor_permissions_sources")
+            sources = raw_sources if isinstance(raw_sources, dict) else {}
+            findings.extend(_check_cursor_permissions(path, cursor_permissions, sources))
             continue
         servers = _get_server_map(manifest)
         if servers is None:
@@ -72,15 +74,24 @@ def check_mcp_auto_approve(
 _CURSOR_ALLOW_FIELDS: tuple[str, ...] = ("mcpAllowlist", "autoRun")
 
 
-def _check_cursor_permissions(path: Path, permissions: dict) -> list[PostureFinding]:
+def _check_cursor_permissions(
+    path: Path,
+    permissions: dict,
+    sources: dict[str, dict[str, Path]] | None = None,
+) -> list[PostureFinding]:
     names: set[str] = set()
+    name_path: dict[str, Path] = {}
     for field in _CURSOR_ALLOW_FIELDS:
         value = permissions.get(field)
         if isinstance(value, list):
             names.update(name for name in value if isinstance(name, str))
+        field_sources = (sources or {}).get(field)
+        if isinstance(field_sources, dict):
+            name_path.update(field_sources)
     findings: list[PostureFinding] = []
     for name in sorted(names):
         label = f"mcp-server/{name}"
+        declared_path = name_path.get(name, path)
         findings.append(
             PostureFinding(
                 rule_id=RULE_ID,
@@ -92,7 +103,7 @@ def _check_cursor_permissions(path: Path, permissions: dict) -> list[PostureFind
                     "name": f"{label} autoApprove",
                 },
                 active_in=["cursor"],
-                declared_by={"kind": "manifest", "path": str(path)},
+                declared_by={"kind": "manifest", "path": str(declared_path)},
                 component_path=[{"type": "mcp_server", "name": label}],
                 standards=_STANDARDS,
                 remediation=REMEDIATION,

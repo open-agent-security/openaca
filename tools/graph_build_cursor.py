@@ -540,10 +540,14 @@ def _realize_agent_plugins_root(
 
     Returns `None` (realizing nothing) when the manifest fails validation —
     the caller must not exclude `plugin_root` from sibling discovery in that
-    case, matching `descend_into_plugin`'s own contract.
+    case, matching `descend_into_plugin`'s own contract. `strict=True`
+    (`_resolve_plugin_format` already confirmed this file's `$schema`
+    qualifies, so a failure here is a real defect, not a guard miss) makes
+    `safe_parse` record the failure as a warning instead of the scan
+    silently reporting a clean, empty composition for it.
     """
     manifest = plugin_root / "plugin.json"
-    refs = safe_parse(graph, agent_plugins.parse, manifest)
+    refs = safe_parse(graph, lambda path: agent_plugins.parse(path, strict=True), manifest)
     original_self_ref = next((r for r in refs if component_type_of(r) == "plugin"), None)
     if original_self_ref is None:
         return None

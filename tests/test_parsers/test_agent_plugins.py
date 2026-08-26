@@ -9,6 +9,8 @@ emissions: the plugin self-identity ref, skills (§7.1), and portable MCP
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.agent_plugins import (
     is_agent_plugins_manifest,
     parse,
@@ -166,6 +168,26 @@ def test_parse_rejects_invalid_name_with_zero_skills_and_zero_servers(tmp_path):
             {"$schema": MCP_SCHEMA, "mcpServers": {"a": {"command": "npx", "args": ["x@1.0.0"]}}}
         )
     )
+    assert parse(path) == []
+
+
+def test_parse_strict_raises_on_fatal_validation_failure(tmp_path):
+    """`_realize_agent_plugins_root` (tools/graph_build_cursor.py) calls with
+    `strict=True` so `safe_parse` records this as a warning/evidence gap
+    instead of a scan silently reporting a clean, empty composition for a
+    plugin.json it already committed to treating as Agent Plugins."""
+    path = _write_manifest(tmp_path, {"$schema": MANIFEST_SCHEMA, "name": "My-Plugin"})
+
+    with pytest.raises(ValueError):
+        parse(path, strict=True)
+
+
+def test_parse_non_strict_default_unaffected_by_strict_failure(tmp_path):
+    """The registry-driven route (`tools/parsers/__init__.py`) still calls
+    with the `strict=False` default, since its guard runs against arbitrary
+    `plugin.json` files that are usually not Agent Plugins manifests at
+    all — a guard miss must stay silent, not raise."""
+    path = _write_manifest(tmp_path, {"$schema": MANIFEST_SCHEMA, "name": "My-Plugin"})
     assert parse(path) == []
 
 

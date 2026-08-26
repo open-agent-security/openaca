@@ -508,6 +508,39 @@ def test_shared_field_from_both_files_concatenates_not_replaces(tmp_path):
     assert "project-x" in permissions["autoRun"]
 
 
+def test_project_only_entry_is_attributed_to_project_file_not_primary(tmp_path):
+    """Regression for a Codex review finding: the primary tuple path (first
+    existing file — here the user file) must not be reported as the
+    `declared_by` source for an entry that only exists in the project file.
+    That misdirects remediation at the wrong config file."""
+    user_path = _write(tmp_path / "user" / "permissions.json", {"mcpAllowlist": ["user-only"]})
+    project_path = _write(
+        tmp_path / "project" / "permissions.json", {"mcpAllowlist": ["project-only"]}
+    )
+
+    manifests = resolve_cursor_permissions([user_path, project_path])
+
+    findings = {f.component_label: f for f in check_mcp_auto_approve(manifests)}
+    user_finding = findings["mcp-server/user-only autoApprove"]
+    project_finding = findings["mcp-server/project-only autoApprove"]
+    assert user_finding.declared_by["path"] == str(user_path)
+    assert project_finding.declared_by["path"] == str(project_path)
+
+
+def test_shared_entry_attributed_to_more_specific_project_file(tmp_path):
+    """When both scopes declare the same server, the single resulting finding
+    is attributed to the project file — the more specific, most-actionable
+    location — not the user file just because it happens to be primary."""
+    user_path = _write(tmp_path / "user" / "permissions.json", {"autoRun": ["shared"]})
+    project_path = _write(tmp_path / "project" / "permissions.json", {"autoRun": ["shared"]})
+
+    manifests = resolve_cursor_permissions([user_path, project_path])
+
+    findings = check_mcp_auto_approve(manifests)
+    assert len(findings) == 1
+    assert findings[0].declared_by["path"] == str(project_path)
+
+
 def test_missing_project_file_keeps_user_entries(tmp_path):
     user_path = _write(tmp_path / "user" / "permissions.json", {"mcpAllowlist": ["only-user"]})
     missing_project_path = tmp_path / "project" / "permissions.json"

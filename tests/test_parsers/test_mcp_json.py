@@ -724,6 +724,14 @@ def test_non_string_args_are_dropped():
     assert refs[0].purl == "pkg:npm/%40scope/server@1.0.0"
 
 
+@pytest.mark.parametrize("args", [{}, ""])
+def test_strict_parse_rejects_falsy_non_array_args(args):
+    with pytest.raises(ValueError, match="args must be an array"):
+        parse_mcp_servers(
+            {"x": {"command": "npx", "args": args}}, source_manifest="fake.json", strict=True
+        )
+
+
 def test_uv_absolute_path_tool_run_dispatches_as_uvx():
     """`/usr/bin/uv tool run weather-mcp==0.5.0` should emit a pinned PURL."""
     servers = {"y": {"command": "/usr/bin/uv", "args": ["tool", "run", "weather-mcp==0.5.0"]}}

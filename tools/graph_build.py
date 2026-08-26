@@ -374,21 +374,33 @@ def _seed_endpoint(
     if not isinstance(enabled, dict):
         if "enabledPlugins" in effective and warnings is not None:
             warnings.append("enabledPlugins must be an object")
-    elif any(value is True for value in enabled.values()):
-        if plugins_map is None or lockfile_path is None:
-            if warnings is not None:
-                warnings.append("enabled plugins but installed_plugins.json is unavailable")
-        else:
-            _seed_active_plugins(
-                graph,
-                target,
-                enabled,
-                plugins_map,
-                lockfile_path,
-                layers,
-                normalize,
-                warnings=warnings,
-            )
+    else:
+        for plugin_key, is_enabled in enabled.items():
+            if not isinstance(plugin_key, str):
+                if warnings is not None:
+                    warnings.append("enabledPlugins keys must be plugin@marketplace strings")
+                continue
+            plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
+            if not plugin_name or not marketplace:
+                if warnings is not None:
+                    warnings.append("enabledPlugins keys must be plugin@marketplace strings")
+            if not isinstance(is_enabled, bool) and warnings is not None:
+                warnings.append(f"enabledPlugins.{plugin_key} must be a boolean")
+        if any(value is True for value in enabled.values()):
+            if plugins_map is None or lockfile_path is None:
+                if warnings is not None:
+                    warnings.append("enabled plugins but installed_plugins.json is unavailable")
+            else:
+                _seed_active_plugins(
+                    graph,
+                    target,
+                    enabled,
+                    plugins_map,
+                    lockfile_path,
+                    layers,
+                    normalize,
+                    warnings=warnings,
+                )
 
     if project_root is not None:
         # Project skills are the one endpoint surface the old _walk_project_skill_dirs

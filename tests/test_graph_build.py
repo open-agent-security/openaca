@@ -1266,6 +1266,32 @@ def test_endpoint_partially_malformed_plugin_install_entries_are_reported(tmp_pa
     assert any("invalid install entry" in warning for warning in warnings), warnings
 
 
+def test_endpoint_plugin_missing_manifest_is_reported(tmp_path):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    install_path.mkdir(parents=True)
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any("plugin.json" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize(
     ("filename", "contents"),
     [

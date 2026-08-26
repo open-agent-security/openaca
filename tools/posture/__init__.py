@@ -665,15 +665,21 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
     fallback only (used when no per-entry source is recorded, e.g. by a
     caller that hand-builds a `cursor_permissions` manifest). Real
     remediation targeting instead comes from `cursor_permissions_sources`,
-    a per-field `name -> path` map recording, for every entry, the last
-    path in `paths` that actually declared it — so a project-only entry is
-    never blamed on the user file (or vice versa) just because the user
-    file happens to exist too. "Last path wins attribution" matches the
+    a FLAT `name -> path` map recording, for every entry, the last path in
+    `paths` that actually declared it — across every field, not per field.
+    A name can appear under `mcpAllowlist` in one file and `autoRun` in
+    another; attribution has to follow file precedence regardless of which
+    field carried the entry, so this is one map updated in `paths` order,
+    never a per-field map merged afterwards (a later merge step can't
+    recover which file was actually more specific once two different
+    fields disagree on it). This means a project-only entry is never
+    blamed on the user file (or vice versa) just because the user file
+    happens to exist too. "Last path wins attribution" matches the
     existing precedence: a reader fixing an over-permissive entry looks at
     the most specific (project) file first when both declare the same name.
     """
     merged: dict[str, list] = {}
-    sources: dict[str, dict[str, Path]] = {}
+    sources: dict[str, Path] = {}
     primary: Path | None = None
     for path in paths:
         if not path.is_file():
@@ -686,10 +692,9 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
         for key, value in data.items():
             if isinstance(value, list):
                 merged.setdefault(key, []).extend(value)
-                field_sources = sources.setdefault(key, {})
                 for entry in value:
                     if isinstance(entry, str):
-                        field_sources[entry] = path
+                        sources[entry] = path
     if primary is None or not merged:
         return []
     return [(primary, {"cursor_permissions": merged, "cursor_permissions_sources": sources})]

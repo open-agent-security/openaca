@@ -259,6 +259,54 @@ def test_agent_plugins_fixture_content_strictly_below_native_root_excluded(tmp_p
     assert [p.ref.name for p in plugins] == ["outer"]
 
 
+def test_agent_plugins_fixture_content_strictly_below_agent_plugins_root_excluded(tmp_path):
+    """The nested-exclusion rule is format-agnostic: an Agent Plugins bundle's
+    own fixture content, itself a schema-valid Agent Plugins manifest, must
+    not realize as an independent top-level plugin either — regression for a
+    Codex finding that the original exclusion only ever compared Agent
+    Plugins candidates against realized NATIVE roots, so an Agent-Plugins-
+    under-Agent-Plugins nesting fell through untouched."""
+    root = tmp_path / "outer"
+    _write_json(
+        root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "outer",
+        },
+    )
+    _write_json(
+        root / "examples" / "demo" / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "demo-fixture",
+        },
+    )
+
+    graph = _build(tmp_path)
+
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert [p.ref.name for p in plugins] == ["outer"]
+
+
+def test_native_plugin_nested_under_native_root_excluded(tmp_path):
+    """A native `.cursor-plugin` bundle nested strictly below another
+    realized native root must not realize as an independent sibling —
+    regression for a Codex finding that the original realization loop
+    unconditionally realized every native candidate, regardless of
+    ancestry, before the nested-exclusion check even ran."""
+    root = tmp_path / "outer"
+    _write_json(root / ".cursor-plugin" / "plugin.json", {"name": "outer", "author": {}})
+    _write_json(
+        root / "examples" / "demo" / ".cursor-plugin" / "plugin.json",
+        {"name": "demo-fixture", "author": {}},
+    )
+
+    graph = _build(tmp_path)
+
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert [p.ref.name for p in plugins] == ["outer"]
+
+
 def test_invalid_agent_plugins_root_falls_back_to_valid_claude_plugin(tmp_path):
     """A schema-recognized but `validate_manifest`-failing root `plugin.json`
     (bad name) alongside a valid `.claude-plugin/plugin.json` in the SAME

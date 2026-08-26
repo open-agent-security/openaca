@@ -545,6 +545,27 @@ def test_shared_entry_attributed_to_more_specific_project_file(tmp_path):
     assert declared_by["path"] == str(project_path)
 
 
+def test_shared_entry_across_different_fields_attributed_to_project_file(tmp_path):
+    """Regression for a Codex finding: the same server name can be declared
+    under a DIFFERENT field in each scope (`autoRun` in the user file,
+    `mcpAllowlist` in the project file). Attribution must still follow file
+    precedence — the project file wins — not the order `_CURSOR_ALLOW_FIELDS`
+    happens to iterate in. A field-keyed sources map merged field-by-field
+    let a later-iterated field's path silently overwrite an earlier field's
+    correct attribution regardless of which file was actually more specific;
+    this pins the project file as attributed to the source of truth."""
+    user_path = _write(tmp_path / "user" / "permissions.json", {"autoRun": ["shared"]})
+    project_path = _write(tmp_path / "project" / "permissions.json", {"mcpAllowlist": ["shared"]})
+
+    manifests = resolve_cursor_permissions([user_path, project_path])
+
+    findings = check_mcp_auto_approve(manifests)
+    assert len(findings) == 1
+    declared_by = findings[0].declared_by
+    assert declared_by is not None
+    assert declared_by["path"] == str(project_path)
+
+
 def test_missing_project_file_keeps_user_entries(tmp_path):
     user_path = _write(tmp_path / "user" / "permissions.json", {"mcpAllowlist": ["only-user"]})
     missing_project_path = tmp_path / "project" / "permissions.json"

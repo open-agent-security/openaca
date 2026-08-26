@@ -1227,7 +1227,10 @@ def test_endpoint_malformed_settings_hooks_are_reported(tmp_path):
     assert any("settings hook" in warning for warning in warnings), warnings
 
 
-@pytest.mark.parametrize("enabled_plugins", [[], "plugin@marketplace"])
+@pytest.mark.parametrize(
+    "enabled_plugins",
+    [[], "plugin@marketplace", {"plugin@marketplace": 1}, {"plugin": True}],
+)
 def test_endpoint_malformed_enabled_plugins_are_reported(tmp_path, enabled_plugins):
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": enabled_plugins}))
 

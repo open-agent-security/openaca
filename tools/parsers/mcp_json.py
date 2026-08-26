@@ -508,7 +508,7 @@ def parse_mcp_servers(
                 raise ValueError(f"MCP server {server_name!r} has an invalid URL")
             continue
         raw_command = entry.get("command")
-        raw_args = entry.get("args") or []
+        raw_args = entry.get("args", [])
         if not isinstance(raw_args, list):
             if strict:
                 raise ValueError(f"MCP server {server_name!r} args must be an array")

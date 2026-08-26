@@ -1147,6 +1147,27 @@ def test_endpoint_direct_agent_frontmatter_mcp_is_child_of_agent_not_target(tmp_
     assert any(n.kind == "mcp_server" for n in children_of_agent)
 
 
+@pytest.mark.parametrize(
+    "frontmatter",
+    ["mcpServers: invalid", "hooks: invalid", "field: ]"],
+)
+def test_endpoint_direct_agent_malformed_frontmatter_is_reported(tmp_path, frontmatter):
+    install_root = tmp_path / "claude"
+    agents_dir = install_root / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "agent.md").write_text(f"---\n{frontmatter}\n---\n# Agent\n")
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any("agent definition" in warning for warning in warnings), warnings
+
+
 # --- Stage 4 second Codex review fixes ---
 
 

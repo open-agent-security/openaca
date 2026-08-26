@@ -755,9 +755,18 @@ def _agent_scan_prep(
         repo_parse_cache[cache_key] = (n_found, n_found - len(parse_groups))
     n_found, n_failed = repo_parse_cache[cache_key]
     return AgentScanPrep(
-        manifests=mcp_collector([agent.scan_root], include_gitignored=include_gitignored),
+        # `refs` is threaded into the declared collectors for the same reason
+        # the installed branch above passes it: a collector that re-walks the
+        # filesystem has to re-implement every exclusion the composition
+        # builder applies (realized-plugin subtrees, nested fixture roots,
+        # gitignored candidates, unrealized manifests), and each rule it misses
+        # reports a component the agent does not actually load. Deriving from
+        # the graph's own refs makes that class of divergence unrepresentable.
+        manifests=mcp_collector(
+            [agent.scan_root], include_gitignored=include_gitignored, refs=refs
+        ),
         settings_manifests=settings_collector(
-            [agent.scan_root], include_gitignored=include_gitignored
+            [agent.scan_root], include_gitignored=include_gitignored, refs=refs
         ),
         target_rows=[("path", str(agent.scan_root))],
         next_actions=[

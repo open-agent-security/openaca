@@ -1580,11 +1580,32 @@ def _is_ignored_under(path: Path, eval_root: Path, spec: GitIgnoreSpec | None) -
     """Evaluate `is_ignored(path relative-to eval_root)`, guarding paths that
     are not under `eval_root` (skip the ignore check for those, matching the
     per-directory fallback's reach)."""
-    try:
-        rel = path.relative_to(eval_root)
-    except ValueError:
+    if spec is None:
         return False
-    return spec is not None and is_ignored(rel, spec)  # type: ignore[arg-type]
+    # Callers hand this a RESOLVED path (symlink containment is checked before
+    # the ignore test), so `eval_root` has to be resolved too or the compare is
+    # between different spellings of the same directory — `/var/...` versus
+    # `/private/var/...` on macOS, or any checkout reached through a symlink.
+    # `relative_to` then raises and the file is silently treated as NOT
+    # ignored, which is the permissive direction: a gitignored command or
+    # subagent gets composed. Try the literal root first so an unresolved
+    # caller keeps working, then the resolved one.
+    for base in (eval_root, _resolved_or_none(eval_root)):
+        if base is None:
+            continue
+        try:
+            rel = path.relative_to(base)
+        except ValueError:
+            continue
+        return is_ignored(rel, spec)  # type: ignore[arg-type]
+    return False
+
+
+def _resolved_or_none(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except OSError:
+        return None
 
 
 def _add_repo_standalone_components(

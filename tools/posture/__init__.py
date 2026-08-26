@@ -195,8 +195,15 @@ def _normalize_alias(value: object) -> str:
 def collect_mcp_manifests(
     roots: list[Path],
     include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
 ) -> list[tuple[Path, dict]]:
     """Walk one or more roots for MCP-shaped manifests and return parsed dicts.
+
+    `refs` is accepted and unused: Claude Code's declared walk is already
+    congruent with its composition (one plugin format, no realized-subtree
+    carve-outs), so there is nothing for graph derivation to correct here. The
+    parameter exists so every declared collector shares one signature.
 
     Used by URL-shape rules that need the raw manifest to inspect
     `mcpServers[*].url` and adjacent fields. Parse failures are silently
@@ -248,6 +255,8 @@ def collect_mcp_manifests(
 def collect_settings_manifests(
     roots: list[Path],
     include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
 ) -> list[tuple[Path, dict]]:
     out: list[tuple[Path, dict]] = []
     seen: set[Path] = set()
@@ -435,208 +444,40 @@ def collect_endpoint_settings_manifests(
 def collect_cursor_mcp_manifests(
     roots: list[Path],
     include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
 ) -> list[tuple[Path, dict]]:
-    """Cursor's declared MCP-shaped manifest walk: `.cursor/mcp.json` at any
-    depth, plus each realized plugin root's bundled MCP manifest.
+    """Cursor's declared MCP posture surface, derived from the refs the graph
+    already produced — never a directory walk.
 
-    Plugin roots are resolved through the SAME ordered candidate list
-    Cursor's declared composition builder uses (`find_plugin_roots` /
-    `CURSOR_SURFACE.plugin_formats`) rather than a separately hand-rolled
-    walk, so a plugin bundled only as `.claude-plugin/plugin.json` still
-    reaches posture the same way it reaches composition. An Agent Plugins
-    root whose manifest fails Task 2's `validate_manifest` boundary is
-    treated as though it were absent — §7.2's own "reject outright" rule —
-    since `find_plugin_roots` already committed to that candidate winning
-    its directory and there is nothing to fall back to for MCP purposes.
+    This is the same rule the installed collector follows, and for the same
+    reason. Cursor's composition applies a long list of exclusions: realized
+    plugin subtrees are off-limits to the direct walk, an Agent Plugins root
+    nested under a realized native root never realizes, a bundle missing its
+    manifest self-ref realizes nothing at all, gitignored candidates are
+    dropped before selection, and the portable format reads only a root
+    `mcp.json`. A collector that re-walks has to restate every one of those,
+    and each rule it misses reports an `insecure_transport` finding for a
+    server the agent never loads.
+
+    Deriving from the graph makes that class of divergence unrepresentable:
+    the exclusions are applied once, by the composition builder, and posture
+    inherits them by construction rather than by hand.
+
+    `roots` and `include_gitignored` are accepted and unused — the walk they
+    parameterised is gone, and the graph they would have searched was already
+    built under those same settings.
     """
-    from tools.graph_build import find_plugin_roots
-    from tools.parsers import agent_plugins, claude_plugin
-    from tools.parsers.claude_plugin_root import resolve_within
-    from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE
-
-    out: list[tuple[Path, dict]] = []
-    seen: set[Path] = set()
-
-    def _add(path: Path) -> None:
-        if not path.is_file():
-            return
-        resolved = path.resolve()
-        if resolved in seen:
-            return
-        seen.add(resolved)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            return
-        if isinstance(data, dict):
-            out.append((path, data))
-
-    for root in roots:
-        if root is None or not root.exists():
-            continue
-        spec = None if include_gitignored else load_gitignore_spec(root)
-        candidates = find_plugin_roots(root, CURSOR_SURFACE, include_gitignored=include_gitignored)
-        # Mirror `graph_build_cursor._realize_plugins`'s nesting filter: an
-        # Agent Plugins root whose own fixture content sits strictly below an
-        # already-realized native (`.cursor-plugin`/`.claude-plugin`) root is
-        # never composed as an independent bundle, so posture must not report
-        # on its MCP surface either.
-        native_resolved = [
-            r.resolve() for r, plugin_fmt in candidates if plugin_fmt is not AGENT_PLUGINS_FORMAT
-        ]
-
-        def _strictly_below_native(plugin_root: Path) -> bool:
-            resolved = plugin_root.resolve()
-            return any(
-                resolved != other and resolved.is_relative_to(other) for other in native_resolved
-            )
-
-        # A realized plugin's own subtree is excluded from EVERY direct
-        # surface walk in composition (`_add_scoped_mcps`'s `exclude_under`),
-        # and plugin descent itself only ever reads the plugin root's own
-        # bundled `mcp.json`/`.mcp.json` — never a nested `.cursor/mcp.json`
-        # inside the plugin (that's fixture content, not a Cursor workspace
-        # declaration). "Realized" mirrors composition's own test: format
-        # detection (`find_plugin_roots`) is necessary but not sufficient —
-        # the manifest must also yield a self-ref, exactly as
-        # `descend_into_plugin`/`_realize_agent_plugins_root` require.
-        realized_resolved: set[Path] = set()
-        for plugin_root, plugin_fmt in candidates:
-            if plugin_fmt is AGENT_PLUGINS_FORMAT:
-                if _strictly_below_native(plugin_root):
-                    continue
-                manifest_path = plugin_root / "plugin.json"
-                try:
-                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                    continue
-                if not (
-                    isinstance(manifest_data, dict)
-                    and agent_plugins.validate_manifest(manifest_data)
-                ):
-                    continue
-            else:
-                manifest_path = plugin_root / plugin_fmt.manifest_dir / plugin_fmt.manifest_filename
-                try:
-                    parsed = claude_plugin.parse(manifest_path)
-                except (OSError, ValueError, UnicodeDecodeError):
-                    continue
-                if not any((ref.extra or {}).get("component_type") == "plugin" for ref in parsed):
-                    continue
-            realized_resolved.add(plugin_root.resolve())
-
-        for path in root.rglob("mcp.json"):
-            if path.parent.name != ".cursor":
-                continue
-            if is_ignored(path.relative_to(root), spec):
-                continue
-            resolved = path.resolve()
-            if any(resolved.is_relative_to(realized_root) for realized_root in realized_resolved):
-                continue
-            _add(path)
-
-        for plugin_root, fmt in candidates:
-            if fmt is AGENT_PLUGINS_FORMAT and _strictly_below_native(plugin_root):
-                continue
-            # Mirror `descend_into_plugin`/`_realize_agent_plugins_root`'s own
-            # gate: a candidate whose manifest satisfies `fmt.detect` but fails
-            # to yield a plugin self-ref (e.g. a native manifest missing
-            # `name`) is never realized into the graph, so none of its MCP
-            # surfaces — inline, referenced, or sibling-file — are reachable
-            # from composition either. `realized_resolved` already applied
-            # this exact check above; reuse it rather than re-deriving it.
-            if plugin_root.resolve() not in realized_resolved:
-                continue
-            manifest_version = None
-            if fmt is AGENT_PLUGINS_FORMAT:
-                manifest_path = plugin_root / "plugin.json"
-                try:
-                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                    continue
-                if not (
-                    isinstance(manifest_data, dict)
-                    and agent_plugins.validate_manifest(manifest_data)
-                ):
-                    continue
-                manifest_version = agent_plugins.manifest_schema_version(manifest_data)
-                if manifest_version is None:
-                    continue
-            else:
-                # A native plugin's own manifest (`.claude-plugin/plugin.json`
-                # or `.cursor-plugin/plugin.json`) is itself an MCP surface:
-                # `claude_plugin_root._parse_manifest_refs` reads a top-level
-                # `mcpServers` field straight off this file, either an inline
-                # OBJECT ("$.mcpServers (inlined)") or a STRING path to a
-                # separate manifest — a sibling `mcp.json`/`.mcp.json` (the
-                # `mcp_names` loop below) is only the folder-discovery
-                # surface, unconditional and independent of this field.
-                # Already known unignored: it's the exact manifest
-                # `_resolve_plugin_format` (called by `find_plugin_roots`)
-                # selected for this candidate.
-                manifest_path = plugin_root / fmt.manifest_dir / fmt.manifest_filename
-                try:
-                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                    manifest_data = None
-                referenced = (
-                    manifest_data.get("mcpServers") if isinstance(manifest_data, dict) else None
-                )
-                if isinstance(referenced, dict):
-                    _add(manifest_path)
-                elif isinstance(referenced, str):
-                    candidate = resolve_within(plugin_root, referenced)
-                    if (
-                        candidate is not None
-                        and candidate.is_file()
-                        and not is_ignored(candidate.relative_to(root), spec)
-                    ):
-                        _add(candidate)
-            # `agent_plugins._parse_mcp` only ever resolves a plugin-root
-            # `mcp.json` (§7.2.1) — never `.mcp.json`, which is a native
-            # Cursor-bundle filename with no meaning under Agent Plugins.
-            # Trying both names here would let a `.mcp.json` sibling pass a
-            # valid envelope check and get reported by posture even though
-            # composition never reads it for this format.
-            mcp_names = (
-                ("mcp.json",)
-                if fmt is AGENT_PLUGINS_FORMAT
-                else CURSOR_SURFACE.bundled.mcp_filenames
-            )
-            for mcp_name in mcp_names:
-                candidate = plugin_root / mcp_name
-                if not candidate.is_file():
-                    continue
-                if is_ignored(candidate.relative_to(root), spec):
-                    continue
-                if fmt is AGENT_PLUGINS_FORMAT:
-                    # A bundled mcp.json that fails §7.2's envelope check is
-                    # invisible to composition (`agent_plugins._parse_mcp`
-                    # returns [] for it) — apply the identical check here so
-                    # posture never reports on servers the graph never loaded.
-                    try:
-                        mcp_data = json.loads(candidate.read_text(encoding="utf-8"))
-                    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                        continue
-                    if not agent_plugins.validate_mcp_envelope(mcp_data, manifest_version):
-                        continue
-                _add(candidate)
-                break
-    return out
+    del roots, include_gitignored
+    return _mcp_manifests_from_refs(refs or [])
 
 
-def collect_cursor_endpoint_mcp_manifests(
-    config_dir: Path,
-    project_root: Path | None,
-    refs: list[ComponentRef],
-) -> list[tuple[Path, dict]]:
-    """Cursor's installed MCP posture surface, derived from the refs the
-    graph already produced — never a directory walk. A walk would attribute
-    a fixture the composition graph never actually loaded (e.g. an Agent
-    Plugins bundle's own test fixtures, or a plugin cache entry missing its
-    completion sentinel).
+def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]]:
+    """Reconstruct MCP-shaped manifests from composed `mcp_server` refs.
+
+    Shared by Cursor's declared and installed collectors so the two can never
+    disagree about what a composed server looks like to a posture rule.
     """
-    del config_dir, project_root
     by_path: dict[str, dict] = {}
     for ref in refs:
         if (ref.extra or {}).get("component_type") != "mcp_server":
@@ -651,6 +492,20 @@ def collect_cursor_endpoint_mcp_manifests(
             entry["url"] = url
         by_path.setdefault(source, {"mcpServers": {}})["mcpServers"][name] = entry
     return [(Path(source), manifest) for source, manifest in by_path.items()]
+
+
+def collect_cursor_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Cursor's installed MCP posture surface, derived from the refs the graph
+    already produced — never a directory walk, for the reasons spelled out on
+    `collect_cursor_mcp_manifests`. Both Cursor collectors share one
+    derivation so declared and installed cannot drift apart.
+    """
+    del config_dir, project_root
+    return _mcp_manifests_from_refs(refs)
 
 
 def _mcp_server_ref_name(ref: ComponentRef) -> str | None:
@@ -817,6 +672,8 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
 def collect_cursor_permissions_manifests(
     roots: list[Path],
     include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
 ) -> list[tuple[Path, dict]]:
     """Cursor's declared approval-policy surface: `.cursor/permissions.json`
     at any depth under the given roots, honouring `include_gitignored`
@@ -826,7 +683,15 @@ def collect_cursor_permissions_manifests(
     installed-mode-only concept (`collect_cursor_endpoint_permissions_manifests`).
     A monorepo can declare more than one workspace folder's `permissions.json`;
     all of them concatenate into one effective view via `resolve_cursor_permissions`.
+
+    Unlike the MCP collector this one still walks, because `permissions.json`
+    declares no components and so appears in no graph ref. It therefore takes
+    the one thing it cannot derive — which subtrees composition already
+    claimed — from the graph instead of recomputing it: a realized plugin's
+    own fixture content at `.cursor/permissions.json` is not an active policy,
+    and Cursor's descent never loads permission files from inside a bundle.
     """
+    plugin_roots = _realized_plugin_roots(refs or [])
     paths: list[Path] = []
     for root in roots:
         if root is None or not root.exists():
@@ -837,8 +702,50 @@ def collect_cursor_permissions_manifests(
                 continue
             if is_ignored(path.relative_to(root), spec):
                 continue
+            if _is_under_any(path, plugin_roots):
+                continue
             paths.append(path)
     return resolve_cursor_permissions(paths)
+
+
+def _realized_plugin_roots(refs: list[ComponentRef]) -> list[Path]:
+    """Directories the composition graph actually realized as plugins.
+
+    Derived from `plugin` refs rather than a manifest walk, so a manifest that
+    qualified for discovery but produced no self-ref — a `plugin.json` with an
+    empty `name`, say — never claims a subtree it does not own.
+    """
+    roots: list[Path] = []
+    for ref in refs:
+        if (ref.extra or {}).get("component_type") != "plugin":
+            continue
+        source = ref.source_manifest
+        if not source:
+            continue
+        manifest = Path(source)
+        # `<root>/.cursor-plugin/plugin.json` and `<root>/plugin.json` both
+        # resolve to `<root>`; a presence-only ref names the bundle directory.
+        root = manifest.parent
+        if root.name in {".cursor-plugin", ".claude-plugin"}:
+            root = root.parent
+        elif manifest.is_dir():
+            root = manifest
+        roots.append(root)
+    return roots
+
+
+def _is_under_any(path: Path, roots: list[Path]) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    for root in roots:
+        try:
+            if resolved.is_relative_to(root.resolve()):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def collect_cursor_endpoint_permissions_manifests(

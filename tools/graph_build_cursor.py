@@ -471,40 +471,53 @@ def _realize_plugins(
     branch below.
     """
     candidates = find_plugin_roots(directory, CURSOR_SURFACE, include_gitignored=include_gitignored)
-    native_roots = [root for root, fmt in candidates if fmt is not AGENT_PLUGINS_FORMAT]
-    native_resolved = [r.resolve() for r in native_roots]
+    # Two passes, because the exclusion set must be built from natives that
+    # actually REALIZED, not from every native candidate. A
+    # `.cursor-plugin/plugin.json` with an empty `name` qualifies for
+    # discovery but yields no self-ref, so `descend_into_plugin` returns
+    # `None` and it owns nothing — excluding valid Agent Plugins roots beneath
+    # it would drop real bundles on behalf of a plugin that does not exist in
+    # the graph. "Qualified" and "realized" are different sets and only the
+    # second confers ownership.
+    realized: list[Path] = []
+    realized_native: list[Path] = []
+    for root, fmt in candidates:
+        if fmt is AGENT_PLUGINS_FORMAT:
+            continue
+        manifest = root / fmt.manifest_dir / fmt.manifest_filename
+        node = descend_into_plugin(
+            graph,
+            parent,
+            root,
+            manifest,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+            surface=CURSOR_SURFACE,
+        )
+        if node is not None:
+            realized.append(root)
+            realized_native.append(root.resolve())
 
-    def _strictly_below_native(root: Path) -> bool:
+    def _strictly_below_realized_native(root: Path) -> bool:
         resolved = root.resolve()
         return any(
-            resolved != other and resolved.is_relative_to(other) for other in native_resolved
+            resolved != other and resolved.is_relative_to(other) for other in realized_native
         )
 
-    realized: list[Path] = []
     for root, fmt in candidates:
-        if fmt is AGENT_PLUGINS_FORMAT and _strictly_below_native(root):
+        if fmt is not AGENT_PLUGINS_FORMAT:
             continue
-        if fmt is AGENT_PLUGINS_FORMAT:
-            node = _realize_agent_plugins_root(
-                graph,
-                parent,
-                root,
-                normalize,
-                root_dir=root_dir,
-                root_spec=root_spec,
-            )
-        else:
-            manifest = root / fmt.manifest_dir / fmt.manifest_filename
-            node = descend_into_plugin(
-                graph,
-                parent,
-                root,
-                manifest,
-                normalize,
-                root_dir=root_dir,
-                root_spec=root_spec,
-                surface=CURSOR_SURFACE,
-            )
+        if _strictly_below_realized_native(root):
+            continue
+        node = _realize_agent_plugins_root(
+            graph,
+            parent,
+            root,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+        )
         if node is not None:
             realized.append(root)
     return realized

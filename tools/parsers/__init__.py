@@ -133,6 +133,58 @@ def _parse_repo_agent_plugins(path: Path) -> list[ComponentRef]:
     return agent_plugins.parse(path, strict=True)
 
 
+# The three plugin-marker patterns below are the registry-walk counterpart of
+# `_realize_plugins`'s realized-root exclusion (`tools/graph_build_cursor.py`):
+# a plugin's own bundled fixture (e.g. a nested `examples/demo/plugin.json`,
+# or a nested `.cursor-plugin/plugin.json`) never realizes as its own bundle
+# in composition, so it must not count toward `source_unit_count`/`parse_failed`
+# here either — an unrestricted walk would inflate a valid fixture's count or
+# report a malformed one as a `parse_failed` for content Cursor never loads.
+#
+# `.cursor-plugin/plugin.json` and the bare Agent-Plugins `plugin.json` exist
+# ONLY in `CURSOR_MANIFEST_REGISTRY` (never in `CLAUDE_CODE_MANIFEST_REGISTRY`),
+# so their presence in a given walk's registry reliably signals "this walk
+# includes Cursor's plugin surface" — the trigger for computing realized
+# roots at all. `.claude-plugin/plugin.json` alone (Claude Code's own,
+# unaccompanied by either Cursor-only pattern) never triggers this, so a
+# Claude-Code-only walk pays no extra cost and keeps its pre-existing
+# (unrelated, out of scope here) behavior.
+_CURSOR_PLUGIN_ROOT_TRIGGER_PATTERNS = frozenset({"**/.cursor-plugin/plugin.json", "plugin.json"})
+_CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS = frozenset(
+    {"**/.cursor-plugin/plugin.json", "**/.claude-plugin/plugin.json", "plugin.json"}
+)
+
+
+def _realized_cursor_plugin_roots(root: Path, *, include_gitignored: bool) -> list[Path]:
+    """Directories where a Cursor plugin format actually realizes — thin
+    wrapper around `tools.graph_build_cursor.realized_plugin_roots`, the one
+    place that computation is implemented (also used by Cursor evidence
+    detection in `tools/agent_kinds/cursor.py`), so this registry's exclusion
+    can never drift from composition's own.
+
+    Local import: `tools.graph_build_cursor` imports `tools.parsers` at
+    module scope, so importing it back at this module's top level would be
+    circular. Deferring the import to call time breaks the cycle — the same
+    technique `tools/agent_kinds/cursor.py` already uses for the sibling
+    `tools.graph_build` import.
+    """
+    from tools.graph_build_cursor import realized_plugin_roots
+
+    return realized_plugin_roots(root, include_gitignored=include_gitignored)
+
+
+def _nested_under_realized_plugin_root(path: Path, realized_roots: list[Path]) -> bool:
+    # Local import: see `_realized_cursor_plugin_roots` above for why this
+    # can't be a top-level import.
+    from tools.graph_build_cursor import is_nested_under_realized_plugin_root
+
+    return is_nested_under_realized_plugin_root(path, realized_roots)
+
+
+def _needs_realized_plugin_roots(registry: Sequence[ManifestPattern]) -> bool:
+    return any(entry.pattern in _CURSOR_PLUGIN_ROOT_TRIGGER_PATTERNS for entry in registry)
+
+
 # Cursor's manifest surface. Deliberately no bare `mcp.json`/`.mcp.json`:
 # Cursor's direct MCP surface is the path-scoped `.cursor/mcp.json`; bundle
 # roots are reached only through the plugin route. A bare pattern here would
@@ -300,6 +352,11 @@ def parse_repo_grouped(
     """
     spec = None if include_gitignored else load_gitignore_spec(root)
     normalized_registry = [_normalize_registry_entry(entry) for entry in registry]
+    realized_plugin_roots = (
+        _realized_cursor_plugin_roots(root, include_gitignored=include_gitignored)
+        if _needs_realized_plugin_roots(normalized_registry)
+        else []
+    )
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     for path in iter_unignored_files(root, spec):
@@ -307,6 +364,10 @@ def parse_repo_grouped(
             if not _pattern_matches(path, root, entry.pattern):
                 continue
             if entry.guard is not None and not entry.guard(path):
+                continue
+            if entry.pattern in _CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS and (
+                _nested_under_realized_plugin_root(path, realized_plugin_roots)
+            ):
                 continue
             n_found += 1
             try:
@@ -343,6 +404,11 @@ def parse_repo_registry_counts(
         key: [_normalize_registry_entry(entry) for entry in registry]
         for key, registry in registries.items()
     }
+    realized_plugin_roots = (
+        _realized_cursor_plugin_roots(root, include_gitignored=include_gitignored)
+        if any(_needs_realized_plugin_roots(entries) for entries in normalized.values())
+        else []
+    )
     per_key_found = dict.fromkeys(registries, 0)
     per_key_failed = dict.fromkeys(registries, 0)
     union_found = 0
@@ -355,6 +421,10 @@ def parse_repo_registry_counts(
                 if not _pattern_matches(path, root, entry.pattern):
                     continue
                 if entry.guard is not None and not entry.guard(path):
+                    continue
+                if entry.pattern in _CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS and (
+                    _nested_under_realized_plugin_root(path, realized_plugin_roots)
+                ):
                     continue
                 per_key_found[key] += 1
                 try:

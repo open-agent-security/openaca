@@ -21,7 +21,6 @@ from tools.posture.rules import (
     mutable_install,
     skill_capability,
 )
-from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE
 
 KIND_ID = "cursor"
 DISPLAY_NAME = "Cursor"
@@ -56,58 +55,48 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
 )
 
 
-def _realized_native_plugin_roots(scan_root: Path, *, include_gitignored: bool) -> list[Path]:
-    """Directories where a NATIVE (`.cursor-plugin`, or the reused
-    `.claude-plugin`) plugin format actually realizes — carries a truthy
-    `name`, mirroring the exact qualified/realized distinction
-    `_realize_plugins` (`tools/graph_build_cursor.py`) draws: a candidate
-    whose manifest yields no self-ref confers no ownership, so nothing
-    beneath it is excluded there either.
+def _realized_plugin_roots(scan_root: Path, *, include_gitignored: bool) -> list[Path]:
+    """Directories where a Cursor plugin format — native (`.cursor-plugin`,
+    or the reused `.claude-plugin`) or Agent Plugins — actually realizes:
+    thin wrapper around `tools.graph_build_cursor.realized_plugin_roots`, the
+    one place that computation is implemented, so evidence detection can
+    never drift from what composition itself excludes.
 
-    An Agent Plugins-schema fixture nested inside a realized native root
-    (e.g. a bundled `examples/demo/plugin.json` test fixture) is bundle
-    content, not a second, independent Cursor declaration — composition
-    already excludes it from realizing as its own plugin. Evidence detection
-    has to draw the same boundary, or a repo with no Cursor-owned surface at
-    all can still trip a phantom Cursor BOM off its own unrelated fixture
-    file (the outer native plugin is itself never evidence — see
-    `_DECLARED_EVIDENCE_PATTERNS` above — so nothing should be).
+    Any of those formats can carry a nested fixture of either format (e.g. a
+    bundled `examples/demo/plugin.json` or `examples/demo/.cursor-plugin/
+    plugin.json` test fixture) that is bundle content, not a second,
+    independent Cursor declaration — composition already excludes it from
+    realizing as its own plugin. Evidence detection has to draw the same
+    boundary, or a repo with no Cursor-owned surface at all can still trip a
+    phantom Cursor BOM off its own unrelated fixture file (the outer plugin
+    is itself never evidence — see `_DECLARED_EVIDENCE_PATTERNS` above — so
+    nothing bundled inside it should be either).
     """
     # Local import: agent_kinds -> graph_build* stays one-way (see `_compose`).
-    from tools.graph_build import find_plugin_roots
-    from tools.parsers import claude_plugin
+    from tools.graph_build_cursor import realized_plugin_roots
 
-    roots: list[Path] = []
-    candidates = find_plugin_roots(scan_root, CURSOR_SURFACE, include_gitignored=include_gitignored)
-    for root, fmt in candidates:
-        if fmt is AGENT_PLUGINS_FORMAT:
-            continue
-        manifest = root / fmt.manifest_dir / fmt.manifest_filename
-        try:
-            refs = claude_plugin.parse(manifest)
-        except Exception:
-            continue
-        if any((ref.extra or {}).get("component_type") == "plugin" for ref in refs):
-            roots.append(root.resolve())
-    return roots
+    return realized_plugin_roots(scan_root, include_gitignored=include_gitignored)
 
 
-def _matches_evidence(rel: str, path: Path, native_plugin_roots: list[Path]) -> bool:
+def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
+    if path.name == "plugin.json":
+        # A plugin manifest (native manifest_dir or the flat Agent Plugins
+        # layout) that is bundle content of an already-realized plugin root
+        # is never evidence in its own right — a nested
+        # `.cursor-plugin/plugin.json` or Agent-Plugins `plugin.json` bundled
+        # as fixture content inside an outer, already-realized plugin is
+        # composition's content, not a second, independent Cursor
+        # declaration (see `_realized_plugin_roots`).
+        from tools.graph_build_cursor import is_nested_under_realized_plugin_root
+
+        if is_nested_under_realized_plugin_root(path, realized_roots):
+            return False
     if matches_evidence(rel, _DECLARED_EVIDENCE_PATTERNS):
         return True
     # A root `plugin.json` (Agent Plugins format) is evidence only when its
     # content actually declares the schema — a glob on the filename alone
-    # would treat any unrelated `plugin.json` as a Cursor agent. And only when
-    # it is not bundle content of an already-realized native plugin (see
-    # `_realized_native_plugin_roots`) — otherwise a Claude-only repo whose
-    # plugin happens to bundle an Agent-Plugins-shaped fixture would trip a
-    # phantom Cursor BOM containing nothing but that outer, non-Cursor plugin.
-    if path.name != "plugin.json" or not is_agent_plugins_manifest(path):
-        return False
-    resolved_dir = path.parent.resolve()
-    return not any(
-        resolved_dir != root and resolved_dir.is_relative_to(root) for root in native_plugin_roots
-    )
+    # would treat any unrelated `plugin.json` as a Cursor agent.
+    return path.name == "plugin.json" and is_agent_plugins_manifest(path)
 
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:
@@ -119,15 +108,13 @@ def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> P
     `--include-gitignored` is set.
     """
     spec = None if include_gitignored else load_gitignore_spec(scan_root)
-    native_plugin_roots = _realized_native_plugin_roots(
-        scan_root, include_gitignored=include_gitignored
-    )
+    realized_roots = _realized_plugin_roots(scan_root, include_gitignored=include_gitignored)
     for path in iter_unignored_files(scan_root, spec):
         try:
             rel = path.relative_to(scan_root).as_posix()
         except ValueError:
             continue
-        if _matches_evidence(rel, path, native_plugin_roots):
+        if _matches_evidence(rel, path, realized_roots):
             return path
     return None
 

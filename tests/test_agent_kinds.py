@@ -402,6 +402,45 @@ def test_cursor_agent_plugins_fixture_nested_in_a_claude_plugin_is_not_evidence(
     assert cursor.discover(DiscoveryContext(source="declared", scan_root=tmp_path)) == []
 
 
+def test_cursor_native_plugin_fixture_nested_in_a_claude_plugin_is_not_evidence(tmp_path):
+    """Same hazard as
+    `test_cursor_agent_plugins_fixture_nested_in_a_claude_plugin_is_not_evidence`,
+    but for a NATIVE nested fixture (`.cursor-plugin/plugin.json`) instead of
+    an Agent Plugins one. `.cursor-plugin/plugin.json` is matched by
+    `_DECLARED_EVIDENCE_PATTERNS` directly (not the Agent-Plugins branch), so
+    this pins that the realized-root exclusion applies to pattern-matched
+    evidence too, not only the Agent Plugins `plugin.json` branch."""
+    from tools.agent_kinds import cursor
+
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    fixture_dir = tmp_path / "examples" / "demo" / ".cursor-plugin"
+    fixture_dir.mkdir(parents=True)
+    (fixture_dir / "plugin.json").write_text(json.dumps({"name": "fixture"}), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+    assert cursor.discover(DiscoveryContext(source="declared", scan_root=tmp_path)) == []
+
+
+def test_cursor_native_plugin_bundle_outside_a_claude_plugin_root_is_still_evidence(tmp_path):
+    """Guards against over-suppressing the fix above: a native
+    `.cursor-plugin` bundle that is a genuine sibling of an unrelated Claude
+    plugin (not nested beneath it) is still real Cursor evidence."""
+    from tools.agent_kinds import cursor
+
+    plugin_dir = tmp_path / "claude-plugin" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    sibling_dir = tmp_path / "standalone" / ".cursor-plugin"
+    sibling_dir.mkdir(parents=True)
+    (sibling_dir / "plugin.json").write_text(json.dumps({"name": "standalone"}), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None
+
+
 def test_cursor_agent_plugins_bundle_outside_a_claude_plugin_root_is_still_evidence(tmp_path):
     """The exclusion in `_realized_native_plugin_roots` only applies to a
     manifest strictly BELOW a realized native root's OWN directory — a

@@ -49,7 +49,7 @@ from tools.graph_build import (
     safe_parse,
     same_path,
 )
-from tools.parsers import agent_plugins, mcp_json
+from tools.parsers import agent_plugins, claude_plugin, mcp_json
 from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE, RepoSurface
@@ -563,6 +563,86 @@ def _descend_cursor_declared(
             root_dir=root_dir,
             root_spec=root_spec,
         )
+
+
+def realized_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> list[Path]:
+    """Every directory under `directory` where a Cursor plugin format — native
+    (`.cursor-plugin`/`.claude-plugin`) or Agent Plugins — actually realizes,
+    without building a `Graph`.
+
+    This is the read-only counterpart of `_realize_plugins`'s realized-root
+    computation: same candidate discovery, same ancestors-before-descendants
+    ordering, and the same qualified/realized distinction (a manifest that
+    qualifies for discovery but yields no self-ref owns no subtree). It
+    exists for callers that need to know which subtrees composition already
+    claims WITHOUT paying for a full graph build — Cursor evidence detection
+    (a nested plugin fixture inside an already-realized root must not trip a
+    phantom Cursor BOM) and repo-mode parse-count accounting (that same
+    nested fixture must not inflate `source_unit_count` or register a
+    `parse_failed` for content Cursor never loads). Both would otherwise have
+    to restate `_realize_plugins`'s exclusion rules by hand, and each rule
+    restated by hand is a rule that can drift from the one composition
+    actually applies.
+    """
+    candidates = find_plugin_roots(directory, CURSOR_SURFACE, include_gitignored=include_gitignored)
+    ordered = sorted(candidates, key=lambda entry: len(entry[0].resolve().parts))
+    realized_roots: list[Path] = []
+    for candidate_root, fmt in ordered:
+        resolved = candidate_root.resolve()
+        if any(resolved != other and resolved.is_relative_to(other) for other in realized_roots):
+            continue
+        if fmt is AGENT_PLUGINS_FORMAT:
+            manifest = candidate_root / "plugin.json"
+            parser = agent_plugins.parse
+        else:
+            manifest = candidate_root / fmt.manifest_dir / fmt.manifest_filename
+            parser = claude_plugin.parse
+        try:
+            refs = parser(manifest)
+        except Exception:
+            continue
+        if any((ref.extra or {}).get("component_type") == "plugin" for ref in refs):
+            realized_roots.append(resolved)
+    return realized_roots
+
+
+def plugin_manifest_root(path: Path) -> Path | None:
+    """The plugin root directory `path` (a plugin manifest file) belongs to,
+    per `CURSOR_SURFACE`'s format conventions — mirrors `_find_plugin_roots`'s
+    own per-candidate root derivation, so a manifest's OWN root is computed
+    the same way here as it is during discovery. This matters because a
+    manifest-dir format (`.cursor-plugin`/`.claude-plugin`) puts the manifest
+    ONE directory below its own root, while the flat Agent Plugins format
+    does not — using `path.parent` unconditionally as "the root" would treat
+    a manifest-dir-format plugin's OWN manifest as nested one level below
+    itself.
+
+    Returns `None` when `path` doesn't match any recognized format's
+    manifest filename/directory shape at all.
+    """
+    for fmt in CURSOR_SURFACE.plugin_formats:
+        if path.name != fmt.manifest_filename:
+            continue
+        if fmt.manifest_dir:
+            if path.parent.name != fmt.manifest_dir:
+                continue
+            return path.parent.parent
+        return path.parent
+    return None
+
+
+def is_nested_under_realized_plugin_root(path: Path, realized_roots: list[Path]) -> bool:
+    """True when the plugin root `path` (a manifest file) belongs to is
+    strictly below one of `realized_roots` — i.e. `path` is bundle content of
+    an already-realized plugin, not an independent declaration. A root's own
+    manifest is never "nested" beneath itself; only a DIFFERENT, ancestor
+    root excludes it.
+    """
+    candidate_root = plugin_manifest_root(path)
+    if candidate_root is None:
+        return False
+    resolved = candidate_root.resolve()
+    return any(resolved != root and resolved.is_relative_to(root) for root in realized_roots)
 
 
 def _realize_plugins(

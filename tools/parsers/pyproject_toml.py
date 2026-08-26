@@ -63,6 +63,8 @@ def _emit_specs(
         if req.url:
             # Direct URL/VCS/local references (PEP 440 URL reqs) are not
             # PyPI packages — skip to avoid false-positive purl matches.
+            if strict:
+                raise ValueError(f"{locator} contains a direct reference")
             continue
         refs.append(
             ComponentRef(

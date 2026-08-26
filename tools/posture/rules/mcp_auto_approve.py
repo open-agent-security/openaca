@@ -77,17 +77,14 @@ _CURSOR_ALLOW_FIELDS: tuple[str, ...] = ("mcpAllowlist", "autoRun")
 def _check_cursor_permissions(
     path: Path,
     permissions: dict,
-    sources: dict[str, dict[str, Path]] | None = None,
+    sources: dict[str, Path] | None = None,
 ) -> list[PostureFinding]:
     names: set[str] = set()
-    name_path: dict[str, Path] = {}
     for field in _CURSOR_ALLOW_FIELDS:
         value = permissions.get(field)
         if isinstance(value, list):
             names.update(name for name in value if isinstance(name, str))
-        field_sources = (sources or {}).get(field)
-        if isinstance(field_sources, dict):
-            name_path.update(field_sources)
+    name_path = sources or {}
     findings: list[PostureFinding] = []
     for name in sorted(names):
         label = f"mcp-server/{name}"

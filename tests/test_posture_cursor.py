@@ -523,6 +523,8 @@ def test_project_only_entry_is_attributed_to_project_file_not_primary(tmp_path):
     findings = {f.component_label: f for f in check_mcp_auto_approve(manifests)}
     user_finding = findings["mcp-server/user-only autoApprove"]
     project_finding = findings["mcp-server/project-only autoApprove"]
+    assert user_finding.declared_by is not None
+    assert project_finding.declared_by is not None
     assert user_finding.declared_by["path"] == str(user_path)
     assert project_finding.declared_by["path"] == str(project_path)
 
@@ -538,7 +540,9 @@ def test_shared_entry_attributed_to_more_specific_project_file(tmp_path):
 
     findings = check_mcp_auto_approve(manifests)
     assert len(findings) == 1
-    assert findings[0].declared_by["path"] == str(project_path)
+    declared_by = findings[0].declared_by
+    assert declared_by is not None
+    assert declared_by["path"] == str(project_path)
 
 
 def test_missing_project_file_keeps_user_entries(tmp_path):

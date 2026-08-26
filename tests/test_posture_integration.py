@@ -47,6 +47,39 @@ def test_manifest_posture_resolves_exact_component_bom_ref(tmp_path):
     }
 
 
+def test_cursor_auto_approve_resolves_bom_ref_via_alias_not_manifest_path(tmp_path):
+    """Regression for a Codex review finding: Cursor expresses auto-approval
+    posture in `permissions.json`, a file distinct from the `mcp.json` that
+    actually composed the server. `_attach_bom_ref`'s path-equality gate must
+    not apply to this rule's Cursor branch — its `declared_by.path` names
+    `permissions.json`, which never equals a composed server's
+    `source_manifest`. Without the fix, this finding's `bom_ref` never
+    resolves even though the server name uniquely identifies the composed
+    component."""
+    mcp_path = tmp_path / "mcp.json"
+    mcp_manifest = {"mcpServers": {"foo": {"command": "run-foo"}}}
+    mcp_path.write_text(json.dumps(mcp_manifest))
+    permissions_path = tmp_path / "permissions.json"
+
+    ref = ComponentRef(
+        component_identity="mcp-stdio/local:run-foo",
+        source_manifest=str(mcp_path),
+        source_locator="$.mcpServers.foo",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "foo"}],
+            "bom_ref": "endpoint/mcp.json#$.mcpServers.foo#mcp-stdio/local:run-foo",
+        },
+    )
+    settings_manifests = [(permissions_path, {"cursor_permissions": {"mcpAllowlist": ["foo"]}})]
+
+    findings = run_posture_rules([ref], [(mcp_path, mcp_manifest)], settings_manifests)
+
+    auto_approve = [f for f in findings if f.rule_id == "openaca-posture-mcp-auto-approve"]
+    assert len(auto_approve) == 1
+    assert auto_approve[0].bom_ref == "endpoint/mcp.json#$.mcpServers.foo#mcp-stdio/local:run-foo"
+
+
 def test_posture_off_by_default():
     runner = CliRunner()
     result = runner.invoke(

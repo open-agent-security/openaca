@@ -807,3 +807,49 @@ def test_installed_commands_and_subagents_via_task4_resolvers(tmp_path, fake_hom
     assert agents[0].key.startswith("project/.cursor/agents/deploy.md#")
     commands = _nodes_of_kind(graph, "command")
     assert [c.ref.source_manifest.endswith("release.txt") for c in commands] == [True]
+
+
+def test_installed_plugin_command_shadowed_by_personal_command_is_pruned(tmp_path, fake_home):
+    """Regression for a Codex review finding: Commands' last-wins precedence
+    (docs/specs/cursor-agent-kind.md "Precedence": team -> global -> plugin ->
+    workspace -> personal) places `plugin` as its own tier. A plugin's
+    bundled command must not permanently survive in the composed graph when a
+    same-relative-path personal command wins — and the winning personal
+    command must not ALSO appear as a second, root-parented node for the same
+    occurrence the plugin descent already emitted."""
+    config_root = tmp_path / "cursor_config"
+    _write_json(
+        config_root / "plugins" / "local" / "mydev" / ".cursor-plugin" / "plugin.json",
+        {"name": "mydev", "author": {}},
+    )
+    _write(config_root / "plugins" / "local" / "mydev" / "commands" / "deploy.md", "plugin version")
+    _write(config_root / "commands" / "deploy.md", "personal version")
+
+    graph = _build_installed(config_root)
+
+    commands = _nodes_of_kind(graph, "command")
+    assert len(commands) == 1
+    assert commands[0].ref.source_manifest.endswith(str(Path("cursor_config/commands/deploy.md")))
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert len(plugins) == 1
+    assert graph.children_of(plugins[0]) == []
+
+
+def test_installed_plugin_command_without_shadow_stays_under_plugin_node(tmp_path, fake_home):
+    """The other half of the precedence fix: a plugin command with no
+    same-relative-path override elsewhere must still realize exactly once,
+    as a child of its plugin node — the fix must not over-prune."""
+    config_root = tmp_path / "cursor_config"
+    _write_json(
+        config_root / "plugins" / "local" / "mydev" / ".cursor-plugin" / "plugin.json",
+        {"name": "mydev", "author": {}},
+    )
+    _write(config_root / "plugins" / "local" / "mydev" / "commands" / "deploy.md", "plugin version")
+
+    graph = _build_installed(config_root)
+
+    commands = _nodes_of_kind(graph, "command")
+    assert len(commands) == 1
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert len(plugins) == 1
+    assert [c.key for c in graph.children_of(plugins[0])] == [commands[0].key]

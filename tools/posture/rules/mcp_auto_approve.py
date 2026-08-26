@@ -103,7 +103,13 @@ def _check_cursor_permissions(
                     "name": f"{label} autoApprove",
                 },
                 active_in=["cursor"],
-                declared_by={"kind": "manifest", "path": str(declared_path)},
+                # kind "permissions", not "manifest": `declared_path` is
+                # `permissions.json`, a separate policy file that never
+                # equals a composed server's `source_manifest` (`mcp.json`).
+                # `_attach_bom_ref`'s path-equality gate only applies to
+                # `kind == "manifest"` for exactly this reason — this finding
+                # must still attach a `bom_ref` via alias matching alone.
+                declared_by={"kind": "permissions", "path": str(declared_path)},
                 component_path=[{"type": "mcp_server", "name": label}],
                 standards=_STANDARDS,
                 remediation=REMEDIATION,

@@ -450,7 +450,7 @@ def collect_cursor_mcp_manifests(
     its directory and there is nothing to fall back to for MCP purposes.
     """
     from tools.graph_build import find_plugin_roots
-    from tools.parsers import agent_plugins
+    from tools.parsers import agent_plugins, claude_plugin
     from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE
 
     out: list[tuple[Path, dict]] = []
@@ -474,12 +474,6 @@ def collect_cursor_mcp_manifests(
         if root is None or not root.exists():
             continue
         spec = None if include_gitignored else load_gitignore_spec(root)
-        for path in root.rglob("mcp.json"):
-            if path.parent.name != ".cursor":
-                continue
-            if is_ignored(path.relative_to(root), spec):
-                continue
-            _add(path)
         candidates = find_plugin_roots(root, CURSOR_SURFACE, include_gitignored=include_gitignored)
         # Mirror `graph_build_cursor._realize_plugins`'s nesting filter: an
         # Agent Plugins root whose own fixture content sits strictly below an
@@ -495,6 +489,50 @@ def collect_cursor_mcp_manifests(
             return any(
                 resolved != other and resolved.is_relative_to(other) for other in native_resolved
             )
+
+        # A realized plugin's own subtree is excluded from EVERY direct
+        # surface walk in composition (`_add_scoped_mcps`'s `exclude_under`),
+        # and plugin descent itself only ever reads the plugin root's own
+        # bundled `mcp.json`/`.mcp.json` — never a nested `.cursor/mcp.json`
+        # inside the plugin (that's fixture content, not a Cursor workspace
+        # declaration). "Realized" mirrors composition's own test: format
+        # detection (`find_plugin_roots`) is necessary but not sufficient —
+        # the manifest must also yield a self-ref, exactly as
+        # `descend_into_plugin`/`_realize_agent_plugins_root` require.
+        realized_resolved: set[Path] = set()
+        for plugin_root, plugin_fmt in candidates:
+            if plugin_fmt is AGENT_PLUGINS_FORMAT:
+                if _strictly_below_native(plugin_root):
+                    continue
+                manifest_path = plugin_root / "plugin.json"
+                try:
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if not (
+                    isinstance(manifest_data, dict)
+                    and agent_plugins.validate_manifest(manifest_data)
+                ):
+                    continue
+            else:
+                manifest_path = plugin_root / plugin_fmt.manifest_dir / plugin_fmt.manifest_filename
+                try:
+                    parsed = claude_plugin.parse(manifest_path)
+                except (OSError, ValueError, UnicodeDecodeError):
+                    continue
+                if not any((ref.extra or {}).get("component_type") == "plugin" for ref in parsed):
+                    continue
+            realized_resolved.add(plugin_root.resolve())
+
+        for path in root.rglob("mcp.json"):
+            if path.parent.name != ".cursor":
+                continue
+            if is_ignored(path.relative_to(root), spec):
+                continue
+            resolved = path.resolve()
+            if any(resolved.is_relative_to(realized_root) for realized_root in realized_resolved):
+                continue
+            _add(path)
 
         for plugin_root, fmt in candidates:
             if fmt is AGENT_PLUGINS_FORMAT and _strictly_below_native(plugin_root):

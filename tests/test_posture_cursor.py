@@ -243,6 +243,33 @@ def test_declared_nested_agent_plugins_fixture_under_native_root_excluded(tmp_pa
     assert collect_cursor_mcp_manifests([tmp_path]) == []
 
 
+def test_declared_nested_cursor_mcp_json_inside_native_plugin_excluded(tmp_path):
+    """A realized native plugin's own `.cursor/mcp.json` fixture content is
+    never read by composition — `_add_scoped_mcps`'s `exclude_under` drops
+    every path beneath a realized plugin root, and plugin descent itself only
+    ever reads the plugin root's own bundled `mcp.json`/`.mcp.json`, never a
+    nested `.cursor/mcp.json` inside it. The unrestricted top-level
+    `root.rglob("mcp.json")` walk must mirror that exclusion, or posture
+    reports insecure-transport findings for a server absent from the graph.
+    A sibling `.cursor/mcp.json` OUTSIDE the plugin subtree is unaffected."""
+    plugin_dir = tmp_path / "plug"
+    _write(plugin_dir / ".claude-plugin" / "plugin.json", {"name": "plug"})
+    _write(
+        plugin_dir / ".cursor" / "mcp.json",
+        {"mcpServers": {"fixture": {"url": "http://fixture.example/mcp"}}},
+    )
+    _write(
+        tmp_path / ".cursor" / "mcp.json",
+        {"mcpServers": {"real": {"url": "http://real.example/mcp"}}},
+    )
+
+    manifests = collect_cursor_mcp_manifests([tmp_path])
+
+    paths = {path for path, _ in manifests}
+    assert plugin_dir / ".cursor" / "mcp.json" not in paths
+    assert tmp_path / ".cursor" / "mcp.json" in paths
+
+
 # --- Installed MCP collector: derived from refs, never a directory walk ---
 
 

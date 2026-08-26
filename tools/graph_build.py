@@ -666,9 +666,16 @@ def _seed_direct_components(
         if settings_path is None:
             continue
         scope_data = by_scope.get(scope) or {}
-        for ref in hooks_json.parse_settings_hooks(
-            settings_path, scope_data.get("hooks"), scope=scope
-        ):
+        if "hooks" not in scope_data:
+            continue
+        try:
+            hook_refs = hooks_json.parse_settings_hooks(
+                settings_path, scope_data["hooks"], scope=scope, strict=True
+            )
+        except ValueError as exc:
+            graph.warnings.append(f"could not parse {settings_path}: {exc}")
+            continue
+        for ref in hook_refs:
             component_type = _component_type(ref)
             if not isinstance(component_type, str):
                 continue

@@ -1189,6 +1189,15 @@ def test_endpoint_invalid_marketplace_source_is_reported(tmp_path):
     assert any("marketplace source" in warning for warning in warnings), warnings
 
 
+def test_endpoint_malformed_settings_hooks_are_reported(tmp_path):
+    (tmp_path / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": "not-an-array"}}))
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("settings hook" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize("enabled_plugins", [[], "plugin@marketplace"])
 def test_endpoint_malformed_enabled_plugins_are_reported(tmp_path, enabled_plugins):
     (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": enabled_plugins}))
@@ -1345,6 +1354,43 @@ def test_endpoint_plugin_missing_referenced_mcp_is_reported(tmp_path):
     build_graph(install_root, mode="endpoint", warnings=warnings)
 
     assert any("missing-mcp.json" in warning for warning in warnings), warnings
+
+
+@pytest.mark.parametrize(
+    ("plugin_data", "expected_warning"),
+    [
+        ({"name": "plugin", "hooks": "missing-hooks.json"}, "missing-hooks.json"),
+        ({"name": "plugin", "hooks": {"PreToolUse": "not-an-array"}}, "plugin hook"),
+        ({"name": "plugin", "dependencies": {"helper": "1"}}, "dependencies"),
+    ],
+)
+def test_endpoint_plugin_malformed_declared_surface_is_reported(
+    tmp_path, plugin_data, expected_warning
+):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text(json.dumps(plugin_data))
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any(expected_warning in warning for warning in warnings), warnings
 
 
 def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):

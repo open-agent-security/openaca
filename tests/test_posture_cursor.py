@@ -93,6 +93,51 @@ def test_declared_bundled_mcp_reached_via_claude_plugin_manifest_only(tmp_path):
     assert data["mcpServers"]["insecure"]["url"] == "http://bad.example/mcp"
 
 
+def test_declared_native_plugin_inline_mcp_servers_collected(tmp_path):
+    """`claude_plugin_root._parse_manifest_refs` reads a top-level
+    `mcpServers` OBJECT straight off the plugin manifest itself
+    ("$.mcpServers (inlined)") — composition never needs a sibling
+    `mcp.json` for this case. Posture must inspect the manifest the same
+    way, or an inline insecure-transport server is invisible to a declared
+    scan even though composition loaded it."""
+    root = tmp_path / "plug"
+    _write(
+        root / ".claude-plugin" / "plugin.json",
+        {"name": "plug", "mcpServers": {"inline": {"url": "http://inline.example/mcp"}}},
+    )
+
+    manifests = collect_cursor_mcp_manifests([tmp_path])
+
+    assert len(manifests) == 1
+    path, data = manifests[0]
+    assert path == root / ".claude-plugin" / "plugin.json"
+    assert data["mcpServers"]["inline"]["url"] == "http://inline.example/mcp"
+
+
+def test_declared_native_plugin_referenced_mcp_path_collected(tmp_path):
+    """`mcpServers` may instead be a STRING: a path to a separate MCP
+    manifest resolved relative to the plugin root, under any filename — not
+    just `mcp.json`/`.mcp.json`. Composition (`_parse_manifest_refs`) follows
+    it; posture must follow the same reference or miss the servers it
+    contains."""
+    root = tmp_path / "plug"
+    _write(
+        root / ".claude-plugin" / "plugin.json",
+        {"name": "plug", "mcpServers": "custom/servers.json"},
+    )
+    _write(
+        root / "custom" / "servers.json",
+        {"mcpServers": {"referenced": {"url": "http://referenced.example/mcp"}}},
+    )
+
+    manifests = collect_cursor_mcp_manifests([tmp_path])
+
+    assert len(manifests) == 1
+    path, data = manifests[0]
+    assert path == root / "custom" / "servers.json"
+    assert data["mcpServers"]["referenced"]["url"] == "http://referenced.example/mcp"
+
+
 def test_declared_invalid_agent_plugins_manifest_yields_no_mcp(tmp_path):
     """A schema-recognized root `plugin.json` that fails `validate_manifest`
     does not win — its bundled `mcp.json` must not surface posture, exactly

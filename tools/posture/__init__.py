@@ -451,6 +451,7 @@ def collect_cursor_mcp_manifests(
     """
     from tools.graph_build import find_plugin_roots
     from tools.parsers import agent_plugins, claude_plugin
+    from tools.parsers.claude_plugin_root import resolve_within
     from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE
 
     out: list[tuple[Path, dict]] = []
@@ -552,6 +553,36 @@ def collect_cursor_mcp_manifests(
                 manifest_version = agent_plugins.manifest_schema_version(manifest_data)
                 if manifest_version is None:
                     continue
+            else:
+                # A native plugin's own manifest (`.claude-plugin/plugin.json`
+                # or `.cursor-plugin/plugin.json`) is itself an MCP surface:
+                # `claude_plugin_root._parse_manifest_refs` reads a top-level
+                # `mcpServers` field straight off this file, either an inline
+                # OBJECT ("$.mcpServers (inlined)") or a STRING path to a
+                # separate manifest — a sibling `mcp.json`/`.mcp.json` (the
+                # `mcp_names` loop below) is only the folder-discovery
+                # surface, unconditional and independent of this field.
+                # Already known unignored: it's the exact manifest
+                # `_resolve_plugin_format` (called by `find_plugin_roots`)
+                # selected for this candidate.
+                manifest_path = plugin_root / fmt.manifest_dir / fmt.manifest_filename
+                try:
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    manifest_data = None
+                referenced = (
+                    manifest_data.get("mcpServers") if isinstance(manifest_data, dict) else None
+                )
+                if isinstance(referenced, dict):
+                    _add(manifest_path)
+                elif isinstance(referenced, str):
+                    candidate = resolve_within(plugin_root, referenced)
+                    if (
+                        candidate is not None
+                        and candidate.is_file()
+                        and not is_ignored(candidate.relative_to(root), spec)
+                    ):
+                        _add(candidate)
             # `agent_plugins._parse_mcp` only ever resolves a plugin-root
             # `mcp.json` (§7.2.1) — never `.mcp.json`, which is a native
             # Cursor-bundle filename with no meaning under Agent Plugins.

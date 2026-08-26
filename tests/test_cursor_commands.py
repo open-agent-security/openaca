@@ -145,6 +145,22 @@ def test_repo_mode_groups_by_scope_dir_parent_parent(tmp_path):
     )
 
 
+def test_ignored_higher_precedence_file_does_not_shadow_lower_precedence_winner(tmp_path):
+    """A gitignored `.cursor/commands/deploy.md` must not win last-wins
+    resolution over an unignored `.claude/commands/deploy.md` at the same
+    relative path: filtering only the resolution winner (post-hoc) would
+    drop the ignored `.cursor` entry AND the `.claude` entry it had already
+    overwritten in the resolved dict, losing the command entirely."""
+    _write(tmp_path / ".claude" / "commands" / "deploy.md", "claude version\n")
+    ignored = _write(tmp_path / ".cursor" / "commands" / "deploy.md", "cursor version\n")
+
+    resolved = resolve_repo(tmp_path, is_ignored=lambda p: p == ignored)
+
+    assert len(resolved) == 1
+    assert resolved[0].relative_path == "deploy.md"
+    assert resolved[0].commands_dir == tmp_path / ".claude" / "commands"
+
+
 def test_traversal_depth_10_included_depth_11_excluded(tmp_path):
     commands_dir = tmp_path / ".cursor" / "commands"
     depth_10 = commands_dir.joinpath(*["d"] * 9, "at-depth-10.md")

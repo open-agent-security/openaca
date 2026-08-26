@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_command_agent
@@ -58,11 +58,19 @@ class ResolvedCommand:
     refs: tuple[ComponentRef, ...]
 
 
-def resolve_repo(repo_root: Path) -> list[ResolvedCommand]:
+def resolve_repo(
+    repo_root: Path, is_ignored: Optional[Callable[[Path], bool]] = None
+) -> list[ResolvedCommand]:
     """Repo mode: discover every `{.claude,.cursor}/commands` dir under
     `repo_root`, grouped by the directory that contains the scope dir
     (`commands_dir.parent.parent`), and resolve each group independently
     with `.cursor` overwriting `.claude`.
+
+    `is_ignored`, when given, is consulted per-candidate-file BEFORE a file
+    participates in last-wins resolution (not after, on the winner only): a
+    gitignored higher-precedence file must never shadow an unignored
+    lower-precedence file at the same relative path — dropping the winner
+    post-resolution would silently drop both.
     """
     groups: dict[Path, dict[str, Path]] = {}
     for scope_dirname in SCOPE_DIR_ORDER:
@@ -76,7 +84,7 @@ def resolve_repo(repo_root: Path) -> list[ResolvedCommand]:
     for group_root in sorted(groups):
         by_dirname = groups[group_root]
         ordered_dirs = [by_dirname[d] for d in SCOPE_DIR_ORDER if d in by_dirname]
-        resolved.extend(_resolve_ordered_dirs(repo_root, ordered_dirs))
+        resolved.extend(_resolve_ordered_dirs(repo_root, ordered_dirs, is_ignored=is_ignored))
     return resolved
 
 
@@ -95,7 +103,10 @@ def resolve_endpoint(scope_dirs: Sequence[Path]) -> list[ResolvedCommand]:
 
 
 def _resolve_ordered_dirs(
-    containment_root: Optional[Path], ordered_dirs: list[Path]
+    containment_root: Optional[Path],
+    ordered_dirs: list[Path],
+    *,
+    is_ignored: Optional[Callable[[Path], bool]] = None,
 ) -> list[ResolvedCommand]:
     resolved: dict[str, ResolvedCommand] = {}
     for commands_dir in ordered_dirs:
@@ -109,6 +120,8 @@ def _resolve_ordered_dirs(
         if not commands_dir.is_dir():
             continue
         for relative_path, file_path in _iter_command_files(commands_dir):
+            if is_ignored is not None and is_ignored(file_path):
+                continue
             resolved[relative_path] = ResolvedCommand(
                 relative_path=relative_path,
                 file_path=file_path,

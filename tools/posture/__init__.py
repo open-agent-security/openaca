@@ -498,7 +498,18 @@ def collect_cursor_mcp_manifests(
                 manifest_version = agent_plugins.manifest_schema_version(manifest_data)
                 if manifest_version is None:
                     continue
-            for mcp_name in CURSOR_SURFACE.bundled.mcp_filenames:
+            # `agent_plugins._parse_mcp` only ever resolves a plugin-root
+            # `mcp.json` (§7.2.1) — never `.mcp.json`, which is a native
+            # Cursor-bundle filename with no meaning under Agent Plugins.
+            # Trying both names here would let a `.mcp.json` sibling pass a
+            # valid envelope check and get reported by posture even though
+            # composition never reads it for this format.
+            mcp_names = (
+                ("mcp.json",)
+                if fmt is AGENT_PLUGINS_FORMAT
+                else CURSOR_SURFACE.bundled.mcp_filenames
+            )
+            for mcp_name in mcp_names:
                 candidate = plugin_root / mcp_name
                 if not candidate.is_file():
                     continue

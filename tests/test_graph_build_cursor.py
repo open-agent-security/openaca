@@ -447,6 +447,33 @@ def test_gitignored_command_and_subagent_excluded_by_default(tmp_path):
     assert len(included_agents) == 1
 
 
+def test_ignored_higher_precedence_command_and_subagent_fall_back_to_lower_precedence(tmp_path):
+    """A gitignored higher-precedence file must not shadow an unignored
+    lower-precedence file at the same relative path.
+
+    Commands are last-wins with `.cursor` overwriting `.claude` in the same
+    scope, and subagents are first-wins with `.cursor` beating `.claude` — so
+    in both resolvers `.cursor/.../deploy.md` normally wins over
+    `.claude/.../deploy.md`. Filtering only the resolution winner (rather
+    than filtering before resolution) would drop the ignored `.cursor` entry
+    from the graph WITHOUT recovering the `.claude` entry it had already
+    displaced, losing the command/subagent entirely instead of falling back."""
+    _write(tmp_path / ".gitignore", ".cursor/commands/deploy.md\n.cursor/agents/deploy.md\n")
+    _write(tmp_path / ".cursor" / "commands" / "deploy.md", "cursor version")
+    _write(tmp_path / ".claude" / "commands" / "deploy.md", "claude version")
+    _write(tmp_path / ".cursor" / "agents" / "deploy.md", "cursor version")
+    _write(tmp_path / ".claude" / "agents" / "deploy.md", "claude version")
+
+    graph = _build(tmp_path)
+
+    commands = _nodes_of_kind(graph, "command")
+    agents = _nodes_of_kind(graph, "agent")
+    assert len(commands) == 1
+    assert commands[0].ref.source_manifest.endswith(str(Path(".claude/commands/deploy.md")))
+    assert len(agents) == 1
+    assert agents[0].ref.source_manifest.endswith(str(Path(".claude/agents/deploy.md")))
+
+
 # --- Dependency manifests -----------------------------------------------
 
 

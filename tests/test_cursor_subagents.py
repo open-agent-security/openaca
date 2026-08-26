@@ -141,6 +141,23 @@ def test_repo_mode_groups_by_scope_dir_parent_parent(tmp_path):
     )
 
 
+def test_ignored_higher_precedence_file_does_not_shadow_lower_precedence_winner(tmp_path):
+    """A gitignored `.cursor/agents/foo.md` must not win first-wins
+    resolution over an unignored `.claude/agents/foo.md` at the same
+    relative path: filtering only the resolution winner (post-hoc) would
+    drop the ignored `.cursor` entry AND lose the `.claude` entry it had
+    already excluded via `relative_path in seen`, dropping the subagent
+    entirely."""
+    ignored = _write(tmp_path / ".cursor" / "agents" / "foo.md", "cursor version\n")
+    _write(tmp_path / ".claude" / "agents" / "foo.md", "claude version\n")
+
+    resolved = resolve_repo(tmp_path, is_ignored=lambda p: p == ignored)
+
+    assert len(resolved) == 1
+    assert resolved[0].relative_path == "foo.md"
+    assert resolved[0].agents_dir == tmp_path / ".claude" / "agents"
+
+
 def test_traversal_depth_10_included_depth_11_excluded(tmp_path):
     agents_dir = tmp_path / ".cursor" / "agents"
     depth_10 = agents_dir.joinpath(*["d"] * 9, "at-depth-10.md")

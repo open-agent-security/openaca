@@ -85,8 +85,10 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     source = str(path)
 
-    project = data.get("project") or {}
-    if "project" in data and not isinstance(project, dict):
+    project = data.get("project")
+    if project is None:
+        project = {}
+    elif not isinstance(project, dict):
         if strict:
             raise ValueError("pyproject.toml project must be an object")
         project = {}

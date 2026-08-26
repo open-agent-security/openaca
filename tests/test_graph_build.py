@@ -1159,14 +1159,22 @@ def test_endpoint_enabled_plugins_require_an_install_lockfile(tmp_path):
     assert any("installed_plugins.json" in warning for warning in warnings), warnings
 
 
-def test_endpoint_invalid_marketplace_source_is_reported(tmp_path):
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"source": "git", "url": " "},
+        {"source": "git"},
+        "not-an-object",
+    ],
+)
+def test_endpoint_invalid_marketplace_source_is_reported(tmp_path, source):
     install_path = tmp_path / "cache" / "plugin" / "1.0"
     install_path.mkdir(parents=True)
     (tmp_path / "settings.json").write_text(
         json.dumps(
             {
                 "enabledPlugins": {"plugin@internal": True},
-                "extraKnownMarketplaces": {"internal": {"source": {"source": "git", "url": " "}}},
+                "extraKnownMarketplaces": {"internal": {"source": source}},
             }
         )
     )
@@ -1388,6 +1396,10 @@ def test_endpoint_plugin_missing_referenced_mcp_is_reported(tmp_path):
         ({"name": "plugin", "hooks": "missing-hooks.json"}, "missing-hooks.json"),
         ({"name": "plugin", "hooks": {"PreToolUse": "not-an-array"}}, "plugin hook"),
         ({"name": "plugin", "dependencies": {"helper": "1"}}, "dependencies"),
+        ({"name": "plugin", "skills": "missing-skills"}, "skills"),
+        ({"name": "plugin", "commands": "missing-commands"}, "commands"),
+        ({"name": "plugin", "agents": "missing-agents"}, "agents"),
+        ({"name": "plugin", "skills": []}, "skills"),
     ],
 )
 def test_endpoint_plugin_malformed_declared_surface_is_reported(

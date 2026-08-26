@@ -154,7 +154,22 @@ def _attach_bom_ref(finding: PostureFinding, refs: list[ComponentRef]) -> Postur
 
 
 def _declared_path(finding: PostureFinding) -> str | None:
+    """The manifest path a candidate ref's `source_manifest` must match,
+    or `None` when no such constraint applies.
+
+    Only meaningful when `declared_by.kind == "manifest"` — the finding's
+    own source file IS the manifest that also composed the component (e.g.
+    an `autoApprove` field inside `mcp.json` itself). A separate policy file
+    (Cursor's `permissions.json`, `kind: "permissions"`) names no manifest:
+    every one of its findings would otherwise fail this check against every
+    candidate ref (a server's `source_manifest` is `mcp.json`, never
+    `permissions.json`) and never attach a `bom_ref`, even when the server
+    name uniquely identifies a composed component. For those, alias +
+    component_type matching alone decides.
+    """
     if not isinstance(finding.declared_by, dict):
+        return None
+    if finding.declared_by.get("kind") != "manifest":
         return None
     path = finding.declared_by.get("path")
     return path if isinstance(path, str) and path else None

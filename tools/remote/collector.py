@@ -170,12 +170,14 @@ def _build_agent_collection(
     )
     mcp_manifests, settings_manifests = _agent_posture_manifests(agent, refs)
     posture_findings = [
-        _posture_finding_to_payload(replace(f, agent_kind=agent.kind_id, agent_id=agent.agent_id))
+        _posture_finding_to_payload(f)
         for f in run_posture_rules(
             refs,
             mcp_manifests,
             settings_manifests,
             allowed_rules=kind_for(agent.kind_id).posture_rules,
+            agent_kind=agent.kind_id,
+            agent_id=agent.agent_id,
         )
     ]
     observations, scanner_posture = _collect_scanner_findings(

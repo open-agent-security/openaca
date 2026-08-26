@@ -24,6 +24,7 @@ already fully `RepoSurface`-parameterized and needs no Cursor-specific code.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -49,6 +50,7 @@ from tools.graph_build import (
     same_path,
 )
 from tools.parsers import agent_plugins, mcp_json
+from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE, RepoSurface
 
@@ -145,10 +147,18 @@ def _build_cursor_installed(
         extra_roots=extra_roots,
     )
 
-    _realize_installed_plugins(graph, root, config_root, normalize)
+    realized_plugin_commands = _realize_installed_plugins(graph, root, config_root, normalize)
     _add_installed_skills(graph, root, config_root, home, normalize)
     _add_installed_mcps(graph, root, config_root, project_root, normalize)
-    _add_installed_commands_and_subagents(graph, root, config_root, project_root, home, normalize)
+    _add_installed_commands_and_subagents(
+        graph,
+        root,
+        config_root,
+        project_root,
+        home,
+        normalize,
+        realized_plugin_commands=realized_plugin_commands,
+    )
 
     return finalize_graph(
         graph,
@@ -170,7 +180,9 @@ def _iterdir_dirs(directory: Path) -> list[Path]:
         return []
 
 
-def _realize_installed_plugins(graph: Graph, parent: Node, config_root: Path, normalize) -> None:
+def _realize_installed_plugins(
+    graph: Graph, parent: Node, config_root: Path, normalize
+) -> list[tuple[Node, Path]]:
     """`plugins/local/<name>/` (dev-linked, symlinks followed — `iterdir`/
     `is_dir` already resolve a symlinked entry) and
     `plugins/cache/<marketplace>/<name>/<sha>/` (gated on
@@ -180,23 +192,38 @@ def _realize_installed_plugins(graph: Graph, parent: Node, config_root: Path, no
     resolution (`resolve_plugin_format`) and plugin descent
     (`descend_into_plugin`/`descend`); only the install-root enumeration and
     the cache gate are new here.
+
+    Returns each realized plugin's node paired with its bundled commands
+    directory (when it has one) — docs/specs/cursor-agent-kind.md
+    "Precedence" places `plugin` as its own tier in Commands' last-wins order
+    (team → global → plugin → workspace → personal), so the caller can feed
+    these directories into the same precedence resolver used for the
+    workspace/personal tiers rather than letting a plugin's bundled command
+    permanently shadow — or wrongly survive alongside — the entry that
+    should have won.
     """
     plugins_root = config_root / "plugins"
+    realized: list[tuple[Node, Path] | None] = []
     for plugin_dir in _iterdir_dirs(plugins_root / "local"):
-        _realize_installed_plugin_dir(graph, parent, plugin_dir, plugin_dir.name, normalize)
+        realized.append(
+            _realize_installed_plugin_dir(graph, parent, plugin_dir, plugin_dir.name, normalize)
+        )
     for marketplace_dir in _iterdir_dirs(plugins_root / "cache"):
         for name_dir in _iterdir_dirs(marketplace_dir):
             for sha_dir in _iterdir_dirs(name_dir):
                 if not (sha_dir / _CACHE_COMPLETE_SENTINEL).is_file():
                     continue
-                _realize_installed_plugin_dir(
-                    graph,
-                    parent,
-                    sha_dir,
-                    name_dir.name,
-                    normalize,
-                    marketplace_dir=marketplace_dir.name,
+                realized.append(
+                    _realize_installed_plugin_dir(
+                        graph,
+                        parent,
+                        sha_dir,
+                        name_dir.name,
+                        normalize,
+                        marketplace_dir=marketplace_dir.name,
+                    )
                 )
+    return [entry for entry in realized if entry is not None]
 
 
 def _realize_installed_plugin_dir(
@@ -207,7 +234,7 @@ def _realize_installed_plugin_dir(
     normalize,
     *,
     marketplace_dir: str | None = None,
-) -> None:
+) -> tuple[Node, Path] | None:
     fmt = resolve_plugin_format(plugin_dir, CURSOR_SURFACE)
     # `extra["marketplace"]` is the key `canonical_component_identity`
     # (tools/identity.py) treats as verified install state, yielding
@@ -226,6 +253,8 @@ def _realize_installed_plugin_dir(
         else None
     )
     if fmt is AGENT_PLUGINS_FORMAT:
+        # §7 excludes commands from the portable Agent Plugins bundle
+        # contract, so this format never contributes a commands tier.
         _realize_agent_plugins_root(
             graph,
             parent,
@@ -235,9 +264,10 @@ def _realize_installed_plugin_dir(
             root_spec=None,
             plugin_extra=plugin_extra,
         )
-    elif fmt is not None:
+        return None
+    if fmt is not None:
         manifest = plugin_manifest_path(plugin_dir, fmt)
-        descend_into_plugin(
+        node = descend_into_plugin(
             graph,
             parent,
             plugin_dir,
@@ -246,10 +276,35 @@ def _realize_installed_plugin_dir(
             surface=CURSOR_SURFACE,
             plugin_extra=plugin_extra,
         )
-    else:
-        _realize_presence_only_plugin(
-            graph, parent, plugin_dir, plugin_name, normalize, plugin_extra=plugin_extra
-        )
+        if node is None:
+            return None
+        commands_dir = _plugin_commands_dir(plugin_dir, fmt)
+        return (node, commands_dir) if commands_dir is not None else None
+    node = _realize_presence_only_plugin(
+        graph, parent, plugin_dir, plugin_name, normalize, plugin_extra=plugin_extra
+    )
+    commands_dir = _plugin_commands_dir(plugin_dir, fmt)
+    return (node, commands_dir) if commands_dir is not None else None
+
+
+def _plugin_commands_dir(plugin_dir: Path, fmt) -> Path | None:
+    """Where a realized plugin's bundled commands live, mirroring the same
+    manifest-declared `commands` override `_add_bundled_plugin_surfaces`
+    resolves (default `commands/` when absent or when there is no manifest —
+    the presence-only branch, `fmt is None`). Returns `None` when the plugin
+    has no commands directory on disk, so callers never feed a nonexistent
+    tier into precedence resolution.
+    """
+    declared: str | None = None
+    if fmt is not None:
+        try:
+            data = json.loads(plugin_manifest_path(plugin_dir, fmt).read_text())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict) and isinstance(data.get("commands"), str):
+            declared = data["commands"]
+    commands_dir = resolve_within(plugin_dir, declared) if declared else (plugin_dir / "commands")
+    return commands_dir if commands_dir is not None and commands_dir.is_dir() else None
 
 
 def _realize_presence_only_plugin(
@@ -348,6 +403,8 @@ def _add_installed_commands_and_subagents(
     project_root: Path | None,
     home: Path,
     normalize,
+    *,
+    realized_plugin_commands: list[tuple[Node, Path]] | None = None,
 ) -> None:
     """Routes through Task 4's precedence resolvers with explicitly named
     endpoint directories (never a root reconstructed from a directory
@@ -356,8 +413,23 @@ def _add_installed_commands_and_subagents(
     over the full project+personal directory order, matching
     `tools/cursor_commands.py`/`tools/cursor_subagents.py`'s own
     `resolve_endpoint` docstring examples.
+
+    `realized_plugin_commands` (from `_realize_installed_plugins`) is the
+    `plugin` tier docs/specs/cursor-agent-kind.md "Precedence" places between
+    `global` and `workspace` in Commands' last-wins order — each bundled
+    command was already emitted as a child of its plugin node by the earlier
+    plugin descent, so this only feeds those directories into the SAME
+    resolution the workspace/personal tiers go through and then reconciles
+    the graph against the outcome: a plugin command that loses to a
+    same-relative-path workspace/personal entry is pruned from the plugin
+    subtree (Cursor would not load it), and a plugin command that wins is
+    left exactly where it already is rather than re-added as a second,
+    root-parented node for the same file (which would violate the
+    single-parent invariant).
     """
-    command_dirs: list[Path] = []
+    command_dirs: list[Path] = [
+        commands_dir for _, commands_dir in (realized_plugin_commands or [])
+    ]
     agent_dirs: list[Path] = []
     if project_root is not None:
         command_dirs += [
@@ -368,14 +440,64 @@ def _add_installed_commands_and_subagents(
     command_dirs += [home / ".claude" / "commands", config_root / "commands"]
     agent_dirs += [config_root / "agents", home / ".claude" / "agents"]
 
-    for resolved in cursor_commands.resolve_endpoint(command_dirs):
+    plugin_node_by_commands_dir = {
+        commands_dir: node for node, commands_dir in (realized_plugin_commands or [])
+    }
+    resolved_commands = cursor_commands.resolve_endpoint(command_dirs)
+    winner_commands_dir_by_relative_path = {
+        resolved.relative_path: resolved.commands_dir for resolved in resolved_commands
+    }
+    for resolved in resolved_commands:
+        if resolved.commands_dir in plugin_node_by_commands_dir:
+            # Already realized as a child of its plugin node by the earlier
+            # plugin descent — adding it again here would double-parent the
+            # same occurrence.
+            continue
         _emit_command_agent(
             graph, parent, resolved.file_path, resolved.refs, "command", [], normalize
         )
+    for commands_dir, plugin_node in plugin_node_by_commands_dir.items():
+        _prune_shadowed_plugin_commands(
+            graph, plugin_node, commands_dir, winner_commands_dir_by_relative_path
+        )
+
     for resolved in cursor_subagents.resolve_endpoint(agent_dirs):
         _emit_command_agent(
             graph, parent, resolved.file_path, resolved.refs, "agent", [], normalize
         )
+
+
+def _prune_shadowed_plugin_commands(
+    graph: Graph,
+    plugin_node: Node,
+    commands_dir: Path,
+    winner_commands_dir_by_relative_path: dict[str, Path],
+) -> None:
+    """Detach a plugin's already-realized command child when a
+    same-relative-path workspace/personal (or higher-precedence plugin)
+    entry won last-wins resolution over it — Cursor loads only the winner,
+    so the losing plugin command must not remain in the composed graph.
+    """
+    try:
+        commands_dir_resolved = commands_dir.resolve()
+    except (OSError, RuntimeError):
+        return
+    for child in graph.children_of(plugin_node):
+        if child.kind != "command" or child.ref is None or not child.ref.source_manifest:
+            continue
+        try:
+            relative_path = (
+                Path(child.ref.source_manifest).resolve().relative_to(commands_dir_resolved)
+            ).as_posix()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if winner_commands_dir_by_relative_path.get(relative_path) != commands_dir:
+            _remove_node(graph, child)
+
+
+def _remove_node(graph: Graph, node: Node) -> None:
+    graph.edges = [e for e in graph.edges if e.parent != node.key and e.child != node.key]
+    graph.nodes.pop(node.key, None)
 
 
 def _descend_cursor_declared(

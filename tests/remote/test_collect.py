@@ -52,11 +52,14 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         calls.append(("_agent_refs", args))
         return None, [ref]
 
-    def fake_run_posture_rules(refs, manifests, settings_manifests, *, allowed_rules=None):
+    def fake_run_posture_rules(
+        refs, manifests, settings_manifests, *, allowed_rules=None, agent_kind=None, agent_id=None
+    ):
         calls.append(("run_posture_rules", refs))
         assert manifests == [("mcp", {})]
         assert settings_manifests == [("settings", {})]
         assert allowed_rules is None
+        assert agent_kind == "claude-code"
         return [_posture("openaca-posture-mutable-install-reference")]
 
     monkeypatch.setattr("tools.remote.collector._agent_refs", fake_collect_endpoint_components)

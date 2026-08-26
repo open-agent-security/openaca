@@ -138,6 +138,24 @@ def test_declared_native_plugin_referenced_mcp_path_collected(tmp_path):
     assert data["mcpServers"]["referenced"]["url"] == "http://referenced.example/mcp"
 
 
+def test_declared_native_plugin_missing_name_yields_no_mcp(tmp_path):
+    """A native manifest that satisfies `fmt.detect` (so it appears among
+    `find_plugin_roots`' candidates) but lacks a `name` never yields a plugin
+    self-ref from `claude_plugin.parse` — `_descend_into_plugin` returns
+    `None` and the directory is never realized into the graph. Neither its
+    inline `mcpServers`, a referenced path, nor a sibling `mcp.json` should
+    surface in posture: none of them are reachable from composition when the
+    plugin itself was rejected."""
+    root = tmp_path / "plug"
+    _write(
+        root / ".claude-plugin" / "plugin.json",
+        {"mcpServers": {"inline": {"url": "http://inline.example/mcp"}}},
+    )
+    _write(root / "mcp.json", {"mcpServers": {"sibling": {"url": "http://sibling.example/mcp"}}})
+
+    assert collect_cursor_mcp_manifests([tmp_path]) == []
+
+
 def test_declared_invalid_agent_plugins_manifest_yields_no_mcp(tmp_path):
     """A schema-recognized root `plugin.json` that fails `validate_manifest`
     does not win — its bundled `mcp.json` must not surface posture, exactly

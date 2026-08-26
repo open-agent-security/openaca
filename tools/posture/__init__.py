@@ -538,6 +538,15 @@ def collect_cursor_mcp_manifests(
         for plugin_root, fmt in candidates:
             if fmt is AGENT_PLUGINS_FORMAT and _strictly_below_native(plugin_root):
                 continue
+            # Mirror `descend_into_plugin`/`_realize_agent_plugins_root`'s own
+            # gate: a candidate whose manifest satisfies `fmt.detect` but fails
+            # to yield a plugin self-ref (e.g. a native manifest missing
+            # `name`) is never realized into the graph, so none of its MCP
+            # surfaces — inline, referenced, or sibling-file — are reachable
+            # from composition either. `realized_resolved` already applied
+            # this exact check above; reuse it rather than re-deriving it.
+            if plugin_root.resolve() not in realized_resolved:
+                continue
             manifest_version = None
             if fmt is AGENT_PLUGINS_FORMAT:
                 manifest_path = plugin_root / "plugin.json"

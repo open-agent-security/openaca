@@ -371,17 +371,21 @@ def _seed_endpoint(
     if warnings is not None:
         warnings.extend(plugin_warnings)
     enabled = effective.get("enabledPlugins") or {}
-    if isinstance(enabled, dict) and plugins_map is not None and lockfile_path is not None:
-        _seed_active_plugins(
-            graph,
-            target,
-            enabled,
-            plugins_map,
-            lockfile_path,
-            layers,
-            normalize,
-            warnings=warnings,
-        )
+    if isinstance(enabled, dict) and any(value is True for value in enabled.values()):
+        if plugins_map is None or lockfile_path is None:
+            if warnings is not None:
+                warnings.append("enabled plugins but installed_plugins.json is unavailable")
+        else:
+            _seed_active_plugins(
+                graph,
+                target,
+                enabled,
+                plugins_map,
+                lockfile_path,
+                layers,
+                normalize,
+                warnings=warnings,
+            )
 
     if project_root is not None:
         # Project skills are the one endpoint surface the old _walk_project_skill_dirs

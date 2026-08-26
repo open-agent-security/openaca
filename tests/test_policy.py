@@ -222,7 +222,15 @@ def test_plugin_marketplace_targets_reject_urls_with_selectors(marketplace):
         )
 
 
-@pytest.mark.parametrize("marketplace", [" ", "acme/plugins"])
+@pytest.mark.parametrize(
+    "marketplace",
+    [
+        " ",
+        "acme/plugins",
+        "https://github.com:8443/acme/plugins",
+        "https://github.com:notaport/acme/plugins",
+    ],
+)
 def test_plugin_marketplace_targets_require_a_source_url(marketplace):
     with pytest.raises(PolicyValidationError, match="valid source URL"):
         parse(

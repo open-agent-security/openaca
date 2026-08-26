@@ -222,6 +222,40 @@ def test_plugin_marketplace_targets_reject_urls_with_selectors(marketplace):
         )
 
 
+@pytest.mark.parametrize("marketplace", [" ", "acme/plugins"])
+def test_plugin_marketplace_targets_require_a_source_url(marketplace):
+    with pytest.raises(PolicyValidationError, match="valid source URL"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed"},
+                    "plugins": {
+                        "default": "allowed",
+                        "blocked": [{"marketplace": marketplace}],
+                    },
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
+def test_plugin_marketplace_target_accepts_an_scp_style_git_url():
+    parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {
+                    "default": "allowed",
+                    "allowed": [{"marketplace": "git@git.example.com:acme/plugins.git"}],
+                },
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+
+
 @pytest.mark.parametrize("vulnerability_id", ["cve-2026-12345", "not-an-id", "  ", "GHSA-1234"])
 def test_policy_rejects_a_malformed_vulnerability_gate_id(vulnerability_id):
     with pytest.raises(PolicyValidationError, match="malformed id"):

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.pyproject_toml import parse
 
 REPOS = Path(__file__).parent.parent / "fixtures" / "repos"
@@ -81,6 +83,14 @@ def test_missing_project_table_returns_empty(tmp_path):
     cfg = tmp_path / "pyproject.toml"
     cfg.write_text('[build-system]\nrequires = ["hatchling"]\n')
     assert parse(cfg) == []
+
+
+def test_strict_parse_rejects_a_falsy_non_object_project_table(tmp_path):
+    cfg = tmp_path / "pyproject.toml"
+    cfg.write_text("project = []\n")
+
+    with pytest.raises(ValueError, match="project must be an object"):
+        parse(cfg, strict=True)
 
 
 def test_non_string_dep_entries_are_skipped(tmp_path):

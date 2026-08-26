@@ -264,6 +264,21 @@ def test_plugin_marketplace_target_accepts_an_scp_style_git_url():
     )
 
 
+@pytest.mark.parametrize("url", [" ", "https://mcp.example.com:notaport", "https://${HOST}/mcp"])
+def test_mcp_targets_require_a_parseable_url(url):
+    with pytest.raises(PolicyValidationError, match="parseable URL"):
+        parse(
+            {
+                "version": 1,
+                "admission": {
+                    "mcps": {"default": "allowed", "blocked": [{"url": url}]},
+                    "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                },
+            }
+        )
+
+
 @pytest.mark.parametrize("vulnerability_id", ["cve-2026-12345", "not-an-id", "  ", "GHSA-1234"])
 def test_policy_rejects_a_malformed_vulnerability_gate_id(vulnerability_id):
     with pytest.raises(PolicyValidationError, match="malformed id"):

@@ -7,6 +7,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import yaml
 
@@ -316,6 +317,8 @@ def _parse_targets(
                 targets.append(McpTarget(command=tuple(command)))
             elif not isinstance(url, str) or not url:
                 raise PolicyValidationError(f"{target_label}.url must be a non-empty string")
+            elif not _parseable_mcp_url(url):
+                raise PolicyValidationError(f"{target_label}.url must be a parseable URL")
             else:
                 targets.append(McpTarget(url=url))
         else:
@@ -355,6 +358,19 @@ def _parse_targets(
     if len({target.key() for target in targets}) != len(targets):
         raise PolicyValidationError(f"{label} contains a duplicate target")
     return targets
+
+
+def _parseable_mcp_url(value: str) -> bool:
+    if value != value.strip() or "${" in value:
+        return False
+    try:
+        parsed = urlparse(value)
+        if parsed.hostname is None:
+            return False
+        parsed.port
+        return True
+    except ValueError:
+        return False
 
 
 def _parse_skills(value: object) -> AdmissionDefault:

@@ -106,7 +106,12 @@ def _parse_manifest_refs(
                     warnings.append(f"could not parse {plugin_json_path}: {exc}")
         elif isinstance(servers, str):
             referenced = resolve_within(plugin_root, servers)
-            if referenced is not None and referenced.exists():
+            if referenced is None or not referenced.is_file():
+                if warnings is not None:
+                    warnings.append(
+                        f"could not parse {servers}: referenced MCP manifest is unavailable"
+                    )
+            else:
                 try:
                     file_refs = mcp_json.parse(referenced, strict=warnings is not None)
                 except Exception as exc:

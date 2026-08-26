@@ -1132,10 +1132,21 @@ def test_endpoint_enabled_plugins_require_an_install_lockfile(tmp_path):
     assert any("installed_plugins.json" in warning for warning in warnings), warnings
 
 
+@pytest.mark.parametrize("enabled_plugins", [[], "plugin@marketplace"])
+def test_endpoint_malformed_enabled_plugins_are_reported(tmp_path, enabled_plugins):
+    (tmp_path / "settings.json").write_text(json.dumps({"enabledPlugins": enabled_plugins}))
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("enabledPlugins" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize(
     ("filename", "contents"),
     [
         ("package-lock.json", '{"lockfileVersion": 3, "packages": []}'),
+        ("package-lock.json", '{"lockfileVersion": 1, "dependencies": {}}'),
         ("bun.lock", '{"packages": []}'),
         ("uv.lock", "version = 1\npackage = {}"),
         ("package.json", '{"dependencies": []}'),
@@ -1248,6 +1259,35 @@ def test_endpoint_plugin_inline_surface_shape_failures_are_reported(tmp_path, fi
     build_graph(install_root, mode="endpoint", warnings=warnings)
 
     assert any("plugin.json" in warning for warning in warnings), warnings
+
+
+def test_endpoint_plugin_missing_referenced_mcp_is_reported(tmp_path):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "plugin", "mcpServers": "missing-mcp.json"})
+    )
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(install_root, mode="endpoint", warnings=warnings)
+
+    assert any("missing-mcp.json" in warning for warning in warnings), warnings
 
 
 def test_endpoint_direct_skill_source_provenance_stamped(tmp_path):

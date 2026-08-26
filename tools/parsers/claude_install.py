@@ -508,7 +508,7 @@ _RUNTIME_MANIFEST_LOCATORS: dict[str, set[str]] = {
 
 
 def _walk_plugin_implementation_deps(
-    install_path: Path, *, warnings: list[str] | None = None
+    install_path: Path, *, warnings: list[str] | None = None, strict: bool = False
 ) -> list[ComponentRef]:
     """Tier-2 walk: parse every supported lockfile at the installPath, then
     manifest-fall-back for ecosystems not covered by a lockfile.
@@ -531,7 +531,7 @@ def _walk_plugin_implementation_deps(
         if not lockfile.is_file():
             continue
         try:
-            lock_refs = parser(lockfile, strict=True)  # type: ignore[operator]
+            lock_refs = parser(lockfile, strict=strict)  # type: ignore[operator]
         except Exception as exc:
             if warnings is not None:
                 warnings.append(f"{lockfile}: failed to parse ({exc})")
@@ -547,7 +547,7 @@ def _walk_plugin_implementation_deps(
         if not manifest.is_file():
             continue
         try:
-            manifest_refs = parser(manifest, strict=True)  # type: ignore[operator]
+            manifest_refs = parser(manifest, strict=strict)  # type: ignore[operator]
         except Exception as exc:
             if warnings is not None:
                 warnings.append(f"{manifest}: failed to parse ({exc})")

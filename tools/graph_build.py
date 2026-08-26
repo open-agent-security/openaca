@@ -1583,7 +1583,11 @@ def _add_bundled_plugin_surfaces(
     refs.extend(
         _parse_bundled_hooks(plugin_root, plugin_data, plugin_name, warnings=graph.warnings)
     )
-    refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
+    refs.extend(
+        _parse_bundled_command_agents(
+            plugin_root, plugin_data, plugin_name, warnings=graph.warnings
+        )
+    )
     refs = [r for r in refs if _component_type(r) != "skill"]
     # Stamp plugin-container context (declared_by.kind=plugin + a
     # plugin-prefixed component_path) onto each bundled ref. This is placement
@@ -1597,14 +1601,26 @@ def _add_bundled_plugin_surfaces(
     # installed plugin's OWN .gitignore is never applied (parity with the old
     # walk_plugin_root, which did not filter installed-plugin surfaces).
     eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
+    agent_nodes_by_source: dict[str, Node] = {}
     for ref in refs:
         component_type = _component_type(ref)
-        if not isinstance(component_type, str):
+        if not isinstance(component_type, str) or component_type not in {"agent", "command"}:
             continue
         if ref.source_manifest and _is_ignored_under(Path(ref.source_manifest), eval_root, spec):
             continue
         node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
         _add_child(graph, plugin_node, node)
+        if component_type == "agent" and ref.source_manifest:
+            agent_nodes_by_source[ref.source_manifest] = node
+    for ref in refs:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str) or component_type in {"agent", "command"}:
+            continue
+        if ref.source_manifest and _is_ignored_under(Path(ref.source_manifest), eval_root, spec):
+            continue
+        node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+        parent = agent_nodes_by_source.get(ref.source_manifest or "", plugin_node)
+        _add_child(graph, parent, node)
 
 
 def _plugin_manifest_data(graph: Graph, plugin_root: Path) -> dict:

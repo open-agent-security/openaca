@@ -59,7 +59,7 @@ def parse_file(
         extra={"scope_owner": scope_owner, "component_type": kind},
     )
     refs = [parent]
-    if kind == "agent" and scope_owner is None:
+    if kind == "agent":
         refs.extend(_agent_frontmatter_child_refs(md_path, frontmatter, strict=strict))
     return refs
 

@@ -877,6 +877,39 @@ def test_endpoint_plugin_bundled_mcp_is_plugin_child(tmp_path):
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
 
 
+def test_endpoint_plugin_agent_frontmatter_mcp_is_agent_child(tmp_path):
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text('{"name":"plugin"}')
+    agents_dir = install_path / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "agent.md").write_text(
+        "---\nmcpServers:\n  tool:\n    command: npx\n"
+        "    args: ['@acme/tool@1.0.0']\n---\n# Agent\n"
+    )
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    g = build_graph(install_root, mode="endpoint")
+
+    mcp = next(node for node in g.nodes.values() if node.kind == "mcp_server")
+    assert [node.kind for node in g.lineage(mcp)] == ["mcp_server", "agent", "plugin", "target"]
+
+
 def test_repo_plugin_bundled_skill_not_double_created_by_surface_walk(tmp_path):
     # The plugin bundles a skill (created by descent) AND non-skill surfaces.
     # Adding the non-skill surfaces must not duplicate the skill node.

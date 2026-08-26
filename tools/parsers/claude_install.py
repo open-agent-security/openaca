@@ -167,6 +167,8 @@ def _walk_active_plugins(
         entries: list[tuple[int, dict]] = [
             (i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)
         ]
+        if len(entries) != len(raw_entries):
+            warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
             warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
             continue

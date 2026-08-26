@@ -1208,6 +1208,32 @@ def test_endpoint_malformed_enabled_plugins_are_reported(tmp_path, enabled_plugi
     assert any("enabledPlugins" in warning for warning in warnings), warnings
 
 
+def test_endpoint_partially_malformed_plugin_install_entries_are_reported(tmp_path):
+    install_path = tmp_path / "cache" / "plugin" / "1.0"
+    install_path.mkdir(parents=True)
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        "malformed-entry",
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)},
+                    ]
+                }
+            }
+        )
+    )
+
+    warnings: list[str] = []
+    build_graph(tmp_path, mode="endpoint", warnings=warnings)
+
+    assert any("invalid install entry" in warning for warning in warnings), warnings
+
+
 @pytest.mark.parametrize(
     ("filename", "contents"),
     [

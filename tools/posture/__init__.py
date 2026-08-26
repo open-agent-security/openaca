@@ -483,6 +483,7 @@ def collect_cursor_mcp_manifests(
         for plugin_root, fmt in find_plugin_roots(
             root, CURSOR_SURFACE, include_gitignored=include_gitignored
         ):
+            manifest_version = None
             if fmt is AGENT_PLUGINS_FORMAT:
                 manifest_path = plugin_root / "plugin.json"
                 try:
@@ -494,11 +495,26 @@ def collect_cursor_mcp_manifests(
                     and agent_plugins.validate_manifest(manifest_data)
                 ):
                     continue
+                manifest_version = agent_plugins.manifest_schema_version(manifest_data)
+                if manifest_version is None:
+                    continue
             for mcp_name in CURSOR_SURFACE.bundled.mcp_filenames:
                 candidate = plugin_root / mcp_name
-                if candidate.is_file():
-                    _add(candidate)
-                    break
+                if not candidate.is_file():
+                    continue
+                if fmt is AGENT_PLUGINS_FORMAT:
+                    # A bundled mcp.json that fails §7.2's envelope check is
+                    # invisible to composition (`agent_plugins._parse_mcp`
+                    # returns [] for it) — apply the identical check here so
+                    # posture never reports on servers the graph never loaded.
+                    try:
+                        mcp_data = json.loads(candidate.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if not agent_plugins.validate_mcp_envelope(mcp_data, manifest_version):
+                        continue
+                _add(candidate)
+                break
     return out
 
 

@@ -420,6 +420,33 @@ def test_command_traversal_depth_10_included_depth_11_excluded(tmp_path):
     assert not any(m.endswith("at-depth-11.md") for m in manifests)
 
 
+def test_gitignored_command_and_subagent_excluded_by_default(tmp_path):
+    """Neither `cursor_commands.resolve_repo` nor `cursor_subagents.resolve_repo`
+    is gitignore-aware itself (both walk with unrestricted `Path.rglob`), so
+    the graph builder must filter their resolved paths before emission —
+    parity with `_add_cursor_skills`/`_add_scoped_mcps` in the same module."""
+    _write(tmp_path / ".gitignore", "ignored/\n")
+    _write(tmp_path / "ignored" / ".cursor" / "commands" / "deploy.md", "deploy body")
+    _write(tmp_path / "ignored" / ".cursor" / "agents" / "reviewer.md", "reviewer body")
+    _write(tmp_path / ".cursor" / "commands" / "kept.md", "kept body")
+
+    graph = _build(tmp_path)
+
+    commands = _nodes_of_kind(graph, "command")
+    agents = _nodes_of_kind(graph, "agent")
+    assert [c.ref.source_manifest.endswith("kept.md") for c in commands] == [True]
+    assert agents == []
+
+    included_graph = build_cursor_graph(
+        _FakeAgent(source="declared", scan_root=tmp_path), include_gitignored=True
+    )
+    included_graph.validate()
+    included_commands = _nodes_of_kind(included_graph, "command")
+    included_agents = _nodes_of_kind(included_graph, "agent")
+    assert len(included_commands) == 2
+    assert len(included_agents) == 1
+
+
 # --- Dependency manifests -----------------------------------------------
 
 
@@ -480,6 +507,31 @@ def test_installed_cached_bundle_with_sentinel_realizes(tmp_path, fake_home):
     # component bundled inside it inherits a plugin-private identity.
     assert plugins[0].ref.extra.get("marketplace") == "acme-market"
     assert plugins[0].ref.component_identity == "plugin/acme-market/widget"
+
+
+def test_installed_cached_agent_plugins_bundle_has_no_duplicate_self_ref(tmp_path, fake_home):
+    """A marketplace-cached Agent Plugins bundle stamps `plugin_extra` onto a
+    NEW `self_ref` object (`dataclasses.replace`); the identity check that
+    skips the self ref while walking `refs` must compare against the
+    original object still sitting in that list, or the pre-extra ref falls
+    through the loop and re-emits as a second, marketplace-less nested
+    plugin — inflating active-plugin counts in endpoint BOMs."""
+    config_root = tmp_path / "cursor_config"
+    sha_dir = config_root / "plugins" / "cache" / "acme-market" / "portable" / "sha1"
+    _write_json(
+        sha_dir / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "portable-plugin",
+        },
+    )
+    _write(sha_dir / ".cache-complete")
+
+    graph = _build_installed(config_root)
+
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert [p.ref.name for p in plugins] == ["portable-plugin"]
+    assert plugins[0].ref.component_identity == "plugin/acme-market/portable-plugin"
 
 
 def test_installed_dev_linked_bundle_gets_no_marketplace_identity(tmp_path, fake_home):

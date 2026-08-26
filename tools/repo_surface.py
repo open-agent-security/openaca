@@ -1,0 +1,220 @@
+"""Repo-mode surface descriptors (ADR-0053).
+
+`graph_build`'s repo-mode helpers are structurally kind-neutral; they are
+Claude-specific only in the directory/filename literals they match against
+(`.claude`, `.claude-plugin`, `.mcp.json`, and two lookup tables). This module
+names those literals as frozen, importable data so a second kind supplies its
+own `RepoSurface` instead of forking the walker.
+
+Imports only parser leaf modules — never `tools.graph_build` (which imports
+this module) and never `tools.agent_kinds` (ADR-0044's one-way dependency).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from tools.parsers import agent_plugins
+from tools.parsers.claude_command_agent import Kind
+
+
+@dataclass(frozen=True)
+class PluginFormat:
+    """One candidate plugin-manifest shape a `RepoSurface` recognizes.
+
+    `manifest_dir`/`manifest_filename` locate the candidate file; `detect`
+    tests whether its *parsed content* qualifies as this format — the one
+    field ADR-0053 permits to be a `Callable`, because qualification (e.g. an
+    Agent Plugins manifest's `$schema`) is a content fact, not a path shape.
+    """
+
+    manifest_dir: str
+    manifest_filename: str
+    detect: Callable[[dict], bool]
+
+
+@dataclass(frozen=True)
+class BundledLayout:
+    """Names of the surfaces bundled under a realized plugin root.
+
+    `mcp_filenames` is an ORDERED tuple, not a single name: Cursor's folder
+    discovery accepts root `.mcp.json` *or* `mcp.json`
+    (docs/specs/cursor-agent-kind.md:283), so a single `str` field would
+    force a false choice between the two. Each name is tried in order; the
+    first that resolves to a file wins. Claude Code's tuple has one element
+    (`(".mcp.json",)`), so this is behavior-preserving there.
+    """
+
+    skills_dir: str
+    mcp_filenames: tuple[str, ...]
+    hooks_filename: str
+    commands_dir: str
+    agents_dir: str
+
+
+@dataclass(frozen=True)
+class RepoSurface:
+    """Names and shadowing rules a kind reads out of a repository tree.
+
+    `config_dir` is the per-project config directory (`.claude`) under which
+    project skills, settings, and standalone commands/agents live.
+    `plugin_formats` is the ordered candidate list a plugin root's manifest is
+    matched against; the first qualifying candidate wins.
+
+    The remaining fields exist for a kind (Cursor) whose repo-mode surface
+    isn't expressible through the single-`config_dir` fields above — multiple
+    skill roots, no settings-equivalent surface, a project-scoped (not
+    any-name) MCP manifest. They default to the empty/`None` values that keep
+    `CLAUDE_CODE_SURFACE` behaviorally untouched; a kind that needs them reads
+    them directly rather than through the `config_dir`-shaped helpers.
+
+    - `skill_config_dirs`: config-dir roots searched for `<dir>/<project_skills_subdir>`
+      at any depth, each walked *recursively* beneath its `skills` dir. Empty
+      for Claude Code, which uses `config_dir` + the one-level project-skill
+      walk instead.
+    - `excluded_skill_dirs`: directory basenames that are never a skill root
+      even when they sit beside `project_skills_subdir` (Cursor's
+      vendor-owned `skills-cursor`).
+    - `scoped_mcp_rels`: project-scoped MCP manifest relative paths
+      (`.cursor/mcp.json`), matched at any depth, as opposed to
+      `standalone_mcp_filenames`' any-name-anywhere matching.
+    - `settings_rel`: the settings-equivalent manifest's repo-relative path,
+      or `None` when the kind has no such surface at this layer.
+    """
+
+    config_dir: str
+    plugin_formats: tuple[PluginFormat, ...]
+    bundled: BundledLayout
+    settings_filename: str
+    project_skills_subdir: str
+    standalone_mcp_filenames: tuple[str, ...]
+    command_agent_surfaces: tuple[tuple[str, Kind], ...]
+    skill_config_dirs: tuple[str, ...] = ()
+    excluded_skill_dirs: tuple[str, ...] = ()
+    scoped_mcp_rels: tuple[str, ...] = ()
+    settings_rel: str | None = None
+    # A realized plugin root with no manifest at all is legitimate for this
+    # kind. Cursor's marketplace cache ships such bundles and they load
+    # entirely by folder discovery (docs/specs/cursor-agent-kind.md, Plugins),
+    # so reporting them as unparseable is wrong — and policy mode escalates
+    # that report to a hard error. Claude Code's plugins are named by an
+    # install lockfile that points at a manifest, so a missing one there is a
+    # real defect worth reporting.
+    manifest_optional: bool = False
+
+
+def _detect_claude_plugin_manifest(data: dict) -> bool:
+    return isinstance(data, dict)
+
+
+def _detect_cursor_native_manifest(data: dict) -> bool:
+    return isinstance(data.get("name"), str)
+
+
+# §5.2: the Agent Plugins manifest schema URLs, rebuilt from the parser's
+# public `SUPPORTED_SCHEMA_VERSIONS` (never the module's private URL map) so
+# this stays in lockstep with `tools/parsers/agent_plugins.py` without a
+# cross-module private import.
+_AGENT_PLUGINS_SCHEMA_URLS = frozenset(
+    f"https://agent-plugins.org/schemas/{version}/plugin.schema.json"
+    for version in agent_plugins.SUPPORTED_SCHEMA_VERSIONS
+)
+
+
+def _detect_agent_plugins_manifest(data: dict) -> bool:
+    schema = data.get("$schema")
+    return isinstance(schema, str) and schema in _AGENT_PLUGINS_SCHEMA_URLS
+
+
+CLAUDE_CODE_SURFACE = RepoSurface(
+    config_dir=".claude",
+    plugin_formats=(
+        PluginFormat(
+            manifest_dir=".claude-plugin",
+            manifest_filename="plugin.json",
+            detect=_detect_claude_plugin_manifest,
+        ),
+    ),
+    bundled=BundledLayout(
+        skills_dir="skills",
+        mcp_filenames=(".mcp.json",),
+        hooks_filename="hooks/hooks.json",
+        commands_dir="commands",
+        agents_dir="agents",
+    ),
+    settings_filename="settings.json",
+    project_skills_subdir="skills",
+    # Standalone MCP manifest filenames discovered at any depth in repo mode
+    # (parity with the REGISTRY `mcp.json` / `.mcp.json` / `claude_desktop_config.json`
+    # patterns, which match by bare name anywhere in the tree).
+    standalone_mcp_filenames=("mcp.json", ".mcp.json", "claude_desktop_config.json"),
+    # `.claude/<subdir>/**/*.md` agent-component surfaces discovered at any depth in
+    # repo mode, mirroring the REGISTRY command/agent patterns.
+    command_agent_surfaces=(("commands", "command"), ("agents", "agent")),
+)
+
+# Cursor's own plugin format, `.cursor-plugin/plugin.json`.
+_CURSOR_PLUGIN_FORMAT = PluginFormat(
+    manifest_dir=".cursor-plugin",
+    manifest_filename="plugin.json",
+    detect=_detect_cursor_native_manifest,
+)
+
+# The portable Agent Plugins format, `plugin.json` at the candidate root
+# itself — `manifest_dir=""` is the one shape `_resolve_plugin_format`/
+# `_find_plugin_roots` in `tools/graph_build.py` special-case: no subdirectory
+# level, the manifest sits directly in the plugin root.
+_AGENT_PLUGINS_FORMAT = PluginFormat(
+    manifest_dir="",
+    manifest_filename="plugin.json",
+    detect=_detect_agent_plugins_manifest,
+)
+
+CURSOR_SURFACE = RepoSurface(
+    config_dir=".cursor",
+    # Ordered candidate list per docs/specs/cursor-agent-kind.md "Manifest
+    # resolution": `.cursor-plugin/plugin.json` -> `.claude-plugin/plugin.json`
+    # (Cursor also reads Claude Code's own manifest) -> root `plugin.json`
+    # (Agent Plugins, content-identified via `$schema`). The `.claude-plugin`
+    # candidate is `CLAUDE_CODE_SURFACE`'s own format object, reused verbatim
+    # so the two kinds can never disagree about what qualifies it.
+    plugin_formats=(
+        _CURSOR_PLUGIN_FORMAT,
+        CLAUDE_CODE_SURFACE.plugin_formats[0],
+        _AGENT_PLUGINS_FORMAT,
+    ),
+    # Cursor Plugins' bundled contract mirrors Claude Code's own plugin
+    # bundle shape, with one deliberate crossing (ADR-0053): folder discovery
+    # accepts root `mcp.json` OR `.mcp.json` (docs/specs/cursor-agent-kind.md:283),
+    # tried in this order — `mcp.json` first, since it's Cursor's own default.
+    bundled=BundledLayout(
+        skills_dir="skills",
+        mcp_filenames=("mcp.json", ".mcp.json"),
+        hooks_filename="hooks/hooks.json",
+        commands_dir="commands",
+        agents_dir="agents",
+    ),
+    # Unused by Cursor's own composer — carried for dataclass completeness,
+    # matching CLAUDE_CODE_SURFACE's values so a stray read isn't silently
+    # wrong.
+    settings_filename="settings.json",
+    project_skills_subdir="skills",
+    standalone_mcp_filenames=(),
+    manifest_optional=True,
+    command_agent_surfaces=(),
+    # Cursor's own vendor-built-in skill root is a SIBLING of `skills/`
+    # (`<config_dir>/skills-cursor/`), never nested inside it — Cursor's own
+    # docs say to ignore it (docs/specs/cursor-agent-kind.md "Exclusions").
+    skill_config_dirs=(".cursor", ".agents", ".claude", ".codex"),
+    excluded_skill_dirs=("skills-cursor",),
+    scoped_mcp_rels=(".cursor/mcp.json",),
+    settings_rel=None,
+)
+
+# Public alias (ADR-0053: a cross-module private import is never the
+# contract): `graph_build_cursor` needs to recognize which realized
+# candidate is the portable Agent Plugins format, to route it through
+# `agent_plugins.parse` instead of the `claude_plugin`-shaped plugin branch,
+# and to apply the "strictly below a realized native root" exclusion.
+AGENT_PLUGINS_FORMAT = _AGENT_PLUGINS_FORMAT

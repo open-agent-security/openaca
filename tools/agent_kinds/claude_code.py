@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import os
-from fnmatch import fnmatch
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext, matches_evidence
 from tools.graph import Graph
 from tools.parsers import REGISTRY as _MANIFEST_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -50,14 +49,7 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
 
 
 def _matches_evidence(rel: str) -> bool:
-    for pattern in _DECLARED_EVIDENCE_PATTERNS:
-        if fnmatch(rel, pattern):
-            return True
-        # `*/` in the patterns above matches one segment; a declaration may sit
-        # at any depth, so also test every suffix of the path.
-        if pattern.startswith("*/") and fnmatch(rel, f"*/{pattern}"):
-            return True
-    return False
+    return matches_evidence(rel, _DECLARED_EVIDENCE_PATTERNS)
 
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:

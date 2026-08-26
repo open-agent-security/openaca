@@ -79,7 +79,16 @@ def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
 
     result = CliRunner().invoke(
         openaca_main,
-        ["bom", "endpoint", "--config-dir", str(config_dir), "-o", str(output)],
+        [
+            "bom",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(config_dir),
+            "-o",
+            str(output),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -87,6 +96,23 @@ def test_bom_endpoint_short_output_writes_cyclonedx_agent_bom_to_file(tmp_path):
     doc = json.loads(output.read_text(encoding="utf-8"))
     assert doc["bomFormat"] == "CycloneDX"
     assert any(c.get("purl") == "pkg:npm/%40mcpjam/inspector@1.4.2" for c in doc["components"])
+
+
+def test_bom_endpoint_config_dir_without_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(openaca_main, ["bom", "endpoint", "--config-dir", str(tmp_path)])
+
+    assert result.exit_code != 0
+    assert "--config-dir requires --kind" in result.output
+
+
+def test_bom_endpoint_unknown_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(
+        openaca_main,
+        ["bom", "endpoint", "--kind", "not-a-real-kind", "--config-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "unknown agent kind" in result.output.lower()
 
 
 def test_bom_diff_command_renders_text_summary(tmp_path):
@@ -242,11 +268,22 @@ def test_scan_bom_verbose_renders_endpoint_inventory_from_bom(tmp_path):
     bom_path = tmp_path / "endpoint.bom.json"
     bom_result = CliRunner().invoke(
         openaca_main,
-        ["bom", "endpoint", "--config-dir", str(config_dir), "--output", str(bom_path)],
+        [
+            "bom",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(config_dir),
+            "--output",
+            str(bom_path),
+        ],
     )
     assert bom_result.exit_code == 0, bom_result.output
 
-    direct = CliRunner().invoke(scan_main, ["endpoint", "--config-dir", str(config_dir), "-v"])
+    direct = CliRunner().invoke(
+        scan_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(config_dir), "-v"]
+    )
     from_bom = CliRunner().invoke(scan_main, ["bom", "--input", str(bom_path), "-v"])
 
     assert direct.exit_code == 0, direct.output
@@ -622,7 +659,16 @@ def test_bom_endpoint_surfaces_resolver_warnings(tmp_path):
     output = tmp_path / "endpoint.bom.json"
     result = CliRunner().invoke(
         openaca_main,
-        ["bom", "endpoint", "--config-dir", str(config_dir), "-o", str(output)],
+        [
+            "bom",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(config_dir),
+            "-o",
+            str(output),
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "ghost@mp enabled but missing from installed_plugins.json" in result.output

@@ -21,7 +21,8 @@ from tools.agent_kinds import (
 from tools.bom import agent_info_from_cyclonedx, build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
-from tools.parsers import parse_repo_grouped
+from tools.cli_kind import kind_option, require_kind_for_config_dir
+from tools.parsers import parse_repo_registry_counts
 from tools.scan import _filter_agent_scope_refs, _is_plugin_ref, _refs_from_graph
 
 
@@ -345,9 +346,23 @@ def repo(
         return
     basenames = output_basenames(agents)
     documents: list[tuple[str, dict]] = []
-    # A many-per-place kind can return several declared agents over one root, so
-    # memoize the walk per (root, kind surface) rather than re-walking per agent.
-    walks: dict[tuple[Path, tuple], tuple[int, int]] = {}
+    # `target` is the only scan_root `discover_agents(source="declared", ...)`
+    # ever returns here, so one walk over the union of every present kind's
+    # patterns covers every agent — walking once per kind (or per agent, for a
+    # many-per-place kind sharing a root) would re-walk the filesystem once
+    # per kind for the five host-agnostic dependency manifests both kinds
+    # declare. Each kind's own (n_found, n_failed) still comes out of that one
+    # walk unmixed with the other kind's — a Cursor parse failure must not
+    # degrade the Claude agent's coverage.
+    registries: dict[str, tuple] = {
+        agent.kind_id: kind_for(agent.kind_id).manifest_patterns for agent in agents
+    }
+    per_kind_counts, _union_counts = parse_repo_registry_counts(
+        target, registries, include_gitignored=include_gitignored
+    )
+    walks: dict[tuple[Path, tuple], tuple[int, int]] = {
+        (target, patterns): per_kind_counts[kind_id] for kind_id, patterns in registries.items()
+    }
     for agent in agents:
         assert agent.scan_root is not None
         kind = kind_for(agent.kind_id)
@@ -359,15 +374,7 @@ def repo(
         # the filesystem walk, not the graph; source them from the walk against
         # this kind's own patterns so a repo declaring two kinds counts each
         # kind's own manifests. Composition comes from the graph.
-        walk_key = (agent.scan_root, kind.manifest_patterns)
-        if walk_key not in walks:
-            parse_groups, n_found = parse_repo_grouped(
-                agent.scan_root,
-                include_gitignored=include_gitignored,
-                registry=kind.manifest_patterns,
-            )
-            walks[walk_key] = (n_found, n_found - len(parse_groups))
-        n_found, n_failed = walks[walk_key]
+        n_found, n_failed = walks[(agent.scan_root, kind.manifest_patterns)]
         if n_failed:
             click.echo(
                 f"warning: {n_failed} of {n_found} matched manifest(s) failed to parse"
@@ -393,11 +400,17 @@ def repo(
 
 
 @main.command()
+@kind_option
 @click.option(
     "--config-dir",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Agent host config directory. Defaults to $CLAUDE_CONFIG_DIR, else ~/.claude.",
+    help=(
+        "Agent host config directory for the kind selected with --kind. "
+        "Requires --kind. Each kind resolves its own default root when "
+        "omitted (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude; Cursor: "
+        "~/.cursor)."
+    ),
 )
 @click.option(
     "--project",
@@ -408,14 +421,18 @@ def repo(
 @_output_option
 @_output_dir_option
 def endpoint(
+    kind: str | None,
     config_dir: Path | None,
     project: Path | None,
     output_path: Path | None,
     output_dir: Path | None,
 ) -> None:
     """Generate one Agent BOM per installed agent."""
+    require_kind_for_config_dir(kind, config_dir)
     agents = discover_agents(
-        DiscoveryContext(source="installed", config_dir=config_dir, project_root=project)
+        DiscoveryContext(
+            source="installed", config_dir=config_dir, project_root=project, kind_id=kind
+        )
     )
     if not agents:
         click.echo("no installed agent found", err=True)

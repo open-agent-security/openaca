@@ -54,6 +54,7 @@ from tools.parsers.claude_plugin_root import (
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import SCOPE_PRECEDENCE
 from tools.parsers.settings_layers import load as load_settings
+from tools.repo_surface import CLAUDE_CODE_SURFACE, PluginFormat, RepoSurface
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -141,6 +142,7 @@ def _make_normalizer(
     install_root: Path,
     project_root: Path | None,
     root_label: str = "endpoint",
+    extra_roots: tuple[tuple[str, Path], ...] = (),
 ) -> SourceNormalizer:
     """Build the `source_manifest`-path normalizer for a scan.
 
@@ -157,6 +159,11 @@ def _make_normalizer(
       so paths under different roots can't collide: `project/<rel>` under
       `project_root`, `endpoint/<rel>` under `install_root`. A path under neither
       falls back to the absolute path (last resort).
+
+    `extra_roots` are additional labeled roots checked (longest path first, so a
+    nested root wins over an ancestor) after `project_root` and before
+    `install_root`. Claude Code passes none; a second kind with more than one
+    config root threads them here instead of forking the normalizer.
     """
     # Keep BOTH the logical (un-resolved) and resolved forms of each root.
     # Resolved roots make prefix-matching symlink-stable for genuinely-nested
@@ -170,6 +177,11 @@ def _make_normalizer(
     target_r = target.resolve()
     install_r = install_root.resolve()
     project_r = project_root.resolve() if project_root is not None else None
+    extra_roots_sorted = sorted(
+        ((label, root, root.resolve()) for label, root in extra_roots),
+        key=lambda entry: len(str(entry[1])),
+        reverse=True,
+    )
 
     def _rel(abs_path: str, root_logical: Path, root_resolved: Path) -> str | None:
         path = Path(abs_path)
@@ -198,6 +210,10 @@ def _make_normalizer(
             rel = _rel(abs_path, project_root, project_r)
             if rel is not None:
                 return f"project/{rel}"
+        for label, root_logical, root_resolved in extra_roots_sorted:
+            rel = _rel(abs_path, root_logical, root_resolved)
+            if rel is not None:
+                return f"{label}/{rel}"
         rel = _rel(abs_path, install_root, install_r)
         if rel is not None:
             return f"{root_label}/{rel}"
@@ -261,6 +277,7 @@ def build_rooted_graph(
     project_root: Path | None = None,
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -297,12 +314,43 @@ def build_rooted_graph(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            surface=surface,
         )
         attach_root_dir = root_dir
         attach_root_spec = root_spec
-    name_index = build_manifest_name_index(
-        Path(target), include_gitignored=attach_include_gitignored
+    return finalize_graph(
+        graph,
+        Path(target),
+        normalize,
+        project_root=project_root,
+        include_gitignored=include_gitignored,
+        attach_include_gitignored=attach_include_gitignored,
+        root_dir=attach_root_dir,
+        root_spec=attach_root_spec,
+        warnings=warnings,
     )
+
+
+def finalize_graph(
+    graph: Graph,
+    target: Path,
+    normalize: SourceNormalizer,
+    *,
+    project_root: Path | None = None,
+    include_gitignored: bool = False,
+    attach_include_gitignored: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
+    warnings: list[str] | None = None,
+) -> Graph:
+    """The `build_rooted_graph` tail, shared by every kind's composer: build the
+    manifest name index, merge in `project_root`'s (endpoint mode only), attach
+    ADR-0039 MCP launch-dependency packages, and validate.
+
+    A second kind's `compose` calls this same function after seeding/descending
+    its own graph so launch resolution never forks per kind.
+    """
+    name_index = build_manifest_name_index(target, include_gitignored=attach_include_gitignored)
     if project_root is not None:
         # Endpoint mode: project_root is separate from install_root (target),
         # so its manifests are absent from the target walk. Merge them in so
@@ -318,14 +366,14 @@ def build_rooted_graph(
         }
     _attach_mcp_launch_deps(
         graph,
-        Path(target),
+        target,
         normalize,
         name_index,
         project_root=project_root,
         include_gitignored=attach_include_gitignored,
         project_root_include_gitignored=include_gitignored,
-        root_dir=attach_root_dir,
-        root_spec=attach_root_spec,
+        root_dir=root_dir,
+        root_spec=root_spec,
     )
     graph.validate()
     if warnings is not None:
@@ -777,6 +825,7 @@ def descend(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> None:
     """Discover children of `parent` under `directory` and recurse.
 
@@ -814,22 +863,23 @@ def descend(
         # root is a boundary handoff: the plugin owns its entire subtree, so its
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
-        plugin_roots = _find_plugin_roots(directory, include_gitignored=include_gitignored)
+        plugin_roots = _find_plugin_roots(directory, surface, include_gitignored=include_gitignored)
         # Only directories that actually produced a plugin node own their
         # subtree. A malformed/empty `plugin.json` yields no node, so its dir
         # must NOT be excluded from sibling discovery — otherwise one bad
         # manifest would silently hide an otherwise-valid `.mcp.json`, project
         # skill, or dep manifest in the same/under that directory.
         realized_roots: list[Path] = []
-        for plugin_root in plugin_roots:
+        for plugin_root, plugin_format in plugin_roots:
             plugin_node = _descend_into_plugin(
                 graph,
                 parent,
                 plugin_root,
-                plugin_root / ".claude-plugin" / "plugin.json",
+                _plugin_manifest_path(plugin_root, plugin_format),
                 normalize,
                 root_dir=root_dir,
                 root_spec=root_spec,
+                surface=surface,
             )
             if plugin_node is not None:
                 realized_roots.append(plugin_root)
@@ -842,6 +892,7 @@ def descend(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            surface=surface,
         )
         # A plugin root owns its own dep manifests (emitted under the plugin via
         # the plugin-branch descent); emitting them again under target would
@@ -867,13 +918,26 @@ def descend(
             include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
+            surface=surface,
         )
     elif parent.kind == "plugin":
         _add_bundled_skills(
-            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
+            graph,
+            parent,
+            directory,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+            surface=surface,
         )
         _add_bundled_plugin_surfaces(
-            graph, parent, directory, normalize, root_dir=root_dir, root_spec=root_spec
+            graph,
+            parent,
+            directory,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+            surface=surface,
         )
         if emit_own_root_deps:
             _add_dep_manifest_packages(
@@ -901,25 +965,73 @@ def _same_path(a: Path, b: Path) -> bool:
     return a.resolve() == b.resolve()
 
 
-def _find_plugin_roots(directory: Path, *, include_gitignored: bool = False) -> list[Path]:
-    """Plugin roots are dirs containing `.claude-plugin/plugin.json`, at ANY
-    depth (parity with parse_repo). Discovery uses the same gitignore-aware walk
-    as project-skill discovery so we skip `node_modules/`, `.git/`, gitignored
-    dirs. Returns each plugin root sorted for determinism.
+def _resolve_plugin_format(directory: Path, surface: RepoSurface) -> PluginFormat | None:
+    """The single decider of which `PluginFormat` governs `directory`: the
+    first candidate in `surface.plugin_formats` **list order** (precedence,
+    not filesystem walk order) whose `<manifest_dir>/<manifest_filename>`
+    exists on disk AND whose content qualifies per `fmt.detect` (ADR-0053:
+    "first qualifying candidate", not first path-shape match — load-bearing
+    once a surface has more than one format sharing a directory, e.g. Cursor's
+    `.cursor-plugin/plugin.json` beside a root `plugin.json`). `None` if no
+    candidate both exists and qualifies.
+
+    This is the one routine both plugin-root discovery (`_find_plugin_roots`)
+    and manifest-path re-derivation (`_resolve_plugin_manifest`) call, so the
+    two can never disagree about which manifest governs a given root.
+    """
+    for fmt in surface.plugin_formats:
+        manifest = directory / fmt.manifest_dir / fmt.manifest_filename
+        if not manifest.is_file():
+            continue
+        try:
+            data = json.loads(manifest.read_text())
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(data, dict) and fmt.detect(data):
+            return fmt
+    return None
+
+
+def _plugin_manifest_path(directory: Path, fmt: PluginFormat) -> Path:
+    return directory / fmt.manifest_dir / fmt.manifest_filename
+
+
+def _find_plugin_roots(
+    directory: Path, surface: RepoSurface, *, include_gitignored: bool = False
+) -> list[tuple[Path, PluginFormat]]:
+    """Plugin roots are dirs containing one of `surface.plugin_formats`'
+    `<manifest_dir>/<manifest_filename>`, at ANY depth (parity with parse_repo).
+    Discovery uses the same gitignore-aware walk as project-skill discovery so
+    we skip `node_modules/`, `.git/`, gitignored dirs. Returns each plugin
+    root paired with the `PluginFormat` `_resolve_plugin_format` picked for it
+    (list-order precedence, not the order the walk happened to see candidate
+    files in), sorted by root for determinism.
     """
     spec = None if include_gitignored else load_gitignore_spec(directory)
-    roots: list[Path] = []
-    seen: set[Path] = set()
+    candidate_roots: dict[Path, Path] = {}  # resolved -> logical
     for path in iter_unignored_files(directory, spec):
-        if path.name != "plugin.json" or path.parent.name != ".claude-plugin":
-            continue
-        root = path.parent.parent
-        resolved = root.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        roots.append(root)
-    return sorted(roots)
+        for fmt in surface.plugin_formats:
+            if path.name != fmt.manifest_filename:
+                continue
+            if fmt.manifest_dir:
+                if path.parent.name != fmt.manifest_dir:
+                    continue
+                root = path.parent.parent
+            else:
+                # manifest_dir="": the manifest sits directly in the plugin
+                # root (e.g. Agent Plugins' root `plugin.json`), not nested
+                # one level down.
+                root = path.parent
+            resolved = root.resolve()
+            if resolved not in candidate_roots:
+                candidate_roots[resolved] = root
+            break
+    roots: list[tuple[Path, PluginFormat]] = []
+    for root in candidate_roots.values():
+        fmt = _resolve_plugin_format(root, surface)
+        if fmt is not None:
+            roots.append((root, fmt))
+    return sorted(roots, key=lambda entry: entry[0])
 
 
 def _attach_mcp_launch_deps(
@@ -1084,6 +1196,8 @@ def _descend_into_plugin(
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
+    plugin_extra: dict | None = None,
 ) -> Node | None:
     """Create the plugin node (child of target) and descend into its subtree.
 
@@ -1099,9 +1213,24 @@ def _descend_into_plugin(
     self_ref = next((r for r in parsed if _component_type(r) == "plugin"), None)
     if self_ref is None:
         return None
+    if plugin_extra:
+        # Merged BEFORE the node is created, not after descending. `_add_child`
+        # finalizes identity on insert and children inherit the parent's
+        # `_identity_namespace`, so a field that decides the plugin's identity
+        # (e.g. `marketplace`) has to be present here or the whole subtree
+        # finalizes against a namespace-less parent.
+        self_ref = replace(self_ref, extra={**(self_ref.extra or {}), **plugin_extra})
     plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
     _add_child(graph, target, plugin_node)
-    descend(graph, plugin_node, plugin_root, normalize, root_dir=root_dir, root_spec=root_spec)
+    descend(
+        graph,
+        plugin_node,
+        plugin_root,
+        normalize,
+        root_dir=root_dir,
+        root_spec=root_spec,
+        surface=surface,
+    )
     return plugin_node
 
 
@@ -1117,6 +1246,7 @@ def _add_project_skills(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> None:
     """Project skills live at `.claude/skills/<name>/SKILL.md` at ANY depth.
 
@@ -1136,7 +1266,7 @@ def _add_project_skills(
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
     for path in iter_unignored_files(directory, walk_spec):
-        if path.name != "SKILL.md" or not _is_project_skill_md(path, directory):
+        if path.name != "SKILL.md" or not _is_project_skill_md(path, directory, surface):
             continue
         if _is_ignored_under(path, eval_root, spec):
             continue
@@ -1155,18 +1285,21 @@ def _add_project_skills(
         )
 
 
-def _is_project_skill_md(path: Path, root: Path) -> bool:
-    """True iff `path` is `.../.claude/skills/<name>/SKILL.md` relative to root."""
+def _is_project_skill_md(
+    path: Path, root: Path, surface: RepoSurface = CLAUDE_CODE_SURFACE
+) -> bool:
+    """True iff `path` is `.../<config_dir>/<project_skills_subdir>/<name>/SKILL.md`
+    relative to root."""
     try:
         parts = path.relative_to(root).parts
     except ValueError:
         return False
-    # parts == (..., ".claude", "skills", "<name>", "SKILL.md")
+    # parts == (..., config_dir, project_skills_subdir, "<name>", "SKILL.md")
     return (
         len(parts) >= 4
         and parts[-1] == "SKILL.md"
-        and parts[-3] == "skills"
-        and parts[-4] == ".claude"
+        and parts[-3] == surface.project_skills_subdir
+        and parts[-4] == surface.config_dir
     )
 
 
@@ -1178,20 +1311,22 @@ def _add_bundled_skills(
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> None:
-    """Plugin-bundled skills live at `<plugin-root>/skills/<name>/SKILL.md`,
-    or at a custom directory named by the manifest's `"skills"` field.
+    """Plugin-bundled skills live at `<plugin-root>/<surface.bundled.skills_dir>/<name>/SKILL.md`,
+    or at a custom directory named by the manifest's `"skills"` field — read from
+    whichever manifest `surface` resolved for this plugin root, per ADR-0053.
 
     Path resolution mirrors `claude_plugin_root._parse_bundled_skills`:
     `resolve_within` rejects traversal outside the plugin root, the default
-    `skills/` is always tried, and a custom dir equal to the default is
+    skills dir is always tried, and a custom dir equal to the default is
     deduped.
     """
     skill_dirs: list[Path] = []
-    default_skills = resolve_within(directory, "skills")
+    default_skills = resolve_within(directory, surface.bundled.skills_dir)
     if default_skills is not None and default_skills.is_dir():
         skill_dirs.append(default_skills)
-    custom_skills = _plugin_custom_skills_field(directory)
+    custom_skills = _plugin_custom_skills_field(directory, surface)
     if isinstance(custom_skills, str):
         custom_dir = resolve_within(directory, custom_skills)
         if custom_dir is not None and custom_dir.is_dir():
@@ -1214,8 +1349,8 @@ def _add_bundled_skills(
         )
 
 
-def _plugin_custom_skills_field(plugin_root: Path) -> object:
-    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+def _plugin_custom_skills_field(plugin_root: Path, surface: RepoSurface) -> object:
+    manifest = _resolve_plugin_manifest(plugin_root, surface)
     if not manifest.is_file():
         return None
     try:
@@ -1431,19 +1566,6 @@ def _is_ignored_under(path: Path, eval_root: Path, spec: GitIgnoreSpec | None) -
     return spec is not None and is_ignored(rel, spec)  # type: ignore[arg-type]
 
 
-# Standalone MCP manifest filenames discovered at any depth in repo mode
-# (parity with the REGISTRY `mcp.json` / `.mcp.json` / `claude_desktop_config.json`
-# patterns, which match by bare name anywhere in the tree).
-_STANDALONE_MCP_FILENAMES = ("mcp.json", ".mcp.json", "claude_desktop_config.json")
-
-# `.claude/<subdir>/**/*.md` agent-component surfaces discovered at any depth in
-# repo mode, mirroring the REGISTRY command/agent patterns.
-_COMMAND_AGENT_SURFACES: tuple[tuple[str, Kind], ...] = (
-    ("commands", "command"),
-    ("agents", "agent"),
-)
-
-
 def _add_repo_standalone_components(
     graph: Graph,
     parent: Node,
@@ -1454,8 +1576,9 @@ def _add_repo_standalone_components(
     include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> None:
-    """Repo target-level standalone surfaces: MCP manifests and `.claude`
+    """Repo target-level standalone surfaces: MCP manifests and `<config_dir>`
     commands/agents discovered at any depth (parity with the parser REGISTRY),
     each a child of the target.
 
@@ -1472,14 +1595,16 @@ def _add_repo_standalone_components(
         resolved = path.resolve()
         if any(resolved.is_relative_to(root) for root in exclude_resolved):
             continue
-        if path.name in _STANDALONE_MCP_FILENAMES:
+        if path.name in surface.standalone_mcp_filenames:
             for ref in _safe_parse(graph, mcp_json.parse, path):
                 if _component_type(ref) != "mcp_server":
                     continue
                 node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
-        if path.name == "settings.json" and _is_claude_settings_json(path, directory):
+        if path.name == surface.settings_filename and _is_claude_settings_json(
+            path, directory, surface
+        ):
             for ref in _safe_parse(graph, claude_settings.parse, path):
                 if _component_type(ref) != "plugin":
                     continue
@@ -1487,7 +1612,7 @@ def _add_repo_standalone_components(
                 _add_child(graph, parent, node)
             continue
         if path.suffix == ".md":
-            kind = _command_agent_kind(path, directory)
+            kind = _command_agent_kind(path, directory, surface)
             if kind is None:
                 continue
             try:
@@ -1511,25 +1636,31 @@ def _add_repo_standalone_components(
                 _add_child(graph, self_node, child_node)
 
 
-def _is_claude_settings_json(path: Path, root: Path) -> bool:
-    """True iff `path` is `.claude/settings.json` at any depth relative to root."""
+def _is_claude_settings_json(
+    path: Path, root: Path, surface: RepoSurface = CLAUDE_CODE_SURFACE
+) -> bool:
+    """True iff `path` is `<config_dir>/<settings_filename>` at any depth
+    relative to root."""
     try:
         rel = path.relative_to(root).as_posix()
     except ValueError:
         return False
-    return rel == ".claude/settings.json" or rel.endswith("/.claude/settings.json")
+    settings_rel = f"{surface.config_dir}/{surface.settings_filename}"
+    return rel == settings_rel or rel.endswith(f"/{settings_rel}")
 
 
-def _command_agent_kind(path: Path, root: Path) -> Kind | None:
+def _command_agent_kind(
+    path: Path, root: Path, surface: RepoSurface = CLAUDE_CODE_SURFACE
+) -> Kind | None:
     """Return `"command"`/`"agent"` if `path` is a `.md` under a
-    `.claude/commands/` or `.claude/agents/` dir at any depth, else None."""
+    `<config_dir>/<subdir>/` dir at any depth, else None."""
     try:
         parts = path.relative_to(root).parts
     except ValueError:
         return None
-    for subdir, kind in _COMMAND_AGENT_SURFACES:
+    for subdir, kind in surface.command_agent_surfaces:
         for i in range(len(parts) - 2):
-            if parts[i] == ".claude" and parts[i + 1] == subdir:
+            if parts[i] == surface.config_dir and parts[i + 1] == subdir:
                 return kind
     return None
 
@@ -1542,6 +1673,7 @@ def _add_bundled_plugin_surfaces(
     *,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
+    surface: RepoSurface = CLAUDE_CODE_SURFACE,
 ) -> None:
     """A plugin's bundled non-skill surfaces (MCPs, hooks, commands, agents) →
     children of the plugin node. Reuses the shared `claude_plugin_root` helpers
@@ -1556,19 +1688,20 @@ def _add_bundled_plugin_surfaces(
     if plugin_ref is None:
         return
     plugin_name = plugin_ref.name or ""
-    plugin_data = _plugin_manifest_data(graph, plugin_root)
-    plugin_manifest_path = plugin_root / ".claude-plugin" / "plugin.json"
-    for surface in ("skills", "commands", "agents"):
-        if surface not in plugin_data:
+    plugin_data = _plugin_manifest_data(graph, plugin_root, surface)
+    plugin_manifest_path = _resolve_plugin_manifest(plugin_root, surface)
+    # `field`, not `surface`: this loop is over manifest field NAMES and would
+    # otherwise shadow the `RepoSurface` parameter it sits beside.
+    for field in ("skills", "commands", "agents"):
+        if field not in plugin_data:
             continue
-        declared_path = plugin_data[surface]
+        declared_path = plugin_data[field]
         resolved = (
             resolve_within(plugin_root, declared_path) if isinstance(declared_path, str) else None
         )
         if resolved is None or not resolved.is_dir():
             graph.warnings.append(
-                f"could not parse {plugin_manifest_path}: "
-                f"{surface} must name an available directory"
+                f"could not parse {plugin_manifest_path}: {field} must name an available directory"
             )
 
     refs: list[ComponentRef] = []
@@ -1579,13 +1712,35 @@ def _add_bundled_plugin_surfaces(
         warnings=graph.warnings,
     )
     refs.extend(manifest_refs)
-    refs.extend(_parse_default_mcp(plugin_root, manifest_refs, warnings=graph.warnings))
+    # The one deliberate crossing of the placement/content boundary (ADR-0053):
+    # the bundled MCP filename(s) are placement data (`surface.bundled.mcp_filenames`)
+    # threaded into a leaf parser.
     refs.extend(
-        _parse_bundled_hooks(plugin_root, plugin_data, plugin_name, warnings=graph.warnings)
+        _parse_default_mcp(
+            plugin_root,
+            manifest_refs,
+            warnings=graph.warnings,
+            mcp_filenames=surface.bundled.mcp_filenames,
+        )
+    )
+    refs.extend(
+        _parse_bundled_hooks(
+            plugin_root,
+            plugin_data,
+            plugin_name,
+            warnings=graph.warnings,
+            plugin_json_path=plugin_manifest_path,
+            hooks_filename=surface.bundled.hooks_filename,
+        )
     )
     refs.extend(
         _parse_bundled_command_agents(
-            plugin_root, plugin_data, plugin_name, warnings=graph.warnings
+            plugin_root,
+            plugin_data,
+            plugin_name,
+            warnings=graph.warnings,
+            commands_dir=surface.bundled.commands_dir,
+            agents_dir=surface.bundled.agents_dir,
         )
     )
     refs = [r for r in refs if _component_type(r) != "skill"]
@@ -1623,8 +1778,28 @@ def _add_bundled_plugin_surfaces(
         _add_child(graph, parent, node)
 
 
-def _plugin_manifest_data(graph: Graph, plugin_root: Path) -> dict:
-    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+def _resolve_plugin_manifest(plugin_root: Path, surface: RepoSurface) -> Path:
+    """The manifest path for an already-realized plugin root, via the same
+    `_resolve_plugin_format` decision `_find_plugin_roots` uses — so the two
+    can never disagree about which format governs a root. Falls back to the
+    first candidate's path when none is present on disk (parity with the old
+    unconditional `.claude-plugin/plugin.json` path, whose read is guarded by
+    callers)."""
+    fmt = _resolve_plugin_format(plugin_root, surface) or surface.plugin_formats[0]
+    return _plugin_manifest_path(plugin_root, fmt)
+
+
+def _plugin_manifest_data(graph: Graph, plugin_root: Path, surface: RepoSurface) -> dict:
+    if _resolve_plugin_format(plugin_root, surface) is None and surface.manifest_optional:
+        # No candidate manifest resolved AND this kind permits that: Cursor's
+        # marketplace cache ships bundles with no manifest at all, which load
+        # entirely by folder discovery (docs/specs/cursor-agent-kind.md,
+        # Plugins). Warning would report every such bundle as unparseable, and
+        # policy mode escalates that to a hard error. Claude Code's plugins are
+        # named by an install lockfile that points at a manifest, so a missing
+        # one there stays a real defect and still warns below.
+        return {}
+    manifest = _resolve_plugin_manifest(plugin_root, surface)
     if not manifest.is_file():
         graph.warnings.append(f"could not parse {manifest}: file is unavailable")
         return {}
@@ -1637,3 +1812,21 @@ def _plugin_manifest_data(graph: Graph, plugin_root: Path) -> dict:
         graph.warnings.append(f"plugin manifest {manifest} must contain an object")
         return {}
     return data
+
+
+# Public aliases for the shared graph-construction primitives a second kind's
+# composer needs (ADR-0053): a cross-module private import is never the
+# contract. Renaming one of these is an interface change, not a refactor.
+add_child = _add_child
+make_normalizer = _make_normalizer
+add_dep_manifest_packages = _add_dep_manifest_packages
+find_plugin_roots = _find_plugin_roots
+descend_into_plugin = _descend_into_plugin
+add_skill_node = _add_skill_node
+ignore_context = _ignore_context
+is_ignored_under = _is_ignored_under
+component_type_of = _component_type
+safe_parse = _safe_parse
+same_path = _same_path
+resolve_plugin_format = _resolve_plugin_format
+plugin_manifest_path = _plugin_manifest_path

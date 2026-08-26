@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 from click.testing import CliRunner
@@ -350,7 +351,11 @@ def test_status_reports_network_failure_without_traceback(tmp_path, monkeypatch)
     assert "Traceback" not in result.output
 
 
-def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch):
+def test_collect_endpoint_cli_passes_no_kind_or_config_dir_through_by_default(monkeypatch):
+    """No --kind/--config-dir means every installed kind resolves its own
+    default root (Task 9 Step 3) — `$CLAUDE_CONFIG_DIR`/`~/.claude` resolution
+    now happens inside discovery, not eagerly in the CLI, so the CLI's job is
+    just to pass `None`/`None` through unmodified."""
     calls: list[dict] = []
 
     def fake_collect_endpoint(**kwargs):
@@ -358,12 +363,38 @@ def test_collect_endpoint_cli_honors_claude_config_dir_env(tmp_path, monkeypatch
         return [_upload_result(asset_id="asset-123")]
 
     monkeypatch.setattr("tools.remote.cli.collect_endpoint", fake_collect_endpoint)
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
 
     result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
 
     assert result.exit_code == 0
-    assert calls[0]["config_dir"] == tmp_path
+    assert calls[0]["config_dir"] is None
+    assert calls[0]["kind_id"] is None
+
+
+def test_sync_endpoint_dry_run_defaults_to_claude_config_dir_env(tmp_path, monkeypatch):
+    """End-to-end: with no --kind/--config-dir, `$CLAUDE_CONFIG_DIR` is still
+    honored — resolution now happens inside `discover_agents`, not the CLI."""
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text(
+        '[remote]\napi_url = "http://remote.test"\ntoken = "ot_TEST"\nasset_id = "asset-123"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+    config_dir = tmp_path / "claude-config"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    # Isolate from the real ~/.cursor so this machine's default two-kind
+    # discovery doesn't leak a second payload into the assertion below.
+    monkeypatch.setattr("tools.agent_kinds.cursor.Path.home", lambda: tmp_path / "no-cursor-home")
+
+    result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["bom"]["metadata"]["component"]["bom-ref"] == "root/claude-code"
 
 
 def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
@@ -381,6 +412,8 @@ def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
             "remote",
             "sync",
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "--scanner",
@@ -431,6 +464,33 @@ def _asset_result():
     )
 
 
+def test_sync_endpoint_config_dir_without_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(
+        openaca_main, ["remote", "sync", "endpoint", "--config-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code != 0
+    assert "--config-dir requires --kind" in result.output
+
+
+def test_sync_endpoint_unknown_kind_is_a_hard_error(tmp_path):
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--kind",
+            "not-a-real-kind",
+            "--config-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "unknown agent kind" in result.output.lower()
+
+
 def test_sync_endpoint_dry_run_prints_the_payload_as_one_json_line(tmp_path, monkeypatch):
     """stdout stays machine-readable so the preview can be piped to jq."""
     config_path = tmp_path / "remote.toml"
@@ -448,7 +508,16 @@ def test_sync_endpoint_dry_run_prints_the_payload_as_one_json_line(tmp_path, mon
 
     result = CliRunner().invoke(
         openaca_main,
-        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--dry-run"],
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(tmp_path),
+            "--dry-run",
+        ],
     )
 
     assert result.exit_code == 0
@@ -468,7 +537,16 @@ def test_sync_endpoint_dry_run_runs_without_remote_configuration(tmp_path, monke
 
     result = CliRunner().invoke(
         openaca_main,
-        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--dry-run"],
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(tmp_path),
+            "--dry-run",
+        ],
     )
 
     assert result.exit_code == 0
@@ -485,6 +563,10 @@ def _fake_collection(**kwargs) -> list[EndpointCollection]:
                 source="installed",
                 root_label="claude-code",
                 coverage_baseline="complete",
+                # Redaction (`_prepare_upload_payload`) reads each collection's
+                # own agent.config_root now, not the CLI's outer --config-dir —
+                # a real installed AgentInstance always carries one.
+                config_root=kwargs.get("config_dir") or Path("/fake/.claude"),
             ),
             bom={"bomFormat": "CycloneDX", "specVersion": "1.7", "components": []},
             posture_findings=[],

@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 from click.testing import CliRunner
 from jsonschema import Draft202012Validator
@@ -636,6 +637,8 @@ def test_endpoint_mode_attributes_bundled_mcp_finding_to_plugin(tmp_path):
             scan_main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "--sarif",
@@ -793,6 +796,8 @@ def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
             scan_main,
             [
                 "endpoint",
+                "--kind",
+                "claude-code",
                 "--config-dir",
                 str(tmp_path),
                 "--format",
@@ -884,7 +889,9 @@ def test_endpoint_mode_hook_graph_identity_is_inventory_only(tmp_path):
         "tools.scan._load_osv_with_overlays",
         lambda refs, *, progress=None: ([advisory], [], 0, {}),
     ):
-        result = runner.invoke(scan_main, ["endpoint", "--config-dir", str(tmp_path), "-v"])
+        result = runner.invoke(
+            scan_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(tmp_path), "-v"]
+        )
     assert result.exit_code == 0, result.output
     assert "curl evil.example.com" in result.output
     assert "No advisories matched" in result.output
@@ -931,6 +938,8 @@ def test_endpoint_lockfile_transitive_finding_with_attribution(tmp_path):
         scan_main,
         [
             "endpoint",
+            "--kind",
+            "claude-code",
             "--config-dir",
             str(tmp_path),
             "--sarif",
@@ -1181,7 +1190,9 @@ def test_endpoint_scan_emits_the_migrated_agent_document(tmp_path):
         encoding="utf-8",
     )
 
-    out = CliRunner().invoke(bom_main, ["endpoint", "--config-dir", str(root)])
+    out = CliRunner().invoke(
+        bom_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root)]
+    )
     assert out.exit_code == 0, out.output
     doc = json.loads(out.output.strip())
 
@@ -1239,7 +1250,9 @@ def test_remote_upload_payload_is_agent_rooted_and_redacted(tmp_path):
         "---\nname: demo\ndescription: demo\n---\n", encoding="utf-8"
     )
 
-    payloads = build_endpoint_dry_run_payloads(config_dir=config_dir, project=None)
+    payloads = build_endpoint_dry_run_payloads(
+        config_dir=config_dir, kind_id="claude-code", project=None
+    )
 
     assert len(payloads) == 1
     payload = payloads[0]
@@ -1263,3 +1276,150 @@ def test_remote_upload_payload_is_agent_rooted_and_redacted(tmp_path):
     synthesized += [p["value"] for p in metadata["properties"]]
     assert not [s for s in synthesized if s.startswith("/") or s.startswith("file://")]
     assert str(tmp_path) not in json.dumps(payload)
+
+
+def test_declared_repo_bom_covers_both_registered_kinds(tmp_path):
+    """Plan 042 marquee, declared side: a repo carrying evidence for both
+    registered kinds (`.claude/skills/…`, `.cursor/mcp.json`) emits two Agent
+    BOM documents from one `bom repo` call, each parsing clean. Claude Code's
+    declared `COVERAGE_BASELINE` is `complete` and Cursor's is `partial`
+    (Task 8 Step 1) — the difference is the baseline floor, not a parse
+    failure, since both walks are clean. The shared `.claude/agents/
+    reviewer.md` file — read by Cursor's own `.claude` compat root as well as
+    by Claude Code natively — must key identically in both documents: the
+    product promise of the whole cross-read design."""
+    from tools.bom_cli import main as bom_main
+
+    skill = tmp_path / ".claude" / "skills" / "deploy"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: deploy\ndescription: d\n---\n", encoding="utf-8")
+
+    cursor_mcp = tmp_path / ".cursor" / "mcp.json"
+    cursor_mcp.parent.mkdir(parents=True)
+    cursor_mcp.write_text(
+        json.dumps({"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}),
+        encoding="utf-8",
+    )
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: reviews\n---\nbody\n", encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    docs = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    assert len(docs) == 2
+
+    by_kind = {}
+    for doc in docs:
+        props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
+        by_kind[props["openaca:agent_kind"]] = (doc, props)
+
+    assert set(by_kind) == {"claude-code", "cursor"}
+    assert by_kind["claude-code"][1]["openaca:composition_coverage"] == "complete"
+    assert by_kind["cursor"][1]["openaca:composition_coverage"] == "partial"
+
+    def reviewer_ref(doc):
+        return next(
+            c["bom-ref"]
+            for c in doc["components"]
+            if c["bom-ref"].startswith(".claude/agents/reviewer.md")
+        )
+
+    assert reviewer_ref(by_kind["claude-code"][0]) == reviewer_ref(by_kind["cursor"][0])
+
+
+def _write_two_kind_home(fake_home: Path, *, malformed_cursor_plugin: bool) -> None:
+    agents_dir = fake_home / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "x.md").write_text("---\nname: x\ndescription: d\n---\nbody\n", encoding="utf-8")
+
+    (fake_home / ".claude" / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"gh": {"command": "npx", "args": ["-y", "@x/gh@1.0.0"]}}}),
+        encoding="utf-8",
+    )
+
+    cached_plugin = fake_home / ".cursor" / "plugins" / "cache" / "acme-market" / "widget" / "sha1"
+    (cached_plugin / ".cursor-plugin").mkdir(parents=True)
+    (cached_plugin / ".cursor-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "widget", "author": {}}), encoding="utf-8"
+    )
+    (cached_plugin / ".cache-complete").write_text("", encoding="utf-8")
+
+    if malformed_cursor_plugin:
+        broken = fake_home / ".cursor" / "plugins" / "cache" / "acme-market" / "broken" / "sha2"
+        (broken / ".cursor-plugin").mkdir(parents=True)
+        (broken / ".cursor-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
+        (broken / ".cache-complete").write_text("", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "malformed_cursor_plugin", [False, True], ids=["clean", "cursor_only_malformed"]
+)
+def test_installed_scan_endpoint_covers_both_registered_kinds(
+    monkeypatch, tmp_path, malformed_cursor_plugin
+):
+    """Plan 042 marquee, installed side: with `~/.claude` and `~/.cursor`
+    both present, a bare `scan endpoint` (no `--kind`, no `--config-dir`)
+    renders one card per registered kind. The Cursor plugin node never
+    carries an `enabled` property — installed discovery is blind to
+    marketplace enable state (docs/specs/cursor-agent-kind.md) — and the
+    shared `~/.claude/agents/x.md` file keys as `claude-code/agents/x.md#…`
+    in both kinds' own graphs, not as an absolute path, whichever kind reads
+    it.
+
+    Parametrized (still one e2e addition, not a third) over a second fixture
+    state that adds an unparseable Cursor-only plugin manifest under a second
+    cache entry: Claude Code's per-agent coverage stays `complete` in both
+    states, proving the malformed Cursor-only file's evidence gap is never
+    counted against Claude Code even though Task 9 Step 5 makes the two
+    kinds share scan-wide `stats` totals. Cursor's own coverage is `partial`
+    in both states too — not because the malformed file has no effect, but
+    because `resolve_coverage` floors observed coverage at each kind's own
+    `COVERAGE_BASELINE` (Task 8 Step 1 pins Cursor's installed baseline at
+    `partial` already), so a further evidence gap has nothing lower to drop
+    to. The isolation is the point: nothing here lets Cursor's gap read back
+    as a Claude Code regression, or vice versa.
+    """
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+    from tools.scan import main as scan_main
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".cursor").mkdir(parents=True)
+    _write_two_kind_home(fake_home, malformed_cursor_plugin=malformed_cursor_plugin)
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.agent_kinds.cursor.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build_cursor.Path.home", lambda: fake_home)
+
+    result = CliRunner().invoke(scan_main, ["endpoint", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    # Endpoint mode prints one "detected config_dir=..." line per kind before
+    # the JSON document, and a trailing summary line after it.
+    doc, _ = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])
+    coverage_by_kind = {a["kind"]: a["coverage"] for a in doc["agents"]}
+    assert coverage_by_kind == {"claude-code": "complete", "cursor": "partial"}
+
+    text_result = CliRunner().invoke(scan_main, ["endpoint"])
+    assert text_result.exit_code == 0, text_result.output
+    assert "Claude Code" in text_result.output
+    assert "Cursor" in text_result.output
+
+    agents = discover_agents(DiscoveryContext(source="installed"))
+    assert {a.kind_id for a in agents} == {"claude-code", "cursor"}
+
+    for agent in agents:
+        graph = build_agent_graph(agent)
+        for node in graph.nodes.values():
+            if node.kind == "plugin" and node.ref is not None:
+                assert "enabled" not in (node.ref.extra or {})
+        agent_nodes = [n for n in graph.nodes.values() if n.kind == "agent"]
+        assert len(agent_nodes) == 1
+        assert agent_nodes[0].key.startswith("claude-code/agents/x.md#"), (
+            agent.kind_id,
+            agent_nodes[0].key,
+        )

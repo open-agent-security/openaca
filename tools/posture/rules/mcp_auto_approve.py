@@ -27,6 +27,10 @@ def check_mcp_auto_approve(
 ) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for path, manifest in manifests:
+        cursor_permissions = manifest.get("cursor_permissions")
+        if isinstance(cursor_permissions, dict):
+            findings.extend(_check_cursor_permissions(path, cursor_permissions))
+            continue
         servers = _get_server_map(manifest)
         if servers is None:
             continue
@@ -56,6 +60,44 @@ def check_mcp_auto_approve(
                     remediation=REMEDIATION,
                 )
             )
+    return findings
+
+
+# Cursor expresses this posture in `permissions.json`, not a per-server
+# `autoApprove` field on `mcp.json` — `mcpAllowlist` and `autoRun` are the
+# same posture the rule exists to report (docs/specs/cursor-agent-kind.md
+# "Posture rule applicability"). `manifest` here is already the effective
+# (concatenated, both-scopes-merged) view `tools.posture.resolve_cursor_permissions`
+# produced, so no precedence logic belongs in this branch.
+_CURSOR_ALLOW_FIELDS: tuple[str, ...] = ("mcpAllowlist", "autoRun")
+
+
+def _check_cursor_permissions(path: Path, permissions: dict) -> list[PostureFinding]:
+    names: set[str] = set()
+    for field in _CURSOR_ALLOW_FIELDS:
+        value = permissions.get(field)
+        if isinstance(value, list):
+            names.update(name for name in value if isinstance(name, str))
+    findings: list[PostureFinding] = []
+    for name in sorted(names):
+        label = f"mcp-server/{name}"
+        findings.append(
+            PostureFinding(
+                rule_id=RULE_ID,
+                title=TITLE,
+                severity=SEVERITY,
+                confidence=CONFIDENCE,
+                component={
+                    "type": "mcp_server",
+                    "name": f"{label} autoApprove",
+                },
+                active_in=["cursor"],
+                declared_by={"kind": "manifest", "path": str(path)},
+                component_path=[{"type": "mcp_server", "name": label}],
+                standards=_STANDARDS,
+                remediation=REMEDIATION,
+            )
+        )
     return findings
 
 

@@ -1,0 +1,371 @@
+{
+  "edges": [
+    {
+      "child": ".claude/agents/standalone-agent.md#$#standalone-agent",
+      "parent": "openaca:target"
+    },
+    {
+      "child": ".claude/commands/standalone-cmd.md#$#standalone-cmd",
+      "parent": "openaca:target"
+    },
+    {
+      "child": ".claude/settings.json#$.enabledPlugins['some-other-plugin@some-marketplace']#plugin/some-marketplace/some-other-plugin",
+      "parent": "openaca:target"
+    },
+    {
+      "child": ".claude/skills/proj-skill/SKILL.md#$.frontmatter#proj-skill",
+      "parent": "openaca:target"
+    },
+    {
+      "child": "mcp.json#$.mcpServers.root-mcp#mcp-server/pypi/root-mcp-tool",
+      "parent": "openaca:target"
+    },
+    {
+      "child": "package.json#dependencies#pkg:npm/left-pad@1.0.0",
+      "parent": "openaca:target"
+    },
+    {
+      "child": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin",
+      "parent": "openaca:target"
+    },
+    {
+      "child": "plugin-dir/.mcp.json#$.mcpServers.bundled-mcp#mcp-server/npm/@acme/bundled-mcp",
+      "parent": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin"
+    },
+    {
+      "child": "plugin-dir/agents/helper.md#$#helper",
+      "parent": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin"
+    },
+    {
+      "child": "plugin-dir/commands/greet.md#$#greet",
+      "parent": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin"
+    },
+    {
+      "child": "plugin-dir/hooks/hooks.json#$.hooks.PreToolUse[0]#",
+      "parent": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin"
+    },
+    {
+      "child": "plugin-dir/skills/widget/SKILL.md#$.frontmatter#widget",
+      "parent": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin"
+    }
+  ],
+  "nodes": [
+    {
+      "key": ".claude/agents/standalone-agent.md#$#standalone-agent",
+      "kind": "agent",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "component_type": "agent",
+          "scope_owner": null
+        },
+        "name": "standalone-agent",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$",
+        "source_manifest": "<FIXTURE>/.claude/agents/standalone-agent.md",
+        "version": null
+      }
+    },
+    {
+      "key": ".claude/commands/standalone-cmd.md#$#standalone-cmd",
+      "kind": "command",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "component_type": "command",
+          "scope_owner": null
+        },
+        "name": "standalone-cmd",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$",
+        "source_manifest": "<FIXTURE>/.claude/commands/standalone-cmd.md",
+        "version": null
+      }
+    },
+    {
+      "key": ".claude/settings.json#$.enabledPlugins['some-other-plugin@some-marketplace']#plugin/some-marketplace/some-other-plugin",
+      "kind": "plugin",
+      "ref": {
+        "component_identity": "plugin/some-marketplace/some-other-plugin",
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "_identity_namespace": "plugin/some-marketplace/some-other-plugin",
+          "component_type": "plugin",
+          "marketplace": "some-marketplace"
+        },
+        "name": "some-other-plugin",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$.enabledPlugins['some-other-plugin@some-marketplace']",
+        "source_manifest": "<FIXTURE>/.claude/settings.json",
+        "version": null
+      }
+    },
+    {
+      "key": ".claude/skills/proj-skill/SKILL.md#$.frontmatter#proj-skill",
+      "kind": "skill",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "artifact_coordinates": [
+            {
+              "algorithm": "sha256",
+              "kind": "skill-content-hash",
+              "value": "sha256:913b92d698a3e373c1db8dfe28f8b4bed48aa21c0f4f47e99a7de91aec446842"
+            }
+          ],
+          "component_type": "skill"
+        },
+        "name": "proj-skill",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$.frontmatter",
+        "source_manifest": "<FIXTURE>/.claude/skills/proj-skill/SKILL.md",
+        "version": null
+      }
+    },
+    {
+      "key": "mcp.json#$.mcpServers.root-mcp#mcp-server/pypi/root-mcp-tool",
+      "kind": "mcp_server",
+      "ref": {
+        "component_identity": "mcp-server/pypi/root-mcp-tool",
+        "ecosystem": "PyPI",
+        "extra": {
+          "_identity_finalized": true,
+          "component_path": [
+            {
+              "name": "root-mcp",
+              "type": "mcp_server"
+            }
+          ],
+          "component_type": "mcp_server",
+          "declared_by": {
+            "kind": "manifest",
+            "path": "<FIXTURE>/mcp.json"
+          },
+          "install_source": "uvx root-mcp-tool==0.1.0"
+        },
+        "name": "root-mcp-tool",
+        "purl": "pkg:pypi/root-mcp-tool@0.1.0",
+        "scope": "agent-component",
+        "source_locator": "$.mcpServers.root-mcp",
+        "source_manifest": "<FIXTURE>/mcp.json",
+        "version": "0.1.0"
+      }
+    },
+    {
+      "key": "openaca:target",
+      "kind": "target",
+      "ref": null
+    },
+    {
+      "key": "package.json#dependencies#pkg:npm/left-pad@1.0.0",
+      "kind": "package",
+      "ref": {
+        "component_identity": "package/npm/left-pad",
+        "ecosystem": "npm",
+        "extra": {
+          "_identity_finalized": true
+        },
+        "name": "left-pad",
+        "purl": "pkg:npm/left-pad@1.0.0",
+        "scope": "agent-component",
+        "source_locator": "dependencies",
+        "source_manifest": "<FIXTURE>/package.json",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "key": "plugin-dir/.claude-plugin/plugin.json#$#root-plugin",
+      "kind": "plugin",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "component_type": "plugin"
+        },
+        "name": "root-plugin",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$",
+        "source_manifest": "<FIXTURE>/plugin-dir/.claude-plugin/plugin.json",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "key": "plugin-dir/.mcp.json#$.mcpServers.bundled-mcp#mcp-server/npm/@acme/bundled-mcp",
+      "kind": "mcp_server",
+      "ref": {
+        "component_identity": "mcp-server/npm/@acme/bundled-mcp",
+        "ecosystem": "npm",
+        "extra": {
+          "_identity_finalized": true,
+          "component_path": [
+            {
+              "name": "root-plugin",
+              "type": "plugin"
+            },
+            {
+              "name": "bundled-mcp",
+              "type": "mcp_server"
+            }
+          ],
+          "component_type": "mcp_server",
+          "declared_by": {
+            "kind": "plugin",
+            "name": "root-plugin",
+            "path": "<FIXTURE>/plugin-dir/.claude-plugin/plugin.json"
+          },
+          "install_source": "npx -y @acme/bundled-mcp@1.0.0"
+        },
+        "name": "@acme/bundled-mcp",
+        "purl": "pkg:npm/%40acme/bundled-mcp@1.0.0",
+        "scope": "agent-component",
+        "source_locator": "$.mcpServers.bundled-mcp",
+        "source_manifest": "<FIXTURE>/plugin-dir/.mcp.json",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "key": "plugin-dir/agents/helper.md#$#helper",
+      "kind": "agent",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "component_path": [
+            {
+              "name": "root-plugin",
+              "type": "plugin"
+            },
+            {
+              "name": "helper",
+              "type": "agent"
+            }
+          ],
+          "component_type": "agent",
+          "declared_by": {
+            "kind": "plugin",
+            "name": "root-plugin",
+            "path": "<FIXTURE>/plugin-dir/.claude-plugin/plugin.json"
+          },
+          "scope_owner": "root-plugin"
+        },
+        "name": "helper",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$",
+        "source_manifest": "<FIXTURE>/plugin-dir/agents/helper.md",
+        "version": null
+      }
+    },
+    {
+      "key": "plugin-dir/commands/greet.md#$#greet",
+      "kind": "command",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "component_path": [
+            {
+              "name": "root-plugin",
+              "type": "plugin"
+            },
+            {
+              "name": "greet",
+              "type": "command"
+            }
+          ],
+          "component_type": "command",
+          "declared_by": {
+            "kind": "plugin",
+            "name": "root-plugin",
+            "path": "<FIXTURE>/plugin-dir/.claude-plugin/plugin.json"
+          },
+          "scope_owner": "root-plugin"
+        },
+        "name": "greet",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$",
+        "source_manifest": "<FIXTURE>/plugin-dir/commands/greet.md",
+        "version": null
+      }
+    },
+    {
+      "key": "plugin-dir/hooks/hooks.json#$.hooks.PreToolUse[0]#",
+      "kind": "hook",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "command": "echo pre-tool",
+          "component_path": [
+            {
+              "name": "root-plugin",
+              "type": "plugin"
+            },
+            {
+              "name": "claude-hook/command:8190160a04fcbc88",
+              "type": "hook"
+            }
+          ],
+          "component_type": "hook",
+          "declared_by": {
+            "kind": "plugin",
+            "name": "root-plugin",
+            "path": "<FIXTURE>/plugin-dir/.claude-plugin/plugin.json"
+          },
+          "event": "PreToolUse",
+          "index": 0,
+          "matcher": null,
+          "type": "command"
+        },
+        "name": null,
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$.hooks.PreToolUse[0]",
+        "source_manifest": "<FIXTURE>/plugin-dir/hooks/hooks.json",
+        "version": null
+      }
+    },
+    {
+      "key": "plugin-dir/skills/widget/SKILL.md#$.frontmatter#widget",
+      "kind": "skill",
+      "ref": {
+        "component_identity": null,
+        "ecosystem": null,
+        "extra": {
+          "_identity_finalized": true,
+          "artifact_coordinates": [
+            {
+              "algorithm": "sha256",
+              "kind": "skill-content-hash",
+              "value": "sha256:a3e4512f286ed96def6cab5b969870faef0a8a8541086c4296c9d75e82814049"
+            }
+          ],
+          "component_type": "skill"
+        },
+        "name": "widget",
+        "purl": null,
+        "scope": "agent-component",
+        "source_locator": "$.frontmatter",
+        "source_manifest": "<FIXTURE>/plugin-dir/skills/widget/SKILL.md",
+        "version": null
+      }
+    }
+  ]
+}

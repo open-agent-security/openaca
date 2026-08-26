@@ -847,6 +847,28 @@ def test_repo_plugin_bundled_mcp_and_hooks_are_plugin_children(tmp_path):
     assert [n.kind for n in g.lineage(mcp)] == ["mcp_server", "plugin", "target"]
 
 
+def test_repo_plugin_inline_hook_source_manifest_points_at_real_manifest(tmp_path):
+    """Claude-Code control for the Cursor regression: an inline `hooks` block
+    in plugin.json must stamp the hook ref's `source_manifest` with the SAME
+    manifest path that was actually read, not a hardcoded literal."""
+    manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "version": "1",
+                "hooks": {"PreToolUse": [{"type": "command", "command": "echo hi"}]},
+            }
+        )
+    )
+    g = build_graph(tmp_path, mode="repo")
+    hook = next(n for n in g.nodes.values() if n.kind == "hook")
+    assert hook.ref is not None
+    assert Path(hook.ref.source_manifest).resolve() == manifest.resolve()
+    assert Path(hook.ref.source_manifest).is_file()
+
+
 def test_endpoint_plugin_bundled_mcp_is_plugin_child(tmp_path):
     install_root = tmp_path / "claude"
     install_root.mkdir()

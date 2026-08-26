@@ -2337,7 +2337,9 @@ def test_endpoint_card_tree_is_rooted_at_the_agent(tmp_path):
         encoding="utf-8",
     )
 
-    result = CliRunner().invoke(scan_main, ["endpoint", "--config-dir", str(root), "--no-color"])
+    result = CliRunner().invoke(
+        scan_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--no-color"]
+    )
 
     assert result.exit_code == 0, result.output
     inventory = result.output.split("Inventory", 1)[1]

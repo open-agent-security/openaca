@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple, Union
+
+from pathspec import GitIgnoreSpec
 
 from tools.component_ref import ComponentRef
 from tools.parsers import (
+    agent_plugins,
     bun_lock,
     claude_command_agent,
     claude_plugin,
@@ -22,6 +25,23 @@ from tools.parsers import (
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
 ParserFn = Callable[[Path], list[ComponentRef]]
+GuardFn = Callable[[Path], bool]
+
+
+class ManifestPattern(NamedTuple):
+    """One registry entry: a glob, its parser, and an optional guard.
+
+    A `NamedTuple` (not a dataclass) so `manifest_patterns` tuples stay
+    hashable — `tools/scan.py` and `tools/bom_cli.py` cache on
+    `(scan_root, kind.manifest_patterns)`.
+    """
+
+    pattern: str
+    parser: ParserFn
+    guard: GuardFn | None = None
+
+
+RegistryEntry = Union[ManifestPattern, tuple[str, ParserFn]]
 
 
 def _parse_repo_command(path: Path) -> list[ComponentRef]:
@@ -32,66 +52,95 @@ def _parse_repo_agent(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(path, kind="agent")
 
 
-REGISTRY: list[tuple[str, ParserFn]] = [
-    ("package.json", package_json.parse),
-    ("pyproject.toml", pyproject_toml.parse),
-    ("mcp.json", mcp_json.parse),
-    (".mcp.json", mcp_json.parse),
+# The five dependency manifests shared by every host — not Claude-Code- or
+# Cursor-specific.
+HOST_AGNOSTIC_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("package.json", package_json.parse),
+    ManifestPattern("pyproject.toml", pyproject_toml.parse),
+    ManifestPattern("package-lock.json", package_lock_json.parse),
+    ManifestPattern("uv.lock", uv_lock.parse),
+    ManifestPattern("bun.lock", bun_lock.parse),
+]
+
+# Everything else in the pre-split REGISTRY, unchanged and in order. The
+# `.claude-plugin/plugin.json` and `.claude/settings.json` patterns are
+# re-anchored to `**/...` here: git-wildmatch anchors a slashed pattern at the
+# root, but the hand-rolled matcher these patterns used to run through
+# special-cased them to mean "at any depth" — the `**/` prefix is required to
+# keep that meaning under `pathspec`.
+CLAUDE_CODE_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("mcp.json", mcp_json.parse),
+    ManifestPattern(".mcp.json", mcp_json.parse),
     # Claude Desktop user-config: same JSON shape as `mcp.json`
     # (`mcpServers` map of stdio launches), different filename. Reuse
     # the same parser; the filename pattern is the only addition.
-    ("claude_desktop_config.json", mcp_json.parse),
-    (".claude-plugin/plugin.json", claude_plugin.parse),
-    (".claude/settings.json", claude_settings.parse),
+    ManifestPattern("claude_desktop_config.json", mcp_json.parse),
+    ManifestPattern("**/.claude-plugin/plugin.json", claude_plugin.parse),
+    ManifestPattern("**/.claude/settings.json", claude_settings.parse),
     # Plan 008: agent-component inventory in repo mode. These
     # surfaces emit the same ecosystems as endpoint mode; parentage is set by
     # the graph edge, not stored on the refs.
-    ("**/.claude/skills/*/SKILL.md", claude_skill.parse),
-    ("**/.claude/commands/**/*.md", _parse_repo_command),
-    ("**/.claude/agents/**/*.md", _parse_repo_agent),
-    # Plan 009: lockfile parsers for repo-mode transitive coverage.
-    # extra["transitive"]=True so SARIF surfaces properties.coverage=transitive.
-    ("package-lock.json", package_lock_json.parse),
-    ("uv.lock", uv_lock.parse),
-    ("bun.lock", bun_lock.parse),
+    ManifestPattern("**/.claude/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.claude/commands/**/*.md", _parse_repo_command),
+    ManifestPattern("**/.claude/agents/**/*.md", _parse_repo_agent),
 ]
 
+# Cursor's manifest surface. Deliberately no bare `mcp.json`/`.mcp.json`:
+# Cursor's direct MCP surface is the path-scoped `.cursor/mcp.json`; bundle
+# roots are reached only through the plugin route. A bare pattern here would
+# re-create the cross-format collision the per-agent-graph model exists to
+# prevent.
+CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("**/.cursor/mcp.json", mcp_json.parse),
+    ManifestPattern("**/.cursor/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.agents/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.claude/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.codex/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.cursor/commands/**/*.md", _parse_repo_command),
+    ManifestPattern("**/.cursor/agents/**/*.md", _parse_repo_agent),
+    ManifestPattern("**/.claude/agents/**/*.md", _parse_repo_agent),
+    ManifestPattern("**/.cursor-plugin/plugin.json", claude_plugin.parse),
+    ManifestPattern("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
+]
 
-def _registry_pattern_matches(path: Path, root: Path, pattern: str) -> bool:
+# Compat alias: today's flat registry, kept byte-identical in content so
+# `parse_repo`/`parse_repo_grouped` no-arg defaults, and
+# `claude_code.KIND.manifest_patterns == tuple(REGISTRY)`, are unaffected.
+REGISTRY: list[ManifestPattern] = [*HOST_AGNOSTIC_REGISTRY, *CLAUDE_CODE_MANIFEST_REGISTRY]
+
+
+def _normalize_registry_entry(entry: RegistryEntry) -> ManifestPattern:
+    if isinstance(entry, ManifestPattern):
+        return entry
+    pattern, parser = entry
+    return ManifestPattern(pattern, parser)
+
+
+_pattern_cache: dict[str, GitIgnoreSpec] = {}
+
+
+def _compiled_pattern(pattern: str) -> GitIgnoreSpec:
+    # Same shape as `gitignore.py`'s `load_gitignore_spec`/`is_ignored`: a
+    # `GitIgnoreSpec` compiled from one pattern line, matched with
+    # `match_file`. `GitWildMatchPattern` is the single-pattern class but is
+    # deprecated in the installed pathspec version; `GitIgnoreSpec` is the
+    # non-deprecated equivalent this repo already uses elsewhere.
+    compiled = _pattern_cache.get(pattern)
+    if compiled is None:
+        compiled = GitIgnoreSpec.from_lines([pattern])
+        _pattern_cache[pattern] = compiled
+    return compiled
+
+
+def _pattern_matches(path: Path, root: Path, pattern: str) -> bool:
     try:
         rel = path.relative_to(root)
     except ValueError:
         rel = path
-
-    if "/" not in pattern and "*" not in pattern:
-        return rel.name == pattern
-
-    rel_parts = rel.parts
-    rel_posix = rel.as_posix()
-    if pattern in {".claude-plugin/plugin.json", ".claude/settings.json"}:
-        return rel_posix == pattern or rel_posix.endswith(f"/{pattern}")
-
-    if len(rel_parts) < 4 or rel_parts[-1] != "SKILL.md":
-        skill_match = False
-    else:
-        skill_match = any(
-            rel_parts[i] == ".claude"
-            and i + 3 < len(rel_parts)
-            and rel_parts[i + 1] == "skills"
-            and i + 3 == len(rel_parts) - 1
-            for i in range(len(rel_parts) - 3)
-        )
-    if pattern == "**/.claude/skills/*/SKILL.md":
-        return skill_match
-
-    if pattern in {"**/.claude/commands/**/*.md", "**/.claude/agents/**/*.md"}:
-        kind = "commands" if "commands" in pattern else "agents"
-        return rel.suffix == ".md" and any(
-            rel_parts[i] == ".claude" and i + 2 < len(rel_parts) and rel_parts[i + 1] == kind
-            for i in range(len(rel_parts) - 2)
-        )
-
-    return rel.match(pattern)
+    # Normalize a Windows-style backslash path before matching — git-wildmatch
+    # regexes are built assuming forward-slash-separated components.
+    rel_posix = rel.as_posix().replace("\\", "/")
+    return bool(_compiled_pattern(pattern).match_file(rel_posix))
 
 
 def _filter_secondary_refs(
@@ -135,7 +184,7 @@ def parse_repo_grouped(
     root: Path,
     include_gitignored: bool = False,
     *,
-    registry: Sequence[tuple[str, ParserFn]] = REGISTRY,
+    registry: Sequence[RegistryEntry] = REGISTRY,
 ) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
     """Walk `root` and return (per-manifest results, total paths matched).
 
@@ -170,20 +219,84 @@ def parse_repo_grouped(
     rather than the union.
     """
     spec = None if include_gitignored else load_gitignore_spec(root)
+    normalized_registry = [_normalize_registry_entry(entry) for entry in registry]
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     for path in iter_unignored_files(root, spec):
-        for pattern, parser in registry:
-            if not _registry_pattern_matches(path, root, pattern):
+        for entry in normalized_registry:
+            if not _pattern_matches(path, root, entry.pattern):
+                continue
+            if entry.guard is not None and not entry.guard(path):
                 continue
             n_found += 1
             try:
-                refs = parser(path)
+                refs = entry.parser(path)
                 refs = _filter_secondary_refs(refs, path, root, spec)
                 grouped.append((path, refs))
             except Exception:
-                continue
+                pass
+            # One-file-one-route: the walker, not registry hygiene, enforces
+            # that a path is claimed by at most one pattern.
+            break
     return grouped, n_found
+
+
+def parse_repo_registry_counts(
+    root: Path,
+    registries: Mapping[str, Sequence[RegistryEntry]],
+    include_gitignored: bool = False,
+) -> tuple[dict[str, tuple[int, int]], tuple[int, int]]:
+    """One filesystem walk producing every registry's own (n_found, n_failed)
+    plus the (n_found, n_failed) of their union — each path counted once
+    toward the union no matter how many registries' patterns match it.
+
+    Two kinds sharing manifest surface (e.g. the five host-agnostic
+    dependency manifests) each need their own count for their own
+    coverage — a Cursor parse failure must not degrade the Claude agent's
+    coverage — but a *scan-wide* total must count a shared `package.json`
+    once, not once per kind that declares it. Walking `root` once and
+    checking every registry per path, instead of once per registry, is what
+    keeps the two accounting layers about the same paths from disagreeing.
+    """
+    spec = None if include_gitignored else load_gitignore_spec(root)
+    normalized = {
+        key: [_normalize_registry_entry(entry) for entry in registry]
+        for key, registry in registries.items()
+    }
+    per_key_found = dict.fromkeys(registries, 0)
+    per_key_failed = dict.fromkeys(registries, 0)
+    union_found = 0
+    union_failed = 0
+    for path in iter_unignored_files(root, spec):
+        union_matched = False
+        union_ok = True
+        for key, entries in normalized.items():
+            for entry in entries:
+                if not _pattern_matches(path, root, entry.pattern):
+                    continue
+                if entry.guard is not None and not entry.guard(path):
+                    continue
+                per_key_found[key] += 1
+                try:
+                    entry.parser(path)
+                    ok = True
+                except Exception:
+                    ok = False
+                    per_key_failed[key] += 1
+                if not union_matched:
+                    union_matched = True
+                    union_ok = ok
+                # One-file-one-route within this registry, mirroring
+                # `parse_repo_grouped`.
+                break
+        if union_matched:
+            union_found += 1
+            if not union_ok:
+                union_failed += 1
+    return (
+        {key: (per_key_found[key], per_key_failed[key]) for key in registries},
+        (union_found, union_failed),
+    )
 
 
 def flatten_grouped(

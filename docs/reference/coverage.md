@@ -3,6 +3,26 @@
 OpenACA follows a tiered model loosely analogous to traditional SCA's
 `lockfile > manifest > source code` hierarchy.
 
+## Agent kinds
+
+OpenACA registers one composition builder per agent kind. Each kind pins a
+coverage baseline per source — `resolve_coverage` floors observed coverage at
+that baseline regardless of how clean a given scan's parse is:
+
+| Kind | Declared | Installed |
+|---|---|---|
+| `claude-code` | `complete` | `complete` |
+| `cursor` | `partial` | `partial` |
+
+Cursor is `partial` at both sources, for different reasons per source:
+installed composition is blind to plugin enable state (a server-side call),
+runtime MCP registration, and the extensibility flag; declared composition is
+narrower still — nothing is installed, so there is no plugin cache and no
+runtime registration to read — but still hits the extensibility flag and
+unparsed instruction surfaces. See
+[`docs/specs/cursor-agent-kind.md`](../specs/cursor-agent-kind.md) for the
+full evidence-gap detail.
+
 | Tier | What it reads | V0 status |
 |---|---|---|
 | **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` in endpoint mode, `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | V0 |
@@ -22,6 +42,10 @@ dependencies. OpenACA suppresses those from advisory queries and output; scan
 them with a general-purpose SCA scanner.
 
 ## Supported manifests
+
+The table below is Claude Code's manifest set. Cursor is a second, separately
+scoped agent kind — see `docs/specs/cursor-agent-kind.md` for the manifests it
+reads.
 
 | Manifest | Detects | Identifier emitted |
 |---|---|---|
@@ -56,8 +80,8 @@ version from lockfiles or install state.
 OpenACA V0 does not yet see:
 
 - inline or programmatic SDK configuration embedded directly in source code;
-- non-Claude local agent-host state such as Codex CLI, Cursor, Windsurf, or VS
-  Code agent-mode config;
+- non-Claude, non-Cursor local agent-host state such as Codex CLI, Windsurf,
+  or VS Code agent-mode config;
 - vulnerabilities for local-only or source-less components that do not provide
   a package, Git, or external match coordinate;
 - live tool invocation behavior or runtime blocking.

@@ -44,6 +44,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 037 | [Agent component capability extraction](037-capability-extraction.md) | ⏸ Pending | 033 |
 | 038 | [Source-stable component identity](038-source-stable-component-identity.md) | ✅ Done | 033, 034, 037 |
 | 040 | [Multi-agent support](040-multi-agent-support.md) | ✅ Done | 038 |
+| 041 | [Collector agent-rooted uploads](041-collector-agent-rooted-uploads.md) | ✅ Done | 040 |
+| 042 | [Cursor agent kind](042-cursor-agent-kind.md) | ✅ Done | 040 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 
@@ -87,4 +89,6 @@ audit before implementation is marked complete:
 - Active disclosure pipeline at scale.
 - `type: exposure` and `type: config` records.
 - T3 (hash-based) advisories.
-- Cursor / Windsurf manifest parsers.
+- Windsurf manifest parsers. (Cursor moved into scope as plan 042 — the
+  agent-kind mechanism from plan 040 made a second runtime an extension rather
+  than a re-root.)

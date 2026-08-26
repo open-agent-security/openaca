@@ -37,7 +37,11 @@ def walk_plugin_root(
     )
     refs.extend(_parse_default_mcp(plugin_root, refs))
     refs.extend(_parse_bundled_skills(plugin_root, plugin_data))
-    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_name))
+    refs.extend(
+        _parse_bundled_hooks(
+            plugin_root, plugin_data, plugin_name, plugin_json_path=plugin_json_path
+        )
+    )
     refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
     return refs
 
@@ -145,10 +149,26 @@ def _parse_manifest_refs(
 
 
 def _parse_default_mcp(
-    plugin_root: Path, existing_refs: list[ComponentRef], *, warnings: list[str] | None = None
+    plugin_root: Path,
+    existing_refs: list[ComponentRef],
+    *,
+    warnings: list[str] | None = None,
+    mcp_filenames: tuple[str, ...] = (".mcp.json",),
 ) -> list[ComponentRef]:
-    default_mcp = resolve_within(plugin_root, ".mcp.json")
-    if default_mcp is None or not default_mcp.is_file():
+    """Folder discovery for the plugin's bundled MCP manifest.
+
+    `mcp_filenames` is an ORDERED candidate list, not a single name: Cursor's
+    folder discovery accepts root `mcp.json` OR `.mcp.json` (both, never
+    merged — the first that resolves to a file wins). Claude Code passes a
+    one-element tuple, so this is behavior-preserving there.
+    """
+    default_mcp: Path | None = None
+    for mcp_filename in mcp_filenames:
+        candidate = resolve_within(plugin_root, mcp_filename)
+        if candidate is not None and candidate.is_file():
+            default_mcp = candidate
+            break
+    if default_mcp is None:
         return []
     already_seen = {(_source_manifest_key(r), r.component_identity) for r in existing_refs}
     try:
@@ -228,10 +248,12 @@ def _parse_bundled_hooks(
     plugin_name: str,
     *,
     warnings: list[str] | None = None,
+    plugin_json_path: Path,
+    hooks_filename: str = "hooks/hooks.json",
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
-    default_hooks = resolve_within(plugin_root, "hooks/hooks.json")
+    default_hooks = resolve_within(plugin_root, hooks_filename)
     if default_hooks is not None and default_hooks.is_file():
         walked_hook_files.add(default_hooks.resolve())
         try:
@@ -246,7 +268,6 @@ def _parse_bundled_hooks(
             if warnings is not None:
                 warnings.append(f"could not parse {default_hooks}: {exc}")
     inline_hooks = data.get("hooks")
-    plugin_json_path = plugin_root / ".claude-plugin" / "plugin.json"
     if isinstance(inline_hooks, dict):
         try:
             refs.extend(
@@ -291,6 +312,8 @@ def _parse_bundled_command_agents(
     plugin_name: str,
     *,
     warnings: list[str] | None = None,
+    commands_dir: str = "commands",
+    agents_dir: str = "agents",
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
@@ -298,8 +321,8 @@ def _parse_bundled_command_agents(
     except (OSError, RuntimeError):
         return refs
     surfaces: tuple[tuple[Kind, str, str], ...] = (
-        ("command", "commands", "commands"),
-        ("agent", "agents", "agents"),
+        ("command", commands_dir, "commands"),
+        ("agent", agents_dir, "agents"),
     )
     for kind, default_subdir, plugin_key in surfaces:
         dirs: list[Path] = []

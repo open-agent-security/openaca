@@ -66,7 +66,9 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", fake_run_posture_rules)
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     assert calls[0][0] == "_agent_refs"
     assert calls[1] == ("run_posture_rules", [ref])
@@ -250,6 +252,7 @@ def test_build_endpoint_collection_uploads_external_scanner_findings(tmp_path, m
 
     collection = build_endpoint_collections(
         config_dir=tmp_path,
+        kind_id="claude-code",
         project=None,
         external_scanners=("nvidia-skillspector",),
     )[0]
@@ -316,6 +319,7 @@ def test_build_endpoint_collection_missing_external_scanner_aborts(tmp_path, mon
     with pytest.raises(CollectError, match="SkillSpector command not found: skillspector"):
         build_endpoint_collections(
             config_dir=tmp_path,
+            kind_id="claude-code",
             project=None,
             external_scanners=("nvidia-skillspector",),
         )
@@ -347,6 +351,7 @@ def test_build_endpoint_collection_surfaces_scanner_warnings(tmp_path, monkeypat
 
     build_endpoint_collections(
         config_dir=tmp_path,
+        kind_id="claude-code",
         project=None,
         external_scanners=("nvidia-skillspector",),
     )
@@ -373,7 +378,9 @@ def test_build_endpoint_collection_trims_binary_install_source_argv(tmp_path, mo
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "python"
@@ -399,7 +406,9 @@ def test_build_endpoint_collection_trims_npx_install_source_argv(tmp_path, monke
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @example/mcp"
@@ -425,7 +434,9 @@ def test_build_endpoint_collection_trims_uvx_install_source_argv(tmp_path, monke
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server"
@@ -451,7 +462,9 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_argv(tmp_path
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @scope/pkg@1.2.3"
@@ -478,7 +491,9 @@ def test_build_endpoint_collection_aligns_package_mcp_posture_to_graph_identity(
         "tools.remote.collector._agent_posture_manifests",
         lambda agent, refs: ([], []),
     )
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@playwright/mcp"
@@ -511,7 +526,9 @@ def test_build_endpoint_collection_aligns_remote_mcp_posture_to_graph_identity(
         "tools.remote.collector._agent_posture_manifests",
         lambda agent, refs: ([(manifest_path, manifest)], []),
     )
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-remote/example.com/mcp"
@@ -539,7 +556,9 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_argv(tmp_pat
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
@@ -569,7 +588,9 @@ def test_build_endpoint_collection_trims_pinned_github_install_source_argv(tmp_p
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (
@@ -605,7 +626,9 @@ def test_build_endpoint_collection_trims_github_subdirectory_install_source_argv
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (
@@ -648,7 +671,9 @@ def test_build_endpoint_collection_trims_unversioned_github_install_source_argv(
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == expected
@@ -676,7 +701,9 @@ def test_build_endpoint_collection_trims_pinned_docker_install_source_argv(tmp_p
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "docker hashicorp/terraform-mcp-server:0.4.0"
@@ -705,7 +732,9 @@ def test_build_endpoint_collection_trims_docker_digest_install_source_uses_at_se
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == (f"docker ghcr.io/github/github-mcp-server@{digest}")
@@ -729,7 +758,9 @@ def test_build_endpoint_collection_trims_local_mcp_install_source_argv(tmp_path,
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "bun"
@@ -757,7 +788,9 @@ def test_build_endpoint_collection_trims_pinned_npm_install_source_with_flag_pre
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "npx @scope/pkg@1.2.3"
@@ -785,7 +818,9 @@ def test_build_endpoint_collection_trims_pinned_pypi_install_source_with_flag_pr
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:install_source"] == "uvx mcp-server==1.2.3"
@@ -812,7 +847,9 @@ def test_build_endpoint_collection_trims_binary_mcp_with_component_path(tmp_path
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert "openaca:identity" not in props
@@ -839,7 +876,9 @@ def test_build_endpoint_collection_trims_local_mcp_with_component_path(tmp_path,
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert "openaca:identity" not in props
@@ -873,7 +912,9 @@ def test_build_endpoint_collection_trims_unpinned_npx_mcp_with_launcher_flags(
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
@@ -903,7 +944,9 @@ def test_build_endpoint_collection_trims_unpinned_uvx_mcp_with_launcher_flags(
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
@@ -932,7 +975,9 @@ def test_build_endpoint_collection_trims_uvx_short_python_flag(tmp_path, monkeyp
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/my-tool"
@@ -959,7 +1004,9 @@ def test_build_endpoint_collection_trims_uv_tool_run_as_package_launch(tmp_path,
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/pypi/weather-mcp"
@@ -1014,7 +1061,9 @@ def test_build_endpoint_collection_trims_npx_package_flag_install_source(
     )
     monkeypatch.setattr("tools.remote.collector.run_posture_rules", lambda *args, **kwargs: [])
 
-    collection = build_endpoint_collections(config_dir=tmp_path, project=None)[0]
+    collection = build_endpoint_collections(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )[0]
 
     props = {prop["name"]: prop["value"] for prop in collection.bom["components"][0]["properties"]}
     assert props["openaca:identity"] == "mcp-server/npm/@scope/pkg"
@@ -1050,7 +1099,7 @@ def test_collect_endpoint_registers_asset_uploads_bom_and_saves_asset_id(tmp_pat
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    results = collect_endpoint(config_dir=tmp_path, project=None)
+    results = collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert results[0].asset_id == "asset-123"
     assert [name for name, _ in calls] == ["init", "register_asset", "upload_bom"]
@@ -1089,6 +1138,7 @@ def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, mon
 
     collect_endpoint(
         config_dir=tmp_path,
+        kind_id="claude-code",
         project=None,
         external_scanners=("nvidia-skillspector",),
     )
@@ -1097,6 +1147,7 @@ def test_collect_endpoint_forwards_external_scanners_to_collection(tmp_path, mon
         "build_endpoint_collections",
         {
             "config_dir": tmp_path,
+            "kind_id": "claude-code",
             "project": None,
             "external_scanners": ("nvidia-skillspector",),
         },
@@ -1150,7 +1201,7 @@ def test_collect_endpoint_uploads_content_hash_of_redacted_bom(tmp_path, monkeyp
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     payload = captured["payload"]
     # The absolute path must have been redacted out of the BOM.
@@ -1322,7 +1373,7 @@ def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert calls == ["init", "asset-existing"]
 
@@ -1347,7 +1398,7 @@ def test_collect_endpoint_caches_payload_on_interactive_offline_failure(tmp_path
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert exc.value.exit_code == 2
     pending = list(pending_dir.glob("pending-bom-*.json"))
@@ -1375,7 +1426,7 @@ def test_collect_endpoint_converts_upload_client_error_to_collect_error(tmp_path
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert exc.value.exit_code == 1
     assert str(exc.value) == "invalid or revoked token"
@@ -1402,7 +1453,7 @@ def test_collect_endpoint_converts_registration_network_error_to_collect_error(
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as exc:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert exc.value.exit_code == 2
     assert "asset registration failed" in str(exc.value)
@@ -1427,6 +1478,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
         "tools.remote.collector.build_endpoint_collections",
         lambda **kwargs: [
             _collection(
+                config_root=tmp_path,
                 bom={
                     "bomFormat": "CycloneDX",
                     "specVersion": "1.7",
@@ -1439,7 +1491,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
                             ],
                         }
                     ],
-                }
+                },
             )
         ],
     )
@@ -1454,7 +1506,7 @@ def test_collect_endpoint_redacts_absolute_paths_before_upload(tmp_path, monkeyp
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     props = uploads[0]["bom"]["components"][0]["properties"]
     # Inside config_dir → relativized; outside config_dir → basename + stable digest
@@ -1484,7 +1536,7 @@ def test_write_pending_payload_creates_file_mode_0600(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError):
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     pending = list(pending_dir.glob("pending-bom-*.json"))
     assert len(pending) == 1
@@ -1509,7 +1561,7 @@ def test_collect_endpoint_quiet_offline_failure_exits_zero_after_cache(tmp_path,
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    results = collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
+    results = collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None, quiet=True)
 
     # `--quiet` gates only the cached-failure category, so nothing raises and
     # the CLI still exits 0 — as before, when this raised CollectError(exit_code=0).
@@ -1541,7 +1593,7 @@ def test_collect_endpoint_replays_pending_cache_before_current_upload(tmp_path, 
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert uploads[0] == "sha256:old"
     assert len(uploads) == 2
@@ -1572,7 +1624,9 @@ def test_collect_endpoint_continues_current_collection_when_replay_fails(tmp_pat
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    results = collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+    results = collect_endpoint(
+        config_dir=tmp_path, kind_id="claude-code", project=None, allow_offline_cache=True
+    )
 
     # `--allow-offline-cache` gates only the cached-failure category, so this
     # returns instead of raising CollectError(exit_code=0); the CLI exits 0 either way.
@@ -1606,7 +1660,7 @@ def test_collect_endpoint_skips_and_removes_corrupt_pending_file(tmp_path, monke
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert not (pending_dir / "pending-bom-bad.json").exists(), "corrupt file removed"
     assert len(uploads) == 1, "only the current upload ran, not the corrupt pending one"
@@ -1646,7 +1700,7 @@ def test_collect_endpoint_skips_replay_when_no_asset_id_registered(tmp_path, mon
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(uploads) == 1, "only the current upload ran, not the stale pending one"
     assert uploads[0]["asset_id"] == "new-asset-id"
@@ -1685,7 +1739,7 @@ def test_collect_endpoint_purges_stale_asset_pending_files_on_replay(tmp_path, m
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    collect_endpoint(config_dir=tmp_path, project=None)
+    collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(uploads) == 1, "only the current upload ran, not the stale pending one"
     assert uploads[0]["asset_id"] == "new-asset-id"
@@ -1703,13 +1757,23 @@ def test_collect_endpoint_cli_prints_upload_summary(tmp_path, monkeypatch):
 
     result = CliRunner().invoke(
         openaca_main,
-        ["remote", "sync", "endpoint", "--config-dir", str(tmp_path), "--quiet"],
+        [
+            "remote",
+            "sync",
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(tmp_path),
+            "--quiet",
+        ],
     )
 
     assert result.exit_code == 0
     assert calls == [
         {
             "config_dir": tmp_path,
+            "kind_id": "claude-code",
             "project": None,
             "quiet": True,
             "allow_offline_cache": False,
@@ -1744,7 +1808,10 @@ def _write_config(tmp_path: Path, *, asset_id: str | None) -> Path:
 
 
 def _collection(
-    *, agent_kind: str = "claude-code", bom: dict[str, Any] | None = None
+    *,
+    agent_kind: str = "claude-code",
+    bom: dict[str, Any] | None = None,
+    config_root: Path | None = None,
 ) -> EndpointCollection:
     return EndpointCollection(
         agent=AgentInstance(
@@ -1753,6 +1820,12 @@ def _collection(
             source="installed",
             root_label=agent_kind,
             coverage_baseline="complete",
+            # `_prepare_upload_payload` redacts against each collection's own
+            # agent.config_root now, not the CLI's outer --config-dir — a real
+            # installed AgentInstance always carries one. Callers whose bom
+            # embeds absolute paths under a real config_dir pass it explicitly
+            # so redaction has the right root to relativize against.
+            config_root=config_root or Path(f"/fake/.{agent_kind}"),
         ),
         bom=bom
         or {
@@ -1857,7 +1930,9 @@ def test_dry_run_builds_the_payload_that_would_be_uploaded(tmp_path, monkeypatch
         "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
     )
 
-    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    payloads = build_endpoint_dry_run_payloads(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )
 
     assert len(payloads) == 1
     payload = payloads[0]
@@ -1866,6 +1941,66 @@ def test_dry_run_builds_the_payload_that_would_be_uploaded(tmp_path, monkeypatch
     assert payload["target_locator"] == "endpoint:user-scope"
     assert payload["content_hash"] == _content_hash_of(payload["bom"])
     assert payload["posture_findings"][0]["rule_id"] == "openaca-posture-insecure-transport"
+
+
+def test_default_two_kind_discovery_redacts_each_collection_against_its_own_root(
+    tmp_path, monkeypatch
+):
+    """Task 9 Step 4 regression: default discovery (no --kind/--config-dir)
+    returns both a Claude Code and a Cursor collection from one invocation.
+    Each collection's absolute paths must redact against its OWN
+    `agent.config_root` — never a single outer `config_dir`, which can be at
+    most one kind's root and would leak the other kind's absolute paths (or
+    silently fall back to a bare basename) into the upload."""
+    config_path = _write_config(tmp_path, asset_id="asset-existing")
+    monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
+
+    fake_home = tmp_path / "home"
+    claude_dir = fake_home / ".claude"
+    cursor_dir = fake_home / ".cursor"
+    (claude_dir / "skills" / "deploy").mkdir(parents=True)
+    (claude_dir / "skills" / "deploy" / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: d\n---\n", encoding="utf-8"
+    )
+    (cursor_dir / "skills" / "review").mkdir(parents=True)
+    (cursor_dir / "skills" / "review" / "SKILL.md").write_text(
+        "---\nname: review\ndescription: r\n---\n", encoding="utf-8"
+    )
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.agent_kinds.cursor.Path.home", lambda: fake_home)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+
+    payloads = build_endpoint_dry_run_payloads(project=None)
+
+    assert len(payloads) == 2
+
+    def agent_kind(payload):
+        props = payload["bom"]["metadata"]["component"]["properties"]
+        return next(p["value"] for p in props if p["name"] == "openaca:agent_kind")
+
+    def source_manifest(payload, *, bom_ref_contains: str) -> str:
+        for component in payload["bom"]["components"]:
+            if bom_ref_contains not in component["bom-ref"]:
+                continue
+            for prop in component.get("properties", []):
+                if prop["name"] == "openaca:source_manifest":
+                    return prop["value"]
+        raise AssertionError(f"no component with {bom_ref_contains!r} in its bom-ref")
+
+    by_kind = {agent_kind(p): p for p in payloads}
+    assert set(by_kind) == {"claude-code", "cursor"}
+
+    # Each collection's OWN skill relativizes under its OWN root — the exact
+    # thing that breaks if redaction used a single shared outer config_dir
+    # (at most one kind's root) instead of each collection's own
+    # `agent.config_root`: the other kind's own-root skill would then fall
+    # back to a bare digested basename instead of a root-relative path.
+    assert source_manifest(by_kind["claude-code"], bom_ref_contains="deploy") == (
+        "skills/deploy/SKILL.md"
+    )
+    assert source_manifest(by_kind["cursor"], bom_ref_contains="review") == (
+        "skills/review/SKILL.md"
+    )
 
 
 def test_dry_run_never_constructs_a_remote_client(tmp_path, monkeypatch):
@@ -1882,7 +2017,7 @@ def test_dry_run_never_constructs_a_remote_client(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", fail)
 
-    build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    build_endpoint_dry_run_payloads(config_dir=tmp_path, kind_id="claude-code", project=None)
 
 
 def test_dry_run_marks_an_unregistered_asset_rather_than_inventing_one(tmp_path, monkeypatch):
@@ -1892,7 +2027,9 @@ def test_dry_run_marks_an_unregistered_asset_rather_than_inventing_one(tmp_path,
         "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
     )
 
-    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    payloads = build_endpoint_dry_run_payloads(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )
 
     assert payloads[0]["asset_id"] == DRY_RUN_UNREGISTERED_ASSET_ID
 
@@ -1905,7 +2042,9 @@ def test_dry_run_works_without_remote_configuration(tmp_path, monkeypatch):
         "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection()]
     )
 
-    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    payloads = build_endpoint_dry_run_payloads(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )
 
     assert payloads[0]["asset_id"] == DRY_RUN_UNREGISTERED_ASSET_ID
 
@@ -1920,7 +2059,7 @@ def test_dry_run_writes_no_config_and_no_pending_cache(tmp_path, monkeypatch):
     )
     before = config_path.read_text(encoding="utf-8")
 
-    build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    build_endpoint_dry_run_payloads(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert config_path.read_text(encoding="utf-8") == before
     assert not pending_dir.exists()
@@ -1948,10 +2087,13 @@ def test_dry_run_shows_the_redacted_payload_not_the_raw_one(tmp_path, monkeypatc
     }
     monkeypatch.setattr("tools.remote.collector.get_config_path", lambda: config_path)
     monkeypatch.setattr(
-        "tools.remote.collector.build_endpoint_collections", lambda **kwargs: [_collection(bom=bom)]
+        "tools.remote.collector.build_endpoint_collections",
+        lambda **kwargs: [_collection(bom=bom, config_root=tmp_path)],
     )
 
-    payloads = build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+    payloads = build_endpoint_dry_run_payloads(
+        config_dir=tmp_path, kind_id="claude-code", project=None
+    )
 
     value = payloads[0]["bom"]["components"][0]["properties"][0]["value"]
     assert value == "skills/deploy/SKILL.md"
@@ -1978,7 +2120,7 @@ def test_dry_run_enforces_the_upload_contract_rather_than_printing_a_violation(
     )
 
     with pytest.raises(RemoteUploadContractError):
-        build_endpoint_dry_run_payloads(config_dir=tmp_path, project=None)
+        build_endpoint_dry_run_payloads(config_dir=tmp_path, kind_id="claude-code", project=None)
 
 
 def _content_hash_of(bom: dict[str, Any]) -> str:
@@ -2005,7 +2147,9 @@ def _endpoint_fixture(root: Path) -> Path:
 def test_build_endpoint_collections_emits_one_agent_rooted_bom_per_agent(tmp_path):
     config_dir = _endpoint_fixture(tmp_path / ".claude")
 
-    collections = build_endpoint_collections(config_dir=config_dir, project=None)
+    collections = build_endpoint_collections(
+        config_dir=config_dir, kind_id="claude-code", project=None
+    )
 
     assert len(collections) == 1
     assert collections[0].agent.kind_id == "claude-code"
@@ -2046,7 +2190,7 @@ def test_collect_endpoint_uploads_one_payload_per_agent(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    results = collect_endpoint(config_dir=tmp_path, project=None)
+    results = collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(results) == 2
     assert [u["asset_id"] for u in uploads] == ["asset-123", "asset-123"]
@@ -2077,7 +2221,9 @@ def test_collect_endpoint_caches_only_the_failing_agent(tmp_path, monkeypatch):
 
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
-    results = collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+    results = collect_endpoint(
+        config_dir=tmp_path, kind_id="claude-code", project=None, allow_offline_cache=True
+    )
 
     assert len(results) == 1
     assert len(list(pending_dir.glob("pending-bom-*.json"))) == 1
@@ -2113,7 +2259,7 @@ def test_collect_endpoint_attempts_every_agent_by_default_and_names_the_failed_o
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as excinfo:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(uploads) == 2  # the second agent was still attempted
     assert excinfo.value.exit_code == 2
@@ -2131,7 +2277,7 @@ def test_collect_endpoint_warns_and_returns_empty_when_no_agent_discovered(tmp_p
     monkeypatch.setattr("tools.remote.collector.get_pending_dir", lambda: tmp_path / "pending")
     monkeypatch.setattr("tools.remote.collector.build_endpoint_collections", lambda **kwargs: [])
 
-    results = collect_endpoint(config_dir=tmp_path, project=None)
+    results = collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert results == []
 
@@ -2169,7 +2315,7 @@ def test_collect_endpoint_attempts_every_agent_after_multiple_network_failures(
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as excinfo:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(uploads) == 3  # every agent was attempted, including after the second failure
     assert excinfo.value.exit_code == 2
@@ -2208,7 +2354,9 @@ def test_collect_endpoint_continues_past_a_rejected_agent_without_caching_it(tmp
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as excinfo:
-        collect_endpoint(config_dir=tmp_path, project=None, allow_offline_cache=True)
+        collect_endpoint(
+            config_dir=tmp_path, kind_id="claude-code", project=None, allow_offline_cache=True
+        )
 
     assert len(uploads) == 2  # the second agent was still attempted
     assert (
@@ -2255,7 +2403,7 @@ def test_collect_endpoint_names_both_a_rejected_and_a_cached_agent_together(tmp_
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as excinfo:
-        collect_endpoint(config_dir=tmp_path, project=None, quiet=True)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None, quiet=True)
 
     assert len(uploads) == 3  # every agent was attempted despite the rejection
     assert excinfo.value.exit_code == 1  # a rejection is present, so not suppressed
@@ -2292,7 +2440,7 @@ def test_collect_endpoint_aborts_on_auth_failure_without_attempting_later_agents
     monkeypatch.setattr("tools.remote.collector.RemoteClient", FakeClient)
 
     with pytest.raises(CollectError) as excinfo:
-        collect_endpoint(config_dir=tmp_path, project=None)
+        collect_endpoint(config_dir=tmp_path, kind_id="claude-code", project=None)
 
     assert len(uploads) == 1  # the second agent was never attempted
     assert excinfo.value.exit_code == 1

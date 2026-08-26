@@ -4,6 +4,9 @@ Companion ADRs: [0044](../adrs/0044-agent-bom-root.md) (BOM root),
 [0045](../adrs/0045-agent-identity-keying.md) (keying),
 [0046](../adrs/0046-agent-coverage.md) (coverage).
 
+Per-kind specs written against this mechanism:
+[Cursor Agent Kind](cursor-agent-kind.md).
+
 Mechanism only. A runtime's own config paths, manifest shapes, and precedence
 rules belong in a per-kind spec, so a future implementer of a managed or
 framework agent never reads coding-agent material to understand this.
@@ -288,9 +291,21 @@ documentation records both the runtime registration API and that a disabled serv
 surface is file-declared, so missing it is scanner maturity rather than runtime
 opacity — which keeps the level at `partial` either way (ADR-0046) but is a
 different reason, and it means parsing only the two well-known paths finds two
-servers of thirteen. The per-server enable state is the open question: this
-investigation did not find where it persists, so whether it is observable at all
-is unestablished and a Cursor kind must not claim `complete` until it is.
+servers of thirteen. The per-server enable state was the open question, left
+unestablished here.
+
+**That question has since been answered, and the answer is the harder one.**
+[ADR-0052](../adrs/0052-cursor-agent-kind.md) records it: activation state is not
+a file this investigation failed to locate, it is a **server call**. Local state
+persists only enabled ids — numeric and nameless — and no local file records which
+component they name.
+
+The distinction is worth keeping because the two halves above age differently.
+"Scanner maturity" is a debt: write the parser and coverage improves. "Not on
+disk" is a ceiling: no parser closes it, and an offline scan cannot distinguish an
+installed-but-disabled component from an installed-and-enabled one. A kind spec
+that reports both as one undifferentiated gap tells a future implementer to keep
+looking for a file that does not exist.
 
 **Remoteness is not what hides composition; code is** — row four against a
 framework agent. A managed service exposes its whole composition over an API,
@@ -983,7 +998,10 @@ parts of this mechanism, gated by kind *shape* rather than kind count — see
 - Any kind beyond Claude Code. This change migrates the one kind that exists;
   adding a second is a separate change that amends the parser set in `CLAUDE.md`
   and the thesis roadmap then. Managed and framework agents appear here only as
-  evaluation exemplars, written as kind declarations in ADR-0044.
+  evaluation exemplars, written as kind declarations in ADR-0044. **Cursor is
+  that separate change** — see [Cursor Agent Kind](cursor-agent-kind.md) and
+  [ADR-0052](../adrs/0052-cursor-agent-kind.md); this document stays
+  mechanism-only and is not amended by it.
 - Renaming either existing use of "scope". `openaca:scope` (composition
   classification) and `openaca:plugin_scope` (user versus project) already
   collide today; the composition source is a third scope-like idea but does not

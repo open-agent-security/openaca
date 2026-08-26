@@ -49,9 +49,22 @@ openaca scan endpoint \
 
 ```bash
 openaca scan endpoint \
+    --kind claude-code \
     --config-dir ~/.claude \
     --project /path/to/repo
 ```
+
+`scan endpoint`, `bom endpoint`, and `remote sync endpoint` all take `--kind`
+to limit discovery to one registered agent kind (`claude-code` or `cursor`).
+Omit `--kind` and discovery finds every installed kind whose own default root
+exists — a bare `openaca scan endpoint` with both Claude Code and Cursor
+installed renders one card per kind. `--config-dir` names one kind's root, so
+it **requires** `--kind`: with more than one installed kind, `--config-dir`
+alone can't say which kind's root it names, and the CLI errors rather than
+guessing. Each kind resolves its own default root when `--config-dir` is
+omitted — Claude Code from `$CLAUDE_CONFIG_DIR`, else `~/.claude`; Cursor from
+`~/.cursor` (no environment variable). An unrecognized `--kind` is a hard
+error listing the known kinds.
 
 A subcommand is required. Shared options such as `-v`, `--fail-on`, `--sarif`,
 `--format`, and `--no-color` can sit before or after the subcommand name:
@@ -200,7 +213,8 @@ Use `openaca scan --help` for the complete generated option list.
 ## Agent BOM commands
 
 A BOM describes one **agent**, and each command emits one document per agent it
-discovers — one, today, because Claude Code is the only registered kind.
+discovers — one or more, since Claude Code and Cursor are both registered
+kinds; a repo or endpoint declaring evidence for both emits two documents.
 
 Generate an Agent BOM for each agent a repository declares:
 

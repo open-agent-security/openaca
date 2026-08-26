@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "some-other-plugin@some-marketplace": true
+  }
+}

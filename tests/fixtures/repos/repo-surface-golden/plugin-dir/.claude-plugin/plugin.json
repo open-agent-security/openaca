@@ -1,0 +1,5 @@
+{
+  "name": "root-plugin",
+  "version": "1.0.0",
+  "description": "Fixture plugin bundling a skill, a command, an agent, a hook, and a default MCP file."
+}

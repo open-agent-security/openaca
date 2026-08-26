@@ -373,6 +373,60 @@ def test_cursor_an_unrelated_plugin_json_is_not_evidence(tmp_path):
     assert cursor.declared_evidence(tmp_path) is None
 
 
+def test_cursor_agent_plugins_fixture_nested_in_a_claude_plugin_is_not_evidence(tmp_path):
+    """A Claude-format plugin (`.claude-plugin/plugin.json`) that happens to
+    bundle a schema-valid Agent Plugins fixture (e.g. a test/example
+    `plugin.json` under `examples/demo/`) declares no Cursor agent by itself:
+    the outer `.claude-plugin` manifest is cross-read-only, never evidence
+    (`test_cursor_a_claude_only_tree_declares_no_cursor_agent`), and
+    composition (`_realize_plugins` in `tools/graph_build_cursor.py`)
+    explicitly excludes the nested fixture from realizing as an independent
+    bundle because it sits strictly below the realized native root. Evidence
+    detection must draw the same boundary, or this tree trips a phantom
+    Cursor BOM containing nothing but the outer, non-Cursor plugin."""
+    from tools.agent_kinds import cursor
+
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    fixture_dir = tmp_path / "examples" / "demo"
+    fixture_dir.mkdir(parents=True)
+    fixture_manifest = {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "fixture",
+    }
+    (fixture_dir / "plugin.json").write_text(json.dumps(fixture_manifest), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+    assert cursor.discover(DiscoveryContext(source="declared", scan_root=tmp_path)) == []
+
+
+def test_cursor_agent_plugins_bundle_outside_a_claude_plugin_root_is_still_evidence(tmp_path):
+    """The exclusion in `_realized_native_plugin_roots` only applies to a
+    manifest strictly BELOW a realized native root's OWN directory — a
+    sibling Agent Plugins bundle elsewhere in the tree, outside the native
+    plugin's root, is real Cursor evidence, same as
+    `test_cursor_schema_detected_root_plugin_json_is_evidence`. The native
+    plugin here is rooted at `nested-claude-plugin/` (not the scan root), so
+    `standalone/` is a genuine sibling, not bundle content."""
+    from tools.agent_kinds import cursor
+
+    plugin_dir = tmp_path / "nested-claude-plugin" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    sibling_dir = tmp_path / "standalone"
+    sibling_dir.mkdir()
+    manifest = {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "standalone",
+    }
+    (sibling_dir / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None
+
+
 def test_cursor_installed_discovery_yields_one_agent(tmp_path, monkeypatch):
     from tools.agent_kinds import cursor
 

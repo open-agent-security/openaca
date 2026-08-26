@@ -122,6 +122,17 @@ def _parse_repo_cursor_agent(path: Path) -> list[ComponentRef]:
     return claude_command_agent.parse_file(path, kind="agent", extensions=_CURSOR_AGENT_EXTENSIONS)
 
 
+def _parse_repo_agent_plugins(path: Path) -> list[ComponentRef]:
+    # `strict=True`: this route's guard is `agent_plugins.is_agent_plugins_manifest`,
+    # the same "`$schema` already confirmed to qualify" precondition
+    # `_realize_agent_plugins_root` (`tools/graph_build_cursor.py`) runs under —
+    # a `validate_manifest` failure past that guard is a real defect, not a
+    # registry-guard miss. Non-strict here would let `parse_repo_grouped`/
+    # `parse_repo_registry_counts` report a fatally invalid manifest as a
+    # clean, empty, successfully-parsed unit instead of a `parse_failed`.
+    return agent_plugins.parse(path, strict=True)
+
+
 # Cursor's manifest surface. Deliberately no bare `mcp.json`/`.mcp.json`:
 # Cursor's direct MCP surface is the path-scoped `.cursor/mcp.json`; bundle
 # roots are reached only through the plugin route. A bare pattern here would
@@ -167,7 +178,9 @@ CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
     # Cursor's `source_unit_count` and a malformed one cannot contribute a
     # parse failure or an evidence gap.
     ManifestPattern("**/.claude-plugin/plugin.json", claude_plugin.parse),
-    ManifestPattern("plugin.json", agent_plugins.parse, agent_plugins.is_agent_plugins_manifest),
+    ManifestPattern(
+        "plugin.json", _parse_repo_agent_plugins, agent_plugins.is_agent_plugins_manifest
+    ),
 ]
 
 # Compat alias: today's flat registry, kept byte-identical in content so

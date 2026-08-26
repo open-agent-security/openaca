@@ -151,6 +151,32 @@ def test_declared_agent_plugins_mcp_missing_schema_yields_no_mcp(tmp_path):
     assert collect_cursor_mcp_manifests([tmp_path]) == []
 
 
+def test_declared_agent_plugins_dot_mcp_json_sibling_is_ignored(tmp_path):
+    """`agent_plugins._parse_mcp` only ever resolves a plugin-root `mcp.json`
+    (§7.2.1) — never `.mcp.json`, which is a native Cursor-bundle filename
+    with no meaning under Agent Plugins. A valid-looking `.mcp.json` sibling
+    (no `mcp.json` present) must not surface posture: composition never
+    loads it for this format, so reporting on it would flag servers the
+    graph never composed."""
+    root = tmp_path / "dotfile-agent-plugin"
+    _write(
+        root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "dotfile-plugin",
+        },
+    )
+    _write(
+        root / ".mcp.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            "mcpServers": {"srv": {"url": "http://srv.example/mcp"}},
+        },
+    )
+
+    assert collect_cursor_mcp_manifests([tmp_path]) == []
+
+
 def test_declared_directory_with_both_native_and_claude_manifest_reports_once(tmp_path):
     """A directory carrying both a native and a Claude-format manifest
     reports posture for the first-winning candidate only, not shadowed

@@ -700,14 +700,27 @@ def _add_commands_and_subagents(
     checks those surfaces need.
 
     Neither resolver is gitignore-aware itself (both walk with unrestricted
-    `Path.rglob`), so a resolved file's path is checked against the same
-    `ignore_context`/`is_ignored_under` gate `_add_cursor_skills`/
-    `_add_scoped_mcps` use, before it is ever emitted into the graph.
+    `Path.rglob`), so each resolver is given an `is_ignored` predicate built
+    from the same `ignore_context`/`is_ignored_under` gate `_add_cursor_skills`/
+    `_add_scoped_mcps` use — evaluated PER CANDIDATE FILE, before precedence
+    resolution picks a winner for a given relative path, not only on the
+    winner afterwards. Filtering only the winner would let a gitignored
+    higher-precedence file (e.g. an ignored `.cursor/commands/x.md`) win
+    resolution and then get dropped, silently shadowing an unignored
+    lower-precedence file (`.claude/commands/x.md`) that should have surfaced
+    instead.
     """
     exclude_resolved = [p.resolve() for p in exclude_under]
     eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
 
-    for resolved in cursor_commands.resolve_repo(directory):
+    def _is_ignored(path: Path) -> bool:
+        try:
+            resolved_path = path.resolve()
+        except (OSError, RuntimeError):
+            return True
+        return is_ignored_under(resolved_path, eval_root, spec)
+
+    for resolved in cursor_commands.resolve_repo(directory, is_ignored=_is_ignored):
         _emit_command_agent(
             graph,
             parent,
@@ -719,7 +732,7 @@ def _add_commands_and_subagents(
             eval_root=eval_root,
             spec=spec,
         )
-    for resolved in cursor_subagents.resolve_repo(directory):
+    for resolved in cursor_subagents.resolve_repo(directory, is_ignored=_is_ignored):
         _emit_command_agent(
             graph,
             parent,

@@ -423,6 +423,9 @@ def _descend_cursor_declared(
         directory,
         normalize,
         exclude_under=realized_roots,
+        include_gitignored=include_gitignored,
+        root_dir=root_dir,
+        root_spec=root_spec,
     )
     # The scan root's own bare dep manifests (parity with Claude Code's
     # target-level `_add_dep_manifest_packages` call): skipped when the scan
@@ -528,20 +531,26 @@ def _realize_agent_plugins_root(
     """
     manifest = plugin_root / "plugin.json"
     refs = safe_parse(graph, agent_plugins.parse, manifest)
-    self_ref = next((r for r in refs if component_type_of(r) == "plugin"), None)
-    if self_ref is None:
+    original_self_ref = next((r for r in refs if component_type_of(r) == "plugin"), None)
+    if original_self_ref is None:
         return None
+    self_ref = original_self_ref
     eval_root, spec = ignore_context(plugin_root, False, root_dir, root_spec)
     if self_ref.source_manifest and is_ignored_under(
         Path(self_ref.source_manifest), eval_root, spec
     ):
         return None
     if plugin_extra:
+        # `replace` returns a NEW object, so the skip check below must compare
+        # against `original_self_ref` (still the object sitting in `refs`) —
+        # comparing against the reassigned `self_ref` would let the pre-extra
+        # ref fall through the loop and re-emit as a second, marketplace-less
+        # nested plugin.
         self_ref = replace(self_ref, extra={**(self_ref.extra or {}), **plugin_extra})
     plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
     add_child(graph, parent, plugin_node)
     for ref in refs:
-        if ref is self_ref:
+        if ref is original_self_ref:
             continue
         kind = component_type_of(ref)
         if not isinstance(kind, str):
@@ -680,22 +689,47 @@ def _add_commands_and_subagents(
     normalize,
     *,
     exclude_under: list[Path],
+    include_gitignored: bool,
+    root_dir: Path,
+    root_spec,
 ) -> None:
     """Route through Task 4's precedence resolvers rather than walking
     `.cursor/commands`/`.claude/commands`/`.cursor/agents`/`.claude/agents`
     directly: `tools.cursor_commands`/`tools.cursor_subagents` already
     implement the (opposite-direction) precedence rules and containment
     checks those surfaces need.
+
+    Neither resolver is gitignore-aware itself (both walk with unrestricted
+    `Path.rglob`), so a resolved file's path is checked against the same
+    `ignore_context`/`is_ignored_under` gate `_add_cursor_skills`/
+    `_add_scoped_mcps` use, before it is ever emitted into the graph.
     """
     exclude_resolved = [p.resolve() for p in exclude_under]
+    eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
 
     for resolved in cursor_commands.resolve_repo(directory):
         _emit_command_agent(
-            graph, parent, resolved.file_path, resolved.refs, "command", exclude_resolved, normalize
+            graph,
+            parent,
+            resolved.file_path,
+            resolved.refs,
+            "command",
+            exclude_resolved,
+            normalize,
+            eval_root=eval_root,
+            spec=spec,
         )
     for resolved in cursor_subagents.resolve_repo(directory):
         _emit_command_agent(
-            graph, parent, resolved.file_path, resolved.refs, "agent", exclude_resolved, normalize
+            graph,
+            parent,
+            resolved.file_path,
+            resolved.refs,
+            "agent",
+            exclude_resolved,
+            normalize,
+            eval_root=eval_root,
+            spec=spec,
         )
 
 
@@ -707,11 +741,17 @@ def _emit_command_agent(
     kind: str,
     exclude_resolved: list[Path],
     normalize,
+    *,
+    eval_root: Path | None = None,
+    spec=None,
 ) -> None:
     """One command/subagent file → one self node (child of `parent`) plus,
     for subagents, any frontmatter `mcpServers`/`hooks` children `parse_file`
     returned after the self ref (parity with the `.md` branch of
     `tools.graph_build._add_repo_standalone_components`).
+
+    `eval_root`/`spec` are `None` for the installed-mode caller (no gitignore
+    filtering applies there); the declared-mode caller always passes both.
     """
     if not refs:
         return
@@ -720,6 +760,8 @@ def _emit_command_agent(
     except (OSError, RuntimeError):
         return
     if any(resolved.is_relative_to(root) for root in exclude_resolved):
+        return
+    if eval_root is not None and is_ignored_under(resolved, eval_root, spec):
         return
     self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])
     add_child(graph, parent, self_node)

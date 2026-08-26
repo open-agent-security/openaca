@@ -119,12 +119,36 @@ def test_declared_valid_agent_plugins_manifest_surfaces_bundled_mcp(tmp_path):
             "name": "good-plugin",
         },
     )
-    _write(root / "mcp.json", {"mcpServers": {"srv": {"url": "http://srv.example/mcp"}}})
+    _write(
+        root / "mcp.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+            "mcpServers": {"srv": {"url": "http://srv.example/mcp"}},
+        },
+    )
 
     manifests = collect_cursor_mcp_manifests([tmp_path])
 
     assert len(manifests) == 1
     assert manifests[0][0] == root / "mcp.json"
+
+
+def test_declared_agent_plugins_mcp_missing_schema_yields_no_mcp(tmp_path):
+    """§7.2.1: a bundled `mcp.json` MUST carry its own `$schema` — one that
+    only has `mcpServers` is invalid, exactly as composition
+    (`agent_plugins._parse_mcp`) would reject it, so posture must not surface
+    a server the graph never composed."""
+    root = tmp_path / "schemaless-agent-plugin"
+    _write(
+        root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "schemaless-plugin",
+        },
+    )
+    _write(root / "mcp.json", {"mcpServers": {"srv": {"url": "http://srv.example/mcp"}}})
+
+    assert collect_cursor_mcp_manifests([tmp_path]) == []
 
 
 def test_declared_directory_with_both_native_and_claude_manifest_reports_once(tmp_path):

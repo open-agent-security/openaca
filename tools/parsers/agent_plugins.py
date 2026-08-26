@@ -181,13 +181,50 @@ def _parse_skills(plugin_root: Path) -> list[ComponentRef]:
     return refs
 
 
+def manifest_schema_version(data: dict) -> str | None:
+    """The supported schema version a validated manifest's `$schema` names,
+    or `None`. Exported so a caller that already has a validated `plugin.json`
+    dict (e.g. posture's plugin-root walk) can look up the matching MCP
+    schema version without a private cross-module import.
+    """
+    schema = data.get("$schema")
+    return _MANIFEST_SCHEMA_VERSION_BY_URL.get(schema) if isinstance(schema, str) else None
+
+
+def validate_mcp_envelope(data: object, manifest_version: str | None) -> bool:
+    """§7.2.1/§7.2.2: is `data` a valid bundled `mcp.json` envelope for
+    `manifest_version`? Exactly `{"$schema", "mcpServers"}` as top-level
+    keys, `$schema` matching the schema URL for `manifest_version`, and
+    `mcpServers` a dict. `manifest_version=None` (an unrecognized manifest
+    `$schema`) always fails — there is no schema URL to match against.
+
+    Exported so posture's `collect_cursor_mcp_manifests` can apply the
+    identical check before treating a bundled `mcp.json` as posture-relevant:
+    a malformed envelope is invisible to composition (§7.2.2 scopes the
+    failure to MCP alone, not the whole plugin) and must stay invisible to
+    posture too, or posture reports on servers the graph never composed.
+    """
+    if manifest_version is None:
+        return False
+    if not isinstance(data, dict):
+        return False
+    if set(data.keys()) - {"$schema", "mcpServers"}:
+        return False
+    schema = data.get("$schema")
+    expected_schema = _MCP_SCHEMA_URL_BY_VERSION.get(manifest_version)
+    if not isinstance(schema, str) or expected_schema is None or schema != expected_schema:
+        return False
+    return isinstance(data.get("mcpServers"), dict)
+
+
 def _parse_mcp(plugin_root: Path, manifest_version: str) -> list[ComponentRef]:
     """§7.2.1/§7.2.2: validate the `mcp.json` envelope, then hand the inner
     `mcpServers` map to the shared MCP dispatch for per-entry parsing.
 
-    Any envelope failure — missing file, invalid JSON, non-object, wrong or
-    missing `$schema`, a `$schema` version that doesn't match `plugin.json`,
-    or an extra top-level field — disables MCP for this plugin and returns
+    Any envelope failure — missing file, invalid JSON, or a shape
+    `validate_mcp_envelope` rejects (non-object, wrong/missing `$schema`, a
+    `$schema` version that doesn't match `plugin.json`, an extra top-level
+    field, non-dict `mcpServers`) — disables MCP for this plugin and returns
     []. It never affects the plugin's skills, which are parsed separately.
     """
     mcp_path = resolve_within(plugin_root, "mcp.json")
@@ -201,19 +238,10 @@ def _parse_mcp(plugin_root: Path, manifest_version: str) -> list[ComponentRef]:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return []
-    if not isinstance(data, dict):
-        return []
-    if set(data.keys()) - {"$schema", "mcpServers"}:
-        return []
-    schema = data.get("$schema")
-    expected_schema = _MCP_SCHEMA_URL_BY_VERSION.get(manifest_version)
-    if not isinstance(schema, str) or expected_schema is None or schema != expected_schema:
-        return []
-    servers = data.get("mcpServers")
-    if not isinstance(servers, dict):
+    if not validate_mcp_envelope(data, manifest_version):
         return []
     return parse_mcp_servers(
-        servers,
+        data["mcpServers"],
         source_manifest=str(mcp_path),
         locator_prefix="$.mcpServers",
     )

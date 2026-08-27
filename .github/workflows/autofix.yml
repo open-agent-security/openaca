@@ -252,6 +252,30 @@ jobs:
                   | .id + "\t" + (.isResolved | tostring)' > /tmp/pr_threads.tsv
           echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.tsv) threads"
 
+          # The PR's own commits, so a declared SHA can be checked for
+          # belonging to this PR rather than merely looking like a SHA. This
+          # comes through the pull-request scope the job already holds — no
+          # `contents: read` — and costs one call per run, not one per thread.
+          # If it fails the file is empty, every declaration is rejected, and
+          # the threads stay open, which is the safe direction.
+          if ! gh api graphql -f query='
+            query($o:String!,$n:String!,$p:Int!,$endCursor:String){
+              repository(owner:$o,name:$n){pullRequest(number:$p){
+                commits(first:100,after:$endCursor){
+                  pageInfo{hasNextPage endCursor} nodes{commit{oid}}}}}}' \
+            -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
+            --jq '.data.repository.pullRequest.commits.nodes[].commit.oid' > /tmp/pr_commits.txt; then
+            echo "::warning::could not list this PR's commits — every declaration will be rejected"
+            : > /tmp/pr_commits.txt
+          fi
+          echo "PR #$PR_NUM has $(wc -l < /tmp/pr_commits.txt) commits"
+
+          # The resolved-state snapshot above is read once, so it cannot catch a
+          # thread declared twice within the SAME comment — the concurrency
+          # group serializes runs, not lines. Threads handled in this run are
+          # recorded here and skipped on a repeat.
+          : > /tmp/handled.txt
+
           RESOLVED=0; REJECTED=0; SKIPPED=0
           while IFS='|' read -r _kw tid sha note; do
             TID=$(printf '%s' "${tid:-}" | tr -d '[:space:]`')
@@ -268,14 +292,26 @@ jobs:
             # that does not exist while still resolving the thread — the SHA is
             # the audit anchor, so a well-formed-looking wrong one is the whole
             # problem.
+            SHA=$(printf '%s' "$SHA" | tr 'A-Z' 'a-z')
             SHA_OK=1
             case "$SHA" in *[!0-9a-f]*) SHA_OK=0 ;; esac
             [ "${#SHA}" -ge 7 ] && [ "${#SHA}" -le 40 ] || SHA_OK=0
             if [ "$SHA_OK" -eq 0 ]; then
               echo "::warning::skipping $TID — declared SHA is not a commit id"; REJECTED=$((REJECTED+1)); continue
             fi
+            # Well-formed is not enough: a valid-looking SHA from another branch
+            # would make the reply cite unrelated work, which reads as
+            # legitimate and is worse than an obvious 404. `index($0,s)==1`
+            # anchors a prefix match without regex, so a short SHA matches its
+            # full oid.
+            if ! awk -v s="$SHA" 'index($0, s) == 1 { found = 1; exit } END { exit !found }' /tmp/pr_commits.txt; then
+              echo "::warning::skipping $TID — declared SHA is not a commit on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue
+            fi
             # awk reads the file directly rather than through a pipe, so the
             # early exit cannot SIGPIPE a producer.
+            if grep -qxF "$TID" /tmp/handled.txt; then
+              echo "$TID already handled in this run — skipping"; SKIPPED=$((SKIPPED+1)); continue
+            fi
             STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)
             case "$STATE" in
               false) ;;
@@ -296,7 +332,7 @@ jobs:
                  -f t="$TID" -f b="$BODY" --silent \
                && gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
                  -f t="$TID" --silent; then
-              echo "resolved $TID"; RESOLVED=$((RESOLVED+1))
+              echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
             else
               echo "::warning::failed to resolve $TID"; REJECTED=$((REJECTED+1))
             fi

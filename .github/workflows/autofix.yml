@@ -246,10 +246,13 @@ jobs:
             query($o:String!,$n:String!,$p:Int!,$endCursor:String){
               repository(owner:$o,name:$n){pullRequest(number:$p){
                 reviewThreads(first:100,after:$endCursor){
-                  pageInfo{hasNextPage endCursor} nodes{id isResolved}}}}}' \
+                  pageInfo{hasNextPage endCursor}
+                  nodes{id isResolved comments(last:20){nodes{body}}}}}}}' \
             -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
             --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-                  | .id + "\t" + (.isResolved | tostring)' > /tmp/pr_threads.tsv
+                  | .id + "\t" + (.isResolved | tostring) + "\t"
+                    + ([.comments.nodes[].body | select(contains("<!-- autofix-resolver-reply -->"))] | length > 0 | tostring)' \
+            > /tmp/pr_threads.tsv
           echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.tsv) threads"
 
           # The PR's own commits, so a declared SHA can be checked for
@@ -276,7 +279,7 @@ jobs:
           # recorded here and skipped on a repeat.
           : > /tmp/handled.txt
 
-          RESOLVED=0; REJECTED=0; SKIPPED=0
+          RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0
           while IFS='|' read -r _kw tid sha note; do
             TID=$(printf '%s' "${tid:-}" | tr -d '[:space:]`')
             SHA=$(printf '%s' "${sha:-}" | tr -d '[:space:]`')
@@ -313,6 +316,7 @@ jobs:
               echo "$TID already handled in this run — skipping"; SKIPPED=$((SKIPPED+1)); continue
             fi
             STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)
+            HAS_REPLY=$(awk -F'\t' -v t="$TID" '$1 == t { print $3; exit }' /tmp/pr_threads.tsv)
             case "$STATE" in
               false) ;;
               true)
@@ -323,27 +327,51 @@ jobs:
                 echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue ;;
             esac
 
+            # A brokered reply is authored by the PAT's identity, which
+            # claude.yml trusts as OWNER/MEMBER/COLLABORATOR. Forwarding a
+            # model-authored `@claude` (or `@codex`) verbatim would therefore be
+            # a fresh trusted invocation of another bot, driven by whatever text
+            # an injection put in the note. Stripping `@` outright is blunt and
+            # total; backticks would not help, because the trust gate matches
+            # the raw body and does not care about markdown.
+            NOTE=$(printf '%s' "$NOTE" | tr -d '@')
+
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
-          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>"
-            # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
-            # and would read a local file into a public reply.
-            if gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-                 -f t="$TID" -f b="$BODY" --silent \
-               && gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
+          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>
+          <!-- autofix-resolver-reply -->"
+
+            # Reply and resolve are two calls, so a transient failure between
+            # them leaves a reply posted on an unresolved thread. A later
+            # delivery must retry the resolve WITHOUT posting the reply again —
+            # hence the marker above and this check, rather than trusting the
+            # resolved flag alone.
+            OK=1
+            if [ "$HAS_REPLY" = "true" ]; then
+              echo "$TID already has a resolver reply — retrying the resolve only"
+            else
+              # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
+              # and would read a local file into a public reply.
+              gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+                -f t="$TID" -f b="$BODY" --silent || OK=0
+            fi
+            if [ "$OK" -eq 1 ] && gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
                  -f t="$TID" --silent; then
               echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
             else
-              echo "::warning::failed to resolve $TID"; REJECTED=$((REJECTED+1))
+              # An API failure is not a bad declaration. Counted apart so the
+              # summary comment below does not blame the bot for a transient
+              # blip that the next delivery will retry.
+              echo "::warning::API call failed for $TID — will retry on the next delivery"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
             fi
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
-          echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED"
+          echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED"
           # Only speak up when the whole declaration failed. SKIPPED>0 means a
           # repeat `edited` firing over work already done, which is the normal
           # steady state — complaining there would post the same warning on
           # every edit of the summary comment.
-          if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
+          if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
           fi
 

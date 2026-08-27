@@ -478,6 +478,41 @@ def test_command_and_subagent_precedence_routed_through_task4_resolvers(tmp_path
     assert agents[0].ref.source_manifest.endswith(str(Path(".cursor/agents/deploy.md")))
 
 
+def test_malformed_subagent_records_a_graph_warning(tmp_path):
+    """An independently-declared malformed subagent (not owned by any
+    realized plugin) must surface `ResolvedSubagent.parse_error` as a graph
+    warning — the positive case for the exclusion-ordering fix below."""
+    _write(
+        tmp_path / ".cursor" / "agents" / "broken.md",
+        "---\nname: [unclosed\n---\nbody\n",
+    )
+
+    graph = _build(tmp_path)
+
+    assert _nodes_of_kind(graph, "agent") == []
+    assert any("broken.md" in warning for warning in graph.warnings)
+
+
+def test_malformed_subagent_inside_realized_plugin_records_no_warning(tmp_path):
+    """Regression for a Codex finding: `_emit_command_agent` used to append
+    `parse_error` to `graph.warnings` BEFORE checking `exclude_resolved`, so
+    a malformed subagent fixture nested inside an already-realized plugin
+    subtree (content Cursor never loads independently — composition already
+    excludes it wholesale, see `is_owned_by_realized_plugin`) still reported
+    a warning. The fix orders the exclusion check first."""
+    root = tmp_path / "plug"
+    _write_json(root / ".cursor-plugin" / "plugin.json", {"name": "plug", "author": {}})
+    _write(
+        root / ".cursor" / "agents" / "broken.md",
+        "---\nname: [unclosed\n---\nbody\n",
+    )
+
+    graph = _build(tmp_path)
+
+    assert _nodes_of_kind(graph, "agent") == []
+    assert not any("broken.md" in warning for warning in graph.warnings)
+
+
 def test_command_traversal_depth_10_included_depth_11_excluded(tmp_path):
     commands_dir = tmp_path / ".cursor" / "commands"
     _write(commands_dir.joinpath(*["d"] * 9, "at-depth-10.md"), "included")

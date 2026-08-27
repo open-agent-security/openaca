@@ -1019,12 +1019,12 @@ def _emit_command_agent(
     `parse_error`, when set, is `cursor_subagents.ResolvedSubagent.parse_error`
     — a strict-parse failure with no refs to show for it. Recorded as a graph
     warning so a malformed subagent is reported rather than silently
-    composing nothing.
+    composing nothing — but only once the exclusion/ignore checks below have
+    confirmed this file is an independent declaration Cursor would actually
+    load; a malformed fixture owned by an already-realized plugin subtree
+    (or gitignored) is content Cursor never loads, so it must not surface a
+    warning either.
     """
-    if parse_error is not None:
-        graph.warnings.append(parse_error)
-    if not refs:
-        return
     try:
         resolved = file_path.resolve()
     except (OSError, RuntimeError):
@@ -1032,6 +1032,10 @@ def _emit_command_agent(
     if any(resolved.is_relative_to(root) for root in exclude_resolved):
         return
     if eval_root is not None and is_ignored_under(resolved, eval_root, spec):
+        return
+    if parse_error is not None:
+        graph.warnings.append(parse_error)
+    if not refs:
         return
     self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])
     add_child(graph, parent, self_node)

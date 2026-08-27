@@ -304,6 +304,7 @@ jobs:
           # recorded here and skipped on a repeat.
           : > /tmp/handled.txt
           : > /tmp/missing_notes.txt
+          : > /tmp/rejected.txt
 
           RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0; NOTE_FAILED=0
 
@@ -349,7 +350,9 @@ jobs:
             # anchors a prefix match without regex, so a short SHA matches its
             # full oid.
             if ! awk -v s="$SHA" 'index($0, s) == 1 { found = 1; exit } END { exit !found }' /tmp/pr_commits.txt; then
-              echo "::warning::skipping $TID — declared SHA is not a commit on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue
+              echo "::warning::skipping $TID — declared SHA is not a commit on PR #$PR_NUM"; REJECTED=$((REJECTED+1))
+              echo "$TID (declared SHA $SHA is not a commit on this PR — a rebase may have rewritten it)" >> /tmp/rejected.txt
+              continue
             fi
             # awk reads the file directly rather than through a pipe, so the
             # early exit cannot SIGPIPE a producer.
@@ -364,7 +367,8 @@ jobs:
                 # again would stack duplicate replies on a thread already closed.
                 echo "$TID already resolved — skipping"; SKIPPED=$((SKIPPED+1)); continue ;;
               *)
-                echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue ;;
+                echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1))
+                echo "$TID (not a thread on this PR)" >> /tmp/rejected.txt; continue ;;
             esac
 
             # A brokered reply is authored by the PAT's identity, which
@@ -421,12 +425,20 @@ jobs:
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
           echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED notes_missing=$NOTE_FAILED"
-          # Report a rejection whenever nothing was accepted, regardless of how
-          # many lines were skipped as already-done. Requiring SKIPPED to be zero
-          # meant one already-resolved line in the same comment could hide a
-          # genuinely invalid declaration and leave the run green.
-          if [ "$RESOLVED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
-            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
+          # Report EVERY rejection, not only a wholly-rejected declaration. A
+          # partial rejection was previously silent outside the run log, which
+          # hid the case that matters most: `rebase-stale-prs` force-rebases a
+          # stale PR and rewrites the fix commit's SHA, so a correct declaration
+          # naming the pre-rebase SHA no longer matches the PR's commits. The
+          # declaration is not translated across the rebase on purpose — the
+          # rewritten commit cannot be identified reliably, and resolving a
+          # thread with a note citing a dead SHA is worse than leaving it open —
+          # so the rejection has to be visible enough to re-declare.
+          if [ "$REJECTED" -gt 0 ]; then
+            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $REJECTED declared thread(s) were rejected and remain open — see the [workflow run]($RUN_URL):
+          $(sed 's/^/- /' /tmp/rejected.txt)
+
+          If a SHA was rewritten by an automatic rebase, re-declare it against the current commit." || true
           fi
           # A resolved thread with no note is not recoverable by a redelivery —
           # it will be skipped as resolved — so this has to be loud.

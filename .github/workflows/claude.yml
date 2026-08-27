@@ -62,6 +62,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # The job's GITHUB_TOKEN carries contents/PR/issues write, and
+          # actions/checkout writes it into .git/config by default. An autofix
+          # run must be able to write files in this checkout and is allowed to
+          # run the test suite over them, so injected code in a test or
+          # conftest.py could read that token straight out of the Git config and
+          # perform arbitrary authenticated API calls. Removing the step-level
+          # GH_TOKEN did NOT close that path — the checkout had put one back.
+          #
+          # Safe to disable: claude-code-action authenticates its own commits and
+          # pushes with a short-lived GitHub App token, not with credentials the
+          # checkout leaves behind. The raw `git push` fallback allowed below
+          # loses its credentials as a result; the action's own push wrapper is
+          # unaffected, which is the sanctioned path anyway.
+          #
+          # Residual, stated rather than assumed closed: whatever credential the
+          # action itself configures for its pushes is outside this workflow's
+          # control, so this narrows the exposure to the action's scoped token
+          # rather than eliminating tokens from the checkout entirely.
+          persist-credentials: false
           # Full history. `fetch-depth: 1` (default) breaks rebase tasks:
           # `git merge-base origin/main HEAD` returns empty on a shallow
           # clone whose ancestor commit isn't in the local object store,

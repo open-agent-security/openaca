@@ -294,8 +294,9 @@ jobs:
           # group serializes runs, not lines. Threads handled in this run are
           # recorded here and skipped on a repeat.
           : > /tmp/handled.txt
+          : > /tmp/missing_notes.txt
 
-          RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0
+          RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0; NOTE_FAILED=0
 
           # "Retry on the next delivery" is not a plan: if the last `edited`
           # event is the one carrying the declaration, there is no next delivery
@@ -385,10 +386,12 @@ jobs:
             # reply retry — three mechanisms detecting a hazard that ordering
             # removes.
             #
-            # The residual cost is honest: if the reply fails after the resolve
-            # succeeded, the thread is closed without its note. The run goes red
-            # below, so it is visible and a human can add it. Losing one note is
-            # a better failure than silently posting three.
+            # The residual cost: if the reply fails after the resolve succeeded,
+            # the thread is closed without its note. A redelivery will skip it as
+            # resolved, so nothing recovers it automatically — which is exactly
+            # why that case has to fail the run instead of warning into a green
+            # log. Losing one note is a better failure than silently posting
+            # three, but only if someone is told.
             if ! retry gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
                  -f t="$TID" --silent; then
               # An API failure is not a bad declaration. Counted apart so the
@@ -400,12 +403,15 @@ jobs:
             # Exactly one attempt, never retried. -f/--raw-field, never -F:
             # `-F` treats a leading @ as a filename and would read a local file
             # into a public reply.
-            gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-              -f t="$TID" -f b="$BODY" --silent \
-              || echo "::warning::$TID resolved but its note could not be posted"
+            if ! gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+                 -f t="$TID" -f b="$BODY" --silent; then
+              echo "::warning::$TID resolved but its note could not be posted"
+              NOTE_FAILED=$((NOTE_FAILED+1))
+              echo "$TID $SHA" >> /tmp/missing_notes.txt
+            fi
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
-          echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED"
+          echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED notes_missing=$NOTE_FAILED"
           # Only speak up when the whole declaration failed. SKIPPED>0 means a
           # repeat `edited` firing over work already done, which is the normal
           # steady state — complaining there would post the same warning on
@@ -413,9 +419,18 @@ jobs:
           if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
           fi
+          # A resolved thread with no note is not recoverable by a redelivery —
+          # it will be skipped as resolved — so this has to be loud.
+          if [ "$NOTE_FAILED" -gt 0 ]; then
+            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $NOTE_FAILED thread(s) were resolved but their audit note could not be posted — see the [workflow run]($RUN_URL). A redelivery will skip them as already resolved, so the commit reference has to be added by hand:
+          $(cat /tmp/missing_notes.txt 2>/dev/null | sed 's/^/- /')" || true
+            echo "::error::$NOTE_FAILED thread(s) resolved without an audit note"
+          fi
           if [ "$FAILED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $FAILED declared thread(s) could not be closed after retries — see the [workflow run]($RUN_URL). They are still open; re-tag claude or close them by hand." || true
             echo "::error::$FAILED thread(s) left unresolved after retries"
+          fi
+          if [ "$FAILED" -gt 0 ] || [ "$NOTE_FAILED" -gt 0 ]; then
             exit 1
           fi
 

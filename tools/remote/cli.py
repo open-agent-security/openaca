@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import click
@@ -88,6 +89,50 @@ def status() -> None:
     click.echo(f"Latest BOM: {asset.latest_bom_id or 'none'}")
     click.echo(f"Last seen: {asset.last_seen_at or 'never'}")
     click.echo(f"Components: {asset.component_count} components")
+
+
+@main.group()
+def policy() -> None:
+    """Retrieve the organization policy for local compilation."""
+
+
+@policy.command("fetch")
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), required=True)
+def fetch_policy(output: Path) -> None:
+    """Write the current policy document to OUTPUT without changing host settings."""
+    try:
+        config = load_remote_config(get_config_path())
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if config.token is None:
+        raise click.ClickException(
+            "Remote is not configured; run openaca remote configure --token <TOKEN>"
+        )
+    try:
+        result = RemoteClient(api_url=config.api_url, token=config.token).get_policy_document()
+    except httpx.TransportError as exc:
+        raise click.ClickException(f"Remote API unreachable: {exc}") from exc
+    except RemoteClientError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if result.document is None:
+        click.echo("No remote policy is configured.")
+        return
+    _write_json_atomically(output, result.document)
+    click.echo(f"Fetched policy revision {result.revision}.")
+
+
+def _write_json_atomically(path: Path, document: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(document, indent=2, sort_keys=True))
+            handle.write("\n")
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 @main.group()
@@ -199,7 +244,6 @@ def _print_upload_result(result) -> None:
     click.echo(f"Asset: {result.asset_id}")
     click.echo(f"Components: {result.component_count}")
     click.echo(f"Findings: {result.finding_count}")
-    click.echo(f"Policy violations: {result.policy_violation_count}")
     click.echo(f"Dashboard: {result.dashboard_url}")
 
 

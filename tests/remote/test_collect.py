@@ -1798,7 +1798,6 @@ def _upload_result(*, asset_id: str) -> BomUploadResult:
         asset_id=asset_id,
         component_count=0,
         finding_count=0,
-        policy_violation_count=0,
         drift=DriftResult(added=0, removed=0, changed=0),
         dashboard_url="https://app/boms/bom-123",
     )

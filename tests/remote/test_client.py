@@ -52,7 +52,6 @@ def test_upload_bom_sends_bom_and_posture_findings():
                 "asset_id": "asset-123",
                 "component_count": 1,
                 "finding_count": 2,
-                "policy_violation_count": 0,
                 "drift": {"added": 1, "removed": 0, "changed": 0},
                 "dashboard_url": "https://app.test/boms/bom-123",
             },
@@ -97,6 +96,34 @@ def test_get_me_returns_org_and_token_context():
 
     assert result.org.id == "org-123"
     assert result.token.name == "demo"
+
+
+def test_get_policy_document_returns_revision_and_document():
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "document": {"version": 1},
+                "revision": 3,
+                "updated_at": None,
+                "updated_by": None,
+            },
+        )
+
+    client = RemoteClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_policy_document()
+
+    assert seen["path"] == "/api/v1/policy"
+    assert result.document == {"version": 1}
+    assert result.revision == 3
 
 
 def test_get_asset_returns_asset_summary():

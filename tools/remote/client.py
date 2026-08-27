@@ -53,7 +53,6 @@ class BomUploadResult:
     asset_id: str
     component_count: int
     finding_count: int
-    policy_violation_count: int
     drift: DriftResult
     dashboard_url: str
 
@@ -75,6 +74,12 @@ class TokenResult:
 class MeResult:
     org: OrgResult
     token: TokenResult
+
+
+@dataclass(frozen=True)
+class PolicyDocumentResult:
+    document: JsonObject | None
+    revision: int
 
 
 @dataclass(frozen=True)
@@ -123,7 +128,6 @@ class RemoteClient:
             asset_id=_required_str(data, "asset_id"),
             component_count=_required_int(data, "component_count"),
             finding_count=_required_int(data, "finding_count"),
-            policy_violation_count=_required_int(data, "policy_violation_count"),
             drift=DriftResult(
                 added=_required_int(drift, "added"),
                 removed=_required_int(drift, "removed"),
@@ -143,6 +147,16 @@ class RemoteClient:
                 name=_required_str(token, "name"),
                 last_used_at=_optional_str(token, "last_used_at"),
             ),
+        )
+
+    def get_policy_document(self) -> PolicyDocumentResult:
+        data = self._request("GET", "/api/v1/policy")
+        document = data.get("document")
+        if document is not None and not isinstance(document, dict):
+            raise RemoteClientError("remote backend response has invalid policy document")
+        return PolicyDocumentResult(
+            document=document,
+            revision=_required_int(data, "revision"),
         )
 
     def get_asset(self, asset_id: str) -> AssetStatusResult:

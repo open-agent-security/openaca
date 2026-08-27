@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from tools.agent_kinds import AgentInstance
 from tools.cli import main as openaca_main
-from tools.remote.client import BomUploadResult, DriftResult
+from tools.remote.client import BomUploadResult, DriftResult, PolicyDocumentResult
 from tools.remote.collector import EndpointCollection
 from tools.remote.config import load_remote_config
 
@@ -38,6 +38,54 @@ def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
     config = load_remote_config(config_path)
     assert config.token == "ot_TEST"
     assert config.api_url == "https://api.openaca.dev"
+
+
+def test_policy_fetch_writes_current_document(tmp_path, monkeypatch):
+    config_path = tmp_path / "remote.toml"
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.cli.RemoteClient",
+        lambda **_kwargs: type(
+            "Client",
+            (),
+            {"get_policy_document": lambda self: PolicyDocumentResult({"version": 1}, 4)},
+        )(),
+    )
+    output = tmp_path / "policy.json"
+
+    configured = CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_TEST"])
+    result = CliRunner().invoke(
+        openaca_main, ["remote", "policy", "fetch", "--output", str(output)]
+    )
+
+    assert configured.exit_code == 0
+    assert result.exit_code == 0
+    assert result.output == "Fetched policy revision 4.\n"
+    assert json.loads(output.read_text()) == {"version": 1}
+
+
+def test_policy_fetch_without_document_leaves_existing_output_unchanged(tmp_path, monkeypatch):
+    config_path = tmp_path / "remote.toml"
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        "tools.remote.cli.RemoteClient",
+        lambda **_kwargs: type(
+            "Client",
+            (),
+            {"get_policy_document": lambda self: PolicyDocumentResult(None, 0)},
+        )(),
+    )
+    output = tmp_path / "policy.json"
+    output.write_text("existing\n")
+
+    CliRunner().invoke(openaca_main, ["remote", "configure", "--token", "ot_TEST"])
+    result = CliRunner().invoke(
+        openaca_main, ["remote", "policy", "fetch", "--output", str(output)]
+    )
+
+    assert result.exit_code == 0
+    assert result.output == "No remote policy is configured.\n"
+    assert output.read_text() == "existing\n"
 
 
 def test_configure_masked_token_shows_last4_for_disambiguation(tmp_path, monkeypatch):
@@ -398,7 +446,6 @@ def _upload_result(*, asset_id: str) -> BomUploadResult:
         asset_id=asset_id,
         component_count=0,
         finding_count=0,
-        policy_violation_count=0,
         drift=DriftResult(added=0, removed=0, changed=0),
         dashboard_url="https://app/boms/bom-123",
     )

@@ -150,6 +150,19 @@ jobs:
       # as text keeps it from needing any API access of its own. Built with
       # --body-file so nothing in the review text is ever interpolated into a
       # shell command.
+      #
+      # RULE for every comment this PAT authors: literal text may contain bot
+      # mentions — the `@claude` below is the whole point — but anything
+      # INTERPOLATED must be mention-free. A mention in a PAT-authored comment
+      # activates the downstream bot (see the authentication note at the top),
+      # so copying a review body verbatim lets one finding that merely discusses
+      # `@codex` request another review, which triggers another write-enabled
+      # run. Hence the `gsub("@"; "")` below.
+      #
+      # The other interpolated values in this workflow are already covered: the
+      # resolver's fields go through its `nomention` helper, branch names are
+      # constrained to `^[A-Za-z0-9._/-]+$` before use, and the rest are numeric
+      # or workflow-internal.
       - name: Post @claude trigger comment
         run: |
           cat > /tmp/trigger.md <<'PREAMBLE'
@@ -175,8 +188,10 @@ jobs:
             -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
             --jq '.data.repository.pullRequest.reviewThreads.nodes[]
                   | select(.isResolved == false)
-                  | "- `" + .id + "` " + (.path // "-") + ":" + ((.line // 0) | tostring)
-                    + " — " + ((.comments.nodes[0].body // "") | gsub("[\\n\\r\\t]"; " ") | .[0:160])' \
+                  | "- `" + .id + "` " + ((.path // "-") | gsub("@"; ""))
+                    + ":" + ((.line // 0) | tostring)
+                    + " — " + ((.comments.nodes[0].body // "")
+                               | gsub("[\\n\\r\\t]"; " ") | gsub("@"; "") | .[0:160])' \
             >> /tmp/trigger.md || echo "(thread inventory unavailable — ask for ids in a comment)" >> /tmp/trigger.md
           gh pr comment "$PR_NUM" -R "$REPO" --body-file /tmp/trigger.md
 
@@ -429,8 +444,18 @@ jobs:
             # window rather than closing it — closing it would need the two jobs
             # to share a lock — but a rejected declaration is recoverable where a
             # wrong audit anchor on a closed thread is not.
-            if ! pr_commits_to /tmp/pr_commits_recheck.txt \
-               || ! sha_on_branch /tmp/pr_commits_recheck.txt "$SHA"; then
+            # An API failure and a SHA that genuinely left the branch are
+            # different outcomes and must not share a branch. Collapsing them
+            # into one condition — which is what this was — reported a
+            # rate-limited fetch as "left the branch", blamed the declaration
+            # for an outage, and could leave the run green with a valid thread
+            # still open. Same conflation the pre-loop fetches already avoid.
+            if ! pr_commits_to /tmp/pr_commits_recheck.txt; then
+              echo "::warning::could not re-check commits for $TID — leaving it open"
+              FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+              continue
+            fi
+            if ! sha_on_branch /tmp/pr_commits_recheck.txt "$SHA"; then
               echo "::warning::skipping $TID — declared SHA left the branch mid-run (rebase?)"
               REJECTED=$((REJECTED+1))
               echo "$(nomention "$TID") (declared SHA $SHA left the branch during this run)" >> /tmp/rejected.txt

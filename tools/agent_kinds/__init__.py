@@ -19,13 +19,20 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from tools.bom import AGENT_ROOT_PREFIX
 from tools.capability import COVERAGE_LEVELS
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
 from tools.parsers import ManifestPattern
+
+if TYPE_CHECKING:
+    # Annotation-only (this module has `from __future__ import annotations`),
+    # so `agent_kinds` gains no runtime import edge. ADR-0044's one-way rule
+    # constrains `graph_build`, not this module, but keeping the edge to
+    # type-check time costs nothing and leaves import order untouched.
+    from tools.repo_surface import RepoSurface
 
 Cardinality = Literal["singleton", "many_per_place"]
 CompositionSource = Literal["installed", "declared"]
@@ -121,6 +128,14 @@ class AgentKind:
     # entirely inside `compose`/`discover` rather than through this shared
     # declaration.
     manifest_patterns: tuple[ManifestPattern, ...] = ()
+    # The repo-mode surface descriptor those patterns belong to (ADR-0053).
+    # Carrying it here is what makes plugin-ownership exclusion a property of
+    # the KIND rather than of each consumer that walks a tree: registry
+    # accounting and evidence detection both reach it through this field, so
+    # a third kind inherits the rule by declaring a surface instead of by
+    # remembering to call a predicate. `None` for kinds with no filesystem
+    # repo surface at all.
+    repo_surface: RepoSurface | None = None
     # (mcp_collector, settings_collector) a *declared* agent's posture prep
     # reads through, instead of `_agent_scan_prep` calling Claude-Code-shaped
     # collectors for every kind unconditionally. `None` means the kind has no

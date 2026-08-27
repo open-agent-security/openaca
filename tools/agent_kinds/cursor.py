@@ -21,6 +21,7 @@ from tools.posture.rules import (
     mutable_install,
     skill_capability,
 )
+from tools.repo_surface import CURSOR_SURFACE
 
 KIND_ID = "cursor"
 DISPLAY_NAME = "Cursor"
@@ -75,22 +76,22 @@ def _realized_plugin_roots(scan_root: Path, *, include_gitignored: bool) -> list
     # Local import: agent_kinds -> graph_build* stays one-way (see `_compose`).
     from tools.graph_build_cursor import realized_plugin_roots
 
-    return realized_plugin_roots(scan_root, include_gitignored=include_gitignored)
+    return realized_plugin_roots(scan_root, CURSOR_SURFACE, include_gitignored=include_gitignored)
 
 
 def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
-    if path.name == "plugin.json":
-        # A plugin manifest (native manifest_dir or the flat Agent Plugins
-        # layout) that is bundle content of an already-realized plugin root
-        # is never evidence in its own right — a nested
-        # `.cursor-plugin/plugin.json` or Agent-Plugins `plugin.json` bundled
-        # as fixture content inside an outer, already-realized plugin is
-        # composition's content, not a second, independent Cursor
-        # declaration (see `_realized_plugin_roots`).
-        from tools.graph_build_cursor import is_nested_under_realized_plugin_root
+    # Anything that is content of an already-realized plugin is composition's,
+    # not an independent Cursor declaration — whatever its shape. Testing this
+    # BEFORE the pattern match (and for every path, not just `plugin.json`) is
+    # what keeps a bundled fixture `examples/.cursor/mcp.json`,
+    # `.cursor/commands/demo.md`, or `.cursor/skills/demo/SKILL.md` from
+    # tripping a phantom Cursor BOM off a repo with no Cursor-owned surface at
+    # all. The outer plugin is itself never evidence (see
+    # `_DECLARED_EVIDENCE_PATTERNS`), so nothing bundled inside it can be.
+    from tools.graph_build_cursor import is_owned_by_realized_plugin
 
-        if is_nested_under_realized_plugin_root(path, realized_roots):
-            return False
+    if is_owned_by_realized_plugin(path, realized_roots):
+        return False
     if matches_evidence(rel, _DECLARED_EVIDENCE_PATTERNS):
         return True
     # A root `plugin.json` (Agent Plugins format) is evidence only when its
@@ -223,6 +224,7 @@ KIND = AgentKind(
         }
     ),
     manifest_patterns=tuple(HOST_AGNOSTIC_REGISTRY) + tuple(CURSOR_MANIFEST_REGISTRY),
+    repo_surface=CURSOR_SURFACE,
     posture_manifest_collectors=(
         collect_cursor_mcp_manifests,
         collect_cursor_permissions_manifests,

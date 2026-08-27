@@ -92,6 +92,7 @@ from tools.render import (
     render_repo_inventory_tree,
     render_text,
 )
+from tools.repo_surface import RepoSurface
 from tools.sarif import to_sarif
 from tools.triage import build_triage_cards
 from tools.triage_render import TriageFormat, render_triage_report
@@ -751,6 +752,7 @@ def _agent_scan_prep(
             agent.scan_root,
             include_gitignored=include_gitignored,
             registry=kind.manifest_patterns,
+            surface=kind.repo_surface,
         )
         repo_parse_cache[cache_key] = (n_found, n_found - len(parse_groups))
     n_found, n_failed = repo_parse_cache[cache_key]
@@ -837,14 +839,19 @@ def _scan_discovered_agents(
     # degrade the Claude agent's coverage.
     root_union_totals: dict[Path, tuple[int, int]] = {}
     registries_by_root: dict[Path, dict[str, tuple]] = {}
+    surfaces_by_root: dict[Path, dict[str, RepoSurface | None]] = {}
     for agent, *_rest in built:
         if agent.scan_root is None:
             continue
         kind = kind_for(agent.kind_id)
         registries_by_root.setdefault(agent.scan_root, {})[agent.kind_id] = kind.manifest_patterns
+        surfaces_by_root.setdefault(agent.scan_root, {})[agent.kind_id] = kind.repo_surface
     for scan_root, registries in registries_by_root.items():
         per_kind_counts, union_counts = parse_repo_registry_counts(
-            scan_root, registries, include_gitignored=include_gitignored
+            scan_root,
+            registries,
+            include_gitignored=include_gitignored,
+            surfaces=surfaces_by_root[scan_root],
         )
         for kind_id, patterns in registries.items():
             repo_parse_cache[(scan_root, patterns)] = per_kind_counts[kind_id]

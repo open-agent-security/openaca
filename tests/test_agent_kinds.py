@@ -547,3 +547,70 @@ def test_cursor_kind_is_singleton_with_no_agent_id():
             coverage_baseline="partial",
             agent_id="oops",
         ).validate_against(cursor.KIND)
+
+
+# --- Plugin-owned content is never evidence, whatever its shape -------------
+#
+# The realized-root exclusion used to be tested only for a nested plugin
+# MANIFEST, because the predicate it ran through resolved a path to the plugin
+# root that path defined — and answered "not nested" for anything that defined
+# no plugin root at all. Every non-manifest surface bundled inside a realized
+# plugin therefore still declared a phantom Cursor agent. These pin the
+# generalized rule: ownership is a property of the PATH.
+
+
+def _realized_claude_plugin(root):
+    plugin_dir = root / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+
+def test_cursor_mcp_json_bundled_in_a_realized_plugin_is_not_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor"
+    fixture.mkdir(parents=True)
+    (fixture / "mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+    assert cursor.discover(DiscoveryContext(source="declared", scan_root=tmp_path)) == []
+
+
+def test_cursor_command_bundled_in_a_realized_plugin_is_not_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor" / "commands"
+    fixture.mkdir(parents=True)
+    (fixture / "demo.md").write_text("# demo\n", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+
+
+def test_cursor_skill_bundled_in_a_realized_plugin_is_not_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor" / "skills" / "demo"
+    fixture.mkdir(parents=True)
+    (fixture / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+
+
+def test_cursor_surface_beside_a_realized_plugin_is_still_evidence(tmp_path):
+    """Guards against over-suppression: the exclusion is ancestry-scoped, so a
+    Cursor surface that is a SIBLING of a realized plugin — not bundled inside
+    it — remains a genuine declaration."""
+    from tools.agent_kinds import cursor
+
+    plugin_root = tmp_path / "vendored"
+    plugin_root.mkdir()
+    _realized_claude_plugin(plugin_root)
+
+    own = tmp_path / ".cursor"
+    own.mkdir()
+    (own / "mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None

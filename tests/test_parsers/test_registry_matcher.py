@@ -33,6 +33,7 @@ from tools.parsers import (
 from tools.parsers import _parse_repo_agent_plugins as parse_repo_agent_plugins
 from tools.parsers import _parse_repo_cursor_agent as parse_repo_cursor_agent
 from tools.parsers import _parse_repo_cursor_command as parse_repo_cursor_command
+from tools.repo_surface import CURSOR_SURFACE
 
 
 def test_host_agnostic_registry_is_the_five_dependency_manifests():
@@ -318,13 +319,17 @@ def test_registry_excludes_native_plugin_fixture_nested_in_a_realized_plugin_roo
     nested.mkdir(parents=True)
     (nested / "plugin.json").write_text(json.dumps({"name": "fixture"}), encoding="utf-8")
 
-    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     matched_paths = {path for path, _ in grouped}
     assert (outer / "plugin.json") in matched_paths
     assert (nested / "plugin.json") not in matched_paths
     assert n_found == 1
 
-    per_key, union = parse_repo_registry_counts(tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY})
+    per_key, union = parse_repo_registry_counts(
+        tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY}, surfaces={"cursor": CURSOR_SURFACE}
+    )
     assert per_key["cursor"] == (1, 0)
     assert union == (1, 0)
 
@@ -343,11 +348,15 @@ def test_registry_excludes_a_malformed_nested_fixture_rather_than_failing_it(tmp
     nested.mkdir(parents=True)
     (nested / "plugin.json").write_text("{not valid json", encoding="utf-8")
 
-    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     assert n_found == 1
     assert len(grouped) == 1
 
-    per_key, union = parse_repo_registry_counts(tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY})
+    per_key, union = parse_repo_registry_counts(
+        tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY}, surfaces={"cursor": CURSOR_SURFACE}
+    )
     assert per_key["cursor"] == (1, 0)
     assert union == (1, 0)
 
@@ -366,7 +375,9 @@ def test_registry_still_counts_a_standalone_native_plugin_not_nested_under_anoth
     standalone.mkdir(parents=True)
     (standalone / "plugin.json").write_text(json.dumps({"name": "standalone"}), encoding="utf-8")
 
-    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     matched_paths = {path for path, _ in grouped}
     assert (standalone / "plugin.json") in matched_paths
     assert n_found == 2
@@ -402,7 +413,9 @@ def test_cursor_registry_counts_non_md_command_and_agent_extensions(tmp_path):
     (tmp_path / ".claude" / "commands").mkdir(parents=True)
     (tmp_path / ".claude" / "commands" / "build.md").write_text("build", encoding="utf-8")
 
-    grouped, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
 
     assert n_found == 3
     refs_by_path = {path: refs for path, refs in grouped}
@@ -436,7 +449,9 @@ def test_cursor_registry_command_depth_matches_resolver_traversal_limit(tmp_path
     leaf_dir = _make_nested_file(commands_dir, depth=depth)
     (leaf_dir / "deploy.md").write_text("deploy", encoding="utf-8")
 
-    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    _, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     resolved = resolve_repo(tmp_path)
 
     if depth <= 10:
@@ -458,7 +473,9 @@ def test_cursor_registry_agent_depth_matches_resolver_traversal_limit(tmp_path, 
     leaf_dir = _make_nested_file(agents_dir, depth=depth)
     (leaf_dir / "helper.md").write_text("helper", encoding="utf-8")
 
-    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    _, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     resolved = resolve_repo(tmp_path)
 
     if depth <= 10:
@@ -478,5 +495,91 @@ def test_cursor_registry_depth_guard_also_covers_claude_compat_dirs(tmp_path):
     leaf_dir = _make_nested_file(tmp_path / ".claude" / "commands", depth=11)
     (leaf_dir / "deploy.md").write_text("deploy", encoding="utf-8")
 
-    _, n_found = parse_repo_grouped(tmp_path, registry=CURSOR_MANIFEST_REGISTRY)
+    _, n_found = parse_repo_grouped(
+        tmp_path, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE
+    )
     assert n_found == 0
+
+
+# --- Registry accounting excludes every plugin-owned surface ----------------
+#
+# The exclusion used to be gated on an allowlist of three plugin-manifest
+# patterns, so bundled NON-manifest content still inflated `source_unit_count`
+# and could register a false `parse_failed` for files composition never loads.
+#
+# These assert on the PATHS claimed, not a bare total: the realized plugin's
+# own manifest is itself a legitimate claimed unit, so a count alone cannot
+# distinguish "the fixture was excluded" from "nothing matched at all".
+
+
+def _realized_claude_plugin(root):
+    plugin_dir = root / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+    return plugin_dir / "plugin.json"
+
+
+def _claimed_paths(root):
+    from tools.parsers import parse_repo_grouped
+
+    grouped, _ = parse_repo_grouped(root, registry=CURSOR_MANIFEST_REGISTRY, surface=CURSOR_SURFACE)
+    return {p for p, _refs in grouped}
+
+
+def test_registry_excludes_a_bundled_cursor_mcp_json(tmp_path):
+    manifest = _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor"
+    fixture.mkdir(parents=True)
+    bundled = fixture / "mcp.json"
+    bundled.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    assert _claimed_paths(tmp_path) == {manifest}
+    assert bundled not in _claimed_paths(tmp_path)
+
+
+def test_registry_excludes_a_bundled_cursor_command(tmp_path):
+    manifest = _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor" / "commands"
+    fixture.mkdir(parents=True)
+    (fixture / "demo.md").write_text("# demo\n", encoding="utf-8")
+
+    assert _claimed_paths(tmp_path) == {manifest}
+
+
+def test_registry_excludes_a_bundled_cursor_skill(tmp_path):
+    manifest = _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor" / "skills" / "demo"
+    fixture.mkdir(parents=True)
+    (fixture / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+
+    assert _claimed_paths(tmp_path) == {manifest}
+
+
+def test_registry_excludes_a_bundled_malformed_cursor_mcp_json(tmp_path):
+    """A malformed bundled manifest must not register a `parse_failed` either:
+    Cursor never attempts to load it, so it is invisible to the count."""
+    from tools.parsers import parse_repo_registry_counts
+
+    _realized_claude_plugin(tmp_path)
+    fixture = tmp_path / "examples" / ".cursor"
+    fixture.mkdir(parents=True)
+    (fixture / "mcp.json").write_text("{not valid json", encoding="utf-8")
+
+    per_key, _union = parse_repo_registry_counts(
+        tmp_path, {"cursor": CURSOR_MANIFEST_REGISTRY}, surfaces={"cursor": CURSOR_SURFACE}
+    )
+    # The outer manifest is the one claimed unit; the malformed fixture is
+    # neither counted nor failed.
+    assert per_key["cursor"] == (1, 0)
+
+
+def test_registry_still_counts_a_cursor_surface_beside_a_realized_plugin(tmp_path):
+    """Over-suppression guard: ownership is ancestry-scoped, so a Cursor
+    surface that is a SIBLING of a realized plugin still counts."""
+    manifest = _realized_claude_plugin(tmp_path / "vendored")
+    own = tmp_path / ".cursor"
+    own.mkdir()
+    own_mcp = own / "mcp.json"
+    own_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    assert _claimed_paths(tmp_path) == {manifest, own_mcp}

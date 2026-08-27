@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Callable, NamedTuple, Union
+from typing import TYPE_CHECKING, Callable, NamedTuple, Union
 
 from pathspec import GitIgnoreSpec
 
@@ -23,6 +23,11 @@ from tools.parsers import (
     uv_lock,
 )
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
+
+if TYPE_CHECKING:
+    # Annotation-only: `tools.repo_surface` imports THIS module, so a runtime
+    # import here would be a genuine cycle.
+    from tools.repo_surface import RepoSurface
 
 ParserFn = Callable[[Path], list[ComponentRef]]
 GuardFn = Callable[[Path], bool]
@@ -133,34 +138,16 @@ def _parse_repo_agent_plugins(path: Path) -> list[ComponentRef]:
     return agent_plugins.parse(path, strict=True)
 
 
-# The three plugin-marker patterns below are the registry-walk counterpart of
-# `_realize_plugins`'s realized-root exclusion (`tools/graph_build_cursor.py`):
-# a plugin's own bundled fixture (e.g. a nested `examples/demo/plugin.json`,
-# or a nested `.cursor-plugin/plugin.json`) never realizes as its own bundle
-# in composition, so it must not count toward `source_unit_count`/`parse_failed`
-# here either — an unrestricted walk would inflate a valid fixture's count or
-# report a malformed one as a `parse_failed` for content Cursor never loads.
-#
-# `.cursor-plugin/plugin.json` and the bare Agent-Plugins `plugin.json` exist
-# ONLY in `CURSOR_MANIFEST_REGISTRY` (never in `CLAUDE_CODE_MANIFEST_REGISTRY`),
-# so their presence in a given walk's registry reliably signals "this walk
-# includes Cursor's plugin surface" — the trigger for computing realized
-# roots at all. `.claude-plugin/plugin.json` alone (Claude Code's own,
-# unaccompanied by either Cursor-only pattern) never triggers this, so a
-# Claude-Code-only walk pays no extra cost and keeps its pre-existing
-# (unrelated, out of scope here) behavior.
-_CURSOR_PLUGIN_ROOT_TRIGGER_PATTERNS = frozenset({"**/.cursor-plugin/plugin.json", "plugin.json"})
-_CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS = frozenset(
-    {"**/.cursor-plugin/plugin.json", "**/.claude-plugin/plugin.json", "plugin.json"}
-)
+def plugin_owned_roots(
+    root: Path, surface: RepoSurface | None, *, include_gitignored: bool
+) -> list[Path]:
+    """Realized plugin roots whose content this walk must not claim, or `[]`
+    when `surface` does not opt in (`excludes_plugin_owned_content`).
 
-
-def _realized_cursor_plugin_roots(root: Path, *, include_gitignored: bool) -> list[Path]:
-    """Directories where a Cursor plugin format actually realizes — thin
-    wrapper around `tools.graph_build_cursor.realized_plugin_roots`, the one
-    place that computation is implemented (also used by Cursor evidence
-    detection in `tools/agent_kinds/cursor.py`), so this registry's exclusion
-    can never drift from composition's own.
+    Thin wrapper around `tools.graph_build_cursor.realized_plugin_roots`, the
+    one place that computation is implemented (Cursor evidence detection in
+    `tools/agent_kinds/cursor.py` reaches the same function), so registry
+    accounting's exclusion can never drift from composition's own.
 
     Local import: `tools.graph_build_cursor` imports `tools.parsers` at
     module scope, so importing it back at this module's top level would be
@@ -168,21 +155,37 @@ def _realized_cursor_plugin_roots(root: Path, *, include_gitignored: bool) -> li
     technique `tools/agent_kinds/cursor.py` already uses for the sibling
     `tools.graph_build` import.
     """
+    if surface is None or not surface.excludes_plugin_owned_content:
+        return []
     from tools.graph_build_cursor import realized_plugin_roots
 
-    return realized_plugin_roots(root, include_gitignored=include_gitignored)
+    return realized_plugin_roots(root, surface, include_gitignored=include_gitignored)
 
 
-def _nested_under_realized_plugin_root(path: Path, realized_roots: list[Path]) -> bool:
-    # Local import: see `_realized_cursor_plugin_roots` above for why this
-    # can't be a top-level import.
-    from tools.graph_build_cursor import is_nested_under_realized_plugin_root
+def _entry_claims(
+    path: Path, root: Path, entry: ManifestPattern, owned_roots: Sequence[Path]
+) -> bool:
+    """Whether `entry` is the registry route for `path`.
 
-    return is_nested_under_realized_plugin_root(path, realized_roots)
+    Every walk in this module tests a candidate path through here, which is
+    what makes plugin-ownership exclusion structural rather than a rule each
+    walk remembers to apply. An earlier form gated the exclusion on an
+    allowlist of three plugin-manifest patterns, so a bundled fixture
+    `examples/.cursor/mcp.json` or `.cursor/commands/demo.md` was still
+    counted and parsed — content composition never loads, inflating
+    `source_unit_count` and able to register a false `parse_failed`.
+    Ownership is a property of the PATH, so it is tested for every pattern.
+    """
+    if not _pattern_matches(path, root, entry.pattern):
+        return False
+    if entry.guard is not None and not entry.guard(path):
+        return False
+    if owned_roots:
+        from tools.graph_build_cursor import is_owned_by_realized_plugin
 
-
-def _needs_realized_plugin_roots(registry: Sequence[ManifestPattern]) -> bool:
-    return any(entry.pattern in _CURSOR_PLUGIN_ROOT_TRIGGER_PATTERNS for entry in registry)
+        if is_owned_by_realized_plugin(path, list(owned_roots)):
+            return False
+    return True
 
 
 # Cursor's manifest surface. Deliberately no bare `mcp.json`/`.mcp.json`:
@@ -317,6 +320,7 @@ def parse_repo_grouped(
     include_gitignored: bool = False,
     *,
     registry: Sequence[RegistryEntry] = REGISTRY,
+    surface: RepoSurface | None = None,
 ) -> tuple[list[tuple[Path, list[ComponentRef]]], int]:
     """Walk `root` and return (per-manifest results, total paths matched).
 
@@ -352,22 +356,12 @@ def parse_repo_grouped(
     """
     spec = None if include_gitignored else load_gitignore_spec(root)
     normalized_registry = [_normalize_registry_entry(entry) for entry in registry]
-    realized_plugin_roots = (
-        _realized_cursor_plugin_roots(root, include_gitignored=include_gitignored)
-        if _needs_realized_plugin_roots(normalized_registry)
-        else []
-    )
+    owned_roots = plugin_owned_roots(root, surface, include_gitignored=include_gitignored)
     grouped: list[tuple[Path, list[ComponentRef]]] = []
     n_found = 0
     for path in iter_unignored_files(root, spec):
         for entry in normalized_registry:
-            if not _pattern_matches(path, root, entry.pattern):
-                continue
-            if entry.guard is not None and not entry.guard(path):
-                continue
-            if entry.pattern in _CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS and (
-                _nested_under_realized_plugin_root(path, realized_plugin_roots)
-            ):
+            if not _entry_claims(path, root, entry, owned_roots):
                 continue
             n_found += 1
             try:
@@ -386,6 +380,8 @@ def parse_repo_registry_counts(
     root: Path,
     registries: Mapping[str, Sequence[RegistryEntry]],
     include_gitignored: bool = False,
+    *,
+    surfaces: Mapping[str, RepoSurface | None] | None = None,
 ) -> tuple[dict[str, tuple[int, int]], tuple[int, int]]:
     """One filesystem walk producing every registry's own (n_found, n_failed)
     plus the (n_found, n_failed) of their union — each path counted once
@@ -404,11 +400,16 @@ def parse_repo_registry_counts(
         key: [_normalize_registry_entry(entry) for entry in registry]
         for key, registry in registries.items()
     }
-    realized_plugin_roots = (
-        _realized_cursor_plugin_roots(root, include_gitignored=include_gitignored)
-        if any(_needs_realized_plugin_roots(entries) for entries in normalized.values())
-        else []
-    )
+    # Per kind, not once for the walk: ownership depends on which plugin
+    # formats the kind realizes, so two kinds sharing a root can disagree
+    # about whether a given directory is a plugin — and each must be judged
+    # against its own composition.
+    owned_by_key = {
+        key: plugin_owned_roots(
+            root, (surfaces or {}).get(key), include_gitignored=include_gitignored
+        )
+        for key in normalized
+    }
     per_key_found = dict.fromkeys(registries, 0)
     per_key_failed = dict.fromkeys(registries, 0)
     union_found = 0
@@ -418,13 +419,7 @@ def parse_repo_registry_counts(
         union_ok = True
         for key, entries in normalized.items():
             for entry in entries:
-                if not _pattern_matches(path, root, entry.pattern):
-                    continue
-                if entry.guard is not None and not entry.guard(path):
-                    continue
-                if entry.pattern in _CURSOR_PLUGIN_ROOT_EXCLUDED_PATTERNS and (
-                    _nested_under_realized_plugin_root(path, realized_plugin_roots)
-                ):
+                if not _entry_claims(path, root, entry, owned_by_key[key]):
                     continue
                 per_key_found[key] += 1
                 try:

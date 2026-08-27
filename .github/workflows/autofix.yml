@@ -530,10 +530,23 @@ jobs:
               continue
             fi
             echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
-            # Exactly one attempt, never retried. -f/--raw-field, never -F:
-            # `-F` treats a leading @ as a filename and would read a local file
-            # into a public reply.
-            if ! gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+            # RETRIED, which reverses an earlier decision here on purpose. When
+            # the reply carried only an audit note, one attempt was right: a
+            # retry after a lost response duplicates a non-idempotent create,
+            # and a duplicate note was the worst outcome available. The reply
+            # now also carries the consumption marker, so a reply that never
+            # lands means a reviewer's reopen can be silently undone later —
+            # a correctness failure that outweighs a cosmetic duplicate. The
+            # trade flipped when the marker moved in, so the handling follows.
+            #
+            # A lost response can still duplicate the note within this run
+            # (bounded at three attempts); it cannot duplicate across runs,
+            # because the marker from the landed attempt makes later deliveries
+            # skip the declaration entirely.
+            #
+            # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
+            # and would read a local file into a public reply.
+            if ! retry gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
                  -f t="$TID" -f b="$BODY" --silent; then
               echo "::warning::$TID resolved but its note could not be posted"
               NOTE_FAILED=$((NOTE_FAILED+1))
@@ -560,7 +573,7 @@ jobs:
           # A resolved thread with no note is not recoverable by a redelivery —
           # it will be skipped as resolved — so this has to be loud.
           if [ "$NOTE_FAILED" -gt 0 ]; then
-            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $NOTE_FAILED thread(s) were resolved but their audit note could not be posted — see the [workflow run]($RUN_URL). A redelivery will skip them as already resolved, so the commit reference has to be added by hand:
+            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $NOTE_FAILED thread(s) were resolved but their audit note could not be posted after retries — see the [workflow run]($RUN_URL). Two consequences: the commit reference has to be added by hand, and because the note is also where consumption is recorded, reopening one of these threads will NOT stick — the same declaration can resolve it again. Add the reference or close the thread deliberately:
           $(cat /tmp/missing_notes.txt 2>/dev/null | sed 's/^/- /')" || true
             echo "::error::$NOTE_FAILED thread(s) resolved without an audit note"
           fi

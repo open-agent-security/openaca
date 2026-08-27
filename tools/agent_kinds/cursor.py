@@ -40,6 +40,15 @@ COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
 # lands). A bare `mcp.json`/`.mcp.json` is excluded for the same reason
 # `_DECLARED_EVIDENCE_PATTERNS` excludes it in `claude_code.py`: no kind owns
 # it exclusively.
+#
+# Mirrors `_COMMAND_EXTENSIONS` in `tools/cursor_commands.py` and
+# `_AGENT_EXTENSIONS` in `tools/cursor_subagents.py` exactly (same mirroring
+# `tools/parsers/__init__.py` already does for its own registry counts) so a
+# file extension composition never loads — e.g. `.cursor/commands/README.rst`
+# — can't stand alone as evidence of a declared Cursor agent.
+_CURSOR_COMMAND_EXTENSIONS = (".md", ".txt")
+_CURSOR_AGENT_EXTENSIONS = (".md", ".mdc", ".markdown")
+
 _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     ".cursor/mcp.json",
     "*/.cursor/mcp.json",
@@ -47,10 +56,10 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     "*/.cursor/skills/*/SKILL.md",
     ".agents/skills/*/SKILL.md",
     "*/.agents/skills/*/SKILL.md",
-    ".cursor/commands/*",
-    "*/.cursor/commands/*",
-    ".cursor/agents/*",
-    "*/.cursor/agents/*",
+    *(f".cursor/commands/*{ext}" for ext in _CURSOR_COMMAND_EXTENSIONS),
+    *(f"*/.cursor/commands/*{ext}" for ext in _CURSOR_COMMAND_EXTENSIONS),
+    *(f".cursor/agents/*{ext}" for ext in _CURSOR_AGENT_EXTENSIONS),
+    *(f"*/.cursor/agents/*{ext}" for ext in _CURSOR_AGENT_EXTENSIONS),
     ".cursor-plugin/plugin.json",
     "*/.cursor-plugin/plugin.json",
 )

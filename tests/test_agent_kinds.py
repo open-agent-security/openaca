@@ -353,6 +353,50 @@ def test_cursor_agents_skills_is_evidence(tmp_path):
     assert cursor.declared_evidence(tmp_path) is not None
 
 
+def test_cursor_unsupported_command_extension_is_not_evidence(tmp_path):
+    """Composition only accepts `.md`/`.txt` commands; a repo whose only
+    `.cursor/commands` entry has an unsupported extension declares nothing,
+    rather than tripping a phantom near-empty Cursor BOM."""
+    from tools.agent_kinds import cursor
+
+    commands = tmp_path / ".cursor" / "commands"
+    commands.mkdir(parents=True)
+    (commands / "README.rst").write_text("not a command", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+
+
+def test_cursor_unsupported_agent_extension_is_not_evidence(tmp_path):
+    """Same as above for subagents, which accept `.md`/`.mdc`/`.markdown`."""
+    from tools.agent_kinds import cursor
+
+    agents = tmp_path / ".cursor" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "notes.txt").write_text("not an agent", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+
+
+def test_cursor_supported_command_extension_is_still_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    commands = tmp_path / ".cursor" / "commands"
+    commands.mkdir(parents=True)
+    (commands / "deploy.md").write_text("# deploy\n", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None
+
+
+def test_cursor_supported_agent_extension_is_still_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    agents = tmp_path / ".cursor" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "deploy.mdc").write_text("# deploy\n", encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None
+
+
 def test_cursor_schema_detected_root_plugin_json_is_evidence(tmp_path):
     from tools.agent_kinds import cursor
 

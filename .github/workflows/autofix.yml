@@ -251,7 +251,8 @@ jobs:
             -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
             --jq '.data.repository.pullRequest.reviewThreads.nodes[]
                   | .id + "\t" + (.isResolved | tostring) + "\t"
-                    + ([.comments.nodes[].body | select(contains("<!-- autofix-resolver-reply -->"))] | length > 0 | tostring)' \
+                    + ([.comments.nodes[].body
+                        | capture("<!-- autofix-resolver-reply:(?<s>[0-9a-f]+) -->").s] | join(","))' \
             > /tmp/pr_threads.tsv
           echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.tsv) threads"
 
@@ -280,6 +281,21 @@ jobs:
           : > /tmp/handled.txt
 
           RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0
+
+          # "Retry on the next delivery" is not a plan: if the last `edited`
+          # event is the one carrying the declaration, there is no next delivery
+          # and the thread stays open behind an already-posted reply. Retry here,
+          # bounded, and fail the step if anything is still outstanding so the
+          # run goes red rather than exiting 0 on a broken promise.
+          retry() {
+            n=0
+            until "$@"; do
+              n=$((n + 1))
+              [ "$n" -ge 3 ] && return 1
+              sleep $((n * 3))
+            done
+            return 0
+          }
           while IFS='|' read -r _kw tid sha note; do
             TID=$(printf '%s' "${tid:-}" | tr -d '[:space:]`')
             SHA=$(printf '%s' "${sha:-}" | tr -d '[:space:]`')
@@ -316,7 +332,13 @@ jobs:
               echo "$TID already handled in this run — skipping"; SKIPPED=$((SKIPPED+1)); continue
             fi
             STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)
-            HAS_REPLY=$(awk -F'\t' -v t="$TID" '$1 == t { print $3; exit }' /tmp/pr_threads.tsv)
+            # Markers are recorded per SHA, not per thread. A thread reopened
+            # after a wrong close — which the reply itself invites — and then
+            # genuinely fixed in a new commit must get a NEW reply naming that
+            # commit; a thread-scoped marker would resolve it silently and leave
+            # the audit trail crediting the earlier SHA.
+            PRIOR_SHAS=$(awk -F'\t' -v t="$TID" '$1 == t { print $3; exit }' /tmp/pr_threads.tsv)
+            case ",${PRIOR_SHAS}," in *",${SHA},"*) HAS_REPLY=true ;; *) HAS_REPLY=false ;; esac
             case "$STATE" in
               false) ;;
               true)
@@ -339,7 +361,7 @@ jobs:
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
           <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>
-          <!-- autofix-resolver-reply -->"
+          <!-- autofix-resolver-reply:$SHA -->"
 
             # Reply and resolve are two calls, so a transient failure between
             # them leaves a reply posted on an unresolved thread. A later
@@ -352,17 +374,17 @@ jobs:
             else
               # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
               # and would read a local file into a public reply.
-              gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+              retry gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
                 -f t="$TID" -f b="$BODY" --silent || OK=0
             fi
-            if [ "$OK" -eq 1 ] && gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
+            if [ "$OK" -eq 1 ] && retry gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
                  -f t="$TID" --silent; then
               echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
             else
               # An API failure is not a bad declaration. Counted apart so the
               # summary comment below does not blame the bot for a transient
               # blip that the next delivery will retry.
-              echo "::warning::API call failed for $TID — will retry on the next delivery"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+              echo "::warning::API call failed for $TID after retries"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
             fi
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
@@ -373,6 +395,11 @@ jobs:
           # every edit of the summary comment.
           if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
+          fi
+          if [ "$FAILED" -gt 0 ]; then
+            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $FAILED declared thread(s) could not be closed after retries — see the [workflow run]($RUN_URL). They are still open; re-tag claude or close them by hand." || true
+            echo "::error::$FAILED thread(s) left unresolved after retries"
+            exit 1
           fi
 
   request-codex-rereview-on-push:

@@ -478,6 +478,48 @@ def test_command_and_subagent_precedence_routed_through_task4_resolvers(tmp_path
     assert agents[0].ref.source_manifest.endswith(str(Path(".cursor/agents/deploy.md")))
 
 
+def test_declared_plugin_command_shadowed_by_workspace_command_is_pruned(tmp_path):
+    """Regression for a Codex review finding: Commands' last-wins precedence
+    (docs/specs/cursor-agent-kind.md "Precedence": team -> global -> plugin ->
+    workspace -> personal) places `plugin` below `workspace`. A realized
+    native plugin's bundled command must not permanently survive in the
+    declared graph when a same-relative-path workspace command wins — the
+    plugin's own descent adds it unconditionally, so it must be pruned
+    afterward rather than left to coexist with the resolver's winner."""
+    _write_json(
+        tmp_path / "vendor" / ".cursor-plugin" / "plugin.json", {"name": "vendor", "author": {}}
+    )
+    _write(tmp_path / "vendor" / "commands" / "deploy.md", "plugin version")
+    _write(tmp_path / ".cursor" / "commands" / "deploy.md", "workspace version")
+
+    graph = _build(tmp_path)
+
+    commands = _nodes_of_kind(graph, "command")
+    assert len(commands) == 1
+    assert commands[0].ref.source_manifest.endswith(str(Path(".cursor/commands/deploy.md")))
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert len(plugins) == 1
+    assert graph.children_of(plugins[0]) == []
+
+
+def test_declared_plugin_command_without_shadow_stays_under_plugin_node(tmp_path):
+    """The other half of the precedence fix: a plugin command with no
+    same-relative-path workspace override must still realize exactly once,
+    as a child of its plugin node — the fix must not over-prune."""
+    _write_json(
+        tmp_path / "vendor" / ".cursor-plugin" / "plugin.json", {"name": "vendor", "author": {}}
+    )
+    _write(tmp_path / "vendor" / "commands" / "deploy.md", "plugin version")
+
+    graph = _build(tmp_path)
+
+    commands = _nodes_of_kind(graph, "command")
+    assert len(commands) == 1
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert len(plugins) == 1
+    assert [c.key for c in graph.children_of(plugins[0])] == [commands[0].key]
+
+
 def test_malformed_subagent_records_a_graph_warning(tmp_path):
     """An independently-declared malformed subagent (not owned by any
     realized plugin) must surface `ResolvedSubagent.parse_error` as a graph

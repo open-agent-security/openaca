@@ -22,6 +22,19 @@ CMD="${1:-}"
 PR="${2:-}"
 [[ "$PR" =~ ^[0-9]+$ ]] || die "usage: $0 {list|reply|resolve} <pr> [thread-id] [body]"
 
+# The <pr> argument is caller-controlled — a prompt injection in content this
+# run reads (a PR body, a file, a linter message) could pass a different
+# PR number to widen this script's reach beyond the PR actually being worked.
+# GITHUB_EVENT_PATH is populated by the Actions runner from the real webhook
+# payload before the job starts; nothing in the checkout or in comment/file
+# content can forge it. Require the argument to match that trusted number.
+TRUSTED_PR=""
+if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -r "$GITHUB_EVENT_PATH" ]; then
+  TRUSTED_PR=$(jq -r '.pull_request.number // .issue.number // empty' "$GITHUB_EVENT_PATH")
+fi
+[[ "$TRUSTED_PR" =~ ^[0-9]+$ ]] || die "no trusted PR number in the triggering event; refusing"
+[ "$PR" = "$TRUSTED_PR" ] || die "pr argument ($PR) does not match the triggering PR (#$TRUSTED_PR); refusing"
+
 REPO="${GITHUB_REPOSITORY:-}"
 [ -n "$REPO" ] || REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 OWNER="${REPO%%/*}"

@@ -250,10 +250,18 @@ jobs:
               PRRT_[A-Za-z0-9_=-]*) ;;
               *) echo "::warning::skipping malformed thread id"; REJECTED=$((REJECTED+1)); continue ;;
             esac
-            case "$SHA" in
-              [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
-              *) echo "::warning::skipping $TID — declared SHA is not a commit id"; REJECTED=$((REJECTED+1)); continue ;;
-            esac
+            # Hex-only, 7..40 chars, with nothing trailing. A prefix glob
+            # ending in `*` would accept `abc1234,` or seven hex characters
+            # followed by arbitrary text, and the reply would then cite a commit
+            # that does not exist while still resolving the thread — the SHA is
+            # the audit anchor, so a well-formed-looking wrong one is the whole
+            # problem.
+            SHA_OK=1
+            case "$SHA" in *[!0-9a-f]*) SHA_OK=0 ;; esac
+            [ "${#SHA}" -ge 7 ] && [ "${#SHA}" -le 40 ] || SHA_OK=0
+            if [ "$SHA_OK" -eq 0 ]; then
+              echo "::warning::skipping $TID — declared SHA is not a commit id"; REJECTED=$((REJECTED+1)); continue
+            fi
             # awk reads the file directly rather than through a pipe, so the
             # early exit cannot SIGPIPE a producer.
             STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)

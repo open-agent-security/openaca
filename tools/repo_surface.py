@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
-from tools.parsers import agent_plugins
+from tools.parsers import agent_plugins, claude_plugin
 from tools.parsers.claude_command_agent import Kind
 
 
@@ -27,11 +28,18 @@ class PluginFormat:
     tests whether its *parsed content* qualifies as this format — the one
     field ADR-0053 permits to be a `Callable`, because qualification (e.g. an
     Agent Plugins manifest's `$schema`) is a content fact, not a path shape.
+
+    `parse` is the second permitted `Callable`, and it is the same kind of
+    fact: which parser reads this manifest shape is a property of the format,
+    not of whichever caller happens to hold it. Carrying it here is what lets
+    `realized_plugin_roots` ask "does this candidate realize?" for ANY kind's
+    formats instead of branching on a specific format object.
     """
 
     manifest_dir: str
     manifest_filename: str
     detect: Callable[[dict], bool]
+    parse: Callable[[Path], list] | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,23 @@ class RepoSurface:
     # install lockfile that points at a manifest, so a missing one there is a
     # real defect worth reporting.
     manifest_optional: bool = False
+    # Content beneath a realized plugin root belongs to that plugin, not to
+    # the tree: composition reaches it through the plugin branch, so any
+    # OTHER consumer that walks the tree — evidence detection, registry
+    # parse accounting — must not claim it independently. A nested fixture
+    # (`examples/demo/plugin.json`, `examples/.cursor/mcp.json`) would
+    # otherwise declare a phantom agent and inflate `source_unit_count`.
+    #
+    # The rule is kind-neutral, but activation is per-kind and deliberately
+    # so. Claude Code has the same latent overreach (its
+    # `standalone_mcp_filenames` match at any depth, so a `.claude-plugin`
+    # bundle's own fixture `mcp.json` counts twice), and fixing it here would
+    # change Claude Code's counts inside a Cursor change — destroying the
+    # uncontaminated regression gate ADR-0053 built this parameterization to
+    # preserve. Flipping this to `True` for Claude Code is a one-line change
+    # that belongs in its own diff, with its own before/after count
+    # assertions.
+    excludes_plugin_owned_content: bool = False
 
 
 def _detect_claude_plugin_manifest(data: dict) -> bool:
@@ -134,6 +159,7 @@ CLAUDE_CODE_SURFACE = RepoSurface(
             manifest_dir=".claude-plugin",
             manifest_filename="plugin.json",
             detect=_detect_claude_plugin_manifest,
+            parse=claude_plugin.parse,
         ),
     ),
     bundled=BundledLayout(
@@ -159,6 +185,7 @@ _CURSOR_PLUGIN_FORMAT = PluginFormat(
     manifest_dir=".cursor-plugin",
     manifest_filename="plugin.json",
     detect=_detect_cursor_native_manifest,
+    parse=claude_plugin.parse,
 )
 
 # The portable Agent Plugins format, `plugin.json` at the candidate root
@@ -169,6 +196,7 @@ _AGENT_PLUGINS_FORMAT = PluginFormat(
     manifest_dir="",
     manifest_filename="plugin.json",
     detect=_detect_agent_plugins_manifest,
+    parse=agent_plugins.parse,
 )
 
 CURSOR_SURFACE = RepoSurface(
@@ -202,6 +230,7 @@ CURSOR_SURFACE = RepoSurface(
     project_skills_subdir="skills",
     standalone_mcp_filenames=(),
     manifest_optional=True,
+    excludes_plugin_owned_content=True,
     command_agent_surfaces=(),
     # Cursor's own vendor-built-in skill root is a SIBLING of `skills/`
     # (`<config_dir>/skills-cursor/`), never nested inside it — Cursor's own

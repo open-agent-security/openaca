@@ -775,9 +775,9 @@ def test_bom_repo_reads_the_agent_s_own_manifest_registry(tmp_path, monkeypatch)
     seen_registries = []
     real_counts = tools.bom_cli.parse_repo_registry_counts
 
-    def spy(root, registries, include_gitignored=False):
+    def spy(root, registries, include_gitignored=False, **kwargs):
         seen_registries.append(registries)
-        return real_counts(root, registries, include_gitignored=include_gitignored)
+        return real_counts(root, registries, include_gitignored=include_gitignored, **kwargs)
 
     monkeypatch.setattr("tools.bom_cli.parse_repo_registry_counts", spy)
 
@@ -835,9 +835,9 @@ def test_bom_repo_two_kinds_share_one_filesystem_walk(tmp_path, monkeypatch):
     walk_calls = []
     real_counts = tools.bom_cli.parse_repo_registry_counts
 
-    def spy(root, registries, include_gitignored=False):
+    def spy(root, registries, include_gitignored=False, **kwargs):
         walk_calls.append(registries)
-        return real_counts(root, registries, include_gitignored=include_gitignored)
+        return real_counts(root, registries, include_gitignored=include_gitignored, **kwargs)
 
     monkeypatch.setattr("tools.bom_cli.parse_repo_registry_counts", spy)
 

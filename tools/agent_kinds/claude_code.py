@@ -15,6 +15,7 @@ from tools.posture import (
     collect_mcp_manifests,
     collect_settings_manifests,
 )
+from tools.repo_surface import CLAUDE_CODE_SURFACE
 
 KIND_ID = "claude-code"
 DISPLAY_NAME = "Claude Code"
@@ -172,6 +173,7 @@ KIND = AgentKind(
     # second kind registers its own subset here instead of these module-level
     # functions being called unconditionally for every agent regardless of kind.
     manifest_patterns=tuple(_MANIFEST_REGISTRY),
+    repo_surface=CLAUDE_CODE_SURFACE,
     posture_manifest_collectors=(collect_mcp_manifests, collect_settings_manifests),
     installed_posture_collectors=(
         collect_endpoint_mcp_manifests,

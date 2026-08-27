@@ -357,8 +357,14 @@ def repo(
     registries: dict[str, tuple] = {
         agent.kind_id: kind_for(agent.kind_id).manifest_patterns for agent in agents
     }
+    surfaces: dict[str, object] = {
+        agent.kind_id: kind_for(agent.kind_id).repo_surface for agent in agents
+    }
     per_kind_counts, _union_counts = parse_repo_registry_counts(
-        target, registries, include_gitignored=include_gitignored
+        target,
+        registries,
+        include_gitignored=include_gitignored,
+        surfaces=surfaces,  # type: ignore[arg-type]
     )
     walks: dict[tuple[Path, tuple], tuple[int, int]] = {
         (target, patterns): per_kind_counts[kind_id] for kind_id, patterns in registries.items()

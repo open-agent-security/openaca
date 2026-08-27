@@ -209,17 +209,23 @@ jobs:
       github.event.comment.user.login == 'claude[bot]' &&
       contains(github.event.comment.body, 'RESOLVED |')
     runs-on: ubuntu-latest
-    # The already-resolved check below is a read-then-write, so it only gives
-    # idempotency against runs that do not overlap. Two `edited` deliveries in
-    # quick succession would otherwise both snapshot a thread as unresolved and
-    # both post a reply. Serializing per PR is what makes the snapshot mean
-    # something; different PRs touch disjoint threads and may still run at once.
+    # Grouped per COMMENT, not per PR. The already-resolved check below is a
+    # read-then-write, so it needs serialization — but a PR-wide group made
+    # GitHub drop work: it keeps at most one pending run, and "any existing
+    # pending job or workflow in the same concurrency group will be canceled and
+    # the new queued job or workflow will take its place." Three deliveries from
+    # distinct comments therefore lost the middle one's declarations for good.
+    #
+    # Per-comment groups serialize what actually needs it — repeat `edited`
+    # deliveries of the same comment, which carry the same body — while distinct
+    # comments never supersede each other. Two different comments declaring the
+    # same thread can still race to a duplicate note; that is a cosmetic loss,
+    # where a dropped declaration was a silent one.
     #
     # `cancel-in-progress: false` is deliberate, not inherited: cancelling the
-    # in-flight run would discard declarations it had not processed yet, and a
-    # queued run costs nothing here.
+    # in-flight run would discard declarations it had not processed yet.
     concurrency:
-      group: resolve-declared-threads-${{ github.event.issue.number }}
+      group: resolve-declared-threads-${{ github.event.comment.id }}
       cancel-in-progress: false
     permissions:
       pull-requests: write
@@ -227,32 +233,27 @@ jobs:
       GH_TOKEN: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
       REPO: ${{ github.repository }}
       PR_NUM: ${{ github.event.issue.number }}
+      # Read as data, never interpolated into a command.
+      COMMENT_BODY: ${{ github.event.comment.body }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Resolve the declared threads
         run: |
           set -uo pipefail
 
-          # Read declarations from EVERY claude comment on the PR, not just the
-          # one that triggered this run. GitHub keeps at most one pending run per
-          # concurrency group — "any existing pending job or workflow in the same
-          # concurrency group will be canceled and the new queued job or workflow
-          # will take its place" — so with three deliveries from distinct
-          # comments the middle one is superseded and its declarations would
-          # otherwise be lost for good. Reconciling the whole PR makes whichever
-          # run survives converge everything, and re-reading old declarations is
-          # free because resolved threads are skipped.
+          # Only this comment's declarations. Reading the PR's whole comment
+          # history instead — which is where this went for one commit — replays
+          # consumed declarations: a reviewer who reopens a thread because the
+          # declared fix was inadequate would have it closed again by the stale
+          # line, with the same obsolete justification. The reopen is the
+          # documented escape hatch, and the reply itself invites it, so it has
+          # to win.
           #
-          # REST, and `claude[bot]` exactly: on this surface the app login
-          # carries the bracket suffix, so it cannot be confused with a user
-          # account named `claude`. GraphQL normalizes both to `claude` and would
-          # let such an account inject declarations here.
-          if ! gh api "repos/$REPO/issues/$PR_NUM/comments" --paginate \
-              --jq '.[] | select(.user.login == "claude[bot]") | .body' > /tmp/claim.txt; then
-            echo "::error::could not read this PR's comments — nothing reconciled"
-            exit 1
-          fi
-          echo "reconciling $(grep -c '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt || true) declaration line(s) across all claude comments"
+          # Declarations are not lost by scoping this narrowly, because the
+          # concurrency group is per comment: distinct comments no longer
+          # supersede one another, which is what the history scan was
+          # compensating for.
+          printf '%s' "$COMMENT_BODY" > /tmp/claim.txt
 
           # Thread id + resolved state for THIS PR, captured to a file first. A
           # `... | grep -q` membership test would let grep exit early, SIGPIPE
@@ -412,11 +413,11 @@ jobs:
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
           echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED notes_missing=$NOTE_FAILED"
-          # Only speak up when the whole declaration failed. SKIPPED>0 means a
-          # repeat `edited` firing over work already done, which is the normal
-          # steady state — complaining there would post the same warning on
-          # every edit of the summary comment.
-          if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
+          # Report a rejection whenever nothing was accepted, regardless of how
+          # many lines were skipped as already-done. Requiring SKIPPED to be zero
+          # meant one already-resolved line in the same comment could hide a
+          # genuinely invalid declaration and leave the run green.
+          if [ "$RESOLVED" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
           fi
           # A resolved thread with no note is not recoverable by a redelivery —

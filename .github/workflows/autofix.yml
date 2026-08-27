@@ -227,14 +227,32 @@ jobs:
       GH_TOKEN: ${{ secrets.AUTOFIX_TRIGGER_PAT }}
       REPO: ${{ github.repository }}
       PR_NUM: ${{ github.event.issue.number }}
-      # Read as data, never interpolated into a command.
-      COMMENT_BODY: ${{ github.event.comment.body }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Resolve the declared threads
         run: |
           set -uo pipefail
-          printf '%s' "$COMMENT_BODY" > /tmp/claim.txt
+
+          # Read declarations from EVERY claude comment on the PR, not just the
+          # one that triggered this run. GitHub keeps at most one pending run per
+          # concurrency group — "any existing pending job or workflow in the same
+          # concurrency group will be canceled and the new queued job or workflow
+          # will take its place" — so with three deliveries from distinct
+          # comments the middle one is superseded and its declarations would
+          # otherwise be lost for good. Reconciling the whole PR makes whichever
+          # run survives converge everything, and re-reading old declarations is
+          # free because resolved threads are skipped.
+          #
+          # REST, and `claude[bot]` exactly: on this surface the app login
+          # carries the bracket suffix, so it cannot be confused with a user
+          # account named `claude`. GraphQL normalizes both to `claude` and would
+          # let such an account inject declarations here.
+          if ! gh api "repos/$REPO/issues/$PR_NUM/comments" --paginate \
+              --jq '.[] | select(.user.login == "claude[bot]") | .body' > /tmp/claim.txt; then
+            echo "::error::could not read this PR's comments — nothing reconciled"
+            exit 1
+          fi
+          echo "reconciling $(grep -c '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt || true) declaration line(s) across all claude comments"
 
           # Thread id + resolved state for THIS PR, captured to a file first. A
           # `... | grep -q` membership test would let grep exit early, SIGPIPE

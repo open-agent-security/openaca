@@ -66,7 +66,14 @@ fetch_threads() {
 # the whole point of the script is that its authority is narrower than the
 # token's.
 assert_thread_on_pr() {
-  fetch_threads | cut -f1 | grep -qxF "$1" || die "thread $1 is not on PR #$PR"
+  # Capture the full id list before testing membership: piping straight into
+  # `grep -q` lets grep exit the instant it matches, which can SIGPIPE the
+  # still-writing `fetch_threads | cut` upstream. Under `set -o pipefail`
+  # that SIGPIPE becomes the pipeline's exit status even though the match
+  # succeeded, so a thread that IS on the PR gets wrongly rejected.
+  local ids
+  ids=$(fetch_threads | cut -f1)
+  grep -qxF "$1" <<<"$ids" || die "thread $1 is not on PR #$PR"
 }
 
 case "$CMD" in
@@ -78,14 +85,14 @@ case "$CMD" in
     [[ "$TID" =~ ^[A-Za-z0-9_=-]+$ ]] || die "bad thread id: $TID"
     assert_thread_on_pr "$TID"
     gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-      -F t="$TID" -F b="$BODY" --jq '"replied " + .data.addPullRequestReviewThreadReply.comment.url'
+      -f t="$TID" -f b="$BODY" --jq '"replied " + .data.addPullRequestReviewThreadReply.comment.url'
     ;;
   resolve)
     TID="${3:?thread-id required}"
     [[ "$TID" =~ ^[A-Za-z0-9_=-]+$ ]] || die "bad thread id: $TID"
     assert_thread_on_pr "$TID"
     gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{id isResolved}}}' \
-      -F t="$TID" --jq '"resolved " + .data.resolveReviewThread.thread.id'
+      -f t="$TID" --jq '"resolved " + .data.resolveReviewThread.thread.id'
     ;;
   *)
     die "usage: $0 {list|reply|resolve} <pr> [thread-id] [body]"

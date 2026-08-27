@@ -11,6 +11,7 @@ import tools.component_ref
 import tools.identity
 import tools.matcher
 import tools.osv_federation
+import tools.policy
 import tools.severity
 
 
@@ -22,6 +23,7 @@ def test_facade_reexports_are_identical_objects():
     assert core.build_agent_bom is tools.bom.build_agent_bom
     assert core.component_refs_from_cyclonedx is tools.bom.component_refs_from_cyclonedx
     assert core.bom_components_from_cyclonedx is tools.bom.bom_components_from_cyclonedx
+    assert core.graph_from_cyclonedx is tools.bom.graph_from_cyclonedx
     assert core.OsvQuery is tools.osv_federation.OsvQuery
     assert core.collect_osv_queries is tools.osv_federation.collect_osv_queries
     assert core.stamp_osv_query_provenance is tools.osv_federation.stamp_osv_query_provenance
@@ -29,3 +31,11 @@ def test_facade_reexports_are_identical_objects():
     assert core.Finding is tools.matcher.Finding
     assert core.derive_severity_label is tools.severity.derive_severity_label
     assert core.derive_severity_score is tools.severity.derive_severity_score
+    assert core.Policy is tools.policy.Policy
+    assert core.PolicyValidationError is tools.policy.PolicyValidationError
+    assert core.PolicyEvaluationError is tools.policy.PolicyEvaluationError
+    assert core.EndpointComponent is tools.policy.EndpointComponent
+    assert core.Decision is tools.policy.Decision
+    assert core.parse_policy is tools.policy.parse
+    assert core.evaluate_admission is tools.policy.evaluate_admission
+    assert core.apply_risk_gates is tools.policy.apply_risk_gates

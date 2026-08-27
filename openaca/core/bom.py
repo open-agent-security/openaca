@@ -5,6 +5,7 @@ from tools.bom import (
     bom_components_from_cyclonedx,
     build_agent_bom,
     component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "bom_components_from_cyclonedx",
     "build_agent_bom",
     "component_refs_from_cyclonedx",
+    "graph_from_cyclonedx",
 ]

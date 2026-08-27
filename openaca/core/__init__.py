@@ -13,6 +13,7 @@ from openaca.core.bom import (
     bom_components_from_cyclonedx,
     build_agent_bom,
     component_refs_from_cyclonedx,
+    graph_from_cyclonedx,
 )
 from openaca.core.component_ref import ComponentRef
 from openaca.core.identity import MatchCoordinate, match_coordinates
@@ -22,21 +23,40 @@ from openaca.core.osv_queries import (
     collect_osv_queries,
     stamp_osv_query_provenance,
 )
+from openaca.core.policy import (
+    Decision,
+    EndpointComponent,
+    Policy,
+    PolicyEvaluationError,
+    PolicyValidationError,
+    apply_risk_gates,
+    evaluate_admission,
+    parse_policy,
+)
 from openaca.core.severity import derive_severity_label, derive_severity_score
 
 __all__ = [
     "BOMComponent",
     "ComponentRef",
+    "Decision",
+    "EndpointComponent",
     "Finding",
     "MatchCoordinate",
     "OsvQuery",
+    "Policy",
+    "PolicyEvaluationError",
+    "PolicyValidationError",
+    "apply_risk_gates",
     "bom_components_from_cyclonedx",
     "build_agent_bom",
     "collect_osv_queries",
     "component_refs_from_cyclonedx",
     "derive_severity_label",
     "derive_severity_score",
+    "evaluate_admission",
+    "graph_from_cyclonedx",
     "match",
     "match_coordinates",
+    "parse_policy",
     "stamp_osv_query_provenance",
 ]

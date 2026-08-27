@@ -343,6 +343,32 @@ def test_cursor_bare_mcp_json_is_not_evidence(tmp_path):
     assert cursor.declared_evidence(tmp_path) is None
 
 
+def test_cursor_permissions_json_is_evidence_of_a_declared_cursor_agent(tmp_path):
+    """A repo whose only Cursor-owned file is `.cursor/permissions.json`
+    still declares a Cursor agent, so `collect_cursor_permissions_manifests`
+    runs and `mcp_auto_approve` can see its `mcpAllowlist`/`autoRun` keys
+    (docs/specs/cursor-agent-kind.md "Posture rule applicability")."""
+    from tools.agent_kinds import cursor
+
+    permissions = tmp_path / ".cursor" / "permissions.json"
+    permissions.parent.mkdir(parents=True)
+    permissions.write_text('{"mcpAllowlist": ["*"]}', encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is not None
+    agents = cursor.discover(DiscoveryContext(source="declared", scan_root=tmp_path))
+
+    assert len(agents) == 1
+    assert agents[0].kind_id == "cursor"
+
+
+def test_cursor_bare_permissions_json_is_not_evidence(tmp_path):
+    from tools.agent_kinds import cursor
+
+    (tmp_path / "permissions.json").write_text('{"mcpAllowlist": ["*"]}', encoding="utf-8")
+
+    assert cursor.declared_evidence(tmp_path) is None
+
+
 def test_cursor_agents_skills_is_evidence(tmp_path):
     from tools.agent_kinds import cursor
 

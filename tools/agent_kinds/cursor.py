@@ -52,6 +52,8 @@ _CURSOR_AGENT_EXTENSIONS = (".md", ".mdc", ".markdown")
 _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     ".cursor/mcp.json",
     "*/.cursor/mcp.json",
+    ".cursor/permissions.json",
+    "*/.cursor/permissions.json",
     ".cursor/skills/*/SKILL.md",
     "*/.cursor/skills/*/SKILL.md",
     ".agents/skills/*/SKILL.md",

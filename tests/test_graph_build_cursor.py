@@ -520,6 +520,33 @@ def test_declared_plugin_command_without_shadow_stays_under_plugin_node(tmp_path
     assert [c.key for c in graph.children_of(plugins[0])] == [commands[0].key]
 
 
+def test_declared_plugin_command_not_shadowed_by_excluded_nested_fixture(tmp_path):
+    """Regression for a Codex review finding: `resolve_repo` discovers
+    `.cursor/commands` dirs by an unrestricted `rglob`, so a bundled fixture
+    nested INSIDE a realized plugin's own directory (e.g.
+    `vendor/.cursor/commands/deploy.md`) is a resolver hit too — but it is
+    content Cursor never independently loads (owned by the realized plugin
+    subtree) and `_emit_command_agent` already drops it via `exclude_resolved`.
+    The pruning helper must apply that same exclusion before treating a
+    same-relative-path resolver hit as a legitimate workspace override —
+    otherwise the excluded fixture prunes the plugin's real bundled command
+    and neither survives."""
+    _write_json(
+        tmp_path / "vendor" / ".cursor-plugin" / "plugin.json", {"name": "vendor", "author": {}}
+    )
+    _write(tmp_path / "vendor" / "commands" / "deploy.md", "plugin version")
+    _write(tmp_path / "vendor" / ".cursor" / "commands" / "deploy.md", "nested fixture")
+
+    graph = _build(tmp_path)
+
+    commands = _nodes_of_kind(graph, "command")
+    assert len(commands) == 1
+    assert commands[0].ref.source_manifest.endswith(str(Path("vendor/commands/deploy.md")))
+    plugins = _nodes_of_kind(graph, "plugin")
+    assert len(plugins) == 1
+    assert [c.key for c in graph.children_of(plugins[0])] == [commands[0].key]
+
+
 def test_malformed_subagent_records_a_graph_warning(tmp_path):
     """An independently-declared malformed subagent (not owned by any
     realized plugin) must surface `ResolvedSubagent.parse_error` as a graph

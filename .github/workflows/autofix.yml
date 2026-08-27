@@ -60,7 +60,17 @@ on:
     # Bounce 3: claude declares which threads its push fixed -> a trusted job
     # resolves exactly those. The declaration is data, never code: the bot has
     # no credential and nothing executable, so the resolve happens here.
-    types: [created]
+    #
+    # `edited` is REQUIRED, not defensive. claude-code-action creates one
+    # in-progress comment and edits it in place into the "Claude finished"
+    # summary (same behaviour the iteration cap below relies on to count runs).
+    # The declaration is in that summary, so it arrives on `edited`; the
+    # `created` event fires on the placeholder, before the work exists. Verified
+    # on real runs — every claude[bot] comment has updated_at minutes after
+    # created_at. Subscribing to `created` alone means this job never fires.
+    # Because `edited` can fire repeatedly, the job skips threads that are
+    # already resolved rather than replying to them again.
+    types: [created, edited]
   pull_request:
     # Bounce 2: new commits on a PR head -> request a Codex re-review.
     # `synchronize` fires for pushes from ANY author — claude bot fixes,
@@ -214,20 +224,23 @@ jobs:
           set -uo pipefail
           printf '%s' "$COMMENT_BODY" > /tmp/claim.txt
 
-          # Full id list for THIS PR, captured to a file first. A
+          # Thread id + resolved state for THIS PR, captured to a file first. A
           # `... | grep -q` membership test would let grep exit early, SIGPIPE
           # the paginating producer, and reject a thread that is genuinely on
-          # the PR.
+          # the PR. `$endCursor` is the variable `gh api --paginate` advances;
+          # with any other name `after:` stays null and the first page repeats
+          # forever.
           gh api graphql -f query='
             query($o:String!,$n:String!,$p:Int!,$endCursor:String){
               repository(owner:$o,name:$n){pullRequest(number:$p){
                 reviewThreads(first:100,after:$endCursor){
-                  pageInfo{hasNextPage endCursor} nodes{id}}}}}' \
+                  pageInfo{hasNextPage endCursor} nodes{id isResolved}}}}}' \
             -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
-            --jq '.data.repository.pullRequest.reviewThreads.nodes[].id' > /tmp/pr_threads.txt
-          echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.txt) threads"
+            --jq '.data.repository.pullRequest.reviewThreads.nodes[]
+                  | .id + "\t" + (.isResolved | tostring)' > /tmp/pr_threads.tsv
+          echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.tsv) threads"
 
-          RESOLVED=0; REJECTED=0
+          RESOLVED=0; REJECTED=0; SKIPPED=0
           while IFS='|' read -r _kw tid sha note; do
             TID=$(printf '%s' "${tid:-}" | tr -d '[:space:]`')
             SHA=$(printf '%s' "${sha:-}" | tr -d '[:space:]`')
@@ -241,9 +254,18 @@ jobs:
               [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
               *) echo "::warning::skipping $TID — declared SHA is not a commit id"; REJECTED=$((REJECTED+1)); continue ;;
             esac
-            if ! grep -qxF "$TID" /tmp/pr_threads.txt; then
-              echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue
-            fi
+            # awk reads the file directly rather than through a pipe, so the
+            # early exit cannot SIGPIPE a producer.
+            STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)
+            case "$STATE" in
+              false) ;;
+              true)
+                # `edited` can fire more than once on the same comment. Replying
+                # again would stack duplicate replies on a thread already closed.
+                echo "$TID already resolved — skipping"; SKIPPED=$((SKIPPED+1)); continue ;;
+              *)
+                echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1)); continue ;;
+            esac
 
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
@@ -260,8 +282,12 @@ jobs:
             fi
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
-          echo "resolved=$RESOLVED rejected=$REJECTED"
-          if [ "$RESOLVED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
+          echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED"
+          # Only speak up when the whole declaration failed. SKIPPED>0 means a
+          # repeat `edited` firing over work already done, which is the normal
+          # steady state — complaining there would post the same warning on
+          # every edit of the summary comment.
+          if [ "$RESOLVED" -eq 0 ] && [ "$SKIPPED" -eq 0 ] && [ "$REJECTED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ Every thread claude declared as fixed was rejected ($REJECTED). Nothing was resolved — see the [workflow run]($RUN_URL). The threads are still open, which is the safe outcome."
           fi
 

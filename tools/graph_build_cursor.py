@@ -521,10 +521,19 @@ def _remove_node(graph: Graph, node: Node) -> None:
     graph.nodes.pop(node.key, None)
 
 
+def _is_excluded(path: Path, exclude_resolved: list[Path]) -> bool:
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):
+        return True
+    return any(resolved.is_relative_to(root) for root in exclude_resolved)
+
+
 def _prune_shadowed_declared_plugin_commands(
     graph: Graph,
     realized_plugin_commands: list[tuple[Node, Path]],
     resolved_commands: list[cursor_commands.ResolvedCommand],
+    exclude_resolved: list[Path],
 ) -> None:
     """Declared-mode counterpart of `_prune_shadowed_plugin_commands`.
 
@@ -546,14 +555,28 @@ def _prune_shadowed_declared_plugin_commands(
     `resolve_repo`'s own `commands_dir.parent.parent` grouping — so an
     unrelated workspace elsewhere in a multi-root repo scan sharing the same
     relative filename by coincidence never shadows a plugin outside its tree.
+
+    `exclude_resolved` (the same realized-plugin-root list `_emit_command_agent`
+    filters against) is applied here too: a `resolve_repo` hit that sits
+    inside an already-realized plugin subtree — e.g. a bundled fixture like
+    `vendor/.cursor/commands/deploy.md` nested under `vendor`'s own realized
+    root — is content Cursor never independently loads and was never emitted
+    as a node. Counting it toward `overridden_relative_paths` anyway would
+    prune the plugin's real bundled command in its favor and leave neither
+    survive in the graph.
     """
+    independent_commands = [
+        resolved
+        for resolved in resolved_commands
+        if not _is_excluded(resolved.file_path, exclude_resolved)
+    ]
     for plugin_node, commands_dir in realized_plugin_commands:
         try:
             commands_dir_resolved = commands_dir.resolve()
         except (OSError, RuntimeError):
             continue
         overridden_relative_paths: set[str] = set()
-        for resolved in resolved_commands:
+        for resolved in independent_commands:
             try:
                 group_root = resolved.commands_dir.resolve().parent.parent
             except (OSError, RuntimeError):
@@ -1059,7 +1082,7 @@ def _add_commands_and_subagents(
             spec=spec,
         )
     _prune_shadowed_declared_plugin_commands(
-        graph, realized_plugin_commands or [], resolved_commands
+        graph, realized_plugin_commands or [], resolved_commands, exclude_resolved
     )
     for resolved in cursor_subagents.resolve_repo(directory, is_ignored=_is_ignored):
         _emit_command_agent(

@@ -247,13 +247,10 @@ jobs:
               repository(owner:$o,name:$n){pullRequest(number:$p){
                 reviewThreads(first:100,after:$endCursor){
                   pageInfo{hasNextPage endCursor}
-                  nodes{id isResolved comments(last:20){nodes{body}}}}}}}' \
+                  nodes{id isResolved}}}}}' \
             -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
             --jq '.data.repository.pullRequest.reviewThreads.nodes[]
-                  | .id + "\t" + (.isResolved | tostring) + "\t"
-                    + ([.comments.nodes[].body
-                        | capture("<!-- autofix-resolver-reply:(?<s>[0-9a-f]+) -->").s] | join(","))' \
-            > /tmp/pr_threads.tsv
+                  | .id + "\t" + (.isResolved | tostring)' > /tmp/pr_threads.tsv
           echo "PR #$PR_NUM has $(wc -l < /tmp/pr_threads.tsv) threads"
 
           # The PR's own commits, so a declared SHA can be checked for
@@ -332,13 +329,6 @@ jobs:
               echo "$TID already handled in this run — skipping"; SKIPPED=$((SKIPPED+1)); continue
             fi
             STATE=$(awk -F'\t' -v t="$TID" '$1 == t { print $2; exit }' /tmp/pr_threads.tsv)
-            # Markers are recorded per SHA, not per thread. A thread reopened
-            # after a wrong close — which the reply itself invites — and then
-            # genuinely fixed in a new commit must get a NEW reply naming that
-            # commit; a thread-scoped marker would resolve it silently and leave
-            # the audit trail crediting the earlier SHA.
-            PRIOR_SHAS=$(awk -F'\t' -v t="$TID" '$1 == t { print $3; exit }' /tmp/pr_threads.tsv)
-            case ",${PRIOR_SHAS}," in *",${SHA},"*) HAS_REPLY=true ;; *) HAS_REPLY=false ;; esac
             case "$STATE" in
               false) ;;
               true)
@@ -360,32 +350,41 @@ jobs:
 
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
-          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>
-          <!-- autofix-resolver-reply:$SHA -->"
+          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>"
 
-            # Reply and resolve are two calls, so a transient failure between
-            # them leaves a reply posted on an unresolved thread. A later
-            # delivery must retry the resolve WITHOUT posting the reply again —
-            # hence the marker above and this check, rather than trusting the
-            # resolved flag alone.
-            OK=1
-            if [ "$HAS_REPLY" = "true" ]; then
-              echo "$TID already has a resolver reply — retrying the resolve only"
-            else
-              # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
-              # and would read a local file into a public reply.
-              retry gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-                -f t="$TID" -f b="$BODY" --silent || OK=0
-            fi
-            if [ "$OK" -eq 1 ] && retry gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
+            # ORDER MATTERS, and it is the whole duplicate-reply defence.
+            #
+            # `resolveReviewThread` is idempotent — resolving an already-resolved
+            # thread succeeds with no visible change — so it is safe to retry.
+            # `addPullRequestReviewThreadReply` is a create with no idempotency
+            # key, so retrying it after a lost response posts the comment twice.
+            #
+            # Resolving first, then replying exactly once, makes every ordering
+            # safe without bookkeeping: a redelivery finds the thread resolved
+            # and skips it, so the reply cannot be duplicated; a reopened thread
+            # is unresolved again and correctly gets a fresh reply naming the new
+            # commit. That replaced a per-SHA marker, a marker snapshot, and a
+            # reply retry — three mechanisms detecting a hazard that ordering
+            # removes.
+            #
+            # The residual cost is honest: if the reply fails after the resolve
+            # succeeded, the thread is closed without its note. The run goes red
+            # below, so it is visible and a human can add it. Losing one note is
+            # a better failure than silently posting three.
+            if ! retry gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' \
                  -f t="$TID" --silent; then
-              echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
-            else
               # An API failure is not a bad declaration. Counted apart so the
-              # summary comment below does not blame the bot for a transient
-              # blip that the next delivery will retry.
-              echo "::warning::API call failed for $TID after retries"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+              # summary comment below does not blame the bot for a blip.
+              echo "::warning::could not resolve $TID after retries"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+              continue
             fi
+            echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
+            # Exactly one attempt, never retried. -f/--raw-field, never -F:
+            # `-F` treats a leading @ as a filename and would read a local file
+            # into a public reply.
+            gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+              -f t="$TID" -f b="$BODY" --silent \
+              || echo "::warning::$TID resolved but its note could not be posted"
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 
           echo "resolved=$RESOLVED skipped=$SKIPPED rejected=$REJECTED failed=$FAILED"

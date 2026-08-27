@@ -313,6 +313,15 @@ jobs:
           # and the thread stays open behind an already-posted reply. Retry here,
           # bounded, and fail the step if anything is still outstanding so the
           # run goes red rather than exiting 0 on a broken promise.
+          # Every piece of model-derived text that reaches a comment authored by
+          # the trusted PAT goes through this. A PAT-authored comment containing
+          # `@claude` satisfies claude.yml's trusted-author trigger, so a
+          # declaration could otherwise start a model run outside the seven-run
+          # cap — a loop driven by whatever an injection wrote. Stripping `@`
+          # is blunt and total; the trigger matches the raw body, so markdown
+          # tricks do not help.
+          nomention() { printf '%s' "$1" | tr -d '@'; }
+
           retry() {
             n=0
             until "$@"; do
@@ -327,10 +336,21 @@ jobs:
             SHA=$(printf '%s' "${sha:-}" | tr -d '[:space:]`')
             NOTE=$(printf '%s' "${note:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
+            # Prefix-glob-with-`*` was the same mistake the SHA check had: it
+            # accepted `PRRT_a@claude`. Reject on any character outside the set
+            # instead, and require the prefix.
+            TID_OK=1
             case "$TID" in
-              PRRT_[A-Za-z0-9_=-]*) ;;
-              *) echo "::warning::skipping malformed thread id"; REJECTED=$((REJECTED+1)); continue ;;
+              PRRT_*) ;;
+              *) TID_OK=0 ;;
             esac
+            case "${TID#PRRT_}" in
+              "" | *[!A-Za-z0-9_=-]*) TID_OK=0 ;;
+            esac
+            if [ "$TID_OK" -eq 0 ]; then
+              echo "::warning::skipping malformed thread id"; REJECTED=$((REJECTED+1))
+              echo "$(nomention "$TID") (malformed thread id)" >> /tmp/rejected.txt; continue
+            fi
             # Hex-only, 7..40 chars, with nothing trailing. A prefix glob
             # ending in `*` would accept `abc1234,` or seven hex characters
             # followed by arbitrary text, and the reply would then cite a commit
@@ -351,7 +371,7 @@ jobs:
             # full oid.
             if ! awk -v s="$SHA" 'index($0, s) == 1 { found = 1; exit } END { exit !found }' /tmp/pr_commits.txt; then
               echo "::warning::skipping $TID — declared SHA is not a commit on PR #$PR_NUM"; REJECTED=$((REJECTED+1))
-              echo "$TID (declared SHA $SHA is not a commit on this PR — a rebase may have rewritten it)" >> /tmp/rejected.txt
+              echo "$(nomention "$TID") (declared SHA $SHA is not a commit on this PR — a rebase may have rewritten it)" >> /tmp/rejected.txt
               continue
             fi
             # awk reads the file directly rather than through a pipe, so the
@@ -368,7 +388,7 @@ jobs:
                 echo "$TID already resolved — skipping"; SKIPPED=$((SKIPPED+1)); continue ;;
               *)
                 echo "::warning::skipping $TID — not a thread on PR #$PR_NUM"; REJECTED=$((REJECTED+1))
-                echo "$TID (not a thread on this PR)" >> /tmp/rejected.txt; continue ;;
+                echo "$(nomention "$TID") (not a thread on this PR)" >> /tmp/rejected.txt; continue ;;
             esac
 
             # A brokered reply is authored by the PAT's identity, which
@@ -378,11 +398,32 @@ jobs:
             # an injection put in the note. Stripping `@` outright is blunt and
             # total; backticks would not help, because the trust gate matches
             # the raw body and does not care about markdown.
-            NOTE=$(printf '%s' "$NOTE" | tr -d '@')
+            NOTE=$(nomention "$NOTE")
 
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
           <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>"
+
+            # rebase-stale-prs runs under an unrelated concurrency group and can
+            # force-push between the snapshot above and this mutation, rewriting
+            # the declared commit. Re-check membership here so a thread is never
+            # closed citing a SHA that left the branch mid-run. This narrows the
+            # window rather than closing it — closing it would need the two jobs
+            # to share a lock — but a rejected declaration is recoverable where a
+            # wrong audit anchor on a closed thread is not.
+            if ! gh api graphql -f query='
+                query($o:String!,$n:String!,$p:Int!,$endCursor:String){
+                  repository(owner:$o,name:$n){pullRequest(number:$p){
+                    commits(first:100,after:$endCursor){
+                      pageInfo{hasNextPage endCursor} nodes{commit{oid}}}}}}' \
+                -f o="${REPO%%/*}" -f n="${REPO##*/}" -F p="$PR_NUM" --paginate \
+                --jq '.data.repository.pullRequest.commits.nodes[].commit.oid' 2>/dev/null \
+                | awk -v s="$SHA" 'index($0, s) == 1 { f = 1; exit } END { exit !f }'; then
+              echo "::warning::skipping $TID — declared SHA left the branch mid-run (rebase?)"
+              REJECTED=$((REJECTED+1))
+              echo "$(nomention "$TID") (declared SHA $SHA left the branch during this run)" >> /tmp/rejected.txt
+              continue
+            fi
 
             # ORDER MATTERS, and it is the whole duplicate-reply defence.
             #
@@ -420,7 +461,7 @@ jobs:
                  -f t="$TID" -f b="$BODY" --silent; then
               echo "::warning::$TID resolved but its note could not be posted"
               NOTE_FAILED=$((NOTE_FAILED+1))
-              echo "$TID $SHA" >> /tmp/missing_notes.txt
+              echo "$(nomention "$TID") $SHA" >> /tmp/missing_notes.txt
             fi
           done < <(grep '^[[:space:]]*RESOLVED[[:space:]]*|' /tmp/claim.txt)
 

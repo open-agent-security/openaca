@@ -72,9 +72,9 @@ jobs:
           #
           # Safe to disable: claude-code-action authenticates its own commits and
           # pushes with a short-lived GitHub App token, not with credentials the
-          # checkout leaves behind. The raw `git push` fallback allowed below
-          # loses its credentials as a result; the action's own push wrapper is
-          # unaffected, which is the sanctioned path anyway.
+          # checkout leaves behind. The raw `git push` fallback is removed
+          # below rather than left to fail; the action's own push wrapper is
+          # unaffected, and is the sanctioned path anyway.
           #
           # Residual, stated rather than assumed closed: whatever credential the
           # action itself configures for its pushes is outside this workflow's
@@ -146,15 +146,21 @@ jobs:
           #    it would confidently defend self-referential ADRs/tests it cannot
           #    falsify (see PRs #97/#98).
           #
-          # 3. Push (`Bash(git push:*)`) — the bot's sanctioned push path is
-          #    claude-code-action's git-push.sh wrapper, but it occasionally
-          #    falls back to raw `git push`; without this the fallback is denied
-          #    and the bot commits without pushing (PR #141 stalled this way).
-          #    main is branch-protected (require-PR, no force-push), so this
-          #    reaches only PR branches, never main. The `:*` also matches
-          #    `git push --no-verify` (skips the pre-push gate); accepted because
-          #    ci.yml re-runs the same gate on every PR push, so a bypassed push
-          #    still goes red in CI — a PR-branch quality lapse, not a main risk.
+          # There is deliberately NO `Bash(git push:*)` grant. The action's base
+          # tools already cover its own authenticated `git-push.sh` wrapper,
+          # which is the sanctioned path; the raw fallback that grant existed
+          # for cannot authenticate any more, because the checkout no longer
+          # persists credentials. Keeping it would be a dead capability that
+          # presents as a permissions failure — the shape of the PR #141 stall
+          # it was added to prevent.
+          #
+          # The tradeoff, stated: if the action's wrapper fails, the bot commits
+          # without pushing and the loop stalls visibly (a finished-comment with
+          # no synchronize event, so no re-review). That is recoverable and
+          # noticeable. The alternative — leaving a push credential in a
+          # workspace the model can write to and run tests from — is neither.
+          # If a stall recurs, fix the wrapper's inputs; do not hand the model a
+          # credential.
           #
           # There is deliberately NO review-thread grant here — not a `gh api
           # graphql` wildcard, and not a helper script in the repo either. An
@@ -174,7 +180,7 @@ jobs:
           # local-execution verification is ever needed, run it on a separate
           # sandboxed runner with no write token and no secrets — not here.
           claude_args: |
-            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),Bash(git push:*),WebFetch,WebSearch"
+            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),WebFetch,WebSearch"
 
           # Surface Claude's full SDK conversation in the workflow log.
           # Default is `false` (per claude-code-action upstream) which hides

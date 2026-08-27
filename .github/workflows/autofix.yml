@@ -272,6 +272,34 @@ jobs:
               --jq '.data.repository.pullRequest.commits.nodes[].commit.oid' > "$1"
           }
 
+          # Consumption record. A declaration must not be replayable: a rerun,
+          # or a redelivery of the same comment after a reviewer reopened the
+          # thread, would otherwise resolve it again on the strength of a fix
+          # already judged inadequate — silently undoing the reviewer.
+          # Per-comment concurrency serializes overlapping deliveries; it
+          # remembers nothing across them.
+          #
+          # The record lives in the thread, because this job has no durable
+          # store: the reply carries a marker naming the SHA it was posted for.
+          # That mechanism existed earlier in this PR and I removed it once
+          # ordering made it unnecessary for preventing duplicate REPLIES. The
+          # reasoning was right; the blanket removal was not. Consumption
+          # tracking is a different requirement and it needs history.
+          #
+          # Paginated rather than a fixed `comments(last:N)` window: a marker
+          # that falls outside the window reads as "never consumed" and the
+          # replay returns.
+          thread_markers_to() {
+            gh api graphql -f query='
+              query($tid:ID!,$endCursor:String){
+                node(id:$tid){ ... on PullRequestReviewThread {
+                  comments(first:100,after:$endCursor){
+                    pageInfo{hasNextPage endCursor} nodes{body}}}}}' \
+              -f tid="$2" --paginate \
+              --jq '.data.node.comments.nodes[].body
+                    | scan("<!-- autofix-resolver-reply:([0-9a-f]+) -->") | .[0]' > "$1"
+          }
+
           # Reads a captured list; the early exit is safe because the producer
           # has already finished.
           sha_on_branch() {
@@ -435,7 +463,18 @@ jobs:
 
             BODY="Addressed in \`$SHA\`. ${NOTE:-No detail declared.}
 
-          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification.</sub>"
+          <sub>Resolved by the autofix loop from claude's declaration. [Workflow run]($RUN_URL) · if this thread was closed without a real fix, reopen it — the declaration is the bot's claim, not a verification. Reopening sticks: this declaration will not be replayed.</sub>
+          <!-- autofix-resolver-reply:$SHA -->"
+
+            if ! thread_markers_to /tmp/thread_markers.txt "$TID"; then
+              echo "::warning::could not read $TID's history — leaving it open"
+              FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+              continue
+            fi
+            if grep -qxF "$SHA" /tmp/thread_markers.txt; then
+              echo "$TID already acted on declaration $SHA — skipping (reopened?)"
+              SKIPPED=$((SKIPPED+1)); continue
+            fi
 
             # rebase-stale-prs runs under an unrelated concurrency group and can
             # force-push between the snapshot above and this mutation, rewriting

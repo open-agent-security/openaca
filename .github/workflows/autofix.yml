@@ -132,7 +132,9 @@ jobs:
       # the old comment-driven no-push detection it required is gone.
       - name: Post @claude trigger comment
         run: |
-          gh pr comment "$PR_NUM" -R "$REPO" --body "@claude please address the Codex review feedback above. CRITICAL: before applying any fix that depends on infrastructure or invariants you have not verified (DLQ, schema, contracts, ADRs in docs/adrs/), grep the repo for the prerequisite. If it is not present, push back via a PR comment explaining the missing context rather than implementing on a false premise."
+          gh pr comment "$PR_NUM" -R "$REPO" --body "@claude please address the Codex review feedback above. CRITICAL: before applying any fix that depends on infrastructure or invariants you have not verified (DLQ, schema, contracts, ADRs in docs/adrs/), grep the repo for the prerequisite. If it is not present, push back via a PR comment explaining the missing context rather than implementing on a false premise.
+
+          After you have pushed your fixes, close out the threads you fixed. Run \`bash scripts/review-threads.sh list $PR_NUM\` for the unresolved threads and their ids. For each thread a code change in this push actually addresses: \`bash scripts/review-threads.sh reply $PR_NUM <thread-id> '<what changed, naming the fix commit SHA>'\`, then \`bash scripts/review-threads.sh resolve $PR_NUM <thread-id>\`. Resolve a thread ONLY when a change in this push addresses it — never because you disagree with it, never when you pushed back instead of fixing, and never in bulk. Leave every other thread unresolved: the unresolved list is how convergence gets measured, so a wrongly resolved thread costs more than one left open."
 
   request-codex-rereview-on-push:
     # Bounce 2: new commits pushed to a PR head -> @codex re-reviews HEAD.

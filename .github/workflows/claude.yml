@@ -137,6 +137,17 @@ jobs:
           #    ci.yml re-runs the same gate on every PR push, so a bypassed push
           #    still goes red in CI — a PR-branch quality lapse, not a main risk.
           #
+          # 4. Review-thread bookkeeping (`Bash(bash scripts/review-threads.sh:*)`)
+          #    — lets the bot reply to and resolve the threads it actually
+          #    fixed. Deliberately a script rather than `Bash(gh api graphql:*)`:
+          #    permission matching is prefix-based, so `graphql:*` would grant
+          #    arbitrary authenticated GraphQL under a write token
+          #    (mergePullRequest, addPullRequestReview, deleteRef) reachable
+          #    from an injection in the PR content this run reads. The script
+          #    exposes list/reply/resolve only and refuses thread ids that
+          #    aren't on the PR being worked, so the worst case is a wrongly
+          #    resolved thread — visible on the PR and reversible by hand.
+          #
           # DELIBERATELY read-only. We do NOT grant `Bash(python:*)`/`Bash(curl:*)`
           # (arbitrary code execution + network). This job runs with a write
           # token and secrets in env, and it reads untrusted PR/issue content —
@@ -147,7 +158,7 @@ jobs:
           # local-execution verification is ever needed, run it on a separate
           # sandboxed runner with no write token and no secrets — not here.
           claude_args: |
-            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),Bash(git push:*),WebFetch,WebSearch"
+            --allowed-tools "Bash(uv run ruff format:*),Bash(uv run ruff check:*),Bash(uv run pyright:*),Bash(uv run pytest:*),Bash(git push:*),Bash(bash scripts/review-threads.sh:*),WebFetch,WebSearch"
 
           # Surface Claude's full SDK conversation in the workflow log.
           # Default is `false` (per claude-code-action upstream) which hides
@@ -163,3 +174,12 @@ jobs:
           # review threads — all of which are already public on the PR. We
           # don't pass secrets through the prompt. Acceptable.
           show_full_output: true
+
+        # `scripts/review-threads.sh` shells out to `gh`, which needs a token.
+        # The job's own GITHUB_TOKEN carries `pull-requests: write` (see the
+        # permissions block above) and is the narrowest credential that can
+        # resolve a thread. It lands in the environment of every allowed Bash
+        # command, not only the script; the allowed set is the dev-loop gates,
+        # `git push`, and this script, none of which echo their environment.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

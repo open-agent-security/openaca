@@ -477,7 +477,14 @@ def _add_installed_commands_and_subagents(
 
     for resolved in cursor_subagents.resolve_endpoint(agent_dirs):
         _emit_command_agent(
-            graph, parent, resolved.file_path, resolved.refs, "agent", [], normalize
+            graph,
+            parent,
+            resolved.file_path,
+            resolved.refs,
+            "agent",
+            [],
+            normalize,
+            parse_error=resolved.parse_error,
         )
 
 
@@ -984,6 +991,7 @@ def _add_commands_and_subagents(
             normalize,
             eval_root=eval_root,
             spec=spec,
+            parse_error=resolved.parse_error,
         )
 
 
@@ -998,6 +1006,7 @@ def _emit_command_agent(
     *,
     eval_root: Path | None = None,
     spec=None,
+    parse_error: str | None = None,
 ) -> None:
     """One command/subagent file → one self node (child of `parent`) plus,
     for subagents, any frontmatter `mcpServers`/`hooks` children `parse_file`
@@ -1006,7 +1015,14 @@ def _emit_command_agent(
 
     `eval_root`/`spec` are `None` for the installed-mode caller (no gitignore
     filtering applies there); the declared-mode caller always passes both.
+
+    `parse_error`, when set, is `cursor_subagents.ResolvedSubagent.parse_error`
+    — a strict-parse failure with no refs to show for it. Recorded as a graph
+    warning so a malformed subagent is reported rather than silently
+    composing nothing.
     """
+    if parse_error is not None:
+        graph.warnings.append(parse_error)
     if not refs:
         return
     try:

@@ -677,6 +677,13 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
     happens to exist too. "Last path wins attribution" matches the
     existing precedence: a reader fixing an over-permissive entry looks at
     the most specific (project) file first when both declare the same name.
+
+    Source tracking is restricted to `mcp_auto_approve.CURSOR_ALLOW_FIELDS`
+    (`mcpAllowlist`, `autoRun`) — the only fields `_check_cursor_permissions`
+    evaluates. A name occurring in an unrelated field such as `mcpDenylist`
+    must never overwrite the attribution for an allow-field occurrence of the
+    same name in an earlier file; that field carries no auto-approval posture
+    and its path is not where the risky permission is actually declared.
     """
     merged: dict[str, list] = {}
     sources: dict[str, Path] = {}
@@ -692,9 +699,10 @@ def resolve_cursor_permissions(paths: list[Path]) -> list[tuple[Path, dict]]:
         for key, value in data.items():
             if isinstance(value, list):
                 merged.setdefault(key, []).extend(value)
-                for entry in value:
-                    if isinstance(entry, str):
-                        sources[entry] = path
+                if key in mcp_auto_approve.CURSOR_ALLOW_FIELDS:
+                    for entry in value:
+                        if isinstance(entry, str):
+                            sources[entry] = path
     if primary is None or not merged:
         return []
     return [(primary, {"cursor_permissions": merged, "cursor_permissions_sources": sources})]

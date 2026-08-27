@@ -124,7 +124,16 @@ def _parse_repo_cursor_command(path: Path) -> list[ComponentRef]:
 
 
 def _parse_repo_cursor_agent(path: Path) -> list[ComponentRef]:
-    return claude_command_agent.parse_file(path, kind="agent", extensions=_CURSOR_AGENT_EXTENSIONS)
+    # `strict=True` (parity with `tools.cursor_subagents._parse_isolated` and
+    # `graph_build._add_endpoint_command_agents`'s `strict=kind == "agent"`):
+    # `parse_repo_registry_counts` counts this call's raised exceptions
+    # toward `n_failed`, which feeds `bom_cli`'s "N of M manifest(s) failed
+    # to parse" warning and `evidence_gaps`. Without `strict=True`, malformed
+    # frontmatter/`mcpServers`/`hooks` silently parses as an empty/partial
+    # agent and coverage reports a clean parse for a file that dropped data.
+    return claude_command_agent.parse_file(
+        path, kind="agent", extensions=_CURSOR_AGENT_EXTENSIONS, strict=True
+    )
 
 
 def _parse_repo_agent_plugins(path: Path) -> list[ComponentRef]:

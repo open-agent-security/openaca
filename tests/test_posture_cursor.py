@@ -549,7 +549,7 @@ def test_shared_entry_across_different_fields_attributed_to_project_file(tmp_pat
     """Regression for a Codex finding: the same server name can be declared
     under a DIFFERENT field in each scope (`autoRun` in the user file,
     `mcpAllowlist` in the project file). Attribution must still follow file
-    precedence — the project file wins — not the order `_CURSOR_ALLOW_FIELDS`
+    precedence — the project file wins — not the order `CURSOR_ALLOW_FIELDS`
     happens to iterate in. A field-keyed sources map merged field-by-field
     let a later-iterated field's path silently overwrite an earlier field's
     correct attribution regardless of which file was actually more specific;
@@ -564,6 +564,26 @@ def test_shared_entry_across_different_fields_attributed_to_project_file(tmp_pat
     declared_by = findings[0].declared_by
     assert declared_by is not None
     assert declared_by["path"] == str(project_path)
+
+
+def test_unrelated_field_does_not_overwrite_allow_field_attribution(tmp_path):
+    """Regression for a Codex finding: a name declared in an allow field
+    (`mcpAllowlist`/`autoRun`) in one file must keep that file's attribution
+    even if the SAME name later appears in an unrelated list field (e.g.
+    `mcpDenylist`) in a later-processed file. `_check_cursor_permissions`
+    never reads `mcpDenylist`, so letting it participate in source tracking
+    pointed remediation at a file that never declared the risky permission.
+    """
+    allow_path = _write(tmp_path / "project" / "permissions.json", {"mcpAllowlist": ["shared"]})
+    unrelated_path = _write(tmp_path / "user" / "permissions.json", {"mcpDenylist": ["shared"]})
+
+    manifests = resolve_cursor_permissions([allow_path, unrelated_path])
+
+    findings = check_mcp_auto_approve(manifests)
+    assert len(findings) == 1
+    declared_by = findings[0].declared_by
+    assert declared_by is not None
+    assert declared_by["path"] == str(allow_path)
 
 
 def test_missing_project_file_keeps_user_entries(tmp_path):

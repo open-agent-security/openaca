@@ -49,12 +49,19 @@ SCOPE_DIR_ORDER: tuple[str, ...] = (".cursor", ".claude")
 
 @dataclass(frozen=True)
 class ResolvedSubagent:
-    """One subagent that survived precedence resolution."""
+    """One subagent that survived precedence resolution.
+
+    `parse_error` is set (and `refs` empty) when `_parse_isolated` hit
+    malformed frontmatter/`mcpServers`/`hooks` under strict parsing — the
+    caller surfaces it as a graph warning rather than silently composing a
+    subagent with dropped children.
+    """
 
     relative_path: str
     file_path: Path
     agents_dir: Path
     refs: tuple[ComponentRef, ...]
+    parse_error: str | None = None
 
 
 def resolve_repo(
@@ -121,11 +128,13 @@ def _resolve_ordered_dirs(
                 continue
             if is_ignored is not None and is_ignored(file_path):
                 continue
+            refs, parse_error = _parse_isolated(file_path)
             seen[relative_path] = ResolvedSubagent(
                 relative_path=relative_path,
                 file_path=file_path,
                 agents_dir=agents_dir,
-                refs=tuple(_parse_isolated(file_path)),
+                refs=refs,
+                parse_error=parse_error,
             )
     return [seen[key] for key in sorted(seen)]
 
@@ -152,10 +161,22 @@ def _iter_agent_files(agents_dir: Path) -> list[tuple[str, Path]]:
     return out
 
 
-def _parse_isolated(file_path: Path) -> list[ComponentRef]:
+def _parse_isolated(file_path: Path) -> tuple[tuple[ComponentRef, ...], str | None]:
+    """Parse one subagent file strictly (parity with `graph_build._add_endpoint_command_agents`'s
+    `strict=kind == "agent"`): malformed frontmatter, `mcpServers`, or `hooks`
+    must not silently compose a subagent with dropped children. On failure,
+    returns no refs and an error message for the caller to surface as a
+    graph warning, instead of a valid-looking ref that omits what failed to
+    parse.
+    """
     try:
-        return claude_command_agent.parse_file(
-            file_path, kind="agent", extensions=_AGENT_EXTENSIONS
+        return (
+            tuple(
+                claude_command_agent.parse_file(
+                    file_path, kind="agent", extensions=_AGENT_EXTENSIONS, strict=True
+                )
+            ),
+            None,
         )
-    except Exception:
-        return []
+    except Exception as exc:
+        return (), f"could not parse agent definition {file_path}: {exc}"

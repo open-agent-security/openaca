@@ -71,7 +71,7 @@ def check_mcp_auto_approve(
 # "Posture rule applicability"). `manifest` here is already the effective
 # (concatenated, both-scopes-merged) view `tools.posture.resolve_cursor_permissions`
 # produced, so no precedence logic belongs in this branch.
-_CURSOR_ALLOW_FIELDS: tuple[str, ...] = ("mcpAllowlist", "autoRun")
+CURSOR_ALLOW_FIELDS: tuple[str, ...] = ("mcpAllowlist", "autoRun")
 
 
 def _check_cursor_permissions(
@@ -80,7 +80,7 @@ def _check_cursor_permissions(
     sources: dict[str, Path] | None = None,
 ) -> list[PostureFinding]:
     names: set[str] = set()
-    for field in _CURSOR_ALLOW_FIELDS:
+    for field in CURSOR_ALLOW_FIELDS:
         value = permissions.get(field)
         if isinstance(value, list):
             names.update(name for name in value if isinstance(name, str))

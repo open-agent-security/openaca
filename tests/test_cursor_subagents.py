@@ -122,8 +122,48 @@ def test_malformed_file_isolated_to_one_subagent(tmp_path, monkeypatch):
     assert relative_paths == ["bad.md", "good.md"]
     bad_entry = next(r for r in resolved if r.relative_path == "bad.md")
     assert bad_entry.refs == ()
+    assert bad_entry.parse_error is not None
+    assert str(bad) in bad_entry.parse_error
     good_entry = next(r for r in resolved if r.relative_path == "good.md")
     assert len(good_entry.refs) == 1
+    assert good_entry.parse_error is None
+
+
+def test_malformed_frontmatter_yaml_fails_strict_instead_of_silently_dropping(tmp_path):
+    """Regression for a Codex finding: `_parse_isolated` used to leave
+    `strict=False`, so invalid YAML frontmatter silently substituted an empty
+    frontmatter dict and returned a valid-looking agent ref rather than
+    surfacing the failure. With `strict=True` this must raise internally and
+    come back as a `parse_error`, not a "successfully parsed" empty agent.
+    """
+    _write(
+        tmp_path / ".cursor" / "agents" / "broken.md",
+        "---\nname: [unclosed\n---\nbody\n",
+    )
+
+    resolved = resolve_repo(tmp_path)
+
+    assert len(resolved) == 1
+    assert resolved[0].refs == ()
+    assert resolved[0].parse_error is not None
+
+
+def test_malformed_inline_mcp_servers_fails_strict_instead_of_silently_dropping(tmp_path):
+    """Regression for the same Codex finding: a subagent whose frontmatter
+    `mcpServers` entries are malformed (not name->object mappings) must fail
+    strictly rather than composing an agent ref with the bad server silently
+    dropped.
+    """
+    _write(
+        tmp_path / ".cursor" / "agents" / "broken-mcp.md",
+        "---\nmcpServers:\n  - not-a-mapping\n---\nbody\n",
+    )
+
+    resolved = resolve_repo(tmp_path)
+
+    assert len(resolved) == 1
+    assert resolved[0].refs == ()
+    assert resolved[0].parse_error is not None
 
 
 def test_repo_mode_groups_by_scope_dir_parent_parent(tmp_path):

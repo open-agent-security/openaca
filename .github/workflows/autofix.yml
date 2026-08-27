@@ -209,6 +209,18 @@ jobs:
       github.event.comment.user.login == 'claude[bot]' &&
       contains(github.event.comment.body, 'RESOLVED |')
     runs-on: ubuntu-latest
+    # The already-resolved check below is a read-then-write, so it only gives
+    # idempotency against runs that do not overlap. Two `edited` deliveries in
+    # quick succession would otherwise both snapshot a thread as unresolved and
+    # both post a reply. Serializing per PR is what makes the snapshot mean
+    # something; different PRs touch disjoint threads and may still run at once.
+    #
+    # `cancel-in-progress: false` is deliberate, not inherited: cancelling the
+    # in-flight run would discard declarations it had not processed yet, and a
+    # queued run costs nothing here.
+    concurrency:
+      group: resolve-declared-threads-${{ github.event.issue.number }}
+      cancel-in-progress: false
     permissions:
       pull-requests: write
     env:

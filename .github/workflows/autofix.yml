@@ -307,18 +307,36 @@ jobs:
           # and keying on the declared string let the second spelling replay a
           # declaration the first had already consumed. The early exit is safe
           # because the producer has already finished writing the file.
-          sha_full() {
-            awk -v s="$2" 'index($0, s) == 1 { print; exit }' "$1"
+          # Prints EVERY oid the declared prefix matches. Printing only the
+          # first would silently pick one of two commits sharing a 7-to-39
+          # character prefix and mark consumption against a commit the
+          # declaration did not identify; the caller requires exactly one match.
+          sha_matches() {
+            awk -v s="$2" 'index($0, s) == 1 { print }' "$1"
           }
 
           # For any mutation whose response can be lost, the exit code is not the
           # outcome — the observable state is. Both mutations here are checked
           # this way after retries: the thread's resolved flag for the resolve,
           # the SHA marker for the reply.
-          thread_is_resolved() {
-            [ "$(gh api graphql -f query='
-              query($tid:ID!){node(id:$tid){... on PullRequestReviewThread{isResolved}}}' \
-              -f tid="$1" --jq '.data.node.isResolved' 2>/dev/null)" = "true" ]
+          # 0 = resolved, 1 = observed unresolved, 2 = UNKNOWN. The third state
+          # is the point: swallowing a query failure into "unresolved" turns an
+          # unavailable answer into a confident wrong one, and the caller would
+          # then record a failure without writing the consumption marker on a
+          # thread that is in fact closed — the replay hole again. Retries first,
+          # because this runs during whatever outage broke the mutation.
+          thread_resolved_state() {
+            _s=""
+            for _i in 1 2 3; do
+              if _s=$(gh api graphql -f query='
+                query($tid:ID!){node(id:$tid){... on PullRequestReviewThread{isResolved}}}' \
+                -f tid="$1" --jq '.data.node.isResolved' 2>/dev/null) && [ -n "$_s" ]; then
+                [ "$_s" = "true" ] && return 0
+                return 1
+              fi
+              [ "$_i" -lt 3 ] && sleep $((_i * 3))
+            done
+            return 2
           }
 
 
@@ -380,6 +398,7 @@ jobs:
           : > /tmp/handled.txt
           : > /tmp/missing_notes.txt
           : > /tmp/rejected.txt
+          : > /tmp/uncertain.txt
 
           RESOLVED=0; REJECTED=0; SKIPPED=0; FAILED=0; NOTE_FAILED=0
 
@@ -446,12 +465,19 @@ jobs:
             # anchors a prefix match without regex, so a short SHA matches its
             # full oid.
             DECLARED="$SHA"
-            SHA=$(sha_full /tmp/pr_commits.txt "$SHA")
-            if [ -z "$SHA" ]; then
+            sha_matches /tmp/pr_commits.txt "$SHA" > /tmp/sha_matches.txt
+            MATCHES=$(wc -l < /tmp/sha_matches.txt | tr -d ' ')
+            if [ "$MATCHES" -eq 0 ]; then
               echo "::warning::skipping $TID — declared SHA is not a commit on PR #$PR_NUM"; REJECTED=$((REJECTED+1))
               echo "$(nomention "$TID") (declared SHA $DECLARED is not a commit on this PR — a rebase may have rewritten it)" >> /tmp/rejected.txt
               continue
             fi
+            if [ "$MATCHES" -gt 1 ]; then
+              echo "::warning::skipping $TID — declared SHA $DECLARED is ambiguous ($MATCHES commits)"; REJECTED=$((REJECTED+1))
+              echo "$(nomention "$TID") (declared SHA $DECLARED matches $MATCHES commits on this PR — declare more characters)" >> /tmp/rejected.txt
+              continue
+            fi
+            SHA=$(cat /tmp/sha_matches.txt)
             # awk reads the file directly rather than through a pipe, so the
             # early exit cannot SIGPIPE a producer.
             if grep -qxF "$TID" /tmp/handled.txt; then
@@ -511,7 +537,7 @@ jobs:
               FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
               continue
             fi
-            if [ -z "$(sha_full /tmp/pr_commits_recheck.txt "$SHA")" ]; then
+            if [ -z "$(sha_matches /tmp/pr_commits_recheck.txt "$SHA")" ]; then
               echo "::warning::skipping $TID — declared SHA left the branch mid-run (rebase?)"
               REJECTED=$((REJECTED+1))
               echo "$(nomention "$TID") (declared SHA $SHA left the branch during this run)" >> /tmp/rejected.txt
@@ -546,14 +572,21 @@ jobs:
               # FAILED there would leave the thread closed with no consumption
               # marker — so a later reopen lets this same declaration close it
               # again. Ask the thread instead of trusting the exit code.
-              if thread_is_resolved "$TID"; then
-                echo "$TID resolve landed despite the error — continuing to the note"
-              else
-                # A genuine API failure is not a bad declaration. Counted apart
-                # so the summary comment does not blame the bot for a blip.
-                echo "::warning::could not resolve $TID after retries"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
-                continue
-              fi
+              thread_resolved_state "$TID"; state=$?
+              case "$state" in
+                0) echo "$TID resolve landed despite the error — continuing to the note" ;;
+                1) # A genuine API failure is not a bad declaration. Counted apart
+                   # so the summary comment does not blame the bot for a blip.
+                   echo "::warning::could not resolve $TID after retries"; FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+                   continue ;;
+                *) # State unknown. The thread may be closed with no consumption
+                   # marker, which a later reopen would let this declaration undo.
+                   # Not guessed either way: reported by name for a human.
+                   echo "::warning::$TID — resolve outcome unknown and state unreadable"
+                   FAILED=$((FAILED+1)); echo "$TID" >> /tmp/handled.txt
+                   echo "$(nomention "$TID") $SHA" >> /tmp/uncertain.txt
+                   continue ;;
+              esac
             fi
             echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
             # The reply is a create with no idempotency key, so a bare retry
@@ -614,6 +647,10 @@ jobs:
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $NOTE_FAILED thread(s) were resolved but their audit note could not be posted after retries — see the [workflow run]($RUN_URL). Two consequences: the commit reference has to be added by hand, and because the note is also where consumption is recorded, reopening one of these threads will NOT stick — the same declaration can resolve it again. Add the reference or close the thread deliberately:
           $(cat /tmp/missing_notes.txt 2>/dev/null | sed 's/^/- /')" || true
             echo "::error::$NOTE_FAILED thread(s) resolved without an audit note"
+          fi
+          if [ -s /tmp/uncertain.txt ]; then
+            gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ For the thread(s) below the resolve outcome could not be determined — see the [workflow run]($RUN_URL). They may be closed with no consumption record, in which case reopening will NOT stick and this declaration could close them again. Check each by hand:
+          $(sed 's/^/- /' /tmp/uncertain.txt)" || true
           fi
           if [ "$FAILED" -gt 0 ]; then
             gh pr comment "$PR_NUM" -R "$REPO" --body "⚠️ $FAILED declared thread(s) could not be closed after retries — see the [workflow run]($RUN_URL). They are still open; re-tag claude or close them by hand." || true

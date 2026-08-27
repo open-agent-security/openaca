@@ -858,9 +858,7 @@ def test_installed_commands_and_subagents_via_task4_resolvers(tmp_path, fake_hom
 
 
 @pytest.mark.parametrize("project_dir", [".cursor", ".agents", ".claude", ".codex"])
-def test_installed_skill_discovered_in_each_of_four_project_roots(
-    tmp_path, fake_home, project_dir
-):
+def test_installed_skill_discovered_in_each_of_four_project_roots(tmp_path, fake_home, project_dir):
     """`--project` must scan the same four skill roots under the project
     folder as it does under the user config root — a project-scoped skill
     was previously invisible to an installed-mode scan."""

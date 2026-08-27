@@ -530,24 +530,36 @@ jobs:
               continue
             fi
             echo "resolved $TID"; RESOLVED=$((RESOLVED+1)); echo "$TID" >> /tmp/handled.txt
-            # RETRIED, which reverses an earlier decision here on purpose. When
-            # the reply carried only an audit note, one attempt was right: a
-            # retry after a lost response duplicates a non-idempotent create,
-            # and a duplicate note was the worst outcome available. The reply
-            # now also carries the consumption marker, so a reply that never
-            # lands means a reviewer's reopen can be silently undone later —
-            # a correctness failure that outweighs a cosmetic duplicate. The
-            # trade flipped when the marker moved in, so the handling follows.
+            # The reply is a create with no idempotency key, so a bare retry
+            # after a lost response posts the note twice. The marker makes that
+            # ambiguity resolvable: after a failed attempt, ask the thread
+            # whether this SHA's marker is there. Present means the write landed
+            # and only the response was lost — stop. Absent means it genuinely
+            # failed — retry.
             #
-            # A lost response can still duplicate the note within this run
-            # (bounded at three attempts); it cannot duplicate across runs,
-            # because the marker from the landed attempt makes later deliveries
-            # skip the declaration entirely.
+            # If the marker query itself fails the state is unknown, and the two
+            # errors are not equal: a missing marker lets a reviewer's reopen be
+            # undone later, while a duplicate note is cosmetic. So an unknown
+            # state retries.
             #
-            # -f/--raw-field, never -F: `-F` treats a leading @ as a filename
-            # and would read a local file into a public reply.
-            if ! retry gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-                 -f t="$TID" -f b="$BODY" --silent; then
+            # -f/--raw-field, never -F: `-F` treats a leading @ as a filename and
+            # would read a local file into a public reply.
+            REPLY_OK=0
+            attempt=0
+            while [ "$attempt" -lt 3 ]; do
+              attempt=$((attempt + 1))
+              if gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
+                   -f t="$TID" -f b="$BODY" --silent; then
+                REPLY_OK=1; break
+              fi
+              if thread_markers_to /tmp/thread_markers.txt "$TID" \
+                 && grep -qxF "$SHA" /tmp/thread_markers.txt; then
+                echo "$TID note landed despite the error (marker present) — not reposting"
+                REPLY_OK=1; break
+              fi
+              [ "$attempt" -lt 3 ] && sleep $((attempt * 3))
+            done
+            if [ "$REPLY_OK" -eq 0 ]; then
               echo "::warning::$TID resolved but its note could not be posted"
               NOTE_FAILED=$((NOTE_FAILED+1))
               echo "$(nomention "$TID") $SHA" >> /tmp/missing_notes.txt

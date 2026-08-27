@@ -148,7 +148,7 @@ def _build_cursor_installed(
     )
 
     realized_plugin_commands = _realize_installed_plugins(graph, root, config_root, normalize)
-    _add_installed_skills(graph, root, config_root, home, normalize)
+    _add_installed_skills(graph, root, config_root, project_root, home, normalize)
     _add_installed_mcps(graph, root, config_root, project_root, normalize)
     _add_installed_commands_and_subagents(
         graph,
@@ -339,12 +339,26 @@ def _realize_presence_only_plugin(
 
 
 def _add_installed_skills(
-    graph: Graph, parent: Node, config_root: Path, home: Path, normalize
+    graph: Graph,
+    parent: Node,
+    config_root: Path,
+    project_root: Path | None,
+    home: Path,
+    normalize,
 ) -> None:
-    """The four user skill roots (docs/specs/cursor-agent-kind.md "Where each
+    """The four user skill roots AND, when a project root is scanned, the same
+    four project-scoped roots (docs/specs/cursor-agent-kind.md "Where each
     surface loads from"), each walked recursively; `<config_dir>/skills-cursor`
     is excluded by construction — it is never one of these four roots."""
-    roots = [config_root / "skills"] + [
+    roots = []
+    if project_root is not None:
+        roots += [
+            project_root / ".cursor" / "skills",
+            project_root / ".agents" / "skills",
+            project_root / ".claude" / "skills",
+            project_root / ".codex" / "skills",
+        ]
+    roots += [config_root / "skills"] + [
         home / dirname / "skills" for _, dirname in _HOME_COMPAT_ROOTS
     ]
     for skills_dir in roots:

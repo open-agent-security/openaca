@@ -521,6 +521,60 @@ def _remove_node(graph: Graph, node: Node) -> None:
     graph.nodes.pop(node.key, None)
 
 
+def _prune_shadowed_declared_plugin_commands(
+    graph: Graph,
+    realized_plugin_commands: list[tuple[Node, Path]],
+    resolved_commands: list[cursor_commands.ResolvedCommand],
+) -> None:
+    """Declared-mode counterpart of `_prune_shadowed_plugin_commands`.
+
+    A realized native plugin's bundled `commands/` tier sits below `workspace`
+    in Cursor's last-wins order (docs/specs/cursor-agent-kind.md "Precedence").
+    `cursor_commands.resolve_repo` only resolves the workspace tier
+    (`.cursor/commands`/`.claude/commands`) — the plugin's own directory is
+    never one of its candidates — so a same-relative-path workspace command
+    must detach the plugin's already-realized copy rather than let both
+    survive. This can NOT reuse `_prune_shadowed_plugin_commands` as-is: that
+    function treats "no entry for this relative path" as "shadowed" (safe
+    there because `resolve_endpoint` always includes the plugin's own
+    directory as a candidate, so an unshadowed plugin command is its own
+    entry's winner); here an unshadowed plugin command has no entry at all,
+    so the same test would prune every plugin command unconditionally.
+
+    Scoped to the workspace group the plugin is nested under — a resolved
+    command's group root is its `commands_dir`'s grandparent, per
+    `resolve_repo`'s own `commands_dir.parent.parent` grouping — so an
+    unrelated workspace elsewhere in a multi-root repo scan sharing the same
+    relative filename by coincidence never shadows a plugin outside its tree.
+    """
+    for plugin_node, commands_dir in realized_plugin_commands:
+        try:
+            commands_dir_resolved = commands_dir.resolve()
+        except (OSError, RuntimeError):
+            continue
+        overridden_relative_paths: set[str] = set()
+        for resolved in resolved_commands:
+            try:
+                group_root = resolved.commands_dir.resolve().parent.parent
+            except (OSError, RuntimeError):
+                continue
+            if commands_dir_resolved.is_relative_to(group_root):
+                overridden_relative_paths.add(resolved.relative_path)
+        if not overridden_relative_paths:
+            continue
+        for child in graph.children_of(plugin_node):
+            if child.kind != "command" or child.ref is None or not child.ref.source_manifest:
+                continue
+            try:
+                relative_path = (
+                    Path(child.ref.source_manifest).resolve().relative_to(commands_dir_resolved)
+                ).as_posix()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if relative_path in overridden_relative_paths:
+                _remove_node(graph, child)
+
+
 def _descend_cursor_declared(
     graph: Graph,
     parent: Node,
@@ -531,7 +585,7 @@ def _descend_cursor_declared(
     root_dir: Path,
     root_spec,
 ) -> None:
-    realized_roots = _realize_plugins(
+    realized_roots, realized_plugin_commands = _realize_plugins(
         graph,
         parent,
         directory,
@@ -569,6 +623,7 @@ def _descend_cursor_declared(
         include_gitignored=include_gitignored,
         root_dir=root_dir,
         root_spec=root_spec,
+        realized_plugin_commands=realized_plugin_commands,
     )
     # The scan root's own bare dep manifests (parity with Claude Code's
     # target-level `_add_dep_manifest_packages` call): skipped when the scan
@@ -686,7 +741,7 @@ def _realize_plugins(
     include_gitignored: bool,
     root_dir: Path,
     root_spec,
-) -> list[Path]:
+) -> tuple[list[Path], list[tuple[Node, Path]]]:
     """Realize every qualifying plugin root under `directory`, once each.
 
     `find_plugin_roots` already collapses same-directory candidates to one
@@ -714,11 +769,20 @@ def _realize_plugins(
     # drop a real bundle on behalf of a plugin that does not exist in the
     # graph. "Qualified" and "realized" are different sets and only the
     # second confers ownership.
+
+    Also returns each realized native plugin's node paired with its bundled
+    commands directory (when it has one), mirroring
+    `_realize_installed_plugins`'s same return shape: Commands' last-wins
+    order places `plugin` between `global` and `workspace`
+    (docs/specs/cursor-agent-kind.md "Precedence"), so `_add_commands_and_subagents`
+    can reconcile a plugin's bundled command against a same-relative-path
+    workspace command instead of letting both survive in the graph.
     """
     candidates = find_plugin_roots(directory, CURSOR_SURFACE, include_gitignored=include_gitignored)
     ordered = sorted(candidates, key=lambda entry: len(entry[0].resolve().parts))
     realized: list[Path] = []
     realized_roots: list[Path] = []
+    realized_plugin_commands: list[tuple[Node, Path]] = []
 
     def _strictly_below_realized(root: Path) -> bool:
         resolved = root.resolve()
@@ -751,7 +815,11 @@ def _realize_plugins(
         if node is not None:
             realized.append(root)
             realized_roots.append(root.resolve())
-    return realized
+            if fmt is not AGENT_PLUGINS_FORMAT:
+                commands_dir = _plugin_commands_dir(root, fmt)
+                if commands_dir is not None:
+                    realized_plugin_commands.append((node, commands_dir))
+    return realized, realized_plugin_commands
 
 
 def _realize_agent_plugins_root(
@@ -940,6 +1008,7 @@ def _add_commands_and_subagents(
     include_gitignored: bool,
     root_dir: Path,
     root_spec,
+    realized_plugin_commands: list[tuple[Node, Path]] | None = None,
 ) -> None:
     """Route through Task 4's precedence resolvers rather than walking
     `.cursor/commands`/`.claude/commands`/`.cursor/agents`/`.claude/agents`
@@ -957,6 +1026,14 @@ def _add_commands_and_subagents(
     resolution and then get dropped, silently shadowing an unignored
     lower-precedence file (`.claude/commands/x.md`) that should have surfaced
     instead.
+
+    `realized_plugin_commands` (from `_realize_plugins`) is the `plugin` tier
+    docs/specs/cursor-agent-kind.md "Precedence" places between `global` and
+    `workspace` in Commands' last-wins order. `cursor_commands.resolve_repo`
+    only resolves the workspace tier (it has no notion of a bundled plugin
+    directory), so a realized plugin's bundled command is reconciled
+    separately, after the workspace tier resolves, rather than folded into
+    the same precedence walk.
     """
     exclude_resolved = [p.resolve() for p in exclude_under]
     eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
@@ -968,7 +1045,8 @@ def _add_commands_and_subagents(
             return True
         return is_ignored_under(resolved_path, eval_root, spec)
 
-    for resolved in cursor_commands.resolve_repo(directory, is_ignored=_is_ignored):
+    resolved_commands = cursor_commands.resolve_repo(directory, is_ignored=_is_ignored)
+    for resolved in resolved_commands:
         _emit_command_agent(
             graph,
             parent,
@@ -980,6 +1058,9 @@ def _add_commands_and_subagents(
             eval_root=eval_root,
             spec=spec,
         )
+    _prune_shadowed_declared_plugin_commands(
+        graph, realized_plugin_commands or [], resolved_commands
+    )
     for resolved in cursor_subagents.resolve_repo(directory, is_ignored=_is_ignored):
         _emit_command_agent(
             graph,

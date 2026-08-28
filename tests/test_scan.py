@@ -2509,6 +2509,26 @@ def test_scan_reports_a_zero_component_agent(tmp_path):
     assert len(doc["agents"]) == 1  # the agent exists even with nothing configured
 
 
+def test_a_non_boolean_enabled_plugins_value_downgrades_coverage(tmp_path):
+    """A non-boolean `enabledPlugins.<key>` value (e.g. `"true"` as a string)
+    is never treated as `True`, so the plugin it names is silently omitted
+    from composition — a dropped component, not just a note, so it must lower
+    `composition_coverage` rather than leave it `complete`."""
+    root = tmp_path / ".claude"
+    root.mkdir()
+    (root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"demo@m": "true"}}), encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(
+        main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["agents"][0]["coverage"] == "partial"
+
+
 def test_scan_prints_one_card_per_agent(monkeypatch, tmp_path):
     from tests.fixtures.agent_kinds import register_synthetic_kind
 

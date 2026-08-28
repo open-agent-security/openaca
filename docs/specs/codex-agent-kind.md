@@ -113,7 +113,7 @@ parsers, **Scope** is about this change.
 | Plugin enable state | `enabledPlugins` in settings | `[plugins."<name>@<mkt>"] enabled` | Same model, TOML | **In** |
 | Marketplaces | `known_marketplaces.json` | `[marketplaces.<name>]` + `source_type`, `last_revision` | Same model, TOML | **In** |
 | Plugin hooks | `hooks/hooks.json` | same envelope, **same PascalCase events** | Parser as-is | **In** |
-| Standalone hooks | not a repo-mode surface | `<project>/.codex/hooks.json` | Parser as-is | **In** |
+| Standalone hooks | not a repo-mode surface | `$CODEX_HOME/hooks.json` (user), `<project>/.codex/hooks.json` (project) | Parser as-is | **In** |
 | Approval policy | settings `permissions` | `~/.codex/rules/*.rules` — a **DSL**, not JSON | **New — posture** | **In** (posture) |
 | Project trust | none | `[projects."<path>"] trust_level` | New — posture | **In** (posture) |
 | Commands | `.claude/commands/` | **none found** | — | **Out** — no surface |
@@ -195,7 +195,7 @@ not *is it reachable*.
 | Subagents | `<root>/agents/*.toml` | **none** | flat | `.toml` | installed |
 | Plugins | `<root>/plugins/cache/<mkt>/<name>/<ver>/` | — | per bundle | two manifest formats | installed |
 | Plugin hooks | bundled `hooks/hooks.json` | same | per bundle | `{hooks:{Event:[...]}}` | both |
-| Project hooks | — | `.codex/hooks.json` | file | same envelope | declared |
+| Standalone hooks | `<root>/hooks.json` | `.codex/hooks.json` | file | same envelope | both |
 | Approval policy | `<root>/rules/*.rules` | — | flat | `prefix_rule(...)` DSL | installed |
 | Project trust | `config.toml` `[projects.*]` | — | inline table | `trust_level` | installed |
 
@@ -335,7 +335,27 @@ Three consequences, applied to every kind alike:
 
 Installed adds the plugin cache, `agents/*.toml`, `<root>/skills/`, and both
 config layers — the base `config.toml` **and every `<name>.config.toml`
-profile**.
+profile**. It also adds `$CODEX_HOME/hooks.json` and, if the project is
+trusted, `<project>/.codex/hooks.json` — see below.
+
+### The user-root `hooks.json` sidecar, and why the original audit missed it
+
+The original audit ([ADR-0055](../adrs/0055-codex-agent-kind.md)) scoped the
+standalone `hooks.json` envelope to the project only
+(`<project>/.codex/hooks.json`), matched against the binary strings that
+motivated this kind. Codex's own hooks documentation additionally names
+`$CODEX_HOME/hooks.json` as a **user-scope** sidecar, loaded unconditionally
+alongside every `config.toml` layer — "if more than one hook source exists,
+Codex loads all matching hooks; higher-precedence config layers don't replace
+lower-precedence hooks." Endpoint mode read only the inline `[hooks]`
+config.toml form, so an endpoint declaring hooks solely via the sidecar had
+them silently absent from the graph. Composition now reads both scopes in
+endpoint mode, reusing `hooks_json.parse_standalone_hooks` (declared mode
+already read the project scope); the project sidecar is trust-gated the same
+way the project's `.codex/config.toml` layer is.
+
+This is a scope correction, not a reversal of the ADR's central claim (Codex is
+Claude Code-shaped) — recorded here rather than by editing the accepted ADR.
 
 ### The profile layer, and why it was a real gap
 

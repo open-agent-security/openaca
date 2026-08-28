@@ -453,7 +453,7 @@ def _seed_endpoint(
                 if warnings is not None:
                     warnings.append("enabledPlugins keys must be plugin@marketplace strings")
             if not isinstance(is_enabled, bool) and warnings is not None:
-                warnings.append(f"enabledPlugins.{plugin_key} must be a boolean")
+                record_gap(warnings, f"enabledPlugins.{plugin_key} must be a boolean")
         if any(value is True for value in enabled.values()):
             if plugins_map is None or lockfile_path is None:
                 if warnings is not None:
@@ -2457,6 +2457,57 @@ def _seed_codex_hooks_from_layer(
         _add_child(graph, target, node)
 
 
+def _seed_codex_standalone_hooks_file(
+    graph: Graph, target: Node, hooks_path: Path, scope: str, normalize: SourceNormalizer
+) -> None:
+    if not hooks_path.is_file():
+        return
+    for ref in _safe_parse(
+        graph,
+        lambda path: hooks_json.parse_standalone_hooks(path, scope=scope, strict=True),
+        hooks_path,
+    ):
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
+            continue
+        node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+        _add_child(graph, target, node)
+
+
+def _seed_codex_standalone_hooks(
+    graph: Graph,
+    target: Node,
+    config_root: Path,
+    project_root: Path | None,
+    normalize: SourceNormalizer,
+) -> None:
+    """Standalone `hooks.json`, at the user root and (if trusted) the project.
+
+    Distinct from `_seed_codex_hooks` above, which reads the inline `[hooks]`
+    table in `config.toml`: Codex's own docs list `$CODEX_HOME/hooks.json` and
+    `<project>/.codex/hooks.json` as two more scopes that load unconditionally
+    alongside every `config.toml` layer, additively — "higher-precedence config
+    layers don't replace lower-precedence hooks" — never overriding one
+    another. Endpoint mode previously read neither sidecar, only the inline
+    TOML form, so a Codex endpoint configured this way was silently
+    under-reported.
+
+    The project file is trust-gated for the same reason `codex_config_layers`
+    gates the project config layer: Codex ignores an untrusted project's
+    `.codex/` directory outright.
+    """
+    _seed_codex_standalone_hooks_file(graph, target, config_root / "hooks.json", "user", normalize)
+    if project_root is None:
+        return
+    trusted_paths = codex_trusted_projects(config_root)
+    resolved = str(project_root.resolve())
+    if resolved not in trusted_paths and str(project_root) not in trusted_paths:
+        return
+    _seed_codex_standalone_hooks_file(
+        graph, target, project_root / ".codex" / "hooks.json", "project", normalize
+    )
+
+
 def _seed_cache_plugins(
     graph: Graph,
     target: Node,
@@ -2477,17 +2528,33 @@ def _seed_cache_plugins(
 
     Every mismatch a real endpoint can show is reconciled explicitly rather
     than silently resolved; see the warnings below.
+
+    Enable state and marketplace registration are merged across the base
+    config and every `<name>.config.toml` profile — the same layer set
+    `_seed_codex_profile_mcp_servers` and `_seed_codex_hooks` already read —
+    because `--profile` layers a profile over the base, and a plugin enabled
+    only by a profile is still installed and one profile-switch from active.
+    A plugin counts as enabled if any active layer says so: enablement is a
+    boolean, not an occurrence, so unlike MCP servers there is no way to keep
+    two profiles' disagreement visible as separate nodes, and treating any
+    `True` as authoritative is the same over-approximate-towards-active
+    direction this project already takes for which profile is "active".
     """
     cache_root = config_root / "plugins" / "cache"
-    config_path = config_root / "config.toml"
-    config = None
-    if config_path.is_file():
+    plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
+    marketplaces: dict[str, codex_config.MarketplaceEntry] = {}
+    for layer in codex_config_layers(config_root):
+        if layer.kind not in ("base", "profile"):
+            continue
         try:
-            config = codex_config.load_config(config_path)
+            layer_config = codex_config.load_config(layer.path)
         except Exception as exc:  # noqa: BLE001 - recorded, never fatal
-            graph.record_gap(f"could not parse {config_path}: {exc}")
-    plugins = config.plugins if config is not None else {}
-    marketplaces = config.marketplaces if config is not None else {}
+            graph.record_gap(f"could not parse {layer.path}: {exc}")
+            continue
+        marketplaces.update(layer_config.marketplaces)
+        for key, entry in layer_config.plugins.items():
+            if key not in plugins or entry.enabled:
+                plugins[key] = entry
 
     seen: set[tuple[str | None, str]] = set()
     if cache_root.is_dir():
@@ -2673,6 +2740,7 @@ def build_codex_installed_graph(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )
     _seed_codex_hooks(graph, root, config_root, project_root, normalize)
+    _seed_codex_standalone_hooks(graph, root, config_root, project_root, normalize)
     _prune_codex_system_skills(graph, config_root)
 
     return finalize_graph(

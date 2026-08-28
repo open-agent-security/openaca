@@ -834,9 +834,19 @@ def _add_direct_endpoint_skills(
     normalize: SourceNormalizer,
     project_root: Path | None = None,
 ) -> None:
-    """Endpoint install-root direct skills: one skill node per `<skills_dir>/<name>/`
-    subdir with descent so the skill's dep manifests become package children
-    (parity with `_add_skill_node` used for project skills and plugin skills).
+    """Endpoint install-root direct skills: one skill node per `SKILL.md` found
+    at any depth beneath `skills_dir`, with descent so the skill's dep
+    manifests become package children (parity with `_add_skill_node` used for
+    project skills and plugin skills).
+
+    Recursive, matching every other `SKILL.md` walk in this module (project
+    skills, repo-mode skills): `docs/specs/codex-agent-kind.md`'s surface table
+    documents `<root>/skills/` as recursive for both declared and installed
+    sources, and this is the shared branch `EndpointSurface`/ADR-0057 route
+    Codex's install-root skills through, so it must actually recurse. A
+    dot-prefixed directory at any depth is skipped — this is what excludes
+    Codex's vendor `skills/.system/` root here, ahead of (and independent of)
+    `_prune_codex_system_skills`'s marker-based belt-and-suspenders pass.
 
     Provenance is stamped here (parity with `_parse_direct_skill`) because
     direct endpoint skills may have a `.skill-lock.json` alongside them that
@@ -845,11 +855,11 @@ def _add_direct_endpoint_skills(
     """
     if not skills_dir.is_dir():
         return
-    for skill_subdir in sorted(skills_dir.iterdir()):
-        if skill_subdir.name.startswith("."):
-            continue
-        skill_md = skill_subdir / "SKILL.md"
+    for skill_md in sorted(skills_dir.rglob("SKILL.md")):
         if not skill_md.is_file():
+            continue
+        skill_subdir = skill_md.parent
+        if any(part.startswith(".") for part in skill_subdir.relative_to(skills_dir).parts):
             continue
         for ref in _safe_parse(graph, lambda path: claude_skill.parse(path, strict=True), skill_md):
             if ref.name:

@@ -1657,15 +1657,12 @@ def test_endpoint_direct_skill_symlink_followed(tmp_path):
     """Install-root skills at <install-root>/skills/<name> that are symlinks to
     another directory must be discovered in endpoint mode.
 
-    `_add_direct_endpoint_skills` switched from `Path.iterdir()` to
-    `Path.rglob("SKILL.md")` for recursion (plan 043's Codex install-root
-    surface needs nested discovery), but `rglob` is built on `Path.walk()`,
-    which defaults to `follow_symlinks=False` -- a symlinked directory entry
-    is excluded from the walk entirely, not merely not recursed into further
-    (verified against CPython's own os.walk/pathlib source). A symlinked
-    skill directly under `skills/` is therefore invisible to `rglob` alone,
-    where the old `iterdir()` path found it. The supplementary
-    `_add_skills_from_dir` pass restores it.
+    `_add_direct_endpoint_skills` walks `skills_dir` via
+    `_iter_skill_subdirs_following_symlinks`, which follows symlinked
+    directory entries (unlike `Path.rglob`/`Path.walk`, which default to
+    `follow_symlinks=False` and exclude a symlinked entry from the walk
+    entirely -- verified against CPython's own os.walk/pathlib source). A
+    symlinked skill directly under `skills/` must be discovered.
     """
     install_root = tmp_path / "claude"
     install_root.mkdir()
@@ -1694,6 +1691,70 @@ def test_endpoint_direct_skill_symlink_followed(tmp_path):
     pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
     assert len(pkg_nodes) == 1, (
         "package.json inside symlinked skill dir must produce a package node"
+    )
+
+
+def test_endpoint_nested_skill_symlink_followed(tmp_path):
+    """A symlink nested below the top level of `skills/` (a real directory
+    containing a symlinked skill) must also be discovered.
+
+    `Path.rglob`/`Path.walk()` exclude a symlinked directory entry from
+    traversal at every depth, not just the first — the direct-child case is
+    the same underlying `follow_symlinks=False` default fixed for
+    `test_endpoint_direct_skill_symlink_followed`, so a symlink one level
+    deeper (`skills/team/aws-api -> ...`) hits it identically.
+    """
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    real_skill_dir = tmp_path / "skills-store" / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    (real_skill_dir / "package.json").write_text(
+        '{"name":"aws-api","version":"1","dependencies":{"boto3":"1.34.0"}}'
+    )
+
+    team_dir = install_root / "skills" / "team"
+    team_dir.mkdir(parents=True)
+    os.symlink(real_skill_dir, team_dir / "aws-api")
+
+    g = build_graph(install_root, mode="endpoint")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1, (
+        f"Expected 1 skill node for nested symlinked install-root skill dir, got {len(skill_nodes)}"
+    )
+    pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes) == 1, (
+        "package.json inside nested symlinked skill dir must produce a package node"
+    )
+
+
+def test_endpoint_skill_symlink_cycle_does_not_hang(tmp_path):
+    """A symlink cycle under `skills/` must terminate the walk, not loop
+    forever, while still discovering a real skill reached before the cycle."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    skills_dir = install_root / "skills"
+    real_skill_dir = skills_dir / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    os.symlink(skills_dir, real_skill_dir / "loop")
+
+    g = build_graph(install_root, mode="endpoint")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1, (
+        f"Expected 1 skill node with a symlink cycle present, got {len(skill_nodes)}"
     )
 
 

@@ -827,6 +827,54 @@ def _seed_direct_components(
             _add_child(graph, target, node)
 
 
+def _iter_skill_subdirs_following_symlinks(skills_dir: Path) -> list[Path]:
+    """Every subdirectory beneath `skills_dir`, following symlinks at any depth.
+
+    `Path.rglob`/`Path.walk()` default to `follow_symlinks=False`, so a
+    symlinked directory entry classifies as a non-directory and is excluded
+    from traversal — not just "not recursed past," excluded outright, at
+    every level of the walk (verified against CPython's own `pathlib`/`os.walk`
+    source). That drops a symlinked skill whether it sits directly under
+    `skills_dir` (e.g. `skills/aws-api -> /store/aws-api`) or nested under a
+    real directory (e.g. `skills/team/aws-api -> /store/aws-api`) — `iterdir()`
+    resolves a symlink entry like any other, so walking with it instead
+    recovers both cases in one pass, with no separate direct-child patch.
+
+    Cycle-safe: each directory's resolved (real) path is recorded before its
+    children are visited, so a symlink loop — a directory symlinking to an
+    ancestor, directly or through another symlink — is visited once rather
+    than recursed into forever.
+    """
+    found: list[Path] = []
+    seen: set[Path] = set()
+    stack: list[Path] = [skills_dir]
+    while stack:
+        directory = stack.pop()
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                continue
+            if not is_dir:
+                continue
+            found.append(entry)
+            stack.append(entry)
+    return found
+
+
 def _add_direct_endpoint_skills(
     graph: Graph,
     parent: Node,
@@ -844,36 +892,23 @@ def _add_direct_endpoint_skills(
     documents `<root>/skills/` as recursive for both declared and installed
     sources, and this is the shared branch `EndpointSurface`/ADR-0057 route
     Codex's install-root skills through, so it must actually recurse. A
-    dot-prefixed directory at any depth is skipped — this is what excludes
-    Codex's vendor `skills/.system/` root here, ahead of (and independent of)
+    dot-prefixed directory at any depth is skipped by
+    `_iter_skill_subdirs_following_symlinks` — this is what excludes Codex's
+    vendor `skills/.system/` root here, ahead of (and independent of)
     `_prune_codex_system_skills`'s marker-based belt-and-suspenders pass.
 
     Provenance is stamped here (parity with `_parse_direct_skill`) because
     direct endpoint skills may have a `.skill-lock.json` alongside them that
     records their install source. Project skills and plugin-bundled skills do
     not go through this path.
-
-    `rglob` alone is not enough: `Path.walk()` (which `rglob` is built on in
-    this Python version) defaults to `follow_symlinks=False`, so a symlinked
-    directory entry classifies as a non-directory and is excluded from
-    traversal entirely — verified against CPython's own `pathlib`/`os.walk`
-    source, not just observed behavior. A symlink-installed skill directly
-    under `skills_dir` would otherwise vanish, where the pre-`rglob` `iterdir()`
-    version found it (`iterdir()` lists symlink entries like any other, and the
-    `is_file()` check that followed it resolves through the link). The
-    supplementary `_add_skills_from_dir` pass below restores that direct-child
-    symlink case — the same idiom already used to patch this exact gap for
-    project skills, see the call site in `_seed_endpoint`. `_add_child`'s dedup
-    collapses the overlap for every non-symlink child the `rglob` pass above
-    already found.
     """
     if not skills_dir.is_dir():
         return
-    for skill_md in sorted(skills_dir.rglob("SKILL.md")):
+    for skill_subdir in sorted(
+        _iter_skill_subdirs_following_symlinks(skills_dir), key=lambda p: str(p)
+    ):
+        skill_md = skill_subdir / "SKILL.md"
         if not skill_md.is_file():
-            continue
-        skill_subdir = skill_md.parent
-        if any(part.startswith(".") for part in skill_subdir.relative_to(skills_dir).parts):
             continue
         for ref in _safe_parse(graph, lambda path: claude_skill.parse(path, strict=True), skill_md):
             if ref.name:
@@ -885,14 +920,6 @@ def _add_direct_endpoint_skills(
             skill_node = Node(key=occurrence_key(ref, normalize), kind="skill", ref=ref)
             _add_child(graph, parent, skill_node)
             descend(graph, skill_node, skill_subdir, normalize)
-    _add_skills_from_dir(
-        graph,
-        parent,
-        skills_dir,
-        normalize=normalize,
-        project_root=project_root,
-        stamp_provenance=True,
-    )
 
 
 def _add_endpoint_command_agents(
@@ -2350,6 +2377,31 @@ def codex_trusted_projects(config_root: Path) -> set[str]:
     return trusted
 
 
+def codex_project_trusted_unconditionally(config_root: Path, project_root: Path) -> bool:
+    """Whether the project is trusted by the **base** `config.toml` alone.
+
+    Distinct from `codex_trusted_projects`, which unions trust records across
+    every profile: a trust record that exists only in a profile's
+    `<name>.config.toml` is in effect only when that specific profile is
+    selected, not on every invocation. `_seed_cache_plugins` needs this
+    distinction — the project layer's plugin declarations are safe to treat as
+    a full override only when the project is active no matter which profile
+    (if any) is selected; when trust itself is profile-dependent, a
+    base-enabled plugin is still reachable through a plain, no-profile
+    invocation, and an override would incorrectly hide that.
+    """
+    path = config_root / "config.toml"
+    if not path.is_file():
+        return False
+    try:
+        config = codex_config.load_config(path)
+    except Exception:  # noqa: BLE001 - a broken base layer is a scan gap, not a crash
+        return False
+    trusted = {p.path for p in config.projects.values() if p.trust_level == "trusted"}
+    resolved = str(project_root.resolve())
+    return resolved in trusted or str(project_root) in trusted
+
+
 def codex_config_layers(
     config_root: Path, project_root: Path | None = None
 ) -> list[CodexConfigLayer]:
@@ -2568,17 +2620,25 @@ def _seed_cache_plugins(
     only by *some* profile is still one profile-switch from active, and there
     is no way to know which profile, if any, is the selected one — the same
     reasoning `_seed_codex_profile_mcp_servers` uses for over-approximating
-    towards active. The trusted project layer has no such ambiguity: once a
-    project is trusted its `.codex/config.toml` is unconditionally active, so
-    it fully **overrides** whatever base/profile said for any key it declares
-    — including replacing an earlier `enabled = true` with `false` — the same
-    "project entries win" precedence `_seed_codex_mcp_servers` already applies
-    to servers. Only the project layer gets this override treatment; profiles
-    keep the OR-union among themselves and against the base.
+    towards active. The trusted project layer only gets that same override
+    treatment when `codex_project_trusted_unconditionally` says trust comes
+    from the base config: only then is the project active on *every*
+    invocation regardless of profile, so its declarations — including
+    replacing an earlier `enabled = true` with `false` — safely override, the
+    same "project entries win" precedence `_seed_codex_mcp_servers` already
+    applies to servers. When trust instead comes from a profile only, the
+    project is active exclusively when that profile is selected; a plain,
+    no-profile invocation never loads it, so its plugin table joins the same
+    OR-union as profiles rather than overriding — an explicit project
+    `enabled = false` must not erase a base `enabled = true` that a
+    no-profile invocation can still reach.
     """
     cache_root = config_root / "plugins" / "cache"
     plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
     marketplaces: dict[str, codex_config.MarketplaceEntry] = {}
+    project_overrides = project_root is not None and codex_project_trusted_unconditionally(
+        config_root, project_root
+    )
     for layer in codex_config_layers(config_root, project_root):
         try:
             layer_config = codex_config.load_config(layer.path)
@@ -2586,7 +2646,7 @@ def _seed_cache_plugins(
             graph.record_gap(f"could not parse {layer.path}: {exc}")
             continue
         marketplaces.update(layer_config.marketplaces)
-        if layer.kind == "project":
+        if layer.kind == "project" and project_overrides:
             plugins.update(layer_config.plugins)
         else:
             for key, entry in layer_config.plugins.items():

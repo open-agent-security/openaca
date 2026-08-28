@@ -1,14 +1,22 @@
 """Codex's `config.toml` (plan 043 Task 1, spec: Codex Agent Kind).
 
-One file carries four surfaces Codex's composition needs: `[mcp_servers.*]`
+One file carries five surfaces Codex's composition needs: `[mcp_servers.*]`
 declares MCP servers inline, `[plugins."<name>@<marketplace>"]` records enable
-state, `[marketplaces.*]` records where a plugin was resolved from, and
-`[projects."<path>"]` records workspace trust.
+state, `[marketplaces.*]` records where a plugin was resolved from,
+`[projects."<path>"]` records workspace trust, and an inline `[hooks]` table
+(`[[hooks.<Event>]]`) is Codex's TOML rendering of the same envelope
+`hooks_json` already reads from `hooks.json` — a documented alternative to the
+sidecar file, scoped per config layer (verified against
+developers.openai.com/codex/hooks: "Codex discovers hooks next to active
+config layers in either of these forms: `hooks.json` [or] inline `[hooks]`
+tables inside `config.toml`").
 
 `parse` emits only the MCP servers, because they are the only components this
 file declares; plugins become refs during endpoint composition (where the cache
-supplies the version and install path), and `[projects.*]` is posture. Callers
-that need the other three read `load_config`.
+supplies the version and install path), `[projects.*]` is posture, and
+`[hooks]` is read by the caller (`graph_build._seed_codex_hooks`) through
+`hooks_json.parse_settings_hooks` rather than duplicated here. Callers that
+need any of the other four read `load_config`.
 
 **`enabled` is always stated, never omitted.** An absent key resolves to
 enabled — verified against the audited endpoint, where `codex mcp list` reports
@@ -73,6 +81,7 @@ class CodexConfig:
     plugins: dict[tuple[str | None, str], PluginEntry] = field(default_factory=dict)
     marketplaces: dict[str, MarketplaceEntry] = field(default_factory=dict)
     projects: dict[str, ProjectEntry] = field(default_factory=dict)
+    hooks: dict = field(default_factory=dict)
 
 
 def _as_bool(value: object, default: bool = True) -> bool:
@@ -142,11 +151,15 @@ def load_config(path: Path) -> CodexConfig:
                 trust_level=table.get("trust_level"),
             )
 
+    raw_hooks = data.get("hooks")
+    hooks = raw_hooks if isinstance(raw_hooks, dict) else {}
+
     return CodexConfig(
         mcp_servers=servers,
         plugins=plugins,
         marketplaces=marketplaces,
         projects=projects,
+        hooks=hooks,
     )
 
 

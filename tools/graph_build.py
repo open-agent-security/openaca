@@ -2276,6 +2276,50 @@ def _seed_codex_profile_mcp_servers(
             _add_child(graph, target, node)
 
 
+def _seed_codex_hooks(
+    graph: Graph, target: Node, config_root: Path, normalize: SourceNormalizer
+) -> None:
+    """Inline `[hooks]` tables in `$CODEX_HOME/config.toml`.
+
+    `CODEX_ENDPOINT.seeds_hooks` is `False` because that flag gates the
+    *shared* settings.json-layer walk (`_seed_shared_endpoint_surfaces`),
+    which Codex has no counterpart for. This is a separate, Codex-owned
+    surface — same fork rationale as `_seed_codex_mcp_servers` — reading the
+    TOML table's own envelope, which the docs describe as the inline
+    equivalent of `hooks.json`'s `{event: [...]}` shape, so composition reuses
+    `hooks_json.parse_settings_hooks` rather than a second implementation.
+
+    Base config only: unlike MCP servers, hooks fire from every active config
+    layer rather than the last one to declare a given name, so a profile
+    layer's own `[hooks]` (`<root>/<name>.config.toml`) is additional surface
+    this does not yet cover, tracked alongside `_seed_codex_profile_mcp_servers`
+    for a future pass rather than guessed at here.
+    """
+    config_path = config_root / "config.toml"
+    if not config_path.is_file():
+        return
+    try:
+        config = codex_config.load_config(config_path)
+    except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+        graph.record_gap(f"could not parse {config_path}: {exc}")
+        return
+    if not config.hooks:
+        return
+    try:
+        hook_refs = hooks_json.parse_settings_hooks(
+            config_path, config.hooks, scope="user", strict=True
+        )
+    except ValueError as exc:
+        graph.record_gap(f"could not parse {config_path} hooks: {exc}")
+        return
+    for ref in hook_refs:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
+            continue
+        node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+        _add_child(graph, target, node)
+
+
 def _seed_cache_plugins(
     graph: Graph,
     target: Node,
@@ -2491,6 +2535,7 @@ def build_codex_installed_graph(
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )
+    _seed_codex_hooks(graph, root, config_root, normalize)
     _prune_codex_system_skills(graph, config_root)
 
     return finalize_graph(

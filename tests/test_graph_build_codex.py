@@ -442,6 +442,28 @@ def test_project_hooks_are_not_composed_at_the_endpoint(tmp_path):
     assert not any(n.kind == "hook" for n in graph.nodes.values())
 
 
+def test_hooks_declared_inline_in_config_toml_are_composed_at_the_endpoint(tmp_path):
+    """`$CODEX_HOME/config.toml` can carry hooks as an inline `[hooks]` table
+    (documented alternative to the sidecar `hooks.json`); a scan that only
+    ever read `hooks.json` silently dropped every hook declared this way."""
+    root = _home(tmp_path)
+    with (root / "config.toml").open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n[[hooks.SessionStart]]\n"
+            'matcher = "*"\n\n'
+            "[[hooks.SessionStart.hooks]]\n"
+            'type = "command"\n'
+            'command = "echo hi"\n'
+        )
+
+    graph = build_codex_installed_graph(root)
+    hooks = [n for n in graph.nodes.values() if n.kind == "hook"]
+
+    assert len(hooks) == 1
+    assert hooks[0].ref.extra["event"] == "SessionStart"
+    assert str(root / "config.toml") in hooks[0].ref.source_manifest
+
+
 def test_a_malformed_first_candidate_falls_through_to_the_second(tmp_path):
     """First *qualifying* candidate wins, not first found."""
     root = _home(tmp_path)

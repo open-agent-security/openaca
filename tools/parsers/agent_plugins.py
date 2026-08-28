@@ -25,6 +25,8 @@ import json
 import re
 from pathlib import Path
 
+from pathspec import GitIgnoreSpec
+
 from tools.component_ref import ComponentRef
 from tools.parsers import claude_skill
 from tools.parsers.claude_plugin_root import resolve_within
@@ -49,7 +51,9 @@ _MCP_SCHEMA_URL_BY_VERSION = {
 _NAME_RE = re.compile(r"^(?!.*--)(?!.*\.\.)[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$")
 
 
-def is_agent_plugins_manifest(path: Path) -> bool:
+def is_agent_plugins_manifest(
+    path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None
+) -> bool:
     """Registry guard: does `path` declare itself an Agent Plugins manifest?
 
     True iff the file parses as a JSON object whose `$schema` full-matches a
@@ -57,6 +61,12 @@ def is_agent_plugins_manifest(path: Path) -> bool:
     JSON, non-object, missing/unsupported/mismatched `$schema` — is False,
     so a bare `plugin.json` registry pattern doesn't pick up an unrelated
     file of the same name.
+
+    `root`/`spec` are unused: this guard only ever judges `path` itself, not
+    a sibling candidate, so it needs no gitignore context — the parameters
+    exist so this function's signature satisfies `GuardFn` when installed as
+    a registry entry's guard, while `tools/agent_kinds/cursor.py` can still
+    call it directly with just a path.
     """
     try:
         data = json.loads(path.read_text())

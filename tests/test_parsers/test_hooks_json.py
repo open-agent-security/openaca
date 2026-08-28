@@ -249,6 +249,26 @@ def test_parse_settings_hooks_strict_accepts_well_formed_nested_handlers():
     assert len(refs) == 2
 
 
+def test_parse_settings_hooks_strict_rejects_non_list_nested_hooks_value():
+    """A matcher group's `hooks` key present but not a list (e.g. a string)
+    must raise under strict=True. Non-strict `_walk_events` falls back to
+    treating the group itself as a flat handler when `hooks` isn't a list —
+    degenerate input, not a second format — so without this check strict mode
+    would silently accept a group whose `hooks` value is nonsense and emit a
+    placeholder ref with no `type`/`command`, rather than surfacing the
+    malformed file as a gap."""
+    hooks_block = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": "not-a-list",
+            }
+        ]
+    }
+    with pytest.raises(ValueError):
+        parse_settings_hooks(Path("/fake/s.json"), hooks_block, scope="project", strict=True)
+
+
 def test_parse_plugin_hooks_empty_hooks_block_returns_empty(tmp_path):
     path = _write_hooks_json(tmp_path / "hooks.json", {"hooks": {}})
     assert parse_plugin_hooks(path, plugin_name="p") == []

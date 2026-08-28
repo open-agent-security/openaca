@@ -32,7 +32,16 @@ if TYPE_CHECKING:
     from tools.repo_surface import RepoSurface
 
 ParserFn = Callable[[Path], list[ComponentRef]]
-GuardFn = Callable[[Path], bool]
+# `(path, root, spec)`: `root`/`spec` carry the same gitignore context the
+# walk itself resolved `path` under, so a guard that needs to check a
+# SIBLING candidate's gitignore status (not just `path`'s own — that's
+# already been filtered by the walk before the guard ever runs) can match
+# composition's own gitignore-aware resolution instead of assuming every
+# candidate on disk is live. Guards that don't need this ignore the trailing
+# args; `root`/`spec` default to `None` so a guard remains callable directly
+# with just a path (`is_agent_plugins_manifest` is used this way outside the
+# registry).
+GuardFn = Callable[[Path, Path, "GitIgnoreSpec | None"], bool]
 
 
 class ManifestPattern(NamedTuple):
@@ -109,7 +118,8 @@ _CURSOR_COMMAND_AGENT_MAX_DEPTH = 10
 
 
 def _within_cursor_traversal_depth(scope_dirname: str, root_dirname: str) -> GuardFn:
-    def guard(path: Path) -> bool:
+    def guard(path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None) -> bool:
+        _ = (root, spec)
         parts = path.parts
         for i in range(len(parts) - 1, 0, -1):
             if parts[i] == root_dirname and parts[i - 1] == scope_dirname:
@@ -193,6 +203,7 @@ def _entry_claims(
     entry: ManifestPattern,
     owned_roots: Sequence[Path],
     surface: RepoSurface | None = None,
+    spec: GitIgnoreSpec | None = None,
 ) -> bool:
     """Whether `entry` is the registry route for `path`.
 
@@ -204,10 +215,14 @@ def _entry_claims(
     counted and parsed — content composition never loads, inflating
     `source_unit_count` and able to register a false `parse_failed`.
     Ownership is a property of the PATH, so it is tested for every pattern.
+
+    `root`/`spec` are the walk's own gitignore context, passed through to
+    `entry.guard` for the rare guard that needs to judge a sibling candidate
+    rather than just `path` (see `_is_resolved_codex_plugin_format`).
     """
     if not _pattern_matches(path, root, entry.pattern):
         return False
-    if entry.guard is not None and not entry.guard(path):
+    if entry.guard is not None and not entry.guard(path, root, spec):
         return False
     if owned_roots and surface is not None:
         from tools.graph_build_cursor import is_owned_by_realized_plugin
@@ -284,17 +299,29 @@ def _is_resolved_codex_plugin_format(manifest_dir: str) -> GuardFn:
     with what `_add_codex_declared_config_mcps`'s plugin branch actually
     composes.
 
+    `resolve_plugin_format` must see the SAME `eval_root`/`spec` gitignore
+    context `_find_plugin_roots` resolves this root's plugin format under
+    (`root`/`spec` here are exactly that: the scan root and gitignore spec
+    the walk calling this guard is using) — passing none, as an earlier
+    version of this guard did, makes it treat a gitignored higher-precedence
+    candidate as present. A root where `.codex-plugin/plugin.json` is
+    gitignored but `.claude-plugin/plugin.json` is not would then have this
+    guard pick the invisible `.codex-plugin` candidate and reject the visible
+    `.claude-plugin` one composition actually reads — the exact double-count/
+    phantom-failure bug this guard exists to prevent, just for the opposite
+    candidate.
+
     Local import: `tools.graph_build` imports `tools.parsers` at module scope
     (same cycle `plugin_owned_roots` already breaks this way for
     `tools.graph_build_cursor`).
     """
 
-    def guard(path: Path) -> bool:
+    def guard(path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None) -> bool:
         from tools.graph_build import resolve_plugin_format
         from tools.repo_surface import CODEX_SURFACE
 
-        root = path.parent.parent
-        fmt = resolve_plugin_format(root, CODEX_SURFACE)
+        plugin_root = path.parent.parent
+        fmt = resolve_plugin_format(plugin_root, CODEX_SURFACE, eval_root=root, spec=spec)
         return fmt is not None and fmt.manifest_dir == manifest_dir
 
     return guard
@@ -464,7 +491,7 @@ def parse_repo_grouped(
     n_found = 0
     for path in iter_unignored_files(root, spec):
         for entry in normalized_registry:
-            if not _entry_claims(path, root, entry, owned_roots, surface):
+            if not _entry_claims(path, root, entry, owned_roots, surface, spec):
                 continue
             n_found += 1
             try:
@@ -523,7 +550,7 @@ def parse_repo_registry_counts(
         for key, entries in normalized.items():
             for entry in entries:
                 if not _entry_claims(
-                    path, root, entry, owned_by_key[key], (surfaces or {}).get(key)
+                    path, root, entry, owned_by_key[key], (surfaces or {}).get(key), spec
                 ):
                     continue
                 per_key_found[key] += 1

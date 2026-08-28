@@ -1033,3 +1033,61 @@ def test_every_codex_surface_reads_one_layer_definition():
         src = inspect.getsource(fn)
         assert "codex_config_layers(" in src, f"{fn.__name__} builds its own layer list"
         assert '"*.config.toml"' not in src, f"{fn.__name__} re-globs profiles"
+
+
+def test_layer_activation_is_decided_once_not_per_surface(tmp_path):
+    """The profile-only-trust condition lives on the layer.
+
+    Each surface deriving its own answer is what produced a round of findings
+    where MCP servers, cached plugins, and hooks each disagreed about the same
+    endpoint. `codex_config_layers` decides; surfaces read `layer.overrides`.
+    """
+    import inspect
+
+    from tools import graph_build
+
+    for fn in (graph_build._seed_codex_mcp_servers, graph_build._seed_cache_plugins):
+        src = inspect.getsource(fn)
+        assert "layer.overrides" in src, f"{fn.__name__} should read the layer's condition"
+        assert "codex_project_trusted_unconditionally(" not in src, (
+            f"{fn.__name__} re-derives the activation condition"
+        )
+
+
+def test_a_profile_trusted_project_layer_does_not_override(tmp_path):
+    """Trust declared only in a profile makes the project layer conditional: a
+    base-declared server stays reachable through a plain, no-profile run, so
+    the project must not replace it by name."""
+    root = _home(tmp_path)
+    project = tmp_path / "proj-cond"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.user_svc]\ncommand = "project-version"\n', encoding="utf-8"
+    )
+    (root / "trusting.config.toml").write_text(
+        f'[projects."{project.resolve()}"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert len(_server_named(graph, "user_svc")) == 2, (
+        "both the base and the conditionally-active project server are reachable"
+    )
+
+
+def test_an_unconditionally_trusted_project_layer_overrides(tmp_path):
+    """Trust in the base config is active on every invocation, so the project
+    layer is a higher-precedence override rather than an alternate."""
+    root = _home(tmp_path)
+    project = tmp_path / "proj-uncond"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.user_svc]\ncommand = "project-version"\n', encoding="utf-8"
+    )
+    _trust(root, project)
+
+    graph = build_codex_installed_graph(root, project)
+    svc = _server_named(graph, "user_svc")
+
+    assert len(svc) == 1
+    assert str(project) in svc[0].source_manifest

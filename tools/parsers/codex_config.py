@@ -77,6 +77,12 @@ class CodexConfig:
     to re-split the key and risk splitting it differently.
     """
 
+    # Top-level surfaces that are PRESENT but of the wrong TOML type. Absent
+    # and malformed are different states, and collapsing them is what let a
+    # `mcp_servers = "bad"` or `hooks = []` silently drop a whole component
+    # surface while coverage still read `complete`. Callers gap on these.
+    malformed: tuple[str, ...] = ()
+
     mcp_servers: dict = field(default_factory=dict)
     plugins: dict[tuple[str | None, str], PluginEntry] = field(default_factory=dict)
     marketplaces: dict[str, MarketplaceEntry] = field(default_factory=dict)
@@ -108,16 +114,46 @@ def _load_toml(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+# Every top-level table `load_config` reads. Named so a surface added later
+# without malformed-handling fails the parametrised test rather than shipping
+# the coercion bug again.
+TOP_LEVEL_SURFACES: tuple[str, ...] = (
+    "mcp_servers",
+    "plugins",
+    "marketplaces",
+    "projects",
+    "hooks",
+)
+
+
+def _table(data: dict, key: str, malformed: list[str]) -> dict:
+    """A top-level table, distinguishing absent from present-but-malformed.
+
+    `data.get(key) if isinstance(..., dict) else {}` — the pattern this
+    replaces — reports a present, wrongly-typed surface as an empty one. Every
+    downstream reader then takes its "nothing here" path: no components, no
+    warning, and `composition_coverage` still `complete`. Recording the key
+    instead lets the caller raise or gap.
+    """
+    raw = data.get(key)
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        malformed.append(key)
+        return {}
+    return raw
+
+
 def load_config(path: Path) -> CodexConfig:
     """Read `config.toml`. Malformed TOML raises `tomllib.TOMLDecodeError`."""
     data = _load_toml(path)
 
-    raw_servers = data.get("mcp_servers")
-    servers = raw_servers if isinstance(raw_servers, dict) else {}
+    malformed: list[str] = []
+    servers = _table(data, "mcp_servers", malformed)
 
     plugins: dict[tuple[str | None, str], PluginEntry] = {}
-    raw_plugins = data.get("plugins")
-    if isinstance(raw_plugins, dict):
+    raw_plugins = _table(data, "plugins", malformed)
+    if raw_plugins:
         for key, entry in raw_plugins.items():
             if not isinstance(key, str):
                 continue
@@ -130,8 +166,8 @@ def load_config(path: Path) -> CodexConfig:
             )
 
     marketplaces: dict[str, MarketplaceEntry] = {}
-    raw_marketplaces = data.get("marketplaces")
-    if isinstance(raw_marketplaces, dict):
+    raw_marketplaces = _table(data, "marketplaces", malformed)
+    if raw_marketplaces:
         for name, entry in raw_marketplaces.items():
             table = entry if isinstance(entry, dict) else {}
             marketplaces[str(name)] = MarketplaceEntry(
@@ -142,8 +178,8 @@ def load_config(path: Path) -> CodexConfig:
             )
 
     projects: dict[str, ProjectEntry] = {}
-    raw_projects = data.get("projects")
-    if isinstance(raw_projects, dict):
+    raw_projects = _table(data, "projects", malformed)
+    if raw_projects:
         for proj_path, entry in raw_projects.items():
             table = entry if isinstance(entry, dict) else {}
             projects[str(proj_path)] = ProjectEntry(
@@ -159,10 +195,14 @@ def load_config(path: Path) -> CodexConfig:
     # `record_gap` sees it. Coercing here (as `mcp_servers` used to, before
     # `parse()` was changed to read the raw TOML directly) would make that
     # `strict=True` unreachable for a malformed `hooks` table.
-    raw_hooks = data.get("hooks")
-    hooks = raw_hooks if raw_hooks is not None else {}
+    # `hooks` goes through the same helper as every other surface. It used to
+    # be preserved raw so a downstream `strict=True` parse would reject it, but
+    # that only worked for TRUTHY malformed values — `hooks = []` passed the
+    # callers' `if not config.hooks` gate and was never validated at all.
+    hooks = _table(data, "hooks", malformed)
 
     return CodexConfig(
+        malformed=tuple(malformed),
         mcp_servers=servers,
         plugins=plugins,
         marketplaces=marketplaces,

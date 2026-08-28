@@ -2236,6 +2236,7 @@ def _add_codex_declared_config_hooks(
             continue
         try:
             config = codex_config.load_config(config_path)
+            _gap_malformed_codex_surfaces(graph, config_path, config)
         except Exception as exc:  # noqa: BLE001 - recorded, never fatal
             graph.record_gap(f"could not parse {config_path}: {exc}")
             continue
@@ -2444,15 +2445,14 @@ def _seed_codex_mcp_servers(
     project's servers join the profile servers below as additive occurrences
     instead.
     """
-    project_overrides = project_root is not None and codex_project_trusted_unconditionally(
-        config_root, project_root
-    )
+    layers = codex_config_layers(config_root, project_root)
+    project_overrides = any(layer.kind == "project" and layer.overrides for layer in layers)
+
     # Base always merges by name; the project layer only joins this
     # override-by-name merge when its trust is unconditional. Profiles (and a
     # profile-trusted project, below) are handled separately because their
     # semantics differ: they are alternates, not an override of the base.
     override_kinds = {"base", "project"} if project_overrides else {"base"}
-    layers = codex_config_layers(config_root, project_root)
     by_name: dict[str, ComponentRef] = {}
     for layer in [layer for layer in layers if layer.kind in override_kinds]:
         for ref in _safe_parse(
@@ -2481,6 +2481,30 @@ class CodexConfigLayer:
     path: Path
     scope: str  # "user" | "project"
     kind: str  # "base" | "profile" | "project"
+    # Whether this layer is active on EVERY invocation, and may therefore
+    # override the base by name. False for a profile (only one is selected, and
+    # the selection leaves no trace on disk) and for a project whose trust is
+    # itself declared only in a profile — a base-enabled component is still
+    # reachable through a plain, no-profile run, so overriding it would hide a
+    # reachable occurrence.
+    #
+    # Carried here rather than recomputed per surface: each surface deriving
+    # its own answer is what produced a round of findings where MCP servers,
+    # cached plugins, and hooks each disagreed about the profile-only-trust
+    # case.
+    overrides: bool = True
+
+
+def _gap_malformed_codex_surfaces(graph: Graph, path: Path, config) -> None:
+    """Record a coverage gap per present-but-malformed config surface.
+
+    A surface of the wrong TOML type declares components we cannot read, so it
+    lowers coverage exactly as an unparseable file would. Without this the
+    surface reads as absent and the BOM claims `complete` while silently
+    dropping every component it declared.
+    """
+    for surface in config.malformed:
+        graph.record_gap(f"could not parse {path}: {surface} must be a table")
 
 
 def codex_trusted_projects(config_root: Path) -> set[str]:
@@ -2554,7 +2578,7 @@ def codex_config_layers(
     """
     out = [CodexConfigLayer(config_root / "config.toml", "user", "base")]
     out.extend(
-        CodexConfigLayer(path, "user", "profile")
+        CodexConfigLayer(path, "user", "profile", overrides=False)
         for path in sorted(config_root.glob("*.config.toml"))
     )
     if project_root is not None:
@@ -2563,7 +2587,12 @@ def codex_config_layers(
             project_root
         ) in codex_trusted_projects(config_root):
             out.append(
-                CodexConfigLayer(project_root / ".codex" / "config.toml", "project", "project")
+                CodexConfigLayer(
+                    project_root / ".codex" / "config.toml",
+                    "project",
+                    "project",
+                    overrides=codex_project_trusted_unconditionally(config_root, project_root),
+                )
             )
     return [layer for layer in out if layer.path.is_file()]
 
@@ -2635,6 +2664,7 @@ def _seed_codex_hooks_from_layer(
         return
     try:
         config = codex_config.load_config(config_path)
+        _gap_malformed_codex_surfaces(graph, config_path, config)
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal
         graph.record_gap(f"could not parse {config_path}: {exc}")
         return
@@ -2760,12 +2790,12 @@ def _seed_cache_plugins(
     cache_root = config_root / "plugins" / "cache"
     plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
     marketplaces: dict[str, codex_config.MarketplaceEntry] = {}
-    project_overrides = project_root is not None and codex_project_trusted_unconditionally(
-        config_root, project_root
-    )
-    for layer in codex_config_layers(config_root, project_root):
+    all_layers = codex_config_layers(config_root, project_root)
+    project_overrides = any(layer.kind == "project" and layer.overrides for layer in all_layers)
+    for layer in all_layers:
         try:
             layer_config = codex_config.load_config(layer.path)
+            _gap_malformed_codex_surfaces(graph, layer.path, layer_config)
         except Exception as exc:  # noqa: BLE001 - recorded, never fatal
             graph.record_gap(f"could not parse {layer.path}: {exc}")
             continue

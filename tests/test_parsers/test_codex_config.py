@@ -14,7 +14,7 @@ import tomllib
 
 import pytest
 
-from tools.parsers import codex_config, hooks_json
+from tools.parsers import codex_config
 
 STDIO_AND_REMOTE = """
 [mcp_servers.local_tool]
@@ -175,24 +175,43 @@ def test_empty_config_is_not_an_error(tmp_path):
     assert codex_config.parse(p) == []
 
 
-def test_load_config_preserves_a_malformed_hooks_value(tmp_path):
-    """`hooks` is a top-level string, not a table.
+@pytest.mark.parametrize("value", ['"bad"', "[]", "5", "false"])
+def test_a_malformed_top_level_surface_is_recorded_not_coerced(tmp_path, value):
+    """Present-but-wrongly-typed is not the same state as absent.
 
-    Both `graph_build` readers of `config.hooks`
-    (`_add_codex_declared_config_hooks`, `_seed_codex_hooks_from_layer`) gate
-    on `if not config.hooks` before handing the value to
-    `hooks_json.parse_settings_hooks(..., strict=True)` — the thing that
-    actually raises. If `load_config` coerced the malformed shape to `{}`
-    first (as it used to, and as it did for `mcp_servers` before `parse` was
-    changed to bypass the coercion), that `strict=True` check would never see
-    it: a present-but-unparseable surface would look identical to an absent
-    one.
+    An earlier fix preserved the raw malformed value so a downstream
+    `strict=True` parse would reject it. That only worked for TRUTHY values:
+    `hooks = []` passed every caller's `if not config.hooks` gate and was never
+    validated, so a declared surface vanished while coverage read `complete`.
+    Recording the surface name instead is independent of truthiness.
     """
     p = tmp_path / "config.toml"
-    p.write_text('hooks = "bad"\n', encoding="utf-8")
+    p.write_text(f"hooks = {value}\n", encoding="utf-8")
 
-    cfg = codex_config.load_config(p)
+    assert codex_config.load_config(p).malformed == ("hooks",)
 
-    assert cfg.hooks == "bad"
-    with pytest.raises(ValueError, match="hooks"):
-        hooks_json.parse_settings_hooks(p, cfg.hooks, scope="project", strict=True)
+
+@pytest.mark.parametrize("surface", codex_config.TOP_LEVEL_SURFACES)
+def test_every_top_level_surface_reports_malformedness(tmp_path, surface):
+    """Parametrised over the surface list, so a surface added later without
+    malformed-handling fails here rather than shipping the coercion bug again.
+    """
+    p = tmp_path / "config.toml"
+    p.write_text(f'{surface} = "bad"\n', encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == (surface,)
+
+
+def test_a_well_formed_config_reports_nothing_malformed(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[mcp_servers.a]\ncommand = "true"\n', encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == ()
+
+
+def test_an_absent_surface_is_not_malformed(tmp_path):
+    """Absent is a normal state; only a present wrong type is a gap."""
+    p = tmp_path / "config.toml"
+    p.write_text("", encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == ()

@@ -559,6 +559,8 @@ def _seed_shared_endpoint_surfaces(
                 normalize=normalize,
                 project_root=project_root,
                 stamp_provenance=True,
+                root_dir=project_root,
+                root_spec=project_skill_spec,
             )
         else:
             _add_skills_from_dir(
@@ -1654,6 +1656,8 @@ def _add_project_skills_from_dir_following_symlinks(
     normalize: SourceNormalizer,
     project_root: Path | None = None,
     stamp_provenance: bool = False,
+    root_dir: Path | None = None,
+    root_spec: GitIgnoreSpec | None = None,
 ) -> None:
     """Recursive, symlink-following counterpart to `_add_skills_from_dir`, for
     project-skill surfaces where nesting is meaningful (`RepoSurface.skill_config_dirs`
@@ -1668,9 +1672,17 @@ def _add_project_skills_from_dir_following_symlinks(
     cycle-safe walker already used to close this identical gap for install-root
     direct skills (`_add_direct_endpoint_skills`); reused here rather than
     reimplemented.
+
+    Unlike install-root skills (unfiltered — see `_ignore_context`'s docstring),
+    this walk is the project-skill surface, which DOES filter by the project
+    root's `.gitignore` (`_seed_shared_endpoint_surfaces` threads
+    `root_dir`/`root_spec` for exactly that reason). `root_dir`/`root_spec` are
+    also forwarded into `_add_skill_node` so a skill kept by this filter still
+    has its own dep manifests filtered on descent, matching `_add_skills_from_dir`.
     """
     if not skills_dir.is_dir():
         return
+    eval_root, spec = _ignore_context(skills_dir, False, root_dir, root_spec)
     for skill_subdir in sorted(
         _iter_skill_subdirs_following_symlinks(graph, skills_dir), key=lambda p: str(p)
     ):
@@ -1682,6 +1694,8 @@ def _add_project_skills_from_dir_following_symlinks(
             continue
         if not is_skill:
             continue
+        if _is_ignored_under(skill_md, eval_root, spec):
+            continue
         _add_skill_node(
             graph,
             parent,
@@ -1689,6 +1703,8 @@ def _add_project_skills_from_dir_following_symlinks(
             normalize=normalize,
             project_root=project_root,
             stamp_provenance=stamp_provenance,
+            root_dir=root_dir,
+            root_spec=root_spec,
         )
 
 
@@ -2736,6 +2752,24 @@ def _seed_codex_standalone_hooks(
     )
 
 
+def _sorted_subdirs(graph: Graph, directory: Path) -> list[Path]:
+    """Subdirectories of `directory`, sorted, tolerating an unreadable directory.
+
+    `iterdir()` raises `PermissionError` (a subclass of `OSError`) rather than
+    silently returning nothing, and a partial or restrictively-permissioned
+    plugin install (e.g. `plugins/cache/<marketplace>/`) must degrade this one
+    subtree to a coverage gap rather than aborting the whole endpoint scan —
+    same reasoning as `_iter_skill_subdirs_following_symlinks`'s own guarded
+    `iterdir()`.
+    """
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError as exc:
+        graph.record_gap(f"could not list {directory}: {exc}")
+        return []
+    return [entry for entry in entries if entry.is_dir()]
+
+
 def _seed_cache_plugins(
     graph: Graph,
     target: Node,
@@ -2809,11 +2843,11 @@ def _seed_cache_plugins(
 
     seen: set[tuple[str | None, str]] = set()
     if cache_root.is_dir():
-        for marketplace_dir in sorted(p for p in cache_root.iterdir() if p.is_dir()):
+        for marketplace_dir in _sorted_subdirs(graph, cache_root):
             marketplace = marketplace_dir.name
-            for plugin_dir in sorted(p for p in marketplace_dir.iterdir() if p.is_dir()):
+            for plugin_dir in _sorted_subdirs(graph, marketplace_dir):
                 name = plugin_dir.name
-                for version_dir in sorted(p for p in plugin_dir.iterdir() if p.is_dir()):
+                for version_dir in _sorted_subdirs(graph, plugin_dir):
                     seen.add((marketplace, name))
                     _realize_codex_plugin(
                         graph,

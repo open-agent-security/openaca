@@ -1555,11 +1555,19 @@ def test_e2e_codex_endpoint_renders_disabled_plugins_in_the_tree(tmp_path):
 
 
 def test_e2e_codex_endpoint_composes_the_project_layer(tmp_path):
-    """(b, continued) `--project` reaches both project surfaces."""
+    """(b, continued) `--project` reaches both project surfaces — once the
+    directory is trusted. Codex ignores a project's config until then, so the
+    fixture has to record trust rather than rely on it being layered
+    unconditionally."""
     from tools.scan import main as scan_main
 
     root = _codex_home(tmp_path)
     project = _codex_project(tmp_path)
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + f'\n[projects."{project.resolve()}"]\ntrust_level = "trusted"\n',
+        encoding="utf-8",
+    )
 
     result = CliRunner().invoke(
         scan_main,

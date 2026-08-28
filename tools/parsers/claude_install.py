@@ -172,7 +172,7 @@ def _walk_active_plugins(
             (i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)
         ]
         if len(entries) != len(raw_entries):
-            warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
+            record_gap(warnings, f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
             record_gap(warnings, f"plugin {plugin_key}: no valid install entries; skipping")
             continue
@@ -185,8 +185,9 @@ def _walk_active_plugins(
         plugin_name, marketplace = _split_plugin_key(plugin_key)
         version = entry.get("version")
         if version is not None and not isinstance(version, str):
-            warnings.append(
-                f"{plugin_key}: non-string version {version!r} in installed_plugins.json; skipping"
+            record_gap(
+                warnings,
+                f"{plugin_key}: non-string version {version!r} in installed_plugins.json; skipping",
             )
             continue
         # Canonical component_identity is version-less so advisory matching is

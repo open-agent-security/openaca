@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import tomllib
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from pathspec import GitIgnoreSpec
@@ -446,7 +446,7 @@ def _seed_endpoint(
         for plugin_key, is_enabled in enabled.items():
             if not isinstance(plugin_key, str):
                 if warnings is not None:
-                    warnings.append("enabledPlugins keys must be plugin@marketplace strings")
+                    record_gap(warnings, "enabledPlugins keys must be plugin@marketplace strings")
                 continue
             plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
             if not plugin_name or not marketplace:
@@ -573,7 +573,7 @@ def _seed_active_plugins(
             continue
         entries = [(i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)]
         if len(entries) != len(raw_entries) and warnings is not None:
-            warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
+            record_gap(warnings, f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
             if warnings is not None:
                 record_gap(warnings, f"plugin {plugin_key}: no valid install entries; skipping")
@@ -2279,17 +2279,14 @@ def _seed_codex_mcp_servers(
     one config file, with a project file layered over the user one. Project
     entries win, matching `_seed_endpoint`'s own precedence rule.
     """
-    # Base and project layer by precedence: a same-named project server
-    # replaces the user one, matching `_seed_endpoint`'s own rule.
-    layered = [config_root / "config.toml"]
-    if project_root is not None:
-        layered.append(project_root / ".codex" / "config.toml")
-
+    # Base and project merge by name — a same-named project server replaces
+    # the user one, matching `_seed_endpoint`'s own rule. Profiles are handled
+    # separately below because their semantics differ: they are alternates, not
+    # an override of the base.
+    layers = codex_config_layers(config_root, project_root)
     by_name: dict[str, ComponentRef] = {}
-    for source in layered:
-        if not source.is_file():
-            continue
-        for ref in _safe_parse(graph, codex_config.parse, source):
+    for layer in [layer for layer in layers if layer.kind in ("base", "project")]:
+        for ref in _safe_parse(graph, codex_config.parse, layer.path):
             name = _codex_server_name(ref)
             if name is not None:
                 by_name[name] = ref
@@ -2299,6 +2296,75 @@ def _seed_codex_mcp_servers(
         _add_child(graph, target, node)
 
     _seed_codex_profile_mcp_servers(graph, target, config_root, normalize)
+
+
+@dataclass(frozen=True)
+class CodexConfigLayer:
+    """One config file that can contribute to an installed Codex agent."""
+
+    path: Path
+    scope: str  # "user" | "project"
+    kind: str  # "base" | "profile" | "project"
+
+
+def codex_trusted_projects(config_root: Path) -> set[str]:
+    """Project paths Codex records as trusted, across every layer that can
+    carry the record.
+
+    Unions the base config and every profile: `codex -p <name>` layers a
+    profile over the base, so a directory marked trusted in a profile only is
+    still trusted when that profile is selected — and which profile is selected
+    leaves no trace on disk.
+    """
+    trusted: set[str] = set()
+    for path in [config_root / "config.toml", *sorted(config_root.glob("*.config.toml"))]:
+        if not path.is_file():
+            continue
+        try:
+            config = codex_config.load_config(path)
+        except Exception:  # noqa: BLE001 - a broken layer is a scan gap, not a crash
+            continue
+        trusted.update(p.path for p in config.projects.values() if p.trust_level == "trusted")
+    return trusted
+
+
+def codex_config_layers(
+    config_root: Path, project_root: Path | None = None
+) -> list[CodexConfigLayer]:
+    """Every config layer that can be active for this endpoint, in precedence
+    order: base, then profiles, then the project.
+
+    **One definition, read by every Codex surface.** Each surface previously
+    built its own layer list, and each missed a different layer — hooks skipped
+    profiles and the project, project trust skipped profiles, plugins read only
+    the base. That is why successive review rounds found the same class of bug
+    on a different surface each time; the layer set is the thing that was
+    duplicated, so it is the thing that is now shared. Merge semantics stay
+    with the caller, because they genuinely differ: MCP servers merge by name
+    with the project winning, while profile servers are additive occurrences.
+
+    Every profile is returned rather than an active one — the `-p` selection is
+    an invocation flag that leaves nothing on disk, so the union
+    over-approximates, which is the safe direction.
+
+    The project layer is **trust-gated**: Codex ignores a project's config
+    until the directory is trusted, so composing it unconditionally would
+    report servers, hooks, and plugins the runtime does not load.
+    """
+    out = [CodexConfigLayer(config_root / "config.toml", "user", "base")]
+    out.extend(
+        CodexConfigLayer(path, "user", "profile")
+        for path in sorted(config_root.glob("*.config.toml"))
+    )
+    if project_root is not None:
+        resolved = str(project_root.resolve())
+        if resolved in codex_trusted_projects(config_root) or str(
+            project_root
+        ) in codex_trusted_projects(config_root):
+            out.append(
+                CodexConfigLayer(project_root / ".codex" / "config.toml", "project", "project")
+            )
+    return [layer for layer in out if layer.path.is_file()]
 
 
 def _codex_server_name(ref: ComponentRef) -> str | None:
@@ -2327,8 +2393,10 @@ def _seed_codex_profile_mcp_servers(
     profiles declaring the same server differently are two things the agent
     could run, and collapsing them to one would hide whichever lost.
     """
-    for source in sorted(config_root.glob("*.config.toml")):
-        for ref in _safe_parse(graph, codex_config.parse, source):
+    for layer in codex_config_layers(config_root):
+        if layer.kind != "profile":
+            continue
+        for ref in _safe_parse(graph, codex_config.parse, layer.path):
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
@@ -2358,13 +2426,8 @@ def _seed_codex_hooks(
     `.codex/config.toml`, the same project layer `_seed_codex_mcp_servers`
     already reads unconditionally for servers.
     """
-    layers: list[tuple[Path, str]] = [(config_root / "config.toml", "user")]
-    layers.extend((path, "user") for path in sorted(config_root.glob("*.config.toml")))
-    if project_root is not None:
-        layers.append((project_root / ".codex" / "config.toml", "project"))
-
-    for config_path, scope in layers:
-        _seed_codex_hooks_from_layer(graph, target, config_path, scope, normalize)
+    for layer in codex_config_layers(config_root, project_root):
+        _seed_codex_hooks_from_layer(graph, target, layer.path, layer.scope, normalize)
 
 
 def _seed_codex_hooks_from_layer(

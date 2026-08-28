@@ -148,8 +148,9 @@ def _parse_manifest_refs(
                     file_refs = []
                 refs.extend(file_refs)
         elif warnings is not None:
-            warnings.append(
-                f"could not parse {plugin_json_path}: mcpServers must be an object or path"
+            record_gap(
+                warnings,
+                f"could not parse {plugin_json_path}: mcpServers must be an object or path",
             )
     return refs
 
@@ -322,8 +323,8 @@ def _parse_bundled_hooks(
                     if warnings is not None:
                         record_gap(warnings, f"could not parse {custom_hooks_file}: {exc}")
         elif warnings is not None:
-            warnings.append(
-                f"could not parse {inline_hooks}: referenced hook manifest is unavailable"
+            record_gap(
+                warnings, f"could not parse {inline_hooks}: referenced hook manifest is unavailable"
             )
     elif "hooks" in data and warnings is not None:
         record_gap(warnings, f"could not parse {plugin_json_path}: hooks must be an object or path")

@@ -1970,6 +1970,56 @@ def test_endpoint_non_string_version_entry_emits_warning(tmp_path):
     assert any("non-string version" in w for w in warnings), warnings
 
 
+def test_endpoint_enabled_plugin_missing_from_map_lowers_coverage(tmp_path):
+    """The whole plugin failed to compose — no node, no contents — so the
+    'missing from installed_plugins.json' warning must be a coverage gap
+    (`graph.warnings.gaps`), which is what `tools.scan._component_gap_count`
+    reads. A plain warning would let a BOM with a silently dropped plugin
+    report `complete`."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    settings = {"enabledPlugins": {"ghost@mp": True}}
+    (install_root / "settings.json").write_text(json.dumps(settings))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    assert any(
+        "ghost@mp enabled but missing from installed_plugins.json" in gap for gap in g.warnings.gaps
+    )
+
+
+def test_endpoint_non_string_version_entry_lowers_coverage(tmp_path):
+    """Same rationale as the sibling test above: a non-string version drops
+    the whole plugin, so it must count as a coverage gap."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    install_path = install_root / "cache" / "demo" / "1.0.0"
+    install_path.mkdir(parents=True)
+    _skill_with_dep(install_path, "skills/deploy")
+    (install_root / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@mp": True}}))
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@mp": [{"scope": "user", "version": 123, "installPath": str(install_path)}]
+                },
+            }
+        )
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    g = build_graph(install_root, mode="endpoint", project_root=project_root)
+    assert any("non-string version" in gap for gap in g.warnings.gaps)
+
+
 # --- Codex PR #131 review fixes ---
 
 

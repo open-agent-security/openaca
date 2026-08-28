@@ -567,8 +567,8 @@ def _seed_active_plugins(
         raw_entries = plugins_map.get(plugin_key)
         if not isinstance(raw_entries, list) or not raw_entries:
             if warnings is not None:
-                warnings.append(
-                    f"plugin {plugin_key} enabled but missing from installed_plugins.json"
+                record_gap(
+                    warnings, f"plugin {plugin_key} enabled but missing from installed_plugins.json"
                 )
             continue
         entries = [(i, e) for i, e in enumerate(raw_entries) if isinstance(e, dict)]
@@ -587,9 +587,10 @@ def _seed_active_plugins(
         version = entry.get("version")
         if version is not None and not isinstance(version, str):
             if warnings is not None:
-                warnings.append(
+                record_gap(
+                    warnings,
                     f"{plugin_key}: non-string version {version!r} in "
-                    "installed_plugins.json; skipping"
+                    "installed_plugins.json; skipping",
                 )
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
@@ -1385,11 +1386,29 @@ def _add_project_skills(
 def _is_project_skill_md(
     path: Path, root: Path, surface: RepoSurface = CLAUDE_CODE_SURFACE
 ) -> bool:
-    """True iff `path` is `.../<config_dir>/<project_skills_subdir>/<name>/SKILL.md`
-    relative to root."""
+    """True iff `path` is a project skill's `SKILL.md` relative to root.
+
+    Claude Code (empty `skill_config_dirs`) is a one-level walk:
+    `.../<config_dir>/<project_skills_subdir>/<name>/SKILL.md`. A kind that
+    sets `skill_config_dirs` (Codex) means recursive nesting beneath
+    `<config_dir>/<project_skills_subdir>/`, matching
+    `graph_build_cursor._is_cursor_skill_md`'s any-depth walk — this mirrors
+    that so `CODEX_MANIFEST_REGISTRY`'s `**/.codex/skills/**/SKILL.md` glob
+    and graph composition agree on what a Codex skill is.
+    """
     try:
         parts = path.relative_to(root).parts
     except ValueError:
+        return False
+    if surface.skill_config_dirs:
+        for i in range(len(parts) - 2):
+            if parts[i] not in surface.skill_config_dirs:
+                continue
+            if parts[i + 1] in surface.excluded_skill_dirs:
+                continue
+            if parts[i + 1] != surface.project_skills_subdir:
+                continue
+            return True
         return False
     # parts == (..., config_dir, project_skills_subdir, "<name>", "SKILL.md")
     return (
@@ -2011,10 +2030,23 @@ def _add_codex_declared_config_mcps(
     *,
     include_gitignored: bool,
     root_spec: GitIgnoreSpec | None,
+    realized_plugin_roots: list[Path],
 ) -> None:
-    """MCP servers from every `.codex/config.toml` in the tree."""
+    """MCP servers from every `.codex/config.toml` in the tree.
+
+    Content beneath an already-realized plugin root belongs to the plugin
+    branch, not the tree walk (single-parent invariant, same rule
+    `CODEX_SURFACE.excludes_plugin_owned_content` applies to declared
+    evidence and registry parse-count accounting) — otherwise a fixture like
+    a plugin's own `examples/.codex/config.toml` would add its MCP servers
+    directly under the target.
+    """
+    from tools.graph_build_cursor import is_owned_by_realized_plugin
+
     for config_path in sorted(scan_root.rglob(".codex/config.toml")):
         if not include_gitignored and _is_ignored_under(config_path, scan_root, root_spec):
+            continue
+        if is_owned_by_realized_plugin(config_path, realized_plugin_roots, CODEX_SURFACE):
             continue
         refs = _safe_parse(graph, codex_config.parse, config_path)
         for ref in refs:
@@ -2030,14 +2062,20 @@ def _add_codex_declared_hooks(
     *,
     include_gitignored: bool,
     root_spec: GitIgnoreSpec | None,
+    realized_plugin_roots: list[Path],
 ) -> None:
     """Standalone `.codex/hooks.json`, project scope.
 
     The envelope and event names are Claude Code's — PascalCase, same shape —
-    so `hooks_json` parses it with no Codex-specific handling.
+    so `hooks_json` parses it with no Codex-specific handling. Plugin-owned
+    content is excluded for the same reason as the config-MCP walk above.
     """
+    from tools.graph_build_cursor import is_owned_by_realized_plugin
+
     for hooks_path in sorted(scan_root.rglob(".codex/hooks.json")):
         if not include_gitignored and _is_ignored_under(hooks_path, scan_root, root_spec):
+            continue
+        if is_owned_by_realized_plugin(hooks_path, realized_plugin_roots, CODEX_SURFACE):
             continue
         refs = _safe_parse(
             graph,
@@ -2080,6 +2118,11 @@ def build_codex_declared_graph(
         root_spec=root_spec,
         surface=CODEX_SURFACE,
     )
+    from tools.graph_build_cursor import realized_plugin_roots as find_realized_plugin_roots
+
+    realized_roots = find_realized_plugin_roots(
+        scan_root, CODEX_SURFACE, include_gitignored=include_gitignored
+    )
     _add_codex_declared_config_mcps(
         graph,
         root,
@@ -2087,6 +2130,7 @@ def build_codex_declared_graph(
         normalize,
         include_gitignored=include_gitignored,
         root_spec=root_spec,
+        realized_plugin_roots=realized_roots,
     )
     _add_codex_declared_hooks(
         graph,
@@ -2095,6 +2139,7 @@ def build_codex_declared_graph(
         normalize,
         include_gitignored=include_gitignored,
         root_spec=root_spec,
+        realized_plugin_roots=realized_roots,
     )
 
     return finalize_graph(

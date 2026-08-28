@@ -493,6 +493,7 @@ def _seed_shared_endpoint_surfaces(
     normalize: SourceNormalizer,
     *,
     surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
+    repo_surface: RepoSurface = CLAUDE_CODE_SURFACE,
     by_scope: dict | None = None,
 ) -> None:
     """The two endpoint surfaces whose procedure is shared across kinds
@@ -506,6 +507,13 @@ def _seed_shared_endpoint_surfaces(
     `by_scope` is only read when `surface.seeds_hooks` is true, so a kind that
     seeds no settings-scoped hooks passes `None` rather than assembling a
     settings structure it does not have.
+
+    `repo_surface` is the `RepoSurface` counterpart of `surface`: passed
+    through to `_add_project_skills`, whose `.claude`-vs-`.codex` (and
+    one-level-vs-recursive) skill-directory match is a `RepoSurface` field, not
+    an `EndpointSurface` one. Left at the Claude Code default, a Codex endpoint
+    scan would recognise `<project>/.claude/skills/**/SKILL.md` as its own
+    project skills — a Claude-only surface, not Codex's.
     """
     if project_root is not None:
         # Project skills are the one endpoint surface the old _walk_project_skill_dirs
@@ -522,6 +530,7 @@ def _seed_shared_endpoint_surfaces(
             stamp_provenance=True,
             root_dir=project_root,
             root_spec=project_skill_spec,
+            surface=repo_surface,
         )
         # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
         # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
@@ -2330,6 +2339,18 @@ def _seed_codex_subagents(
             _add_child(graph, target, node)
 
 
+def _emit_codex_config_mcp_servers(
+    graph: Graph, target: Node, config_path: Path, normalize: SourceNormalizer
+) -> None:
+    """Parse one config layer and add each of its MCP servers as an additive
+    occurrence (never merged by name) — the emission `_seed_codex_profile_mcp_servers`
+    and a profile-only-trusted project layer (`_seed_codex_mcp_servers`) share.
+    """
+    for ref in _safe_parse(graph, lambda path: codex_config.parse(path, strict=True), config_path):
+        node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        _add_child(graph, target, node)
+
+
 def _seed_codex_mcp_servers(
     graph: Graph,
     target: Node,
@@ -2343,16 +2364,29 @@ def _seed_codex_mcp_servers(
 
     Forked from `_seed_remote_mcps` (ADR-0057): that function reads Claude
     Code's settings layers and `.mcp.json`; Codex's servers are a TOML table in
-    one config file, with a project file layered over the user one. Project
-    entries win, matching `_seed_endpoint`'s own precedence rule.
+    one config file, with a project file layered over the user one.
+
+    Project entries win, matching `_seed_endpoint`'s own precedence rule — but
+    only when `codex_project_trusted_unconditionally` says the project is
+    trusted by the **base** config, the same distinction `_seed_cache_plugins`
+    draws for plugin enablement. When trust instead comes from a profile only,
+    the project's `.codex/config.toml` is active exclusively when that profile
+    is selected; a plain, no-profile invocation still runs the base server, so
+    replacing it by name would hide a reachable occurrence. In that case the
+    project's servers join the profile servers below as additive occurrences
+    instead.
     """
-    # Base and project merge by name — a same-named project server replaces
-    # the user one, matching `_seed_endpoint`'s own rule. Profiles are handled
-    # separately below because their semantics differ: they are alternates, not
-    # an override of the base.
+    project_overrides = project_root is not None and codex_project_trusted_unconditionally(
+        config_root, project_root
+    )
+    # Base always merges by name; the project layer only joins this
+    # override-by-name merge when its trust is unconditional. Profiles (and a
+    # profile-trusted project, below) are handled separately because their
+    # semantics differ: they are alternates, not an override of the base.
+    override_kinds = {"base", "project"} if project_overrides else {"base"}
     layers = codex_config_layers(config_root, project_root)
     by_name: dict[str, ComponentRef] = {}
-    for layer in [layer for layer in layers if layer.kind in ("base", "project")]:
+    for layer in [layer for layer in layers if layer.kind in override_kinds]:
         for ref in _safe_parse(
             graph, lambda path: codex_config.parse(path, strict=True), layer.path
         ):
@@ -2365,6 +2399,11 @@ def _seed_codex_mcp_servers(
         _add_child(graph, target, node)
 
     _seed_codex_profile_mcp_servers(graph, target, config_root, normalize)
+
+    if project_root is not None and not project_overrides:
+        for layer in layers:
+            if layer.kind == "project":
+                _emit_codex_config_mcp_servers(graph, target, layer.path, normalize)
 
 
 @dataclass(frozen=True)
@@ -2488,13 +2527,8 @@ def _seed_codex_profile_mcp_servers(
     could run, and collapsing them to one would hide whichever lost.
     """
     for layer in codex_config_layers(config_root):
-        if layer.kind != "profile":
-            continue
-        for ref in _safe_parse(
-            graph, lambda path: codex_config.parse(path, strict=True), layer.path
-        ):
-            node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
-            _add_child(graph, target, node)
+        if layer.kind == "profile":
+            _emit_codex_config_mcp_servers(graph, target, layer.path, normalize)
 
 
 def _seed_codex_hooks(
@@ -2851,6 +2885,7 @@ def build_codex_installed_graph(
         project_root,
         normalize,
         surface=CODEX_ENDPOINT,
+        repo_surface=CODEX_SURFACE,
         by_scope=None,
     )
     _seed_codex_subagents(graph, root, config_root, normalize)

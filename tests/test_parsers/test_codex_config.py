@@ -138,6 +138,29 @@ def test_absent_plugin_enabled_key_states_enabled_true(tmp_path):
     assert cfg.plugins[("m", "p")].enabled is True
 
 
+def test_malformed_mcp_servers_table_raises_under_strict(tmp_path):
+    """`mcp_servers` is a top-level string, not a table.
+
+    `load_config` coerces this to `{}` for callers that only want
+    plugins/marketplaces/projects; `parse` must not inherit that coercion
+    silently — a malformed table is a readable-but-unparseable surface, not an
+    empty one (`_safe_parse` classifies the raised `ValueError` as a
+    composition-coverage gap in `graph_build.py`).
+    """
+    p = tmp_path / "config.toml"
+    p.write_text('mcp_servers = "bad"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="mcp_servers"):
+        codex_config.parse(p, strict=True)
+
+
+def test_malformed_mcp_servers_table_is_swallowed_without_strict(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('mcp_servers = "bad"\n', encoding="utf-8")
+
+    assert codex_config.parse(p) == []
+
+
 def test_empty_config_is_not_an_error(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text("", encoding="utf-8")

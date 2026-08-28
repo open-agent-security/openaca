@@ -244,6 +244,19 @@ def _refs(graph, kind):
     return [n.ref for n in graph.nodes.values() if n.kind == kind and n.ref is not None]
 
 
+def _trust(root: Path, project: Path) -> None:
+    """Record `project` as trusted in the endpoint's base config.
+
+    Codex ignores a project's `.codex/config.toml` until the directory is
+    trusted, so a fixture that wants the project layer composed has to say so.
+    """
+    root.joinpath("config.toml").write_text(
+        root.joinpath("config.toml").read_text(encoding="utf-8")
+        + f'\n[projects."{project.resolve()}"]\ntrust_level = "trusted"\n',
+        encoding="utf-8",
+    )
+
+
 def _plugins(graph):
     return {r.name: r for r in _refs(graph, "plugin")}
 
@@ -421,6 +434,7 @@ def test_project_layer_composes_skills_and_mcp_and_project_wins(tmp_path):
         '[mcp_servers.user_svc]\ncommand = "project-wins"\n', encoding="utf-8"
     )
 
+    _trust(root, project)
     graph = build_codex_installed_graph(root, project)
     skill_names = _skill_names(graph)
     user_svc = _server_named(graph, "user_svc")
@@ -487,9 +501,8 @@ def test_hooks_in_a_profile_config_are_composed_at_the_endpoint(tmp_path):
 
 
 def test_hooks_in_a_trusted_project_config_are_composed_at_the_endpoint(tmp_path):
-    """`_seed_codex_mcp_servers` already layers a trusted project's
-    `.codex/config.toml` unconditionally for MCP servers; hooks declared the
-    same way in the same file must compose too, with project scope."""
+    """A trusted project's `.codex/config.toml` contributes hooks with project
+    scope, the same layer its MCP servers come from."""
     root = _home(tmp_path)
     project = tmp_path / "proj3"
     (project / ".codex").mkdir(parents=True)
@@ -498,6 +511,7 @@ def test_hooks_in_a_trusted_project_config_are_composed_at_the_endpoint(tmp_path
         'type = "command"\ncommand = "echo project"\n',
         encoding="utf-8",
     )
+    _trust(root, project)
 
     graph = build_codex_installed_graph(root, project)
     hooks = _refs(graph, "hook")
@@ -591,6 +605,7 @@ def test_mcp_launch_dependencies_attach_after_the_forked_seeds(tmp_path):
         encoding="utf-8",
     )
 
+    _trust(root, project)
     graph = build_codex_installed_graph(root, project)
     proj_svc = _server_named(graph, "proj_svc")[0]
     server_key = next(k for k, n in graph.nodes.items() if n.ref is proj_svc)
@@ -690,3 +705,60 @@ def test_a_root_with_no_profiles_is_unaffected(tmp_path):
     graph = build_codex_installed_graph(_home(tmp_path))
 
     assert len(_refs(graph, "mcp_server")) == 1
+
+
+def test_an_untrusted_project_layer_is_not_composed(tmp_path):
+    """Codex ignores a project's config until the directory is trusted, so
+    composing it unconditionally reports servers, hooks, and plugins the
+    runtime does not load."""
+    root = _home(tmp_path)
+    project = tmp_path / "untrusted"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.ghost]\ncommand = "true"\n\n'
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\ncommand = "echo ghost"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert _server_named(graph, "ghost") == []
+    assert not any(
+        "echo ghost" in str((r.extra or {}).get("command")) for r in _refs(graph, "hook")
+    )
+
+
+def test_trust_recorded_only_in_a_profile_still_gates_the_project_in(tmp_path):
+    """`codex -p <name>` layers a profile over the base, so trust declared in a
+    profile is real trust — and which profile is selected leaves no trace."""
+    root = _home(tmp_path)
+    project = tmp_path / "proj-via-profile"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.from_project]\ncommand = "true"\n', encoding="utf-8"
+    )
+    (root / "trusting.config.toml").write_text(
+        f'[projects."{project.resolve()}"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert _server_named(graph, "from_project"), "profile-declared trust is trust"
+
+
+def test_every_codex_surface_reads_one_layer_definition():
+    """The layer set was the thing duplicated across surfaces, so it is the
+    thing that is shared. Each surface still owns its own merge semantics."""
+    import inspect
+
+    from tools import graph_build
+
+    for fn in (
+        graph_build._seed_codex_mcp_servers,
+        graph_build._seed_codex_profile_mcp_servers,
+        graph_build._seed_codex_hooks,
+    ):
+        src = inspect.getsource(fn)
+        assert "codex_config_layers(" in src, f"{fn.__name__} builds its own layer list"
+        assert '"*.config.toml"' not in src, f"{fn.__name__} re-globs profiles"

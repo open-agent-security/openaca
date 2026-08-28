@@ -156,6 +156,12 @@ class AgentKind:
     # no filesystem-shaped installed posture surface (e.g. a control-plane
     # kind whose installed state lives behind an API, not on disk).
     installed_posture_collectors: InstalledPostureCollectors | None = None
+    # Posture surfaces that declare no components, keyed by the rule id that
+    # consumes them. The `(mcp, settings)` pair above has no room for a third
+    # or fourth channel, and overloading either slot would make one rule's
+    # input depend on another's manifest shape. `None` means the kind has no
+    # such surfaces — every existing kind is unaffected.
+    extra_installed_posture_collectors: Mapping[str, InstalledPostureCollector] | None = None
 
     def __post_init__(self) -> None:
         """A typo in an allowlist would silently disable an intended rule rather
@@ -188,9 +194,9 @@ def matches_evidence(rel: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _registry() -> tuple[AgentKind, ...]:
-    from tools.agent_kinds import claude_code, cursor
+    from tools.agent_kinds import claude_code, codex, cursor
 
-    return (claude_code.KIND, cursor.KIND)
+    return (claude_code.KIND, cursor.KIND, codex.KIND)
 
 
 REGISTRY: tuple[AgentKind, ...] = _registry()

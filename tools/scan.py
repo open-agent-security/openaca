@@ -39,7 +39,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
 
@@ -68,7 +68,7 @@ from tools.bom import (
 from tools.cli_kind import kind_option, require_kind_for_config_dir
 from tools.component_ref import ComponentRef
 from tools.finding_output import graph_for
-from tools.graph import Graph
+from tools.graph import Graph, WarningLog
 from tools.graph_build import _TARGET_KEY
 from tools.matcher import Finding, match
 from tools.observations import (
@@ -143,6 +143,32 @@ def default_overlays_dir() -> Path:
 def _component_type(ref: ComponentRef) -> str:
     value = (ref.extra or {}).get("component_type")
     return value if isinstance(value, str) and value else "component"
+
+
+def _component_gap_count(warnings: list[str]) -> int:
+    """How many warnings mean a component may be missing.
+
+    A plain list has no such distinction and counts as none: under the
+    opt-in rule a warning is a note unless it says otherwise.
+    """
+    return len(getattr(warnings, "gaps", ()))
+
+
+def _count_active_plugins(refs: list[ComponentRef]) -> int:
+    """Plugin refs that are actually active.
+
+    Every installed-agent path labels its plugin count "active plugin". That
+    was accurate while every kind's plugin refs existed only for plugins
+    already known to be active — Claude Code never emits a ref for a non-`True`
+    enable entry, and Cursor's refs carry no `enabled` key at all. ADR-0055
+    breaks the assumption: Codex inventories disabled plugins too and records
+    `enabled` on them, so an endpoint with several disabled plugins would
+    otherwise report them all as active.
+
+    `is not False` rather than truthiness, so a kind that omits the key keeps
+    counting exactly as it did before.
+    """
+    return sum(1 for r in refs if _is_plugin_ref(r) and (r.extra or {}).get("enabled") is not False)
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
@@ -682,6 +708,10 @@ class AgentScanPrep:
     unit_count: int
     unit_label: str
     parse_failed: int
+    # Rule-id-keyed manifests for posture surfaces that declare no components.
+    # Always empty for a declared agent: a repo scan must never read
+    # `$CODEX_HOME` to populate a finding about the machine it runs on.
+    extra_manifests: dict[str, list[tuple[Path, dict]]] = field(default_factory=dict)
 
 
 def _next_actions_for(agent: AgentInstance) -> list[str]:
@@ -723,6 +753,10 @@ def _agent_scan_prep(
             # is the one Cursor surface those variables relocate, so
             # `--config-dir` does not relocate it here either.
             settings_manifests=settings_collector(agent.config_root, agent.project_root),
+            extra_manifests={
+                rule_id: collector(agent.config_root, agent.project_root, refs)
+                for rule_id, collector in (kind.extra_installed_posture_collectors or {}).items()
+            },
             target_rows=[
                 ("config", str(agent.config_root)),
                 (
@@ -731,7 +765,7 @@ def _agent_scan_prep(
                 ),
             ],
             next_actions=_next_actions_for(agent),
-            unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
+            unit_count=_count_active_plugins(refs),
             unit_label="active plugin",
             parse_failed=0,
         )
@@ -903,13 +937,19 @@ def _scan_discovered_agents(
                 prep.manifests,
                 prep.settings_manifests,
                 allowed_rules=kind.posture_rules,
+                extra_manifests=prep.extra_manifests,
                 agent_kind=agent.kind_id,
                 agent_id=agent.agent_id,
             )
             posture_findings.extend(agent_posture)
 
+        # Only component gaps lower coverage — `composition_coverage`
+        # qualifies the component graph, so a note about a component we did
+        # read says nothing about whether we identified it. A parse failure is
+        # a gap by construction: the manifest's components went unread.
         coverage = resolve_coverage(
-            agent.coverage_baseline, evidence_gaps=len(warnings) + prep.parse_failed
+            agent.coverage_baseline,
+            evidence_gaps=_component_gap_count(warnings) + prep.parse_failed,
         )
         summaries.append(
             AgentSummary(
@@ -1134,7 +1174,7 @@ def repo(
     # attribution are derived from graph structure, not path heuristics.
     built: list[tuple[AgentInstance, Graph, list[ComponentRef], list[ComponentRef], list[str]]] = []
     for agent in agents:
-        warnings: list[str] = []
+        warnings: WarningLog = WarningLog()
         graph = build_agent_graph(agent, include_gitignored=include_gitignored, warnings=warnings)
         agent_all_refs = _refs_from_graph(graph)
         # V0: drop software-dependency refs (deps from non-plugin manifests).
@@ -1151,7 +1191,7 @@ def repo(
             agent_name=agent.display_name,
             composition_source=agent.source,
             composition_coverage=resolve_coverage(
-                agent.coverage_baseline, evidence_gaps=len(warnings)
+                agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
             ),
         ).component_refs()
         built.append((agent, graph, agent_all_refs, refs, warnings))
@@ -1361,13 +1401,13 @@ def endpoint(
                 f"detected config_dir={agent.config_root}, project={project_note} (mode=endpoint)",
                 err=True,
             )
-        warnings: list[str] = []
+        warnings: WarningLog = WarningLog()
         graph = build_agent_graph(agent, warnings=warnings)
         agent_all_refs = _refs_from_graph(graph)
         refs = build_agent_bom(
             _filter_agent_scope_refs(agent_all_refs),
             target=str(agent.config_root),
-            source_unit_count=sum(1 for r in agent_all_refs if _is_plugin_ref(r)),
+            source_unit_count=_count_active_plugins(agent_all_refs),
             source_unit_label="active plugin",
             graph=graph,
             agent_kind=agent.kind_id,
@@ -1375,7 +1415,7 @@ def endpoint(
             agent_name=agent.display_name,
             composition_source=agent.source,
             composition_coverage=resolve_coverage(
-                agent.coverage_baseline, evidence_gaps=len(warnings)
+                agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
             ),
         ).component_refs()
         built.append((agent, graph, agent_all_refs, refs, warnings))

@@ -1,0 +1,4 @@
+---
+name: bundled-skill
+---
+Bundled.

@@ -22,8 +22,14 @@ from tools.bom import agent_info_from_cyclonedx, build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
 from tools.cli_kind import kind_option, require_kind_for_config_dir
+from tools.graph import WarningLog
 from tools.parsers import parse_repo_registry_counts
-from tools.scan import _filter_agent_scope_refs, _is_plugin_ref, _refs_from_graph
+from tools.scan import (
+    _component_gap_count,
+    _count_active_plugins,
+    _filter_agent_scope_refs,
+    _refs_from_graph,
+)
 
 
 @click.group()
@@ -372,7 +378,7 @@ def repo(
     for agent in agents:
         assert agent.scan_root is not None
         kind = kind_for(agent.kind_id)
-        warnings: list[str] = []
+        warnings: WarningLog = WarningLog()
         graph = build_agent_graph(agent, include_gitignored=include_gitignored, warnings=warnings)
         for w in warnings:
             click.echo(f"warning: {w}", err=True)
@@ -398,7 +404,7 @@ def repo(
             agent_name=agent.display_name,
             composition_source=agent.source,
             composition_coverage=resolve_coverage(
-                agent.coverage_baseline, evidence_gaps=len(warnings) + n_failed
+                agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings) + n_failed
             ),
         )
         documents.append((basenames[agent.bom_ref], bom.to_cyclonedx()))
@@ -447,7 +453,7 @@ def endpoint(
     basenames = output_basenames(agents)
     documents: list[tuple[str, dict]] = []
     for agent in agents:
-        warnings: list[str] = []
+        warnings: WarningLog = WarningLog()
         graph = build_agent_graph(agent, warnings=warnings)
         for w in warnings:
             click.echo(f"warning: {w}", err=True)
@@ -455,7 +461,7 @@ def endpoint(
         bom = build_agent_bom(
             _filter_agent_scope_refs(refs),
             target=str(agent.config_root),
-            source_unit_count=sum(1 for r in refs if _is_plugin_ref(r)),
+            source_unit_count=_count_active_plugins(refs),
             source_unit_label="active plugin",
             graph=graph,
             agent_kind=agent.kind_id,
@@ -463,7 +469,7 @@ def endpoint(
             agent_name=agent.display_name,
             composition_source=agent.source,
             composition_coverage=resolve_coverage(
-                agent.coverage_baseline, evidence_gaps=len(warnings)
+                agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
             ),
         )
         documents.append((basenames[agent.bom_ref], bom.to_cyclonedx()))

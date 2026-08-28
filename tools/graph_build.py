@@ -25,7 +25,8 @@ from pathlib import Path
 from pathspec import GitIgnoreSpec
 
 from tools.component_ref import ComponentRef
-from tools.graph import Edge, Graph, Node
+from tools.endpoint_surface import CLAUDE_CODE_ENDPOINT, CODEX_ENDPOINT, EndpointSurface
+from tools.graph import Edge, Graph, Node, WarningLog, record_gap
 from tools.identity import canonical_component_identity, finalize_component_identity
 from tools.mcp_launch_resolve import normalize_pypi_name, resolve_mcp_launch_dir
 from tools.parsers import (
@@ -35,6 +36,9 @@ from tools.parsers import (
     claude_plugin,
     claude_settings,
     claude_skill,
+    codex_agent,
+    codex_config,
+    codex_rules,
     hooks_json,
     mcp_json,
     package_json,
@@ -52,9 +56,9 @@ from tools.parsers.claude_plugin_root import (
     resolve_within,
 )
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
-from tools.parsers.settings_layers import SCOPE_PRECEDENCE
+from tools.parsers.settings_layers import SCOPE_PRECEDENCE, default_managed_dir
 from tools.parsers.settings_layers import load as load_settings
-from tools.repo_surface import CLAUDE_CODE_SURFACE, PluginFormat, RepoSurface
+from tools.repo_surface import CLAUDE_CODE_SURFACE, CODEX_SURFACE, PluginFormat, RepoSurface
 
 # Top-level dependency manifests handled in repo mode. Each maps a filename to
 # the leaf parser that emits its package refs. Task 2.2+ extends descent with
@@ -278,6 +282,7 @@ def build_rooted_graph(
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
     surface: RepoSurface = CLAUDE_CODE_SURFACE,
+    endpoint_surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -294,7 +299,15 @@ def build_rooted_graph(
     attach_root_spec: GitIgnoreSpec | None = None
     attach_include_gitignored = include_gitignored
     if mode == "endpoint":
-        _seed_endpoint(graph, root, Path(target), project_root, normalize, warnings=graph.warnings)
+        _seed_endpoint(
+            graph,
+            root,
+            Path(target),
+            project_root,
+            normalize,
+            surface=endpoint_surface,
+            warnings=graph.warnings,
+        )
         # Endpoint has no single repo root; installed artifacts are not
         # gitignore-filtered (parity with the descent's root_dir=None behavior).
         attach_include_gitignored = True
@@ -377,7 +390,13 @@ def finalize_graph(
     )
     graph.validate()
     if warnings is not None:
-        warnings.extend(graph.warnings)
+        # `absorb` rather than `extend`, so the caller's list keeps knowing
+        # which of these are component gaps — that distinction is what
+        # `composition_coverage` reads.
+        if isinstance(warnings, WarningLog):
+            warnings.absorb(graph.warnings)
+        else:
+            warnings.extend(graph.warnings)
     return graph
 
 
@@ -388,6 +407,7 @@ def _seed_endpoint(
     project_root: Path | None,
     normalize: SourceNormalizer,
     *,
+    surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
     warnings: list[str] | None = None,
 ) -> None:
     """Endpoint mode: the target's children are seeded from resolved Claude
@@ -421,7 +441,7 @@ def _seed_endpoint(
     enabled = effective.get("enabledPlugins", {})
     if not isinstance(enabled, dict):
         if "enabledPlugins" in effective and warnings is not None:
-            warnings.append("enabledPlugins must be an object")
+            record_gap(warnings, "enabledPlugins must be an object")
     else:
         for plugin_key, is_enabled in enabled.items():
             if not isinstance(plugin_key, str):
@@ -437,7 +457,9 @@ def _seed_endpoint(
         if any(value is True for value in enabled.values()):
             if plugins_map is None or lockfile_path is None:
                 if warnings is not None:
-                    warnings.append("enabled plugins but installed_plugins.json is unavailable")
+                    record_gap(
+                        warnings, "enabled plugins but installed_plugins.json is unavailable"
+                    )
             else:
                 _seed_active_plugins(
                     graph,
@@ -450,6 +472,41 @@ def _seed_endpoint(
                     warnings=warnings,
                 )
 
+    _seed_shared_endpoint_surfaces(
+        graph,
+        target,
+        install_root,
+        project_root,
+        normalize,
+        surface=surface,
+        by_scope=by_scope,
+    )
+
+    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
+
+
+def _seed_shared_endpoint_surfaces(
+    graph: Graph,
+    target: Node,
+    install_root: Path,
+    project_root: Path | None,
+    normalize: SourceNormalizer,
+    *,
+    surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
+    by_scope: dict | None = None,
+) -> None:
+    """The two endpoint surfaces whose procedure is shared across kinds
+    (ADR-0057): project skills, and direct components.
+
+    Callable on its own, which is the point. A kind that forks plugin
+    acquisition and remote MCP calls THIS rather than `_seed_endpoint` — the
+    latter also runs Claude Code's own acquisition unconditionally, against
+    whatever root it was handed.
+
+    `by_scope` is only read when `surface.seeds_hooks` is true, so a kind that
+    seeds no settings-scoped hooks passes `None` rather than assembling a
+    settings structure it does not have.
+    """
     if project_root is not None:
         # Project skills are the one endpoint surface the old _walk_project_skill_dirs
         # filtered by the project root's .gitignore (e.g. skills under an ignored
@@ -468,7 +525,7 @@ def _seed_endpoint(
         )
         # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
         # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
-        # <project>/.claude/skills/ are discovered — parity with the old
+        # <project>/<config_dir>/skills/ are discovered — parity with the old
         # _walk_project_skill_dirs path that called _walk_skill_dir (iterdir-based)
         # before iter_unignored_files. _add_child dedup collapses non-symlink dupes.
         # stamp_provenance matches _parse_direct_skill, which both old project-skill
@@ -476,14 +533,21 @@ def _seed_endpoint(
         _add_skills_from_dir(
             graph,
             target,
-            project_root / ".claude" / "skills",
+            project_root / surface.project_config_dir / surface.project_skills_subdir,
             normalize=normalize,
             project_root=project_root,
             stamp_provenance=True,
         )
 
-    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
-    _seed_direct_components(graph, target, install_root, project_root, by_scope, normalize)
+    _seed_direct_components(
+        graph,
+        target,
+        install_root,
+        project_root,
+        by_scope,
+        normalize,
+        surface=surface,
+    )
 
 
 def _seed_active_plugins(
@@ -512,7 +576,7 @@ def _seed_active_plugins(
             warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
             if warnings is not None:
-                warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
+                record_gap(warnings, f"plugin {plugin_key}: no valid install entries; skipping")
             continue
         scope = claude_install._enabling_scope(plugin_key, layers, "endpoint")
         entry, index, warning = claude_install._select_install_entry(entries, scope)
@@ -564,12 +628,14 @@ def _seed_active_plugins(
         install_path = entry.get("installPath")
         if not isinstance(install_path, str) or not install_path:
             if warnings is not None:
-                warnings.append(f"plugin {plugin_key}: missing installPath; skipping contents")
+                record_gap(warnings, f"plugin {plugin_key}: missing installPath; skipping contents")
             continue
         install_dir = Path(install_path)
         if not install_dir.is_dir():
             if warnings is not None:
-                warnings.append(f"plugin {plugin_key}: installPath {install_path!r} is unavailable")
+                record_gap(
+                    warnings, f"plugin {plugin_key}: installPath {install_path!r} is unavailable"
+                )
             continue
         # Reuse the repo-mode plugin descent for bundled skills + their deps,
         # but suppress the plugin's OWN root dep manifests: those come from
@@ -601,6 +667,13 @@ def _seed_remote_mcps(
     normalize: SourceNormalizer,
 ) -> None:
     scope_to_settings_path = {
+        # An administrator's system-wide policy. It can declare `mcpServers`
+        # and `hooks`, so skipping it reported an MDM-managed endpoint's
+        # composition as complete while missing components it genuinely has.
+        # Provenance points at the base file even when a `managed-settings.d`
+        # drop-in supplied the value — the scope is what identity keys on, and
+        # the merged layer has one representative path.
+        "managed": default_managed_dir() / "managed-settings.json",
         "user": install_root / "settings.json",
         "project": (project_root / ".claude" / "settings.json")
         if project_root is not None
@@ -610,8 +683,6 @@ def _seed_remote_mcps(
         else None,
     }
     for scope in SCOPE_PRECEDENCE:
-        if scope == "managed":
-            continue
         settings_path = scope_to_settings_path.get(scope)
         if settings_path is None:
             continue
@@ -620,7 +691,7 @@ def _seed_remote_mcps(
             continue
         mcp_servers = scope_data["mcpServers"]
         if not isinstance(mcp_servers, dict):
-            graph.warnings.append(f"could not parse {settings_path}: mcpServers must be an object")
+            graph.record_gap(f"could not parse {settings_path}: mcpServers must be an object")
             continue
         try:
             refs = mcp_json.parse_mcp_servers(
@@ -630,7 +701,7 @@ def _seed_remote_mcps(
                 strict=True,
             )
         except ValueError as exc:
-            graph.warnings.append(f"could not parse {settings_path}: {exc}")
+            graph.record_gap(f"could not parse {settings_path}: {exc}")
             continue
         for ref in refs:
             if _component_type(ref) != "mcp_server":
@@ -659,8 +730,10 @@ def _seed_direct_components(
     target: Node,
     install_root: Path,
     project_root: Path | None,
-    by_scope: dict,
+    by_scope: dict | None,
     normalize: SourceNormalizer,
+    *,
+    surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
 ) -> None:
     """Seed the remaining `_walk_direct_components` surfaces as target children.
 
@@ -681,47 +754,57 @@ def _seed_direct_components(
     # Install-root direct skills: descend into each skill dir so its dep
     # manifests become package children of the skill node (parity with
     # `_add_skill_node` used for project skills and plugin-bundled skills).
-    _add_direct_endpoint_skills(graph, target, install_root / "skills", normalize, project_root)
+    if surface.direct_skills_dir is not None:
+        _add_direct_endpoint_skills(
+            graph, target, install_root / surface.direct_skills_dir, normalize, project_root
+        )
 
     # Personal commands/agents: per-file parse so agent frontmatter
     # mcpServers/hooks attach under the agent node, not the target (parity with
-    # the `.md` branch of `_add_repo_standalone_components`).
-    _add_endpoint_command_agents(
-        graph, target, install_root / "commands", normalize, kind="command"
-    )
-    _add_endpoint_command_agents(graph, target, install_root / "agents", normalize, kind="agent")
+    # the `.md` branch of `_add_repo_standalone_components`). A kind whose
+    # agents are not markdown supplies no dirs here and seeds them itself —
+    # the parser choice is not a name this descriptor could carry.
+    for dirname, kind in surface.direct_command_agent_dirs:
+        _add_endpoint_command_agents(graph, target, install_root / dirname, normalize, kind=kind)
 
-    # Project commands/agents under `.claude/`.
-    if project_root is not None:
-        _add_endpoint_command_agents(
-            graph,
-            target,
-            project_root / ".claude" / "commands",
-            normalize,
-            kind="command",
-        )
-        _add_endpoint_command_agents(
-            graph,
-            target,
-            project_root / ".claude" / "agents",
-            normalize,
-            kind="agent",
-        )
+    # Project commands/agents under the kind's project config dir.
+    if project_root is not None and surface.seeds_project_command_agents:
+        for dirname, kind in surface.direct_command_agent_dirs:
+            _add_endpoint_command_agents(
+                graph,
+                target,
+                project_root / surface.project_config_dir / dirname,
+                normalize,
+                kind=kind,
+            )
 
     # Settings-scoped hooks, per scope (no cross-scope merging — parity with
     # `_walk_direct_components`). Hooks are leaf children of the target.
+    #
+    # `seeds_hooks` is an absence, not a switch: a kind that declares hooks in
+    # a repo rather than at its endpoint has no settings-scoped hook surface at
+    # all, so there is nothing here to parameterise differently. `by_scope` is
+    # only read past this gate, which is what lets such a kind pass `None`.
+    if not surface.seeds_hooks:
+        return
+    by_scope = by_scope or {}
     scope_to_settings_path = {
+        # An administrator's system-wide policy. It can declare `mcpServers`
+        # and `hooks`, so skipping it reported an MDM-managed endpoint's
+        # composition as complete while missing components it genuinely has.
+        # Provenance points at the base file even when a `managed-settings.d`
+        # drop-in supplied the value — the scope is what identity keys on, and
+        # the merged layer has one representative path.
+        "managed": default_managed_dir() / "managed-settings.json",
         "user": install_root / "settings.json",
-        "project": (project_root / ".claude" / "settings.json")
+        "project": (project_root / surface.project_config_dir / "settings.json")
         if project_root is not None
         else None,
-        "local": (project_root / ".claude" / "settings.local.json")
+        "local": (project_root / surface.project_config_dir / "settings.local.json")
         if project_root is not None
         else None,
     }
     for scope in SCOPE_PRECEDENCE:
-        if scope == "managed":
-            continue
         settings_path = scope_to_settings_path.get(scope)
         if settings_path is None:
             continue
@@ -733,7 +816,7 @@ def _seed_direct_components(
                 settings_path, scope_data["hooks"], scope=scope, strict=True
             )
         except ValueError as exc:
-            graph.warnings.append(f"could not parse {settings_path}: {exc}")
+            graph.record_gap(f"could not parse {settings_path}: {exc}")
             continue
         for ref in hook_refs:
             component_type = _component_type(ref)
@@ -799,7 +882,7 @@ def _add_endpoint_command_agents(
                 md_path, kind=kind, scope_owner=None, strict=kind == "agent"
             )
         except Exception as exc:
-            graph.warnings.append(f"could not parse agent definition {md_path}: {exc}")
+            graph.record_gap(f"could not parse agent definition {md_path}: {exc}")
             refs = []
         if not refs:
             continue
@@ -1484,7 +1567,7 @@ def _safe_parse(graph: Graph, parse, manifest: Path) -> list[ComponentRef]:
     try:
         return parse(manifest)
     except Exception as exc:
-        graph.warnings.append(f"could not parse {manifest}: {exc}")
+        graph.record_gap(f"could not parse {manifest}: {exc}")
         return []
 
 
@@ -1873,15 +1956,15 @@ def _plugin_manifest_data(
         return {}
     manifest = _resolve_plugin_manifest(plugin_root, surface, eval_root=eval_root, spec=spec)
     if not manifest.is_file():
-        graph.warnings.append(f"could not parse {manifest}: file is unavailable")
+        graph.record_gap(f"could not parse {manifest}: file is unavailable")
         return {}
     try:
         data = json.loads(manifest.read_text())
     except (OSError, ValueError, UnicodeDecodeError) as exc:
-        graph.warnings.append(f"could not parse {manifest}: {exc}")
+        graph.record_gap(f"could not parse {manifest}: {exc}")
         return {}
     if not isinstance(data, dict):
-        graph.warnings.append(f"plugin manifest {manifest} must contain an object")
+        graph.record_gap(f"plugin manifest {manifest} must contain an object")
         return {}
     return data
 
@@ -1902,3 +1985,493 @@ safe_parse = _safe_parse
 same_path = _same_path
 resolve_plugin_format = _resolve_plugin_format
 plugin_manifest_path = _plugin_manifest_path
+
+
+# --- Codex composition (plan 043, ADR-0055/0057) ---------------------------
+#
+# Codex's repo surface is expressible in ADR-0053's existing `RepoSurface`, so
+# repo mode reuses `descend` rather than forking a walker — the parameterization
+# working as intended for a third kind. Two surfaces sit outside the descriptor
+# and are added alongside the walk rather than by widening it:
+#
+# - `<project>/.codex/hooks.json`. Claude Code has no repo-mode standalone hooks
+#   surface (its own spec says so) and Cursor deferred one, so `RepoSurface`
+#   has no field to name it. One kind needing it is not yet evidence the
+#   descriptor is wrong; a second would be.
+# - MCP servers, which live inside `.codex/config.toml` as one TOML table among
+#   four. `scoped_mcp_rels` names a path but assumes an MCP-shaped manifest;
+#   Codex's is a config file that happens to carry servers.
+
+
+def _add_codex_declared_config_mcps(
+    graph: Graph,
+    target: Node,
+    scan_root: Path,
+    normalize: SourceNormalizer,
+    *,
+    include_gitignored: bool,
+    root_spec: GitIgnoreSpec | None,
+) -> None:
+    """MCP servers from every `.codex/config.toml` in the tree."""
+    for config_path in sorted(scan_root.rglob(".codex/config.toml")):
+        if not include_gitignored and _is_ignored_under(config_path, scan_root, root_spec):
+            continue
+        refs = _safe_parse(graph, codex_config.parse, config_path)
+        for ref in refs:
+            node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+            _add_child(graph, target, node)
+
+
+def _add_codex_declared_hooks(
+    graph: Graph,
+    target: Node,
+    scan_root: Path,
+    normalize: SourceNormalizer,
+    *,
+    include_gitignored: bool,
+    root_spec: GitIgnoreSpec | None,
+) -> None:
+    """Standalone `.codex/hooks.json`, project scope.
+
+    The envelope and event names are Claude Code's — PascalCase, same shape —
+    so `hooks_json` parses it with no Codex-specific handling.
+    """
+    for hooks_path in sorted(scan_root.rglob(".codex/hooks.json")):
+        if not include_gitignored and _is_ignored_under(hooks_path, scan_root, root_spec):
+            continue
+        refs = _safe_parse(
+            graph,
+            lambda path: hooks_json.parse_standalone_hooks(path, scope="project", strict=True),
+            hooks_path,
+        )
+        for ref in refs:
+            component_type = _component_type(ref)
+            if not isinstance(component_type, str):
+                continue
+            node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+            _add_child(graph, target, node)
+
+
+def build_codex_declared_graph(
+    agent,
+    *,
+    include_gitignored: bool = False,
+    warnings: list[str] | None = None,
+) -> Graph:
+    """Repo-mode composition for one Codex `AgentInstance`.
+
+    `agent` is duck-typed rather than imported, so this module keeps ADR-0044's
+    one-way dependency: `agent_kinds` may import `graph_build`, never the
+    reverse.
+    """
+    scan_root = Path(agent.scan_root)
+    root = Node(key=agent.bom_ref, kind="target", ref=None)
+    graph = Graph(nodes={root.key: root})
+    normalize = _make_normalizer("repo", scan_root, scan_root, None, agent.root_label)
+    root_spec = None if include_gitignored else load_gitignore_spec(scan_root)
+
+    descend(
+        graph,
+        root,
+        scan_root,
+        normalize,
+        include_gitignored=include_gitignored,
+        root_dir=scan_root,
+        root_spec=root_spec,
+        surface=CODEX_SURFACE,
+    )
+    _add_codex_declared_config_mcps(
+        graph,
+        root,
+        scan_root,
+        normalize,
+        include_gitignored=include_gitignored,
+        root_spec=root_spec,
+    )
+    _add_codex_declared_hooks(
+        graph,
+        root,
+        scan_root,
+        normalize,
+        include_gitignored=include_gitignored,
+        root_spec=root_spec,
+    )
+
+    return finalize_graph(
+        graph,
+        scan_root,
+        normalize,
+        include_gitignored=include_gitignored,
+        attach_include_gitignored=include_gitignored,
+        root_dir=scan_root,
+        root_spec=root_spec,
+        warnings=warnings,
+    )
+
+
+# Codex marks its vendor-owned built-in skill root with this zero-byte file.
+# Excluding by marker rather than by directory name is deliberate: Cursor
+# filters the same six built-ins by a hardcoded name list its own spec flags as
+# drift-prone, and a name list stops working the moment the directory is
+# renamed.
+_CODEX_SYSTEM_SKILLS_MARKER = ".codex-system-skills.marker"
+
+
+def _codex_system_skill_roots(config_root: Path) -> list[Path]:
+    """Directories under `<root>/skills/` that carry the built-in marker."""
+    skills_dir = config_root / "skills"
+    if not skills_dir.is_dir():
+        return []
+    roots: list[Path] = []
+    try:
+        entries = sorted(skills_dir.iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.is_dir() and (entry / _CODEX_SYSTEM_SKILLS_MARKER).exists():
+            roots.append(entry.resolve())
+    return roots
+
+
+def _seed_codex_subagents(
+    graph: Graph, target: Node, config_root: Path, normalize: SourceNormalizer
+) -> None:
+    """`<root>/agents/*.toml`, user scope only.
+
+    Forked from the shared markdown command/agent walk because the format
+    differs, not the location — `EndpointSurface` names directories, and which
+    parser reads a file is not a directory name.
+    """
+    agents_dir = config_root / "agents"
+    if not agents_dir.is_dir():
+        return
+    for path in sorted(agents_dir.glob("*.toml")):
+        for ref in _safe_parse(graph, codex_agent.parse, path):
+            node = Node(key=occurrence_key(ref, normalize), kind="agent", ref=ref)
+            _add_child(graph, target, node)
+
+
+def _seed_codex_mcp_servers(
+    graph: Graph,
+    target: Node,
+    config_root: Path,
+    project_root: Path | None,
+    normalize: SourceNormalizer,
+    *,
+    warnings: list[str] | None = None,
+) -> None:
+    """Codex's MCP servers, from `config.toml` rather than JSON settings layers.
+
+    Forked from `_seed_remote_mcps` (ADR-0057): that function reads Claude
+    Code's settings layers and `.mcp.json`; Codex's servers are a TOML table in
+    one config file, with a project file layered over the user one. Project
+    entries win, matching `_seed_endpoint`'s own precedence rule.
+    """
+    # Base and project layer by precedence: a same-named project server
+    # replaces the user one, matching `_seed_endpoint`'s own rule.
+    layered = [config_root / "config.toml"]
+    if project_root is not None:
+        layered.append(project_root / ".codex" / "config.toml")
+
+    by_name: dict[str, ComponentRef] = {}
+    for source in layered:
+        if not source.is_file():
+            continue
+        for ref in _safe_parse(graph, codex_config.parse, source):
+            name = _codex_server_name(ref)
+            if name is not None:
+                by_name[name] = ref
+
+    for ref in by_name.values():
+        node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+        _add_child(graph, target, node)
+
+    _seed_codex_profile_mcp_servers(graph, target, config_root, normalize)
+
+
+def _codex_server_name(ref: ComponentRef) -> str | None:
+    component_path = (ref.extra or {}).get("component_path") or [{}]
+    name = component_path[0].get("name")
+    return name if isinstance(name, str) else None
+
+
+def _seed_codex_profile_mcp_servers(
+    graph: Graph, target: Node, config_root: Path, normalize: SourceNormalizer
+) -> None:
+    """MCP servers declared in a config profile, `<root>/<name>.config.toml`.
+
+    `codex -p <name>` layers that file over the base config, and it carries the
+    same schema — verified by running `codex -p work mcp list` against a
+    fixture root and seeing the profile's server listed alongside the base
+    one. A scan that read only `config.toml` would miss every server a profile
+    adds, which is a component gap, not a settings one.
+
+    Every profile is read, not just an active one: which profile is selected is
+    an invocation-time flag that leaves no trace on disk. Reporting the union
+    over-approximates, which is the safe direction for a security tool and the
+    direction this project takes elsewhere.
+
+    Profile servers are additive occurrences rather than merged by name. Two
+    profiles declaring the same server differently are two things the agent
+    could run, and collapsing them to one would hide whichever lost.
+    """
+    for source in sorted(config_root.glob("*.config.toml")):
+        for ref in _safe_parse(graph, codex_config.parse, source):
+            node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+            _add_child(graph, target, node)
+
+
+def _seed_cache_plugins(
+    graph: Graph,
+    target: Node,
+    config_root: Path,
+    normalize: SourceNormalizer,
+    *,
+    warnings: list[str] | None = None,
+) -> None:
+    """Codex's installed plugins, walking the **cache** as the traversal root.
+
+    Forked from `_seed_active_plugins` (ADR-0057), and the walk order is the
+    reason. Claude Code iterates its enable map and emits a node only for a
+    `True` entry, so a disabled plugin is invisible to it. ADR-0055 requires
+    Codex inventory everything installed and record `enabled` alongside — which
+    is only expressible by walking the cache first and consulting the enable map
+    second. That is a different traversal over a different source, not the same
+    procedure with different names.
+
+    Every mismatch a real endpoint can show is reconciled explicitly rather
+    than silently resolved; see the warnings below.
+    """
+    cache_root = config_root / "plugins" / "cache"
+    config_path = config_root / "config.toml"
+    config = None
+    if config_path.is_file():
+        try:
+            config = codex_config.load_config(config_path)
+        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+            graph.record_gap(f"could not parse {config_path}: {exc}")
+    plugins = config.plugins if config is not None else {}
+    marketplaces = config.marketplaces if config is not None else {}
+
+    seen: set[tuple[str | None, str]] = set()
+    if cache_root.is_dir():
+        for marketplace_dir in sorted(p for p in cache_root.iterdir() if p.is_dir()):
+            marketplace = marketplace_dir.name
+            for plugin_dir in sorted(p for p in marketplace_dir.iterdir() if p.is_dir()):
+                name = plugin_dir.name
+                for version_dir in sorted(p for p in plugin_dir.iterdir() if p.is_dir()):
+                    seen.add((marketplace, name))
+                    _realize_codex_plugin(
+                        graph,
+                        target,
+                        version_dir,
+                        name=name,
+                        marketplace=marketplace,
+                        version=version_dir.name,
+                        plugins=plugins,
+                        marketplaces=marketplaces,
+                        normalize=normalize,
+                    )
+
+    # An enable-map entry naming a plugin with nothing on disk is not a node —
+    # there is no artifact to inventory — but it is a real discrepancy.
+    for (marketplace, name), entry in sorted(
+        plugins.items(), key=lambda kv: (kv[0][0] or "", kv[0][1])
+    ):
+        if (marketplace, name) not in seen:
+            key = f"{name}@{marketplace}" if marketplace else name
+            graph.record_gap(f"plugin {key} is configured but missing from plugins/cache")
+        _ = entry
+
+    _record_codex_rules_coverage(graph, config_root)
+
+
+# Codex names a locally-sourced bundle's cache directory `local` instead of a
+# version — the same word Claude Code's install lockfile uses for
+# `scope: "local"`. It is a cache-layout marker, so emitting it as a version
+# would assert one the plugin does not have, and advisory matching on the
+# literal string "local" is meaningless.
+_CODEX_NON_VERSION_SEGMENTS = frozenset({"local"})
+
+
+def _codex_plugin_version(version_dir: Path, surface: RepoSurface) -> str | None:
+    """The plugin's version: the manifest's own field, else the cache segment.
+
+    The manifest is the authority — the directory name is where the cache
+    happened to put the bundle. Falling back to the segment keeps versions for
+    the ordinary `<name>/<version>/` layout, and dropping the known layout
+    markers keeps a path artifact out of the BOM.
+    """
+    fmt = _resolve_plugin_format(version_dir, surface)
+    manifest = _plugin_manifest_path(version_dir, fmt) if fmt is not None else None
+    if manifest is not None and manifest.is_file():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            data = None
+        if isinstance(data, dict):
+            declared = data.get("version")
+            if isinstance(declared, str) and declared:
+                return declared
+    segment = version_dir.name
+    return None if segment in _CODEX_NON_VERSION_SEGMENTS else segment
+
+
+def _realize_codex_plugin(
+    graph: Graph,
+    target: Node,
+    version_dir: Path,
+    *,
+    name: str,
+    marketplace: str,
+    version: str,
+    plugins: dict,
+    marketplaces: dict,
+    normalize: SourceNormalizer,
+) -> None:
+    entry = plugins.get((marketplace, name))
+    if entry is None:
+        graph.warnings.append(f"plugin {name}@{marketplace} is cached but has no enable-map record")
+    enabled = True if entry is None else entry.enabled
+
+    # A cache-path segment is NOT provenance. Marketplace-qualified identity is
+    # granted only when `[marketplaces.*]` records the registry the bundle was
+    # resolved from; otherwise the segment is just a directory name someone
+    # could have created, and minting `plugin/{segment}/{name}` from it would
+    # back a real cross-BOM identity with nothing.
+    registered = marketplaces.get(marketplace)
+    extra: dict = {
+        "component_type": "plugin",
+        "component_path": [{"type": "plugin", "name": name}],
+        "declared_by": {"kind": "manifest", "path": str(version_dir)},
+        "installPath": str(version_dir),
+        "enabled": enabled,
+    }
+    if registered is not None:
+        extra["marketplace"] = marketplace
+        if registered.last_revision:
+            extra["last_revision"] = registered.last_revision
+        if registered.source:
+            extra["marketplace_source"] = registered.source
+        component_identity = f"plugin/{marketplace}/{name}"
+    else:
+        graph.warnings.append(
+            f"plugin {name}@{marketplace} has no [marketplaces.{marketplace}] entry; "
+            "identity is occurrence-local"
+        )
+        component_identity = f"plugin/{name}"
+
+    self_ref = ComponentRef(
+        name=name,
+        version=_codex_plugin_version(version_dir, CODEX_SURFACE),
+        component_identity=component_identity,
+        source_manifest=str(version_dir),
+        source_locator="$",
+        extra=extra,
+    )
+    plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
+    _add_child(graph, target, plugin_node)
+
+    # Bundled content: the ordered manifest candidate list and folder discovery
+    # are already `RepoSurface`-parameterised, so this reuses the repo-mode
+    # plugin descent wholesale. Codex has no tier-2 install lockfile, so unlike
+    # Claude Code the plugin's own root dep manifests are emitted here rather
+    # than being suppressed in favour of a lockfile walk.
+    descend(graph, plugin_node, version_dir, normalize, surface=CODEX_SURFACE)
+
+
+def _record_codex_rules_coverage(graph: Graph, config_root: Path) -> None:
+    """Surface `.rules` parse gaps during composition, not only at posture time.
+
+    The approval DSL declares no components, so it produces no ref and would
+    otherwise be invisible to coverage. Appending to the graph's warnings is
+    enough for all three commands, because `scan endpoint`, `bom endpoint`, and
+    `remote sync endpoint` already fold that list into `evidence_gaps`.
+    """
+    rules_dir = config_root / "rules"
+    if not rules_dir.is_dir():
+        return
+    for path in sorted(rules_dir.glob("*.rules")):
+        parsed = codex_rules.parse_rules(path)
+        if parsed.unparsed_count:
+            graph.warnings.append(f"{path}: {parsed.unparsed_count} unparsed rule(s)")
+
+
+def build_codex_installed_graph(
+    config_root: Path,
+    project_root: Path | None = None,
+    *,
+    root_key: str = _TARGET_KEY,
+    root_label: str = "codex",
+    include_gitignored: bool = False,
+    warnings: list[str] | None = None,
+) -> Graph:
+    """Endpoint-mode composition for Codex, owning the whole graph lifecycle.
+
+    Deliberately does **not** call `build_rooted_graph` or `_seed_endpoint`.
+    Both would run Claude Code's own plugin and remote-MCP acquisition against
+    Codex's config root, producing Claude-shaped nodes on a Codex graph
+    (ADR-0057). Only the two literal-substitution branches are shared, through
+    `_seed_shared_endpoint_surfaces`.
+
+    `finalize_graph` runs exactly once, after every seed, so MCP
+    launch-dependency attachment sees Codex's own server refs and every seed's
+    warnings reach the caller through the one copy it already does.
+    """
+    root = Node(key=root_key, kind="target", ref=None)
+    graph = Graph(nodes={root.key: root})
+    normalize = _make_normalizer("endpoint", config_root, config_root, project_root, root_label)
+
+    _seed_shared_endpoint_surfaces(
+        graph,
+        root,
+        config_root,
+        project_root,
+        normalize,
+        surface=CODEX_ENDPOINT,
+        by_scope=None,
+    )
+    _seed_codex_subagents(graph, root, config_root, normalize)
+    _seed_cache_plugins(graph, root, config_root, normalize, warnings=graph.warnings)
+    _seed_codex_mcp_servers(
+        graph, root, config_root, project_root, normalize, warnings=graph.warnings
+    )
+    _prune_codex_system_skills(graph, config_root)
+
+    return finalize_graph(
+        graph,
+        config_root,
+        normalize,
+        project_root=project_root,
+        include_gitignored=include_gitignored,
+        attach_include_gitignored=True,
+        root_dir=None,
+        root_spec=None,
+        warnings=warnings,
+    )
+
+
+def _prune_codex_system_skills(graph: Graph, config_root: Path) -> None:
+    """Drop any skill sourced from a marker-bearing built-in root.
+
+    The shared direct-skill walk already skips dot-prefixed subdirectories, so
+    today's `.system` is excluded incidentally. This makes the exclusion rest on
+    the marker instead, so a rename cannot silently re-admit vendor content.
+    """
+    roots = _codex_system_skill_roots(config_root)
+    if not roots:
+        return
+    doomed = set()
+    for key, node in graph.nodes.items():
+        if node.ref is None or not node.ref.source_manifest:
+            continue
+        try:
+            resolved = Path(node.ref.source_manifest).resolve()
+        except OSError:
+            continue
+        if any(resolved.is_relative_to(root) for root in roots):
+            doomed.add(key)
+    for key in doomed:
+        graph.nodes.pop(key, None)
+    if doomed:
+        graph.edges = [e for e in graph.edges if e.parent not in doomed and e.child not in doomed]

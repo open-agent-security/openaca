@@ -684,3 +684,69 @@ def test_cursor_surface_beside_a_realized_plugin_is_still_evidence(tmp_path):
     (own / "mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
 
     assert cursor.declared_evidence(tmp_path) is not None
+
+
+# --- Only component gaps lower coverage ------------------------------------
+
+
+def test_a_note_does_not_lower_coverage():
+    """`composition_coverage` qualifies the COMPONENT graph. A note about a
+    component we did read — its marketplace is unregistered, its enable value
+    was malformed and defaulted — says nothing about whether we identified it."""
+    from tools.graph import WarningLog
+    from tools.scan import _component_gap_count
+
+    log = WarningLog()
+    log.append("plugin x@y has no [marketplaces.y] entry; identity is occurrence-local")
+    log.append("plugin x@y is cached but has no enable-map record")
+
+    assert _component_gap_count(log) == 0
+
+
+def test_a_component_gap_lowers_coverage():
+    from tools.graph import WarningLog
+    from tools.scan import _component_gap_count
+
+    log = WarningLog()
+    log.gap("could not parse settings.json: bad json")
+
+    assert _component_gap_count(log) == 1
+
+
+def test_gaps_survive_being_absorbed_by_another_log():
+    """`finalize_graph` copies a graph's warnings into the caller's list; the
+    gap distinction has to survive that hop or coverage reads zero."""
+    from tools.graph import WarningLog
+
+    inner = WarningLog()
+    inner.append("a note")
+    inner.gap("a gap")
+    outer = WarningLog()
+
+    outer.absorb(inner)
+
+    assert list(outer) == ["a note", "a gap"]
+    assert outer.gaps == ["a gap"]
+
+
+def test_record_gap_degrades_to_a_note_on_a_plain_list():
+    """Parser sites receive a plain `list[str]` and have no Graph in scope.
+    Under the opt-in rule an unclassifiable warning is a note."""
+    from tools.graph import record_gap
+
+    plain: list[str] = []
+    record_gap(plain, "could not parse x")
+
+    assert plain == ["could not parse x"]
+
+
+def test_every_warning_still_reaches_the_user():
+    """Only coverage narrows — the visible warning output is unchanged."""
+    from tools.graph import Graph, Node
+
+    g = Graph(nodes={"t": Node(key="t", kind="target", ref=None)})
+    g.warnings.append("a note")
+    g.record_gap("a gap")
+
+    assert list(g.warnings) == ["a note", "a gap"]
+    assert g.warnings.gaps == ["a gap"]

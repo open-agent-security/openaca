@@ -101,7 +101,7 @@ def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
     # `_DECLARED_EVIDENCE_PATTERNS`), so nothing bundled inside it can be.
     from tools.graph_build_cursor import is_owned_by_realized_plugin
 
-    if is_owned_by_realized_plugin(path, realized_roots):
+    if is_owned_by_realized_plugin(path, realized_roots, CURSOR_SURFACE):
         return False
     if matches_evidence(rel, _DECLARED_EVIDENCE_PATTERNS):
         return True

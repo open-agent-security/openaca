@@ -53,7 +53,14 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
         return None, [ref]
 
     def fake_run_posture_rules(
-        refs, manifests, settings_manifests, *, allowed_rules=None, agent_kind=None, agent_id=None
+        refs,
+        manifests,
+        settings_manifests,
+        *,
+        allowed_rules=None,
+        agent_kind=None,
+        agent_id=None,
+        extra_manifests=None,
     ):
         calls.append(("run_posture_rules", refs))
         assert manifests == [("mcp", {})]
@@ -143,7 +150,7 @@ def test_composition_coverage_reflects_graph_warnings(tmp_path, monkeypatch):
     coverage the local scan already downgrades."""
     import tools.agent_kinds as agent_kinds
     from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
-    from tools.graph import Graph, Node
+    from tools.graph import Graph, Node, record_gap
 
     def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
         return [
@@ -159,7 +166,10 @@ def test_composition_coverage_reflects_graph_warnings(tmp_path, monkeypatch):
 
     def compose(agent, *, include_gitignored=False, warnings=None) -> Graph:
         if warnings is not None:
-            warnings.append("unreadable manifest: bad/plugin.json")
+            # A component gap, not a note: the manifest's components went
+            # unread. Real composers mark this the same way, and only gaps
+            # lower `composition_coverage`.
+            record_gap(warnings, "unreadable manifest: bad/plugin.json")
         root = Node(key=agent.bom_ref, kind="target", ref=None)
         return Graph(nodes={root.key: root})
 

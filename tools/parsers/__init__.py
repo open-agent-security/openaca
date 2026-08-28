@@ -16,6 +16,8 @@ from tools.parsers import (
     claude_plugin,
     claude_settings,
     claude_skill,
+    codex_config,
+    hooks_json,
     mcp_json,
     package_json,
     package_lock_json,
@@ -147,6 +149,20 @@ def _parse_repo_agent_plugins(path: Path) -> list[ComponentRef]:
     return agent_plugins.parse(path, strict=True)
 
 
+def _parse_repo_codex_config(path: Path) -> list[ComponentRef]:
+    # Malformed TOML raises out of `codex_config.parse` regardless of a strict
+    # flag, so a broken `config.toml` registers as `parse_failed` and reaches
+    # `evidence_gaps` rather than counting as a clean, empty source unit.
+    return codex_config.parse(path, strict=True)
+
+
+def _parse_repo_codex_hooks(path: Path) -> list[ComponentRef]:
+    # `strict=True` mirrors what composition does: `_add_codex_declared_hooks`
+    # parses strictly, so a malformed hooks file must fail here too or the
+    # count and the graph disagree about the same file.
+    return hooks_json.parse_standalone_hooks(path, scope="project", strict=True)
+
+
 def plugin_owned_roots(
     root: Path, surface: RepoSurface | None, *, include_gitignored: bool
 ) -> list[Path]:
@@ -172,7 +188,11 @@ def plugin_owned_roots(
 
 
 def _entry_claims(
-    path: Path, root: Path, entry: ManifestPattern, owned_roots: Sequence[Path]
+    path: Path,
+    root: Path,
+    entry: ManifestPattern,
+    owned_roots: Sequence[Path],
+    surface: RepoSurface | None = None,
 ) -> bool:
     """Whether `entry` is the registry route for `path`.
 
@@ -189,10 +209,10 @@ def _entry_claims(
         return False
     if entry.guard is not None and not entry.guard(path):
         return False
-    if owned_roots:
+    if owned_roots and surface is not None:
         from tools.graph_build_cursor import is_owned_by_realized_plugin
 
-        if is_owned_by_realized_plugin(path, list(owned_roots)):
+        if is_owned_by_realized_plugin(path, list(owned_roots), surface):
             return False
     return True
 
@@ -245,6 +265,34 @@ CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ManifestPattern(
         "plugin.json", _parse_repo_agent_plugins, agent_plugins.is_agent_plugins_manifest
     ),
+]
+
+
+# Codex's manifest surface. Deliberately NO bare `mcp.json`/`.mcp.json`:
+# Codex's MCP servers are declared INSIDE `config.toml` as `[mcp_servers.*]`,
+# never as a standalone manifest, so a bare pattern here would claim files
+# Codex does not read and re-create the cross-format collision the
+# per-agent-graph model exists to prevent.
+#
+# There is also no commands surface, and no `**/.codex/agents/**` route:
+# `.codex/agents` has zero references in the audited binary, so a project
+# cannot declare a Codex subagent. Subagents are user-scope
+# `<root>/agents/*.toml`, which is endpoint state rather than repo content and
+# therefore not a repo-mode registry entry at all.
+CODEX_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("**/.codex/config.toml", _parse_repo_codex_config),
+    ManifestPattern("**/.codex/hooks.json", _parse_repo_codex_hooks),
+    # `**/SKILL.md`, not `*/SKILL.md`: `descend` walks Codex's skill roots
+    # recursively via `CODEX_SURFACE`, so counting only immediate children
+    # would undercount `source_unit_count` and leave a malformed nested skill
+    # unable to register a parse failure.
+    ManifestPattern("**/.codex/skills/**/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.codex-plugin/plugin.json", claude_plugin.parse),
+    # Codex's ordered candidate list includes Claude Code's manifest, so a
+    # bundle carrying only `.claude-plugin/plugin.json` still realizes in the
+    # Codex graph. Without this route its manifest never counts toward Codex's
+    # `source_unit_count` and a malformed one cannot contribute an evidence gap.
+    ManifestPattern("**/.claude-plugin/plugin.json", claude_plugin.parse),
 ]
 
 # Compat alias: today's flat registry, kept byte-identical in content so
@@ -370,7 +418,7 @@ def parse_repo_grouped(
     n_found = 0
     for path in iter_unignored_files(root, spec):
         for entry in normalized_registry:
-            if not _entry_claims(path, root, entry, owned_roots):
+            if not _entry_claims(path, root, entry, owned_roots, surface):
                 continue
             n_found += 1
             try:
@@ -428,7 +476,9 @@ def parse_repo_registry_counts(
         union_ok = True
         for key, entries in normalized.items():
             for entry in entries:
-                if not _entry_claims(path, root, entry, owned_by_key[key]):
+                if not _entry_claims(
+                    path, root, entry, owned_by_key[key], (surfaces or {}).get(key)
+                ):
                     continue
                 per_key_found[key] += 1
                 try:

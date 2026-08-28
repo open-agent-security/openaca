@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {"demo@mkt": true},
+  "mcpServers": {
+    "remote-svc": {"url": "https://example.test/mcp/"},
+    "stdio-svc": {"command": "npx", "args": ["@scope/tool@1.2.3"]}
+  },
+  "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}
+}

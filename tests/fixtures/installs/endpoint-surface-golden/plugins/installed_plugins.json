@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "plugins": {
+    "demo@mkt": [
+      {
+        "scope": "user",
+        "installPath": "/Users/gprasanth/Projects/openaca/tests/fixtures/installs/endpoint-surface-golden/plugins/cache/mkt/demo/1.0.0",
+        "version": "1.0.0",
+        "gitCommitSha": "abc123def456"
+      }
+    ]
+  }
+}

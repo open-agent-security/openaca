@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from tools.component_ref import ComponentRef
+from tools.graph import record_gap
 from tools.marketplace import key as marketplace_key
 from tools.parsers import (
     bun_lock,
@@ -120,20 +121,20 @@ def _load_plugins_map(
     try:
         lockfile = json.loads(lockfile_path.read_text())
     except json.JSONDecodeError as exc:
-        warnings.append(f"installed_plugins.json malformed: {exc}")
+        record_gap(warnings, f"installed_plugins.json malformed: {exc}")
         return None, None, warnings
     except OSError as exc:
-        warnings.append(f"installed_plugins.json unreadable: {exc}")
+        record_gap(warnings, f"installed_plugins.json unreadable: {exc}")
         return None, None, warnings
     except UnicodeDecodeError as exc:
-        warnings.append(f"installed_plugins.json decode error: {exc}")
+        record_gap(warnings, f"installed_plugins.json decode error: {exc}")
         return None, None, warnings
     if not isinstance(lockfile, dict):
-        warnings.append("installed_plugins.json: expected an object at top level")
+        record_gap(warnings, "installed_plugins.json: expected an object at top level")
         return None, None, warnings
     plugins_map = lockfile.get("plugins") or {}
     if not isinstance(plugins_map, dict):
-        warnings.append("installed_plugins.json: 'plugins' value is not an object")
+        record_gap(warnings, "installed_plugins.json: 'plugins' value is not an object")
         return None, None, warnings
     return plugins_map, lockfile_path, warnings
 
@@ -159,7 +160,9 @@ def _walk_active_plugins(
             continue
         raw_entries = plugins_map.get(plugin_key)
         if not isinstance(raw_entries, list) or not raw_entries:
-            warnings.append(f"plugin {plugin_key} enabled but missing from installed_plugins.json")
+            record_gap(
+                warnings, f"plugin {plugin_key} enabled but missing from installed_plugins.json"
+            )
             continue
         # Preserve original lockfile-array indices when filtering out malformed
         # (non-dict) entries; source_locator must reference the real slot in
@@ -171,7 +174,7 @@ def _walk_active_plugins(
         if len(entries) != len(raw_entries):
             warnings.append(f"plugin {plugin_key}: contains an invalid install entry")
         if not entries:
-            warnings.append(f"plugin {plugin_key}: no valid install entries; skipping")
+            record_gap(warnings, f"plugin {plugin_key}: no valid install entries; skipping")
             continue
 
         scope = _enabling_scope(plugin_key, layers, mode)
@@ -541,7 +544,7 @@ def _walk_plugin_implementation_deps(
             lock_refs = parser(lockfile, strict=strict)  # type: ignore[operator]
         except Exception as exc:
             if warnings is not None:
-                warnings.append(f"{lockfile}: failed to parse ({exc})")
+                record_gap(warnings, f"{lockfile}: failed to parse ({exc})")
             continue
         for r in lock_refs:
             refs.append(replace(r, scope="agent-dependency"))
@@ -557,7 +560,7 @@ def _walk_plugin_implementation_deps(
             manifest_refs = parser(manifest, strict=strict)  # type: ignore[operator]
         except Exception as exc:
             if warnings is not None:
-                warnings.append(f"{manifest}: failed to parse ({exc})")
+                record_gap(warnings, f"{manifest}: failed to parse ({exc})")
             continue
         runtime_locators = _RUNTIME_MANIFEST_LOCATORS.get(ecosystem)
         for r in manifest_refs:

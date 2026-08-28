@@ -583,3 +583,96 @@ def test_registry_still_counts_a_cursor_surface_beside_a_realized_plugin(tmp_pat
     own_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
 
     assert _claimed_paths(tmp_path) == {manifest, own_mcp}
+
+
+# --- Codex registry (plan 043 Task 8) --------------------------------------
+
+
+def test_codex_registry_claims_its_own_surfaces():
+    from tools.parsers import CODEX_MANIFEST_REGISTRY
+
+    patterns = {e.pattern for e in CODEX_MANIFEST_REGISTRY}
+
+    assert patterns == {
+        "**/.codex/config.toml",
+        "**/.codex/hooks.json",
+        "**/.codex/skills/**/SKILL.md",
+        "**/.codex-plugin/plugin.json",
+        "**/.claude-plugin/plugin.json",
+    }
+
+
+def test_codex_registry_has_no_bare_mcp_pattern():
+    """Codex's MCP servers live INSIDE `config.toml` as `[mcp_servers.*]`,
+    never as a standalone manifest. A bare `mcp.json` route would claim files
+    Codex does not read and re-create the cross-format collision the
+    per-agent-graph model exists to prevent."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY
+
+    patterns = {e.pattern for e in CODEX_MANIFEST_REGISTRY}
+
+    assert "mcp.json" not in patterns
+    assert ".mcp.json" not in patterns
+    assert not any(p.endswith("/mcp.json") for p in patterns)
+
+
+def test_codex_registry_has_no_commands_or_project_agents_route():
+    """Codex has no commands surface, and `.codex/agents` has zero references
+    in the audited binary — subagents are user-scope endpoint state."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY
+
+    patterns = {e.pattern for e in CODEX_MANIFEST_REGISTRY}
+
+    assert not any("commands" in p for p in patterns)
+    assert not any("/agents/" in p for p in patterns)
+
+
+def test_codex_skill_counting_is_recursive(tmp_path):
+    """Counts must mirror what composition walks, or source_unit_count and the
+    graph disagree about the same tree."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_grouped
+    from tools.repo_surface import CODEX_SURFACE
+
+    nested = tmp_path / ".codex" / "skills" / "group" / "tool"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text("---\nname: tool\n---\nS\n", encoding="utf-8")
+
+    _, n_found = parse_repo_grouped(
+        tmp_path, registry=CODEX_MANIFEST_REGISTRY, surface=CODEX_SURFACE
+    )
+
+    assert n_found == 1
+
+
+def test_codex_registry_excludes_plugin_owned_content(tmp_path):
+    """Via the shared `_entry_claims` chokepoint and
+    `CODEX_SURFACE.excludes_plugin_owned_content`."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_grouped
+    from tools.repo_surface import CODEX_SURFACE
+
+    plugin_dir = tmp_path / ".codex-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+    fixture = tmp_path / "examples" / ".codex" / "skills" / "demo"
+    fixture.mkdir(parents=True)
+    (fixture / "SKILL.md").write_text("---\nname: demo\n---\nS\n", encoding="utf-8")
+
+    grouped, _ = parse_repo_grouped(
+        tmp_path, registry=CODEX_MANIFEST_REGISTRY, surface=CODEX_SURFACE
+    )
+
+    assert {p for p, _refs in grouped} == {plugin_dir / "plugin.json"}
+
+
+def test_a_malformed_codex_config_registers_a_parse_failure(tmp_path):
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_registry_counts
+    from tools.repo_surface import CODEX_SURFACE
+
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex" / "config.toml").write_text("{ not toml", encoding="utf-8")
+
+    per_key, _union = parse_repo_registry_counts(
+        tmp_path, {"codex": CODEX_MANIFEST_REGISTRY}, surfaces={"codex": CODEX_SURFACE}
+    )
+
+    assert per_key["codex"] == (1, 1)

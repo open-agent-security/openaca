@@ -133,7 +133,7 @@ def _detect_claude_plugin_manifest(data: dict) -> bool:
     return isinstance(data, dict)
 
 
-def _detect_cursor_native_manifest(data: dict) -> bool:
+def _detect_named_plugin_manifest(data: dict) -> bool:
     return isinstance(data.get("name"), str)
 
 
@@ -184,7 +184,7 @@ CLAUDE_CODE_SURFACE = RepoSurface(
 _CURSOR_PLUGIN_FORMAT = PluginFormat(
     manifest_dir=".cursor-plugin",
     manifest_filename="plugin.json",
-    detect=_detect_cursor_native_manifest,
+    detect=_detect_named_plugin_manifest,
     parse=claude_plugin.parse,
 )
 
@@ -197,6 +197,17 @@ _AGENT_PLUGINS_FORMAT = PluginFormat(
     manifest_filename="plugin.json",
     detect=_detect_agent_plugins_manifest,
     parse=agent_plugins.parse,
+)
+
+# Codex's own plugin format, `.codex-plugin/plugin.json`. Qualification is the
+# same `name`-is-a-string test Cursor's native format uses, and the manifest is
+# the same shape `claude_plugin.parse` already reads — Codex's bundles are
+# Claude-Code-shaped, which is the whole finding behind ADR-0055.
+_CODEX_PLUGIN_FORMAT = PluginFormat(
+    manifest_dir=".codex-plugin",
+    manifest_filename="plugin.json",
+    detect=_detect_named_plugin_manifest,
+    parse=claude_plugin.parse,
 )
 
 CURSOR_SURFACE = RepoSurface(
@@ -247,3 +258,53 @@ CURSOR_SURFACE = RepoSurface(
 # `agent_plugins.parse` instead of the `claude_plugin`-shaped plugin branch,
 # and to apply the "strictly below a realized native root" exclusion.
 AGENT_PLUGINS_FORMAT = _AGENT_PLUGINS_FORMAT
+
+
+CODEX_SURFACE = RepoSurface(
+    config_dir=".codex",
+    # Ordered candidate list per docs/specs/codex-agent-kind.md "Plugins":
+    # `.codex-plugin/plugin.json` first, then Claude Code's own manifest. The
+    # order is load-bearing, not cosmetic — a bundle carrying both has
+    # genuinely different content in each (on the audited endpoint the
+    # `.codex-plugin` manifest declares `skills`, `hooks`, and an `interface`
+    # block the `.claude-plugin` one lacks), and 4 of the endpoint's cached
+    # bundles carry ONLY Claude's, which is what proves the fallback live
+    # rather than vestigial. `CLAUDE_CODE_SURFACE`'s format object is reused
+    # verbatim so the two kinds can never disagree about what qualifies it.
+    plugin_formats=(
+        _CODEX_PLUGIN_FORMAT,
+        CLAUDE_CODE_SURFACE.plugin_formats[0],
+    ),
+    # Codex's bundles are Claude-Code-shaped: same `skills/`, same
+    # `hooks/hooks.json` with the same PascalCase event names, same `agents/`.
+    bundled=BundledLayout(
+        skills_dir="skills",
+        mcp_filenames=(".mcp.json", "mcp.json"),
+        hooks_filename="hooks/hooks.json",
+        commands_dir="commands",
+        agents_dir="agents",
+    ),
+    # Carried for dataclass completeness. Codex's settings-equivalent is
+    # `config.toml`, which `tools/parsers/codex_config.py` reads directly —
+    # it is not a JSON settings file this field could name.
+    settings_filename="config.toml",
+    project_skills_subdir="skills",
+    # Deliberately empty: Codex's MCP servers are declared INSIDE
+    # `config.toml` as `[mcp_servers.*]`, never as a standalone manifest. A
+    # bare `mcp.json` pattern here would claim files Codex does not read and
+    # recreate the cross-kind collision the per-agent-graph model prevents.
+    standalone_mcp_filenames=(),
+    scoped_mcp_rels=(),
+    # No commands surface. Both other kinds have one; Codex does not, and
+    # shipping a parser for it would report components no agent has.
+    command_agent_surfaces=(),
+    skill_config_dirs=(".codex",),
+    # `<root>/skills/.system/` IS excluded, but structurally — by its
+    # `.codex-system-skills.marker` file, checked during composition — not by
+    # name here. A name list is what Cursor does for these same six built-ins,
+    # and its own spec flags that list as drift-prone.
+    excluded_skill_dirs=(),
+    settings_rel=None,
+    manifest_optional=False,
+    excludes_plugin_owned_content=True,
+)

@@ -3239,3 +3239,52 @@ def test_scan_bom_renders_a_stored_0_4_document_without_agent_metadata(tmp_path)
             "host_surface": "stored BOM",
         }
     ]
+
+
+# --- Active-plugin counting (plan 043 Task 9) ------------------------------
+
+
+def _plugin_ref(name, enabled: bool | None = None):
+    from tools.component_ref import ComponentRef
+
+    extra: dict = {"component_type": "plugin"}
+    if enabled is not None:
+        extra["enabled"] = enabled
+    return ComponentRef(name=name, source_manifest=f"/x/{name}", source_locator="$", extra=extra)
+
+
+def test_count_active_plugins_drops_only_explicitly_disabled():
+    """`is not False`, not truthiness: a kind that omits the key must keep
+    counting exactly as it did before ADR-0055 introduced the field."""
+    from tools.scan import _count_active_plugins
+
+    refs = [
+        _plugin_ref("enabled-explicitly", True),
+        _plugin_ref("disabled-explicitly", False),
+        _plugin_ref("no-key-at-all"),
+    ]
+
+    assert _count_active_plugins(refs) == 2
+
+
+def test_count_active_plugins_ignores_non_plugin_refs():
+    from tools.component_ref import ComponentRef
+    from tools.scan import _count_active_plugins
+
+    refs = [
+        _plugin_ref("p", True),
+        ComponentRef(
+            name="s",
+            source_manifest="/x/s",
+            source_locator="$",
+            extra={"component_type": "skill", "enabled": False},
+        ),
+    ]
+
+    assert _count_active_plugins(refs) == 1
+
+
+def test_count_active_plugins_on_empty_input():
+    from tools.scan import _count_active_plugins
+
+    assert _count_active_plugins([]) == 0

@@ -48,11 +48,63 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
     )
 
 
+class WarningLog(list):
+    """Warnings, plus the subset meaning "a component may be missing".
+
+    `openaca:composition_coverage` qualifies the COMPONENT graph, so only that
+    subset should lower it: a note about a component we *did* read — its
+    marketplace is unregistered, its enable value was malformed and defaulted —
+    says nothing about whether we identified it.
+
+    A `list` subclass rather than a new type, so it passes unchanged through
+    every existing `warnings: list[str]` parameter and every `append`,
+    `extend`, and `len` already written against it.
+
+    Recording a gap is **opt-in**: a plain `append` is a note. That keeps
+    `complete` reachable and stops a newly added diagnostic from silently
+    degrading a kind's coverage. The cost is that a genuine gap must remember
+    `gap()`, which is why the converted sites are the well-known
+    "could not parse / unavailable / missing from" family.
+    """
+
+    def __init__(self, iterable=()) -> None:
+        super().__init__(iterable)
+        self.gaps: list[str] = []
+
+    def gap(self, message: str) -> None:
+        self.append(message)
+        self.gaps.append(message)
+
+    def absorb(self, other: "list[str]") -> None:
+        """Extend with `other`, carrying its gaps across if it has any."""
+        self.extend(other)
+        self.gaps.extend(getattr(other, "gaps", []))
+
+
+def record_gap(warnings: "list[str] | None", message: str) -> None:
+    """Record a component gap on `warnings`, whatever kind of list it is.
+
+    Sites deep in the parsers receive a plain `list[str]` and have no `Graph`
+    in scope. This lets them classify without threading one through: a
+    `WarningLog` records the gap, a plain list degrades to a note.
+    """
+    if warnings is None:
+        return
+    if isinstance(warnings, WarningLog):
+        warnings.gap(message)
+    else:
+        warnings.append(message)
+
+
 @dataclass
 class Graph:
     nodes: dict[str, Node]
     edges: list[Edge] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list, repr=False)
+    warnings: WarningLog = field(default_factory=WarningLog, repr=False)
+
+    def record_gap(self, message: str) -> None:
+        """A warning that also means a component may be missing."""
+        self.warnings.gap(message)
 
     @property
     def root(self) -> Node:

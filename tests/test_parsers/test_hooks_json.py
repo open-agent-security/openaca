@@ -169,6 +169,46 @@ def test_parse_settings_hooks_empty_block_returns_empty():
     assert parse_settings_hooks(Path("/fake/s.json"), {}, scope="user") == []
 
 
+def test_parse_settings_hooks_descends_into_matcher_group():
+    """Real Claude Code settings carry a matcher group per event-array entry
+    (code.claude.com/docs/en/hooks), not a handler directly. Two handlers
+    nested under one matcher group must yield two distinct refs, not one
+    ref with null type/command from reading the group as if it were a
+    handler."""
+    settings_path = Path("/fake/settings.json")
+    hooks_block = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": "echo a"},
+                    {"type": "command", "command": "echo b"},
+                ],
+            }
+        ]
+    }
+    refs = parse_settings_hooks(settings_path, hooks_block, scope="project")
+    assert len(refs) == 2
+    assert {r.extra["command"] for r in refs} == {"echo a", "echo b"}
+    assert {r.extra["type"] for r in refs} == {"command"}
+    assert all(r.extra["matcher"] == "Bash" for r in refs)
+    assert all(r.extra["event"] == "PreToolUse" for r in refs)
+    assert {r.source_locator for r in refs} == {
+        "$.hooks.PreToolUse[0].hooks[0]",
+        "$.hooks.PreToolUse[0].hooks[1]",
+    }
+    assert len({r.component_identity for r in refs}) == 2
+
+
+def test_parse_settings_hooks_matcher_group_with_no_matcher():
+    """`matcher` is optional on the group; absent applies to every match."""
+    hooks_block = {"Stop": [{"hooks": [{"type": "command", "command": "echo x"}]}]}
+    refs = parse_settings_hooks(Path("/fake/s.json"), hooks_block, scope="user")
+    assert len(refs) == 1
+    assert refs[0].extra["matcher"] is None
+    assert refs[0].extra["command"] == "echo x"
+
+
 def test_parse_plugin_hooks_empty_hooks_block_returns_empty(tmp_path):
     path = _write_hooks_json(tmp_path / "hooks.json", {"hooks": {}})
     assert parse_plugin_hooks(path, plugin_name="p") == []

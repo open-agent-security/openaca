@@ -7,7 +7,9 @@ Two input shapes wrap the same inner format:
 - **Settings format** inside a `settings.json` (any scope):
   `{<EventName>: [<entry>, ...]}` (the value of the `hooks` key)
 
-Each entry is `{"type": "command"|"prompt", "command": "...", "matcher": "..."?}`.
+Each array entry is a matcher group, `{"matcher": "..."?, "hooks": [<handler>, ...]}`;
+a handler is `{"type": "command"|"prompt", "command": "...", ...}`. A group with
+no `hooks` array is treated as a single handler in place (see `_walk_events`).
 
 Identity is derived from the hook payload, not where the hook is declared.
 `event`, array `index`, settings `scope`, `type`, `command`, and `matcher`
@@ -160,32 +162,80 @@ def _walk_events(
     source_manifest: str,
     scope: Optional[str],
 ) -> list[ComponentRef]:
+    """Each event's array holds matcher groups, not handlers directly:
+    `{"matcher": "...", "hooks": [<handler>, ...]}` (verified against
+    code.claude.com/docs/en/hooks). The handler objects are one level down,
+    inside the group's own `hooks` array.
+
+    A group with no `hooks` list is degenerate input rather than a second
+    format — it is treated as a single handler in place, so a malformed or
+    hand-written flat entry still yields one hook rather than silently none.
+    """
     refs: list[ComponentRef] = []
     for event, entries in hooks_block.items():
         if not isinstance(event, str) or not isinstance(entries, list):
             continue
-        for index, entry in enumerate(entries):
-            if not isinstance(entry, dict):
+        for group_index, group in enumerate(entries):
+            if not isinstance(group, dict):
                 continue
-            extra = {
-                "event": event,
-                "index": index,
-                "type": entry.get("type"),
-                "command": entry.get("command"),
-                "matcher": entry.get("matcher"),
-            }
-            if scope is not None:
-                extra["scope"] = scope
-            extra["component_type"] = "hook"
-            refs.append(
-                ComponentRef(
-                    component_identity=_hook_identity(entry),
-                    source_manifest=source_manifest,
-                    source_locator=f"$.hooks.{event}[{index}]",
-                    extra=extra,
+            matcher = group.get("matcher")
+            handlers = group.get("hooks")
+            if isinstance(handlers, list):
+                for index, entry in enumerate(handlers):
+                    if not isinstance(entry, dict):
+                        continue
+                    refs.append(
+                        _hook_ref(
+                            entry,
+                            event=event,
+                            index=index,
+                            matcher=matcher,
+                            scope=scope,
+                            source_manifest=source_manifest,
+                            source_locator=f"$.hooks.{event}[{group_index}].hooks[{index}]",
+                        )
+                    )
+            else:
+                refs.append(
+                    _hook_ref(
+                        group,
+                        event=event,
+                        index=group_index,
+                        matcher=matcher,
+                        scope=scope,
+                        source_manifest=source_manifest,
+                        source_locator=f"$.hooks.{event}[{group_index}]",
+                    )
                 )
-            )
     return refs
+
+
+def _hook_ref(
+    entry: dict,
+    *,
+    event: str,
+    index: int,
+    matcher: object,
+    scope: Optional[str],
+    source_manifest: str,
+    source_locator: str,
+) -> ComponentRef:
+    extra = {
+        "event": event,
+        "index": index,
+        "type": entry.get("type"),
+        "command": entry.get("command"),
+        "matcher": matcher,
+    }
+    if scope is not None:
+        extra["scope"] = scope
+    extra["component_type"] = "hook"
+    return ComponentRef(
+        component_identity=_hook_identity(entry),
+        source_manifest=source_manifest,
+        source_locator=source_locator,
+        extra=extra,
+    )
 
 
 def _hook_identity(entry: dict) -> str:

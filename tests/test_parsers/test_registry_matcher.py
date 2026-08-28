@@ -664,6 +664,55 @@ def test_codex_registry_excludes_plugin_owned_content(tmp_path):
     assert {p for p, _refs in grouped} == {plugin_dir / "plugin.json"}
 
 
+def test_codex_registry_counts_only_the_resolved_plugin_manifest(tmp_path):
+    """A root carrying BOTH `.codex-plugin/plugin.json` and
+    `.claude-plugin/plugin.json` realizes as ONE plugin in composition
+    (`_resolve_plugin_format`: first qualifying candidate in list order wins,
+    `.codex-plugin` before `.claude-plugin`). Registry accounting must claim
+    only that same file, or it double-counts one real manifest as two."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_grouped
+    from tools.repo_surface import CODEX_SURFACE
+
+    codex_manifest = tmp_path / ".codex-plugin" / "plugin.json"
+    codex_manifest.parent.mkdir()
+    codex_manifest.write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+    claude_manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    claude_manifest.parent.mkdir()
+    claude_manifest.write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CODEX_MANIFEST_REGISTRY, surface=CODEX_SURFACE
+    )
+
+    assert {p for p, _refs in grouped} == {codex_manifest}
+    assert n_found == 1
+
+
+def test_codex_registry_falls_through_when_codex_plugin_candidate_does_not_qualify(tmp_path):
+    """`.codex-plugin/plugin.json` without a string `name` fails
+    `_detect_named_plugin_manifest`, so `_resolve_plugin_format` falls through
+    to `.claude-plugin/plugin.json`. Registry accounting must follow the same
+    fallback rather than independently parsing the disqualified candidate —
+    otherwise a candidate composition never reads can register a phantom
+    parse failure (or a phantom success) that the graph never produced."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_grouped
+    from tools.repo_surface import CODEX_SURFACE
+
+    codex_manifest = tmp_path / ".codex-plugin" / "plugin.json"
+    codex_manifest.parent.mkdir()
+    codex_manifest.write_text(json.dumps({}), encoding="utf-8")
+    claude_manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    claude_manifest.parent.mkdir()
+    claude_manifest.write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CODEX_MANIFEST_REGISTRY, surface=CODEX_SURFACE
+    )
+
+    assert {p for p, _refs in grouped} == {claude_manifest}
+    assert n_found == 1
+
+
 def test_a_malformed_codex_config_registers_a_parse_failure(tmp_path):
     from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_registry_counts
     from tools.repo_surface import CODEX_SURFACE

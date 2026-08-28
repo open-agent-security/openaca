@@ -268,6 +268,38 @@ CURSOR_MANIFEST_REGISTRY: list[ManifestPattern] = [
 ]
 
 
+def _is_resolved_codex_plugin_format(manifest_dir: str) -> GuardFn:
+    """Claim a Codex plugin-root candidate only if it's the one
+    `_resolve_plugin_format` actually picks for that root.
+
+    Composition reads exactly one manifest per plugin root — the first
+    candidate in `CODEX_SURFACE.plugin_formats` that both exists and
+    qualifies (ADR-0053: "first qualifying candidate", not first path-shape
+    match). Without this guard, a root carrying both `.codex-plugin/plugin.json`
+    and `.claude-plugin/plugin.json` has BOTH claimed and parsed independently
+    by this registry: `source_unit_count` double-counts one real manifest, and
+    a malformed *unused* fallback (or a `.codex-plugin` candidate that fails
+    `detect` but still happens to parse) can register a `parse_failed` for a
+    file composition never reads — in either direction, the count disagrees
+    with what `_add_codex_declared_config_mcps`'s plugin branch actually
+    composes.
+
+    Local import: `tools.graph_build` imports `tools.parsers` at module scope
+    (same cycle `plugin_owned_roots` already breaks this way for
+    `tools.graph_build_cursor`).
+    """
+
+    def guard(path: Path) -> bool:
+        from tools.graph_build import resolve_plugin_format
+        from tools.repo_surface import CODEX_SURFACE
+
+        root = path.parent.parent
+        fmt = resolve_plugin_format(root, CODEX_SURFACE)
+        return fmt is not None and fmt.manifest_dir == manifest_dir
+
+    return guard
+
+
 # Codex's manifest surface. Deliberately NO bare `mcp.json`/`.mcp.json`:
 # Codex's MCP servers are declared INSIDE `config.toml` as `[mcp_servers.*]`,
 # never as a standalone manifest, so a bare pattern here would claim files
@@ -287,12 +319,26 @@ CODEX_MANIFEST_REGISTRY: list[ManifestPattern] = [
     # would undercount `source_unit_count` and leave a malformed nested skill
     # unable to register a parse failure.
     ManifestPattern("**/.codex/skills/**/SKILL.md", claude_skill.parse),
-    ManifestPattern("**/.codex-plugin/plugin.json", claude_plugin.parse),
+    # Guarded: claim `.codex-plugin/plugin.json` only when it's the format
+    # `_resolve_plugin_format` resolves for its root — see
+    # `_is_resolved_codex_plugin_format`.
+    ManifestPattern(
+        "**/.codex-plugin/plugin.json",
+        claude_plugin.parse,
+        _is_resolved_codex_plugin_format(".codex-plugin"),
+    ),
     # Codex's ordered candidate list includes Claude Code's manifest, so a
     # bundle carrying only `.claude-plugin/plugin.json` still realizes in the
     # Codex graph. Without this route its manifest never counts toward Codex's
     # `source_unit_count` and a malformed one cannot contribute an evidence gap.
-    ManifestPattern("**/.claude-plugin/plugin.json", claude_plugin.parse),
+    # Guarded the same way as the `.codex-plugin` candidate above, so a root
+    # carrying both never double-counts or double-fails the one manifest
+    # composition actually reads.
+    ManifestPattern(
+        "**/.claude-plugin/plugin.json",
+        claude_plugin.parse,
+        _is_resolved_codex_plugin_format(".claude-plugin"),
+    ),
 ]
 
 # Compat alias: today's flat registry, kept byte-identical in content so

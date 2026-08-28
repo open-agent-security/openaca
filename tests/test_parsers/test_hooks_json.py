@@ -11,6 +11,8 @@ extra, not in component_identity.
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.hooks_json import (
     parse_plugin_hooks,
     parse_plugin_hooks_inline,
@@ -207,6 +209,44 @@ def test_parse_settings_hooks_matcher_group_with_no_matcher():
     assert len(refs) == 1
     assert refs[0].extra["matcher"] is None
     assert refs[0].extra["command"] == "echo x"
+
+
+def test_parse_settings_hooks_strict_rejects_malformed_nested_handler():
+    """A non-dict handler nested inside a matcher group's own `hooks` array
+    must raise under strict=True, exactly like a malformed top-level entry —
+    otherwise `_walk_events` silently drops it (`continue` on the inner loop)
+    with no exception for a caller's `_safe_parse`/`record_gap` to see, and
+    the BOM composes with one fewer hook than the file actually declares
+    while coverage still reports complete."""
+    hooks_block = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": "echo a"},
+                    "not-a-handler",
+                ],
+            }
+        ]
+    }
+    with pytest.raises(ValueError):
+        parse_settings_hooks(Path("/fake/s.json"), hooks_block, scope="project", strict=True)
+
+
+def test_parse_settings_hooks_strict_accepts_well_formed_nested_handlers():
+    hooks_block = {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": "echo a"},
+                    {"type": "command", "command": "echo b"},
+                ],
+            }
+        ]
+    }
+    refs = parse_settings_hooks(Path("/fake/s.json"), hooks_block, scope="project", strict=True)
+    assert len(refs) == 2
 
 
 def test_parse_plugin_hooks_empty_hooks_block_returns_empty(tmp_path):

@@ -150,11 +150,23 @@ def parse_settings_hooks(
 
 
 def _validate_hook_events(hooks_block: dict, label: str) -> None:
+    """Mirrors `_walk_events`'s own descent: a malformed handler nested inside
+    a matcher group's `hooks` array is exactly as invalid as a malformed
+    top-level entry, and strict mode must raise on both so a caller's
+    `_safe_parse`/`record_gap` sees the drop rather than composing silently
+    with one fewer hook than the file actually declares.
+    """
     for event, entries in hooks_block.items():
         if not isinstance(event, str) or not isinstance(entries, list):
             raise ValueError(f"{label} events must map strings to arrays")
-        if any(not isinstance(entry, dict) for entry in entries):
-            raise ValueError(f"{label} event entries must be objects")
+        for group in entries:
+            if not isinstance(group, dict):
+                raise ValueError(f"{label} event entries must be objects")
+            handlers = group.get("hooks")
+            if isinstance(handlers, list) and any(
+                not isinstance(entry, dict) for entry in handlers
+            ):
+                raise ValueError(f"{label} nested hook handlers must be objects")
 
 
 def _walk_events(

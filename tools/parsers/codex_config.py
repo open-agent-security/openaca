@@ -151,8 +151,16 @@ def load_config(path: Path) -> CodexConfig:
                 trust_level=table.get("trust_level"),
             )
 
+    # Malformed input (e.g. `hooks = "bad"`) is preserved rather than coerced to
+    # `{}`: both callers (`graph_build._add_codex_declared_config_hooks`,
+    # `_seed_codex_hooks_from_layer`) already gate on `if not config.hooks`
+    # before handing this value to `hooks_json.parse_settings_hooks(...,
+    # strict=True)`, which raises on a non-dict shape so the caller's
+    # `record_gap` sees it. Coercing here (as `mcp_servers` used to, before
+    # `parse()` was changed to read the raw TOML directly) would make that
+    # `strict=True` unreachable for a malformed `hooks` table.
     raw_hooks = data.get("hooks")
-    hooks = raw_hooks if isinstance(raw_hooks, dict) else {}
+    hooks = raw_hooks if raw_hooks is not None else {}
 
     return CodexConfig(
         mcp_servers=servers,

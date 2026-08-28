@@ -11,6 +11,7 @@ table among four rather than in a dedicated manifest.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -105,6 +106,27 @@ def test_malformed_hooks_json_warns_rather_than_raising(tmp_path):
 
     assert "skill" in _kinds(graph)
     assert any("hooks.json" in w for w in graph.warnings + warnings)
+
+
+def test_malformed_inline_hooks_table_is_a_gap_not_a_silent_drop(tmp_path):
+    """`hooks = "bad"` is valid TOML but the wrong shape (a string, not a
+    table). `codex_config.load_config` must not coerce this to `{}` — that
+    coercion would make it indistinguishable from "no hooks declared" and
+    `hooks_json.parse_settings_hooks(strict=True)` would never get a chance
+    to reject it."""
+    root = _repo(tmp_path)
+    (root / ".codex" / "config.toml").write_text(
+        'hooks = "bad"\n\n[mcp_servers.svc]\ncommand = "npx"\nargs = ["@scope/tool@1.2.3"]\n',
+        encoding="utf-8",
+    )
+    warnings: list[str] = []
+
+    graph = build_codex_declared_graph(_agent(root), warnings=warnings)
+
+    assert "skill" in _kinds(graph), "the rest of the tree still composes"
+    assert any("config.toml" in w and "hooks" in w for w in graph.warnings + warnings), (
+        "a malformed hooks table must be a recorded gap, not a silent drop"
+    )
 
 
 def test_a_nested_project_codex_dir_is_composed(tmp_path):
@@ -463,6 +485,34 @@ def test_a_nested_project_skill_is_composed(tmp_path):
     assert "nested-skill" in _skill_names(graph)
 
 
+def test_a_project_skill_symlinked_below_a_nested_directory_is_composed(tmp_path):
+    """A symlink one level below the top of `.codex/skills/`
+    (`skills/team/aws-api -> /store/aws-api`) must also be discovered.
+
+    `_add_project_skills`'s own walk (`iter_unignored_files`, os.walk-based)
+    never follows directory symlinks at any depth, and the flat
+    `_add_skills_from_dir` symlink patch only resolves `skills_dir`'s
+    immediate children — so a symlink nested a level deeper was missed by
+    both. `_seed_shared_endpoint_surfaces` now routes a `RepoSurface` with
+    `skill_config_dirs` set (Codex) through the cycle-safe recursive walker
+    (`_add_project_skills_from_dir_following_symlinks`) instead.
+    """
+    root = _home(tmp_path)
+    project = tmp_path / "symlinked-skill-proj"
+
+    real_skill_dir = tmp_path / "skills-store" / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\n---\nrun\n", encoding="utf-8")
+
+    team_dir = project / ".codex" / "skills" / "team"
+    team_dir.mkdir(parents=True)
+    os.symlink(real_skill_dir, team_dir / "aws-api")
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert "aws-api" in _skill_names(graph)
+
+
 def test_a_claude_only_project_skill_is_not_composed_into_the_codex_bom(tmp_path):
     """`_add_project_skills`'s `.claude`-vs-`.codex` skill-directory match is a
     `RepoSurface` field, not an `EndpointSurface` one. Before threading Codex's
@@ -582,6 +632,27 @@ def test_hooks_declared_inline_in_config_toml_are_composed_at_the_endpoint(tmp_p
     assert hooks[0].extra["type"] == "command"
     assert hooks[0].extra["command"] == "echo hi"
     assert str(root / "config.toml") in hooks[0].source_manifest
+
+
+def test_malformed_inline_hooks_table_is_a_gap_at_the_endpoint(tmp_path):
+    """Same coercion bug as the declared-mode case, exercised through the
+    installed-endpoint reader (`_seed_codex_hooks_from_layer`), which shares
+    `codex_config.load_config` with the declared-mode one.
+
+    Uses a profile layer (`work.config.toml`) rather than appending to the
+    base `config.toml`: TOML has no way to add a bare top-level key after a
+    `[table]` header without it becoming a member of that table, so a fresh
+    file is the only way to isolate a top-level `hooks = "bad"`."""
+    root = _home(tmp_path)
+    (root / "work.config.toml").write_text('hooks = "bad"\n', encoding="utf-8")
+    warnings: list[str] = []
+
+    graph = build_codex_installed_graph(root, warnings=warnings)
+
+    assert not _refs(graph, "hook")
+    assert any("work.config.toml" in w and "hooks" in w for w in graph.warnings + warnings), (
+        "a malformed hooks table must be a recorded gap, not a silent drop"
+    )
 
 
 def test_hooks_in_a_profile_config_are_composed_at_the_endpoint(tmp_path):

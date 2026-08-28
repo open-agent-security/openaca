@@ -311,6 +311,23 @@ def test_system_skills_are_excluded_by_marker(tmp_path):
     assert "helpful-tool" not in skill_names, "vendor built-ins are not user composition"
 
 
+def test_a_direct_skill_nested_under_the_install_root_is_still_composed(tmp_path):
+    """`docs/specs/codex-agent-kind.md`'s Skills row documents `<root>/skills/`
+    as recursive for both declared and installed sources. `CODEX_ENDPOINT`
+    routes install-root skills through the shared `_add_direct_endpoint_skills`
+    walk, so a nested layout like `$CODEX_HOME/skills/group/tool/SKILL.md`
+    must still yield a node, not just the immediate-child case already covered
+    by `user-skill`."""
+    root = _home(tmp_path)
+    nested = root / "skills" / "group" / "tool"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text("---\nname: tool\n---\nNested.\n", encoding="utf-8")
+
+    graph = build_codex_installed_graph(root)
+
+    assert "tool" in _skill_names(graph)
+
+
 def test_subagents_are_composed_from_toml(tmp_path):
     graph = build_codex_installed_graph(_home(tmp_path))
     agents = {r.name for r in _refs(graph, "agent")}

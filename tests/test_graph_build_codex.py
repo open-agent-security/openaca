@@ -444,8 +444,10 @@ def test_project_layer_composes_skills_and_mcp_and_project_wins(tmp_path):
     assert str(project) in user_svc[0].source_manifest
 
 
-def test_project_hooks_are_not_composed_at_the_endpoint(tmp_path):
-    """`.codex/hooks.json` is declared-only (Task 6), never endpoint state."""
+def test_an_untrusted_projects_hooks_json_is_not_composed_at_the_endpoint(tmp_path):
+    """`.codex/hooks.json` is trust-gated at the endpoint, the same as the
+    project's `.codex/config.toml` layer — an untrusted project's sidecar must
+    not compose."""
     root = _home(tmp_path)
     project = tmp_path / "proj2"
     (project / ".codex").mkdir(parents=True)
@@ -454,6 +456,40 @@ def test_project_hooks_are_not_composed_at_the_endpoint(tmp_path):
     graph = build_codex_installed_graph(root, project)
 
     assert not any(n.kind == "hook" for n in graph.nodes.values())
+
+
+def test_the_user_roots_hooks_json_is_composed_at_the_endpoint(tmp_path):
+    """`$CODEX_HOME/hooks.json` is a documented sidecar distinct from the
+    inline `[hooks]` config.toml table; endpoint mode previously read only the
+    inline form, silently dropping hooks declared this way."""
+    root = _home(tmp_path)
+    (root / "hooks.json").write_text(json.dumps(HOOKS), encoding="utf-8")
+
+    graph = build_codex_installed_graph(root)
+    hooks = _refs(graph, "hook")
+
+    assert len(hooks) == 1
+    assert hooks[0].extra["command"] == "echo hi"
+    assert hooks[0].extra["scope"] == "user"
+    assert str(root / "hooks.json") in hooks[0].source_manifest
+
+
+def test_a_trusted_projects_hooks_json_is_composed_at_the_endpoint(tmp_path):
+    """The project counterpart of the user-root sidecar above: a trusted
+    project's `.codex/hooks.json` must compose with project scope."""
+    root = _home(tmp_path)
+    project = tmp_path / "proj4"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "hooks.json").write_text(json.dumps(HOOKS), encoding="utf-8")
+    _trust(root, project)
+
+    graph = build_codex_installed_graph(root, project)
+    hooks = _refs(graph, "hook")
+
+    assert len(hooks) == 1
+    assert hooks[0].extra["command"] == "echo hi"
+    assert hooks[0].extra["scope"] == "project"
+    assert str(project / ".codex" / "hooks.json") in hooks[0].source_manifest
 
 
 def test_hooks_declared_inline_in_config_toml_are_composed_at_the_endpoint(tmp_path):
@@ -668,6 +704,35 @@ def test_profile_declared_mcp_servers_are_composed(tmp_path):
     servers = {r.extra["component_path"][0]["name"] for r in _refs(graph, "mcp_server")}
 
     assert {"user_svc", "profile_only"} <= servers
+
+
+def test_a_plugin_enabled_only_in_a_profile_is_reported_enabled(tmp_path):
+    """`--profile` layers `<root>/<name>.config.toml` over the base for
+    `[plugins.*]` too, not just `[mcp_servers.*]`. The base config disables
+    `offpl@mkt`; a profile flips it on, and which profile is selected leaves
+    no trace on disk, so the union — the same over-approximating direction
+    used for profile MCP servers — reports it enabled."""
+    root = _home(tmp_path)
+    (root / "work.config.toml").write_text(
+        '[plugins."offpl@mkt"]\nenabled = true\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+
+    assert _plugins(graph)["offpl"].extra["enabled"] is True
+
+
+def test_a_plugin_disabled_only_in_a_profile_stays_enabled(tmp_path):
+    """The base config enables `codexpl@mkt`; a profile disabling it must not
+    downgrade the union, for the same reason the reverse direction enables."""
+    root = _home(tmp_path)
+    (root / "work.config.toml").write_text(
+        '[plugins."codexpl@mkt"]\nenabled = false\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+
+    assert _plugins(graph)["codexpl"].extra["enabled"] is True
 
 
 def test_the_base_config_is_not_read_twice_as_a_profile(tmp_path):

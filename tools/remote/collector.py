@@ -24,7 +24,7 @@ from tools.agent_kinds import (
 )
 from tools.bom import build_agent_bom
 from tools.component_ref import ComponentRef, safe_pinned_mcp_install_source
-from tools.graph import Graph
+from tools.graph import Graph, WarningLog
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
 from tools.observations import (
     ObservationFinding,
@@ -50,6 +50,7 @@ from tools.remote.upload_contract import (
     RemoteUploadContractError,
     enforce_remote_upload_contract,
 )
+from tools.scan import _component_gap_count, _count_active_plugins
 
 JsonObject = dict[str, Any]
 TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
@@ -118,6 +119,20 @@ def build_endpoint_collections(
     return [_build_agent_collection(agent, external_scanners=external_scanners) for agent in agents]
 
 
+def _agent_extra_posture_manifests(
+    agent: AgentInstance, refs: list[ComponentRef]
+) -> dict[str, list[tuple[Path, dict]]]:
+    """Rule-id-keyed manifests for posture surfaces that declare no components.
+
+    Empty for every kind that declares none, which is every kind but Codex.
+    """
+    collectors = kind_for(agent.kind_id).extra_installed_posture_collectors or {}
+    return {
+        rule_id: collector(agent.config_root, agent.project_root, refs)
+        for rule_id, collector in collectors.items()
+    }
+
+
 def _agent_posture_manifests(
     agent: AgentInstance, refs: list[ComponentRef]
 ) -> tuple[list[tuple[Path, dict]], list[tuple[Path, dict]]]:
@@ -147,7 +162,7 @@ def _build_agent_collection(
     *,
     external_scanners: tuple[str, ...],
 ) -> EndpointCollection:
-    warnings: list[str] = []
+    warnings: WarningLog = WarningLog()
     graph, refs = _agent_refs(agent, warnings)
     bom = _prepare_remote_bom(
         build_agent_bom(
@@ -156,7 +171,7 @@ def _build_agent_collection(
             # path, correct locally under ADR-0003 and a redaction-contract
             # violation across the upload boundary. The upload names no place.
             target=None,
-            source_unit_count=sum(1 for ref in refs if _is_plugin_ref(ref)),
+            source_unit_count=_count_active_plugins(refs),
             source_unit_label="active plugin",
             graph=graph,
             agent_kind=agent.kind_id,
@@ -164,11 +179,12 @@ def _build_agent_collection(
             agent_name=agent.display_name,
             composition_source=agent.source,
             composition_coverage=resolve_coverage(
-                agent.coverage_baseline, evidence_gaps=len(warnings)
+                agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
             ),
         ).to_cyclonedx()
     )
     mcp_manifests, settings_manifests = _agent_posture_manifests(agent, refs)
+    extra_manifests = _agent_extra_posture_manifests(agent, refs)
     posture_findings = [
         _posture_finding_to_payload(f)
         for f in run_posture_rules(
@@ -176,6 +192,7 @@ def _build_agent_collection(
             mcp_manifests,
             settings_manifests,
             allowed_rules=kind_for(agent.kind_id).posture_rules,
+            extra_manifests=extra_manifests,
             agent_kind=agent.kind_id,
             agent_id=agent.agent_id,
         )
@@ -1072,6 +1089,9 @@ def _content_hash(bom: JsonObject) -> str:
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
+    """Retained for callers below; the COUNT goes through
+    `tools.scan._count_active_plugins` so disabled plugins are excluded
+    consistently with every other installed path (ADR-0055)."""
     return (ref.extra or {}).get("component_type") == "plugin"
 
 

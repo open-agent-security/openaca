@@ -1423,3 +1423,227 @@ def test_installed_scan_endpoint_covers_both_registered_kinds(
             agent.kind_id,
             agent_nodes[0].key,
         )
+
+
+# --- Codex as the third agent kind (plan 043 Task 12) ----------------------
+#
+# Cross-layer by construction: each of these fails if discovery, composition,
+# the registry, posture, the renderer, or the emitter regresses.
+
+
+def _codex_home(tmp_path: Path, *, disabled_plugin: bool = False) -> Path:
+    """A `$CODEX_HOME` with two cached bundles, one optionally disabled."""
+    root = tmp_path / "codex-home"
+    root.mkdir()
+    config = [
+        "[marketplaces.mkt]",
+        'source_type = "git"',
+        'source = "https://example.test/mkt.git"',
+        "",
+        '[plugins."alpha@mkt"]',
+        "enabled = true",
+        "",
+        '[plugins."beta@mkt"]',
+        f"enabled = {'false' if disabled_plugin else 'true'}",
+    ]
+    (root / "config.toml").write_text("\n".join(config) + "\n", encoding="utf-8")
+    for name in ("alpha", "beta"):
+        d = root / "plugins" / "cache" / "mkt" / name / "1.0.0" / ".codex-plugin"
+        d.mkdir(parents=True)
+        (d / "plugin.json").write_text(
+            json.dumps({"name": name, "version": "1.0.0"}), encoding="utf-8"
+        )
+    return root
+
+
+def _codex_project(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    (project / ".codex" / "skills" / "demo").mkdir(parents=True)
+    (project / ".codex" / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\n---\nProject skill.\n", encoding="utf-8"
+    )
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.proj_svc]\ncommand = "true"\n', encoding="utf-8"
+    )
+    return project
+
+
+def test_e2e_declared_three_kinds_one_repo(tmp_path):
+    """(a) One tree declaring all three kinds emits three BOMs, each labelled
+    with its own `openaca:agent_kind`."""
+    from tools.bom_cli import main as bom_main
+
+    (tmp_path / ".claude" / "skills" / "s").mkdir(parents=True)
+    (tmp_path / ".claude" / "skills" / "s" / "SKILL.md").write_text(
+        "---\nname: s\n---\nX\n", encoding="utf-8"
+    )
+    (tmp_path / ".cursor").mkdir()
+    (tmp_path / ".cursor" / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"c": {"command": "true"}}}), encoding="utf-8"
+    )
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex" / "hooks.json").write_text(
+        json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]}}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "boms"
+
+    result = CliRunner().invoke(
+        bom_main, ["repo", "--target", str(tmp_path), "--output-dir", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    # One document per kind, the kind carried by the filename. `*.cdx.json`
+    # only: the sibling `.openaca-bom-manifest.json` is a list, not a BOM.
+    kinds = {p.name.removesuffix(".cdx.json") for p in out.glob("*.cdx.json")}
+
+    assert kinds == {"claude-code", "cursor", "codex"}
+    # Each document is a real CycloneDX BOM, not an empty placeholder.
+    for path in out.glob("*.cdx.json"):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        assert doc["bomFormat"] == "CycloneDX"
+
+
+def test_e2e_codex_endpoint_counts_disabled_plugins_correctly(tmp_path):
+    """(b) Real discovery proves Task 9's count fix at all three sites: the
+    rendered stats line, the BOM's `source_unit_count`, and the tree header.
+    None of them can be exercised before the kind is registered."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path, disabled_plugin=True)
+    project = _codex_project(tmp_path)
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "codex",
+            "--config-dir",
+            str(root),
+            "--project",
+            str(project),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    # A `detected config_dir=...` preamble precedes the JSON document, and
+    # human-readable output follows it, so decode just the first object.
+    payload, _end = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])
+    assert payload["stats"]["units"] == 1, "one of two plugins is disabled"
+    assert payload["stats"]["unit"] == "active plugin"
+
+
+def test_e2e_codex_endpoint_renders_disabled_plugins_in_the_tree(tmp_path):
+    """(b, continued) The tree header must not call a disabled plugin active,
+    while still showing it — a disabled plugin is installed."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path, disabled_plugin=True)
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "codex", "--config-dir", str(root)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "2 plugins (1 disabled)" in result.output
+    assert "2 active plugins" not in result.output
+    assert "alpha" in result.output and "beta" in result.output
+
+
+def test_e2e_codex_endpoint_composes_the_project_layer(tmp_path):
+    """(b, continued) `--project` reaches both project surfaces."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path)
+    project = _codex_project(tmp_path)
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "codex",
+            "--config-dir",
+            str(root),
+            "--project",
+            str(project),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "demo" in result.output, "project skill"
+    assert "proj_svc" in result.output, "project MCP server"
+
+
+def test_e2e_codex_config_dir_is_accepted_unlike_cursor(tmp_path):
+    """ADR-0056 against ADR-0054, through the actual CLI guard."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path)
+
+    accepted = CliRunner().invoke(
+        scan_main, ["endpoint", "--kind", "codex", "--config-dir", str(root)]
+    )
+    refused = CliRunner().invoke(
+        scan_main, ["endpoint", "--kind", "cursor", "--config-dir", str(root)]
+    )
+
+    assert accepted.exit_code == 0, accepted.output
+    assert refused.exit_code != 0
+
+
+def test_e2e_codex_remote_sync_preserves_kind_posture_and_disabled_inventory(tmp_path):
+    """(c) `remote sync endpoint` is the one command Tasks 5-11 never exercise
+    directly, and the goal names it. Asserts the Codex kind survives the upload
+    payload along with both new posture rules — and that neither
+    `mcp_auto_approve` nor `api_endpoint_override` appears, since Codex's
+    policy surfaces are not MCP-specific and it has no Anthropic settings."""
+    from tools.remote.collector import build_endpoint_dry_run_payloads
+
+    root = _codex_home(tmp_path, disabled_plugin=True)
+    (root / "rules").mkdir()
+    (root / "rules" / "default.rules").write_text(
+        'prefix_rule(pattern=["git", "commit"], decision="allow")\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[projects."/home/u/repo"]\ntrust_level = "trusted"\n',
+        encoding="utf-8",
+    )
+
+    payloads = build_endpoint_dry_run_payloads(config_dir=root, kind_id="codex", project=None)
+    blob = json.dumps(payloads)
+
+    assert "codex" in blob
+    assert "openaca-posture-command-policy-allow" in blob
+    assert "openaca-posture-project-trust" in blob
+    assert "openaca-posture-mcp-auto-approve" not in blob
+    assert "openaca-posture-api-endpoint-override" not in blob
+
+
+def test_e2e_codex_disabled_mcp_is_inventoried_but_not_an_active_exposure(tmp_path):
+    """A disabled MCP server is still installed, so it is inventoried — but it
+    is not running, so an active-exposure rule must not fire on it."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path)
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[mcp_servers.off_remote]\nurl = "http://insecure.test/mcp/"\nenabled = false\n',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "codex", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    # Remote MCP refs key by URL identity rather than the table name, so the
+    # host is what surfaces in the rendered inventory.
+    assert "insecure.test" in result.output, "a disabled server is still installed"
+    assert "openaca-posture-insecure-transport" not in result.output

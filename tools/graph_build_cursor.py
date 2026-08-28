@@ -709,9 +709,9 @@ def realized_plugin_roots(
     return realized_roots
 
 
-def plugin_manifest_root(path: Path) -> Path | None:
+def plugin_manifest_root(path: Path, surface: RepoSurface = CURSOR_SURFACE) -> Path | None:
     """The plugin root directory `path` (a plugin manifest file) belongs to,
-    per `CURSOR_SURFACE`'s format conventions — mirrors `_find_plugin_roots`'s
+    per `surface`'s format conventions — mirrors `_find_plugin_roots`'s
     own per-candidate root derivation, so a manifest's OWN root is computed
     the same way here as it is during discovery. This matters because a
     manifest-dir format (`.cursor-plugin`/`.claude-plugin`) puts the manifest
@@ -721,9 +721,13 @@ def plugin_manifest_root(path: Path) -> Path | None:
     itself.
 
     Returns `None` when `path` doesn't match any recognized format's
-    manifest filename/directory shape at all.
+    manifest filename/directory shape at all. The surface must be the one
+    whose ownership is being tested: a `.codex-plugin` manifest is invisible
+    to Cursor's format list, and treating an unrecognized manifest as "not a
+    root" would make a plugin's OWN manifest look like bundle content nested
+    beneath itself.
     """
-    for fmt in CURSOR_SURFACE.plugin_formats:
+    for fmt in surface.plugin_formats:
         if path.name != fmt.manifest_filename:
             continue
         if fmt.manifest_dir:
@@ -734,7 +738,9 @@ def plugin_manifest_root(path: Path) -> Path | None:
     return None
 
 
-def is_owned_by_realized_plugin(path: Path, realized_roots: list[Path]) -> bool:
+def is_owned_by_realized_plugin(
+    path: Path, realized_roots: list[Path], surface: RepoSurface = CURSOR_SURFACE
+) -> bool:
     """True when `path` is content of an already-realized plugin rather than
     an independent declaration.
 
@@ -750,7 +756,7 @@ def is_owned_by_realized_plugin(path: Path, realized_roots: list[Path]) -> bool:
     beneath itself but IS the independent declaration, so it stays visible.
     """
     resolved = path.resolve()
-    own_root = plugin_manifest_root(path)
+    own_root = plugin_manifest_root(path, surface)
     own = own_root.resolve() if own_root is not None else None
     return any(resolved.is_relative_to(root) and own != root for root in realized_roots)
 

@@ -66,6 +66,43 @@ def parse_plugin_hooks(
     )
 
 
+def parse_standalone_hooks(
+    hooks_json_path: Path, *, scope: Optional[str] = None, strict: bool = False
+) -> list[ComponentRef]:
+    """Walk a standalone `hooks.json` — a hooks file that is neither bundled in
+    a plugin nor embedded in a settings file.
+
+    Codex declares project hooks this way (`<project>/.codex/hooks.json`).
+    The envelope and event vocabulary are Claude Code's, so only the entry
+    point is new; `scope` is carried onto each ref the same way
+    `parse_settings_hooks` carries it.
+    """
+    try:
+        raw = hooks_json_path.read_text()
+    except (OSError, UnicodeDecodeError):
+        if strict:
+            raise
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        if strict:
+            raise
+        return []
+    if not isinstance(data, dict):
+        if strict:
+            raise ValueError("hooks file must contain an object")
+        return []
+    hooks_block = data.get("hooks")
+    if not isinstance(hooks_block, dict):
+        if strict:
+            raise ValueError("hooks file hooks must be an object")
+        return []
+    if strict:
+        _validate_hook_events(hooks_block, "hook")
+    return _walk_events(hooks_block, source_manifest=str(hooks_json_path), scope=scope)
+
+
 def parse_plugin_hooks_inline(
     hooks_block: dict, plugin_name: str, source_manifest: str, *, strict: bool = False
 ) -> list[ComponentRef]:

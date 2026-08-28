@@ -2397,3 +2397,45 @@ def test_repo_inventory_tree_roots_at_the_agent_when_one_is_named():
     assert named.startswith("Claude Code")
     # No label to name (a stored 0.4 document, or a direct call) keeps the path.
     assert default.startswith("repo /repo")
+
+
+# --- Component-tree plugin header (plan 043 Task 9 Step 3) -----------------
+
+
+def _tree_plugin_ref(name, enabled: bool | None = None):
+    from tools.component_ref import ComponentRef
+
+    extra: dict = {
+        "component_type": "plugin",
+        "component_path": [{"type": "plugin", "name": name}],
+    }
+    if enabled is not None:
+        extra["enabled"] = enabled
+    return ComponentRef(
+        name=name,
+        component_identity=f"plugin/mkt/{name}",
+        source_manifest=f"/x/{name}",
+        source_locator="$",
+        extra=extra,
+    )
+
+
+def test_inventory_tree_header_is_unchanged_when_nothing_is_disabled():
+    """Regression gate for every existing Claude Code and Cursor caller."""
+    from tools.render import render_inventory_tree
+
+    out = render_inventory_tree([_tree_plugin_ref("a", True), _tree_plugin_ref("b")], [])
+
+    assert "2 active plugins" in out
+    assert "disabled" not in out.splitlines()[0]
+
+
+def test_inventory_tree_header_reports_disabled_plugins_separately():
+    from tools.render import render_inventory_tree
+
+    out = render_inventory_tree([_tree_plugin_ref("a", True), _tree_plugin_ref("b", False)], [])
+
+    assert "2 plugins (1 disabled)" in out
+    # A disabled plugin is still installed, so it stays visible in the tree —
+    # it is only no longer summarised as active.
+    assert "a" in out and "b" in out

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,9 +21,11 @@ from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.rules import (
     api_endpoint_override,
+    command_policy_allow,
     insecure_transport,
     mcp_auto_approve,
     mutable_install,
+    project_trust,
     skill_capability,
 )
 
@@ -30,6 +33,8 @@ __all__ = [
     "KNOWN_RULE_IDS",
     "PostureFinding",
     "Standards",
+    "collect_codex_rules_manifests",
+    "collect_codex_project_trust_manifests",
     "collect_cursor_endpoint_mcp_manifests",
     "collect_cursor_endpoint_permissions_manifests",
     "collect_cursor_mcp_manifests",
@@ -54,6 +59,8 @@ KNOWN_RULE_IDS: frozenset[str] = frozenset(
         mcp_auto_approve.RULE_ID,
         api_endpoint_override.RULE_ID,
         skill_capability.RULE_ID,
+        command_policy_allow.RULE_ID,
+        project_trust.RULE_ID,
     }
 )
 
@@ -80,6 +87,7 @@ def run_posture_rules(
     allowed_rules: frozenset[str] | None = None,
     agent_kind: str | None = None,
     agent_id: str | None = None,
+    extra_manifests: Mapping[str, list[tuple[Path, dict]]] | None = None,
 ) -> list[PostureFinding]:
     """Run all V0 posture rules and concatenate their findings.
 
@@ -95,6 +103,17 @@ def run_posture_rules(
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs, agent_kind=agent_kind))
+    # Surfaces that declare no components and so have no manifest channel of
+    # their own. Keyed by rule id rather than positionally: the existing
+    # `(mcp, settings)` pair has no room for a third or fourth, and overloading
+    # either slot would make one rule's input depend on another's shape.
+    extras = extra_manifests or {}
+    findings.extend(
+        command_policy_allow.check_command_policy_allow(
+            extras.get(command_policy_allow.RULE_ID, [])
+        )
+    )
+    findings.extend(project_trust.check_project_trust(extras.get(project_trust.RULE_ID, [])))
     findings = [f for f in findings if allowed_rules is None or f.rule_id in allowed_rules]
     # `active_in` is the answer to "which agent is this active in" (ADR-0044:
     # "the agent doing the scanning is the answer" — see `tools.active_in`).
@@ -802,3 +821,57 @@ def collect_cursor_endpoint_permissions_manifests(
     if project_root is not None:
         paths.append(project_root / ".cursor" / _CURSOR_PERMISSIONS_FILENAME)
     return resolve_cursor_permissions(paths)
+
+
+# --- Codex posture surfaces (plan 043 Task 10) -----------------------------
+#
+# Both are **installed-only** and both are read directly from the filesystem
+# rather than derived from graph refs. That is the documented exception to
+# "posture derives from composition": these surfaces declare no components, so
+# there is no ref to derive from. Every other collector still derives.
+
+
+def collect_codex_rules_manifests(
+    config_root: Path,
+    project_root: Path | None = None,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Parsed `prefix_rule(...)` entries from `<root>/rules/*.rules`.
+
+    A second, independent read from composition's own: `_record_codex_rules_coverage`
+    reads only `unparsed_count` to raise a coverage warning, while this reads
+    the rules themselves for finding content. Neither is derivable from the
+    other, so the duplication is deliberate rather than an oversight.
+    """
+    from tools.parsers import codex_rules
+
+    rules_dir = config_root / "rules"
+    if not rules_dir.is_dir():
+        return []
+    out: list[tuple[Path, dict]] = []
+    for path in sorted(rules_dir.glob("*.rules")):
+        parsed = codex_rules.parse_rules(path)
+        if parsed.rules:
+            out.append((path, {"rules": parsed.rules}))
+    return out
+
+
+def collect_codex_project_trust_manifests(
+    config_root: Path,
+    project_root: Path | None = None,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """`[projects."<path>"] trust_level` from `<root>/config.toml`."""
+    from tools.parsers import codex_config
+
+    config_path = config_root / "config.toml"
+    if not config_path.is_file():
+        return []
+    try:
+        config = codex_config.load_config(config_path)
+    except Exception:  # noqa: BLE001 - a broken config is a scan gap, not a crash
+        return []
+    projects = {p.path: p.trust_level for p in config.projects.values()}
+    if not projects:
+        return []
+    return [(config_path, {"projects": projects})]

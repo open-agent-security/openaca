@@ -9,10 +9,34 @@ OpenACA registers one composition builder per agent kind. Each kind pins a
 coverage baseline per source — `resolve_coverage` floors observed coverage at
 that baseline regardless of how clean a given scan's parse is:
 
+### What lowers a baseline
+
+`openaca:composition_coverage` qualifies the **component graph**, so exactly one
+question sets a kind's baseline: *can this scan deterministically identify the
+agent's components?* Components are the closed set — `mcp_server`, `plugin`,
+`skill`, `hook`, `agent`, `command`.
+
+Three consequences, applied to every kind alike:
+
+- **Administrative and policy surfaces do not lower it.** Approval rules,
+  permission allowlists, and trust settings declare no components. They are
+  posture, reported under their own rule ids, and a scan that cannot read one
+  still knows the composition.
+- **Identity gaps do not lower it.** Not knowing which registry a plugin came
+  from costs it a cross-BOM identity, not its place in the graph.
+- **A readable surface we do not parse does lower it** — until we parse it. That
+  is a real gap in what the scan delivers, and the honest response is to close
+  it rather than label it.
+
+A baseline is argued from a named gap at **that** source. Never inherited from
+the other source, and never set conservatively because a kind is new: a
+`partial` every kind carries by reflex distinguishes nothing.
+
 | Kind | Declared | Installed |
 |---|---|---|
 | `claude-code` | `complete` | `complete` |
 | `cursor` | `partial` | `partial` |
+| `codex` | `complete` | `complete` |
 
 Cursor is `partial` at both sources, for different reasons per source:
 installed composition is blind to plugin enable state (a server-side call),
@@ -22,6 +46,31 @@ runtime registration to read — but still hits the extensibility flag and
 unparsed instruction surfaces. See
 [`docs/specs/cursor-agent-kind.md`](../specs/cursor-agent-kind.md) for the
 full evidence-gap detail.
+
+Codex is `complete` at both sources, and got there by closing a gap rather than
+relabelling one. Its profile layer (`$CODEX_HOME/<name>.config.toml`, activated
+by `codex -p <name>`) genuinely hid MCP servers — verified by running
+`codex -p work mcp list` against a fixture root — so OpenACA now composes every
+profile it finds. The remaining candidates fail the rule rather than the
+evidence: `rules/*.rules` and `[projects.*] trust_level` declare no components
+and report under their own posture rule ids; an unregistered marketplace costs a
+plugin its cross-BOM identity, not its place in the graph; and runtime MCP
+registration has zero references in the audited binary — an earlier draft
+asserted it by carrying the claim over from Cursor, where it is real, without
+checking it for Codex. `managed_config.toml` remains unaudited and is the one
+thing that would reopen this; being a file, the response would be to read it.
+See [`docs/specs/codex-agent-kind.md`](../specs/codex-agent-kind.md).
+
+Claude Code stays `complete`, and now earns it: its administrator-distributed
+managed settings (`managed-settings.json` plus `managed-settings.d/*.json`) can
+declare `mcpServers` and `hooks`, were explicitly not loaded in V0, and are now
+composed. Without that, an MDM-managed endpoint's composition was reported as
+complete while missing components it genuinely had.
+
+Cursor is the one kind still `partial`, and that is the rule doing its job: its
+third-party extensibility flag lives in an editor state database rather than a
+file, so a scan cannot determine whether the `.claude/*` and `.codex/*` skills
+it reports are actually loaded. That gap does not close by parsing.
 
 | Tier | What it reads | V0 status |
 |---|---|---|
@@ -80,7 +129,7 @@ version from lockfiles or install state.
 OpenACA V0 does not yet see:
 
 - inline or programmatic SDK configuration embedded directly in source code;
-- non-Claude, non-Cursor local agent-host state such as Codex CLI, Windsurf,
+- local agent-host state for kinds that are not registered, such as Windsurf
   or VS Code agent-mode config;
 - vulnerabilities for local-only or source-less components that do not provide
   a package, Git, or external match coordinate;

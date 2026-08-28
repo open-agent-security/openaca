@@ -99,26 +99,26 @@ The first is forked, the second parameterised, for the reasons in ADR-0053.
 This task must be reviewable on its own. If Claude Code's output changes at all, the
 refactor is wrong — and that signal is only clean while the diff has no Cursor in it.
 
-- [ ] **Step 1: Write the descriptors.** `BundledLayout`, `PluginFormat`, `RepoSurface`
+- [x] **Step 1: Write the descriptors.** `BundledLayout`, `PluginFormat`, `RepoSurface`
       as frozen dataclasses, per ADR-0053. Import only parser leaves.
-- [ ] **Step 2: Transcribe `CLAUDE_CODE_SURFACE` verbatim** from `_STANDALONE_MCP_FILENAMES`
+- [x] **Step 2: Transcribe `CLAUDE_CODE_SURFACE` verbatim** from `_STANDALONE_MCP_FILENAMES`
       (`:1348`), `_COMMAND_AGENT_SURFACES` (`:1354`), and the `.claude`/`.claude-plugin`/
       `.mcp.json` literals. No behaviour change intended, none permitted.
-- [ ] **Step 3: Extract `finalize_graph`** — the `build_rooted_graph` tail (name index,
+- [x] **Step 3: Extract `finalize_graph`** — the `build_rooted_graph` tail (name index,
       project-root merge, `_attach_mcp_launch_deps`, `validate`). Cursor's builder calls
       the same function so ADR-0039 launch resolution cannot fork.
-- [ ] **Step 4: Add `extra_roots` to `_make_normalizer`** (`:138`), matched
+- [x] **Step 4: Add `extra_roots` to `_make_normalizer`** (`:138`), matched
       longest-path-first after `project_root` and before `install_root`. Claude passes
       `()`; output must be identical.
-- [ ] **Step 5: Thread `surface` through** `descend` (`:691`), `_find_plugin_roots`
+- [x] **Step 5: Thread `surface` through** `descend` (`:691`), `_find_plugin_roots`
       (`:825`), `_descend_into_plugin` (`:999`), `_add_project_skills` (`:1029`),
       `_is_project_skill_md` (`:1079`), `_add_repo_standalone_components` (`:1361`),
       `_is_claude_settings_json` (`:1428`), `_command_agent_kind` (`:1437`),
       `_add_bundled_plugin_surfaces` (`:1451`), `_plugin_manifest_data` (`:1509`).
-- [ ] **Step 6: Parameterise the bundled MCP filename** in
+- [x] **Step 6: Parameterise the bundled MCP filename** in
       `claude_plugin_root._parse_default_mcp`. This is the one deliberate crossing of the
       placement/content boundary — ADR-0053 says it should stay the only one.
-- [ ] **Step 7: Publish the shared construction surface** — public aliases for the
+- [x] **Step 7: Publish the shared construction surface** — public aliases for the
       helpers Cursor's builder needs, so a cross-module private import is never the
       contract.
 
@@ -138,13 +138,13 @@ literal.
 
 **Files:** create `tools/parsers/agent_plugins.py`, `tests/test_parsers/test_agent_plugins.py`
 
-- [ ] **Step 1: `is_agent_plugins_manifest`** — **full-match** against an
+- [x] **Step 1: `is_agent_plugins_manifest`** — **full-match** against an
       **allowlist of supported versions**, currently `{"1.0.0"}`, not a free version
       segment. §5.2 of the standard is normative: a client that does not support the
       declared version *"MUST reject the plugin"*, so an accept-any-version regex would
       parse a future 2.0.0 manifest under 1.0.0 semantics. Never match on origin prefix.
       Reject 1.1.0 — it is a Working Draft.
-- [ ] **Step 2: `validate_manifest`** — a schema-recognized `plugin.json` is not yet a
+- [x] **Step 2: `validate_manifest`** — a schema-recognized `plugin.json` is not yet a
       plugin. §5.3/§5.5 are normative and specific: `name` is required, 1–64 characters,
       **lowercase** alphanumerics/hyphens/periods only, first and last characters
       alphanumeric, no consecutive hyphens or periods. `My-Plugin` and `-start` are
@@ -154,13 +154,13 @@ literal.
         reject the plugin and MUST NOT discover or execute any of its components."*
       - **Non-fatal** — an unknown top-level field, or a non-object `extensions`:
         *"MUST report and ignore... and MUST continue loading the plugin."*
-- [ ] **Step 3: `parse` — skills.** **Immediate child directories** of `skills/` holding
+- [x] **Step 3: `parse` — skills.** **Immediate child directories** of `skills/` holding
       a `SKILL.md`, read only from a manifest that passed Step 2. §7.1: *"Clients MUST
       NOT recursively search deeper descendants"* — the inverse of Cursor's own skill
       roots, which are recursive, so these must not share a walker. Commands, agents,
       hooks, and rules are outside the portable contract and must not be walked even
       when present.
-- [ ] **Step 4: `parse` — portable MCP.** The bundled `mcp.json` is **not** a plain
+- [x] **Step 4: `parse` — portable MCP.** The bundled `mcp.json` is **not** a plain
       `mcpServers` map and must not go straight to the shared dispatch. §7.2.1: it
       *"MUST be a JSON object containing the required `$schema` and `mcpServers` fields,
       with no other top-level fields"*, and its `$schema` is a **different** URL from the
@@ -170,7 +170,7 @@ literal.
       for that plugin and continue loading other component types."* So a bad `mcp.json`
       costs the servers and keeps the skills. Validate the envelope here, then hand the
       inner `mcpServers` map to the shared dispatch for per-entry parsing and isolation.
-- [ ] **Step 5: Containment** — `resolve_within` on skill directories, `SKILL.md` files,
+- [x] **Step 5: Containment** — `resolve_within` on skill directories, `SKILL.md` files,
       and `mcp.json`, so a symlink escaping the bundle realizes nothing.
 
 **Verification:** `1.0.0` accepted, `1.1.0` and `2.0.0` **rejected**, same-origin
@@ -191,7 +191,7 @@ disable MCP alone. A single malformed server entry inside an otherwise valid
 
 **Files:** modify `tools/parsers/__init__.py`, `tools/agent_kinds/__init__.py`
 
-- [ ] **Step 1: Three-way split** — `HOST_AGNOSTIC_REGISTRY`,
+- [x] **Step 1: Three-way split** — `HOST_AGNOSTIC_REGISTRY`,
       `CLAUDE_CODE_MANIFEST_REGISTRY`, `CURSOR_MANIFEST_REGISTRY`, with
       `REGISTRY = [*HOST_AGNOSTIC, *CLAUDE_CODE]` kept as a compat alias so
       `parse_repo`/`parse_repo_grouped` defaults stay byte-identical.
@@ -217,15 +217,15 @@ disable MCP alone. A single malformed server entry inside an otherwise valid
       without it a bare `plugin.json` pattern matches every unrelated plugin
       manifest in a tree. Note **no bare `mcp.json`/`.mcp.json`**, per the
       invariant below.
-- [ ] **Step 2: `ManifestPattern` NamedTuple** with `guard: Callable[[Path], bool] | None`,
+- [x] **Step 2: `ManifestPattern` NamedTuple** with `guard: Callable[[Path], bool] | None`,
       evaluated **before** `n_found` increments, so a bare `plugin.json` pattern does not
       inflate the unit count with every unrelated file. Widen the alias in
       `agent_kinds/__init__.py`; it must stay hashable (`scan.py` caches on it).
-- [ ] **Step 3: Replace `_registry_pattern_matches`** (`:60`) with compiled
+- [x] **Step 3: Replace `_registry_pattern_matches`** (`:60`) with compiled
       `pathspec.GitWildMatchPattern`. Re-anchor `.claude-plugin/plugin.json` and
       `.claude/settings.json` as `**/…` — git anchors slashed patterns at the root and
       the hand-rolled code did not.
-- [ ] **Step 4: `break` on first match** in `parse_repo_grouped` (`:134`), making
+- [x] **Step 4: `break` on first match** in `parse_repo_grouped` (`:134`), making
       one-file-one-route a property of the walker rather than registry hygiene.
 
 **Invariant to test with the reason in the assertion message:** Cursor's registry must
@@ -256,14 +256,14 @@ one: unifying "the precedence walk" gets one of them wrong.
 
 ### Subagents — `tools/cursor_subagents.py`
 
-- [ ] **Step 1: Per-scope resolution** — every `.cursor/agents/<rel>`; each
+- [x] **Step 1: Per-scope resolution** — every `.cursor/agents/<rel>`; each
       `.claude/agents/<rel>` only when no `.cursor` sibling exists at the same relative
       path (first-wins; `.cursor` over `.claude`).
-- [ ] **Step 2: Two entry points** — repo mode walks `**/{.cursor,.claude}/agents`
+- [x] **Step 2: Two entry points** — repo mode walks `**/{.cursor,.claude}/agents`
       grouped by `agents_dir.parent.parent`; endpoint mode takes **explicitly named**
       dirs, because endpoint roots are arbitrary paths and must never be reconstructed
       from a basename.
-- [ ] **Step 3: Containment and isolation** — `resolve_within` on the `agents` dir
+- [x] **Step 3: Containment and isolation** — `resolve_within` on the `agents` dir
       itself, per-file `resolve()` on nested `.md`, and per-file parse isolation so one
       corrupt file costs one subagent.
 
@@ -277,14 +277,14 @@ root dropped; nested `.md` symlink escape dropped; malformed file isolated.
 Commands resolve **last-wins** over team → global → plugin → workspace → personal,
 with **user** scope the eventual winner — the inverse of the subagent rule above.
 
-- [ ] **Step 1: Ordered-scope resolution** — resolve every scope's
+- [x] **Step 1: Ordered-scope resolution** — resolve every scope's
       `.cursor/commands/<rel>` and `.claude/commands/<rel>` in the documented tier order
       and keep the last entry seen per relative path, so a personal-scope file overrides
       a same-path workspace or plugin file rather than coexisting with it.
-- [ ] **Step 2: Two entry points**, mirroring the subagent resolver — repo mode walks
+- [x] **Step 2: Two entry points**, mirroring the subagent resolver — repo mode walks
       both command roots per scope directory grouped by their parent; endpoint mode takes
       explicitly named per-scope dirs.
-- [ ] **Step 3: Containment and isolation**, mirroring the subagent resolver —
+- [x] **Step 3: Containment and isolation**, mirroring the subagent resolver —
       `resolve_within` on the `commands` dir, per-file `resolve()`, per-file parse
       isolation.
 
@@ -299,13 +299,13 @@ isolation cases mirroring the subagent resolver's.
 **Files:** modify `tools/repo_surface.py`; create `tools/graph_build_cursor.py`,
 `tests/test_graph_build_cursor.py`
 
-- [ ] **Step 1: `CURSOR_SURFACE`** — skill dirs `.cursor`, `.agents`, `.claude`,
+- [x] **Step 1: `CURSOR_SURFACE`** — skill dirs `.cursor`, `.agents`, `.claude`,
       `.codex`; command/agent surfaces `.cursor` + `.claude`; `scoped_mcp_rels`
       `.cursor/mcp.json`; `settings_rel=None`; `excluded_skill_dirs=("skills-cursor",)`;
       both plugin formats.
-- [ ] **Step 2: `build_cursor_graph(agent, ...)`** — root `Node(key=agent.bom_ref)`,
+- [x] **Step 2: `build_cursor_graph(agent, ...)`** — root `Node(key=agent.bom_ref)`,
       normalizer, dispatch on `agent.source`, `finalize_graph`.
-- [ ] **Step 3: Declared branch** — plugin roots via the ordered candidate list; Agent
+- [x] **Step 3: Declared branch** — plugin roots via the ordered candidate list; Agent
       Plugins roots excluded **strictly below** a realized native root; skills across the
       four roots recursively; `.cursor/mcp.json`; commands via the Task 4 command
       resolver over `.cursor/commands/**` and `.claude/commands/**` (`.md`/`.txt`);
@@ -328,16 +328,16 @@ a valid `.claude-plugin/plugin.json` realizes the latter, not zero plugins.
 
 **Files:** modify `tools/graph_build_cursor.py`
 
-- [ ] **Step 1: Direct surfaces** — skills across the four user roots
+- [x] **Step 1: Direct surfaces** — skills across the four user roots
       **excluding `skills-cursor`**; commands from `<root>/.cursor/commands` and
       `<root>/.claude/commands` via the Task 4 command resolver; subagents via the
       Task 4 subagent resolver run once per scope.
-- [ ] **Step 2: MCP merge** — `<root>/mcp.json` (user) and `<project>/.cursor/mcp.json`
+- [x] **Step 2: MCP merge** — `<root>/mcp.json` (user) and `<project>/.cursor/mcp.json`
       (project), merged **by server name with project winning**, not two path-keyed
       occurrences that happen to coexist. The merge produces one effective server map;
       each surviving entry's node carries the path of the file it actually won from, so
       posture attribution (Task 7) still points at a real file.
-- [ ] **Step 3: Plugins** — `plugins/local/<name>/` and
+- [x] **Step 3: Plugins** — `plugins/local/<name>/` and
       `plugins/cache/<marketplace>/<name>/<sha>/`. Cached bundles are **gated on
       `.cache-complete`**: a zero-byte sentinel written last, and Cursor's only
       cache-reuse check, so a directory holding content without it is one Cursor
@@ -348,7 +348,7 @@ a valid `.claude-plugin/plugin.json` realizes the latter, not zero plugins.
       synthesized presence-only ref (`extra["manifest"] = "absent"`). Marketplace segment
       goes in `extra["cursor_marketplace_dir"]` — **never** `extra["marketplace"]`, which
       is the cross-BOM identity qualifier.
-- [ ] **Step 4: Home-scoped roots stay home-scoped.** `~/.agents/skills` and the
+- [x] **Step 4: Home-scoped roots stay home-scoped.** `~/.agents/skills` and the
       `.claude`/`.codex` compat roots are cross-tool conventions, not Cursor state, so
       `--config-dir` must not relocate them.
 
@@ -371,12 +371,12 @@ drop the other file's entries.
 **Files:** modify `tools/posture/__init__.py`, `tools/posture/rules/mcp_auto_approve.py`,
 `tools/scan.py`, `tools/remote/collector.py`
 
-- [ ] **Step 1: Promote `_no_manifests`** to `tools.posture.no_manifests` and delete both
+- [x] **Step 1: Promote `_no_manifests`** to `tools.posture.no_manifests` and delete both
       private copies (`tools/scan.py:680`, `tools/remote/collector.py:118`) in favour of
       the shared import — scan, the collector, and Cursor all need it, and importing a
       scan-CLI private is the wrong contract, and leaving the collector's copy in place
       is the same wrong contract by omission.
-- [ ] **Step 2: Cursor collectors.** Declared: a path-and-content walk over `**/.cursor/mcp.json`
+- [x] **Step 2: Cursor collectors.** Declared: a path-and-content walk over `**/.cursor/mcp.json`
       plus every plugin root, resolved through the same ordered manifest-candidate list Task 5's
       declared composition uses — `.cursor-plugin/plugin.json` → `.claude-plugin/plugin.json` →
       schema-detected root `plugin.json`, first candidate that parses, passes the Task 2
@@ -390,7 +390,7 @@ drop the other file's entries.
       Honouring `include_gitignored` exactly as `collect_mcp_manifests` (`:180`) does.
       Installed: derived **from the refs the graph already produced**, never a directory
       walk.
-- [ ] **Step 3: Resolve `permissions.json` before it reaches the rule.** Read the user
+- [x] **Step 3: Resolve `permissions.json` before it reaches the rule.** Read the user
       file (relocatable via `CURSOR_CONFIG_DIR`/`XDG_CONFIG_HOME`, at most one remote
       plus one local) and the project-root-to-folder chain, and produce one effective
       view: the user and project `permissions.json` files **concatenate field by field**
@@ -398,7 +398,7 @@ drop the other file's entries.
       comments and trailing commas are documented as supported and a plain loader drops
       valid files.
 
-- [ ] **Step 4: `mcp_auto_approve` branches on manifest shape.** Claude Code's
+- [x] **Step 4: `mcp_auto_approve` branches on manifest shape.** Claude Code's
       per-server `autoApprove` and Cursor's `mcpAllowlist`/`autoRun` are the same posture
       in different files.
 
@@ -446,11 +446,11 @@ posture for the first-winning candidate only, not shadowed content from both.
 **Files:** create `tools/agent_kinds/cursor.py`; modify `tools/agent_kinds/__init__.py`,
 `tests/test_agent_kinds.py`
 
-- [ ] **Step 1: `KIND`** — `id="cursor"`, singleton, `root_label="cursor"`,
+- [x] **Step 1: `KIND`** — `id="cursor"`, singleton, `root_label="cursor"`,
       `COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}`.
-- [ ] **Step 2: `resolve_config_root`** — `--config-dir`, else `<home>/.cursor`. **No env
+- [x] **Step 2: `resolve_config_root`** — `--config-dir`, else `<home>/.cursor`. **No env
       var**; `CURSOR_CONFIG_DIR` scopes only `permissions.json` and the CLI's own config.
-- [ ] **Step 3: Declared evidence** — Cursor-**owned** surfaces only: `.cursor/mcp.json`,
+- [x] **Step 3: Declared evidence** — Cursor-**owned** surfaces only: `.cursor/mcp.json`,
       `.cursor/skills/*/SKILL.md`, `.agents/skills/*/SKILL.md`, `.cursor/commands/*`,
       `.cursor/agents/*`, `.cursor-plugin/plugin.json`, schema-detected root `plugin.json`.
       **Not** `.claude/*` (a phantom Cursor BOM for every Claude-only repo) and **not** a
@@ -478,7 +478,7 @@ Cursor is registered as this task's **last** step, once `kind_id` filtering and
 change ordinary `scan endpoint`/`bom endpoint`/`remote sync endpoint` invocations (no
 `--kind` given) before there is a way to select or validate a kind.
 
-- [ ] **Step 1: `DiscoveryContext.kind_id`**; `discover_agents` skips non-matching kinds.
+- [x] **Step 1: `DiscoveryContext.kind_id`**; `discover_agents` skips non-matching kinds.
 - [x] **Amended after ADR-0054 (root override is a per-kind capability).** A
       root override is granted only to a kind for which naming a root fully
       specifies the target. `AgentKind.root_override_refusal` carries the reason a
@@ -489,7 +489,7 @@ change ordinary `scan endpoint`/`bom endpoint`/`remote sync endpoint` invocation
       `<home>/.cursor`, and tests needing a hermetic root fake home instead.
       Foreign-tree Cursor scanning is explicitly unserved; the coherent
       "treat this directory as home" override is deferred to its own design.
-- [ ] **Step 2: `--kind` on `scan endpoint`, `bom endpoint`, `remote sync endpoint`.**
+- [x] **Step 2: `--kind` on `scan endpoint`, `bom endpoint`, `remote sync endpoint`.**
       `--config-dir` **requires** `--kind` — a hard error, never silent arbitration.
       Update its help text, which still says `$CLAUDE_CONFIG_DIR`. Default (no `--kind`,
       no `--config-dir`) discovers every installed kind whose own default root exists;
@@ -499,7 +499,7 @@ change ordinary `scan endpoint`/`bom endpoint`/`remote sync endpoint` invocation
       compatibility root the same kind reads under a different variable (e.g. Cursor's
       `--config-dir` never relocates `~/.agents/skills` or the `.claude`/`.codex` compat
       roots — see Task 6 Step 4).
-- [ ] **Step 3: Propagate `--kind` into `remote sync endpoint`'s discovery.**
+- [x] **Step 3: Propagate `--kind` into `remote sync endpoint`'s discovery.**
       `tools/remote/cli.py`'s `endpoint` command resolves `--config-dir` through
       `_resolve_endpoint_config_dir` (`:206`), which is Claude-specific
       (`CLAUDE_CONFIG_DIR`, else `~/.claude`), and passes no kind selection into
@@ -509,7 +509,7 @@ change ordinary `scan endpoint`/`bom endpoint`/`remote sync endpoint` invocation
       through `tools/remote/collector.py`'s `build_endpoint_collections` into
       `DiscoveryContext`, replacing the eager Claude-only root resolution so remote
       collection reaches the same per-kind selection endpoint scan already has.
-- [ ] **Step 4: Fix the redaction root contract for multi-kind default discovery.**
+- [x] **Step 4: Fix the redaction root contract for multi-kind default discovery.**
       `_prepare_upload_payload` (`tools/remote/collector.py:296-335`),
       `_redact_payload_for_remote` (`:734-838`), and `_relativize_path_for_remote`
       (`:421-468`) all redact every collection's absolute paths against one outer
@@ -531,16 +531,16 @@ change ordinary `scan endpoint`/`bom endpoint`/`remote sync endpoint` invocation
       exactly one collection and its `config_root` already equals the outer
       `config_dir`. Cover dry-run and upload-path output for both an explicit `--kind`
       and default two-kind discovery.
-- [ ] **Step 5: Fix double-counted shared manifests.** `scan.py:843-850` keys scan-wide
+- [x] **Step 5: Fix double-counted shared manifests.** `scan.py:843-850` keys scan-wide
       totals on `(scan_root, kind.manifest_patterns)`, so two kinds count one
       `package.json` twice. Per-agent coverage keeps its own subset; scan-wide totals come
       from one walk per root over the union. `bom_cli.py:363` has the same bug.
-- [ ] **Step 6: Decide duplicate findings on shared components.** A
+- [x] **Step 6: Decide duplicate findings on shared components.** A
       `.claude/agents/reviewer.md` is reachable from two agents, so
       `scan.py:851-861` yields the same finding twice. Today no file is reachable from two
       agents. Argued correct — two agents genuinely both expose it — but it needs a test,
       not a discovery in review.
-- [ ] **Step 7: Register Cursor** in `_registry()` (`tools/agent_kinds/__init__.py:146`),
+- [x] **Step 7: Register Cursor** in `_registry()` (`tools/agent_kinds/__init__.py:146`),
       now that Steps 1–4 make it selectable and correctly redacted and Steps 5–6 make its
       counts and findings correct once two kinds coexist.
 
@@ -566,11 +566,11 @@ silently defaulting to Claude Code.
 **Files:** `docs/reference/cli.md`, `docs/reference/coverage.md`, `CLAUDE.md`,
 `docs/plans/README.md`
 
-- [ ] **Step 1:** `--kind` on the three endpoint commands; corrected `--config-dir` help.
-- [ ] **Step 2:** Cursor's `partial` row in the coverage reference.
-- [ ] **Step 3:** Amend the parser-set line in `CLAUDE.md` — V0 scope said Cursor
+- [x] **Step 1:** `--kind` on the three endpoint commands; corrected `--config-dir` help.
+- [x] **Step 2:** Cursor's `partial` row in the coverage reference.
+- [x] **Step 3:** Amend the parser-set line in `CLAUDE.md` — V0 scope said Cursor
       manifests were V1.
-- [ ] **Step 4:** Add 042 to the plan index.
+- [x] **Step 4:** Add 042 to the plan index.
 
 ---
 
@@ -580,7 +580,7 @@ Module tests carry the detail. Per the e2e boundary in `CLAUDE.md`, `tests/test_
 gets exactly **two** additions — the one-screen tests that fail if any of discovery,
 composition, registry, or emission regresses.
 
-- [ ] **Declared, two kinds, one repo.** Fixture with `.claude/skills/…`,
+- [x] **Declared, two kinds, one repo.** Fixture with `.claude/skills/…`,
       `.cursor/mcp.json`, and a shared `.claude/agents/reviewer.md`, with every manifest
       well-formed so neither kind's walk hits a parse failure. `openaca bom repo` emits
       two documents; assert both `openaca:agent_kind` values, and `complete` for Claude
@@ -591,7 +591,7 @@ composition, registry, or emission regresses.
       Step 1, and `resolve_coverage` floors at the baseline regardless of observed
       evidence gaps. Also assert that `reviewer.md`'s `bom-ref` is **identical in both**
       — the product promise of the whole cross-read design.
-- [ ] **Installed, two kinds, one machine.** Fixture `HOME` with `~/.claude` and
+- [x] **Installed, two kinds, one machine.** Fixture `HOME` with `~/.claude` and
       `~/.cursor` (one cached plugin, one MCP, both well-formed). `openaca scan endpoint`
       renders two agent cards; assert the Cursor plugin carries **no** `enabled`
       property, and that a `~/.claude/agents/x.md` node keys as

@@ -26,17 +26,23 @@ This module exposes two views, picked by the caller based on identity needs:
   `claude-hook/settings/<scope>/<event>/<index>` would otherwise lose scope
   provenance after merge).
 
-Managed scope (system-wide policy via plist/registry/managed-settings.json)
-is platform-specific and not loaded in V0; the field is reserved.
+Managed scope is system-wide policy an administrator distributes: a
+`managed-settings.json` plus a `managed-settings.d/*.json` drop-in directory,
+under a platform-specific root. It is loaded, because it can declare
+`mcpServers` and `hooks` — components — and a scan that skipped it would
+report an MDM-managed endpoint's composition as complete while missing them.
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
+
+from tools.graph import record_gap
 
 Scope = Literal["managed", "local", "project", "user"]
 Mode = Literal["repo", "endpoint"]
@@ -113,6 +119,7 @@ def load(
     project_root: Optional[Path] = None,
     *,
     warnings: list[str] | None = None,
+    managed_dir: Optional[Path] = None,
 ) -> SettingsLayers:
     """Read settings files from disk.
 
@@ -137,8 +144,53 @@ def load(
         if (parsed := _load_object(local_file, warnings)) is not None:
             layers.local = parsed
 
-    # Managed scope (system policy) — not loaded in V0.
+    if (parsed := load_managed(managed_dir, warnings=warnings)) is not None:
+        layers.managed = parsed
     return layers
+
+
+def default_managed_dir() -> Path:
+    """Where an administrator's Claude Code policy lands, per platform.
+
+    Matches `tools/policy_cli.py`'s own `_default_managed_settings_dir` — that
+    is where OpenACA *writes* policy, so reading anywhere else would mean the
+    tool could not see settings it had just installed.
+    """
+    system = platform.system()
+    if system == "Darwin":
+        return Path("/Library/Application Support/ClaudeCode")
+    if system == "Windows":
+        return Path("C:/Program Files/ClaudeCode")
+    return Path("/etc/claude-code")
+
+
+def load_managed(
+    directory: Path | None = None, *, warnings: list[str] | None = None
+) -> dict | None:
+    """Merge `managed-settings.json` and every `managed-settings.d/*.json`.
+
+    Drop-ins are applied in sorted filename order after the base file, which is
+    the convention the `NN-name.json` naming implies and the order
+    `policy_cli`'s own collision check walks.
+    """
+    root = directory if directory is not None else default_managed_dir()
+    merged: dict = {}
+    found = False
+    base = root / "managed-settings.json"
+    if (parsed := _load_object(base, warnings)) is not None:
+        _deep_merge(merged, parsed)
+        found = True
+    dropins = root / "managed-settings.d"
+    if dropins.is_dir():
+        try:
+            entries = sorted(dropins.glob("*.json"))
+        except OSError:
+            entries = []
+        for path in entries:
+            if (parsed := _load_object(path, warnings)) is not None:
+                _deep_merge(merged, parsed)
+                found = True
+    return merged if found else None
 
 
 def _load_object(path: Path, warnings: list[str] | None) -> dict | None:
@@ -148,10 +200,10 @@ def _load_object(path: Path, warnings: list[str] | None) -> dict | None:
         parsed = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         if warnings is not None:
-            warnings.append(f"could not parse settings file {path}: {exc}")
+            record_gap(warnings, f"could not parse settings file {path}: {exc}")
         return None
     if not isinstance(parsed, dict):
         if warnings is not None:
-            warnings.append(f"settings file {path} must contain an object")
+            record_gap(warnings, f"settings file {path} must contain an object")
         return None
     return parsed

@@ -8,6 +8,7 @@ from typing import Optional
 from pathspec import GitIgnoreSpec
 
 from tools.component_ref import ComponentRef
+from tools.graph import record_gap
 from tools.parsers import claude_command_agent, claude_skill, hooks_json, mcp_json
 from tools.parsers.claude_command_agent import Kind
 from tools.parsers.gitignore import is_ignored
@@ -74,7 +75,9 @@ def _parse_manifest_refs(
         deps = data["dependencies"]
         if not isinstance(deps, list):
             if warnings is not None:
-                warnings.append(f"could not parse {plugin_json_path}: dependencies must be a list")
+                record_gap(
+                    warnings, f"could not parse {plugin_json_path}: dependencies must be a list"
+                )
         else:
             for i, dep in enumerate(deps):
                 locator = f"$.dependencies[{i}]"
@@ -128,7 +131,7 @@ def _parse_manifest_refs(
                 )
             except ValueError as exc:
                 if warnings is not None:
-                    warnings.append(f"could not parse {plugin_json_path}: {exc}")
+                    record_gap(warnings, f"could not parse {plugin_json_path}: {exc}")
         elif isinstance(servers, str):
             referenced = resolve_within(plugin_root, servers)
             if referenced is None or not referenced.is_file():
@@ -141,7 +144,7 @@ def _parse_manifest_refs(
                     file_refs = mcp_json.parse(referenced, strict=warnings is not None)
                 except Exception as exc:
                     if warnings is not None:
-                        warnings.append(f"could not parse {referenced}: {exc}")
+                        record_gap(warnings, f"could not parse {referenced}: {exc}")
                     file_refs = []
                 refs.extend(file_refs)
         elif warnings is not None:
@@ -196,7 +199,7 @@ def _parse_default_mcp(
         mcp_refs = mcp_json.parse(default_mcp, strict=warnings is not None)
     except Exception as exc:
         if warnings is not None:
-            warnings.append(f"could not parse {default_mcp}: {exc}")
+            record_gap(warnings, f"could not parse {default_mcp}: {exc}")
         return []
     out: list[ComponentRef] = []
     for ref in mcp_refs:
@@ -287,7 +290,7 @@ def _parse_bundled_hooks(
             )
         except Exception as exc:
             if warnings is not None:
-                warnings.append(f"could not parse {default_hooks}: {exc}")
+                record_gap(warnings, f"could not parse {default_hooks}: {exc}")
     inline_hooks = data.get("hooks")
     if isinstance(inline_hooks, dict):
         try:
@@ -301,7 +304,7 @@ def _parse_bundled_hooks(
             )
         except ValueError as exc:
             if warnings is not None:
-                warnings.append(f"could not parse {plugin_json_path}: {exc}")
+                record_gap(warnings, f"could not parse {plugin_json_path}: {exc}")
     elif isinstance(inline_hooks, str):
         custom_hooks_file = resolve_within(plugin_root, inline_hooks)
         if custom_hooks_file is not None and custom_hooks_file.is_file():
@@ -317,13 +320,13 @@ def _parse_bundled_hooks(
                     )
                 except Exception as exc:
                     if warnings is not None:
-                        warnings.append(f"could not parse {custom_hooks_file}: {exc}")
+                        record_gap(warnings, f"could not parse {custom_hooks_file}: {exc}")
         elif warnings is not None:
             warnings.append(
                 f"could not parse {inline_hooks}: referenced hook manifest is unavailable"
             )
     elif "hooks" in data and warnings is not None:
-        warnings.append(f"could not parse {plugin_json_path}: hooks must be an object or path")
+        record_gap(warnings, f"could not parse {plugin_json_path}: hooks must be an object or path")
     return refs
 
 
@@ -404,5 +407,5 @@ def _enumerate_bundled_command_agent_dir(
             )
         except Exception as exc:
             if warnings is not None:
-                warnings.append(f"could not parse agent definition {child}: {exc}")
+                record_gap(warnings, f"could not parse agent definition {child}: {exc}")
     return refs

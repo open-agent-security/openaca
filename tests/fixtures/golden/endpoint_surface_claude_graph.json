@@ -1,0 +1,352 @@
+{
+  "nodes": [
+    {
+      "key": "endpoint/agents/personal-agent.md#$#personal-agent",
+      "kind": "agent",
+      "ref": {
+        "ecosystem": null,
+        "name": "personal-agent",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/agents/personal-agent.md",
+        "source_locator": "$",
+        "component_identity": null,
+        "extra": {
+          "scope_owner": null,
+          "component_type": "agent",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/commands/personal-cmd.md#$#personal-cmd",
+      "kind": "command",
+      "ref": {
+        "ecosystem": null,
+        "name": "personal-cmd",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/commands/personal-cmd.md",
+        "source_locator": "$",
+        "component_identity": null,
+        "extra": {
+          "scope_owner": null,
+          "component_type": "command",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/plugins/cache/mkt/demo/1.0.0/skills/bundled-skill/SKILL.md#$.frontmatter#bundled-skill",
+      "kind": "skill",
+      "ref": {
+        "ecosystem": null,
+        "name": "bundled-skill",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/plugins/cache/mkt/demo/1.0.0/skills/bundled-skill/SKILL.md",
+        "source_locator": "$.frontmatter",
+        "component_identity": "skill/plugin/mkt/demo/bundled-skill",
+        "extra": {
+          "component_type": "skill",
+          "artifact_coordinates": [
+            {
+              "kind": "skill-content-hash",
+              "algorithm": "sha256",
+              "value": "sha256:4790eaea53eb520a9f8b128fe815d213841b37a4361577db41d25269b8a9bcaf"
+            }
+          ],
+          "_identity_finalized": true,
+          "_identity_namespace": "plugin/mkt/demo"
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/plugins/installed_plugins.json#$.plugins.demo@mkt[0]#plugin/mkt/demo",
+      "kind": "plugin",
+      "ref": {
+        "ecosystem": null,
+        "name": "demo",
+        "version": "1.0.0",
+        "source_manifest": "<ENDPOINT>/plugins/installed_plugins.json",
+        "source_locator": "$.plugins.demo@mkt[0]",
+        "component_identity": "plugin/mkt/demo",
+        "extra": {
+          "component_type": "plugin",
+          "declared_by": {
+            "kind": "skill_lock",
+            "path": "<ENDPOINT>/plugins/installed_plugins.json"
+          },
+          "component_path": [
+            {
+              "type": "plugin",
+              "name": "demo"
+            }
+          ],
+          "gitCommitSha": "abc123def456",
+          "installPath": "<ENDPOINT>/plugins/cache/mkt/demo/1.0.0",
+          "marketplace": "mkt",
+          "scope": "user",
+          "_identity_finalized": true,
+          "_identity_namespace": "plugin/mkt/demo"
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/settings.json#$.hooks.SessionStart[0]#",
+      "kind": "hook",
+      "ref": {
+        "ecosystem": null,
+        "name": null,
+        "version": null,
+        "source_manifest": "<ENDPOINT>/settings.json",
+        "source_locator": "$.hooks.SessionStart[0]",
+        "component_identity": null,
+        "extra": {
+          "event": "SessionStart",
+          "index": 0,
+          "type": null,
+          "command": null,
+          "matcher": null,
+          "scope": "user",
+          "component_type": "hook",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/settings.json#$.mcpServers (inlined).remote-svc#mcp-remote/example.test/mcp/",
+      "kind": "mcp_server",
+      "ref": {
+        "ecosystem": null,
+        "name": null,
+        "version": null,
+        "source_manifest": "<ENDPOINT>/settings.json",
+        "source_locator": "$.mcpServers (inlined).remote-svc",
+        "component_identity": "mcp-remote/example.test/mcp/",
+        "extra": {
+          "component_type": "mcp_server",
+          "transport": "http",
+          "url": "https://example.test/mcp/",
+          "declared_by": {
+            "kind": "manifest",
+            "path": "<ENDPOINT>/settings.json"
+          },
+          "component_path": [
+            {
+              "type": "mcp_server",
+              "name": "remote-svc"
+            }
+          ],
+          "install_source": "https://example.test/mcp/",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "endpoint/settings.json#$.mcpServers (inlined).stdio-svc#mcp-server/npm/@scope/tool",
+      "kind": "mcp_server",
+      "ref": {
+        "ecosystem": "npm",
+        "name": "@scope/tool",
+        "version": "1.2.3",
+        "source_manifest": "<ENDPOINT>/settings.json",
+        "source_locator": "$.mcpServers (inlined).stdio-svc",
+        "component_identity": "mcp-server/npm/@scope/tool",
+        "extra": {
+          "component_type": "mcp_server",
+          "declared_by": {
+            "kind": "manifest",
+            "path": "<ENDPOINT>/settings.json"
+          },
+          "component_path": [
+            {
+              "type": "mcp_server",
+              "name": "stdio-svc"
+            }
+          ],
+          "install_source": "npx @scope/tool@1.2.3",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": "pkg:npm/%40scope/tool@1.2.3"
+      }
+    },
+    {
+      "key": "endpoint/skills/direct-skill/SKILL.md#$.frontmatter#direct-skill",
+      "kind": "skill",
+      "ref": {
+        "ecosystem": null,
+        "name": "direct-skill",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/skills/direct-skill/SKILL.md",
+        "source_locator": "$.frontmatter",
+        "component_identity": null,
+        "extra": {
+          "component_type": "skill",
+          "artifact_coordinates": [
+            {
+              "kind": "skill-content-hash",
+              "algorithm": "sha256",
+              "value": "sha256:abdb28dffe126644ce3283ac629264ec90b7c417002fc8b32cffb57e05df7f79"
+            }
+          ],
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "openaca:target",
+      "kind": "target",
+      "ref": null
+    },
+    {
+      "key": "project/.claude/agents/proj-agent.md#$#proj-agent",
+      "kind": "agent",
+      "ref": {
+        "ecosystem": null,
+        "name": "proj-agent",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/project/.claude/agents/proj-agent.md",
+        "source_locator": "$",
+        "component_identity": null,
+        "extra": {
+          "scope_owner": null,
+          "component_type": "agent",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "project/.claude/commands/proj-cmd.md#$#proj-cmd",
+      "kind": "command",
+      "ref": {
+        "ecosystem": null,
+        "name": "proj-cmd",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/project/.claude/commands/proj-cmd.md",
+        "source_locator": "$",
+        "component_identity": null,
+        "extra": {
+          "scope_owner": null,
+          "component_type": "command",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "project/.claude/settings.json#$.hooks.PreToolUse[0]#",
+      "kind": "hook",
+      "ref": {
+        "ecosystem": null,
+        "name": null,
+        "version": null,
+        "source_manifest": "<ENDPOINT>/project/.claude/settings.json",
+        "source_locator": "$.hooks.PreToolUse[0]",
+        "component_identity": null,
+        "extra": {
+          "event": "PreToolUse",
+          "index": 0,
+          "type": null,
+          "command": null,
+          "matcher": null,
+          "scope": "project",
+          "component_type": "hook",
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    },
+    {
+      "key": "project/.claude/skills/proj-skill/SKILL.md#$.frontmatter#proj-skill",
+      "kind": "skill",
+      "ref": {
+        "ecosystem": null,
+        "name": "proj-skill",
+        "version": null,
+        "source_manifest": "<ENDPOINT>/project/.claude/skills/proj-skill/SKILL.md",
+        "source_locator": "$.frontmatter",
+        "component_identity": null,
+        "extra": {
+          "component_type": "skill",
+          "artifact_coordinates": [
+            {
+              "kind": "skill-content-hash",
+              "algorithm": "sha256",
+              "value": "sha256:0636a3095d5fd4dc143225358f298ddc569384c4e212a588c1a3a2297135bcc3"
+            }
+          ],
+          "_identity_finalized": true
+        },
+        "scope": "agent-component",
+        "purl": null
+      }
+    }
+  ],
+  "edges": [
+    {
+      "parent": "endpoint/plugins/installed_plugins.json#$.plugins.demo@mkt[0]#plugin/mkt/demo",
+      "child": "endpoint/plugins/cache/mkt/demo/1.0.0/skills/bundled-skill/SKILL.md#$.frontmatter#bundled-skill"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/agents/personal-agent.md#$#personal-agent"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/commands/personal-cmd.md#$#personal-cmd"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/plugins/installed_plugins.json#$.plugins.demo@mkt[0]#plugin/mkt/demo"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/settings.json#$.hooks.SessionStart[0]#"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/settings.json#$.mcpServers (inlined).remote-svc#mcp-remote/example.test/mcp/"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/settings.json#$.mcpServers (inlined).stdio-svc#mcp-server/npm/@scope/tool"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "endpoint/skills/direct-skill/SKILL.md#$.frontmatter#direct-skill"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "project/.claude/agents/proj-agent.md#$#proj-agent"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "project/.claude/commands/proj-cmd.md#$#proj-cmd"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "project/.claude/settings.json#$.hooks.PreToolUse[0]#"
+    },
+    {
+      "parent": "openaca:target",
+      "child": "project/.claude/skills/proj-skill/SKILL.md#$.frontmatter#proj-skill"
+    }
+  ]
+}

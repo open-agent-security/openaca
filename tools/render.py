@@ -1723,13 +1723,28 @@ def render_inventory_tree(
         direct_refs = refs
     direct_node = _build_direct_node(direct_refs, findings_by_ref, use_color, view=view)
     n_plugins = len(plugins)
+    # A separate computation from the scan-stats/BOM counts, because this feeds
+    # tree formatting rather than accounting — which is exactly why it needs its
+    # own fix. A kind that inventories disabled plugins (ADR-0055) would
+    # otherwise have them summarised as active here even while each node
+    # renders its own `enabled` state correctly.
+    n_active = sum(1 for r in plugins if (r.extra or {}).get("enabled") is not False)
     n_direct = sum(len(v) for v in _direct_categories(direct_refs).values())
     # Total components = everything minus the plugin self-identity refs.
     n_total = sum(1 for r in refs if not _is_plugin_ref(r))
 
+    # Byte-identical to the previous wording whenever nothing is disabled,
+    # which is every Claude Code and Cursor endpoint and any Codex one with no
+    # disabled plugin. The alternate form appears only when a kind actually
+    # inventories a disabled plugin.
+    if n_active == n_plugins:
+        plugin_segment = f"{_pluralize(n_plugins, 'active plugin')}, "
+    else:
+        plugin_segment = f"{_pluralize(n_plugins, 'plugin')} ({n_plugins - n_active} disabled), "
+
     out: list[str] = []
     out.append(
-        f"{_pluralize(n_plugins, 'active plugin')}, "
+        f"{plugin_segment}"
         f"{_pluralize(n_direct, 'direct component')}, "
         f"{_pluralize(n_total, 'total component')}"
     )

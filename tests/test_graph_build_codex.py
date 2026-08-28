@@ -461,7 +461,73 @@ def test_hooks_declared_inline_in_config_toml_are_composed_at_the_endpoint(tmp_p
 
     assert len(hooks) == 1
     assert hooks[0].extra["event"] == "SessionStart"
+    assert hooks[0].extra["type"] == "command"
+    assert hooks[0].extra["command"] == "echo hi"
     assert str(root / "config.toml") in hooks[0].source_manifest
+
+
+def test_hooks_in_a_profile_config_are_composed_at_the_endpoint(tmp_path):
+    """`codex -p work` layers `<root>/work.config.toml` over the base config
+    (verified for MCP servers by `_seed_codex_profile_mcp_servers`; hooks fire
+    from every active layer, not just the base one, so a profile's own
+    `[hooks]` table must compose too, not silently drop)."""
+    root = _home(tmp_path)
+    (root / "work.config.toml").write_text(
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\ncommand = "echo profile"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    hooks = _refs(graph, "hook")
+
+    assert len(hooks) == 1
+    assert hooks[0].extra["command"] == "echo profile"
+    assert str(root / "work.config.toml") in hooks[0].source_manifest
+
+
+def test_hooks_in_a_trusted_project_config_are_composed_at_the_endpoint(tmp_path):
+    """`_seed_codex_mcp_servers` already layers a trusted project's
+    `.codex/config.toml` unconditionally for MCP servers; hooks declared the
+    same way in the same file must compose too, with project scope."""
+    root = _home(tmp_path)
+    project = tmp_path / "proj3"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
+        'type = "command"\ncommand = "echo project"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root, project)
+    hooks = _refs(graph, "hook")
+
+    assert len(hooks) == 1
+    assert hooks[0].extra["command"] == "echo project"
+    assert hooks[0].extra["scope"] == "project"
+    assert str(project / ".codex" / "config.toml") in hooks[0].source_manifest
+
+
+def test_hooks_declared_inline_in_config_toml_are_composed_in_repo_mode(tmp_path):
+    """The declared-graph counterpart of the endpoint test above: a project
+    declaring hooks only via `.codex/config.toml`'s `[hooks]` table, never a
+    sidecar `hooks.json`, must not have them silently absent from the BOM."""
+    root = _repo(tmp_path)
+    with (root / ".codex" / "config.toml").open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n[[hooks.SessionStart]]\n"
+            "[[hooks.SessionStart.hooks]]\n"
+            'type = "command"\n'
+            'command = "echo repo"\n'
+        )
+
+    graph = build_codex_declared_graph(_agent(root))
+    hooks = [n.ref for n in graph.nodes.values() if n.kind == "hook" and n.ref is not None]
+    inline = [r for r in hooks if r.extra["command"] == "echo repo"]
+
+    assert len(inline) == 1
+    assert inline[0].extra["scope"] == "project"
+    assert str(root / ".codex" / "config.toml") in inline[0].source_manifest
 
 
 def test_a_malformed_first_candidate_falls_through_to_the_second(tmp_path):

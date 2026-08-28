@@ -2064,6 +2064,54 @@ def _add_codex_declared_config_mcps(
             _add_child(graph, target, node)
 
 
+def _add_codex_declared_config_hooks(
+    graph: Graph,
+    target: Node,
+    scan_root: Path,
+    normalize: SourceNormalizer,
+    *,
+    include_gitignored: bool,
+    root_spec: GitIgnoreSpec | None,
+    realized_plugin_roots: list[Path],
+) -> None:
+    """Inline `[hooks]` tables from every `.codex/config.toml` in the tree.
+
+    `_add_codex_declared_hooks` below reads the sidecar `.codex/hooks.json`;
+    `config.toml` is a documented alternative form of the same envelope
+    (`_seed_codex_hooks`'s docstring), and a project declaring hooks only this
+    way — never a `hooks.json` — had them silently absent from the declared
+    graph. Same walk, exclusion, and scope as the sidecar form; only the
+    source file and reader differ.
+    """
+    from tools.graph_build_cursor import is_owned_by_realized_plugin
+
+    for config_path in sorted(scan_root.rglob(".codex/config.toml")):
+        if not include_gitignored and _is_ignored_under(config_path, scan_root, root_spec):
+            continue
+        if is_owned_by_realized_plugin(config_path, realized_plugin_roots, CODEX_SURFACE):
+            continue
+        try:
+            config = codex_config.load_config(config_path)
+        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+            graph.record_gap(f"could not parse {config_path}: {exc}")
+            continue
+        if not config.hooks:
+            continue
+        try:
+            hook_refs = hooks_json.parse_settings_hooks(
+                config_path, config.hooks, scope="project", strict=True
+            )
+        except ValueError as exc:
+            graph.record_gap(f"could not parse {config_path} hooks: {exc}")
+            continue
+        for ref in hook_refs:
+            component_type = _component_type(ref)
+            if not isinstance(component_type, str):
+                continue
+            node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+            _add_child(graph, target, node)
+
+
 def _add_codex_declared_hooks(
     graph: Graph,
     target: Node,
@@ -2134,6 +2182,15 @@ def build_codex_declared_graph(
         scan_root, CODEX_SURFACE, include_gitignored=include_gitignored
     )
     _add_codex_declared_config_mcps(
+        graph,
+        root,
+        scan_root,
+        normalize,
+        include_gitignored=include_gitignored,
+        root_spec=root_spec,
+        realized_plugin_roots=realized_roots,
+    )
+    _add_codex_declared_config_hooks(
         graph,
         root,
         scan_root,
@@ -2277,9 +2334,13 @@ def _seed_codex_profile_mcp_servers(
 
 
 def _seed_codex_hooks(
-    graph: Graph, target: Node, config_root: Path, normalize: SourceNormalizer
+    graph: Graph,
+    target: Node,
+    config_root: Path,
+    project_root: Path | None,
+    normalize: SourceNormalizer,
 ) -> None:
-    """Inline `[hooks]` tables in `$CODEX_HOME/config.toml`.
+    """Inline `[hooks]` tables across every active Codex config layer.
 
     `CODEX_ENDPOINT.seeds_hooks` is `False` because that flag gates the
     *shared* settings.json-layer walk (`_seed_shared_endpoint_surfaces`),
@@ -2289,13 +2350,26 @@ def _seed_codex_hooks(
     equivalent of `hooks.json`'s `{event: [...]}` shape, so composition reuses
     `hooks_json.parse_settings_hooks` rather than a second implementation.
 
-    Base config only: unlike MCP servers, hooks fire from every active config
-    layer rather than the last one to declare a given name, so a profile
-    layer's own `[hooks]` (`<root>/<name>.config.toml`) is additional surface
-    this does not yet cover, tracked alongside `_seed_codex_profile_mcp_servers`
-    for a future pass rather than guessed at here.
+    Unlike MCP servers, hooks fire from every active layer rather than the
+    last one to declare a given name (a base-only read silently dropped a
+    profile's or a trusted project's own `[hooks]` table), so this unions the
+    base config, every `<name>.config.toml` profile — the same layer set
+    `_seed_codex_profile_mcp_servers` reads for servers — and the project's
+    `.codex/config.toml`, the same project layer `_seed_codex_mcp_servers`
+    already reads unconditionally for servers.
     """
-    config_path = config_root / "config.toml"
+    layers: list[tuple[Path, str]] = [(config_root / "config.toml", "user")]
+    layers.extend((path, "user") for path in sorted(config_root.glob("*.config.toml")))
+    if project_root is not None:
+        layers.append((project_root / ".codex" / "config.toml", "project"))
+
+    for config_path, scope in layers:
+        _seed_codex_hooks_from_layer(graph, target, config_path, scope, normalize)
+
+
+def _seed_codex_hooks_from_layer(
+    graph: Graph, target: Node, config_path: Path, scope: str, normalize: SourceNormalizer
+) -> None:
     if not config_path.is_file():
         return
     try:
@@ -2307,7 +2381,7 @@ def _seed_codex_hooks(
         return
     try:
         hook_refs = hooks_json.parse_settings_hooks(
-            config_path, config.hooks, scope="user", strict=True
+            config_path, config.hooks, scope=scope, strict=True
         )
     except ValueError as exc:
         graph.record_gap(f"could not parse {config_path} hooks: {exc}")
@@ -2535,7 +2609,7 @@ def build_codex_installed_graph(
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )
-    _seed_codex_hooks(graph, root, config_root, normalize)
+    _seed_codex_hooks(graph, root, config_root, project_root, normalize)
     _prune_codex_system_skills(graph, config_root)
 
     return finalize_graph(

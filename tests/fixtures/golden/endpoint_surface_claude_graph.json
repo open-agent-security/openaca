@@ -98,20 +98,20 @@
       }
     },
     {
-      "key": "endpoint/settings.json#$.hooks.SessionStart[0]#",
+      "key": "endpoint/settings.json#$.hooks.SessionStart[0].hooks[0]#",
       "kind": "hook",
       "ref": {
         "ecosystem": null,
         "name": null,
         "version": null,
         "source_manifest": "<ENDPOINT>/settings.json",
-        "source_locator": "$.hooks.SessionStart[0]",
+        "source_locator": "$.hooks.SessionStart[0].hooks[0]",
         "component_identity": null,
         "extra": {
           "event": "SessionStart",
           "index": 0,
-          "type": null,
-          "command": null,
+          "type": "command",
+          "command": "echo hi",
           "matcher": null,
           "scope": "user",
           "component_type": "hook",
@@ -250,20 +250,20 @@
       }
     },
     {
-      "key": "project/.claude/settings.json#$.hooks.PreToolUse[0]#",
+      "key": "project/.claude/settings.json#$.hooks.PreToolUse[0].hooks[0]#",
       "kind": "hook",
       "ref": {
         "ecosystem": null,
         "name": null,
         "version": null,
         "source_manifest": "<ENDPOINT>/project/.claude/settings.json",
-        "source_locator": "$.hooks.PreToolUse[0]",
+        "source_locator": "$.hooks.PreToolUse[0].hooks[0]",
         "component_identity": null,
         "extra": {
           "event": "PreToolUse",
           "index": 0,
-          "type": null,
-          "command": null,
+          "type": "command",
+          "command": "echo pre",
           "matcher": null,
           "scope": "project",
           "component_type": "hook",
@@ -318,7 +318,7 @@
     },
     {
       "parent": "openaca:target",
-      "child": "endpoint/settings.json#$.hooks.SessionStart[0]#"
+      "child": "endpoint/settings.json#$.hooks.SessionStart[0].hooks[0]#"
     },
     {
       "parent": "openaca:target",
@@ -342,7 +342,7 @@
     },
     {
       "parent": "openaca:target",
-      "child": "project/.claude/settings.json#$.hooks.PreToolUse[0]#"
+      "child": "project/.claude/settings.json#$.hooks.PreToolUse[0].hooks[0]#"
     },
     {
       "parent": "openaca:target",

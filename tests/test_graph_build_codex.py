@@ -774,6 +774,29 @@ def test_a_plugin_disabled_only_in_a_trusted_project_overrides_the_base_enable(t
     assert _plugins(graph)["codexpl"].extra["enabled"] is False
 
 
+def test_a_project_trusted_only_by_a_profile_does_not_override_a_base_enable(tmp_path):
+    """A project trust record that exists only in a profile's
+    `<name>.config.toml` is in effect only while that profile is selected —
+    unlike a base trust record, it is not unconditionally active. The base
+    config enables `codexpl@mkt`; a no-profile invocation never loads the
+    project layer at all, so it stays reachable, and the project's explicit
+    `false` must not erase it (it joins the same OR-union a profile's own
+    disable already cannot win against)."""
+    root = _home(tmp_path)
+    project = tmp_path / "profile-trusted-plugin-proj"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[plugins."codexpl@mkt"]\nenabled = false\n', encoding="utf-8"
+    )
+    (root / "work.config.toml").write_text(
+        f'[projects."{project.resolve()}"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert _plugins(graph)["codexpl"].extra["enabled"] is True
+
+
 def test_the_base_config_is_not_read_twice_as_a_profile(tmp_path):
     """`config.toml` must not match the `*.config.toml` profile glob."""
     root = _home(tmp_path)

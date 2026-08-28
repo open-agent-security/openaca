@@ -533,20 +533,42 @@ def _seed_shared_endpoint_surfaces(
             surface=repo_surface,
         )
         # iterdir() follows symlinks; os.walk (used by iter_unignored_files) does
-        # not. Call _add_skills_from_dir explicitly so symlinked skill dirs under
-        # <project>/<config_dir>/skills/ are discovered — parity with the old
-        # _walk_project_skill_dirs path that called _walk_skill_dir (iterdir-based)
-        # before iter_unignored_files. _add_child dedup collapses non-symlink dupes.
-        # stamp_provenance matches _parse_direct_skill, which both old project-skill
-        # walks shared.
-        _add_skills_from_dir(
-            graph,
-            target,
-            project_root / surface.project_config_dir / surface.project_skills_subdir,
-            normalize=normalize,
-            project_root=project_root,
-            stamp_provenance=True,
-        )
+        # not. Call one of the two symlink-patch helpers below explicitly so
+        # symlinked skill dirs under <project>/<config_dir>/skills/ are
+        # discovered — parity with the old _walk_project_skill_dirs path that
+        # called _walk_skill_dir (iterdir-based) before iter_unignored_files.
+        # _add_child dedup collapses non-symlink dupes. stamp_provenance
+        # matches _parse_direct_skill, which both old project-skill walks
+        # shared.
+        #
+        # `repo_surface.skill_config_dirs` (not `surface`, the EndpointSurface
+        # param) is the recursion signal: it is what `_is_project_skill_md`
+        # itself checks to decide whether nesting below the skills dir is a
+        # project skill at all. A flat, direct-child-only symlink patch is
+        # correct for Claude Code's one-level project skills, but silently
+        # under-recurses for a kind like Codex whose project skills nest
+        # (`.codex/skills/team/tool -> ...`), so that case gets the same
+        # cycle-safe recursive walker `_add_direct_endpoint_skills` already
+        # uses for install-root skills.
+        skills_dir = project_root / surface.project_config_dir / surface.project_skills_subdir
+        if repo_surface.skill_config_dirs:
+            _add_project_skills_from_dir_following_symlinks(
+                graph,
+                target,
+                skills_dir,
+                normalize=normalize,
+                project_root=project_root,
+                stamp_provenance=True,
+            )
+        else:
+            _add_skills_from_dir(
+                graph,
+                target,
+                skills_dir,
+                normalize=normalize,
+                project_root=project_root,
+                stamp_provenance=True,
+            )
 
     _seed_direct_components(
         graph,
@@ -1621,6 +1643,52 @@ def _add_skills_from_dir(
             stamp_provenance=stamp_provenance,
             root_dir=root_dir,
             root_spec=root_spec,
+        )
+
+
+def _add_project_skills_from_dir_following_symlinks(
+    graph: Graph,
+    parent: Node,
+    skills_dir: Path,
+    *,
+    normalize: SourceNormalizer,
+    project_root: Path | None = None,
+    stamp_provenance: bool = False,
+) -> None:
+    """Recursive, symlink-following counterpart to `_add_skills_from_dir`, for
+    project-skill surfaces where nesting is meaningful (`RepoSurface.skill_config_dirs`
+    set — Codex's `.codex/skills/**/SKILL.md`).
+
+    `_add_project_skills`'s own tree walk (`iter_unignored_files`, os.walk-based)
+    does not follow directory symlinks at any depth, and `_add_skills_from_dir`
+    (the flat, direct-child-only patch for that gap) only resolves symlinks
+    among `skills_dir`'s immediate children — so a symlink nested below an
+    intermediate real directory (e.g. `skills/team/tool -> /store/tool`) was
+    still missed by both. `_iter_skill_subdirs_following_symlinks` is the
+    cycle-safe walker already used to close this identical gap for install-root
+    direct skills (`_add_direct_endpoint_skills`); reused here rather than
+    reimplemented.
+    """
+    if not skills_dir.is_dir():
+        return
+    for skill_subdir in sorted(
+        _iter_skill_subdirs_following_symlinks(graph, skills_dir), key=lambda p: str(p)
+    ):
+        skill_md = skill_subdir / "SKILL.md"
+        try:
+            is_skill = skill_md.is_file()
+        except OSError as exc:
+            graph.record_gap(f"could not read {skill_md}: {exc}")
+            continue
+        if not is_skill:
+            continue
+        _add_skill_node(
+            graph,
+            parent,
+            skill_subdir,
+            normalize=normalize,
+            project_root=project_root,
+            stamp_provenance=stamp_provenance,
         )
 
 

@@ -14,7 +14,7 @@ import tomllib
 
 import pytest
 
-from tools.parsers import codex_config
+from tools.parsers import codex_config, hooks_json
 
 STDIO_AND_REMOTE = """
 [mcp_servers.local_tool]
@@ -171,4 +171,28 @@ def test_empty_config_is_not_an_error(tmp_path):
     assert cfg.plugins == {}
     assert cfg.marketplaces == {}
     assert cfg.projects == {}
+    assert cfg.hooks == {}
     assert codex_config.parse(p) == []
+
+
+def test_load_config_preserves_a_malformed_hooks_value(tmp_path):
+    """`hooks` is a top-level string, not a table.
+
+    Both `graph_build` readers of `config.hooks`
+    (`_add_codex_declared_config_hooks`, `_seed_codex_hooks_from_layer`) gate
+    on `if not config.hooks` before handing the value to
+    `hooks_json.parse_settings_hooks(..., strict=True)` — the thing that
+    actually raises. If `load_config` coerced the malformed shape to `{}`
+    first (as it used to, and as it did for `mcp_servers` before `parse` was
+    changed to bypass the coercion), that `strict=True` check would never see
+    it: a present-but-unparseable surface would look identical to an absent
+    one.
+    """
+    p = tmp_path / "config.toml"
+    p.write_text('hooks = "bad"\n', encoding="utf-8")
+
+    cfg = codex_config.load_config(p)
+
+    assert cfg.hooks == "bad"
+    with pytest.raises(ValueError, match="hooks"):
+        hooks_json.parse_settings_hooks(p, cfg.hooks, scope="project", strict=True)

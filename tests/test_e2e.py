@@ -1647,3 +1647,69 @@ def test_e2e_codex_disabled_mcp_is_inventoried_but_not_an_active_exposure(tmp_pa
     # host is what surfaces in the rendered inventory.
     assert "insecure.test" in result.output, "a disabled server is still installed"
     assert "openaca-posture-insecure-transport" not in result.output
+
+
+def test_e2e_codex_enabled_insecure_mcp_endpoint_fires_insecure_transport(tmp_path):
+    """Regression for a Codex review finding: the kind allowlists
+    `insecure_transport` but supplied neither posture-manifest collector, so
+    the rule always received an empty manifest list and could never fire.
+    An *enabled* http:// server, unlike the disabled one above, must be
+    reported."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path)
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[mcp_servers.on_remote]\nurl = "http://insecure.test/mcp/"\n',
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "codex", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert "openaca-posture-insecure-transport" in result.output
+
+
+def test_e2e_codex_declared_insecure_mcp_fires_insecure_transport(tmp_path):
+    """The declared (repo-mode) side of the same collector wiring: a project
+    `.codex/config.toml` with an http:// server must be reported too."""
+    from tools.scan import main as scan_main
+
+    project = _codex_project(tmp_path)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.remote]\nurl = "http://insecure.test/mcp/"\n', encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["repo", "--target", str(project), "--include-posture", "--fail-on", "none"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "openaca-posture-insecure-transport" in result.output
+
+
+def test_e2e_codex_project_trust_from_profile_only_is_still_reported(tmp_path):
+    """Regression for a Codex review finding: `codex -p <name>` layers
+    `<root>/<name>.config.toml` over the base config, and it carries the same
+    `[projects.*]` schema — composition already unions every profile for MCP
+    servers (`_seed_codex_profile_mcp_servers`) for exactly this reason. A
+    directory marked trusted only in a profile file must still surface."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home(tmp_path)
+    (root / "work.config.toml").write_text(
+        '[projects."/home/u/profile-only-repo"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "codex", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert "openaca-posture-project-trust" in result.output
+    assert "profile-only-repo" in result.output

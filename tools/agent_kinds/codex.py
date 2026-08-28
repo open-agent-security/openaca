@@ -10,8 +10,11 @@ from tools.graph import Graph
 from tools.parsers import CODEX_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.posture import (
+    collect_codex_endpoint_mcp_manifests,
+    collect_codex_mcp_manifests,
     collect_codex_project_trust_manifests,
     collect_codex_rules_manifests,
+    no_manifests,
 )
 from tools.posture.rules import (
     command_policy_allow,
@@ -224,9 +227,13 @@ KIND = AgentKind(
     ),
     manifest_patterns=tuple(HOST_AGNOSTIC_REGISTRY) + tuple(CODEX_MANIFEST_REGISTRY),
     repo_surface=CODEX_SURFACE,
-    # No declared collectors: both of Codex's posture surfaces are
-    # installed-only, so a repo scan supplies nothing for either.
-    installed_posture_collectors=None,
+    # `insecure_transport` reads the composed MCP refs at both sources, the
+    # same rule the Cursor collectors follow. The settings slot has nothing to
+    # fill: neither `mcp_auto_approve` nor `api_endpoint_override` is in
+    # Codex's allowlist above, and `no_manifests` is the shared no-op for a
+    # kind with no filesystem-shaped surface for that slot.
+    posture_manifest_collectors=(collect_codex_mcp_manifests, no_manifests),
+    installed_posture_collectors=(collect_codex_endpoint_mcp_manifests, no_manifests),
     extra_installed_posture_collectors={
         command_policy_allow.RULE_ID: collect_codex_rules_manifests,
         project_trust.RULE_ID: collect_codex_project_trust_manifests,

@@ -1,9 +1,12 @@
 """Codex's posture collectors and the `mutable_install` deferral
 (plan 043 Task 10).
 
-Both collectors are **installed-only** and read their surface directly. That is
-the documented exception to "posture derives from composition": neither surface
-produces a `ComponentRef`, so there is nothing to derive from.
+`collect_codex_rules_manifests` and `collect_codex_project_trust_manifests`
+are **installed-only** and read their surface directly. That is the documented
+exception to "posture derives from composition": neither surface produces a
+`ComponentRef`, so there is nothing to derive from. `collect_codex_mcp_manifests`
+/`collect_codex_endpoint_mcp_manifests` are the opposite case — they derive
+from the graph's own composed refs, same as Cursor's MCP collectors.
 """
 
 from __future__ import annotations
@@ -12,6 +15,8 @@ from pathlib import Path
 
 from tools.component_ref import ComponentRef
 from tools.posture import (
+    collect_codex_endpoint_mcp_manifests,
+    collect_codex_mcp_manifests,
     collect_codex_project_trust_manifests,
     collect_codex_rules_manifests,
 )
@@ -77,6 +82,82 @@ def test_a_malformed_config_is_a_gap_not_a_crash(tmp_path):
     (tmp_path / "config.toml").write_text("{ not toml", encoding="utf-8")
 
     assert collect_codex_project_trust_manifests(tmp_path) == []
+
+
+def test_project_trust_collector_reads_profile_layers_too(tmp_path):
+    """`codex -p <name>` layers `<root>/<name>.config.toml` over the base
+    config and it carries the same schema, so a directory trusted only in a
+    profile must still surface — the same reason
+    `_seed_codex_profile_mcp_servers` unions every profile for MCP servers."""
+    root = _root(tmp_path)
+    (root / "work.config.toml").write_text(
+        '[projects."/home/u/profile-only"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    manifests = collect_codex_project_trust_manifests(root)
+
+    by_path = {p.name: m for p, m in manifests}
+    assert by_path["config.toml"]["projects"]["/home/u/trusted-repo"] == "trusted"
+    assert by_path["work.config.toml"]["projects"] == {"/home/u/profile-only": "trusted"}
+
+
+def test_project_trust_collector_skips_a_malformed_profile(tmp_path):
+    root = _root(tmp_path)
+    (root / "broken.config.toml").write_text("{ not toml", encoding="utf-8")
+
+    manifests = collect_codex_project_trust_manifests(root)
+
+    assert [p.name for p, _ in manifests] == ["config.toml"]
+
+
+# --- insecure_transport: derived from composed refs (Codex review finding) --
+
+
+def _mcp_ref(*, url: str, name: str, source: Path, enabled: bool = True) -> ComponentRef:
+    return ComponentRef(
+        name=name,
+        component_identity=f"mcp-remote/{url}",
+        source_manifest=str(source),
+        source_locator=f"$.mcp_servers.{name}",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": name}],
+            "url": url,
+            "enabled": enabled,
+        },
+    )
+
+
+def test_collect_codex_mcp_manifests_derives_from_refs(tmp_path):
+    source = tmp_path / "config.toml"
+    ref = _mcp_ref(url="http://insecure.test/mcp", name="remote", source=source)
+
+    manifests = collect_codex_mcp_manifests([tmp_path], refs=[ref])
+
+    assert manifests == [(source, {"mcpServers": {"remote": {"url": "http://insecure.test/mcp"}}})]
+
+
+def test_collect_codex_endpoint_mcp_manifests_derives_from_refs(tmp_path):
+    source = tmp_path / "config.toml"
+    ref = _mcp_ref(url="http://insecure.test/mcp", name="remote", source=source)
+
+    manifests = collect_codex_endpoint_mcp_manifests(tmp_path, None, [ref])
+
+    assert manifests == [(source, {"mcpServers": {"remote": {"url": "http://insecure.test/mcp"}}})]
+
+
+def test_collect_codex_mcp_manifests_marks_a_disabled_server_disabled(tmp_path):
+    """A disabled Codex server is still composed into a ref (ADR-0055
+    inventories it regardless), unlike Cursor/Claude Code where a disabled
+    server never becomes a ref at all. The reconstructed manifest must carry
+    `disabled: True` or `insecure_transport`'s skip for a disabled entry
+    silently stops working for the one kind that needs it."""
+    source = tmp_path / "config.toml"
+    ref = _mcp_ref(url="http://insecure.test/mcp", name="off", source=source, enabled=False)
+
+    manifests = collect_codex_mcp_manifests([tmp_path], refs=[ref])
+
+    assert manifests[0][1]["mcpServers"]["off"]["disabled"] is True
 
 
 # --- mutable_install: last_revision is NOT an install pin (Task 10C) --------

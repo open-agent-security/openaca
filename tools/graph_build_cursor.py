@@ -1144,7 +1144,7 @@ def _emit_command_agent(
     if eval_root is not None and is_ignored_under(resolved, eval_root, spec):
         return
     if parse_error is not None:
-        graph.warnings.append(parse_error)
+        graph.record_gap(parse_error)
     if not refs:
         return
     self_node = Node(key=occurrence_key(refs[0], normalize), kind=kind, ref=refs[0])

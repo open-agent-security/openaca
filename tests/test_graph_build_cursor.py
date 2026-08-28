@@ -560,6 +560,10 @@ def test_malformed_subagent_records_a_graph_warning(tmp_path):
 
     assert _nodes_of_kind(graph, "agent") == []
     assert any("broken.md" in warning for warning in graph.warnings)
+    assert any("broken.md" in gap for gap in graph.warnings.gaps), (
+        "a subagent that fails to parse composes no node at all, so it must "
+        "count as a coverage gap, not just a note"
+    )
 
 
 def test_malformed_subagent_inside_realized_plugin_records_no_warning(tmp_path):

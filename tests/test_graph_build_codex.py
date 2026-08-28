@@ -121,6 +121,55 @@ def test_a_nested_project_codex_dir_is_composed(tmp_path):
     assert "skill" in _kinds(graph)
 
 
+def test_a_skill_nested_under_the_skills_root_is_still_composed(tmp_path):
+    """`CODEX_MANIFEST_REGISTRY` matches `**/.codex/skills/**/SKILL.md`
+    (recursive, per docs/specs/codex-agent-kind.md's Skills row: "Traversal:
+    recursive") — composition must accept the same nesting, or a skill the
+    registry counts toward `source_unit_count` never reaches the graph."""
+    root = _repo(tmp_path)
+    nested = root / ".codex" / "skills" / "group" / "tool"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text("---\nname: tool\n---\nNested.\n", encoding="utf-8")
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    assert _skill_names(graph) == {"demo", "tool"}
+
+
+def test_plugin_owned_codex_config_and_hooks_are_excluded_from_composition(tmp_path):
+    """A realized plugin's own `.codex/config.toml`/`.codex/hooks.json`
+    fixtures (e.g. an example bundled inside the plugin) belong to the
+    plugin's subtree, not the target — the single-parent invariant declared
+    evidence detection and registry parse-count accounting already apply via
+    `CODEX_SURFACE.excludes_plugin_owned_content`. The raw `rglob` walks that
+    add project-scope MCP servers/hooks must honor the same exclusion, or a
+    bundled fixture is composed as if the project declared it directly."""
+    root = _repo(tmp_path)
+    plugin_root = root / "vendor" / "demo-plugin"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo-plugin"}), encoding="utf-8"
+    )
+    (plugin_root / "examples" / ".codex").mkdir(parents=True)
+    (plugin_root / "examples" / ".codex" / "config.toml").write_text(
+        '[mcp_servers.phantom]\ncommand = "true"\n', encoding="utf-8"
+    )
+    (plugin_root / "examples" / ".codex" / "hooks.json").write_text(
+        json.dumps(HOOKS), encoding="utf-8"
+    )
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    mcp_names = {
+        n.ref.extra["component_path"][0]["name"]
+        for n in graph.nodes.values()
+        if n.kind == "mcp_server" and n.ref is not None
+    }
+    assert mcp_names == {"svc"}
+    hook_count = sum(1 for n in graph.nodes.values() if n.kind == "hook")
+    assert hook_count == 1
+
+
 # --- Installed composition (Task 7) ----------------------------------------
 
 from tools.graph_build import build_codex_installed_graph  # noqa: E402

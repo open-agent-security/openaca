@@ -713,6 +713,35 @@ def test_codex_registry_falls_through_when_codex_plugin_candidate_does_not_quali
     assert n_found == 1
 
 
+def test_codex_registry_resolves_the_gitignored_candidate_as_absent(tmp_path):
+    """The higher-priority `.codex-plugin/plugin.json` is gitignored; the
+    fallback `.claude-plugin/plugin.json` is not. `_find_plugin_roots`
+    resolves plugin format with the walk's own gitignore spec
+    (`_resolve_plugin_format(..., eval_root=directory, spec=spec)`), so
+    composition treats the ignored candidate as absent and falls through to
+    the visible one. The registry's guard must apply that same gitignore
+    context — passing none would see the ignored file on disk, resolve to
+    `.codex-plugin`, and reject the visible `.claude-plugin` manifest
+    composition actually reads."""
+    from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_grouped
+    from tools.repo_surface import CODEX_SURFACE
+
+    (tmp_path / ".gitignore").write_text(".codex-plugin/\n", encoding="utf-8")
+    codex_manifest = tmp_path / ".codex-plugin" / "plugin.json"
+    codex_manifest.parent.mkdir()
+    codex_manifest.write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+    claude_manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    claude_manifest.parent.mkdir()
+    claude_manifest.write_text(json.dumps({"name": "demo"}), encoding="utf-8")
+
+    grouped, n_found = parse_repo_grouped(
+        tmp_path, registry=CODEX_MANIFEST_REGISTRY, surface=CODEX_SURFACE
+    )
+
+    assert {p for p, _refs in grouped} == {claude_manifest}
+    assert n_found == 1
+
+
 def test_a_malformed_codex_config_registers_a_parse_failure(tmp_path):
     from tools.parsers import CODEX_MANIFEST_REGISTRY, parse_repo_registry_counts
     from tools.repo_surface import CODEX_SURFACE

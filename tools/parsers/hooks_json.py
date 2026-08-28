@@ -163,9 +163,11 @@ def _validate_hook_events(hooks_block: dict, label: str) -> None:
             if not isinstance(group, dict):
                 raise ValueError(f"{label} event entries must be objects")
             handlers = group.get("hooks")
-            if isinstance(handlers, list) and any(
-                not isinstance(entry, dict) for entry in handlers
-            ):
+            if handlers is None:
+                continue
+            if not isinstance(handlers, list):
+                raise ValueError(f"{label} nested hook handlers must be an array")
+            if any(not isinstance(entry, dict) for entry in handlers):
                 raise ValueError(f"{label} nested hook handlers must be objects")
 
 

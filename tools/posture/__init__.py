@@ -33,6 +33,8 @@ __all__ = [
     "KNOWN_RULE_IDS",
     "PostureFinding",
     "Standards",
+    "collect_codex_endpoint_mcp_manifests",
+    "collect_codex_mcp_manifests",
     "collect_codex_rules_manifests",
     "collect_codex_project_trust_manifests",
     "collect_cursor_endpoint_mcp_manifests",
@@ -509,8 +511,17 @@ def collect_cursor_mcp_manifests(
 def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]]:
     """Reconstruct MCP-shaped manifests from composed `mcp_server` refs.
 
-    Shared by Cursor's declared and installed collectors so the two can never
-    disagree about what a composed server looks like to a posture rule.
+    Shared by Cursor's and Codex's declared and installed collectors so none
+    of the four can disagree about what a composed server looks like to a
+    posture rule.
+
+    `extra["enabled"] is False` becomes `disabled: True` on the reconstructed
+    entry, the key `insecure_transport`'s skip checks. Cursor/Claude Code never
+    compose a ref for a disabled server at all (`parse_mcp_servers` drops a
+    `disabled: true` entry before a ref exists to carry `enabled`), but Codex
+    inventories a disabled server anyway (ADR-0055) and needs the
+    reconstruction to say so — otherwise a disabled-but-insecure Codex server
+    would be misreported as an active exposure.
     """
     by_path: dict[str, dict] = {}
     for ref in refs:
@@ -524,6 +535,8 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
         url = (ref.extra or {}).get("url")
         if isinstance(url, str):
             entry["url"] = url
+        if (ref.extra or {}).get("enabled") is False:
+            entry["disabled"] = True
         by_path.setdefault(source, {"mcpServers": {}})["mcpServers"][name] = entry
     return [(Path(source), manifest) for source, manifest in by_path.items()]
 
@@ -825,10 +838,45 @@ def collect_cursor_endpoint_permissions_manifests(
 
 # --- Codex posture surfaces (plan 043 Task 10) -----------------------------
 #
-# Both are **installed-only** and both are read directly from the filesystem
-# rather than derived from graph refs. That is the documented exception to
-# "posture derives from composition": these surfaces declare no components, so
-# there is no ref to derive from. Every other collector still derives.
+# `insecure_transport` derives from the graph's own `mcp_server` refs, for the
+# same reason Cursor's MCP collectors do: Codex's composition layers a project
+# file over the user one and unions every `<name>.config.toml` profile
+# (`_seed_codex_profile_mcp_servers`), and a collector that re-walked the
+# filesystem instead would have to restate that precedence to avoid
+# misreporting a server the agent doesn't actually load.
+#
+# `command_policy_allow` and `project_trust` are different: neither surface
+# declares a component, so there is no ref to derive from, and both are read
+# directly from the filesystem instead. That is the documented exception to
+# "posture derives from composition".
+
+
+def collect_codex_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Codex's declared MCP posture surface, derived from the refs the graph
+    already produced — never a directory walk, for the reason
+    `collect_cursor_mcp_manifests` gives.
+
+    `roots` and `include_gitignored` are accepted and unused — the graph they
+    would have searched was already built under those same settings.
+    """
+    del roots, include_gitignored
+    return _mcp_manifests_from_refs(refs or [])
+
+
+def collect_codex_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Codex's installed MCP posture surface, derived from the refs the graph
+    already produced, for the same reason as the declared collector above."""
+    del config_dir, project_root
+    return _mcp_manifests_from_refs(refs)
 
 
 def collect_codex_rules_manifests(
@@ -861,17 +909,29 @@ def collect_codex_project_trust_manifests(
     project_root: Path | None = None,
     refs: list[ComponentRef] | None = None,
 ) -> list[tuple[Path, dict]]:
-    """`[projects."<path>"] trust_level` from `<root>/config.toml`."""
+    """`[projects."<path>"] trust_level` from `<root>/config.toml` and every
+    `<root>/<name>.config.toml` profile.
+
+    `codex -p <name>` layers a profile file over the base config and the file
+    carries the same schema (docs/specs/codex-agent-kind.md "The profile
+    layer, and why it was a real gap") — the same reason
+    `_seed_codex_profile_mcp_servers` unions every profile rather than reading
+    only the base file. A directory marked trusted in a profile only would
+    otherwise never surface, since which profile is selected leaves no trace
+    on disk.
+    """
     from tools.parsers import codex_config
 
-    config_path = config_root / "config.toml"
-    if not config_path.is_file():
-        return []
-    try:
-        config = codex_config.load_config(config_path)
-    except Exception:  # noqa: BLE001 - a broken config is a scan gap, not a crash
-        return []
-    projects = {p.path: p.trust_level for p in config.projects.values()}
-    if not projects:
-        return []
-    return [(config_path, {"projects": projects})]
+    out: list[tuple[Path, dict]] = []
+    sources = [config_root / "config.toml", *sorted(config_root.glob("*.config.toml"))]
+    for config_path in sources:
+        if not config_path.is_file():
+            continue
+        try:
+            config = codex_config.load_config(config_path)
+        except Exception:  # noqa: BLE001 - a broken config is a scan gap, not a crash
+            continue
+        projects = {p.path: p.trust_level for p in config.projects.values()}
+        if projects:
+            out.append((config_path, {"projects": projects}))
+    return out

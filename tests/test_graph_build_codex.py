@@ -457,11 +457,11 @@ def test_hooks_declared_inline_in_config_toml_are_composed_at_the_endpoint(tmp_p
         )
 
     graph = build_codex_installed_graph(root)
-    hooks = [n for n in graph.nodes.values() if n.kind == "hook"]
+    hooks = _refs(graph, "hook")
 
     assert len(hooks) == 1
-    assert hooks[0].ref.extra["event"] == "SessionStart"
-    assert str(root / "config.toml") in hooks[0].ref.source_manifest
+    assert hooks[0].extra["event"] == "SessionStart"
+    assert str(root / "config.toml") in hooks[0].source_manifest
 
 
 def test_a_malformed_first_candidate_falls_through_to_the_second(tmp_path):

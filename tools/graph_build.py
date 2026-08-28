@@ -2512,6 +2512,7 @@ def _seed_cache_plugins(
     graph: Graph,
     target: Node,
     config_root: Path,
+    project_root: Path | None,
     normalize: SourceNormalizer,
     *,
     warnings: list[str] | None = None,
@@ -2529,23 +2530,24 @@ def _seed_cache_plugins(
     Every mismatch a real endpoint can show is reconciled explicitly rather
     than silently resolved; see the warnings below.
 
-    Enable state and marketplace registration are merged across the base
-    config and every `<name>.config.toml` profile — the same layer set
-    `_seed_codex_profile_mcp_servers` and `_seed_codex_hooks` already read —
-    because `--profile` layers a profile over the base, and a plugin enabled
-    only by a profile is still installed and one profile-switch from active.
-    A plugin counts as enabled if any active layer says so: enablement is a
-    boolean, not an occurrence, so unlike MCP servers there is no way to keep
-    two profiles' disagreement visible as separate nodes, and treating any
-    `True` as authoritative is the same over-approximate-towards-active
-    direction this project already takes for which profile is "active".
+    Enable state and marketplace registration are merged across every active
+    layer `codex_config_layers` returns for this endpoint — base, every
+    `<name>.config.toml` profile, and the trusted project's `.codex/config.toml`
+    — the same layer set `_seed_codex_profile_mcp_servers` and `_seed_codex_hooks`
+    already read, in the same precedence order, because `[plugins.*]` and
+    `[marketplaces.*]` are ordinary tables in any of those files, not a
+    base/profile-only surface. A plugin enabled only by a profile or only by the
+    trusted project is still installed and one profile-switch or trust-grant
+    away from active. A plugin counts as enabled if any active layer says so:
+    enablement is a boolean, not an occurrence, so unlike MCP servers there is
+    no way to keep two layers' disagreement visible as separate nodes, and
+    treating any `True` as authoritative is the same over-approximate-towards-
+    active direction this project already takes for which profile is "active".
     """
     cache_root = config_root / "plugins" / "cache"
     plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
     marketplaces: dict[str, codex_config.MarketplaceEntry] = {}
-    for layer in codex_config_layers(config_root):
-        if layer.kind not in ("base", "profile"):
-            continue
+    for layer in codex_config_layers(config_root, project_root):
         try:
             layer_config = codex_config.load_config(layer.path)
         except Exception as exc:  # noqa: BLE001 - recorded, never fatal
@@ -2735,7 +2737,7 @@ def build_codex_installed_graph(
         by_scope=None,
     )
     _seed_codex_subagents(graph, root, config_root, normalize)
-    _seed_cache_plugins(graph, root, config_root, normalize, warnings=graph.warnings)
+    _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )

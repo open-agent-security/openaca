@@ -735,6 +735,24 @@ def test_a_plugin_disabled_only_in_a_profile_stays_enabled(tmp_path):
     assert _plugins(graph)["codexpl"].extra["enabled"] is True
 
 
+def test_a_plugin_enabled_only_in_a_trusted_project_is_reported_enabled(tmp_path):
+    """`[plugins.*]`/`[marketplaces.*]` are ordinary tables in any config
+    layer `codex_config_layers` returns, not a base/profile-only surface — a
+    trusted project's `.codex/config.toml` flips the base config's disabled
+    `offpl@mkt` on, the same as a profile does."""
+    root = _home(tmp_path)
+    project = tmp_path / "trusted-plugin-proj"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[plugins."offpl@mkt"]\nenabled = true\n', encoding="utf-8"
+    )
+    _trust(root, project)
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert _plugins(graph)["offpl"].extra["enabled"] is True
+
+
 def test_the_base_config_is_not_read_twice_as_a_profile(tmp_path):
     """`config.toml` must not match the `*.config.toml` profile glob."""
     root = _home(tmp_path)
@@ -782,7 +800,8 @@ def test_an_untrusted_project_layer_is_not_composed(tmp_path):
     (project / ".codex" / "config.toml").write_text(
         '[mcp_servers.ghost]\ncommand = "true"\n\n'
         "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
-        'type = "command"\ncommand = "echo ghost"\n',
+        'type = "command"\ncommand = "echo ghost"\n\n'
+        '[plugins."offpl@mkt"]\nenabled = true\n',
         encoding="utf-8",
     )
 
@@ -791,6 +810,9 @@ def test_an_untrusted_project_layer_is_not_composed(tmp_path):
     assert _server_named(graph, "ghost") == []
     assert not any(
         "echo ghost" in str((r.extra or {}).get("command")) for r in _refs(graph, "hook")
+    )
+    assert _plugins(graph)["offpl"].extra["enabled"] is False, (
+        "untrusted project must not flip the base config's disabled plugin on"
     )
 
 
@@ -823,6 +845,7 @@ def test_every_codex_surface_reads_one_layer_definition():
         graph_build._seed_codex_mcp_servers,
         graph_build._seed_codex_profile_mcp_servers,
         graph_build._seed_codex_hooks,
+        graph_build._seed_cache_plugins,
     ):
         src = inspect.getsource(fn)
         assert "codex_config_layers(" in src, f"{fn.__name__} builds its own layer list"

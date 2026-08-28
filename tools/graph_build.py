@@ -827,7 +827,7 @@ def _seed_direct_components(
             _add_child(graph, target, node)
 
 
-def _iter_skill_subdirs_following_symlinks(skills_dir: Path) -> list[Path]:
+def _iter_skill_subdirs_following_symlinks(graph: Graph, skills_dir: Path) -> list[Path]:
     """Every subdirectory beneath `skills_dir`, following symlinks at any depth.
 
     `Path.rglob`/`Path.walk()` default to `follow_symlinks=False`, so a
@@ -844,6 +844,12 @@ def _iter_skill_subdirs_following_symlinks(skills_dir: Path) -> list[Path]:
     children are visited, so a symlink loop — a directory symlinking to an
     ancestor, directly or through another symlink — is visited once rather
     than recursed into forever.
+
+    A directory the walk has already identified but cannot enumerate (e.g.
+    permission denied) is a readable surface the scan could not finish
+    reading, not an empty one — `record_gap` so `composition_coverage`
+    reflects the unread skills beneath it, rather than silently reporting the
+    subtree as absent.
     """
     found: list[Path] = []
     seen: set[Path] = set()
@@ -859,7 +865,8 @@ def _iter_skill_subdirs_following_symlinks(skills_dir: Path) -> list[Path]:
         seen.add(resolved)
         try:
             entries = sorted(directory.iterdir())
-        except OSError:
+        except OSError as exc:
+            graph.record_gap(f"could not list {directory}: {exc}")
             continue
         for entry in entries:
             if entry.name.startswith("."):
@@ -905,10 +912,21 @@ def _add_direct_endpoint_skills(
     if not skills_dir.is_dir():
         return
     for skill_subdir in sorted(
-        _iter_skill_subdirs_following_symlinks(skills_dir), key=lambda p: str(p)
+        _iter_skill_subdirs_following_symlinks(graph, skills_dir), key=lambda p: str(p)
     ):
         skill_md = skill_subdir / "SKILL.md"
-        if not skill_md.is_file():
+        # `skill_subdir` was discoverable (its parent could list it), but its
+        # own permission bits gate stat'ing anything inside it — a directory
+        # listed but unreadable would otherwise raise `PermissionError` out of
+        # `is_file()` uncaught (Python's `Path.is_file()` only swallows
+        # ENOENT/ENOTDIR/EBADF/ELOOP, not EACCES), aborting the whole scan
+        # instead of degrading this one skill to a gap.
+        try:
+            is_skill = skill_md.is_file()
+        except OSError as exc:
+            graph.record_gap(f"could not read {skill_md}: {exc}")
+            continue
+        if not is_skill:
             continue
         for ref in _safe_parse(graph, lambda path: claude_skill.parse(path, strict=True), skill_md):
             if ref.name:
@@ -2335,7 +2353,9 @@ def _seed_codex_mcp_servers(
     layers = codex_config_layers(config_root, project_root)
     by_name: dict[str, ComponentRef] = {}
     for layer in [layer for layer in layers if layer.kind in ("base", "project")]:
-        for ref in _safe_parse(graph, codex_config.parse, layer.path):
+        for ref in _safe_parse(
+            graph, lambda path: codex_config.parse(path, strict=True), layer.path
+        ):
             name = _codex_server_name(ref)
             if name is not None:
                 by_name[name] = ref
@@ -2470,7 +2490,9 @@ def _seed_codex_profile_mcp_servers(
     for layer in codex_config_layers(config_root):
         if layer.kind != "profile":
             continue
-        for ref in _safe_parse(graph, codex_config.parse, layer.path):
+        for ref in _safe_parse(
+            graph, lambda path: codex_config.parse(path, strict=True), layer.path
+        ):
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 

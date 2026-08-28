@@ -1758,6 +1758,39 @@ def test_endpoint_skill_symlink_cycle_does_not_hang(tmp_path):
     )
 
 
+def test_endpoint_unreadable_skill_subdir_is_a_coverage_gap(tmp_path):
+    """A skill subdirectory the walk has already identified but cannot list
+    (permission denied) must lower composition coverage, not vanish silently.
+
+    `_iter_skill_subdirs_following_symlinks`'s `iterdir()` try/except used to
+    swallow the `PermissionError` with a bare `continue`; a scan of a real
+    endpoint hitting a locked-down directory would then report
+    `composition_coverage=complete` despite an unread subtree.
+    """
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    skills_dir = install_root / "skills"
+    locked_dir = skills_dir / "locked"
+    locked_dir.mkdir(parents=True)
+    (locked_dir / "SKILL.md").write_text("---\nname: locked\ndescription: d\n---\nrun\n")
+    os.chmod(locked_dir, 0o000)
+    try:
+        warnings: list[str] = []
+        g = build_graph(install_root, mode="endpoint", warnings=warnings)
+    finally:
+        os.chmod(locked_dir, 0o755)
+
+    if os.getuid() != 0:
+        assert any("could not list" in w and "locked" in w for w in warnings)
+        assert not any(n.kind == "skill" for n in g.nodes.values())
+
+
 def test_repo_bundled_plugin_dep_refs_are_component_nodes(tmp_path):
     """plugin.json 'dependencies' refs pass through _with_plugin_context (which
     stamps component_type='component') before the kind-guard, so they end up as

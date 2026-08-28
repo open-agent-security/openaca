@@ -170,13 +170,26 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     Codex's server tables carry the same `command`/`args`/`env`/`url` shape, so
     the ecosystem classification that drives ADR-0039 launch-dependency
     attachment must not be a second implementation that can disagree.
+
+    Reads the raw TOML directly rather than going through `load_config`:
+    `load_config`'s `mcp_servers` field coerces a malformed top-level value
+    (e.g. `mcp_servers = "bad"`) to `{}` for every caller, including the ones
+    that only want plugins/marketplaces/projects and don't care. That coercion
+    ran before `strict` ever got a look, so a malformed table was silently
+    treated as "no servers declared" instead of rejected — the same shape
+    `mcp_json.parse` checks at its own top level for `mcpServers`/`servers`.
     """
-    config = load_config(path)
-    if not config.mcp_servers:
+    data = _load_toml(path)
+    raw_servers = data.get("mcp_servers")
+    if raw_servers is None:
+        return []
+    if not isinstance(raw_servers, dict):
+        if strict:
+            raise ValueError("mcp_servers must be an object")
         return []
 
     refs = parse_mcp_servers(
-        config.mcp_servers,
+        raw_servers,
         source_manifest=str(path),
         locator_prefix="$.mcp_servers",
         strict=strict,
@@ -186,7 +199,7 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         extra = ref.extra or {}
         component_path = extra.get("component_path") or [{}]
         server_name = component_path[0].get("name")
-        entry = config.mcp_servers.get(server_name)
+        entry = raw_servers.get(server_name)
         table = entry if isinstance(entry, dict) else {}
         extra[_ENABLED_KEY] = _as_bool(table.get(_ENABLED_KEY))
 

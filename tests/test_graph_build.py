@@ -1653,6 +1653,50 @@ def test_endpoint_project_skill_symlink_followed(tmp_path):
     )
 
 
+def test_endpoint_direct_skill_symlink_followed(tmp_path):
+    """Install-root skills at <install-root>/skills/<name> that are symlinks to
+    another directory must be discovered in endpoint mode.
+
+    `_add_direct_endpoint_skills` switched from `Path.iterdir()` to
+    `Path.rglob("SKILL.md")` for recursion (plan 043's Codex install-root
+    surface needs nested discovery), but `rglob` is built on `Path.walk()`,
+    which defaults to `follow_symlinks=False` -- a symlinked directory entry
+    is excluded from the walk entirely, not merely not recursed into further
+    (verified against CPython's own os.walk/pathlib source). A symlinked
+    skill directly under `skills/` is therefore invisible to `rglob` alone,
+    where the old `iterdir()` path found it. The supplementary
+    `_add_skills_from_dir` pass restores it.
+    """
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 1, "plugins": {}})
+    )
+
+    real_skill_dir = tmp_path / "skills-store" / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\ndescription: d\n---\nrun\n")
+    (real_skill_dir / "package.json").write_text(
+        '{"name":"aws-api","version":"1","dependencies":{"boto3":"1.34.0"}}'
+    )
+
+    skills_dir = install_root / "skills"
+    skills_dir.mkdir()
+    os.symlink(real_skill_dir, skills_dir / "aws-api")
+
+    g = build_graph(install_root, mode="endpoint")
+    skill_nodes = [n for n in g.nodes.values() if n.kind == "skill"]
+    assert len(skill_nodes) == 1, (
+        f"Expected 1 skill node for symlinked install-root skill dir, got {len(skill_nodes)}"
+    )
+    pkg_nodes = [n for n in g.nodes.values() if n.kind == "package"]
+    assert len(pkg_nodes) == 1, (
+        "package.json inside symlinked skill dir must produce a package node"
+    )
+
+
 def test_repo_bundled_plugin_dep_refs_are_component_nodes(tmp_path):
     """plugin.json 'dependencies' refs pass through _with_plugin_context (which
     stamps component_type='component') before the kind-guard, so they end up as

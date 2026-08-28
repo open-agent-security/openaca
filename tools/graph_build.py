@@ -852,6 +852,20 @@ def _add_direct_endpoint_skills(
     direct endpoint skills may have a `.skill-lock.json` alongside them that
     records their install source. Project skills and plugin-bundled skills do
     not go through this path.
+
+    `rglob` alone is not enough: `Path.walk()` (which `rglob` is built on in
+    this Python version) defaults to `follow_symlinks=False`, so a symlinked
+    directory entry classifies as a non-directory and is excluded from
+    traversal entirely — verified against CPython's own `pathlib`/`os.walk`
+    source, not just observed behavior. A symlink-installed skill directly
+    under `skills_dir` would otherwise vanish, where the pre-`rglob` `iterdir()`
+    version found it (`iterdir()` lists symlink entries like any other, and the
+    `is_file()` check that followed it resolves through the link). The
+    supplementary `_add_skills_from_dir` pass below restores that direct-child
+    symlink case — the same idiom already used to patch this exact gap for
+    project skills, see the call site in `_seed_endpoint`. `_add_child`'s dedup
+    collapses the overlap for every non-symlink child the `rglob` pass above
+    already found.
     """
     if not skills_dir.is_dir():
         return
@@ -871,6 +885,14 @@ def _add_direct_endpoint_skills(
             skill_node = Node(key=occurrence_key(ref, normalize), kind="skill", ref=ref)
             _add_child(graph, parent, skill_node)
             descend(graph, skill_node, skill_subdir, normalize)
+    _add_skills_from_dir(
+        graph,
+        parent,
+        skills_dir,
+        normalize=normalize,
+        project_root=project_root,
+        stamp_provenance=True,
+    )
 
 
 def _add_endpoint_command_agents(
@@ -1862,7 +1884,7 @@ def _add_bundled_plugin_surfaces(
             resolve_within(plugin_root, declared_path) if isinstance(declared_path, str) else None
         )
         if resolved is None or not resolved.is_dir():
-            graph.warnings.append(
+            graph.record_gap(
                 f"could not parse {plugin_manifest_path}: {field} must name an available directory"
             )
 
@@ -2536,13 +2558,23 @@ def _seed_cache_plugins(
     — the same layer set `_seed_codex_profile_mcp_servers` and `_seed_codex_hooks`
     already read, in the same precedence order, because `[plugins.*]` and
     `[marketplaces.*]` are ordinary tables in any of those files, not a
-    base/profile-only surface. A plugin enabled only by a profile or only by the
-    trusted project is still installed and one profile-switch or trust-grant
-    away from active. A plugin counts as enabled if any active layer says so:
-    enablement is a boolean, not an occurrence, so unlike MCP servers there is
-    no way to keep two layers' disagreement visible as separate nodes, and
-    treating any `True` as authoritative is the same over-approximate-towards-
-    active direction this project already takes for which profile is "active".
+    base/profile-only surface.
+
+    The two layer kinds merge differently, matching Codex's own config
+    precedence docs (`developers.openai.com/codex/config-advanced`: project
+    config is a distinct, higher-precedence layer over the user config, not an
+    alternate). Profiles union with base by OR: which profile `-p` selects is
+    an invocation-time flag left with no trace on disk, so a plugin enabled
+    only by *some* profile is still one profile-switch from active, and there
+    is no way to know which profile, if any, is the selected one — the same
+    reasoning `_seed_codex_profile_mcp_servers` uses for over-approximating
+    towards active. The trusted project layer has no such ambiguity: once a
+    project is trusted its `.codex/config.toml` is unconditionally active, so
+    it fully **overrides** whatever base/profile said for any key it declares
+    — including replacing an earlier `enabled = true` with `false` — the same
+    "project entries win" precedence `_seed_codex_mcp_servers` already applies
+    to servers. Only the project layer gets this override treatment; profiles
+    keep the OR-union among themselves and against the base.
     """
     cache_root = config_root / "plugins" / "cache"
     plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
@@ -2554,9 +2586,12 @@ def _seed_cache_plugins(
             graph.record_gap(f"could not parse {layer.path}: {exc}")
             continue
         marketplaces.update(layer_config.marketplaces)
-        for key, entry in layer_config.plugins.items():
-            if key not in plugins or entry.enabled:
-                plugins[key] = entry
+        if layer.kind == "project":
+            plugins.update(layer_config.plugins)
+        else:
+            for key, entry in layer_config.plugins.items():
+                if key not in plugins or entry.enabled:
+                    plugins[key] = entry
 
     seen: set[tuple[str | None, str]] = set()
     if cache_root.is_dir():

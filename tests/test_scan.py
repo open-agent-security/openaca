@@ -2529,6 +2529,51 @@ def test_a_non_boolean_enabled_plugins_value_downgrades_coverage(tmp_path):
     assert doc["agents"][0]["coverage"] == "partial"
 
 
+def test_a_plugin_declared_surface_naming_a_missing_directory_downgrades_coverage(tmp_path):
+    """A plugin manifest's `commands`/`skills`/`agents` field naming a directory
+    that does not exist (or is not a directory) means that whole declared
+    surface could not be inventoried — a dropped component, not just a note —
+    so it must lower `composition_coverage` rather than leave it `complete`."""
+    install_root = tmp_path / "claude"
+    install_path = install_root / "cache" / "plugin" / "1.0"
+    (install_path / ".claude-plugin").mkdir(parents=True)
+    (install_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "plugin", "commands": "missing-commands"})
+    )
+    (install_root / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"plugin@marketplace": True}})
+    )
+    (install_root / "plugins").mkdir()
+    (install_root / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "plugin@marketplace": [
+                        {"scope": "user", "version": "1.0", "installPath": str(install_path)}
+                    ]
+                }
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(install_root),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert doc["agents"][0]["coverage"] == "partial"
+
+
 def test_scan_prints_one_card_per_agent(monkeypatch, tmp_path):
     from tests.fixtures.agent_kinds import register_synthetic_kind
 

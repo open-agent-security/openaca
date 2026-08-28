@@ -753,6 +753,27 @@ def test_a_plugin_enabled_only_in_a_trusted_project_is_reported_enabled(tmp_path
     assert _plugins(graph)["offpl"].extra["enabled"] is True
 
 
+def test_a_plugin_disabled_only_in_a_trusted_project_overrides_the_base_enable(tmp_path):
+    """Unlike a profile (an alternate Codex may or may not have selected), a
+    trusted project's `.codex/config.toml` is unconditionally active once
+    trusted — it is a higher-precedence layer, not another union member.
+    The base config enables `codexpl@mkt`; the project's explicit `false`
+    must win, matching Codex's documented project-overrides-user config
+    precedence and the same "project entries win" rule
+    `_seed_codex_mcp_servers` already applies to servers."""
+    root = _home(tmp_path)
+    project = tmp_path / "trusted-plugin-proj"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[plugins."codexpl@mkt"]\nenabled = false\n', encoding="utf-8"
+    )
+    _trust(root, project)
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert _plugins(graph)["codexpl"].extra["enabled"] is False
+
+
 def test_the_base_config_is_not_read_twice_as_a_profile(tmp_path):
     """`config.toml` must not match the `*.config.toml` profile glob."""
     root = _home(tmp_path)

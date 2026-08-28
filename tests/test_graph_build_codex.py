@@ -303,6 +303,30 @@ def test_every_cached_bundle_is_inventoried_with_explicit_enable_state(tmp_path)
     assert plugins["claudepl"].extra["enabled"] is True
 
 
+def test_an_unreadable_marketplace_cache_dir_is_a_gap_not_a_crash(tmp_path):
+    """`_seed_cache_plugins` used to call `cache_root.iterdir()` (and the two
+    directory levels beneath it) unguarded. A marketplace subtree left with
+    restrictive permissions after a partial install must degrade to a
+    coverage gap, matching `_iter_skill_subdirs_following_symlinks`'s own
+    guarded walk, rather than raising `PermissionError` and aborting the
+    whole endpoint scan.
+    """
+    root = _home(tmp_path)
+    locked_dir = root / "plugins" / "cache" / "locked-mkt"
+    locked_dir.mkdir(parents=True)
+    os.chmod(locked_dir, 0o000)
+    try:
+        warnings: list[str] = []
+        graph = build_codex_installed_graph(root, warnings=warnings)
+    finally:
+        os.chmod(locked_dir, 0o755)
+
+    if os.getuid() != 0:
+        assert any("could not list" in w and "locked-mkt" in w for w in warnings)
+        # The readable bundles from `_home` must still be composed.
+        assert set(_plugins(graph)) == {"codexpl", "claudepl", "offpl"}
+
+
 def test_a_claude_plugin_only_bundle_realizes_via_the_fallback_candidate(tmp_path):
     graph = build_codex_installed_graph(_home(tmp_path))
 
@@ -511,6 +535,33 @@ def test_a_project_skill_symlinked_below_a_nested_directory_is_composed(tmp_path
     graph = build_codex_installed_graph(root, project)
 
     assert "aws-api" in _skill_names(graph)
+
+
+def test_a_gitignored_project_skill_symlinked_below_a_nested_directory_is_excluded(tmp_path):
+    """`_add_project_skills_from_dir_following_symlinks` (the recursive
+    symlink-follow path used above for `.codex/skills/team/aws-api ->`) must
+    still honor the project root's `.gitignore`, matching every other
+    project-skill surface (`_seed_shared_endpoint_surfaces` loads
+    `project_skill_spec` from the project root specifically because project
+    skills — unlike installed-plugin/install-root skills — are filtered).
+    Before threading `root_dir`/`root_spec` through this recursive pass, an
+    ignored nested skill symlink still surfaced.
+    """
+    root = _home(tmp_path)
+    project = tmp_path / "gitignored-skill-proj"
+
+    real_skill_dir = tmp_path / "skills-store" / "aws-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: aws-api\n---\nrun\n", encoding="utf-8")
+
+    team_dir = project / ".codex" / "skills" / "team"
+    team_dir.mkdir(parents=True)
+    os.symlink(real_skill_dir, team_dir / "aws-api")
+    (project / ".gitignore").write_text(".codex/skills/team/\n", encoding="utf-8")
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert "aws-api" not in _skill_names(graph)
 
 
 def test_a_claude_only_project_skill_is_not_composed_into_the_codex_bom(tmp_path):

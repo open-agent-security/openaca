@@ -444,6 +444,74 @@ def test_project_layer_composes_skills_and_mcp_and_project_wins(tmp_path):
     assert str(project) in user_svc[0].source_manifest
 
 
+def test_a_nested_project_skill_is_composed(tmp_path):
+    """`_seed_shared_endpoint_surfaces` now threads Codex's own `RepoSurface`
+    into `_add_project_skills`, which — like `graph_build_cursor`'s any-depth
+    walk — recognises `.codex/skills/**/SKILL.md` at any nesting depth, not
+    just one level down. Before this, only the direct-child supplementary pass
+    (`_add_skills_from_dir`) found project skills at the endpoint, so a skill
+    nested a level deeper was invisible."""
+    root = _home(tmp_path)
+    project = tmp_path / "nested-skill-proj"
+    (project / ".codex" / "skills" / "team" / "nested-skill").mkdir(parents=True)
+    (project / ".codex" / "skills" / "team" / "nested-skill" / "SKILL.md").write_text(
+        "---\nname: nested-skill\n---\nN\n", encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert "nested-skill" in _skill_names(graph)
+
+
+def test_a_claude_only_project_skill_is_not_composed_into_the_codex_bom(tmp_path):
+    """`_add_project_skills`'s `.claude`-vs-`.codex` skill-directory match is a
+    `RepoSurface` field, not an `EndpointSurface` one. Before threading Codex's
+    `RepoSurface` through, this call defaulted to `CLAUDE_CODE_SURFACE`
+    regardless of which kind was scanning, so a project containing a
+    `.claude/skills/` tree (but no matching `.codex/skills/` entry) leaked the
+    Claude-only skill into the Codex BOM."""
+    root = _home(tmp_path)
+    project = tmp_path / "mixed-proj"
+    (project / ".claude" / "skills" / "claude-only-skill").mkdir(parents=True)
+    (project / ".claude" / "skills" / "claude-only-skill" / "SKILL.md").write_text(
+        "---\nname: claude-only-skill\n---\nC\n", encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert "claude-only-skill" not in _skill_names(graph)
+
+
+def test_a_project_trusted_only_by_a_profile_does_not_override_a_base_mcp_server(tmp_path):
+    """Mirrors the profile-only-trust plugin fix
+    (`test_a_project_trusted_only_by_a_profile_does_not_override_a_base_enable`):
+    a project trust record that exists only in a profile's
+    `<name>.config.toml` is in effect only while that profile is selected, not
+    on every invocation. The base config declares `user_svc`; the project
+    (trusted only via a profile) redeclares it with a different command. A
+    no-profile invocation never loads the project layer, so the base's
+    `user_svc` must stay reachable rather than being replaced — the project's
+    redeclaration joins the additive union instead, the same as a profile's
+    own server would."""
+    root = _home(tmp_path)
+    project = tmp_path / "profile-trusted-mcp-proj"
+    (project / ".codex").mkdir(parents=True)
+    (project / ".codex" / "config.toml").write_text(
+        '[mcp_servers.user_svc]\ncommand = "project-wins"\n', encoding="utf-8"
+    )
+    (root / "work.config.toml").write_text(
+        f'[projects."{project.resolve()}"]\ntrust_level = "trusted"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root, project)
+    user_svc = _server_named(graph, "user_svc")
+
+    assert len(user_svc) == 2, "the base occurrence stays reachable alongside the project's"
+    sources = {ref.source_manifest for ref in user_svc}
+    assert any(str(root / "config.toml") == source for source in sources)
+    assert any(str(project) in source for source in sources)
+
+
 def test_an_untrusted_projects_hooks_json_is_not_composed_at_the_endpoint(tmp_path):
     """`.codex/hooks.json` is trust-gated at the endpoint, the same as the
     project's `.codex/config.toml` layer — an untrusted project's sidecar must

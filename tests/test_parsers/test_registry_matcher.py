@@ -597,6 +597,8 @@ def test_codex_registry_claims_its_own_surfaces():
         "**/.codex/config.toml",
         "**/.codex/hooks.json",
         "**/.codex/skills/**/SKILL.md",
+        # The cross-tool convention directory Codex also reads (ADR-0058).
+        "**/.agents/skills/**/SKILL.md",
         "**/.codex-plugin/plugin.json",
         "**/.claude-plugin/plugin.json",
     }

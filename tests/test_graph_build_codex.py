@@ -1247,3 +1247,17 @@ def test_directory_and_config_declared_roles_both_appear(tmp_path):
     names = {r.name for r in _refs(graph, "agent")}
 
     assert {"probe", "viewer"} <= names, "the agents-dir role and the config role"
+
+
+def test_repo_agents_skills_compose_for_codex(tmp_path):
+    """Codex's skills reference lists repository `.agents/skills`, walked from
+    the working directory up to the repository root."""
+    root = _repo(tmp_path)
+    (root / ".agents" / "skills" / "shared").mkdir(parents=True)
+    (root / ".agents" / "skills" / "shared" / "SKILL.md").write_text(
+        "---\nname: shared\n---\nS\n", encoding="utf-8"
+    )
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    assert "shared" in _skill_names(graph)

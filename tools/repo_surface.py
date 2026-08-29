@@ -298,7 +298,13 @@ CODEX_SURFACE = RepoSurface(
     # No commands surface. Both other kinds have one; Codex does not, and
     # shipping a parser for it would report components no agent has.
     command_agent_surfaces=(),
-    skill_config_dirs=(".codex",),
+    # `.agents/skills` as well as `.codex/skills`: Codex's published skills
+    # reference lists repository `.agents/skills` (walked from the working
+    # directory up to the repo root) and `$HOME/.agents/skills` among its
+    # discovery locations. An earlier spec line said `.agents/skills` was not
+    # read, on the evidence that the audited binary contains no such string
+    # literal — the same non-inference that made the `[agents.*]` claim wrong.
+    skill_config_dirs=(".codex", ".agents"),
     # `<root>/skills/.system/` IS excluded, but structurally — by its
     # `.codex-system-skills.marker` file, checked during composition — not by
     # name here. A name list is what Cursor does for these same six built-ins,

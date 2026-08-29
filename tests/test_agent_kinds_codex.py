@@ -164,3 +164,32 @@ def test_three_kinds_are_registered_and_the_others_are_unchanged():
     assert by_id["cursor"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         CURSOR_MANIFEST_REGISTRY
     )
+
+
+# --- The shared `.agents/` convention directory (ADR-0058) ------------------
+
+
+def test_agents_skills_is_evidence_of_a_codex_agent(tmp_path):
+    """ADR-0052 made this Cursor's exclusive evidence on the grounds that
+    Cursor was the only reader. Codex reads it too, so it is evidence for both
+    (ADR-0058)."""
+    (tmp_path / ".agents" / "skills" / "shared").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "shared" / "SKILL.md").write_text(
+        "---\nname: shared\n---\nS\n", encoding="utf-8"
+    )
+
+    assert codex.declared_evidence(tmp_path) is not None
+
+
+def test_a_shared_skills_repo_declares_both_kinds(tmp_path):
+    """The consequence ADR-0058 accepts: two BOMs for one tree, because two
+    runtimes genuinely load those skills."""
+    from tools.agent_kinds import cursor
+
+    (tmp_path / ".agents" / "skills" / "shared").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "shared" / "SKILL.md").write_text(
+        "---\nname: shared\n---\nS\n", encoding="utf-8"
+    )
+
+    assert codex.declared_evidence(tmp_path) is not None
+    assert cursor.declared_evidence(tmp_path) is not None

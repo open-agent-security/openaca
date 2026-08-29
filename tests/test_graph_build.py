@@ -1257,6 +1257,26 @@ def test_endpoint_plugin_warnings_propagated_from_build_graph(tmp_path):
     )
 
 
+def test_endpoint_malformed_lockfile_lowers_coverage(tmp_path):
+    """A malformed installed_plugins.json drops the ENTIRE plugin map, so the
+    warning `_load_plugins_map` records must survive as a coverage gap
+    (`graph.warnings.gaps`) all the way through `_seed_endpoint`'s merge —
+    not just as a plain note in `warnings`, which `_component_gap_count`
+    ignores and would let the BOM report `composition_coverage=complete`
+    despite dropping every installed plugin."""
+    install_root = tmp_path / "claude"
+    install_root.mkdir()
+    (install_root / "settings.json").write_text("{}")
+    plugins_dir = install_root / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "installed_plugins.json").write_text("this is not valid json{{{{")
+
+    g = build_graph(install_root, mode="endpoint")
+    assert any("installed_plugins.json" in gap for gap in g.warnings.gaps), (
+        f"expected the malformed lockfile to be recorded as a coverage gap, got: {g.warnings.gaps}"
+    )
+
+
 def test_endpoint_enabled_plugins_require_an_install_lockfile(tmp_path):
     (tmp_path / "settings.json").write_text(
         json.dumps({"enabledPlugins": {"plugin@marketplace": True}})

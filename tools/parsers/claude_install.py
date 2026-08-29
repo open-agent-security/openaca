@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from tools.component_ref import ComponentRef
-from tools.graph import record_gap
+from tools.graph import WarningLog, record_gap
 from tools.marketplace import key as marketplace_key
 from tools.parsers import (
     bun_lock,
@@ -75,7 +75,7 @@ def parse_install(
     ambiguity, missing lockfile entries) without aborting the scan.
     """
     refs: list[ComponentRef] = []
-    warnings: list[str] = []
+    warnings: WarningLog = WarningLog()
 
     layers = load_settings(install_root, project_root=project_root)
     effective = layers.merged(mode)
@@ -86,7 +86,11 @@ def parse_install(
     # plugins but with direct MCPs/hooks/skills should still produce
     # inventory.
     plugins_map, lockfile_path, plugin_warnings = _load_plugins_map(install_root)
-    warnings.extend(plugin_warnings)
+    # `absorb`, not `extend`: a malformed/unreadable lockfile means the whole
+    # plugin map is unavailable, which is a component gap, not just a note —
+    # losing that distinction here is what let a dropped plugin map still
+    # report `composition_coverage=complete`.
+    warnings.absorb(plugin_warnings)
 
     enabled_plugins = effective.get("enabledPlugins") or {}
     if isinstance(enabled_plugins, dict) and plugins_map is not None and lockfile_path is not None:
@@ -107,14 +111,20 @@ def parse_install(
 
 def _load_plugins_map(
     install_root: Path,
-) -> tuple[Optional[dict], Optional[Path], list[str]]:
+) -> tuple[Optional[dict], Optional[Path], WarningLog]:
     """Read and validate `<install_root>/plugins/installed_plugins.json`.
 
     Returns `(plugins_map, lockfile_path, warnings)`. Either both first
     elements are non-None (lockfile parsed cleanly) or both are None.
     The lockfile is optional; a missing file is not a warning.
+
+    `warnings` is a `WarningLog`, not a plain list: every `record_gap` call
+    below means the whole plugin map is unavailable, which callers must be
+    able to tell apart from an ordinary note. A plain list here would make
+    `record_gap` degrade silently, and the caller's `warnings.extend(...)`
+    would then drop the gap distinction a second time even if it didn't.
     """
-    warnings: list[str] = []
+    warnings: WarningLog = WarningLog()
     lockfile_path = install_root / "plugins" / "installed_plugins.json"
     if not lockfile_path.exists():
         return None, None, warnings

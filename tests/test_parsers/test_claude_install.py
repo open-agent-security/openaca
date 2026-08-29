@@ -161,6 +161,11 @@ def test_install_warns_on_malformed_lockfile(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert any("malformed" in w for w in warnings)
+    # The whole plugin map is unavailable, which is a coverage gap, not just a
+    # note — `_load_plugins_map`'s `record_gap` call must survive the merge
+    # into `parse_install`'s own `warnings` (a `WarningLog.absorb`, not a plain
+    # `.extend`) for `_component_gap_count` to see it.
+    assert any("malformed" in gap for gap in warnings.gaps)
 
 
 def test_install_multi_entry_prefers_matching_scope(tmp_path):

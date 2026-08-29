@@ -2439,3 +2439,17 @@ def test_inventory_tree_header_reports_disabled_plugins_separately():
     # A disabled plugin is still installed, so it stays visible in the tree —
     # it is only no longer summarised as active.
     assert "a" in out and "b" in out
+
+
+def test_inventory_tree_plugin_node_marks_its_own_disabled_state():
+    """The aggregate header alone can't tell a reader WHICH plugin is
+    disabled when more than one is listed; each plugin's own node must say so."""
+    from tools.render import render_inventory_tree
+
+    out = render_inventory_tree([_tree_plugin_ref("a", True), _tree_plugin_ref("b", False)], [])
+    lines = out.splitlines()
+
+    a_line = next(line for line in lines if "plugin/mkt/a" in line)
+    b_line = next(line for line in lines if "plugin/mkt/b" in line)
+    assert "[disabled]" not in a_line
+    assert "[disabled]" in b_line

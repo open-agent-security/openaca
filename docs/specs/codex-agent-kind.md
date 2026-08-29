@@ -481,11 +481,18 @@ and `installed_plugins.json` each have zero references in the audited binary.
 
 Two consequences reach back into shipped decisions:
 
-- **ADR-0052's revisit trigger does not fire.** That ADR made `.agents/skills/`
-  evidence of a *Cursor* agent on the grounds that Cursor is the only registered
-  kind that reads it, and flagged the claim to revisit "if a Codex kind lands."
-  A Codex kind has landed and **Codex does not read `.agents/skills`** (0 refs).
-  The Cursor claim survives unchanged. Recorded here so it is not re-litigated.
+- **ADR-0052's revisit trigger fired, and ADR-0058 resolves it.** That ADR made
+  `.agents/skills/` evidence of a *Cursor* agent on the grounds that Cursor was
+  the only registered kind that read it, and flagged the claim to revisit "if a
+  Codex kind lands." A Codex kind has landed, and **Codex does read
+  `.agents/skills`** — both the repo-scope glob (`CODEX_SURFACE`) and the
+  `$HOME`-scope endpoint read (`_seed_codex_shared_agent_skills`). An earlier
+  draft of this spec asserted the opposite from a zero-reference count for the
+  literal string, which does not follow for a path a program builds from
+  components — see [Reference counts](#reference-counts). Per ADR-0058,
+  `.agents/skills/` is now evidence for **every** kind that reads it: a
+  repository declaring only shared skills there declares both a Cursor and a
+  Codex agent.
 - **Cross-reads are composition, never evidence.** A tree containing only
   `.claude-plugin/plugin.json` declares a Claude Code agent, not a Codex one.
 

@@ -3112,7 +3112,19 @@ def build_codex_installed_graph(
     """
     root = Node(key=root_key, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
-    normalize = _make_normalizer("endpoint", config_root, config_root, project_root, root_label)
+    # `_seed_codex_shared_agent_skills` reads `$HOME/.agents/skills`, a root
+    # outside both `config_root` and `project_root`. Without a labeled
+    # `extra_roots` entry the normalizer falls back to the absolute path
+    # (Cursor's own endpoint builder threads the same root the same way, for
+    # the same reason: stable, machine-independent bom-refs).
+    normalize = _make_normalizer(
+        "endpoint",
+        config_root,
+        config_root,
+        project_root,
+        root_label,
+        extra_roots=(("agents", Path.home() / ".agents"),),
+    )
 
     _seed_shared_endpoint_surfaces(
         graph,

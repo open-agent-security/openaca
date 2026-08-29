@@ -289,7 +289,10 @@ def _home(tmp_path: Path) -> Path:
     )
 
     (root / "agents").mkdir()
-    (root / "agents" / "probe.toml").write_text('name = "probe"\n', encoding="utf-8")
+    (root / "agents" / "probe.toml").write_text(
+        'name = "probe"\ndescription = "d"\ndeveloper_instructions = "i"\n',
+        encoding="utf-8",
+    )
 
     (root / "rules").mkdir()
     (root / "rules" / "default.rules").write_text(
@@ -1305,7 +1308,8 @@ def test_a_config_declared_role_outside_the_agents_dir_is_composed(tmp_path):
     root = _home(tmp_path)
     (root / "roles").mkdir()
     (root / "roles" / "lens.toml").write_text(
-        'name = "lens-file-name"\ndescription = "d"\n', encoding="utf-8"
+        'name = "lens-file-name"\ndescription = "d"\ndeveloper_instructions = "i"\n',
+        encoding="utf-8",
     )
     (root / "config.toml").write_text(
         CONFIG + '\n[agents.lens]\nconfig_file = "roles/lens.toml"\n', encoding="utf-8"
@@ -1321,7 +1325,10 @@ def test_the_table_key_is_the_role_identity_not_the_files_name(tmp_path):
     disagree and must not win."""
     root = _home(tmp_path)
     (root / "roles").mkdir()
-    (root / "roles" / "lens.toml").write_text('name = "something-else"\n', encoding="utf-8")
+    (root / "roles" / "lens.toml").write_text(
+        'name = "something-else"\ndescription = "d"\ndeveloper_instructions = "i"\n',
+        encoding="utf-8",
+    )
     (root / "config.toml").write_text(
         CONFIG + '\n[agents.lens]\nconfig_file = "roles/lens.toml"\n', encoding="utf-8"
     )
@@ -1338,7 +1345,10 @@ def test_a_relative_config_file_resolves_from_the_declaring_config(tmp_path):
     that declares the role, which matters once profiles are involved."""
     root = _home(tmp_path)
     (root / "nested").mkdir()
-    (root / "nested" / "role.toml").write_text('name = "nested-role"\n', encoding="utf-8")
+    (root / "nested" / "role.toml").write_text(
+        'name = "nested-role"\ndescription = "d"\ndeveloper_instructions = "i"\n',
+        encoding="utf-8",
+    )
     (root / "work.config.toml").write_text(
         '[agents.viewer]\nconfig_file = "nested/role.toml"\n', encoding="utf-8"
     )
@@ -1386,7 +1396,9 @@ def test_directory_and_config_declared_roles_both_appear(tmp_path):
     """Both declaration forms are real; neither replaces the other."""
     root = _home(tmp_path)
     (root / "roles").mkdir()
-    (root / "roles" / "viewer.toml").write_text('name = "viewer"\n', encoding="utf-8")
+    (root / "roles" / "viewer.toml").write_text(
+        'name = "viewer"\ndescription = "d"\ndeveloper_instructions = "i"\n', encoding="utf-8"
+    )
     (root / "config.toml").write_text(
         CONFIG + '\n[agents.viewer]\nconfig_file = "roles/viewer.toml"\n', encoding="utf-8"
     )

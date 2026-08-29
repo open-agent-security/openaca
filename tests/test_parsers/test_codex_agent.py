@@ -40,21 +40,48 @@ def test_identity_matches_the_claude_agent_space(tmp_path):
     assert codex_agent.parse(p)[0].component_identity == "claude-agent/dummy-probe"
 
 
-def test_name_falls_back_to_the_filename_stem(tmp_path):
+def test_missing_name_raises(tmp_path):
+    """developers.openai.com/codex/agent-configuration/subagents: every
+    standalone agent file "must define: `name`, `description`,
+    `developer_instructions`" — Codex itself rejects one that doesn't, so
+    this must not silently fall back to the filename and inventory a
+    component Codex never loads.
+    """
     p = tmp_path / "reviewer.toml"
-    p.write_text('description = "no name key"\n', encoding="utf-8")
+    p.write_text(
+        'description = "no name key"\ndeveloper_instructions = "do stuff"\n',
+        encoding="utf-8",
+    )
 
-    refs = codex_agent.parse(p)
-
-    assert refs[0].name == "reviewer"
-    assert refs[0].component_identity == "claude-agent/reviewer"
+    with pytest.raises(ValueError, match="name"):
+        codex_agent.parse(p)
 
 
-def test_a_non_string_name_falls_back_rather_than_emitting_a_bad_identity(tmp_path):
+def test_a_non_string_name_raises(tmp_path):
     p = tmp_path / "odd.toml"
-    p.write_text("name = 42\n", encoding="utf-8")
+    p.write_text(
+        'name = 42\ndescription = "d"\ndeveloper_instructions = "i"\n',
+        encoding="utf-8",
+    )
 
-    assert codex_agent.parse(p)[0].name == "odd"
+    with pytest.raises(ValueError, match="name"):
+        codex_agent.parse(p)
+
+
+def test_missing_description_raises(tmp_path):
+    p = tmp_path / "reviewer.toml"
+    p.write_text('name = "reviewer"\ndeveloper_instructions = "do stuff"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="description"):
+        codex_agent.parse(p)
+
+
+def test_missing_developer_instructions_raises(tmp_path):
+    p = tmp_path / "reviewer.toml"
+    p.write_text('name = "reviewer"\ndescription = "d"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="developer_instructions"):
+        codex_agent.parse(p)
 
 
 def test_malformed_toml_raises(tmp_path):
@@ -87,12 +114,12 @@ def test_description_is_carried(tmp_path):
     assert codex_agent.parse(p)[0].extra["description"] == "A no-op probe agent."
 
 
-def test_an_empty_file_still_yields_a_named_agent(tmp_path):
-    """An empty TOML file is a valid, if uninformative, subagent declaration."""
+def test_an_empty_file_raises(tmp_path):
+    """An empty file defines none of the three required fields, so Codex
+    rejects it — same as a file missing just one of them.
+    """
     p = tmp_path / "blank.toml"
     p.write_text("", encoding="utf-8")
 
-    refs = codex_agent.parse(p)
-
-    assert len(refs) == 1
-    assert refs[0].name == "blank"
+    with pytest.raises(ValueError):
+        codex_agent.parse(p)

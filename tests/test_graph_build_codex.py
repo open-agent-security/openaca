@@ -450,53 +450,44 @@ def test_shared_home_skill_keys_by_label_not_absolute_path(tmp_path, monkeypatch
     assert shared[0].key.startswith("agents/skills/shared-skill/SKILL.md#")
 
 
-def test_config_root_overridden_skips_shared_home_skills_and_records_gap(tmp_path, monkeypatch):
-    """`--config-dir` relocates `config_root`, not `$HOME` (ADR-0059).
+def test_the_shared_skills_root_relocates_with_config_dir(tmp_path):
+    """ADR-0054 grants `--config-dir` only to a kind for which naming a root
+    fully specifies the target. `$HOME/.agents/skills` is not moved by
+    `$CODEX_HOME`, so the flag moves its companion instead: on a real endpoint
+    `.codex` and `.agents` are siblings, so `<dir>/../.agents` is the faithful
+    relocation. Skipping it under an override would ship a flag that knowingly
+    returns an incomplete composition."""
+    from tools.agent_kinds.codex import resolve_shared_skills_root
 
-    Composing `$HOME/.agents/skills` unconditionally when the root was
-    explicitly overridden would stitch the requested tree together with
-    whatever the scanning machine's own home happens to hold — the same
-    split-home failure ADR-0054 refused `--config-dir` over for Cursor. With
-    `config_root_overridden=True`, the shared-skill node must not appear and
-    the coverage gap must be recorded instead.
-    """
-    fake_home = tmp_path / "fakehome"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-    (fake_home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
-    (fake_home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
-        "---\nname: shared-skill\n---\nShared.\n", encoding="utf-8"
+    home = tmp_path / "fake-home"
+    home.mkdir()
+    root = _home(home)  # <fake-home>/codex-home
+    (home / ".agents" / "skills" / "relocated").mkdir(parents=True)
+    (home / ".agents" / "skills" / "relocated" / "SKILL.md").write_text(
+        "---\nname: relocated\n---\nS\n", encoding="utf-8"
     )
 
-    graph = build_codex_installed_graph(_home(tmp_path), config_root_overridden=True)
+    graph = build_codex_installed_graph(root, shared_skills_root=resolve_shared_skills_root(root))
 
-    shared = [
-        n
-        for n in graph.nodes.values()
-        if n.kind == "skill" and n.ref and n.ref.name == "shared-skill"
-    ]
-    assert shared == []
-    assert any("agents/skills skipped" in gap for gap in graph.warnings.gaps)
+    assert "relocated" in _skill_names(graph)
 
 
-def test_config_root_not_overridden_still_composes_shared_home_skills(tmp_path, monkeypatch):
-    """The default/`$CODEX_HOME` case is unaffected by ADR-0059's skip."""
-    fake_home = tmp_path / "fakehome"
-    fake_home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: fake_home)
-    (fake_home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
-    (fake_home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
-        "---\nname: shared-skill\n---\nShared.\n", encoding="utf-8"
+def test_an_unoverridden_scan_reads_the_invoking_users_home(tmp_path):
+    """Default and `$CODEX_HOME` both leave the shared root at the real home,
+    because neither relocates it."""
+    from pathlib import Path as _Path
+
+    from tools.agent_kinds.codex import resolve_shared_skills_root
+
+    assert resolve_shared_skills_root() == _Path.home() / ".agents"
+
+
+def test_the_companion_root_is_a_sibling_of_the_named_root(tmp_path):
+    from tools.agent_kinds.codex import resolve_shared_skills_root
+
+    assert resolve_shared_skills_root(tmp_path / "somewhere" / "codex") == (
+        tmp_path / "somewhere" / ".agents"
     )
-
-    graph = build_codex_installed_graph(_home(tmp_path), config_root_overridden=False)
-
-    shared = [
-        n
-        for n in graph.nodes.values()
-        if n.kind == "skill" and n.ref and n.ref.name == "shared-skill"
-    ]
-    assert len(shared) == 1
 
 
 def test_admin_skills_root_present_lowers_coverage(tmp_path, monkeypatch):

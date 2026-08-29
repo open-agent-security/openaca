@@ -142,6 +142,26 @@ def resolve_config_root(config_dir: Path | None = None) -> Path:
     return Path.home() / ".codex"
 
 
+def resolve_shared_skills_root(config_dir: Path | None = None) -> Path:
+    """The `.agents` directory holding the cross-tool skills root.
+
+    Codex reads `$HOME/.agents/skills`, which `$CODEX_HOME` does not relocate —
+    so by default this is the invoking user's own home. But `--config-dir` names
+    a root explicitly, and ADR-0054 grants that flag only to a kind for which
+    naming a root **fully specifies the target**. Relocating the companion
+    alongside it is what keeps that true: on a real endpoint `.codex` and
+    `.agents` are siblings under the home directory, so the faithful companion
+    to an overridden `<dir>` is `<dir>/../.agents`.
+
+    The alternative — skipping the shared root under an override — would ship a
+    flag that knowingly returns an incomplete composition, which is the outcome
+    ADR-0054 judged worse than having no flag at all.
+    """
+    if config_dir is not None:
+        return config_dir.parent / ".agents"
+    return Path.home() / ".agents"
+
+
 def discover(ctx: DiscoveryContext) -> list[AgentInstance]:
     if ctx.source == "installed":
         return _discover_installed(ctx)
@@ -209,7 +229,9 @@ def _compose(
             root_label=agent.root_label,
             include_gitignored=include_gitignored,
             warnings=warnings,
-            config_root_overridden=agent.config_root_overridden,
+            shared_skills_root=resolve_shared_skills_root(
+                agent.config_root if agent.config_root_overridden else None
+            ),
         )
     return build_codex_declared_graph(
         agent, include_gitignored=include_gitignored, warnings=warnings

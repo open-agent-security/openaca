@@ -92,11 +92,19 @@ Literal counts in the audited binary, for the surfaces this spec turns on:
 | `prefix_rule` | 21 | approval DSL is real |
 | `trust_level` | 17 | trust registry is real |
 | `managed_config.toml` | 6 | admin-distributed layer exists |
-| `.codex/agents` | **0** | no project-scoped subagents |
-| `.agents/skills` | **0** | **not read by Codex** |
+| `.codex/agents` | **0** | ~~no config-declared subagents~~ — **wrong**, see [Subagents](#subagents) |
+| `.agents/skills` | **0** | ~~not read by Codex~~ — **wrong**, see below |
 | `.claude/skills` | **0** | Claude's content tree not read |
 | `.claude/agents` | **0** | Claude's content tree not read |
 | `installed_plugins.json` | **0** | Claude's lockfile not read |
+
+**A zero in this table is weak evidence, and twice it was wrong.** A program
+that builds a path from components — `home.join(".agents").join("skills")` —
+contains no joined literal, so absence here shows only that the path is not
+spelled out in one piece. Both disproved rows were caught by review, not by us,
+and both were defended with this table. Treat a zero as "not found in this form"
+and confirm against the published reference before asserting a surface does not
+exist. The remaining zeros have **not** been re-checked that way.
 
 ## Surface audit
 
@@ -107,7 +115,7 @@ parsers, **Scope** is about this change.
 | Surface | Claude Code | Codex | Reuse | Scope |
 |---|---|---|---|---|
 | MCP servers | `.mcp.json`, inline in settings | `[mcp_servers.<name>]` inline in `config.toml`; adds `enabled`, `startup_timeout_sec`, `tool_timeout_sec`, `bearer_token`, `http_headers` | **New — TOML** | **In** |
-| Skills | `.claude/skills/`, bundled | `~/.codex/skills/`, project `.codex/skills/`, bundled; same `SKILL.md` | Parser as-is | **In** |
+| Skills | `.claude/skills/`, bundled | `<root>/skills/`, project `.codex/skills/`, **`.agents/skills/` at repo and `$HOME` scope**, bundled; same `SKILL.md` | Parser as-is | **In** |
 | Subagents | `.claude/agents/**/*.md` | `<root>/agents/*.toml` **and** `[agents."<role>"] config_file` in any config layer — TOML either way | **New parser** | **In** |
 | Plugins | one manifest format | `.codex-plugin/plugin.json` → `.claude-plugin/plugin.json` | Ordered candidates via `RepoSurface` | **In** |
 | Plugin enable state | `enabledPlugins` in settings | `[plugins."<name>@<mkt>"] enabled` | Same model, TOML | **In** |
@@ -116,7 +124,7 @@ parsers, **Scope** is about this change.
 | Standalone hooks | not a repo-mode surface | `$CODEX_HOME/hooks.json` (user), `<project>/.codex/hooks.json` (project) | Parser as-is | **In** |
 | Approval policy | settings `permissions` | `~/.codex/rules/*.rules` — a **DSL**, not JSON | **New — posture** | **In** (posture) |
 | Project trust | none | `[projects."<path>"] trust_level` | New — posture | **In** (posture) |
-| Commands | `.claude/commands/` | **none found** | — | **Out** — no surface |
+| Commands | `.claude/commands/` | `<root>/prompts/*.md`, invoked as `/prompts:<name>` | — | Deferred — see [Deliberately out of the first pass](#deliberately-out-of-the-first-pass) |
 | Instruction files | `CLAUDE.md` (not read) | `AGENTS.md` (55 refs, heavily read) | — | **Out** — not configuration |
 | Managed config | none | `managed_config.toml` | — | Deferred (schedule) |
 
@@ -193,7 +201,7 @@ not *is it reachable*.
 | Surface | User root | Project root | Traversal | Accepts | Source |
 |---|---|---|---|---|---|
 | MCP servers | `config.toml` `[mcp_servers.*]` | `.codex/config.toml` | inline table | stdio + `url`/`streamable_http` | both |
-| Skills | `<root>/skills/` | `.codex/skills/` | recursive | `SKILL.md` per directory | both |
+| Skills | `<root>/skills/`, `$HOME/.agents/skills/` | `.codex/skills/`, `.agents/skills/` | recursive | `SKILL.md` per directory | both |
 | Subagents | `<root>/agents/*.toml`, plus `[agents.*] config_file` in any layer | via a layer's `[agents.*]` | flat + config-declared | `.toml` | installed |
 | Plugins | `<root>/plugins/cache/<mkt>/<name>/<ver>/` | — | per bundle | two manifest formats | installed |
 | Plugin hooks | bundled `hooks/hooks.json` | same | per bundle | `{hooks:{Event:[...]}}` | both |
@@ -274,6 +282,8 @@ Real, reachable, and skipped — with the cost of skipping each.
 | `$CODEX_HOME/<name>.config.toml` profile layering | A scan reports the base config; a session run under a profile may compose differently |
 | `-c key=value` invocation overrides | Process-lifetime only, never written to disk. Structurally unobservable, not merely skipped |
 | `.rules` beyond `prefix_rule` | The DSL has one verified form; other rule shapes would be reported as unparsed rather than misread |
+| Custom prompts (`<root>/prompts/*.md`) | An endpoint using them reports zero commands. OpenAI marks custom prompts **deprecated** in favour of skills, and the audited endpoint has none, so the surface is recorded rather than built — an earlier draft wrongly said no commands surface existed at all |
+| `/etc/codex/skills` (admin skills) | An MDM-managed endpoint under-reports shared skills. Same class as `managed_config.toml`: administrator-distributed, path not audited (ADR-0058) |
 
 ## Not shipping
 

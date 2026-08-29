@@ -346,6 +346,9 @@ CODEX_MANIFEST_REGISTRY: list[ManifestPattern] = [
     # would undercount `source_unit_count` and leave a malformed nested skill
     # unable to register a parse failure.
     ManifestPattern("**/.codex/skills/**/SKILL.md", claude_skill.parse),
+    # The cross-tool convention directory Codex also reads (ADR-0058), so its
+    # skills count toward Codex's own source units.
+    ManifestPattern("**/.agents/skills/**/SKILL.md", claude_skill.parse),
     # Guarded: claim `.codex-plugin/plugin.json` only when it's the format
     # `_resolve_plugin_format` resolves for its root — see
     # `_is_resolved_codex_plugin_format`.

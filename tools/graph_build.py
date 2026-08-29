@@ -2406,6 +2406,28 @@ def _codex_system_skill_roots(config_root: Path) -> list[Path]:
     return roots
 
 
+def _seed_codex_shared_agent_skills(
+    graph: Graph, target: Node, normalize: SourceNormalizer
+) -> None:
+    """`$HOME/.agents/skills` — the user-scope half of the cross-tool
+    convention directory.
+
+    Codex's published skills reference lists repository `.agents/skills` and
+    `$HOME/.agents/skills` among its discovery locations. The repository half
+    is reached in repo mode through `CODEX_SURFACE.skill_config_dirs`; this is
+    the endpoint half, which no config root contains because it hangs off the
+    home directory rather than `$CODEX_HOME`.
+
+    Home-scoped like Cursor's own compat roots, and for the same reason: a
+    `--config-dir` override moves Codex's root, not the user's home.
+
+    `/etc/codex/skills` (the admin location) is deliberately not read here —
+    it is the same class of administrator-distributed surface as
+    `managed_config.toml` and is recorded as deferred in the spec.
+    """
+    _add_direct_endpoint_skills(graph, target, Path.home() / ".agents" / "skills", normalize)
+
+
 def _seed_codex_subagents(
     graph: Graph,
     target: Node,
@@ -3103,6 +3125,7 @@ def build_codex_installed_graph(
         by_scope=None,
     )
     _seed_codex_subagents(graph, root, config_root, normalize, project_root)
+    _seed_codex_shared_agent_skills(graph, root, normalize)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings

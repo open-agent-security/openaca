@@ -68,6 +68,11 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     "*/.codex/hooks.json",
     ".codex/skills/*/SKILL.md",
     "*/.codex/skills/*/SKILL.md",
+    # Codex reads the cross-tool `.agents/` convention directory as well. It is
+    # evidence for every kind that genuinely reads it — see ADR-0058, which
+    # supersedes ADR-0052's "sole reader" exception now that a second kind does.
+    ".agents/skills/*/SKILL.md",
+    "*/.agents/skills/*/SKILL.md",
     ".codex-plugin/plugin.json",
     "*/.codex-plugin/plugin.json",
 )

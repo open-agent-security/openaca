@@ -67,12 +67,14 @@ def parse_install(
     project_root: Optional[Path] = None,
     mode: Mode = "endpoint",
     include_transitive: bool = True,
-) -> tuple[list[ComponentRef], list[str]]:
+) -> tuple[list[ComponentRef], WarningLog]:
     """Read declared+lockfile state and emit one ComponentRef per active plugin.
 
     Returns `(refs, warnings)`. Warnings are surfaced in `-v` output by the
     `openaca scan endpoint` command so users see resolver caveats (multi-scope
-    ambiguity, missing lockfile entries) without aborting the scan.
+    ambiguity, missing lockfile entries) without aborting the scan. `warnings`
+    is a `WarningLog` so a caller counting coverage gaps (`warnings.gaps`) can
+    tell a dropped plugin map apart from an ordinary note.
     """
     refs: list[ComponentRef] = []
     warnings: WarningLog = WarningLog()

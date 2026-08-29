@@ -261,3 +261,72 @@ def test_a_non_table_project_entry_is_recorded_malformed(tmp_path):
 
     assert cfg.projects == {}
     assert cfg.malformed == ("projects./home/u/proj",)
+
+
+# --- Malformedness is recorded at EVERY level, not just the reported one ---
+#
+# Review found this pattern one level lower each round: the top-level table,
+# then the entry, then the value. Each fix addressed the reported level and
+# left the one beneath it. These pin all three.
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        # level 1 — the top-level table
+        ('plugins = "bad"\n', ("plugins",)),
+        # level 2 — an entry within it
+        ('[plugins]\n"a@m" = "bad"\n', ("plugins.a@m",)),
+        # level 3 — a value within the entry
+        ('[plugins."a@m"]\nenabled = "yes"\n', ("plugins.a@m.enabled",)),
+    ],
+)
+def test_malformedness_is_recorded_at_every_nesting_level(tmp_path, body, expected):
+    p = tmp_path / "config.toml"
+    p.write_text(body, encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == expected
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("[agents.r]\nconfig_file = 5\n", ("agents.r.config_file",)),
+        ("[agents.r]\ndescription = []\n", ("agents.r.description",)),
+    ],
+)
+def test_subagent_role_values_are_type_checked(tmp_path, body, expected):
+    """A non-string `config_file` silently became `None`, which composed the
+    role as if it declared no file at all."""
+    p = tmp_path / "config.toml"
+    p.write_text(body, encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == expected
+
+
+def test_a_wrongly_typed_server_enabled_raises_under_strict(tmp_path):
+    """The registry parses strictly, so this becomes a parse failure rather
+    than a server silently defaulted to enabled."""
+    p = tmp_path / "config.toml"
+    p.write_text('[mcp_servers.a]\ncommand = "true"\nenabled = "yes"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="enabled must be a boolean"):
+        codex_config.parse(p, strict=True)
+
+
+def test_a_wrongly_typed_server_enabled_falls_back_to_enabled_when_lenient(tmp_path):
+    """Absent and unreadable both mean enabled — the safe direction."""
+    p = tmp_path / "config.toml"
+    p.write_text('[mcp_servers.a]\ncommand = "true"\nenabled = "yes"\n', encoding="utf-8")
+
+    assert codex_config.parse(p)[0].extra["enabled"] is True
+
+
+def test_a_well_typed_config_records_nothing_at_any_level(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text(
+        '[plugins."a@m"]\nenabled = false\n\n[agents.r]\nconfig_file = "r.toml"\n',
+        encoding="utf-8",
+    )
+
+    assert codex_config.load_config(p).malformed == ()

@@ -2453,3 +2453,40 @@ def test_inventory_tree_plugin_node_marks_its_own_disabled_state():
     b_line = next(line for line in lines if "plugin/mkt/b" in line)
     assert "[disabled]" not in a_line
     assert "[disabled]" in b_line
+
+
+def test_tree_mcp_leaf_marks_disabled_state():
+    """A Codex MCP server carrying `enabled: False` (ADR-0055) must be
+    distinguishable from an active one in the leaf label — same treatment
+    `_build_plugin_node` gives a disabled plugin's own header, since MCP
+    leaves render enabled and disabled entries identically otherwise."""
+    from tools.render import render_inventory_tree
+
+    refs = [
+        ComponentRef(
+            component_identity="mcp-remote/api.example.com/active",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://api.example.com/active",
+                "transport": "http",
+                "enabled": True,
+            },
+        ),
+        ComponentRef(
+            component_identity="mcp-remote/api.example.com/off",
+            extra={
+                "component_type": "mcp_server",
+                "url": "https://api.example.com/off",
+                "transport": "http",
+                "enabled": False,
+            },
+        ),
+    ]
+
+    out = render_inventory_tree(refs, [], use_unicode=True, graph=_graph_from_refs(refs))
+    lines = out.splitlines()
+
+    active_line = next(line for line in lines if "api.example.com/active" in line)
+    off_line = next(line for line in lines if "api.example.com/off" in line)
+    assert "[disabled]" not in active_line
+    assert "[disabled]" in off_line

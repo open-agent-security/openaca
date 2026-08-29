@@ -143,6 +143,11 @@ def test_install_warns_when_plugin_enabled_but_missing_from_lockfile(tmp_path):
     refs, warnings = parse_install(install_root=tmp_path)
     assert refs == []
     assert any("missing@nowhere" in w for w in warnings)
+    # An enabled plugin absent from the lockfile is a dropped component, not
+    # just a note — `_walk_active_plugins`'s `record_gap` call must survive the
+    # merge into `parse_install`'s own `warnings` (`WarningLog.absorb`, not a
+    # plain `.extend`) for `_component_gap_count` to see it.
+    assert any("missing@nowhere" in gap for gap in warnings.gaps)
 
 
 def test_install_handles_missing_lockfile_silently(tmp_path):

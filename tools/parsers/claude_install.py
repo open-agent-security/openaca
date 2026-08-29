@@ -105,7 +105,10 @@ def parse_install(
             include_transitive=include_transitive,
         )
         refs.extend(plugin_refs)
-        warnings.extend(plugin_walk_warnings)
+        # `absorb`, not `extend` — same reasoning as `_load_plugins_map` above:
+        # an enabled plugin missing from the lockfile is a dropped component,
+        # not just a note, and `extend` alone cannot carry that distinction.
+        warnings.absorb(plugin_walk_warnings)
 
     refs.extend(_walk_direct_components(install_root, project_root, layers, mode))
     return refs, warnings
@@ -158,14 +161,20 @@ def _walk_active_plugins(
     layers: SettingsLayers,
     mode: Mode,
     include_transitive: bool = True,
-) -> tuple[list[ComponentRef], list[str]]:
+) -> tuple[list[ComponentRef], WarningLog]:
     """Process each enabled plugin: emit self-identity + bundled refs.
 
     Extracted from `parse_install` so the caller can always reach the
     direct-component walk regardless of plugin-resolution outcomes.
+
+    `warnings` is a `WarningLog`, not a plain list, for the same reason
+    `_load_plugins_map`'s is: an enabled plugin missing from the lockfile, or
+    an install entry too malformed to use, is a dropped component — a
+    `record_gap` call below must not degrade to an ordinary note just because
+    this function built a plain list.
     """
     refs: list[ComponentRef] = []
-    warnings: list[str] = []
+    warnings: WarningLog = WarningLog()
 
     for plugin_key, is_enabled in enabled_plugins.items():
         if is_enabled is not True:

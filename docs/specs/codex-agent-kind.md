@@ -211,10 +211,11 @@ not *is it reachable*.
 
 Directories a reader expects and will **not** find: `.codex/agents` *(docs
 disagree — Cursor's documentation lists it among Cursor's subagent roots, and
-neither Cursor nor Codex references it; the error is upstream of both)*,
-`.codex/commands` (no commands surface exists), and `.agents/skills` (Codex does
-not read it — see [Files Codex reads that another runtime
-owns](#files-codex-reads-that-another-runtime-owns)).
+neither Cursor nor Codex references it; the error is upstream of both)* and
+`.codex/commands` (no commands surface exists). `.agents/skills` is **not** in
+this list — Codex does read it, both at repo and `$HOME` scope; see [Surfaces
+in scope](#surfaces-in-scope) and [Files Codex reads that another runtime
+owns](#files-codex-reads-that-another-runtime-owns).
 
 ### Hook events
 

@@ -1363,6 +1363,85 @@ def test_redact_payload_redacts_file_uri_in_scanner_evidence(tmp_path):
     assert pf["evidence"]["manifest_path"] == "skills/deploy-helper/SKILL.md"
 
 
+def _codex_component_scoped_posture_finding(rule_id: str, *, kind: str, subject: str, path: str):
+    return PostureFinding(
+        rule_id=rule_id,
+        title="t",
+        severity="medium",
+        confidence="high",
+        component={"type": kind, "name": subject},
+        active_in=["codex"],
+        declared_by={"kind": "manifest", "path": path},
+        component_path=[{"type": kind, "name": subject}],
+        standards=Standards(owasp_agentic_top10=["asi03"]),
+        remediation="r",
+    )
+
+
+def test_posture_payload_distinguishes_command_policy_allow_findings():
+    """`openaca-posture-command-policy-allow` findings never attach a
+    `component_bom_ref` (a command-policy allow rule is not an inventoried
+    BOM component), so the command prefix in evidence is the only field that
+    tells two allow rules from the same `.rules` file apart (Codex review,
+    PR #179)."""
+    from tools.remote.collector import _posture_finding_to_payload
+
+    git_payload = _posture_finding_to_payload(
+        _codex_component_scoped_posture_finding(
+            "openaca-posture-command-policy-allow",
+            kind="command_policy",
+            subject="git commit",
+            path="/home/u/.codex/rules/default.rules",
+        )
+    )
+    npm_payload = _posture_finding_to_payload(
+        _codex_component_scoped_posture_finding(
+            "openaca-posture-command-policy-allow",
+            kind="command_policy",
+            subject="npm install",
+            path="/home/u/.codex/rules/default.rules",
+        )
+    )
+
+    assert "component_bom_ref" not in git_payload
+    assert git_payload["evidence"]["command_prefix"] == "git commit"
+    assert npm_payload["evidence"]["command_prefix"] == "npm install"
+
+
+def test_posture_payload_distinguishes_and_redacts_project_trust_findings(tmp_path):
+    """Same rationale as command-policy-allow above for
+    `openaca-posture-project-trust`: multiple trusted projects from one
+    config must stay distinguishable, and the project path — an absolute
+    filesystem path — must go through the same redaction as every other
+    posture-evidence value before upload."""
+    from tools.remote.collector import _posture_finding_to_payload, _redact_payload_for_remote
+
+    config_dir = tmp_path / ".codex"
+    config_dir.mkdir()
+    trusted = str(config_dir / "repo-a")
+
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [
+            _posture_finding_to_payload(
+                _codex_component_scoped_posture_finding(
+                    "openaca-posture-project-trust",
+                    kind="project",
+                    subject=trusted,
+                    path=str(config_dir / "config.toml"),
+                )
+            )
+        ],
+        "observations": [],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    finding = payload["posture_findings"][0]
+    assert "component_bom_ref" not in finding
+    assert finding["evidence"]["project_path"] == "repo-a"
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

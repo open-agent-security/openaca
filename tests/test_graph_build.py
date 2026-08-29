@@ -2158,6 +2158,34 @@ def test_endpoint_non_string_version_entry_lowers_coverage(tmp_path):
     assert any("non-string version" in gap for gap in g.warnings.gaps)
 
 
+def test_repo_malformed_plugin_dependency_entry_lowers_coverage(tmp_path):
+    """A `dependencies[]` entry that is neither a string nor a `{name, version}`
+    object is dropped rather than emitted; that must count as a coverage gap
+    (Codex review, PR #179: `claude_plugin_root._parse_manifest_refs` recorded
+    this as a plain note, not a gap, so a BOM with a silently dropped
+    dependency reported `complete`)."""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "version": "1", "dependencies": [123]})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    assert any(
+        "must be a dependency string or object with a string name" in gap for gap in g.warnings.gaps
+    )
+
+
+def test_repo_plugin_mcp_servers_referenced_file_missing_lowers_coverage(tmp_path):
+    """`mcpServers` naming a file that does not exist drops every server it
+    would have declared; that must count as a coverage gap, same rationale as
+    the malformed-dependency case above."""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "version": "1", "mcpServers": "./missing.json"})
+    )
+    g = build_graph(tmp_path, mode="repo")
+    assert any("referenced MCP manifest is unavailable" in gap for gap in g.warnings.gaps)
+
+
 # --- Codex PR #131 review fixes ---
 
 

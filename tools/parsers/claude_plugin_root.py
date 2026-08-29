@@ -112,9 +112,10 @@ def _parse_manifest_refs(
                         )
                         continue
                 if warnings is not None:
-                    warnings.append(
+                    record_gap(
+                        warnings,
                         f"could not parse {plugin_json_path}: {locator} must be a "
-                        "dependency string or object with a string name"
+                        "dependency string or object with a string name",
                     )
 
     if "mcpServers" in data:
@@ -136,8 +137,9 @@ def _parse_manifest_refs(
             referenced = resolve_within(plugin_root, servers)
             if referenced is None or not referenced.is_file():
                 if warnings is not None:
-                    warnings.append(
-                        f"could not parse {servers}: referenced MCP manifest is unavailable"
+                    record_gap(
+                        warnings,
+                        f"could not parse {servers}: referenced MCP manifest is unavailable",
                     )
             else:
                 try:

@@ -108,7 +108,7 @@ parsers, **Scope** is about this change.
 |---|---|---|---|---|
 | MCP servers | `.mcp.json`, inline in settings | `[mcp_servers.<name>]` inline in `config.toml`; adds `enabled`, `startup_timeout_sec`, `tool_timeout_sec`, `bearer_token`, `http_headers` | **New — TOML** | **In** |
 | Skills | `.claude/skills/`, bundled | `~/.codex/skills/`, project `.codex/skills/`, bundled; same `SKILL.md` | Parser as-is | **In** |
-| Subagents | `.claude/agents/**/*.md` | `~/.codex/agents/*.toml` — **TOML, user scope only** | **New parser** | **In** |
+| Subagents | `.claude/agents/**/*.md` | `<root>/agents/*.toml` **and** `[agents."<role>"] config_file` in any config layer — TOML either way | **New parser** | **In** |
 | Plugins | one manifest format | `.codex-plugin/plugin.json` → `.claude-plugin/plugin.json` | Ordered candidates via `RepoSurface` | **In** |
 | Plugin enable state | `enabledPlugins` in settings | `[plugins."<name>@<mkt>"] enabled` | Same model, TOML | **In** |
 | Marketplaces | `known_marketplaces.json` | `[marketplaces.<name>]` + `source_type`, `last_revision` | Same model, TOML | **In** |
@@ -127,8 +127,10 @@ Four corrections against the assumption that a third kind resembles the second:
   only cross-runtime read is the `.claude-plugin/plugin.json` manifest *format*.
 - **Enable state is readable.** Cursor's is a server call, which is the sole
   reason ADR-0052 made plugins presence-only. Codex writes it to `config.toml`.
-- **Subagents are TOML and user-scope only.** Not markdown, and `.codex/agents`
-  has zero references — a project cannot declare a Codex subagent.
+- **Subagents are TOML, and have two declaration forms.** Not markdown. A role
+  is declared either by a file in the agents directory or by an
+  `[agents."<role>"]` table naming a `config_file` that may sit anywhere — see
+  [Subagents](#subagents).
 - **There is no commands surface.** Both other kinds have one; Codex does not.
 
 ## Config root
@@ -192,7 +194,7 @@ not *is it reachable*.
 |---|---|---|---|---|---|
 | MCP servers | `config.toml` `[mcp_servers.*]` | `.codex/config.toml` | inline table | stdio + `url`/`streamable_http` | both |
 | Skills | `<root>/skills/` | `.codex/skills/` | recursive | `SKILL.md` per directory | both |
-| Subagents | `<root>/agents/*.toml` | **none** | flat | `.toml` | installed |
+| Subagents | `<root>/agents/*.toml`, plus `[agents.*] config_file` in any layer | via a layer's `[agents.*]` | flat + config-declared | `.toml` | installed |
 | Plugins | `<root>/plugins/cache/<mkt>/<name>/<ver>/` | — | per bundle | two manifest formats | installed |
 | Plugin hooks | bundled `hooks/hooks.json` | same | per bundle | `{hooks:{Event:[...]}}` | both |
 | Standalone hooks | `<root>/hooks.json` | `.codex/hooks.json` | file | same envelope | both |
@@ -356,6 +358,37 @@ way the project's `.codex/config.toml` layer is.
 
 This is a scope correction, not a reversal of the ADR's central claim (Codex is
 Claude Code-shaped) — recorded here rather than by editing the accepted ADR.
+
+### Subagents
+
+Two declaration forms, and both are real:
+
+| Form | Where the role file lives |
+|---|---|
+| Directory | `<root>/agents/<role>.toml` |
+| Config-declared | wherever `[agents."<role>"] config_file` points |
+
+The published configuration reference defines the second:
+
+> **`config_file`** — "Path to a TOML config layer for that role; relative
+> paths resolve from the config file that declares the role."
+> — [Configuration Reference](https://developers.openai.com/codex/config-reference)
+
+Two consequences. The **table key is the role identity**, not the referenced
+file's own `name` — the key is what selects the role, and the two are free to
+disagree. And a `config_file` that does not exist is a **coverage gap**, not an
+absent role: the reference says the path "is validated at load time and must
+point to an existing file", so Codex itself treats it as an error.
+
+**Correction.** An earlier version of this spec said subagents were
+directory-discovered only, on the evidence that the audited binary contains no
+`.codex/agents` string literal. That does not follow — a program that builds a
+path from components has no such literal, so the absence showed nothing. The
+claim was wrong, it made every config-declared role invisible to a scan, and it
+was raised twice in review before being checked against the published
+reference. Recorded here because the failure was one of method, not detail: an
+in-repo document cannot settle a question about a third party's behaviour, which
+is the rule this spec's own [Evidence standard](#evidence-standard) states.
 
 ### The profile layer, and why it was a real gap
 

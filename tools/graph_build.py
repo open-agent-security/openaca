@@ -2407,21 +2407,103 @@ def _codex_system_skill_roots(config_root: Path) -> list[Path]:
 
 
 def _seed_codex_subagents(
-    graph: Graph, target: Node, config_root: Path, normalize: SourceNormalizer
+    graph: Graph,
+    target: Node,
+    config_root: Path,
+    normalize: SourceNormalizer,
+    project_root: Path | None = None,
 ) -> None:
-    """`<root>/agents/*.toml`, user scope only.
+    """Codex subagents, from BOTH declaration forms.
 
-    Forked from the shared markdown command/agent walk because the format
-    differs, not the location — `EndpointSurface` names directories, and which
-    parser reads a file is not a directory name.
+    1. **A file in the agents directory** — `<root>/agents/*.toml`.
+    2. **A config-declared role** — `[agents."<role>"] config_file = "..."` in
+       any active config layer. The referenced file may live anywhere:
+       "Path to a TOML config layer for that role; relative paths resolve from
+       the config file that declares the role"
+       (developers.openai.com/codex/config-reference).
+
+    Form 2 was missing, so a role whose file sits outside `agents/` was
+    reported as no subagent at all. An earlier spec line claimed subagents were
+    directory-discovered only; its evidence was that the audited binary
+    contains no `.codex/agents` string literal, which does not follow — a
+    program that builds a path from components has no such literal. Corrected
+    against the published configuration reference.
+
+    Both forms are read rather than one, because the same reference documents
+    role files in an agents directory as well. Where they overlap, `_add_child`
+    dedupes on the occurrence key.
+
+    The role identity is the **table key**, not the referenced file's own
+    `name`: the key is what selects the role.
     """
     agents_dir = config_root / "agents"
-    if not agents_dir.is_dir():
+    if agents_dir.is_dir():
+        for path in sorted(agents_dir.glob("*.toml")):
+            for ref in _safe_parse(graph, codex_agent.parse, path):
+                node = Node(key=occurrence_key(ref, normalize), kind="agent", ref=ref)
+                _add_child(graph, target, node)
+
+    for layer in codex_config_layers(config_root, project_root):
+        try:
+            config = codex_config.load_config(layer.path)
+        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+            graph.record_gap(f"could not parse {layer.path}: {exc}")
+            continue
+        _gap_malformed_codex_surfaces(graph, layer.path, config)
+        for role in config.agents.values():
+            _seed_codex_config_role(graph, target, layer.path, role, normalize)
+
+
+def _seed_codex_config_role(
+    graph: Graph,
+    target: Node,
+    declaring_config: Path,
+    role,
+    normalize: SourceNormalizer,
+) -> None:
+    """One `[agents."<role>"]` declaration.
+
+    A role naming a `config_file` that is missing is a component we know exists
+    and cannot read, so it lowers coverage — the reference says the path "is
+    validated at load time and must point to an existing file", meaning Codex
+    itself treats this as an error rather than an absent role.
+    """
+    if role.config_file is None:
+        # A role with no file still declares a subagent; its instructions just
+        # come from the parent session. Emit it from the table alone.
+        ref = ComponentRef(
+            name=role.name,
+            component_identity=f"claude-agent/{role.name}",
+            source_manifest=str(declaring_config),
+            source_locator=f'$.agents."{role.name}"',
+            extra={
+                "scope_owner": None,
+                "component_type": "agent",
+                **({"description": role.description} if role.description else {}),
+            },
+        )
+        _add_child(graph, target, Node(occurrence_key(ref, normalize), "agent", ref))
         return
-    for path in sorted(agents_dir.glob("*.toml")):
-        for ref in _safe_parse(graph, codex_agent.parse, path):
-            node = Node(key=occurrence_key(ref, normalize), kind="agent", ref=ref)
-            _add_child(graph, target, node)
+
+    # "relative paths resolve from the config file that declares the role"
+    referenced = Path(role.config_file)
+    if not referenced.is_absolute():
+        referenced = declaring_config.parent / referenced
+    if not referenced.is_file():
+        graph.record_gap(
+            f"could not parse {referenced}: agents.{role.name} config_file is unavailable"
+        )
+        return
+
+    for ref in _safe_parse(graph, codex_agent.parse, referenced):
+        # The table key selects the role, so it is the identity — the
+        # referenced file's own `name` is free to disagree.
+        renamed = replace(
+            ref,
+            name=role.name,
+            component_identity=f"claude-agent/{role.name}",
+        )
+        _add_child(graph, target, Node(occurrence_key(renamed, normalize), "agent", renamed))
 
 
 def _emit_codex_config_mcp_servers(
@@ -3020,7 +3102,7 @@ def build_codex_installed_graph(
         repo_surface=CODEX_SURFACE,
         by_scope=None,
     )
-    _seed_codex_subagents(graph, root, config_root, normalize)
+    _seed_codex_subagents(graph, root, config_root, normalize, project_root)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings

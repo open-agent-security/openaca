@@ -1363,6 +1363,78 @@ def test_a_config_declared_roles_locator_matches_its_own_manifest(tmp_path):
     assert ref.source_locator == "$"
 
 
+def test_an_out_of_root_config_file_anchors_to_the_declaring_config(tmp_path):
+    """`config_file` may be an absolute path anywhere on disk ("Path to a TOML
+    config layer for that role" — the reference names no root requirement).
+    When it sits outside `config_root`, `project_root`, and the shared
+    `.agents` root alike, anchoring `source_manifest` to it (as the in-root
+    case above does) would leave a machine-specific absolute path in the
+    occurrence key and CycloneDX bom-ref — there is no enumerable root left to
+    label it under, unlike the in-root case. The occurrence instead anchors to
+    `declaring_config`, which is always inside a known root."""
+    root = _home(tmp_path)
+    external = tmp_path / "external-roles"
+    external.mkdir()
+    (external / "lens.toml").write_text(
+        'description = "d"\ndeveloper_instructions = "i"\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        CONFIG + f'\n[agents.lens]\nconfig_file = "{(external / "lens.toml").as_posix()}"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    (ref,) = [r for r in _refs(graph, "agent") if r.name == "lens"]
+
+    assert ref.source_manifest == str(root / "config.toml")
+    assert ref.source_locator == '$.agents."lens".config_file'
+
+
+def test_an_out_of_root_config_file_key_is_stable(tmp_path):
+    """The occurrence key itself (what becomes the bom-ref) must not carry the
+    external absolute path — that is the actual cross-machine instability the
+    anchor-to-declaring-config fix exists to avoid."""
+    from tools.graph_build import _make_normalizer, occurrence_key
+
+    root = _home(tmp_path)
+    external = tmp_path / "external-roles"
+    external.mkdir()
+    (external / "lens.toml").write_text(
+        'description = "d"\ndeveloper_instructions = "i"\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        CONFIG + f'\n[agents.lens]\nconfig_file = "{(external / "lens.toml").as_posix()}"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    (ref,) = [r for r in _refs(graph, "agent") if r.name == "lens"]
+    normalize = _make_normalizer(
+        "endpoint", root, root, None, "codex", extra_roots=(("agents", tmp_path / "unused"),)
+    )
+
+    assert str(external) not in occurrence_key(ref, normalize)
+
+
+def test_an_in_root_config_file_still_dedupes_with_the_directory_form(tmp_path):
+    """The in-root anchor-to-referenced-file behavior is deliberately kept
+    (rather than always anchoring to `declaring_config`) because it is what
+    lets a `config_file` pointing at a file already discovered directly under
+    `<root>/agents/` collapse into the one node the directory-scan form
+    already produced for it, instead of double-reporting the same role."""
+    root = _home(tmp_path)
+    (root / "agents" / "lens.toml").write_text(
+        'name = "lens"\ndescription = "d"\ndeveloper_instructions = "i"\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.lens]\nconfig_file = "agents/lens.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+
+    assert len([r for r in _refs(graph, "agent") if r.name == "lens"]) == 1
+
+
 def test_a_relative_config_file_resolves_from_the_declaring_config(tmp_path):
     """Not from the process cwd, and not from the config root — from the file
     that declares the role, which matters once profiles are involved."""

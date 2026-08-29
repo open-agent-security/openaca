@@ -1062,6 +1062,20 @@ def _posture_evidence(finding: PostureFinding) -> JsonObject:
         return {"override_present": True, "manifest_path": manifest_path}
     if finding.rule_id == "openaca-posture-mcp-auto-approve":
         return {"auto_approve": True, "manifest_path": manifest_path}
+    if finding.rule_id == "openaca-posture-command-policy-allow":
+        # No BOM component backs this finding (a command-policy allow rule is
+        # not an inventoried component), so component_bom_ref is never set —
+        # this is the only field that distinguishes one allow rule from
+        # another sharing the same manifest_path. Not a path, so it needs no
+        # redaction.
+        return {"command_prefix": finding.component.get("name"), "manifest_path": manifest_path}
+    if finding.rule_id == "openaca-posture-project-trust":
+        # Same rationale as command-policy-allow above: no BOM component, so
+        # this is the only distinguishing field across multiple trusted
+        # projects from one config. It IS an absolute path, so it goes
+        # through the same evidence-string redaction as every other evidence
+        # value in `_redact_payload_for_remote` before upload.
+        return {"project_path": finding.component.get("name"), "manifest_path": manifest_path}
     return {**_normalized_evidence(finding.evidence), "manifest_path": manifest_path}
 
 

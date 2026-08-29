@@ -2220,7 +2220,7 @@ def _add_codex_declared_config_mcps(
             continue
         if is_owned_by_realized_plugin(config_path, realized_plugin_roots, CODEX_SURFACE):
             continue
-        refs = _safe_parse(graph, codex_config.parse, config_path)
+        refs = _safe_parse(graph, lambda path: codex_config.parse(path, strict=True), config_path)
         for ref in refs:
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)

@@ -148,6 +148,24 @@ def test_malformed_inline_hooks_table_is_a_gap_not_a_silent_drop(tmp_path):
     )
 
 
+def test_a_malformed_declared_mcp_entry_is_a_gap_not_a_silent_drop(tmp_path):
+    """`[mcp_servers] bad = "oops"` is valid TOML but the wrong shape (a
+    string, not a table). The declared-mode reader must parse strictly, the
+    same as `_emit_codex_config_mcp_servers` already does for installed mode
+    — otherwise this one remaining non-strict call site silently drops the
+    malformed entry and coverage stays `complete` over a dropped server."""
+    root = _repo(tmp_path)
+    (root / ".codex" / "config.toml").write_text('[mcp_servers]\nbad = "oops"\n', encoding="utf-8")
+    warnings: list[str] = []
+
+    graph = build_codex_declared_graph(_agent(root), warnings=warnings)
+
+    assert "mcp_server" not in _kinds(graph), "a malformed entry must not become a phantom server"
+    assert any("config.toml" in w for w in graph.warnings + warnings), (
+        "a malformed mcp_servers entry must be a recorded gap, not a silent drop"
+    )
+
+
 def test_a_nested_project_codex_dir_is_composed(tmp_path):
     """Codex reads project config at any depth, as `descend` already walks."""
     nested = tmp_path / "packages" / "app"

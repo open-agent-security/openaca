@@ -224,9 +224,16 @@ def load_config(path: Path) -> CodexConfig:
                 continue
             marketplaces[str(name)] = MarketplaceEntry(
                 name=str(name),
-                source_type=entry.get("source_type"),
-                source=entry.get("source"),
-                last_revision=entry.get("last_revision"),
+                source_type=_typed(
+                    entry.get("source_type"), str, f"marketplaces.{name}.source_type", malformed
+                ),
+                source=_typed(entry.get("source"), str, f"marketplaces.{name}.source", malformed),
+                last_revision=_typed(
+                    entry.get("last_revision"),
+                    str,
+                    f"marketplaces.{name}.last_revision",
+                    malformed,
+                ),
             )
 
     projects: dict[str, ProjectEntry] = {}
@@ -238,7 +245,9 @@ def load_config(path: Path) -> CodexConfig:
                 continue
             projects[str(proj_path)] = ProjectEntry(
                 path=str(proj_path),
-                trust_level=entry.get("trust_level"),
+                trust_level=_typed(
+                    entry.get("trust_level"), str, f"projects.{proj_path}.trust_level", malformed
+                ),
             )
 
     # Malformed input (e.g. `hooks = "bad"`) is preserved rather than coerced to
@@ -306,8 +315,22 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
             raise ValueError("mcp_servers must be an object")
         return []
 
+    # `mcp_json.parse_mcp_servers` drops any entry carrying Claude Code's
+    # `disabled: true` — the opposite polarity of Codex's own `enabled` key,
+    # and a key Codex itself does not read. Passing entries through unchanged
+    # would let that foreign key silently delete a server this module's own
+    # contract says is never dropped for being disabled (ADR-0055). Stripped
+    # on a shallow copy so the enable-state pass below still reads the
+    # original `enabled` value from `raw_servers`.
+    sanitized_servers = {
+        name: {k: v for k, v in entry.items() if k != "disabled"}
+        if isinstance(entry, dict)
+        else entry
+        for name, entry in raw_servers.items()
+    }
+
     refs = parse_mcp_servers(
-        raw_servers,
+        sanitized_servers,
         source_manifest=str(path),
         locator_prefix="$.mcp_servers",
         strict=strict,

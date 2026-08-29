@@ -387,6 +387,32 @@ def test_a_direct_skill_nested_under_the_install_root_is_still_composed(tmp_path
     assert "tool" in _skill_names(graph)
 
 
+def test_shared_home_skill_keys_by_label_not_absolute_path(tmp_path, monkeypatch):
+    """`$HOME/.agents/skills` (`_seed_codex_shared_agent_skills`) sits outside
+    both `config_root` and `project_root`, so the endpoint normalizer must
+    carry it as a labeled `extra_roots` entry — as Cursor's own endpoint
+    builder already does for its home-scoped compat roots — or the node key
+    falls back to the machine-specific absolute path, breaking bom-ref
+    stability and cross-machine dedup."""
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    (fake_home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
+    (fake_home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
+        "---\nname: shared-skill\n---\nShared.\n", encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(_home(tmp_path))
+
+    shared = [
+        n
+        for n in graph.nodes.values()
+        if n.kind == "skill" and n.ref and n.ref.name == "shared-skill"
+    ]
+    assert len(shared) == 1
+    assert shared[0].key.startswith("agents/skills/shared-skill/SKILL.md#")
+
+
 def test_subagents_are_composed_from_toml(tmp_path):
     graph = build_codex_installed_graph(_home(tmp_path))
     agents = {r.name for r in _refs(graph, "agent")}

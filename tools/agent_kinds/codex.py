@@ -35,7 +35,11 @@ ROOT_LABEL = "codex"
 # `declared` is `complete`: all four surfaces a Codex repo declares —
 # `.codex/config.toml`, `.codex/hooks.json`, `.codex/skills/**/SKILL.md`, and
 # both plugin manifest formats — parse in full, and none is conditional on
-# state a scan cannot read. Cursor is `partial` here for a real reason Codex
+# state a scan cannot read. "In full" is load-bearing for the first of them:
+# every component-declaring table of `config.toml` (`[mcp_servers]`, `[hooks]`,
+# `[agents]`) is read in repo mode, not just the servers it was first written
+# for — a table read only at the endpoint hides a component in exactly the
+# tree that declares it. Cursor is `partial` here for a real reason Codex
 # does not share: its extensibility flag lives in an editor state database, so
 # a Cursor repo scan cannot tell whether the compat skills it reports load.
 #

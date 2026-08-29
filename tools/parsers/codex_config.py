@@ -170,40 +170,52 @@ def load_config(path: Path) -> CodexConfig:
     malformed: list[str] = []
     servers = _table(data, "mcp_servers", malformed)
 
+    # A nested entry that is present but not itself a table (e.g.
+    # `plugins."foo@bar" = "bad"`) used to coerce to `{}` and read exactly like
+    # a bare, all-defaults declaration — for `agents` that manufactured a real
+    # subagent node from a string that never declared one. Skipping and
+    # recording `<surface>.<key>` keeps the same absent-vs-malformed
+    # distinction `_table` already draws at the top level, one level deeper.
     plugins: dict[tuple[str | None, str], PluginEntry] = {}
     raw_plugins = _table(data, "plugins", malformed)
     if raw_plugins:
         for key, entry in raw_plugins.items():
             if not isinstance(key, str):
                 continue
-            table = entry if isinstance(entry, dict) else {}
+            if not isinstance(entry, dict):
+                malformed.append(f"plugins.{key}")
+                continue
             marketplace, name = _split_plugin_key(key)
             plugins[(marketplace, name)] = PluginEntry(
                 name=name,
                 marketplace=marketplace,
-                enabled=_as_bool(table.get(_ENABLED_KEY)),
+                enabled=_as_bool(entry.get(_ENABLED_KEY)),
             )
 
     marketplaces: dict[str, MarketplaceEntry] = {}
     raw_marketplaces = _table(data, "marketplaces", malformed)
     if raw_marketplaces:
         for name, entry in raw_marketplaces.items():
-            table = entry if isinstance(entry, dict) else {}
+            if not isinstance(entry, dict):
+                malformed.append(f"marketplaces.{name}")
+                continue
             marketplaces[str(name)] = MarketplaceEntry(
                 name=str(name),
-                source_type=table.get("source_type"),
-                source=table.get("source"),
-                last_revision=table.get("last_revision"),
+                source_type=entry.get("source_type"),
+                source=entry.get("source"),
+                last_revision=entry.get("last_revision"),
             )
 
     projects: dict[str, ProjectEntry] = {}
     raw_projects = _table(data, "projects", malformed)
     if raw_projects:
         for proj_path, entry in raw_projects.items():
-            table = entry if isinstance(entry, dict) else {}
+            if not isinstance(entry, dict):
+                malformed.append(f"projects.{proj_path}")
+                continue
             projects[str(proj_path)] = ProjectEntry(
                 path=str(proj_path),
-                trust_level=table.get("trust_level"),
+                trust_level=entry.get("trust_level"),
             )
 
     # Malformed input (e.g. `hooks = "bad"`) is preserved rather than coerced to
@@ -218,9 +230,11 @@ def load_config(path: Path) -> CodexConfig:
     raw_agents = _table(data, "agents", malformed)
     if raw_agents:
         for role, entry in raw_agents.items():
-            table = entry if isinstance(entry, dict) else {}
-            config_file = table.get("config_file")
-            description = table.get("description")
+            if not isinstance(entry, dict):
+                malformed.append(f"agents.{role}")
+                continue
+            config_file = entry.get("config_file")
+            description = entry.get("description")
             agents[str(role)] = AgentRoleEntry(
                 name=str(role),
                 config_file=config_file if isinstance(config_file, str) else None,

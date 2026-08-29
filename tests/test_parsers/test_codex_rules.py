@@ -7,6 +7,10 @@ wrong posture finding while a wrong count is only a coverage gap.
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from tools.parsers.codex_rules import ParsedRules, PrefixRule, parse_rules
 
 
@@ -77,6 +81,25 @@ def test_whitespace_only_file_yields_no_gap(tmp_path):
 def test_a_missing_file_is_not_an_error(tmp_path):
     """An absent approval surface is a normal state, not a parse failure."""
     assert parse_rules(tmp_path / "absent.rules") == ParsedRules([], 0)
+
+
+def test_an_unreadable_existing_file_counts_as_a_gap(tmp_path):
+    """Unlike a missing file, a present-but-unreadable one must not read as clean.
+
+    Both callers reach this function via `rules_dir.glob("*.rules")`, so the
+    file's existence is already confirmed by the time `parse_rules` runs — a
+    permission error here is not "nothing to see," it is content we know
+    exists and cannot read.
+    """
+    p = tmp_path / "default.rules"
+    p.write_text('prefix_rule(pattern=["git"], decision="allow")\n', encoding="utf-8")
+    p.chmod(0o000)
+    try:
+        if os.access(p, os.R_OK):
+            pytest.skip("cannot deny read access to self as the current user")
+        assert parse_rules(p) == ParsedRules([], 1)
+    finally:
+        p.chmod(0o644)
 
 
 def test_a_call_with_an_unreadable_pattern_list_counts_as_unparsed(tmp_path):

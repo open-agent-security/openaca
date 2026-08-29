@@ -54,6 +54,25 @@ def test_declared_graph_carries_skill_hook_and_mcp(tmp_path):
     assert {"skill", "hook", "mcp_server"} <= _kinds(graph)
 
 
+def test_a_valid_config_toml_is_not_routed_through_the_json_settings_parser(tmp_path):
+    """`.codex/config.toml` is TOML, read directly by `codex_config`.
+
+    The tree walk's standalone-settings branch matches
+    `<config_dir>/<settings_filename>` and feeds it to
+    `claude_settings.parse`, which is JSON-only. `RepoSurface.settings_filename`
+    must be `None` for Codex so that branch never fires for `config.toml` —
+    otherwise a perfectly valid Codex repo's own config produces a bogus
+    "could not parse" gap and `composition_coverage` wrongly degrades from
+    `complete` to `partial`.
+    """
+    warnings: list[str] = []
+
+    graph = build_codex_declared_graph(_agent(_repo(tmp_path)), warnings=warnings)
+
+    assert graph.warnings.gaps == []
+    assert not any("config.toml" in w for w in warnings)
+
+
 def test_agents_md_is_never_a_node(tmp_path):
     """Instruction files are not configuration — the same rule Claude Code
     applies to its own CLAUDE.md (spec: Not configuration)."""

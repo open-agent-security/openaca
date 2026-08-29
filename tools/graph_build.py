@@ -1916,8 +1916,10 @@ def _add_repo_standalone_components(
                 node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
                 _add_child(graph, parent, node)
             continue
-        if path.name == surface.settings_filename and _is_claude_settings_json(
-            path, directory, surface
+        if (
+            surface.settings_filename is not None
+            and path.name == surface.settings_filename
+            and _is_claude_settings_json(path, directory, surface)
         ):
             for ref in _safe_parse(graph, claude_settings.parse, path):
                 if _component_type(ref) != "plugin":

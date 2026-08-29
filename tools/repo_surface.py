@@ -94,7 +94,11 @@ class RepoSurface:
     config_dir: str
     plugin_formats: tuple[PluginFormat, ...]
     bundled: BundledLayout
-    settings_filename: str
+    # `None` when `<config_dir>/<settings_filename>` isn't a JSON file
+    # `claude_settings.parse` can read — e.g. Codex's is TOML, read by
+    # `codex_config` instead. `_add_repo_standalone_components` skips the
+    # settings branch entirely rather than feeding it a non-JSON file.
+    settings_filename: str | None
     project_skills_subdir: str
     standalone_mcp_filenames: tuple[str, ...]
     command_agent_surfaces: tuple[tuple[str, Kind], ...]
@@ -284,10 +288,13 @@ CODEX_SURFACE = RepoSurface(
         commands_dir="commands",
         agents_dir="agents",
     ),
-    # Carried for dataclass completeness. Codex's settings-equivalent is
-    # `config.toml`, which `tools/parsers/codex_config.py` reads directly —
-    # it is not a JSON settings file this field could name.
-    settings_filename="config.toml",
+    # `None`, not `"config.toml"`: Codex's settings-equivalent is TOML, read
+    # directly by `tools/parsers/codex_config.py` (via
+    # `_add_codex_declared_config_mcps`/`_add_codex_declared_config_hooks`),
+    # not the JSON-only `claude_settings.parse` this field feeds. Naming it
+    # here routed every `.codex/config.toml` through `json.loads`, turning a
+    # valid Codex repo's own config into a spurious parse-failure gap.
+    settings_filename=None,
     project_skills_subdir="skills",
     # Deliberately empty: Codex's MCP servers are declared INSIDE
     # `config.toml` as `[mcp_servers.*]`, never as a standalone manifest. A

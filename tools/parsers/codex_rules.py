@@ -102,13 +102,20 @@ def _pattern_items(raw: str) -> tuple[str, ...] | None:
 def parse_rules(path: Path) -> ParsedRules:
     """Read one `.rules` file.
 
-    A missing or unreadable file is `ParsedRules([], 0)` rather than an error:
-    the approval surface being absent is a normal state, not a parse failure.
+    A missing file is `ParsedRules([], 0)` rather than an error: the approval
+    surface being absent is a normal state, not a parse failure. A file that
+    EXISTS but cannot be opened or decoded (permission denied, bad encoding)
+    is `ParsedRules([], 1)`: both callers reach this function by globbing
+    `rules/*.rules`, so the file's presence is already established, and
+    reporting it the same as an absent one would let a real, unreadable
+    ruleset disappear from coverage instead of surfacing as a gap.
     """
     try:
         text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except FileNotFoundError:
         return ParsedRules([], 0)
+    except (OSError, UnicodeDecodeError):
+        return ParsedRules([], 1)
 
     rules: list[PrefixRule] = []
     spans: list[tuple[int, int]] = []

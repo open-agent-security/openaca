@@ -830,9 +830,24 @@ def _redact_payload_for_remote(
             continue
         for key, value in list(evidence.items()):
             if isinstance(value, str):
-                evidence[key] = _redact_property_value_for_remote(
-                    value, config_dir=config_dir, project=project
-                )
+                if key == "project_path":
+                    # `project_trust`'s `project_path` is the ONLY field
+                    # distinguishing one trusted-project finding from another
+                    # — there is no `component_bom_ref` to fall back on (a
+                    # trust record is not a BOM component). The generic
+                    # redactor below collapses an out-of-root path to its
+                    # bare basename, so two trusted directories sharing a
+                    # basename (`/srv/a/repo` and `/home/b/repo`) would become
+                    # indistinguishable subjects. `_redact_source_path`
+                    # appends a digest for exactly that out-of-root case, same
+                    # as it already does for bom-ref/source_manifest paths.
+                    evidence[key] = _redact_source_path(
+                        value, config_dir=config_dir, project=project
+                    )
+                else:
+                    evidence[key] = _redact_property_value_for_remote(
+                        value, config_dir=config_dir, project=project
+                    )
             elif isinstance(value, list):
                 evidence[key] = [
                     _redact_property_value_for_remote(item, config_dir=config_dir, project=project)

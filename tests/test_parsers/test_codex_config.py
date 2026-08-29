@@ -215,3 +215,49 @@ def test_an_absent_surface_is_not_malformed(tmp_path):
     p.write_text("", encoding="utf-8")
 
     assert codex_config.load_config(p).malformed == ()
+
+
+def test_a_non_table_agent_role_is_not_synthesized_as_a_subagent(tmp_path):
+    """`agents.review = "bad"` must not read like a real, file-less role.
+
+    Coercing the string to `{}` used to produce an `AgentRoleEntry` with no
+    `config_file` — indistinguishable from a deliberately minimal role — which
+    `_seed_codex_config_role` then emits as a real subagent node from thin air.
+    """
+    p = tmp_path / "config.toml"
+    p.write_text('agents.review = "bad"\n', encoding="utf-8")
+
+    cfg = codex_config.load_config(p)
+
+    assert cfg.agents == {}
+    assert cfg.malformed == ("agents.review",)
+
+
+def test_a_non_table_plugin_entry_is_not_synthesized_as_enabled(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('plugins."foo@bar" = "bad"\n', encoding="utf-8")
+
+    cfg = codex_config.load_config(p)
+
+    assert cfg.plugins == {}
+    assert cfg.malformed == ("plugins.foo@bar",)
+
+
+def test_a_non_table_marketplace_entry_is_recorded_malformed(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('marketplaces.official = "bad"\n', encoding="utf-8")
+
+    cfg = codex_config.load_config(p)
+
+    assert cfg.marketplaces == {}
+    assert cfg.malformed == ("marketplaces.official",)
+
+
+def test_a_non_table_project_entry_is_recorded_malformed(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('projects."/home/u/proj" = "bad"\n', encoding="utf-8")
+
+    cfg = codex_config.load_config(p)
+
+    assert cfg.projects == {}
+    assert cfg.malformed == ("projects./home/u/proj",)

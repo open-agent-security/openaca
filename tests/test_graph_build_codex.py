@@ -516,6 +516,23 @@ def test_subagents_are_composed_from_toml(tmp_path):
     assert agents == {"probe"}
 
 
+def test_a_non_table_agent_role_is_not_a_phantom_subagent(tmp_path):
+    """`agents.review = "bad"` must not read like a real, file-less role and
+    be emitted as a subagent — it must gap instead."""
+    root = _home(tmp_path)
+    # A trailing bare `agents.review = "bad"` would attach to whatever table
+    # `CONFIG` last opened (`[mcp_servers.user_svc]`) rather than declaring a
+    # top-level `agents` table — `[agents]` resets the TOML table context.
+    (root / "config.toml").write_text(CONFIG + '\n[agents]\nreview = "bad"\n', encoding="utf-8")
+    warnings: list[str] = []
+
+    graph = build_codex_installed_graph(root, warnings=warnings)
+    agents = {r.name for r in _refs(graph, "agent")}
+
+    assert agents == {"probe"}, "the malformed role must not appear as a subagent"
+    assert any("agents.review" in w for w in graph.warnings.gaps + warnings)
+
+
 def test_a_configured_plugin_with_no_cache_bundle_warns_but_is_not_a_node(tmp_path):
     root = _home(tmp_path)
     (root / "config.toml").write_text(

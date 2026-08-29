@@ -1442,6 +1442,52 @@ def test_posture_payload_distinguishes_and_redacts_project_trust_findings(tmp_pa
     assert finding["evidence"]["project_path"] == "repo-a"
 
 
+def test_project_trust_findings_outside_config_dir_stay_distinct_after_redaction(tmp_path):
+    """Two trusted projects OUTSIDE config_dir/project that share a basename
+    must not collapse to the same redacted subject (Codex review, PR #179):
+    the generic evidence redactor falls back to a bare basename for
+    out-of-root paths, which is exactly what would make `/srv/a/repo` and
+    `/home/b/repo` indistinguishable with no `component_bom_ref` to fall
+    back on."""
+    from tools.remote.collector import _posture_finding_to_payload, _redact_payload_for_remote
+
+    config_dir = tmp_path / ".codex"
+    config_dir.mkdir()
+    trusted_a = str(tmp_path / "srv" / "a" / "repo")
+    trusted_b = str(tmp_path / "home" / "b" / "repo")
+
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [
+            _posture_finding_to_payload(
+                _codex_component_scoped_posture_finding(
+                    "openaca-posture-project-trust",
+                    kind="project",
+                    subject=trusted_a,
+                    path=str(config_dir / "config.toml"),
+                )
+            ),
+            _posture_finding_to_payload(
+                _codex_component_scoped_posture_finding(
+                    "openaca-posture-project-trust",
+                    kind="project",
+                    subject=trusted_b,
+                    path=str(config_dir / "config.toml"),
+                )
+            ),
+        ],
+        "observations": [],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    path_a = payload["posture_findings"][0]["evidence"]["project_path"]
+    path_b = payload["posture_findings"][1]["evidence"]["project_path"]
+    assert path_a.startswith("repo.")
+    assert path_b.startswith("repo.")
+    assert path_a != path_b
+
+
 def test_collect_endpoint_uses_existing_asset_id(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path, asset_id="asset-existing")
     calls: list[str] = []

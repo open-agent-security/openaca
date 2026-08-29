@@ -2566,22 +2566,48 @@ def _seed_codex_config_role(
         return
 
     description = role.description or layer_description
+    extra = {
+        "scope_owner": None,
+        "component_type": "agent",
+        **({"description": description} if description else {}),
+    }
+
+    # `normalize` returns its input unchanged only on the last-resort branch —
+    # `referenced` sits outside `config_root`, `project_root`, and the shared
+    # `.agents` root alike. `config_file` may point anywhere on disk ("Path to
+    # a TOML config layer for that role"), unlike the enumerable `agents/*.toml`
+    # locations the sibling directory-scan form reads, so there is no root left
+    # to label it under; anchoring there would put a machine-specific path in
+    # the occurrence key and CycloneDX bom-ref. Anchor to `declaring_config`
+    # instead — always inside a known root — the same anchor the config_file
+    # form uses when it has no file at all.
+    if normalize(str(referenced)) == str(referenced):
+        ref = ComponentRef(
+            name=role.name,
+            component_identity=f"claude-agent/{role.name}",
+            source_manifest=str(declaring_config),
+            source_locator=f'$.agents."{role.name}".config_file',
+            extra=extra,
+        )
+        _add_child(graph, target, Node(occurrence_key(ref, normalize), "agent", ref))
+        return
+
     # `source_locator` must describe a path inside `source_manifest`. Unlike
     # the config_file-less branch above (where both point at `declaring_config`
     # and `$.agents."<role>"` is a real table there), this ref's manifest is
     # the REFERENCED layer file, which has no `agents.<role>` table of its own
     # — it is read wholesale, the same convention `codex_agent.parse` already
-    # uses for a standalone file (`source_locator="$"`).
+    # uses for a standalone file (`source_locator="$"`). This also lets a
+    # `config_file` pointing at a file already discovered directly under
+    # `<root>/agents/` dedupe with that form, since both then agree on
+    # `source_manifest`/`source_locator` — the reason this branch anchors to
+    # the referenced file rather than `declaring_config` whenever it can.
     ref = ComponentRef(
         name=role.name,
         component_identity=f"claude-agent/{role.name}",
         source_manifest=str(referenced),
         source_locator="$",
-        extra={
-            "scope_owner": None,
-            "component_type": "agent",
-            **({"description": description} if description else {}),
-        },
+        extra=extra,
     )
     _add_child(graph, target, Node(occurrence_key(ref, normalize), "agent", ref))
 

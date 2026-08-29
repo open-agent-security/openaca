@@ -413,6 +413,17 @@ Every profile is read rather than an active one, because which profile is
 selected is an invocation flag leaving no trace on disk. The union
 over-approximates, which is the safe direction.
 
+**This behaviour is version-dependent, and the audited version is the one this
+spec follows.** On `codex-cli 0.147.0` a profile's `[mcp_servers.*]` entries do
+load: a fixture root declaring `base_only` in `config.toml` and `profile_only`
+in `work.config.toml` lists **both** under `codex -p work mcp list`, reproduced
+twice. A review round reported the opposite from `codex-cli
+0.144.0-alpha.4`, where only the base server appeared. Both observations are
+presumably correct for their build; composition follows 0.147.0 because that is
+the version this spec's [Evidence standard](#evidence-standard) pins. Re-check
+on the next major release — if profile MCP loading was removed rather than
+added, this becomes an over-report rather than a correction.
+
 ### Candidates that fail the rule, not the evidence
 
 | Candidate | Why it does not lower coverage |

@@ -108,6 +108,27 @@ class CodexConfig:
     hooks: dict = field(default_factory=dict)
 
 
+def _typed(value, expected, path: str, malformed: list[str], default=None):
+    """A scalar of the expected TOML type, recording a mismatch rather than
+    coercing it away.
+
+    Review found this same pattern one level lower each round: first the
+    top-level table (`mcp_servers = "bad"`), then the entry
+    (`[plugins.x] = "bad"`), then the value (`enabled = "yes"`). Each fix
+    addressed the level that had been reported and left the one beneath it, so
+    the next round found it again. Recording at every level is what stops there
+    being a next level.
+
+    Absent stays absent — only a PRESENT value of the wrong type is malformed.
+    """
+    if value is None:
+        return default
+    if isinstance(value, expected):
+        return value
+    malformed.append(path)
+    return default
+
+
 def _as_bool(value: object, default: bool = True) -> bool:
     return value if isinstance(value, bool) else default
 
@@ -189,7 +210,9 @@ def load_config(path: Path) -> CodexConfig:
             plugins[(marketplace, name)] = PluginEntry(
                 name=name,
                 marketplace=marketplace,
-                enabled=_as_bool(entry.get(_ENABLED_KEY)),
+                enabled=_typed(
+                    entry.get(_ENABLED_KEY), bool, f"plugins.{key}.enabled", malformed, True
+                ),
             )
 
     marketplaces: dict[str, MarketplaceEntry] = {}
@@ -237,8 +260,8 @@ def load_config(path: Path) -> CodexConfig:
             description = entry.get("description")
             agents[str(role)] = AgentRoleEntry(
                 name=str(role),
-                config_file=config_file if isinstance(config_file, str) else None,
-                description=description if isinstance(description, str) else None,
+                config_file=_typed(config_file, str, f"agents.{role}.config_file", malformed),
+                description=_typed(description, str, f"agents.{role}.description", malformed),
             )
 
     # `hooks` goes through the same helper as every other surface. It used to
@@ -290,12 +313,23 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         strict=strict,
     )
 
+    # A wrongly-typed `enabled` is reported, not defaulted away: under
+    # `strict=True` it raises so the registry records a parse failure, and
+    # otherwise it falls back to enabled — the same "absent means enabled"
+    # default, which is the safe direction for a security tool.
     for ref in refs:
         extra = ref.extra or {}
         component_path = extra.get("component_path") or [{}]
         server_name = component_path[0].get("name")
         entry = raw_servers.get(server_name)
         table = entry if isinstance(entry, dict) else {}
-        extra[_ENABLED_KEY] = _as_bool(table.get(_ENABLED_KEY))
+        raw_enabled = table.get(_ENABLED_KEY)
+        if raw_enabled is not None and not isinstance(raw_enabled, bool):
+            if strict:
+                raise ValueError(
+                    f"mcp_servers.{server_name}.enabled must be a boolean, "
+                    f"got {type(raw_enabled).__name__}"
+                )
+        extra[_ENABLED_KEY] = _as_bool(raw_enabled)
 
     return refs

@@ -2566,11 +2566,17 @@ def _seed_codex_config_role(
         return
 
     description = role.description or layer_description
+    # `source_locator` must describe a path inside `source_manifest`. Unlike
+    # the config_file-less branch above (where both point at `declaring_config`
+    # and `$.agents."<role>"` is a real table there), this ref's manifest is
+    # the REFERENCED layer file, which has no `agents.<role>` table of its own
+    # — it is read wholesale, the same convention `codex_agent.parse` already
+    # uses for a standalone file (`source_locator="$"`).
     ref = ComponentRef(
         name=role.name,
         component_identity=f"claude-agent/{role.name}",
         source_manifest=str(referenced),
-        source_locator=f'$.agents."{role.name}"',
+        source_locator="$",
         extra={
             "scope_owner": None,
             "component_type": "agent",

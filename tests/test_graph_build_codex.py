@@ -1340,6 +1340,29 @@ def test_the_table_key_is_the_role_identity_not_the_files_name(tmp_path):
     assert "something-else" not in names
 
 
+def test_a_config_declared_roles_locator_matches_its_own_manifest(tmp_path):
+    """`source_locator` must describe a path that exists inside
+    `source_manifest`. The referenced `config_file` layer has no
+    `agents.<role>` table of its own — it is read wholesale, so the locator
+    must be `$` (the file's own root), the same convention `codex_agent.parse`
+    uses for a standalone file — not the `$.agents."<role>"` path that only
+    exists in the DECLARING config."""
+    root = _home(tmp_path)
+    (root / "roles").mkdir()
+    (root / "roles" / "lens.toml").write_text(
+        'description = "d"\ndeveloper_instructions = "i"\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.lens]\nconfig_file = "roles/lens.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+    (ref,) = [r for r in _refs(graph, "agent") if r.name == "lens"]
+
+    assert ref.source_manifest == str(root / "roles" / "lens.toml")
+    assert ref.source_locator == "$"
+
+
 def test_a_relative_config_file_resolves_from_the_declaring_config(tmp_path):
     """Not from the process cwd, and not from the config root — from the file
     that declares the role, which matters once profiles are involved."""

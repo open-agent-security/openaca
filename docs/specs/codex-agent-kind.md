@@ -252,7 +252,7 @@ not *is it reachable*.
 |---|---|---|---|---|---|
 | MCP servers | `config.toml` `[mcp_servers.*]` | `.codex/config.toml` | inline table | stdio + `url`/`streamable_http` | both |
 | Skills | `<root>/skills/`, `$HOME/.agents/skills/` | `.codex/skills/`, `.agents/skills/` | recursive | `SKILL.md` per directory | both |
-| Subagents | `<root>/agents/*.toml`, plus `[agents.*] config_file` in any layer | via a layer's `[agents.*]` | flat + config-declared | `.toml` | installed |
+| Subagents | `<root>/agents/*.toml`, plus `[agents.*] config_file` in any layer | via a layer's `[agents.*]` | flat + config-declared | `.toml` | both — the directory form is installed-only, the config-declared form is read in either mode |
 | Plugins | `<root>/plugins/cache/<mkt>/<name>/<ver>/` | — | per bundle | two manifest formats | installed |
 | Plugin hooks | bundled `hooks/hooks.json` | same | per bundle | `{hooks:{Event:[...]}}` | both |
 | Standalone hooks | `<root>/hooks.json` | `.codex/hooks.json` | file | same envelope | both |
@@ -392,9 +392,19 @@ Three consequences, applied to every kind alike:
 | Declared surface | Read by |
 |---|---|
 | `.codex/config.toml` → `[mcp_servers.*]` | `codex_config.parse` |
+| `.codex/config.toml` → `[hooks]` | `hooks_json.parse_settings_hooks` |
+| `.codex/config.toml` → `[agents.*]` | `_seed_codex_config_role` |
 | `.codex/hooks.json` | `hooks_json.parse_standalone_hooks` |
-| `.codex/skills/**/SKILL.md` | `claude_skill.parse` |
+| `.codex/skills/**/SKILL.md`, `.agents/skills/**/SKILL.md` | `claude_skill.parse` |
 | `.codex-plugin/` and `.claude-plugin/` manifests | `claude_plugin.parse` |
+
+All three component-declaring tables of `config.toml` are read in **both**
+modes, by one walk over the file rather than one per table. Two of them were
+endpoint-only at first, and each cost the same thing: a repository that
+declares hooks — or a subagent role — in its own config and nowhere else
+reported neither. The `[projects.*]` and `[marketplaces.*]` tables stay
+endpoint-only because they declare no components (posture and registry
+identity respectively).
 
 Installed adds the plugin cache, `agents/*.toml`, `<root>/skills/`, and both
 config layers — the base `config.toml` **and every `<name>.config.toml`

@@ -559,16 +559,22 @@ def _seed_shared_endpoint_surfaces(
         # uses for install-root skills.
         skills_dir = project_root / surface.project_config_dir / surface.project_skills_subdir
         if repo_surface.skill_config_dirs:
-            _add_project_skills_from_dir_following_symlinks(
-                graph,
-                target,
-                skills_dir,
-                normalize=normalize,
-                project_root=project_root,
-                stamp_provenance=True,
-                root_dir=project_root,
-                root_spec=project_skill_spec,
-            )
+            # Every directory `_is_project_skill_md` accepts, not just the
+            # endpoint's own `project_config_dir`: Codex reads a project's
+            # `.agents/skills` as well as its `.codex/skills`, and a symlinked
+            # skill directory under the one the patch skipped was missed
+            # exactly as it was under `.codex/skills` before the patch existed.
+            for config_dir in repo_surface.skill_config_dirs:
+                _add_project_skills_from_dir_following_symlinks(
+                    graph,
+                    target,
+                    project_root / config_dir / surface.project_skills_subdir,
+                    normalize=normalize,
+                    project_root=project_root,
+                    stamp_provenance=True,
+                    root_dir=project_root,
+                    root_spec=project_skill_spec,
+                )
         else:
             _add_skills_from_dir(
                 graph,
@@ -2201,7 +2207,7 @@ plugin_manifest_path = _plugin_manifest_path
 #   Codex's is a config file that happens to carry servers.
 
 
-def _add_codex_declared_config_mcps(
+def _add_codex_declared_config_surfaces(
     graph: Graph,
     target: Node,
     scan_root: Path,
@@ -2211,14 +2217,27 @@ def _add_codex_declared_config_mcps(
     root_spec: GitIgnoreSpec | None,
     realized_plugin_roots: list[Path],
 ) -> None:
-    """MCP servers from every `.codex/config.toml` in the tree.
+    """Every component-declaring table of every `.codex/config.toml` in the tree.
+
+    One walk, not one per table. `[mcp_servers]`, `[hooks]`, and `[agents]` all
+    live in the same file, and a per-surface walk re-globbed it, re-loaded it,
+    and re-recorded its malformedness once per reader — the same duplication
+    `codex_config_layers` was introduced to end at the endpoint.
 
     Content beneath an already-realized plugin root belongs to the plugin
     branch, not the tree walk (single-parent invariant, same rule
     `CODEX_SURFACE.excludes_plugin_owned_content` applies to declared
     evidence and registry parse-count accounting) — otherwise a fixture like
-    a plugin's own `examples/.codex/config.toml` would add its MCP servers
+    a plugin's own `examples/.codex/config.toml` would add its components
     directly under the target.
+
+    `[agents]` is read here for the same reason `[hooks]` is: a role declared
+    only in a repository's own config — the place a shared role is most likely
+    to live — was composed at the endpoint and nowhere else, so a repo scan
+    reported no subagent at all. The endpoint's own reader
+    (`_seed_codex_config_role`) is reused rather than reimplemented, so the two
+    modes cannot disagree about role identity, description precedence, or how a
+    `config_file` outside the scanned root is anchored.
     """
     from tools.graph_build_cursor import is_owned_by_realized_plugin
 
@@ -2227,59 +2246,55 @@ def _add_codex_declared_config_mcps(
             continue
         if is_owned_by_realized_plugin(config_path, realized_plugin_roots, CODEX_SURFACE):
             continue
-        refs = _safe_parse(graph, lambda path: codex_config.parse(path, strict=True), config_path)
-        for ref in refs:
+
+        for ref in _safe_parse(
+            graph, lambda path: codex_config.parse(path, strict=True), config_path
+        ):
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
-
-def _add_codex_declared_config_hooks(
-    graph: Graph,
-    target: Node,
-    scan_root: Path,
-    normalize: SourceNormalizer,
-    *,
-    include_gitignored: bool,
-    root_spec: GitIgnoreSpec | None,
-    realized_plugin_roots: list[Path],
-) -> None:
-    """Inline `[hooks]` tables from every `.codex/config.toml` in the tree.
-
-    `_add_codex_declared_hooks` below reads the sidecar `.codex/hooks.json`;
-    `config.toml` is a documented alternative form of the same envelope
-    (`_seed_codex_hooks`'s docstring), and a project declaring hooks only this
-    way — never a `hooks.json` — had them silently absent from the declared
-    graph. Same walk, exclusion, and scope as the sidecar form; only the
-    source file and reader differ.
-    """
-    from tools.graph_build_cursor import is_owned_by_realized_plugin
-
-    for config_path in sorted(scan_root.rglob(".codex/config.toml")):
-        if not include_gitignored and _is_ignored_under(config_path, scan_root, root_spec):
-            continue
-        if is_owned_by_realized_plugin(config_path, realized_plugin_roots, CODEX_SURFACE):
-            continue
         try:
             config = codex_config.load_config(config_path)
             _gap_malformed_codex_surfaces(graph, config_path, config)
         except Exception as exc:  # noqa: BLE001 - recorded, never fatal
             graph.record_gap(f"could not parse {config_path}: {exc}")
             continue
-        if not config.hooks:
+
+        _add_codex_declared_config_hooks(graph, target, config_path, config, normalize)
+        for role in config.agents.values():
+            _seed_codex_config_role(graph, target, config_path, role, normalize)
+
+
+def _add_codex_declared_config_hooks(
+    graph: Graph,
+    target: Node,
+    config_path: Path,
+    config,
+    normalize: SourceNormalizer,
+) -> None:
+    """The `[hooks]` table of one already-loaded `.codex/config.toml`.
+
+    `_add_codex_declared_hooks` below reads the sidecar `.codex/hooks.json`;
+    `config.toml` is a documented alternative form of the same envelope
+    (`_seed_codex_hooks`'s docstring), and a project declaring hooks only this
+    way — never a `hooks.json` — had them silently absent from the declared
+    graph.
+    """
+    if not config.hooks:
+        return
+    try:
+        hook_refs = hooks_json.parse_settings_hooks(
+            config_path, config.hooks, scope="project", strict=True
+        )
+    except ValueError as exc:
+        graph.record_gap(f"could not parse {config_path} hooks: {exc}")
+        return
+    for ref in hook_refs:
+        component_type = _component_type(ref)
+        if not isinstance(component_type, str):
             continue
-        try:
-            hook_refs = hooks_json.parse_settings_hooks(
-                config_path, config.hooks, scope="project", strict=True
-            )
-        except ValueError as exc:
-            graph.record_gap(f"could not parse {config_path} hooks: {exc}")
-            continue
-        for ref in hook_refs:
-            component_type = _component_type(ref)
-            if not isinstance(component_type, str):
-                continue
-            node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
-            _add_child(graph, target, node)
+        node = Node(key=occurrence_key(ref, normalize), kind=component_type, ref=ref)
+        _add_child(graph, target, node)
 
 
 def _add_codex_declared_hooks(
@@ -2351,16 +2366,7 @@ def build_codex_declared_graph(
     realized_roots = find_realized_plugin_roots(
         scan_root, CODEX_SURFACE, include_gitignored=include_gitignored
     )
-    _add_codex_declared_config_mcps(
-        graph,
-        root,
-        scan_root,
-        normalize,
-        include_gitignored=include_gitignored,
-        root_spec=root_spec,
-        realized_plugin_roots=realized_roots,
-    )
-    _add_codex_declared_config_hooks(
+    _add_codex_declared_config_surfaces(
         graph,
         root,
         scan_root,

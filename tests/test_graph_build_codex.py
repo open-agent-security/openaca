@@ -1539,3 +1539,109 @@ def test_repo_agents_skills_compose_for_codex(tmp_path):
     graph = build_codex_declared_graph(_agent(root))
 
     assert "shared" in _skill_names(graph)
+
+
+def test_a_config_declared_role_is_composed_in_repo_mode(tmp_path):
+    """A repo declaring a subagent only through `.codex/config.toml`'s
+    `[agents."<role>"]` table must not have it silently absent from the
+    declared BOM.
+
+    Repo mode already reads two of that file's tables (`[mcp_servers]`,
+    `[hooks]`); `[agents]` is the third component-declaring one, and it was
+    read at the endpoint only — so a role checked into a repository, the
+    place a config-declared role is most likely to be shared, went
+    uninventoried.
+    """
+    root = _repo(tmp_path)
+    (root / ".codex" / "roles").mkdir(parents=True)
+    (root / ".codex" / "roles" / "reviewer.toml").write_text(
+        'description = "reviews diffs"\n', encoding="utf-8"
+    )
+    with (root / ".codex" / "config.toml").open("a", encoding="utf-8") as handle:
+        handle.write('\n[agents."reviewer"]\nconfig_file = "roles/reviewer.toml"\n')
+
+    graph = build_codex_declared_graph(_agent(root))
+    roles = {r.name: r for r in _refs(graph, "agent")}
+
+    assert "reviewer" in roles
+    assert roles["reviewer"].extra["description"] == "reviews diffs"
+
+
+def test_a_config_declared_role_with_no_file_is_composed_in_repo_mode(tmp_path):
+    root = _repo(tmp_path)
+    with (root / ".codex" / "config.toml").open("a", encoding="utf-8") as handle:
+        handle.write('\n[agents."solo"]\ndescription = "no layer file"\n')
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    assert "solo" in {r.name for r in _refs(graph, "agent")}
+
+
+def test_a_missing_config_file_lowers_coverage_in_repo_mode(tmp_path):
+    root = _repo(tmp_path)
+    with (root / ".codex" / "config.toml").open("a", encoding="utf-8") as handle:
+        handle.write('\n[agents."ghost"]\nconfig_file = "roles/absent.toml"\n')
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    assert any("absent.toml" in gap for gap in graph.warnings.gaps)
+
+
+def test_a_plugin_owned_config_declared_role_is_not_a_repo_role(tmp_path):
+    """Plugin-owned content belongs to the plugin branch, the same exclusion
+    the sibling MCP and hook walks over this file apply."""
+    root = _repo(tmp_path)
+    bundle = root / "bundles" / "demo"
+    (bundle / ".codex-plugin").mkdir(parents=True)
+    (bundle / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo"}), encoding="utf-8"
+    )
+    (bundle / "examples" / ".codex").mkdir(parents=True)
+    (bundle / "examples" / ".codex" / "config.toml").write_text(
+        '[agents."fixture"]\ndescription = "example only"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_declared_graph(_agent(root))
+
+    assert "fixture" not in {r.name for r in _refs(graph, "agent")}
+
+
+def test_a_malformed_config_surface_is_gapped_once_in_repo_mode(tmp_path):
+    """One walk over `.codex/config.toml`, so a malformed table records one
+    gap — not one per surface reading the same file."""
+    root = _repo(tmp_path)
+    # First line, not appended: a bare key after a table header would land
+    # inside that table rather than at the top level.
+    (root / ".codex" / "config.toml").write_text(
+        'agents = "bad"\n[mcp_servers.svc]\ncommand = "npx"\nargs = ["@scope/tool@1.2.3"]\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_declared_graph(_agent(root))
+    matching = [g for g in graph.warnings.gaps if "agents must be a table" in g]
+
+    assert len(matching) == 1
+
+
+def test_a_project_agents_skill_symlinked_below_a_nested_directory_is_composed(tmp_path):
+    """The `.agents/skills` counterpart of the `.codex/skills` symlink test.
+
+    Codex reads both project skill roots, and `_add_project_skills`'s os.walk
+    never follows directory symlinks — so the symlink patch has to cover every
+    directory in `skill_config_dirs`, not only the endpoint's own
+    `project_config_dir`.
+    """
+    root = _home(tmp_path)
+    project = tmp_path / "shared-symlink-proj"
+
+    real_skill_dir = tmp_path / "shared-store" / "gcp-api"
+    real_skill_dir.mkdir(parents=True)
+    (real_skill_dir / "SKILL.md").write_text("---\nname: gcp-api\n---\nrun\n", encoding="utf-8")
+
+    team_dir = project / ".agents" / "skills" / "team"
+    team_dir.mkdir(parents=True)
+    os.symlink(real_skill_dir, team_dir / "gcp-api")
+
+    graph = build_codex_installed_graph(root, project)
+
+    assert "gcp-api" in _skill_names(graph)

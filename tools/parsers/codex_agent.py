@@ -32,13 +32,25 @@ _ECOSYSTEM = "claude-agent"
 _EXTENSIONS = (".toml",)
 
 
+# developers.openai.com/codex/agent-configuration/subagents, "Custom agent
+# file schema": "Every standalone custom agent file must define: `name`,
+# `description`, `developer_instructions`." Codex itself rejects a file
+# missing any of the three (verified against the published schema, not just
+# the audited binary) rather than falling back to the filename or omitting
+# the field, so a scan that inventoried it anyway would report a component
+# Codex never loads.
+_REQUIRED_STRING_FIELDS = ("name", "description", "developer_instructions")
+
+
 def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     """Emit one `agent` ref for a single subagent file.
 
     Malformed TOML raises `tomllib.TOMLDecodeError` regardless of `strict`, so
     `parse_repo_registry_counts` records a `parse_failed` rather than reporting
     a clean, empty, successfully-parsed unit for a file that dropped data.
-    `strict` is accepted for registry-signature parity.
+    A file present but missing a required field raises `ValueError` the same
+    way, for the same reason: Codex does not load it, so this must not report
+    a clean parse either. `strict` is accepted for registry-signature parity.
     """
     if not path.is_file() or path.suffix not in _EXTENSIONS:
         return []
@@ -48,13 +60,17 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     if not isinstance(data, dict):
         data = {}
 
-    raw_name = data.get("name")
-    name = raw_name if isinstance(raw_name, str) and raw_name else path.stem
+    for field_name in _REQUIRED_STRING_FIELDS:
+        value = data.get(field_name)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"agent file must define a non-empty {field_name!r}")
 
-    extra: dict = {"scope_owner": None, "component_type": "agent"}
-    description = data.get("description")
-    if isinstance(description, str):
-        extra["description"] = description
+    name = data["name"]
+    extra: dict = {
+        "scope_owner": None,
+        "component_type": "agent",
+        "description": data["description"],
+    }
 
     return [
         ComponentRef(

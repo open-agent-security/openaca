@@ -322,6 +322,45 @@ def test_a_wrongly_typed_server_enabled_falls_back_to_enabled_when_lenient(tmp_p
     assert codex_config.parse(p)[0].extra["enabled"] is True
 
 
+def test_claude_style_disabled_key_does_not_drop_the_server(tmp_path):
+    """`disabled` is Claude Code's key, the opposite polarity of Codex's own
+    `enabled`. Codex does not read it, so a server carrying it must still be
+    inventoried — `mcp_json.parse_mcp_servers` would otherwise silently drop
+    any entry with `disabled = true` before the Codex enable-state pass ever
+    runs, which contradicts this module's own "never dropped for being
+    disabled" contract (ADR-0055)."""
+    p = tmp_path / "config.toml"
+    p.write_text('[mcp_servers.ghost]\ncommand = "true"\ndisabled = true\n', encoding="utf-8")
+
+    refs = codex_config.parse(p)
+
+    assert "ghost" in _server_names(refs)
+    assert _by_server(refs)["ghost"].extra["enabled"] is True
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("[marketplaces.official]\nsource_type = 5\n", ("marketplaces.official.source_type",)),
+        ("[marketplaces.official]\nsource = []\n", ("marketplaces.official.source",)),
+        (
+            "[marketplaces.official]\nlast_revision = false\n",
+            ("marketplaces.official.last_revision",),
+        ),
+        ('[projects."/p"]\ntrust_level = 5\n', ("projects./p.trust_level",)),
+    ],
+)
+def test_marketplace_and_project_scalars_are_type_checked(tmp_path, body, expected):
+    """Same recurring gap as `test_subagent_role_values_are_type_checked`: a
+    present-but-wrongly-typed scalar was accepted raw instead of being
+    recorded malformed, silently reporting `composition_coverage=complete`
+    over a value the runtime would reject."""
+    p = tmp_path / "config.toml"
+    p.write_text(body, encoding="utf-8")
+
+    assert codex_config.load_config(p).malformed == expected
+
+
 def test_a_well_typed_config_records_nothing_at_any_level(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text(

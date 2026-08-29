@@ -81,3 +81,28 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
             extra=extra,
         )
     ]
+
+
+def read_role_layer_description(path: Path) -> str | None:
+    """A `[agents."<role>"] config_file` layer's own `description`, if any.
+
+    This is a **different schema** from `parse` above. The published
+    "Custom agent file schema" (`name`, `description`, `developer_instructions`
+    all required) is documented only for a *standalone* file discovered under
+    `agents/`. The configuration reference instead describes `config_file` as
+    "a TOML config layer for that role" — the role's identity is already the
+    table key, and its description already has a home on the `[agents.*]`
+    table itself (`AgentRoleEntry.description`), so neither `name` nor
+    `description` is required in the file `config_file` points at. Requiring
+    `parse`'s standalone schema here rejected the common case (a layer
+    supplying only `developer_instructions`) as if Codex itself would refuse
+    it, which is not documented anywhere for this declaration form.
+
+    Malformed TOML still raises `tomllib.TOMLDecodeError`, same as `parse`.
+    """
+    with path.open("rb") as handle:
+        data = tomllib.load(handle)
+    if not isinstance(data, dict):
+        return None
+    description = data.get("description")
+    return description if isinstance(description, str) and description else None

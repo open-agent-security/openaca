@@ -432,6 +432,83 @@ def test_shared_home_skill_keys_by_label_not_absolute_path(tmp_path, monkeypatch
     assert shared[0].key.startswith("agents/skills/shared-skill/SKILL.md#")
 
 
+def test_config_root_overridden_skips_shared_home_skills_and_records_gap(tmp_path, monkeypatch):
+    """`--config-dir` relocates `config_root`, not `$HOME` (ADR-0059).
+
+    Composing `$HOME/.agents/skills` unconditionally when the root was
+    explicitly overridden would stitch the requested tree together with
+    whatever the scanning machine's own home happens to hold — the same
+    split-home failure ADR-0054 refused `--config-dir` over for Cursor. With
+    `config_root_overridden=True`, the shared-skill node must not appear and
+    the coverage gap must be recorded instead.
+    """
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    (fake_home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
+    (fake_home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
+        "---\nname: shared-skill\n---\nShared.\n", encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(_home(tmp_path), config_root_overridden=True)
+
+    shared = [
+        n
+        for n in graph.nodes.values()
+        if n.kind == "skill" and n.ref and n.ref.name == "shared-skill"
+    ]
+    assert shared == []
+    assert any("agents/skills skipped" in gap for gap in graph.warnings.gaps)
+
+
+def test_config_root_not_overridden_still_composes_shared_home_skills(tmp_path, monkeypatch):
+    """The default/`$CODEX_HOME` case is unaffected by ADR-0059's skip."""
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    (fake_home / ".agents" / "skills" / "shared-skill").mkdir(parents=True)
+    (fake_home / ".agents" / "skills" / "shared-skill" / "SKILL.md").write_text(
+        "---\nname: shared-skill\n---\nShared.\n", encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(_home(tmp_path), config_root_overridden=False)
+
+    shared = [
+        n
+        for n in graph.nodes.values()
+        if n.kind == "skill" and n.ref and n.ref.name == "shared-skill"
+    ]
+    assert len(shared) == 1
+
+
+def test_admin_skills_root_present_lowers_coverage(tmp_path, monkeypatch):
+    """`/etc/codex/skills` is real per ADR-0058, not merely unaudited like
+    `managed_config.toml` — when it exists on the scanned endpoint, its
+    known-real skill components are known-missing from the graph, so the gap
+    must be counted rather than silently absent."""
+    from tools import graph_build
+
+    admin_root = tmp_path / "etc-codex-skills"
+    admin_root.mkdir()
+    monkeypatch.setattr(graph_build, "_CODEX_ADMIN_SKILLS_ROOT", admin_root)
+
+    graph = build_codex_installed_graph(_home(tmp_path))
+
+    assert any("is not composed" in gap for gap in graph.warnings.gaps)
+
+
+def test_admin_skills_root_absent_does_not_lower_coverage(tmp_path, monkeypatch):
+    from tools import graph_build
+
+    monkeypatch.setattr(
+        graph_build, "_CODEX_ADMIN_SKILLS_ROOT", tmp_path / "no-such-etc-codex-skills"
+    )
+
+    graph = build_codex_installed_graph(_home(tmp_path))
+
+    assert not any("is not composed" in gap for gap in graph.warnings.gaps)
+
+
 def test_subagents_are_composed_from_toml(tmp_path):
     graph = build_codex_installed_graph(_home(tmp_path))
     agents = {r.name for r in _refs(graph, "agent")}

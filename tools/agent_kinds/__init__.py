@@ -70,6 +70,13 @@ class AgentInstance:
     project_root: Path | None = None
     scan_root: Path | None = None
     agent_id: str | None = None
+    # True only when `config_root` came from an explicit `--config-dir` flag
+    # rather than a kind's own env-var/default resolution. `None`-refusal
+    # kinds (ADR-0054) can otherwise still read a surface that a root
+    # override does not relocate (ADR-0059 for Codex's `$HOME/.agents/skills`);
+    # a kind's `compose` consults this to skip that surface instead of
+    # silently stitching two homes together.
+    config_root_overridden: bool = False
 
     @property
     def bom_ref(self) -> str:

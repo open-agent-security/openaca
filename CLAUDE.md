@@ -148,6 +148,27 @@ Don't move existing unit tests here. Don't put e2e tests in module
 test files. The boundary is: *does this test fail if any one of
 several modules regresses?*
 
+## Weighing review findings against a stated bar
+
+A spec may declare a **robustness bar** — what it aims to get right, and what
+it defers. When one does, weigh findings against it rather than against
+completeness, and say which side of the bar a finding falls on.
+
+The bar exists because severity is not uniform and reviewers cannot infer it.
+"A surface an ordinary installation has goes uninventoried" and "a wrongly
+typed scalar is coerced rather than rejected" are different problems: the first
+breaks the product, the second is invisible unless the config is already
+invalid. Without a stated bar both arrive as the same priority, and a review
+can iterate indefinitely over a combinatorial tail while the important findings
+are already fixed.
+
+For a finding below the bar, record it as deferred with the cost of skipping it
+— do not implement it, and do not re-raise it in the next round. For a finding
+above it, fix it regardless of how narrow the trigger looks.
+
+If a spec states no bar, review for correctness as usual. Adding one is the
+spec author's job, not the reviewer's.
+
 ## Verifying claims about external behavior
 
 When a review comment, design decision, or bug report turns on how a *third

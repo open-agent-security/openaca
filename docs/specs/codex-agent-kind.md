@@ -106,6 +106,56 @@ and both were defended with this table. Treat a zero as "not found in this form"
 and confirm against the published reference before asserting a surface does not
 exist. The remaining zeros have **not** been re-checked that way.
 
+## Robustness bar
+
+**What this kind aims to get right: a correct inventory for an ordinary
+installation.** That is the bar a review should hold it to, and the bar the
+sections below are written against.
+
+Stating it because it is not self-evident, and because its absence has a cost.
+Without it, "an MCP server declared in `config.toml` never reaches the BOM" and
+"`enabled = "yes"` is coerced to `true` instead of rejected" look like the same
+class of problem. They are not: the first breaks the product for every user of
+that surface, the second changes nothing anyone will observe unless they
+hand-edit a config into an invalid state.
+
+### In scope, and worth blocking on
+
+- A surface an ordinary installation actually has, going uninventoried.
+- A component reported that the runtime would not load, or attributed to the
+  wrong agent.
+- A wrong `bom-ref`, identity, or coverage verdict — those flow into advisory
+  matching and cross-machine correlation.
+- Anything that leaks a host path or unrelated inventory across the upload
+  boundary.
+
+### Out of scope for now, deliberately
+
+- **Exhaustive validation of malformed configuration.** A malformed surface
+  lowers `composition_coverage` and says so; that *is* the handling. Rejecting
+  every wrongly-typed scalar individually is not a goal, and a finding that one
+  more field coerces rather than raises is not material unless the coercion
+  produces a **wrong inventory** rather than merely an unvalidated one.
+- **Exhaustive coverage of layer × trust × symlink × gitignore combinations.**
+  The documented common cases are handled. The combinatorial tail is deferred:
+  each cell is individually cheap and collectively unbounded, and the state
+  space is larger than the value of exploring it cell by cell at this stage.
+- **Surfaces an ordinary installation does not have** — administrator-
+  distributed config, MDM policy, remote/split homes. These are recorded in
+  [Deliberately out of the first pass](#deliberately-out-of-the-first-pass)
+  with the cost of skipping each, rather than built.
+
+### How to weigh a finding against this
+
+Ask what an ordinary installation loses. If the answer is "a component is
+missing, mis-attributed, or wrongly identified", it is in scope regardless of
+how narrow the trigger looks. If the answer is "nothing observable unless the
+config is already invalid", it belongs in the deferred tail — worth recording,
+not worth another round.
+
+This bar is for **this kind at this stage**, not a general standard. It should
+tighten once the common paths are settled.
+
 ## Surface audit
 
 A **surface** is a place the runtime reads configuration from, not a component

@@ -1142,3 +1142,108 @@ def test_an_unconditionally_trusted_project_layer_overrides(tmp_path):
 
     assert len(svc) == 1
     assert str(project) in svc[0].source_manifest
+
+
+# --- Config-declared subagent roles (PR #178 review) -----------------------
+#
+# `[agents."<role>"] config_file = "..."` is a second declaration form. A role
+# whose file sits outside `agents/` was previously reported as no subagent at
+# all. Verified against developers.openai.com/codex/config-reference:
+# "Path to a TOML config layer for that role; relative paths resolve from the
+# config file that declares the role."
+
+
+def test_a_config_declared_role_outside_the_agents_dir_is_composed(tmp_path):
+    root = _home(tmp_path)
+    (root / "roles").mkdir()
+    (root / "roles" / "lens.toml").write_text(
+        'name = "lens-file-name"\ndescription = "d"\n', encoding="utf-8"
+    )
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.lens]\nconfig_file = "roles/lens.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+
+    assert "lens" in {r.name for r in _refs(graph, "agent")}
+
+
+def test_the_table_key_is_the_role_identity_not_the_files_name(tmp_path):
+    """The key selects the role, so the referenced file's own `name` is free to
+    disagree and must not win."""
+    root = _home(tmp_path)
+    (root / "roles").mkdir()
+    (root / "roles" / "lens.toml").write_text('name = "something-else"\n', encoding="utf-8")
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.lens]\nconfig_file = "roles/lens.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+    names = {r.name for r in _refs(graph, "agent")}
+
+    assert "lens" in names
+    assert "something-else" not in names
+
+
+def test_a_relative_config_file_resolves_from_the_declaring_config(tmp_path):
+    """Not from the process cwd, and not from the config root — from the file
+    that declares the role, which matters once profiles are involved."""
+    root = _home(tmp_path)
+    (root / "nested").mkdir()
+    (root / "nested" / "role.toml").write_text('name = "nested-role"\n', encoding="utf-8")
+    (root / "work.config.toml").write_text(
+        '[agents.viewer]\nconfig_file = "nested/role.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+
+    assert "viewer" in {r.name for r in _refs(graph, "agent")}
+
+
+def test_a_role_with_no_config_file_is_still_a_subagent(tmp_path):
+    """The table alone declares the role; its instructions inherit from the
+    parent session."""
+    root = _home(tmp_path)
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.inheritor]\ndescription = "inherits everything"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+    roles = {r.name: r for r in _refs(graph, "agent")}
+
+    assert "inheritor" in roles
+    assert roles["inheritor"].extra["description"] == "inherits everything"
+
+
+def test_a_missing_config_file_lowers_coverage(tmp_path):
+    """The reference says the path "is validated at load time and must point to
+    an existing file", so Codex treats this as an error — a component we know
+    exists and cannot read."""
+    from tools.graph import WarningLog
+    from tools.scan import _component_gap_count
+
+    root = _home(tmp_path)
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.ghost]\nconfig_file = "nowhere/ghost.toml"\n', encoding="utf-8"
+    )
+    warnings = WarningLog()
+
+    build_codex_installed_graph(root, warnings=warnings)
+
+    assert _component_gap_count(warnings) >= 1
+    assert any("config_file is unavailable" in w for w in warnings)
+
+
+def test_directory_and_config_declared_roles_both_appear(tmp_path):
+    """Both declaration forms are real; neither replaces the other."""
+    root = _home(tmp_path)
+    (root / "roles").mkdir()
+    (root / "roles" / "viewer.toml").write_text('name = "viewer"\n', encoding="utf-8")
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.viewer]\nconfig_file = "roles/viewer.toml"\n', encoding="utf-8"
+    )
+
+    graph = build_codex_installed_graph(root)
+    names = {r.name for r in _refs(graph, "agent")}
+
+    assert {"probe", "viewer"} <= names, "the agents-dir role and the config role"

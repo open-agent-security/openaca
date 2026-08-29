@@ -61,6 +61,23 @@ class PluginEntry:
 
 
 @dataclass(frozen=True)
+class AgentRoleEntry:
+    """One `[agents."<role>"]` table — a subagent declared by the config.
+
+    `config_file` points at the role's own TOML file and may sit anywhere:
+    "Path to a TOML config layer for that role; relative paths resolve from the
+    config file that declares the role."
+    (developers.openai.com/codex/config-reference). The role name is the table
+    key, not the referenced file's `name`, because the key is what selects the
+    role.
+    """
+
+    name: str
+    config_file: str | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True)
 class ProjectEntry:
     """One `[projects."<path>"]` table."""
 
@@ -87,6 +104,7 @@ class CodexConfig:
     plugins: dict[tuple[str | None, str], PluginEntry] = field(default_factory=dict)
     marketplaces: dict[str, MarketplaceEntry] = field(default_factory=dict)
     projects: dict[str, ProjectEntry] = field(default_factory=dict)
+    agents: dict[str, AgentRoleEntry] = field(default_factory=dict)
     hooks: dict = field(default_factory=dict)
 
 
@@ -123,6 +141,7 @@ TOP_LEVEL_SURFACES: tuple[str, ...] = (
     "marketplaces",
     "projects",
     "hooks",
+    "agents",
 )
 
 
@@ -195,6 +214,19 @@ def load_config(path: Path) -> CodexConfig:
     # `record_gap` sees it. Coercing here (as `mcp_servers` used to, before
     # `parse()` was changed to read the raw TOML directly) would make that
     # `strict=True` unreachable for a malformed `hooks` table.
+    agents: dict[str, AgentRoleEntry] = {}
+    raw_agents = _table(data, "agents", malformed)
+    if raw_agents:
+        for role, entry in raw_agents.items():
+            table = entry if isinstance(entry, dict) else {}
+            config_file = table.get("config_file")
+            description = table.get("description")
+            agents[str(role)] = AgentRoleEntry(
+                name=str(role),
+                config_file=config_file if isinstance(config_file, str) else None,
+                description=description if isinstance(description, str) else None,
+            )
+
     # `hooks` goes through the same helper as every other surface. It used to
     # be preserved raw so a downstream `strict=True` parse would reject it, but
     # that only worked for TRUTHY malformed values — `hooks = []` passed the
@@ -207,6 +239,7 @@ def load_config(path: Path) -> CodexConfig:
         plugins=plugins,
         marketplaces=marketplaces,
         projects=projects,
+        agents=agents,
         hooks=hooks,
     )
 

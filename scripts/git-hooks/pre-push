@@ -77,9 +77,37 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
 # dirty tree can no longer produce a false pass — but pushing while holding
 # uncommitted edits still means the thing you validated is not the thing you
 # are working on, which is worth stopping for.
-if ! git diff --quiet HEAD; then
+#
+# One exception, and only inside a GitHub Actions job: claude-code-action
+# rewrites the repo's agent-config files from origin/main before it starts
+# ("Restoring .claude, .mcp.json, .claude.json, .gitmodules, .ripgreprc,
+# CLAUDE.md, CLAUDE.local.md, .husky from origin/main (PR head is
+# untrusted)") — a prompt-injection defense, since a PR head can otherwise
+# hand the bot its own instructions. On any PR that legitimately edits one of
+# those files, that restore leaves the worktree permanently dirty against the
+# PR head, and the bot cannot clean it: the workflow grants it no `git
+# checkout`/`git restore`/`git stash`. Every @claude run on such a PR then
+# ends with the fix committed and unpushed (PR #181, and #180 before it,
+# where the bot instead committed the restored file and silently reverted a
+# branch change).
+#
+# Ignoring those paths costs nothing here: the gates below validate a `git
+# archive` of the commit being pushed, never the worktree, so a dirty file
+# cannot produce a false pass. The guard's real purpose — don't push while
+# holding edits you meant to keep — still applies to every other path, and to
+# every local push, where GITHUB_ACTIONS is unset and nothing is exempt.
+RESTORED_BY_ACTION=(.claude .mcp.json .claude.json .gitmodules .ripgreprc
+                    CLAUDE.md CLAUDE.local.md .husky)
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  dirty="$(git diff --name-only HEAD -- . $(printf ":(exclude)%s " "${RESTORED_BY_ACTION[@]}"))"
+else
+  dirty="$(git diff --name-only HEAD)"
+fi
+if [ -n "$dirty" ]; then
   fail "working tree has uncommitted changes — the commit being pushed
     is not what you have on disk.
+    Files:
+$(echo "$dirty" | sed 's/^/      /')
     To fix: git commit (or git stash) before pushing."
 fi
 untracked="$(git ls-files --others --exclude-standard)"

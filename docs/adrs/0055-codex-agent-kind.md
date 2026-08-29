@@ -33,8 +33,10 @@ The evidence that settles the shape:
 - `$CODEX_HOME` relocates the whole root, as `$CLAUDE_CONFIG_DIR` does.
 
 And the evidence that separates it from Cursor: `.claude/skills`,
-`.claude/agents`, `.agents/skills`, and `installed_plugins.json` each have
-**zero** references in the audited binary. Codex is not a cross-reader.
+`.claude/agents`, and `installed_plugins.json` — Claude Code's own directories
+and lockfile — each have **zero** references in the audited binary. Codex
+reads no other runtime's own tree. (`.agents/skills` also read zero at audit
+time, but that reading was wrong — see the correction below.)
 
 ## Decision
 
@@ -76,10 +78,17 @@ no taxonomy ADR.
 **`skills/.system/` is excluded structurally**, by its
 `.codex-system-skills.marker` file rather than by a list of names.
 
-**ADR-0052's revisit trigger does not fire.** That ADR made `.agents/skills/`
-evidence of a Cursor agent because Cursor was the only registered kind reading
-it, and flagged the claim to revisit if a Codex kind landed. One has, and Codex
-does **not** read `.agents/skills`. The Cursor claim survives unchanged.
+**Correction — ADR-0052's revisit trigger did fire.** This ADR originally
+claimed the opposite here, on the same zero-binary-reference evidence the
+[Reference counts](../specs/codex-agent-kind.md#reference-counts) table now
+flags as unsound: a program that builds `.agents/skills` from path components
+has no such literal to find. Codex's published skills reference lists both
+repository `.agents/skills` and `$HOME/.agents/skills` among its discovery
+locations, and the shipped `tools/agent_kinds/codex.py` reads both. **Codex
+does read `.agents/skills`**, and
+[ADR-0058](0058-shared-agents-skills-directory.md) replaces ADR-0052's
+sole-reader exception: the directory is now evidence for every kind that reads
+it, not just Cursor.
 
 ## Alternatives considered
 
@@ -151,8 +160,10 @@ does not settle it; see the spec's Identity section.
 - **When `managed_config.toml` is audited.** It is an admin-distributed layer
   that changes what an MDM-managed endpoint composes, and closing it raises
   installed coverage.
-- **If a fourth kind reads `.agents/skills`.** The ADR-0052 exception survives
-  Codex specifically because Codex does not read it; that is a per-kind fact, not
-  a general one.
+- ~~If a fourth kind reads `.agents/skills`~~ — moot: Codex itself already
+  reads it (see the correction above), and
+  [ADR-0058](0058-shared-agents-skills-directory.md) already generalized the
+  rule to every kind that reads the directory rather than tracking readers
+  one by one.
 - **If instruction files gain a content-evidence component type.** `AGENTS.md`
   belongs to it, and it would have to land for every kind at once.

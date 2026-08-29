@@ -1141,6 +1141,19 @@ def _source_provenance_note(ref: ComponentRef) -> str:
 
 
 def _leaf_label(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
+    """Short identifier rendered on a tree leaf, with a disabled marker for
+    an MCP server carrying `enabled: False` (ADR-0055's readable enable
+    state) — the same treatment `_build_plugin_node` gives a disabled
+    plugin's own header, applied at the label level since MCP leaves have no
+    separate header line.
+    """
+    label = _leaf_label_text(ref, parent_plugin)
+    if _component_type_for_tree(ref) == "mcp_server" and ref.extra.get("enabled") is False:
+        return f"{label} [disabled]"
+    return label
+
+
+def _leaf_label_text(ref: ComponentRef, parent_plugin: Optional[str] = None) -> str:
     """Short identifier rendered on a tree leaf.
 
     Strips the component kind prefix (`skill/`, `claude-command/`, etc.) —

@@ -2409,7 +2409,7 @@ def _codex_system_skill_roots(config_root: Path) -> list[Path]:
 
 
 def _seed_codex_shared_agent_skills(
-    graph: Graph, target: Node, normalize: SourceNormalizer
+    graph: Graph, target: Node, shared_root: Path, normalize: SourceNormalizer
 ) -> None:
     """`$HOME/.agents/skills` — the user-scope half of the cross-tool
     convention directory.
@@ -2427,14 +2427,13 @@ def _seed_codex_shared_agent_skills(
     it is the same class of administrator-distributed surface as
     `managed_config.toml` and is recorded as deferred in the spec.
 
-    Callers must not invoke this when the scan's config root was reached via
-    an explicit `--config-dir` override rather than `$CODEX_HOME`/the default:
-    `Path.home()` here is the *invoking process's* home, not something a root
-    override relocates (ADR-0059), so composing it unconditionally would
-    stitch the requested root together with whatever `~/.agents/skills`
-    happens to hold on the machine running the scan.
+    `shared_root` is supplied rather than derived, because it **relocates with
+    `--config-dir`** (ADR-0059): naming a root explicitly moves the companion
+    `.agents` beside it, so the flag still fully specifies the target and
+    ADR-0054's rule keeps holding. Deriving `Path.home()` here would stitch the
+    requested root together with the scanning machine's own home.
     """
-    _add_direct_endpoint_skills(graph, target, Path.home() / ".agents" / "skills", normalize)
+    _add_direct_endpoint_skills(graph, target, shared_root / "skills", normalize)
 
 
 _CODEX_ADMIN_SKILLS_ROOT = Path("/etc/codex/skills")
@@ -3127,7 +3126,7 @@ def build_codex_installed_graph(
     root_label: str = "codex",
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
-    config_root_overridden: bool = False,
+    shared_skills_root: Path | None = None,
 ) -> Graph:
     """Endpoint-mode composition for Codex, owning the whole graph lifecycle.
 
@@ -3141,13 +3140,17 @@ def build_codex_installed_graph(
     launch-dependency attachment sees Codex's own server refs and every seed's
     warnings reach the caller through the one copy it already does.
 
-    `config_root_overridden` is true only when `config_root` came from an
-    explicit `--config-dir` flag (ADR-0059), never from `$CODEX_HOME` or the
-    default: `$HOME/.agents/skills` is not relocated by any of those, so an
-    override composing it unconditionally would stitch the requested root
-    together with the scanning machine's own home directory — the exact
-    split-home failure mode ADR-0054 refused `--config-dir` over for Cursor.
+    `shared_skills_root` is the `.agents` directory holding the cross-tool
+    skills root. It **relocates with `--config-dir`** (ADR-0059): a caller that
+    names a config root explicitly passes the companion beside it, so both move
+    together and naming one directory still fully specifies the target. That is
+    what keeps ADR-0054's rule satisfied — a scan never stitches the requested
+    root together with the scanning machine's own home.
     """
+    # Defaults to the invoking user's `~/.agents`, which is what an
+    # unoverridden scan reads. A caller naming a root explicitly passes the
+    # companion beside it, so both move together.
+    shared_root = shared_skills_root if shared_skills_root is not None else Path.home() / ".agents"
     root = Node(key=root_key, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
     # `_seed_codex_shared_agent_skills` reads `$HOME/.agents/skills`, a root
@@ -3161,7 +3164,7 @@ def build_codex_installed_graph(
         config_root,
         project_root,
         root_label,
-        extra_roots=(("agents", Path.home() / ".agents"),),
+        extra_roots=(("agents", shared_root),),
     )
 
     _seed_shared_endpoint_surfaces(
@@ -3175,14 +3178,7 @@ def build_codex_installed_graph(
         by_scope=None,
     )
     _seed_codex_subagents(graph, root, config_root, normalize, project_root)
-    if config_root_overridden:
-        graph.record_gap(
-            "$HOME/.agents/skills skipped: --config-dir overrides the config "
-            "root, but that shared skill root is not relocated by it "
-            "(ADR-0059)"
-        )
-    else:
-        _seed_codex_shared_agent_skills(graph, root, normalize)
+    _seed_codex_shared_agent_skills(graph, root, shared_root, normalize)
     _record_codex_admin_skills_gap(graph)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
     _seed_codex_mcp_servers(

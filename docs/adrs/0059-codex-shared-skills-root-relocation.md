@@ -1,6 +1,6 @@
 ---
 id: 0059
-title: Skip `$HOME/.agents/skills` when `--config-dir` overrides Codex's root
+title: The shared `.agents` skills root relocates with `--config-dir`
 status: accepted
 date: 2026-08-29
 supersedes: null
@@ -38,49 +38,44 @@ refused `--config-dir` over for Cursor.
 
 ## Decision
 
-**Reopen, as ADR-0056 asked to, with a scoped answer rather than a full
-reversal.** `root_override_refusal` for Codex stays `None` — every surface
-`$CODEX_HOME` genuinely relocates (`config.toml`, `agents/`, `plugins/`,
-`rules/`, `skills/` under the config root) remains override-honoring, unlike
-Cursor's three-way split. `$HOME/.agents/skills` is the sole exception: when
-`config_root` came from an explicit `--config-dir` flag,
-`build_codex_installed_graph` no longer calls
-`_seed_codex_shared_agent_skills`. Instead it records a coverage gap
-(`graph.record_gap`), so an overridden scan reports `composition_coverage:
-partial` and says why, rather than silently omitting or silently mixing
-homes. A scan using `$CODEX_HOME` or the default still composes it —
-`Path.home()` there is genuinely the invoking user's own home, not a foreign
-one, so there is nothing to stitch.
+**Reopen, as ADR-0056 asked to, and close it by making the companion root move
+with the flag.** `root_override_refusal` for Codex stays `None`, and a scan
+using `--config-dir` composes a **complete** endpoint rather than one missing a
+surface.
 
-This is possible because only *one* surface disqualifies, not three: unlike
-Cursor, Codex does not also need `permissions.json`-style flag-independent
-relocation or another runtime's skill roots. Skipping the one non-relocatable
-surface, rather than refusing the whole flag, keeps the override useful for
-the surfaces it actually specifies while removing the silent-mixing defect.
+Codex reads `$HOME/.agents/skills`, which `$CODEX_HOME` does not relocate — so
+by default that root is the invoking user's own home, and there is nothing to
+stitch. `--config-dir` is different: it names a root explicitly, and ADR-0054
+grants that flag only to a kind for which naming a root **fully specifies the
+target**. So naming a root moves its companion too. On a real endpoint `.codex`
+and `.agents` are siblings under the home directory, which makes
+`<dir>/../.agents` the faithful relocation, and
+`codex.resolve_shared_skills_root` the one place that decides it.
+
+ADR-0056's premise — "Codex reads no other runtime's tree, so there is no
+second home to strand" — was made false by ADR-0058 adding the shared skills
+read. This restores it in the only way that keeps both ADRs true at once: there
+is still exactly one root to name, because naming it moves everything that
+hangs off it.
 
 ## Alternatives considered
 
-- **Refuse `--config-dir` for Codex entirely, reversing ADR-0056.** Rejected:
-  it would discard override utility for every surface that genuinely is
-  `$CODEX_HOME`-relocatable (the overwhelming majority) to guard against one
-  surface that is not, and it would re-require every Codex endpoint test to
-  monkeypatch `Path.home()` — exactly the cost ADR-0056 named as what
-  accepting the flag avoids.
-- **Make `$HOME/.agents/skills` relocatable together with the override** (ADR-
-  0054's deferred "treat this directory as home" design). Rejected for this
-  round: it is the correct way to serve foreign-tree scanning but needs its
-  own design — including whether it outranks the real `$HOME` for a directory
-  that is a *shared* convention, not Codex's own — and ADR-0054 already
-  deferred it once rather than bolting it onto a flag that half-fits.
-- **Compose it unconditionally and rely on the `extra_roots` label alone.**
-  Rejected: a stable `bom-ref` label (the earlier review round's fix) makes
-  the *key* machine-independent, but the *value* — which skills actually load
-  — still comes from whatever machine ran the scan, which is the defect, not
-  a labeling problem.
-- **Silently drop it with no gap.** Rejected: `--config-dir` exists so a scan
-  can be pointed at a foreign tree (a fixture, a mounted image, a CI cache);
-  silently under-reporting a real skill surface on that tree is the same
-  "wrong inventory that doesn't say so" ADR-0054 already rejected once.
+- **Skip the shared root under an override and record a coverage gap** — the
+  first form of this decision, reversed. It keeps the flag and reports honestly
+  that something was omitted, but it ships a flag that knowingly returns an
+  incomplete composition, which is precisely the outcome ADR-0054 judged worse
+  than having no flag at all. "Correct but partial, and it says so" is a weaker
+  contract than "names one directory, gets everything".
+- **Refuse `--config-dir` for Codex, as ADR-0054 does for Cursor** — rejected.
+  Cursor disqualifies because *three* groups relocate on different axes and one
+  of them is another runtime's tree. Codex has one config root plus one
+  companion directory that moves with it, so the flag can still fully specify
+  the target; refusing would remove the endpoint-test isolation the flag
+  provides for no gain in correctness.
+- **Read the real `$HOME/.agents/skills` even under an override** — rejected.
+  That stitches the requested root together with whatever the scanning
+  machine's home happens to hold, which is the split-home failure ADR-0054
+  named. It is also the one variant that can *upload* unrelated inventory.
 
 ## Consequences
 

@@ -830,17 +830,23 @@ def _redact_payload_for_remote(
             continue
         for key, value in list(evidence.items()):
             if isinstance(value, str):
-                if key == "project_path":
-                    # `project_trust`'s `project_path` is the ONLY field
-                    # distinguishing one trusted-project finding from another
-                    # — there is no `component_bom_ref` to fall back on (a
-                    # trust record is not a BOM component). The generic
-                    # redactor below collapses an out-of-root path to its
-                    # bare basename, so two trusted directories sharing a
-                    # basename (`/srv/a/repo` and `/home/b/repo`) would become
-                    # indistinguishable subjects. `_redact_source_path`
-                    # appends a digest for exactly that out-of-root case, same
-                    # as it already does for bom-ref/source_manifest paths.
+                if key in ("project_path", "command_prefix"):
+                    # Neither `project_trust`'s `project_path` nor
+                    # `command_policy_allow`'s `command_prefix` has a
+                    # `component_bom_ref` to fall back on (neither a trust
+                    # record nor a command-policy rule is a BOM component),
+                    # so each is the ONLY field distinguishing one finding
+                    # from another sharing the same manifest_path. A
+                    # `command_prefix` whose first pattern token is an
+                    # absolute path (e.g. `/usr/bin/foo`) IS an absolute
+                    # path by `_is_absolute_path`'s definition, so the
+                    # generic redactor below collapses two out-of-root
+                    # prefixes sharing a basename (`/usr/bin/foo` and
+                    # `/opt/bin/foo`) to the same bare basename, same as it
+                    # did for project_path before that was fixed.
+                    # `_redact_source_path` appends a digest for exactly
+                    # that out-of-root case, same as it already does for
+                    # bom-ref/source_manifest paths.
                     evidence[key] = _redact_source_path(
                         value, config_dir=config_dir, project=project
                     )
@@ -1081,8 +1087,10 @@ def _posture_evidence(finding: PostureFinding) -> JsonObject:
         # No BOM component backs this finding (a command-policy allow rule is
         # not an inventoried component), so component_bom_ref is never set —
         # this is the only field that distinguishes one allow rule from
-        # another sharing the same manifest_path. Not a path, so it needs no
-        # redaction.
+        # another sharing the same manifest_path. The pattern's first token
+        # can itself be an absolute path (e.g. `/usr/bin/foo`), so this goes
+        # through the same digest-preserving redaction as project_path in
+        # `_redact_payload_for_remote` before upload.
         return {"command_prefix": finding.component.get("name"), "manifest_path": manifest_path}
     if finding.rule_id == "openaca-posture-project-trust":
         # Same rationale as command-policy-allow above: no BOM component, so

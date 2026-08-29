@@ -1408,6 +1408,51 @@ def test_posture_payload_distinguishes_command_policy_allow_findings():
     assert npm_payload["evidence"]["command_prefix"] == "npm install"
 
 
+def test_command_prefix_findings_with_shared_basename_stay_distinct_after_redaction(tmp_path):
+    """Two absolute command-prefix allow rules OUTSIDE config_dir/project that
+    share a basename must not collapse to the same redacted subject (Codex
+    review, PR #179): `command_prefix` was passed through the generic
+    evidence redactor, which falls back to a bare basename for an
+    out-of-root absolute path — exactly what made `/usr/bin/foo` and
+    `/opt/bin/foo` indistinguishable, with no `component_bom_ref` to fall
+    back on (a command-policy allow rule is not a BOM component)."""
+    from tools.remote.collector import _posture_finding_to_payload, _redact_payload_for_remote
+
+    config_dir = tmp_path / ".codex"
+    config_dir.mkdir()
+
+    payload = {
+        "bom": {"components": []},
+        "posture_findings": [
+            _posture_finding_to_payload(
+                _codex_component_scoped_posture_finding(
+                    "openaca-posture-command-policy-allow",
+                    kind="command_policy",
+                    subject="/usr/bin/foo",
+                    path=str(config_dir / "rules" / "default.rules"),
+                )
+            ),
+            _posture_finding_to_payload(
+                _codex_component_scoped_posture_finding(
+                    "openaca-posture-command-policy-allow",
+                    kind="command_policy",
+                    subject="/opt/bin/foo",
+                    path=str(config_dir / "rules" / "default.rules"),
+                )
+            ),
+        ],
+        "observations": [],
+    }
+
+    _redact_payload_for_remote(payload, config_dir=config_dir, project=None)
+
+    prefix_a = payload["posture_findings"][0]["evidence"]["command_prefix"]
+    prefix_b = payload["posture_findings"][1]["evidence"]["command_prefix"]
+    assert prefix_a.startswith("foo.")
+    assert prefix_b.startswith("foo.")
+    assert prefix_a != prefix_b
+
+
 def test_posture_payload_distinguishes_and_redacts_project_trust_findings(tmp_path):
     """Same rationale as command-policy-allow above for
     `openaca-posture-project-trust`: multiple trusted projects from one

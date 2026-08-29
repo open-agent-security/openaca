@@ -2426,8 +2426,36 @@ def _seed_codex_shared_agent_skills(
     `/etc/codex/skills` (the admin location) is deliberately not read here —
     it is the same class of administrator-distributed surface as
     `managed_config.toml` and is recorded as deferred in the spec.
+
+    Callers must not invoke this when the scan's config root was reached via
+    an explicit `--config-dir` override rather than `$CODEX_HOME`/the default:
+    `Path.home()` here is the *invoking process's* home, not something a root
+    override relocates (ADR-0059), so composing it unconditionally would
+    stitch the requested root together with whatever `~/.agents/skills`
+    happens to hold on the machine running the scan.
     """
     _add_direct_endpoint_skills(graph, target, Path.home() / ".agents" / "skills", normalize)
+
+
+_CODEX_ADMIN_SKILLS_ROOT = Path("/etc/codex/skills")
+
+
+def _record_codex_admin_skills_gap(graph: Graph) -> None:
+    """`/etc/codex/skills` is real per ADR-0058 (OpenAI's own skills reference
+    names it), so unlike the still-unaudited `managed_config.toml` its
+    existence is not in question — only whether a given endpoint has one.
+
+    Composing it is out of scope for this pass (spec: "Deliberately out of the
+    first pass"), but a directory that is actually present on this endpoint
+    can hide real skill components, which is exactly the condition that must
+    lower `composition_coverage` rather than let it read `complete` over an
+    admin-distributed skill set we know is there and chose not to parse.
+    """
+    if _CODEX_ADMIN_SKILLS_ROOT.is_dir():
+        graph.record_gap(
+            f"{_CODEX_ADMIN_SKILLS_ROOT} exists but is not composed "
+            "(admin-distributed skills, deferred per ADR-0058)"
+        )
 
 
 def _seed_codex_subagents(
@@ -3099,6 +3127,7 @@ def build_codex_installed_graph(
     root_label: str = "codex",
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
+    config_root_overridden: bool = False,
 ) -> Graph:
     """Endpoint-mode composition for Codex, owning the whole graph lifecycle.
 
@@ -3111,6 +3140,13 @@ def build_codex_installed_graph(
     `finalize_graph` runs exactly once, after every seed, so MCP
     launch-dependency attachment sees Codex's own server refs and every seed's
     warnings reach the caller through the one copy it already does.
+
+    `config_root_overridden` is true only when `config_root` came from an
+    explicit `--config-dir` flag (ADR-0059), never from `$CODEX_HOME` or the
+    default: `$HOME/.agents/skills` is not relocated by any of those, so an
+    override composing it unconditionally would stitch the requested root
+    together with the scanning machine's own home directory — the exact
+    split-home failure mode ADR-0054 refused `--config-dir` over for Cursor.
     """
     root = Node(key=root_key, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
@@ -3139,7 +3175,15 @@ def build_codex_installed_graph(
         by_scope=None,
     )
     _seed_codex_subagents(graph, root, config_root, normalize, project_root)
-    _seed_codex_shared_agent_skills(graph, root, normalize)
+    if config_root_overridden:
+        graph.record_gap(
+            "$HOME/.agents/skills skipped: --config-dir overrides the config "
+            "root, but that shared skill root is not relocated by it "
+            "(ADR-0059)"
+        )
+    else:
+        _seed_codex_shared_agent_skills(graph, root, normalize)
+    _record_codex_admin_skills_gap(graph)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings

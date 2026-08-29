@@ -49,6 +49,12 @@ ROOT_LABEL = "codex"
 #   * runtime MCP registration has ZERO references in the audited binary — an
 #     earlier draft asserted it by carrying the claim over from Cursor, where it
 #     is real, without checking it here.
+#   * `/etc/codex/skills` and a `--config-dir`-overridden `$HOME/.agents/skills`
+#     CAN each hide real skill components, unlike the items above — so those
+#     two are not baseline exceptions but runtime checks
+#     (`_record_codex_admin_skills_gap`, the override branch in
+#     `build_codex_installed_graph`, ADR-0059) that degrade an affected scan to
+#     `partial` via `graph.record_gap` while an unaffected one stays `complete`.
 # `managed_config.toml` remains unaudited, and is the one thing that would
 # reopen this: it is a file, so if it turns out to declare components the
 # honest response is to read it, not to relabel.
@@ -161,6 +167,7 @@ def _discover_installed(ctx: DiscoveryContext) -> list[AgentInstance]:
             coverage_baseline=COVERAGE_BASELINE["installed"],
             config_root=root,
             project_root=ctx.project_root,
+            config_root_overridden=ctx.config_dir is not None,
         )
     ]
 
@@ -202,6 +209,7 @@ def _compose(
             root_label=agent.root_label,
             include_gitignored=include_gitignored,
             warnings=warnings,
+            config_root_overridden=agent.config_root_overridden,
         )
     return build_codex_declared_graph(
         agent, include_gitignored=include_gitignored, warnings=warnings

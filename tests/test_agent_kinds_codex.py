@@ -117,6 +117,45 @@ def test_a_missing_installed_root_yields_nothing(tmp_path, monkeypatch):
     assert codex.discover(DiscoveryContext(source="installed")) == []
 
 
+# --- Root-override honesty for the one non-relocatable surface (ADR-0059) ---
+
+
+def test_explicit_config_dir_flag_marks_the_instance_overridden(tmp_path, monkeypatch):
+    """`--config-dir` (not `$CODEX_HOME`) is what makes `$HOME/.agents/skills`
+    unsafe to compose (ADR-0059): only the flag names a possibly-foreign root.
+    """
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    root = tmp_path / "flag-root"
+    root.mkdir()
+
+    agents = codex.discover(DiscoveryContext(source="installed", config_dir=root))
+
+    assert len(agents) == 1
+    assert agents[0].config_root_overridden is True
+
+
+def test_codex_home_env_var_does_not_mark_the_instance_overridden(tmp_path, monkeypatch):
+    """`$CODEX_HOME` reflects the invoking user's own environment, so
+    `$HOME/.agents/skills` is still genuinely theirs to compose."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    agents = codex.discover(DiscoveryContext(source="installed"))
+
+    assert len(agents) == 1
+    assert agents[0].config_root_overridden is False
+
+
+def test_default_root_does_not_mark_the_instance_overridden(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    (tmp_path / ".codex").mkdir()
+
+    agents = codex.discover(DiscoveryContext(source="installed"))
+
+    assert len(agents) == 1
+    assert agents[0].config_root_overridden is False
+
+
 def test_coverage_baseline_is_complete_at_both_sources():
     """Under the rule — a gap lowers composition coverage only if it can hide a
     COMPONENT — nothing about a Codex scan is undetectable.

@@ -2553,15 +2553,31 @@ def _seed_codex_config_role(
         )
         return
 
-    for ref in _safe_parse(graph, codex_agent.parse, referenced):
-        # The table key selects the role, so it is the identity — the
-        # referenced file's own `name` is free to disagree.
-        renamed = replace(
-            ref,
-            name=role.name,
-            component_identity=f"claude-agent/{role.name}",
-        )
-        _add_child(graph, target, Node(occurrence_key(renamed, normalize), "agent", renamed))
+    # `codex_agent.parse` enforces the standalone `agents/*.toml` schema
+    # (name, description, developer_instructions all required), which is
+    # documented only for that declaration form. A `config_file` layer is
+    # documented as "a TOML config layer for that role" instead — the role's
+    # name is already the table key and its description already has a home
+    # on the table itself, so neither is required in this file.
+    try:
+        layer_description = codex_agent.read_role_layer_description(referenced)
+    except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+        graph.record_gap(f"could not parse {referenced}: {exc}")
+        return
+
+    description = role.description or layer_description
+    ref = ComponentRef(
+        name=role.name,
+        component_identity=f"claude-agent/{role.name}",
+        source_manifest=str(referenced),
+        source_locator=f'$.agents."{role.name}"',
+        extra={
+            "scope_owner": None,
+            "component_type": "agent",
+            **({"description": description} if description else {}),
+        },
+    )
+    _add_child(graph, target, Node(occurrence_key(ref, normalize), "agent", ref))
 
 
 def _emit_codex_config_mcp_servers(

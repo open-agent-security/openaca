@@ -123,3 +123,34 @@ def test_an_empty_file_raises(tmp_path):
 
     with pytest.raises(ValueError):
         codex_agent.parse(p)
+
+
+# --- config_file role layers (PR #180 review) -------------------------------
+#
+# `[agents."<role>"] config_file = "..."` points at "a TOML config layer for
+# that role" (developers.openai.com/codex/config-reference) — a different,
+# undocumented-as-required schema from the standalone `agents/*.toml` file's
+# "Custom agent file schema" above. `read_role_layer_description` must not
+# apply `parse`'s required-field rule to it.
+
+
+def test_read_role_layer_description_does_not_require_name_or_developer_instructions(tmp_path):
+    p = tmp_path / "layer.toml"
+    p.write_text('description = "layer description"\n', encoding="utf-8")
+
+    assert codex_agent.read_role_layer_description(p) == "layer description"
+
+
+def test_read_role_layer_description_is_none_when_absent(tmp_path):
+    p = tmp_path / "layer.toml"
+    p.write_text('developer_instructions = "only this"\n', encoding="utf-8")
+
+    assert codex_agent.read_role_layer_description(p) is None
+
+
+def test_read_role_layer_description_malformed_toml_raises(tmp_path):
+    p = tmp_path / "broken.toml"
+    p.write_text("{ not toml", encoding="utf-8")
+
+    with pytest.raises(tomllib.TOMLDecodeError):
+        codex_agent.read_role_layer_description(p)

@@ -1409,6 +1409,29 @@ def test_directory_and_config_declared_roles_both_appear(tmp_path):
     assert {"probe", "viewer"} <= names, "the agents-dir role and the config role"
 
 
+def test_a_config_file_layer_missing_name_and_description_still_composes(tmp_path):
+    """A `config_file` layer is documented as "a TOML config layer for that
+    role", not the standalone-file "Custom agent file schema" — so a layer
+    carrying only `developer_instructions` (the common case, since the role's
+    name is the table key and its description already lives on the table) must
+    not be rejected the way a standalone `agents/*.toml` file missing those
+    fields is."""
+    root = _home(tmp_path)
+    (root / "roles").mkdir()
+    (root / "roles" / "lens.toml").write_text('developer_instructions = "i"\n', encoding="utf-8")
+    (root / "config.toml").write_text(
+        CONFIG + '\n[agents.lens]\ndescription = "table description"\n'
+        'config_file = "roles/lens.toml"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    roles = {r.name: r for r in _refs(graph, "agent")}
+
+    assert "lens" in roles
+    assert roles["lens"].extra["description"] == "table description"
+
+
 def test_repo_agents_skills_compose_for_codex(tmp_path):
     """Codex's skills reference lists repository `.agents/skills`, walked from
     the working directory up to the repository root."""

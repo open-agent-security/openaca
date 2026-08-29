@@ -634,6 +634,49 @@ def test_cyclonedx_round_trips_plugin_scope_and_git_commit_sha():
     assert refs[0].extra["gitCommitSha"] == "deadbeef1234abcd"
 
 
+def test_cyclonedx_round_trips_plugin_enabled_state():
+    """extra["enabled"] (ADR-0055: Codex plugins/MCP servers carry real enable
+    state) must survive BOM encode/decode as an actual bool, for both `True`
+    and `False` — a kind without the key (Cursor) must not gain one.
+
+    Without a dedicated property, `_component_properties` dropped the value
+    entirely, so `openaca bom endpoint` and the remote-sync payload serialized
+    a disabled Codex plugin indistinguishably from an enabled one.
+    """
+    original = build_agent_bom(
+        [
+            ComponentRef(
+                component_identity="plugin/marketplace/off",
+                source_manifest="config.toml",
+                source_locator="$.plugins.marketplace/off",
+                extra={"component_type": "plugin", "enabled": False},
+            ),
+            ComponentRef(
+                component_identity="plugin/marketplace/on",
+                source_manifest="config.toml",
+                source_locator="$.plugins.marketplace/on",
+                extra={"component_type": "plugin", "enabled": True},
+            ),
+            ComponentRef(
+                component_identity="plugin/cursor/no-enable-key",
+                source_manifest="mcp.json",
+                source_locator="$.plugins.no-enable-key",
+                extra={"component_type": "plugin"},
+            ),
+        ],
+        target_type="endpoint",
+        target="~/.codex",
+    )
+    encoded = json.loads(json.dumps(original.to_cyclonedx()))
+
+    refs = component_refs_from_cyclonedx(encoded)
+    by_identity = {r.component_identity: r for r in refs}
+
+    assert by_identity["plugin/marketplace/off"].extra["enabled"] is False
+    assert by_identity["plugin/marketplace/on"].extra["enabled"] is True
+    assert "enabled" not in by_identity["plugin/cursor/no-enable-key"].extra
+
+
 def test_parse_purl_strips_qualifiers_and_subpath():
     """PURLs with qualifiers (?...) or subpath (#...) must yield a clean version."""
     doc = {

@@ -79,14 +79,18 @@ hangs off it.
 
 ## Consequences
 
-**Enables.** `--config-dir` keeps composing every genuinely relocatable Codex
-surface; only the one home-derived exception is withheld, and it is withheld
-honestly (a named, counted gap) instead of silently.
+**Enables.** `--config-dir` composes every genuinely relocatable Codex surface,
+including the `.agents/skills` companion — `resolve_shared_skills_root` relocates
+it to `<dir>/../.agents` instead of withholding it, so an overridden scan can
+report a **complete** `installed` composition rather than one that knowingly
+skips a surface.
 
-**Costs.** An overridden Codex scan can never report `complete` coverage for
-`installed`, even when every other surface parses cleanly — the gap fires
-unconditionally on override, not only when `~/.agents/skills` happens to
-exist, since a scan cannot know what it chose not to look at.
+**Costs.** The relocation is a convention, not a guarantee: it assumes `.codex`
+and its `.agents` companion stay siblings under the named root's parent. A
+fixture or endpoint built without that sibling relationship composes an empty
+shared-skills root under `--config-dir`, the same as a real endpoint whose user
+simply has no shared skills — the two are indistinguishable, which is the
+accepted trade-off for treating "name a root" as fully specifying the target.
 
 **Watch for.** A second Codex surface found to read the invoking process's
 home independently of `config_root` would mean this is a pattern, not an

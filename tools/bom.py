@@ -594,6 +594,14 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
     _append_prop(props, "openaca:plugin_scope", (ref.extra or {}).get("scope"))
     _append_prop(props, "openaca:git_commit_sha", (ref.extra or {}).get("gitCommitSha"))
+    # A kind with readable enable state (ADR-0055) sets `extra["enabled"]` as an
+    # actual bool; a kind without one (Cursor) omits the key entirely, and that
+    # absence must survive — emitting only for `True`/`False` keeps "unknown"
+    # distinguishable from "enabled" instead of collapsing both to the same
+    # missing property.
+    enabled = (ref.extra or {}).get("enabled")
+    if isinstance(enabled, bool):
+        _append_prop(props, "openaca:enabled", "true" if enabled else "false")
     _append_json_prop(
         props,
         "openaca:artifact_coordinates",
@@ -698,6 +706,9 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
             extra["source_provenance"] = json.loads(source_provenance)
         except json.JSONDecodeError:
             extra["source_provenance"] = source_provenance
+    enabled_prop = props.get("openaca:enabled")
+    if enabled_prop in ("true", "false"):
+        extra["enabled"] = enabled_prop == "true"
     _restore_capabilities(props, extra)
     return extra
 

@@ -1564,7 +1564,12 @@ def _build_plugin_node(
             categories, tier2, findings_by_ref, exclude=set(direct_ids)
         )
     containment = _containment_marker(bundled_ids, use_color)
-    header = f"{display_id}{context_note} [scope={scope}]{marker}{containment}"
+    # A kind with readable enable state (ADR-0055) can install a plugin that is
+    # on disk but turned off; the aggregate header above already counts it as
+    # disabled, so the node itself must say which one rather than rendering
+    # identically to an active plugin.
+    disabled_note = " [disabled]" if plugin_ref.extra.get("enabled") is False else ""
+    header = f"{display_id}{context_note} [scope={scope}]{disabled_note}{marker}{containment}"
     root = _TreeNode(label=header)
 
     _append_category_nodes(
@@ -1726,8 +1731,8 @@ def render_inventory_tree(
     # A separate computation from the scan-stats/BOM counts, because this feeds
     # tree formatting rather than accounting — which is exactly why it needs its
     # own fix. A kind that inventories disabled plugins (ADR-0055) would
-    # otherwise have them summarised as active here even while each node
-    # renders its own `enabled` state correctly.
+    # otherwise have them summarised as active here; `_build_plugin_node` marks
+    # each disabled node individually so the two stay consistent.
     n_active = sum(1 for r in plugins if (r.extra or {}).get("enabled") is not False)
     n_direct = sum(len(v) for v in _direct_categories(direct_refs).values())
     # Total components = everything minus the plugin self-identity refs.

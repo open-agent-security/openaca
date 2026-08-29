@@ -437,7 +437,14 @@ def _seed_endpoint(
 
     plugins_map, lockfile_path, plugin_warnings = claude_install._load_plugins_map(install_root)
     if warnings is not None:
-        warnings.extend(plugin_warnings)
+        # `absorb`, not `extend`, so a malformed/unreadable installed_plugins.json
+        # still lowers `composition_coverage` instead of reading `complete` while
+        # the entire plugin map silently dropped (matches the pattern at
+        # `finalize_graph`'s own `warnings.absorb(graph.warnings)` above).
+        if isinstance(warnings, WarningLog):
+            warnings.absorb(plugin_warnings)
+        else:
+            warnings.extend(plugin_warnings)
     enabled = effective.get("enabledPlugins", {})
     if not isinstance(enabled, dict):
         if "enabledPlugins" in effective and warnings is not None:

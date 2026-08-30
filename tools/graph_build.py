@@ -3376,7 +3376,6 @@ def build_codex_installed_graph(
     _seed_codex_shared_agent_skills(graph, root, shared_root, normalize)
     _record_codex_admin_skills_gap(graph)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
-    _propagate_inactive_plugin_state(graph)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )
@@ -3384,7 +3383,7 @@ def build_codex_installed_graph(
     _seed_codex_standalone_hooks(graph, root, config_root, project_root, normalize)
     _prune_codex_system_skills(graph, config_root)
 
-    return finalize_graph(
+    graph = finalize_graph(
         graph,
         config_root,
         normalize,
@@ -3395,6 +3394,12 @@ def build_codex_installed_graph(
         root_spec=None,
         warnings=warnings,
     )
+    # After finalize_graph, not before: `_attach_mcp_launch_deps` (run inside
+    # finalize_graph) adds package children to an inactive plugin's MCP server
+    # nodes, and those need the inherited state too — running this pass first
+    # left them looking live.
+    _propagate_inactive_plugin_state(graph)
+    return graph
 
 
 def _prune_codex_system_skills(graph: Graph, config_root: Path) -> None:

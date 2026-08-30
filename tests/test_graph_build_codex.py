@@ -1780,6 +1780,47 @@ def test_components_inside_a_live_plugin_are_not_stamped(tmp_path):
     assert skill.extra.get("enabled") is None
 
 
+def test_a_launch_dependency_of_an_inactive_plugins_mcp_server_inherits_state(tmp_path):
+    """`_attach_mcp_launch_deps` (inside `finalize_graph`) adds package children
+    to an MCP server node after every other seed has run. When that server
+    belongs to an inactive plugin, its launch-dependency packages must inherit
+    the plugin's state too — inheritance running before launch-dep attachment
+    left them looking live."""
+    root = _home(tmp_path)
+    bundle = _cache_bundle(root, "gone-mkt", "stale")
+    (bundle / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"tool_svc": {"command": "npx", "args": ["@scope/orphan-tool@1.2.3"]}}}
+        ),
+        encoding="utf-8",
+    )
+    (root / "packages" / "orphan-tool").mkdir(parents=True)
+    (root / "packages" / "orphan-tool" / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "@scope/orphan-tool",
+                "version": "1.2.3",
+                "dependencies": {"left-pad": "1.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    server = next(
+        r for r in _refs(graph, "mcp_server") if r.extra["component_path"][-1]["name"] == "tool_svc"
+    )
+    server_key = next(k for k, n in graph.nodes.items() if n.ref is server)
+    package = next(
+        graph.nodes[e.child].ref for e in graph.edges if e.parent == server_key
+    )
+
+    assert package is not None
+    assert package.extra["enabled"] is False
+    assert package.extra["installed"] is False
+    assert package.extra["inactive_via"] == "stale"
+
+
 def test_an_orphaned_cache_bundle_is_not_reported_enabled(tmp_path):
     """Neither an enable-map record nor any marketplace declaration.
 

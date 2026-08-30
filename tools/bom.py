@@ -602,6 +602,15 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     enabled = (ref.extra or {}).get("enabled")
     if isinstance(enabled, bool):
         _append_prop(props, "openaca:enabled", "true" if enabled else "false")
+    # `installed` separates residue from a deliberate switch-off, and follows
+    # the same absence-is-meaningful rule: emitted only when actually false, so
+    # a missing property still reads as installed rather than as unknown.
+    installed = (ref.extra or {}).get("installed")
+    if installed is False:
+        _append_prop(props, "openaca:installed", "false")
+    # Names the plugin whose state this component inherited, so an inactive row
+    # explains itself without a join back to its parent.
+    _append_prop(props, "openaca:inactive_via", (ref.extra or {}).get("inactive_via"))
     _append_json_prop(
         props,
         "openaca:artifact_coordinates",
@@ -709,6 +718,11 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
     enabled_prop = props.get("openaca:enabled")
     if enabled_prop in ("true", "false"):
         extra["enabled"] = enabled_prop == "true"
+    if props.get("openaca:installed") == "false":
+        extra["installed"] = False
+    inactive_via = props.get("openaca:inactive_via")
+    if isinstance(inactive_via, str) and inactive_via:
+        extra["inactive_via"] = inactive_via
     _restore_capabilities(props, extra)
     return extra
 

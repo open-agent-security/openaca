@@ -172,11 +172,33 @@ parsers, **Scope** is about this change.
 | Marketplaces | `known_marketplaces.json` | `[marketplaces.<name>]` + `source_type`, `last_revision` | Same model, TOML | **In** |
 | Plugin hooks | `hooks/hooks.json` | same envelope, **same PascalCase events** | Parser as-is | **In** |
 | Standalone hooks | not a repo-mode surface | `$CODEX_HOME/hooks.json` (user), `<project>/.codex/hooks.json` (project) | Parser as-is | **In** |
-| Approval policy | settings `permissions` | `~/.codex/rules/*.rules` — a **DSL**, not JSON | **New — posture** | **In** (posture) |
-| Project trust | none | `[projects."<path>"] trust_level` | New — posture | **In** (posture) |
+| Approval policy | settings `permissions` | `~/.codex/rules/*.rules` — a **DSL**, not JSON | **New — posture** | **In** (posture, scan only — see below) |
+| Project trust | none | `[projects."<path>"] trust_level` | New — posture | **In** (posture, scan only — see below) |
 | Commands | `.claude/commands/` | `<root>/prompts/*.md`, invoked as `/prompts:<name>` | — | Deferred — see [Deliberately out of the first pass](#deliberately-out-of-the-first-pass) |
 | Instruction files | `CLAUDE.md` (not read) | `AGENTS.md` (55 refs, heavily read) | — | **Out** — not configuration |
 | Managed config | none | `managed_config.toml` | — | Deferred (schedule) |
+
+### Approval posture is scanned, not uploaded
+
+Both approval rules are **in scope and fully implemented**: they parse, they
+fire, and `openaca scan endpoint --kind codex --include-posture` reports every
+one of them. What they do not do yet is reach OpenACA Cloud. They are held back
+at the upload boundary by `_UPLOAD_DEFERRED_RULES`
+(`tools/remote/collector.py`), and the hosted side tracks re-enabling them in
+[openaca-fleet#72](https://github.com/open-agent-security/openaca-fleet/issues/72).
+
+The reason is a hosted-side storage shape, not a gap here. Both rules describe
+an **approval** rather than a component — a shell prefix Codex may run
+unattended, a directory whose contents it trusts — so neither carries a
+`bom_ref` to attach a finding to. The upload schema rejects a
+`component`-scoped finding that names no component, and the request is atomic,
+so 21 such findings cost the agent's entire BOM: an endpoint that composed 91
+components uploaded none at all. Holding them back is what let Codex inventory
+land while the hosted side grows somewhere to put an approval.
+
+Re-enabling is deleting one frozenset. Until then, treat a Codex agent showing
+far fewer findings in the Cloud console than in a local scan as expected rather
+than as a bug — the difference is exactly these two rules.
 
 Four corrections against the assumption that a third kind resembles the second:
 
@@ -256,8 +278,8 @@ not *is it reachable*.
 | Plugins | `<root>/plugins/cache/<mkt>/<name>/<ver>/` | — | per bundle | two manifest formats | installed |
 | Plugin hooks | bundled `hooks/hooks.json` | same | per bundle | `{hooks:{Event:[...]}}` | both |
 | Standalone hooks | `<root>/hooks.json` | `.codex/hooks.json` | file | same envelope | both |
-| Approval policy | `<root>/rules/*.rules` | — | flat | `prefix_rule(...)` DSL | installed |
-| Project trust | `config.toml` `[projects.*]` | — | inline table | `trust_level` | installed |
+| Approval policy | `<root>/rules/*.rules` | — | flat | `prefix_rule(...)` DSL | installed (scan only) |
+| Project trust | `config.toml` `[projects.*]` | — | inline table | `trust_level` | installed (scan only) |
 
 Directories a reader expects and will **not** find: `.codex/agents` *(docs
 disagree — Cursor's documentation lists it among Cursor's subagent roots, and

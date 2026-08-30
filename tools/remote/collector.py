@@ -33,6 +33,7 @@ from tools.observations import (
     collect_skillspector_findings,
 )
 from tools.posture import PostureFinding, no_manifests, run_posture_rules
+from tools.posture.rules import command_policy_allow, project_trust
 from tools.remote.client import (
     BomUploadResult,
     RemoteAuthError,
@@ -59,6 +60,35 @@ TARGET_LOCATOR_ENDPOINT = "endpoint:user-scope"
 # payload is being shown to a human deciding whether it is safe to send.
 DRY_RUN_UNREGISTERED_ASSET_ID = "(unregistered)"
 _AGENT_SCOPES = frozenset({"agent-component", "agent-dependency"})
+
+# Rules that run locally but are held back from the upload payload.
+#
+# Both describe an APPROVAL rather than a component — a shell-command prefix
+# Codex may run unattended, a directory whose contents it trusts — so neither
+# has a `bom_ref` to attach a finding to. Every rule before them named
+# something the scan already inventories, which is why nothing had to decide
+# this until Codex shipped.
+#
+# The hosted side cannot yet store them. Its findings table takes one
+# non-component finding per (bom, rule): uniqueness is
+# `(bom_id, evidence_record_id, scope)` and an evidence record is one per rule
+# by design, so 13 approved prefixes would collapse into a single row. The
+# per-instance axis has to be org-scoped — its ADR-0004 forbids putting a
+# subject on the global evidence row — and today the only such axis is
+# `bom_component_id`. Sending them as-is is worse than holding them: a
+# component-scoped finding with no `component_bom_ref` is rejected at the
+# request level, so ONE malformed finding costs the whole agent's inventory.
+#
+# Held back, not deleted. `openaca scan` still reports every one of them, and
+# policy risk gates still key on their rule ids — this is the upload boundary
+# only. Delete this set once the hosted side can model an approval:
+# open-agent-security/openaca-fleet#72.
+_UPLOAD_DEFERRED_RULES = frozenset(
+    {
+        command_policy_allow.RULE_ID,
+        project_trust.RULE_ID,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -196,6 +226,7 @@ def _build_agent_collection(
             agent_kind=agent.kind_id,
             agent_id=agent.agent_id,
         )
+        if f.rule_id not in _UPLOAD_DEFERRED_RULES
     ]
     observations, scanner_posture = _collect_scanner_findings(
         refs, external_scanners=external_scanners

@@ -2628,3 +2628,91 @@ def test_collect_endpoint_aborts_on_auth_failure_without_attempting_later_agents
     assert len(uploads) == 1  # the second agent was never attempted
     assert excinfo.value.exit_code == 1
     assert str(excinfo.value) == "invalid or revoked token"
+
+
+def _codex_root_with_approvals(tmp_path):
+    """A Codex config root carrying both approval surfaces."""
+    root = tmp_path / ".codex"
+    (root / "rules").mkdir(parents=True)
+    (root / "rules" / "default.rules").write_text(
+        'prefix_rule(pattern=["uv", "sync"], decision="allow")\n'
+        'prefix_rule(pattern=["git", "commit", "-m"], decision="allow")\n',
+        encoding="utf-8",
+    )
+    (root / "config.toml").write_text(
+        '[projects."/home/u/work/repo"]\ntrust_level = "trusted"\n',
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_approval_posture_rules_are_held_back_from_the_upload(tmp_path):
+    """`command-policy-allow` and `project-trust` describe an approval, not a
+    component, so they carry no `component_bom_ref` — and a component-scoped
+    finding without one is rejected at the request level, costing the whole
+    agent's inventory rather than the one finding.
+
+    Held back at the upload boundary until the hosted side can model an
+    approval; the local rules are untouched (see the sibling test)."""
+    from tools.remote.collector import _UPLOAD_DEFERRED_RULES, build_endpoint_collections
+
+    root = _codex_root_with_approvals(tmp_path)
+
+    collections = build_endpoint_collections(config_dir=root, kind_id="codex", project=None)
+
+    assert len(collections) == 1
+    uploaded = {f["finding_id"] for f in collections[0].posture_findings}
+    assert uploaded.isdisjoint(_UPLOAD_DEFERRED_RULES)
+
+
+def test_the_deferral_is_the_upload_boundary_not_the_rule(tmp_path):
+    """The same root still reports both rules locally. If this ever fails,
+    the deferral has leaked out of the collector and into the scanner."""
+    from tools.agent_kinds import DiscoveryContext, discover_agents, kind_for
+    from tools.posture import run_posture_rules
+    from tools.posture.rules import command_policy_allow, project_trust
+    from tools.remote.collector import _agent_posture_manifests, _agent_refs
+
+    root = _codex_root_with_approvals(tmp_path)
+    agents = discover_agents(
+        DiscoveryContext(source="installed", config_dir=root, project_root=None, kind_id="codex")
+    )
+    agent = agents[0]
+    _, refs = _agent_refs(agent, [])
+    mcp_manifests, settings_manifests = _agent_posture_manifests(agent, refs)
+    from tools.remote.collector import _agent_extra_posture_manifests
+
+    findings = run_posture_rules(
+        refs,
+        mcp_manifests,
+        settings_manifests,
+        allowed_rules=kind_for(agent.kind_id).posture_rules,
+        extra_manifests=_agent_extra_posture_manifests(agent, refs),
+        agent_kind=agent.kind_id,
+        agent_id=agent.agent_id,
+    )
+    fired = {f.rule_id for f in findings}
+
+    assert command_policy_allow.RULE_ID in fired
+    assert project_trust.RULE_ID in fired
+
+
+def test_no_uploaded_posture_finding_claims_a_component_it_cannot_name(tmp_path):
+    """The structural invariant the deferral exists to protect, asserted
+    against the real Codex surface rather than the two rule ids: a
+    `component`-scoped finding with no `component_bom_ref` fails the hosted
+    request schema, and the request is atomic — so one such finding drops the
+    agent's whole BOM. A future rule that reintroduces the shape fails here
+    rather than in production."""
+    from tools.remote.collector import build_endpoint_collections
+
+    root = _codex_root_with_approvals(tmp_path)
+
+    collections = build_endpoint_collections(config_dir=root, kind_id="codex", project=None)
+
+    offenders = [
+        f
+        for f in collections[0].posture_findings
+        if f.get("scope") == "component" and not f.get("component_bom_ref")
+    ]
+    assert offenders == []

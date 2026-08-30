@@ -1645,3 +1645,172 @@ def test_a_project_agents_skill_symlinked_below_a_nested_directory_is_composed(t
     graph = build_codex_installed_graph(root, project)
 
     assert "gcp-api" in _skill_names(graph)
+
+
+def _cache_bundle(root, marketplace: str, name: str, version: str = "1.0.0"):
+    d = root / "plugins" / "cache" / marketplace / name / version
+    (d / ".codex-plugin").mkdir(parents=True)
+    (d / ".codex-plugin" / "plugin.json").write_text(json.dumps({"name": name}), encoding="utf-8")
+    (d / "skills" / "packaged").mkdir(parents=True)
+    (d / "skills" / "packaged" / "SKILL.md").write_text(
+        "---\nname: packaged\n---\nS\n", encoding="utf-8"
+    )
+    return d
+
+
+def _marketplace_manifest(root, rel: str, name: str):
+    path = root / ".tmp" / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"name": name, "plugins": []}), encoding="utf-8")
+    return path
+
+
+def test_a_marketplace_declared_only_by_its_manifest_grants_identity(tmp_path):
+    """Codex composes marketplaces it never writes to `[marketplaces.*]`:
+    `codex plugin marketplace list` reports one rooted at
+    `$CODEX_HOME/.tmp/plugins` that config.toml does not declare. Without it,
+    every plugin installed from that marketplace — and every skill, command,
+    agent and hook inside it, which inherit the plugin's identity — has no
+    cross-BOM join key."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "openai-curated", "widgets")
+    _marketplace_manifest(root, "plugins/.agents/plugins/marketplace.json", "openai-curated")
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "widgets")
+    skill = next(r for r in _refs(graph, "skill") if r.name == "packaged")
+
+    assert plugin.component_identity == "plugin/openai-curated/widgets"
+    assert skill.component_identity == "skill/plugin/openai-curated/widgets/packaged"
+
+
+def test_a_marketplace_manifest_one_level_deeper_is_also_found(tmp_path):
+    """`.tmp/bundled-marketplaces/<name>/` is the other observed root shape."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "openai-bundled", "sites")
+    _marketplace_manifest(
+        root,
+        "bundled-marketplaces/openai-bundled/.agents/plugins/marketplace.json",
+        "openai-bundled",
+    )
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "sites")
+
+    assert plugin.component_identity == "plugin/openai-bundled/sites"
+
+
+def test_a_claude_shaped_marketplace_manifest_is_read_too(tmp_path):
+    """Codex accepts both marketplace formats, so both name their own root."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "vendor-mkt", "thing")
+    _marketplace_manifest(
+        root, "marketplaces/vendor-mkt/.claude-plugin/marketplace.json", "vendor-mkt"
+    )
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "thing")
+
+    assert plugin.component_identity == "plugin/vendor-mkt/thing"
+
+
+def test_an_orphaned_bundle_is_marked_not_installed(tmp_path):
+    """`enabled = false` alone conflates two states: a plugin the user turned
+    off is installed and can be turned back on; an orphan is residue that
+    cannot. Both are inert, only one is actionable."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "gone-mkt", "stale")
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "stale")
+
+    assert plugin.extra["installed"] is False
+    assert plugin.extra["enabled"] is False
+
+
+def test_a_config_disabled_plugin_stays_installed(tmp_path):
+    """The other half of the distinction: deliberately off, still installed."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "known-mkt", "widget")
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[marketplaces.known-mkt]\nsource_type = "local"\nsource = "/tmp/known"\n'
+        + '\n[plugins."widget@known-mkt"]\nenabled = false\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "widget")
+
+    assert plugin.extra["enabled"] is False
+    assert "installed" not in plugin.extra
+
+
+def test_components_inside_an_inactive_plugin_inherit_its_state(tmp_path):
+    """A skill has no switch of its own — it is loaded because its plugin is.
+    Without inheriting, an orphan's skill was indistinguishable from a live
+    one except for a blank identity, which reads as a scan failure rather than
+    as "the agent never loads this"."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "gone-mkt", "stale")
+
+    graph = build_codex_installed_graph(root)
+    skill = next(r for r in _refs(graph, "skill") if r.name == "packaged")
+
+    assert skill.extra["enabled"] is False
+    assert skill.extra["installed"] is False
+    assert skill.extra["inactive_via"] == "stale"
+
+
+def test_components_inside_a_live_plugin_are_not_stamped(tmp_path):
+    """Inheritance must not leak: a live plugin's contents carry no inherited
+    state at all, so absence keeps meaning "active"."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "known-mkt", "widget")
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[marketplaces.known-mkt]\nsource_type = "local"\nsource = "/tmp/known"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    skill = next(r for r in _refs(graph, "skill") if r.name == "packaged")
+
+    assert "inactive_via" not in skill.extra
+    assert skill.extra.get("enabled") is None
+
+
+def test_an_orphaned_cache_bundle_is_not_reported_enabled(tmp_path):
+    """Neither an enable-map record nor any marketplace declaration.
+
+    On the audited endpoint this was residue from a marketplace Codex no
+    longer composes: three bundles Codex cannot load, reported as enabled and
+    publishing ~40 components for plugins the agent does not have. Still
+    inventoried — an unaudited marketplace source must not silently delete
+    real plugins — but not enabled."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "openai-curated-remote", "stale")
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "stale")
+
+    assert plugin.extra["enabled"] is False
+    assert "neither its marketplace nor an enable-map record" in " ".join(graph.warnings)
+
+
+def test_a_registered_marketplace_without_an_enable_record_still_defaults_enabled(tmp_path):
+    """The ambiguous case keeps over-reporting toward active: the bundle comes
+    from a registry Codex still composes and only the enable entry is absent."""
+    root = _home(tmp_path)
+    _cache_bundle(root, "known-mkt", "widget")
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text(encoding="utf-8")
+        + '\n[marketplaces.known-mkt]\nsource_type = "local"\nsource = "/tmp/known"\n',
+        encoding="utf-8",
+    )
+
+    graph = build_codex_installed_graph(root)
+    plugin = next(r for r in _refs(graph, "plugin") if r.name == "widget")
+
+    assert plugin.extra["enabled"] is True
+    assert plugin.component_identity == "plugin/known-mkt/widget"

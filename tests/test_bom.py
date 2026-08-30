@@ -1185,3 +1185,47 @@ def test_stored_0_4_runtime_hosts_are_still_restored():
 
     assert refs[0].extra["runtime_hosts"] == ["claude-code"]
     assert refs[0].extra["agent_host"] == "claude-code"
+
+
+def _codex_plugin_ref(**extra):
+    from tools.component_ref import ComponentRef
+
+    return ComponentRef(
+        name="stale",
+        component_identity="plugin/stale",
+        source_manifest="/root/plugins/cache/gone/stale/1.0.0",
+        source_locator="$",
+        extra={"component_type": "plugin", **extra},
+    )
+
+
+def test_installed_false_reaches_the_bom_properties():
+    """`enabled` alone cannot say whether a plugin can be turned back on."""
+    from tools.bom import _component_properties
+
+    props = {
+        p["name"]: p["value"] for p in _component_properties(_codex_plugin_ref(installed=False))
+    }
+
+    assert props["openaca:installed"] == "false"
+
+
+def test_an_installed_component_emits_no_installed_property():
+    """Absence means installed, so a true value must not be emitted — the same
+    rule `openaca:enabled` follows to keep `unknown` expressible."""
+    from tools.bom import _component_properties
+
+    props = {p["name"]: p["value"] for p in _component_properties(_codex_plugin_ref())}
+
+    assert "openaca:installed" not in props
+
+
+def test_inactive_via_names_the_deciding_plugin():
+    from tools.bom import _component_properties
+
+    props = {
+        p["name"]: p["value"]
+        for p in _component_properties(_codex_plugin_ref(inactive_via="superpowers"))
+    }
+
+    assert props["openaca:inactive_via"] == "superpowers"

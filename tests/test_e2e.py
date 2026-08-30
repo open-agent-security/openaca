@@ -1604,15 +1604,8 @@ def test_e2e_codex_config_dir_is_accepted_unlike_cursor(tmp_path):
     assert refused.exit_code != 0
 
 
-def test_e2e_codex_remote_sync_preserves_kind_posture_and_disabled_inventory(tmp_path):
-    """(c) `remote sync endpoint` is the one command Tasks 5-11 never exercise
-    directly, and the goal names it. Asserts the Codex kind survives the upload
-    payload along with both new posture rules — and that neither
-    `mcp_auto_approve` nor `api_endpoint_override` appears, since Codex's
-    policy surfaces are not MCP-specific and it has no Anthropic settings."""
-    from tools.remote.collector import build_endpoint_dry_run_payloads
-
-    root = _codex_home(tmp_path, disabled_plugin=True)
+def _codex_home_with_approvals(tmp_path, **kwargs):
+    root = _codex_home(tmp_path, **kwargs)
     (root / "rules").mkdir()
     (root / "rules" / "default.rules").write_text(
         'prefix_rule(pattern=["git", "commit"], decision="allow")\n', encoding="utf-8"
@@ -1622,15 +1615,64 @@ def test_e2e_codex_remote_sync_preserves_kind_posture_and_disabled_inventory(tmp
         + '\n[projects."/home/u/repo"]\ntrust_level = "trusted"\n',
         encoding="utf-8",
     )
+    return root
+
+
+def test_e2e_codex_remote_sync_payload_is_acceptable_to_the_hosted_schema(tmp_path):
+    """(c) `remote sync endpoint` is the one command Tasks 5-11 never exercise
+    directly, and the goal names it.
+
+    Asserts the payload against the hosted request contract rather than by
+    grepping a JSON blob for substrings. The blob form passed while every real
+    upload was rejected: a `component`-scoped finding with no
+    `component_bom_ref` fails the hosted schema, and the request is atomic, so
+    one such finding dropped the agent's entire BOM. Codex's two approval
+    rules produce exactly that shape and are held back at the upload boundary
+    (`_UPLOAD_DEFERRED_RULES`) until the hosted side can model an approval —
+    the sibling test below proves they still fire locally."""
+    from tools.remote.collector import build_endpoint_dry_run_payloads
+
+    root = _codex_home_with_approvals(tmp_path, disabled_plugin=True)
 
     payloads = build_endpoint_dry_run_payloads(config_dir=root, kind_id="codex", project=None)
-    blob = json.dumps(payloads)
 
-    assert "codex" in blob
-    assert "openaca-posture-command-policy-allow" in blob
-    assert "openaca-posture-project-trust" in blob
-    assert "openaca-posture-mcp-auto-approve" not in blob
-    assert "openaca-posture-api-endpoint-override" not in blob
+    assert len(payloads) == 1
+    payload = payloads[0]
+    properties = payload["bom"]["metadata"]["component"]["properties"]
+    assert {"name": "openaca:agent_kind", "value": "codex"} in properties
+    # The inventory the upload exists to carry, which a rejected request loses.
+    assert payload["bom"]["components"], "an accepted upload carries the agent's components"
+
+    for finding in payload["posture_findings"]:
+        if finding["scope"] == "component":
+            assert finding.get("component_bom_ref"), (
+                f"{finding['finding_id']} claims a component it cannot name — "
+                "the hosted schema rejects the whole request for this"
+            )
+
+    uploaded = {f["finding_id"] for f in payload["posture_findings"]}
+    # Codex's policy surfaces are not MCP-specific and it has no Anthropic
+    # settings, so neither rule may appear regardless of the deferral.
+    assert "openaca-posture-mcp-auto-approve" not in uploaded
+    assert "openaca-posture-api-endpoint-override" not in uploaded
+
+
+def test_e2e_codex_approval_posture_still_reports_locally(tmp_path):
+    """The other half of the deferral: held back from the upload, never from
+    the scan. If this fails, the upload boundary has leaked into the scanner
+    and the user has lost a finding rather than deferred publishing it."""
+    from tools.scan import main as scan_main
+
+    root = _codex_home_with_approvals(tmp_path)
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "codex", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert "openaca-posture-command-policy-allow" in result.output
+    assert "openaca-posture-project-trust" in result.output
 
 
 def test_e2e_codex_disabled_mcp_is_inventoried_but_not_an_active_exposure(tmp_path):

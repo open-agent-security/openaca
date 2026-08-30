@@ -457,7 +457,6 @@ def _asset_result():
         owner_clerk_user_id=None,
         team_name=None,
         metadata={},
-        latest_bom_id="bom-123",
         last_seen_at="2026-05-27T12:00:00Z",
         created_at="2026-05-27T11:00:00Z",
         component_count=14,
@@ -574,3 +573,88 @@ def _fake_collection(**kwargs) -> list[EndpointCollection]:
             component_count=0,
         )
     ]
+
+
+def _asset_result_with_agents():
+    from tools.remote.client import AgentStatusResult, AssetStatusResult
+
+    return AssetStatusResult(
+        id="asset-123",
+        asset_type="endpoint",
+        external_id="demo-host",
+        display_name="demo-mbp",
+        owner_clerk_user_id=None,
+        team_name=None,
+        metadata={},
+        last_seen_at="2026-05-27T12:00:00Z",
+        created_at="2026-05-27T11:00:00Z",
+        component_count=14,
+        agents=(
+            AgentStatusResult(
+                agent_kind="claude-code",
+                agent_id=None,
+                composition_source="installed",
+                composition_coverage="complete",
+                latest_bom_id="bom-cc",
+                last_seen_at="2026-05-27T12:00:00Z",
+            ),
+            AgentStatusResult(
+                agent_kind="cursor",
+                agent_id=None,
+                composition_source="installed",
+                composition_coverage="partial",
+                latest_bom_id="bom-cur",
+                last_seen_at="2026-05-27T12:00:00Z",
+            ),
+        ),
+    )
+
+
+def _run_status(monkeypatch, tmp_path, asset) -> str:
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[remote]",
+                'api_url = "http://remote.test"',
+                'token = "ot_TEST"',
+                'asset_id = "asset-123"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def get_me(self):
+            return _me_result()
+
+        def get_asset(self, asset_id: str):
+            return asset
+
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
+    result = CliRunner().invoke(openaca_main, ["remote", "status"])
+    assert result.exit_code == 0
+    return result.output
+
+
+def test_status_reports_a_bom_per_agent(monkeypatch, tmp_path):
+    """`Latest BOM: none` right after a successful upload was the symptom:
+    status read the asset-level id, which Fleet stopped populating when BOMs
+    moved under agents."""
+    output = _run_status(monkeypatch, tmp_path, _asset_result_with_agents())
+
+    assert "claude-code: bom-cc (complete)" in output
+    assert "cursor: bom-cur (partial)" in output
+    assert "Latest BOM: none" not in output
+
+
+def test_status_says_so_when_no_agent_has_synced(monkeypatch, tmp_path):
+    """A registered-but-never-synced machine has no agents and no BOM."""
+    output = _run_status(monkeypatch, tmp_path, _asset_result())
+
+    assert "Latest BOM: none — no agent has synced yet" in output

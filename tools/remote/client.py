@@ -53,7 +53,9 @@ class BomUploadResult:
     asset_id: str
     component_count: int
     finding_count: int
-    policy_violation_count: int
+    # None when the backend does not report it: the Cloud upload response
+    # retired this field when policy moved to a shared policy document.
+    policy_violation_count: int | None
     drift: DriftResult
     dashboard_url: str
 
@@ -78,6 +80,23 @@ class MeResult:
 
 
 @dataclass(frozen=True)
+class AgentStatusResult:
+    """One agent kind composed on an asset.
+
+    Fleet attaches a BOM to an agent rather than to the asset — an endpoint
+    running Claude Code and Cursor has one of each — so this is what
+    identifies an upload. The asset carries no BOM id at all.
+    """
+
+    agent_kind: str
+    agent_id: str | None
+    composition_source: str | None
+    composition_coverage: str | None
+    latest_bom_id: str | None
+    last_seen_at: str | None
+
+
+@dataclass(frozen=True)
 class AssetStatusResult:
     id: str
     asset_type: str
@@ -86,10 +105,15 @@ class AssetStatusResult:
     owner_clerk_user_id: str | None
     team_name: str | None
     metadata: JsonObject
-    latest_bom_id: str | None
     last_seen_at: str | None
     created_at: str
+    # Machine-level aggregates stay on the asset; BOM identity does not. An
+    # asset runs N agent kinds, so "the asset's latest BOM" names nothing —
+    # which is why Fleet moved it to the agent (its ADR-0018) rather than
+    # leaving a field that silently meant "whichever kind uploaded last".
     component_count: int
+    # Empty for a machine that has registered but never synced.
+    agents: tuple[AgentStatusResult, ...] = ()
 
 
 class RemoteClient:
@@ -123,7 +147,7 @@ class RemoteClient:
             asset_id=_required_str(data, "asset_id"),
             component_count=_required_int(data, "component_count"),
             finding_count=_required_int(data, "finding_count"),
-            policy_violation_count=_required_int(data, "policy_violation_count"),
+            policy_violation_count=_optional_int(data, "policy_violation_count"),
             drift=DriftResult(
                 added=_required_int(drift, "added"),
                 removed=_required_int(drift, "removed"),
@@ -155,10 +179,10 @@ class RemoteClient:
             owner_clerk_user_id=_optional_str(data, "owner_clerk_user_id"),
             team_name=_optional_str(data, "team_name"),
             metadata=_required_object(data, "metadata"),
-            latest_bom_id=_optional_str(data, "latest_bom_id"),
             last_seen_at=_optional_str(data, "last_seen_at"),
             created_at=_required_str(data, "created_at"),
             component_count=_required_int(data, "component_count"),
+            agents=_parse_agents(data),
         )
 
     def _request(self, method: str, path: str, payload: JsonObject | None = None) -> JsonObject:
@@ -239,6 +263,43 @@ def _optional_str(data: JsonObject, key: str) -> str | None:
     if value is None or isinstance(value, str):
         return value
     raise RemoteClientError(f"remote backend response has invalid string field: {key}")
+
+
+def _parse_agents(data: JsonObject) -> tuple[AgentStatusResult, ...]:
+    """The asset's `agents` array, absent on a backend that predates it.
+
+    A malformed entry is skipped rather than raising: this feeds `remote
+    status`, a read-only report, and refusing to print an asset because one
+    agent row is odd is worse than printing the rest.
+    """
+    raw = data.get("agents")
+    if not isinstance(raw, list):
+        return ()
+    agents = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("agent_kind")
+        if not isinstance(kind, str):
+            continue
+        agents.append(
+            AgentStatusResult(
+                agent_kind=kind,
+                agent_id=_optional_str(entry, "agent_id"),
+                composition_source=_optional_str(entry, "composition_source"),
+                composition_coverage=_optional_str(entry, "composition_coverage"),
+                latest_bom_id=_optional_str(entry, "latest_bom_id"),
+                last_seen_at=_optional_str(entry, "last_seen_at"),
+            )
+        )
+    return tuple(agents)
+
+
+def _optional_int(data: JsonObject, key: str) -> int | None:
+    value = data.get(key)
+    if value is None or isinstance(value, int):
+        return value
+    raise RemoteClientError(f"remote backend response has invalid integer field: {key}")
 
 
 def _required_int(data: JsonObject, key: str) -> int:

@@ -78,6 +78,37 @@ def test_upload_bom_sends_bom_and_posture_findings():
     assert '"posture_findings":[{"rule_id":"openaca-posture-test"}]' in str(captured["payload"])
 
 
+def test_upload_bom_accepts_response_without_policy_violation_count():
+    """The Cloud backend retired this field with the shared-policy cutover.
+
+    A response that omits it is current, not malformed: policy state now lives
+    in the policy document, not in the upload reply.
+    """
+
+    client = RemoteClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                201,
+                json={
+                    "bom_id": "bom-123",
+                    "asset_id": "asset-123",
+                    "component_count": 1,
+                    "finding_count": 2,
+                    "drift": {"added": 1, "removed": 0, "changed": 0},
+                    "dashboard_url": "https://app.test/boms/bom-123",
+                },
+            )
+        ),
+    )
+
+    result = client.upload_bom({"asset_id": "asset-123", "bom": {"bomFormat": "CycloneDX"}})
+
+    assert result.bom_id == "bom-123"
+    assert result.policy_violation_count is None
+
+
 def test_get_me_returns_org_and_token_context():
     client = RemoteClient(
         api_url="https://api.test",
@@ -114,7 +145,6 @@ def test_get_asset_returns_asset_summary():
                     "owner_clerk_user_id": None,
                     "team_name": None,
                     "metadata": {},
-                    "latest_bom_id": "bom-123",
                     "last_seen_at": "2026-05-28T00:00:00Z",
                     "created_at": "2026-05-28T00:00:00Z",
                     "component_count": 3,
@@ -242,3 +272,88 @@ def test_504_retries_with_backoff_then_raises_server_error():
         client.get_me()
 
     assert sleeps == [1.0, 4.0]
+
+
+def test_get_asset_carries_per_agent_latest_boms():
+    """Fleet attaches a BOM to an agent, not to the asset.
+
+    `AssetSummary` carries no BOM id at all — Fleet moved the column to the
+    `agents` table (its ADR-0018), because anchoring current state on the
+    asset meant a machine's second upload silently displaced its first.
+    """
+    client = RemoteClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "id": "asset-123",
+                    "asset_type": "endpoint",
+                    "external_id": "host",
+                    "display_name": "host",
+                    "owner_clerk_user_id": None,
+                    "team_name": None,
+                    "metadata": {},
+                    "last_seen_at": "2026-05-28T00:00:00Z",
+                    "created_at": "2026-05-28T00:00:00Z",
+                    "component_count": 3,
+                    "agents": [
+                        {
+                            "agent_kind": "claude-code",
+                            "agent_id": None,
+                            "composition_source": "installed",
+                            "composition_coverage": "complete",
+                            "latest_bom_id": "bom-cc",
+                            "last_seen_at": "2026-05-28T00:00:00Z",
+                        },
+                        {
+                            "agent_kind": "cursor",
+                            "agent_id": None,
+                            "composition_source": "installed",
+                            "composition_coverage": "partial",
+                            "latest_bom_id": "bom-cur",
+                            "last_seen_at": "2026-05-28T00:00:00Z",
+                        },
+                    ],
+                },
+            )
+        ),
+    )
+
+    result = client.get_asset("asset-123")
+
+    assert [(a.agent_kind, a.latest_bom_id) for a in result.agents] == [
+        ("claude-code", "bom-cc"),
+        ("cursor", "bom-cur"),
+    ]
+    assert result.agents[1].composition_coverage == "partial"
+
+
+def test_get_asset_without_agents_is_still_readable():
+    """A machine that registered but never synced has no agents."""
+    client = RemoteClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "id": "asset-123",
+                    "asset_type": "endpoint",
+                    "external_id": "host",
+                    "display_name": "host",
+                    "owner_clerk_user_id": None,
+                    "team_name": None,
+                    "metadata": {},
+                    "last_seen_at": "2026-05-28T00:00:00Z",
+                    "created_at": "2026-05-28T00:00:00Z",
+                    "component_count": 3,
+                },
+            )
+        ),
+    )
+
+    result = client.get_asset("asset-123")
+
+    assert result.agents == ()

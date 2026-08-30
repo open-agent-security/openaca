@@ -85,7 +85,16 @@ def status() -> None:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(f"Asset: {asset.display_name} ({asset.id})")
-    click.echo(f"Latest BOM: {asset.latest_bom_id or 'none'}")
+    # Per agent, because an asset has no BOM of its own: one upload per agent
+    # kind, each with its own id. Reading the asset-level id Fleet removed is
+    # why this line said "Latest BOM: none" right after a successful upload.
+    if asset.agents:
+        click.echo("Latest BOM:")
+        for agent in asset.agents:
+            coverage = f" ({agent.composition_coverage})" if agent.composition_coverage else ""
+            click.echo(f"  {agent.agent_kind}: {agent.latest_bom_id or 'none'}{coverage}")
+    else:
+        click.echo("Latest BOM: none — no agent has synced yet")
     click.echo(f"Last seen: {asset.last_seen_at or 'never'}")
     click.echo(f"Components: {asset.component_count} components")
 
@@ -211,7 +220,8 @@ def _print_upload_result(result) -> None:
     click.echo(f"Asset: {result.asset_id}")
     click.echo(f"Components: {result.component_count}")
     click.echo(f"Findings: {result.finding_count}")
-    click.echo(f"Policy violations: {result.policy_violation_count}")
+    if result.policy_violation_count is not None:
+        click.echo(f"Policy violations: {result.policy_violation_count}")
     click.echo(f"Dashboard: {result.dashboard_url}")
 
 

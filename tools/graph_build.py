@@ -3016,6 +3016,7 @@ def _seed_cache_plugins(
     no-profile invocation can still reach.
     """
     cache_root = config_root / "plugins" / "cache"
+    discovered_marketplaces = _codex_discovered_marketplaces(config_root)
     plugins: dict[tuple[str | None, str], codex_config.PluginEntry] = {}
     marketplaces: dict[str, codex_config.MarketplaceEntry] = {}
     all_layers = codex_config_layers(config_root, project_root)
@@ -3053,6 +3054,7 @@ def _seed_cache_plugins(
                         plugins=plugins,
                         marketplaces=marketplaces,
                         normalize=normalize,
+                        discovered_marketplaces=discovered_marketplaces,
                     )
 
     # An enable-map entry naming a plugin with nothing on disk is not a node —
@@ -3099,6 +3101,57 @@ def _codex_plugin_version(version_dir: Path, surface: RepoSurface) -> str | None
     return None if segment in _CODEX_NON_VERSION_SEGMENTS else segment
 
 
+# Codex composes marketplaces it never writes to `[marketplaces.*]`. Verified
+# against the runtime rather than inferred: on the audited endpoint
+# `codex plugin marketplace list` reports six marketplaces while `config.toml`
+# declares five. The undeclared one, `openai-curated`, is rooted at
+# `$CODEX_HOME/.tmp/plugins` and names itself only in its own manifest —
+# `{"name": "openai-curated", ...}`. Reading `[marketplaces.*]` alone therefore
+# denies identity to every plugin installed from it, and its whole payload with
+# it (`_plugin_private_identity` inherits from the plugin's identity).
+#
+# Two manifest shapes, because Codex accepts both marketplace formats: the
+# Agent Plugins one and Claude Code's. Two depths, because a marketplace root
+# sits either directly under `.tmp/` (`.tmp/plugins`) or one level in
+# (`.tmp/bundled-marketplaces/openai-bundled`). Fixed globs rather than an
+# `rglob`: `.tmp/plugins/plugins/` alone holds ~180 bundles, and a full walk to
+# find a file at a known depth would pay for all of them.
+_CODEX_MARKETPLACE_MANIFESTS = (
+    ".agents/plugins/marketplace.json",
+    ".claude-plugin/marketplace.json",
+)
+
+
+def _codex_discovered_marketplaces(config_root: Path) -> dict[str, Path]:
+    """Marketplaces that declare themselves under `$CODEX_HOME/.tmp/`.
+
+    A manifest naming itself IS provenance, unlike the cache-path segment
+    `_realize_codex_plugin` refuses to mint identity from: the segment is a
+    directory name anyone could create, while the manifest is the marketplace's
+    own record of what it is. First declaration of a name wins, so a config
+    entry is never displaced by a stale copy.
+    """
+    discovered: dict[str, Path] = {}
+    tmp_root = config_root / ".tmp"
+    if not tmp_root.is_dir():
+        return discovered
+    manifests: list[Path] = []
+    for rel in _CODEX_MARKETPLACE_MANIFESTS:
+        manifests.extend(sorted(tmp_root.glob(f"*/{rel}")))
+        manifests.extend(sorted(tmp_root.glob(f"*/*/{rel}")))
+    for manifest in manifests:
+        try:
+            data = json.loads(manifest.read_text())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        name = data.get("name")
+        if isinstance(name, str) and name and name not in discovered:
+            discovered[name] = manifest
+    return discovered
+
+
 def _realize_codex_plugin(
     graph: Graph,
     target: Node,
@@ -3110,18 +3163,45 @@ def _realize_codex_plugin(
     plugins: dict,
     marketplaces: dict,
     normalize: SourceNormalizer,
+    discovered_marketplaces: dict[str, Path] | None = None,
 ) -> None:
-    entry = plugins.get((marketplace, name))
-    if entry is None:
-        graph.warnings.append(f"plugin {name}@{marketplace} is cached but has no enable-map record")
-    enabled = True if entry is None else entry.enabled
-
-    # A cache-path segment is NOT provenance. Marketplace-qualified identity is
-    # granted only when `[marketplaces.*]` records the registry the bundle was
-    # resolved from; otherwise the segment is just a directory name someone
-    # could have created, and minting `plugin/{segment}/{name}` from it would
-    # back a real cross-BOM identity with nothing.
     registered = marketplaces.get(marketplace)
+    declared_by_manifest = (discovered_marketplaces or {}).get(marketplace)
+    known_marketplace = registered is not None or declared_by_manifest is not None
+    orphaned = False
+
+    entry = plugins.get((marketplace, name))
+    if entry is not None:
+        enabled = entry.enabled
+    elif known_marketplace:
+        # A known marketplace with no enable record is the ambiguous case the
+        # over-reporting default exists for: the bundle is installed from a
+        # registry Codex still composes, and only the enable entry is absent.
+        graph.warnings.append(f"plugin {name}@{marketplace} is cached but has no enable-map record")
+        enabled = True
+    else:
+        # Neither signal. On the audited endpoint this was residue: three
+        # bundles cached under a marketplace `codex plugin marketplace list`
+        # does not report, with no `[plugins.*]` entry either — Codex cannot
+        # load them, and reporting them enabled published ~40 components for
+        # plugins the agent does not have. Kept in the inventory rather than
+        # dropped, because a marketplace source we have not audited would
+        # otherwise silently delete real plugins; `enabled = False` is the
+        # honest reading and the one downstream active-exposure rules already
+        # respect.
+        graph.warnings.append(
+            f"plugin {name}@{marketplace} is cached but neither its marketplace nor an "
+            "enable-map record is declared; reported as not installed"
+        )
+        enabled = False
+        orphaned = True
+
+    # A cache-path segment is NOT provenance. Marketplace-qualified identity
+    # needs the registry the bundle was resolved from to be declared somewhere
+    # real — `[marketplaces.*]`, or the marketplace's own manifest — otherwise
+    # the segment is just a directory name someone could have created, and
+    # minting `plugin/{segment}/{name}` from it would back a real cross-BOM
+    # identity with nothing.
     extra: dict = {
         "component_type": "plugin",
         "component_path": [{"type": "plugin", "name": name}],
@@ -3129,6 +3209,15 @@ def _realize_codex_plugin(
         "installPath": str(version_dir),
         "enabled": enabled,
     }
+    # `installed` separates two states `enabled = false` alone conflates: a
+    # plugin the user deliberately turned off is installed and working, while
+    # an orphaned bundle is residue the runtime cannot load at all. Both are
+    # inert, so both score the same for risk — but only one of them can be
+    # turned back on, and a reader offered "re-enable" for the other is being
+    # misled. Emitted only when false: absence means installed, the same
+    # convention the rest of the `openaca:*` optional properties follow.
+    if orphaned:
+        extra["installed"] = False
     if registered is not None:
         extra["marketplace"] = marketplace
         if registered.last_revision:
@@ -3136,10 +3225,17 @@ def _realize_codex_plugin(
         if registered.source:
             extra["marketplace_source"] = registered.source
         component_identity = f"plugin/{marketplace}/{name}"
+    elif declared_by_manifest is not None:
+        # Declared by its own manifest but not by config. Identity is granted —
+        # the manifest names the marketplace — but no `last_revision` or
+        # `source` is available, because those are registry bookkeeping
+        # `[marketplaces.*]` carries and a manifest does not.
+        extra["marketplace"] = marketplace
+        component_identity = f"plugin/{marketplace}/{name}"
     else:
         graph.warnings.append(
-            f"plugin {name}@{marketplace} has no [marketplaces.{marketplace}] entry; "
-            "identity is occurrence-local"
+            f"plugin {name}@{marketplace} has no [marketplaces.{marketplace}] entry "
+            "and no marketplace manifest under .tmp; identity is occurrence-local"
         )
         component_identity = f"plugin/{name}"
 
@@ -3160,6 +3256,44 @@ def _realize_codex_plugin(
     # Claude Code the plugin's own root dep manifests are emitted here rather
     # than being suppressed in favour of a lockfile walk.
     descend(graph, plugin_node, version_dir, normalize, surface=CODEX_SURFACE)
+
+
+def _propagate_inactive_plugin_state(graph: Graph) -> None:
+    """Stamp every component inside an inactive plugin with the parent's state.
+
+    Enable state belongs to the container, not the contents: a skill has no
+    switch of its own, it is loaded because its plugin is. So only the plugin
+    row carried `enabled`, and a reader looking at the skill saw nothing —
+    two identical-looking `writing-skills` rows, one of which the agent never
+    loads, distinguishable only by a blank identity that reads as a scan
+    failure rather than as "this is not live".
+
+    Inherited rather than recomputed, and `inactive_via` names the plugin that
+    decided it, so the row explains itself without a join. Runs after every
+    plugin is realized, so it sees the whole subtree `descend` built.
+    """
+    for node in list(graph.nodes.values()):
+        if node.kind != "plugin" or node.ref is None:
+            continue
+        plugin_extra = node.ref.extra or {}
+        if plugin_extra.get("enabled") is not False:
+            continue
+        inherited: dict = {"enabled": False, "inactive_via": node.ref.name}
+        if plugin_extra.get("installed") is False:
+            inherited["installed"] = False
+
+        stack = [child for child in graph.children_of(node)]
+        seen: set[str] = set()
+        while stack:
+            child = stack.pop()
+            if child.key in seen:
+                continue
+            seen.add(child.key)
+            if child.ref is not None:
+                graph.nodes[child.key] = replace(
+                    child, ref=replace(child.ref, extra={**(child.ref.extra or {}), **inherited})
+                )
+            stack.extend(graph.children_of(child))
 
 
 def _record_codex_rules_coverage(graph: Graph, config_root: Path) -> None:
@@ -3242,6 +3376,7 @@ def build_codex_installed_graph(
     _seed_codex_shared_agent_skills(graph, root, shared_root, normalize)
     _record_codex_admin_skills_gap(graph)
     _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
+    _propagate_inactive_plugin_state(graph)
     _seed_codex_mcp_servers(
         graph, root, config_root, project_root, normalize, warnings=graph.warnings
     )

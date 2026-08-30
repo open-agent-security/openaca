@@ -1811,9 +1811,7 @@ def test_a_launch_dependency_of_an_inactive_plugins_mcp_server_inherits_state(tm
         r for r in _refs(graph, "mcp_server") if r.extra["component_path"][-1]["name"] == "tool_svc"
     )
     server_key = next(k for k, n in graph.nodes.items() if n.ref is server)
-    package = next(
-        graph.nodes[e.child].ref for e in graph.edges if e.parent == server_key
-    )
+    package = next(graph.nodes[e.child].ref for e in graph.edges if e.parent == server_key)
 
     assert package is not None
     assert package.extra["enabled"] is False

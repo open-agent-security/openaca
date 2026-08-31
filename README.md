@@ -143,6 +143,37 @@ installed-on-this-machine.
 See [Scan Modes](https://github.com/open-agent-security/openaca/blob/main/docs/concepts/scan-modes.md)
 for the details, including `--project <path>`.
 
+## Endpoint policy for Claude Code
+
+OpenACA can compile an admission and risk policy into a Claude Code managed
+settings drop-in for one endpoint. Compilation scans the endpoint first, so
+risk-gate results and the resulting artifact reflect the installed components
+on that machine. OpenACA writes the artifact you name; an administrator or
+device-management tool installs it into Claude Code's system settings directory.
+
+```bash
+openaca policy validate policy.yaml
+openaca policy compile policy.yaml --target "$HOME/.claude" --host claude --output /tmp/50-openaca-policy.json
+sudo install -m 644 /tmp/50-openaca-policy.json "/Library/Application Support/ClaudeCode/managed-settings.d/50-openaca-policy.json"
+```
+
+The current Claude target can enforce exact MCP admission, explicit plugin
+blocks, and a category-wide block on standalone skills. It does not provide a
+managed allowlist for already-installed plugins. A policy with
+`plugins.default: blocked` is therefore reported as not enforceable for
+Claude Code.
+
+After deploying an artifact, start a fresh Claude session and check `/status`.
+It must show the file drop-in as a selected managed source. For a blocked
+plugin, check `/plugin`'s **Installed** view and a command supplied by that
+plugin. Do not use `claude plugins list` as an effective-policy assertion: it
+can show a persisted installation record even when managed policy prevents the
+plugin from loading. For a standalone-skill block, check that a direct skill
+is unavailable while a skill supplied by an admitted plugin remains available.
+
+The [policy verification fixtures](https://github.com/open-agent-security/openaca-demo/tree/main/policy)
+provide copyable policy files and a full MCP, plugin, and skill test sequence.
+
 ## GitHub Action
 
 Add to `.github/workflows/openaca.yml`:

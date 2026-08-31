@@ -169,6 +169,13 @@ class RemoteClient:
             ),
         )
 
+    def get_policy_document(self) -> JsonObject | None:
+        data = self._request("GET", "/api/v1/policy")
+        document = data.get("document")
+        if document is not None and not isinstance(document, dict):
+            raise RemoteClientError("remote backend response has invalid document field")
+        return document
+
     def get_asset(self, asset_id: str) -> AssetStatusResult:
         data = self._request("GET", f"/api/v1/assets/{asset_id}")
         return AssetStatusResult(

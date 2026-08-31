@@ -13,11 +13,11 @@ from tools.remote.collector import EndpointCollection
 from tools.remote.config import load_remote_config
 
 
-def test_remote_is_public_upload_command_group() -> None:
+def test_remote_is_public_command_group() -> None:
     result = CliRunner().invoke(openaca_main, ["remote", "--help"])
 
     assert result.exit_code == 0
-    assert "Configure opt-in remote uploads" in result.output
+    assert "Configure remote endpoint services" in result.output
 
 
 def test_fleet_command_group_is_not_public() -> None:
@@ -25,6 +25,111 @@ def test_fleet_command_group_is_not_public() -> None:
 
     assert result.exit_code != 0
     assert "No such command" in result.output
+
+
+def test_remote_policy_compile_fetches_and_compiles_a_fresh_endpoint(tmp_path, monkeypatch):
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text(
+        '[remote]\napi_url = "http://remote.test"\ntoken = "ot_TEST"\n', encoding="utf-8"
+    )
+    target = tmp_path / "claude"
+    target.mkdir()
+    (target / "settings.json").write_text("{}", encoding="utf-8")
+    (target / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"command":"npx","args":["-y","safe-mcp"]}}}',
+        encoding="utf-8",
+    )
+    output = tmp_path / "50-openaca-policy.json"
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            seen["api_url"] = api_url
+            seen["token"] = token
+
+        def get_policy_document(self) -> dict[str, object]:
+            return {
+                "version": 1,
+                "admission": {
+                    "mcps": {
+                        "default": "blocked",
+                        "allowed": [{"command": ["npx", "-y", "safe-mcp"]}],
+                    },
+                    "plugins": {"default": "allowed"},
+                    "skills": {"default": "allowed"},
+                },
+            }
+
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "remote",
+            "policy",
+            "compile",
+            "--target",
+            str(target),
+            "--host",
+            "claude",
+            "--output",
+            str(output),
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen == {"api_url": "http://remote.test", "token": "ot_TEST"}
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "allowManagedMcpServersOnly": True,
+        "allowedMcpServers": [{"serverCommand": ["npx", "-y", "safe-mcp"]}],
+    }
+    assert json.loads(result.stdout)["artifact"]["written"] is True
+
+
+def test_remote_policy_compile_preserves_an_existing_artifact_when_no_policy_exists(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text('[remote]\ntoken = "ot_TEST"\n', encoding="utf-8")
+    target = tmp_path / "claude"
+    target.mkdir()
+    (target / "settings.json").write_text("{}", encoding="utf-8")
+    output = tmp_path / "50-openaca-policy.json"
+    output.write_text('{"existing":true}\n', encoding="utf-8")
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def get_policy_document(self) -> None:
+            return None
+
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
+
+    result = CliRunner().invoke(
+        openaca_main,
+        [
+            "remote",
+            "policy",
+            "compile",
+            "--target",
+            str(target),
+            "--host",
+            "claude",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Remote has no policy" in result.output
+    assert output.read_text(encoding="utf-8") == '{"existing":true}\n'
 
 
 def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):

@@ -158,6 +158,7 @@ openaca policy compile policy.yaml --target ~/.claude --host claude --output man
 openaca policy compile policy.yaml --target ~/.claude --host claude --project . --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --dry-run
 openaca policy compile policy.yaml --target ~/.claude --host claude --managed-settings-dir /etc/claude-code --dry-run
+openaca remote policy compile --target ~/.claude --host claude --output /tmp/50-openaca-policy.json
 ```
 
 `validate` checks the document only. It exits `0` when valid and `1` when
@@ -215,6 +216,15 @@ that final atomic write. The artifact and report together are the endpoint's
 **expected policy**: the settings OpenACA intends the host to enforce for that
 endpoint. The logical policy document is an input to this result, not a second
 policy to compare in the user interface.
+
+`openaca remote policy compile` reads the existing remote configuration from
+`openaca remote configure`, fetches the current policy document, and then runs
+the same validation, fresh endpoint scan, risk-gate evaluation, collision
+check, artifact write, and report as `openaca policy compile`. It accepts the
+same endpoint and output options, except that the policy path is replaced by
+the configured remote source. It does not cache the fetched document or install
+the artifact. If the remote is unavailable, returns an invalid document, or has
+no policy document, compilation fails before replacing an existing artifact.
 
 ## Claude Code target
 

@@ -7,6 +7,8 @@ import click
 import httpx
 
 from tools.cli_kind import kind_option, require_kind_for_config_dir
+from tools.policy import PolicyEvaluationError, PolicyValidationError, parse
+from tools.policy_cli import compile_endpoint_policy, emit_policy_report
 from tools.remote.client import RemoteClient, RemoteClientError
 from tools.remote.collector import (
     CollectError,
@@ -27,7 +29,7 @@ from tools.remote.upload_contract import RemoteUploadContractError
 
 @click.group()
 def main() -> None:
-    """Configure opt-in remote uploads."""
+    """Configure remote endpoint services."""
 
 
 @main.command()
@@ -102,6 +104,67 @@ def status() -> None:
 @main.group()
 def sync() -> None:
     """Collect and upload remote data."""
+
+
+@main.group()
+def policy() -> None:
+    """Fetch and compile the organization policy for one endpoint."""
+
+
+@policy.command()
+@click.option("--target", type=click.Path(file_okay=False, path_type=Path), required=True)
+@click.option("--project", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--host", type=click.Choice(["claude"]), required=True)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--managed-settings-dir", type=click.Path(file_okay=False, path_type=Path))
+@click.option("--dry-run", is_flag=True)
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+def compile(
+    target: Path,
+    project: Path | None,
+    host: str,
+    output: Path | None,
+    managed_settings_dir: Path | None,
+    dry_run: bool,
+    output_format: str,
+) -> None:
+    """Fetch the organization policy and compile it for one endpoint."""
+    if output is None and not dry_run:
+        raise click.UsageError("--output is required unless --dry-run is set")
+    try:
+        config = load_remote_config(get_config_path())
+    except ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if config.token is None:
+        raise click.ClickException(
+            "Remote is not configured; run openaca remote configure --token <TOKEN>"
+        )
+
+    client = RemoteClient(api_url=config.api_url, token=config.token)
+    try:
+        document = client.get_policy_document()
+        if document is None:
+            raise click.ClickException("Remote has no policy; existing artifact was not changed")
+        policy_document = parse(document)
+        compilation = compile_endpoint_policy(
+            policy_document,
+            target=target,
+            project=project,
+            output=output,
+            managed_settings_dir=managed_settings_dir,
+            dry_run=dry_run,
+        )
+    except httpx.TransportError as exc:
+        raise click.ClickException(f"Remote API unreachable: {exc}") from exc
+    except (RemoteClientError, PolicyValidationError, PolicyEvaluationError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    emit_policy_report(compilation, output_format)
+    if project is None:
+        click.echo(
+            "note: project-local configuration was not scanned; pass --project to include it",
+            err=True,
+        )
 
 
 @sync.command()

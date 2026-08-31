@@ -130,6 +130,46 @@ def test_get_me_returns_org_and_token_context():
     assert result.token.name == "demo"
 
 
+def test_get_policy_returns_the_organization_document_and_revision():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["authorization"] = request.headers.get("authorization")
+        return httpx.Response(
+            200,
+            json={
+                "document": {
+                    "version": 1,
+                    "admission": {
+                        "mcps": {"default": "allowed"},
+                        "plugins": {"default": "allowed"},
+                        "skills": {"default": "allowed"},
+                    },
+                },
+                "revision": 4,
+            },
+        )
+
+    client = RemoteClient(
+        api_url="https://api.test",
+        token="ot_TEST",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.get_policy_document()
+
+    assert result == {
+        "version": 1,
+        "admission": {
+            "mcps": {"default": "allowed"},
+            "plugins": {"default": "allowed"},
+            "skills": {"default": "allowed"},
+        },
+    }
+    assert seen == {"path": "/api/v1/policy", "authorization": "Bearer ot_TEST"}
+
+
 def test_get_asset_returns_asset_summary():
     client = RemoteClient(
         api_url="https://api.test",

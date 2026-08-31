@@ -84,24 +84,53 @@ def compile(
         raise click.UsageError("--output is required unless --dry-run is set")
     try:
         policy = load(policy_path)
-        components, advisory_matches, advisories, posture_matches, unmapped_posture = (
-            _evaluate_endpoint(policy, target, project)
-        )
-        decisions = apply_risk_gates(
+        compilation = compile_endpoint_policy(
             policy,
-            components,
-            advisories=advisories,
-            advisory_matches=advisory_matches,
-            posture_matches=posture_matches,
+            target=target,
+            project=project,
+            output=output,
+            managed_settings_dir=managed_settings_dir,
+            dry_run=dry_run,
         )
-        rendered = compile_policy(policy, decisions)
-        directory = managed_settings_dir or _default_managed_settings_dir()
-        collisions = _managed_key_collisions(directory, set(rendered.settings))
-        if collisions:
-            labels = ", ".join(f"{key} in {path}" for key, path in collisions)
-            raise click.ClickException(f"managed settings key collision: {labels}")
     except (PolicyValidationError, PolicyEvaluationError) as exc:
         raise click.ClickException(str(exc)) from exc
+
+    emit_policy_report(compilation, output_format)
+    if project is None:
+        click.echo(
+            "note: project-local configuration was not scanned; pass --project to include it",
+            err=True,
+        )
+
+
+def compile_endpoint_policy(
+    policy: Policy,
+    *,
+    target: Path,
+    project: Path | None,
+    output: Path | None,
+    managed_settings_dir: Path | None,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Evaluate one endpoint and atomically write its policy artifact when requested."""
+    if output is None and not dry_run:
+        raise click.UsageError("--output is required unless --dry-run is set")
+    components, advisory_matches, advisories, posture_matches, unmapped_posture = (
+        _evaluate_endpoint(policy, target, project)
+    )
+    decisions = apply_risk_gates(
+        policy,
+        components,
+        advisories=advisories,
+        advisory_matches=advisory_matches,
+        posture_matches=posture_matches,
+    )
+    rendered = compile_policy(policy, decisions)
+    directory = managed_settings_dir or _default_managed_settings_dir()
+    collisions = _managed_key_collisions(directory, set(rendered.settings))
+    if collisions:
+        labels = ", ".join(f"{key} in {path}" for key, path in collisions)
+        raise click.ClickException(f"managed settings key collision: {labels}")
 
     # Endpoint-level posture findings (no discovered component to attribute the
     # restriction to, e.g. `openaca-posture-api-endpoint-override`) cannot be
@@ -124,12 +153,7 @@ def compile(
     if not dry_run:
         assert output is not None
         _write_artifact(output, artifact_json)
-    _emit_report(report, output_format)
-    if project is None:
-        click.echo(
-            "note: project-local configuration was not scanned; pass --project to include it",
-            err=True,
-        )
+    return report
 
 
 def _evaluate_endpoint(
@@ -337,7 +361,7 @@ def _report(
     }
 
 
-def _emit_report(report: dict[str, Any], output_format: str) -> None:
+def emit_policy_report(report: dict[str, Any], output_format: str) -> None:
     if output_format == "json":
         click.echo(json.dumps(report, sort_keys=True))
         return

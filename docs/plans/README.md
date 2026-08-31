@@ -47,6 +47,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 041 | [Collector agent-rooted uploads](041-collector-agent-rooted-uploads.md) | ✅ Done | 040 |
 | 042 | [Cursor agent kind](042-cursor-agent-kind.md) | ✅ Done | 040 |
 | 043 | [Codex agent kind](043-codex-agent-kind.md) | ✅ Done | 042 |
+| 044 | [Remote policy compilation](044-remote-policy-compilation.md) | ✅ Done | 043 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

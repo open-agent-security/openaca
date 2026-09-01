@@ -730,6 +730,87 @@ risk_gates:
     assert any("vulnerability GHSA-3ch2-jxxc-v4xf" in d["reasons"] for d in blocked)
 
 
+def test_remote_policy_compile_blocks_a_vulnerable_standalone_mcp_server(tmp_path, monkeypatch):
+    """ADR-0061 E2E, remote variant of the test above: `openaca remote policy
+    compile` fetches a policy document over a faked `RemoteClient` (the only
+    stand-in — retrieval is an unprivileged network call the local command
+    doesn't own) and from there runs the identical compilation path as
+    `openaca policy compile`: real agent discovery, graph construction, OSV
+    lookup against the autouse offline-OSV fixture
+    (`tests/fixtures/osv/ghsa-3ch2-jxxc-v4xf.json`), the checked-in
+    `overlays/GHSA-3ch2-jxxc-v4xf.yaml` merge, advisory matching, the
+    vulnerability risk gate, and Claude managed-settings compilation. A
+    regression that only shows up once a remote-sourced policy reaches real
+    endpoint evidence — as opposed to the admission-only fake policy in
+    `tests/remote/test_cli.py` — fails this test.
+    """
+    from tools.cli import main as openaca_main
+
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "evil": {
+                        "command": "npx",
+                        "args": ["-y", "@akoskm/create-mcp-server-stdio@0.9.0"],
+                    }
+                }
+            }
+        )
+    )
+
+    remote_policy_document = {
+        "version": 1,
+        "admission": {
+            "mcps": {"default": "allowed"},
+            "plugins": {"default": "allowed"},
+            "skills": {"default": "allowed"},
+        },
+        "risk_gates": {"vulnerabilities": {"ids": ["CVE-2025-54994"]}},
+    }
+
+    class FakeClient:
+        def __init__(self, *, api_url: str, token: str) -> None:
+            pass
+
+        def get_policy_document(self):
+            return remote_policy_document
+
+    config_path = tmp_path / "remote.toml"
+    config_path.write_text(
+        '[remote]\napi_url = "http://remote.test"\ntoken = "ot_TEST"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
+    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        openaca_main,
+        [
+            "remote",
+            "policy",
+            "compile",
+            "--target",
+            str(tmp_path),
+            "--host",
+            "claude",
+            "--dry-run",
+            "--format",
+            "json",
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report["expected_policy"]["deniedMcpServers"] == [
+        {"serverCommand": ["npx", "-y", "@akoskm/create-mcp-server-stdio@0.9.0"]}
+    ]
+    blocked = [d for d in report["decisions"] if d["result"] == "blocked"]
+    assert any("vulnerability GHSA-3ch2-jxxc-v4xf" in d["reasons"] for d in blocked)
+
+
 def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
     """Endpoint JSON output should identify the bundled MCP as the finding
     component while preserving the plugin container in component_path."""

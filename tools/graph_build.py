@@ -44,6 +44,7 @@ from tools.parsers import (
     package_json,
     package_lock_json,
     pyproject_toml,
+    settings_layers,
     skill_lock,
     uv_lock,
 )
@@ -56,7 +57,7 @@ from tools.parsers.claude_plugin_root import (
     resolve_within,
 )
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
-from tools.parsers.settings_layers import SCOPE_PRECEDENCE, default_managed_dir
+from tools.parsers.settings_layers import SCOPE_PRECEDENCE
 from tools.parsers.settings_layers import load as load_settings
 from tools.repo_surface import CLAUDE_CODE_SURFACE, CODEX_SURFACE, PluginFormat, RepoSurface
 
@@ -720,7 +721,7 @@ def _seed_remote_mcps(
         # Provenance points at the base file even when a `managed-settings.d`
         # drop-in supplied the value — the scope is what identity keys on, and
         # the merged layer has one representative path.
-        "managed": default_managed_dir() / "managed-settings.json",
+        "managed": settings_layers.default_managed_dir() / "managed-settings.json",
         "user": install_root / "settings.json",
         "project": (project_root / ".claude" / "settings.json")
         if project_root is not None
@@ -842,7 +843,7 @@ def _seed_direct_components(
         # Provenance points at the base file even when a `managed-settings.d`
         # drop-in supplied the value — the scope is what identity keys on, and
         # the merged layer has one representative path.
-        "managed": default_managed_dir() / "managed-settings.json",
+        "managed": settings_layers.default_managed_dir() / "managed-settings.json",
         "user": install_root / "settings.json",
         "project": (project_root / surface.project_config_dir / "settings.json")
         if project_root is not None

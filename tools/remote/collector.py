@@ -1145,6 +1145,9 @@ def _manifest_path(finding: PostureFinding) -> str:
 
 
 def _install_ref(finding: PostureFinding) -> str:
+    identity = finding.component.get("identity")
+    if isinstance(identity, str) and identity:
+        return identity
     name = finding.component.get("name")
     if isinstance(name, str) and "(" in name and name.endswith(")"):
         return name.rsplit("(", maxsplit=1)[1][:-1]

@@ -108,6 +108,36 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     ]
 
 
+def test_mutable_install_payload_uses_component_identity_not_launch_arguments():
+    """The remote payload must not include credentials from an MCP launch command."""
+    from tools.remote.collector import _posture_finding_to_payload
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    finding = PostureFinding(
+        rule_id="openaca-posture-mutable-install-reference",
+        title="Mutable install",
+        severity="low",
+        confidence="high",
+        component={
+            "type": "mcp_server",
+            "name": (
+                "npm/@pasympa/discord-mcp (npx -y @pasympa/discord-mcp DISCORD_TOKEN=redacted)"
+            ),
+            "identity": "mcp-server/npm/@pasympa/discord-mcp",
+        },
+        active_in=["codex"],
+        declared_by={"kind": "manifest", "path": "config.toml"},
+        component_path=[{"type": "mcp_server", "name": "discord"}],
+        standards=Standards(),
+        remediation="Pin the install reference.",
+    )
+
+    payload = _posture_finding_to_payload(finding)
+
+    assert payload["evidence"]["install_ref"] == "mcp-server/npm/@pasympa/discord-mcp"
+    enforce_remote_upload_contract({"posture_findings": [payload]})
+
+
 def test_build_endpoint_collections_respects_the_kind_posture_allowlist(tmp_path, monkeypatch):
     """A kind that restricts its posture rules must see that restriction
     honored remotely, exactly as the local `scan endpoint` path already does

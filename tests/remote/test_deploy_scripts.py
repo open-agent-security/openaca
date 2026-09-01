@@ -43,6 +43,66 @@ def test_remote_deploy_scripts_are_valid_bash():
         assert result.returncode == 0, result.stderr
 
 
+def test_kandji_policy_script_is_valid_bash():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "deploy" / "policy" / "kandji.sh")],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_kandji_policy_script_compiles_as_console_user_then_installs(tmp_path: Path):
+    managed = tmp_path / "managed"
+    run = _run_script(
+        REPO_ROOT / "deploy" / "policy" / "kandji.sh",
+        tmp_path,
+        env={"OPENACA_POLICY_MANAGED_SETTINGS_DIR": str(managed)},
+        openaca_body="""
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+mkdir -p "$(dirname "$output")"
+printf '{"generated":true}\\n' > "$output"
+""",
+    )
+
+    assert run.result.returncode == 0, run.result.stderr
+    assert (managed / "managed-settings.d" / "50-openaca-policy.json").read_text() == (
+        '{"generated":true}\n'
+    )
+    invocation = (run.log_dir / "openaca.log").read_text(encoding="utf-8")
+    assert (
+        f"args=remote policy compile --target {run.home / '.claude'} --host claude "
+        f"--managed-settings-dir {managed} --output "
+    ) in invocation
+
+
+def test_kandji_policy_script_preserves_existing_artifact_when_compilation_fails(tmp_path: Path):
+    managed = tmp_path / "managed"
+    destination = managed / "managed-settings.d" / "50-openaca-policy.json"
+    destination.parent.mkdir(parents=True)
+    destination.write_text('{"existing":true}\n', encoding="utf-8")
+
+    run = _run_script(
+        REPO_ROOT / "deploy" / "policy" / "kandji.sh",
+        tmp_path,
+        env={"OPENACA_POLICY_MANAGED_SETTINGS_DIR": str(managed)},
+        openaca_body="exit 5",
+    )
+
+    assert run.result.returncode == 5
+    assert destination.read_text(encoding="utf-8") == '{"existing":true}\n'
+
+
 def test_remote_deploy_scripts_require_token(tmp_path: Path):
     for path in _remote_deploy_scripts():
         run = _run_script(path, tmp_path / path.stem)
@@ -142,6 +202,7 @@ def _run_script(
     *,
     env: dict[str, str] | None = None,
     args: list[str] | None = None,
+    openaca_body: str = "",
 ) -> ScriptRun:
     home = root / "home" / "alice"
     log_dir = root / "logs"
@@ -189,6 +250,7 @@ exec "$@"
         f"""
 printf "args=%s\\n" "$*" >> "{log_dir / "openaca.log"}"
 printf "token_env=%s\\n" "${{OPENACA_REMOTE_TOKEN:-}}" >> "{log_dir / "openaca.log"}"
+{openaca_body}
 """,
     )
 

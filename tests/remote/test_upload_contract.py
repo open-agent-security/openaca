@@ -1,6 +1,26 @@
 import pytest
 
-from tools.remote.upload_contract import RemoteUploadContractError, enforce_remote_upload_contract
+from tools.remote.upload_contract import (
+    RemoteUploadContractError,
+    enforce_remote_upload_contract,
+    strip_credential_tokens,
+)
+
+
+def test_strip_credential_tokens_drops_a_credential_flag_and_its_value():
+    """A credential passed as a separate flag/value pair (`--token secret`)
+    has no `=` for `_SECRET_ASSIGNMENT_RE` to match and no known-prefix shape
+    for `_SECRET_VALUE_RE` to match, so it must be caught by flag name
+    instead — both the flag and the following value are dropped, the rest
+    of the launch command survives.
+    """
+    sanitized = strip_credential_tokens("npx -y @pkg/name --token supersecret")
+    assert sanitized == "npx -y @pkg/name"
+    assert "supersecret" not in sanitized
+
+    sanitized = strip_credential_tokens("npx -y @pkg/name --api-key supersecret --debug")
+    assert sanitized == "npx -y @pkg/name --debug"
+    assert "supersecret" not in sanitized
 
 
 def test_allows_relative_inventory_paths_and_bare_host_urls():

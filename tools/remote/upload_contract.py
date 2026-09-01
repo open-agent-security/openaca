@@ -25,6 +25,14 @@ _URL_PATTERN_RE = re.compile(r"https?://[^\s,)]*", re.IGNORECASE)
 _SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)(?:token|api[_-]?key|apikey|secret|password|authorization|auth[_-]?token)="
 )
+# A `-`/`--` flag whose name itself signals a credential (e.g. `--token`,
+# `--api-key`, `--discord-token`) — as opposed to `_SECRET_ASSIGNMENT_RE`,
+# which matches a `name=value` token. These take their value as the
+# following whitespace-delimited token, so `strip_credential_tokens` drops
+# the flag together with the token after it.
+_SECRET_FLAG_RE = re.compile(
+    r"(?i)^-{1,2}[\w-]*(?:token|api[_-]?key|apikey|secret|password|authorization|auth[_-]?token)[\w-]*$"
+)
 _FORBIDDEN_NAME_RE = re.compile(
     r"(?i)(?:^|[:_.-])("
     r"env|environment|token|api[_-]?key|apikey|secret|password|authorization|"
@@ -36,25 +44,33 @@ _FORBIDDEN_NAME_RE = re.compile(
 
 def strip_credential_tokens(value: str) -> str:
     """Drop whitespace-delimited tokens that look like a credential
-    assignment or a known secret value, keeping the rest of the string intact.
+    assignment, a known secret value, or a credential flag's value, keeping
+    the rest of the string intact.
 
     Used to sanitize a raw MCP launch command (launcher + package + argv)
     before it is surfaced as posture evidence: the mutable install
     coordinate (e.g. `npx pkg@latest`) is safe to upload, but a credential
-    passed as a positional launch argument (e.g. `DISCORD_TOKEN=...`) is not.
-    Filtering per-token — rather than rejecting the whole string when any
-    token matches — preserves the coordinate that the mutable-install rule
-    exists to report.
+    passed as a positional launch argument (e.g. `DISCORD_TOKEN=...` or
+    `--token supersecret`) is not. Filtering per-token — rather than
+    rejecting the whole string when any token matches — preserves the
+    coordinate that the mutable-install rule exists to report.
     """
     try:
         tokens = shlex.split(value)
     except ValueError:
         tokens = value.split()
-    kept = [
-        token
-        for token in tokens
-        if not _SECRET_ASSIGNMENT_RE.search(token) and not _SECRET_VALUE_RE.search(token)
-    ]
+    kept: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if _SECRET_ASSIGNMENT_RE.search(token) or _SECRET_VALUE_RE.search(token):
+            continue
+        if _SECRET_FLAG_RE.match(token):
+            skip_next = True
+            continue
+        kept.append(token)
     return shlex.join(kept)
 
 

@@ -143,6 +143,40 @@ def test_mutable_install_payload_strips_credentials_but_keeps_the_mutable_refere
     enforce_remote_upload_contract({"posture_findings": [payload]})
 
 
+def test_mutable_install_payload_strips_a_credential_flag_and_its_value():
+    """A credential passed as a separate launch flag (`--token supersecret`),
+    rather than a `KEY=value` assignment, must still be stripped — it has no
+    `=` and no known-secret-value shape for the token/value regexes alone to
+    catch, so the flag-name check has to remove it and its following value.
+    """
+    from tools.remote.collector import _posture_finding_to_payload
+    from tools.remote.upload_contract import enforce_remote_upload_contract
+
+    finding = PostureFinding(
+        rule_id="openaca-posture-mutable-install-reference",
+        title="Mutable install",
+        severity="low",
+        confidence="high",
+        component={
+            "type": "mcp_server",
+            "name": ("npm/@pasympa/discord-mcp (npx -y @pasympa/discord-mcp --token supersecret)"),
+            "identity": "mcp-server/npm/@pasympa/discord-mcp",
+        },
+        active_in=["codex"],
+        declared_by={"kind": "manifest", "path": "config.toml"},
+        component_path=[{"type": "mcp_server", "name": "discord"}],
+        standards=Standards(),
+        remediation="Pin the install reference.",
+    )
+
+    payload = _posture_finding_to_payload(finding)
+
+    install_ref = payload["evidence"]["install_ref"]
+    assert install_ref == "npx -y @pasympa/discord-mcp"
+    assert "supersecret" not in install_ref
+    enforce_remote_upload_contract({"posture_findings": [payload]})
+
+
 def test_build_endpoint_collections_respects_the_kind_posture_allowlist(tmp_path, monkeypatch):
     """A kind that restricts its posture rules must see that restriction
     honored remotely, exactly as the local `scan endpoint` path already does

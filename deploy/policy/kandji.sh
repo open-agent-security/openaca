@@ -37,6 +37,11 @@ run_as_user() {
 # Retrieval, scanning, advisory evaluation, and compilation finish before the
 # only managed-settings write below. Any failure leaves the installed artifact
 # untouched.
+#
+# No --project: this script runs fleet-wide with no single project checkout to
+# scope to, so the compiled policy covers user-level Claude Code configuration
+# only (see "Compile" in docs/specs/policy-compiler.md and
+# docs/remote-deployment.md).
 run_as_user "$OPENACA_BIN" remote policy compile \
   --target "$USER_HOME/.claude" \
   --host claude \

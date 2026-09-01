@@ -48,6 +48,13 @@ The script leaves that existing artifact unchanged when policy retrieval,
 endpoint scanning, advisory evaluation, or compilation fails, including when
 the remote has no configured policy.
 
+The compile step does not pass `--project`: a Kandji script runs system-wide
+with no single project checkout to scope to. The resulting artifact covers
+only the console user's user-level Claude Code configuration; a component
+that exists solely in a project-local `.claude/` directory is absent from
+both admission and risk-gate evaluation (see "Compile" in
+`docs/specs/policy-compiler.md`).
+
 ## Jamf
 
 Use `deploy/remote/jamf.sh`. You can provide variables as environment variables,

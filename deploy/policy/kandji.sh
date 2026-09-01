@@ -20,7 +20,12 @@ if [ ! -x "$OPENACA_BIN" ]; then
   exit 4
 fi
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openaca-policy.XXXXXX")"
+# Root's own $TMPDIR is a private per-user directory (mode 0700, see
+# getconf DARWIN_USER_TEMP_DIR) that the console user cannot traverse, so the
+# later `sudo -u` compilation step would be unable to reach $ARTIFACT_FILE.
+# /tmp is the one path guaranteed to be traversable by both root and the
+# console user.
+WORK_DIR="$(mktemp -d /tmp/openaca-policy.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 chown "$CONSOLE_USER":staff "$WORK_DIR"
 ARTIFACT_FILE="$WORK_DIR/50-openaca-policy.json"

@@ -20,7 +20,7 @@ if [ ! -x "$OPENACA_BIN" ]; then
   exit 4
 fi
 
-WORK_DIR="$(mktemp -d /private/tmp/openaca-policy.XXXXXX)"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openaca-policy.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
 chown "$CONSOLE_USER":staff "$WORK_DIR"
 ARTIFACT_FILE="$WORK_DIR/50-openaca-policy.json"

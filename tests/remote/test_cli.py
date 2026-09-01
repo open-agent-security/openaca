@@ -11,6 +11,7 @@ from tools.cli import main as openaca_main
 from tools.remote.client import BomUploadResult, DriftResult
 from tools.remote.collector import EndpointCollection
 from tools.remote.config import load_remote_config
+from tools.remote.upload_contract import RemoteUploadContractError
 
 
 def test_remote_is_public_command_group() -> None:
@@ -528,6 +529,21 @@ def test_collect_endpoint_cli_forwards_external_scanners(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert calls[0]["external_scanners"] == ("nvidia-skillspector",)
+
+
+def test_sync_endpoint_reports_upload_contract_errors_without_a_traceback(monkeypatch):
+    def fail(**kwargs):
+        raise RemoteUploadContractError(
+            "$.posture_findings[5].evidence.install_ref contains a blocked value"
+        )
+
+    monkeypatch.setattr("tools.remote.cli.collect_endpoint", fail)
+
+    result = CliRunner().invoke(openaca_main, ["remote", "sync", "endpoint"])
+
+    assert result.exit_code == 1
+    assert "install_ref contains a blocked value" in result.output
+    assert "Traceback" not in result.output
 
 
 def _upload_result(*, asset_id: str) -> BomUploadResult:

@@ -238,6 +238,10 @@ def endpoint(
         if not quiet:
             click.echo(str(exc), err=True)
         raise click.exceptions.Exit(exc.exit_code) from exc
+    except RemoteUploadContractError as exc:
+        if not quiet:
+            click.echo(str(exc), err=True)
+        raise click.exceptions.Exit(1) from exc
     _print_upload_results(results)
 
 

@@ -33,6 +33,21 @@ The scripts install or update `uv`, install the selected `openaca` CLI into the
 console user's tool directory, configure the remote, and load
 `~/Library/LaunchAgents/com.openaca.remote.plist`.
 
+## Claude Code policy delivery
+
+After remote collection is configured, use `deploy/policy/kandji.sh` as a root
+Kandji script to apply the configured policy to Claude Code. It runs as the
+logged-in user to fetch and compile a fresh endpoint artifact, then performs
+one atomic replacement of:
+
+```text
+/Library/Application Support/ClaudeCode/managed-settings.d/50-openaca-policy.json
+```
+
+The script leaves that existing artifact unchanged when policy retrieval,
+endpoint scanning, advisory evaluation, or compilation fails, including when
+the remote has no configured policy.
+
 ## Jamf
 
 Use `deploy/remote/jamf.sh`. You can provide variables as environment variables,
@@ -46,6 +61,10 @@ or use Jamf parameters:
 
 Use `deploy/remote/kandji.sh` as a custom script. Provide the required token via
 Kandji's script environment variable support.
+
+To compile and install the Claude Code policy, use
+`deploy/policy/kandji.sh` after the remote collection script has configured the
+console user's OpenACA client.
 
 ## Intune
 

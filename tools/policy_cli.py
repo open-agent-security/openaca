@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import platform
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +22,7 @@ from tools.component_ref import ComponentRef
 from tools.graph import Graph
 from tools.matcher import match
 from tools.osv_federation import is_queryable
+from tools.parsers import settings_layers
 from tools.policy import (
     Decision,
     EndpointComponent,
@@ -126,7 +126,7 @@ def compile_endpoint_policy(
         posture_matches=posture_matches,
     )
     rendered = compile_policy(policy, decisions)
-    directory = managed_settings_dir or _default_managed_settings_dir()
+    directory = managed_settings_dir or settings_layers.default_managed_dir()
     collisions = _managed_key_collisions(directory, set(rendered.settings))
     if collisions:
         labels = ", ".join(f"{key} in {path}" for key, path in collisions)
@@ -253,15 +253,6 @@ def _evaluate_endpoint(
                         "enforceable (no discovered component target)"
                     )
     return components, findings, advisories, posture, unmapped_posture
-
-
-def _default_managed_settings_dir() -> Path:
-    system = platform.system()
-    if system == "Darwin":
-        return Path("/Library/Application Support/ClaudeCode")
-    if system == "Windows":
-        return Path("C:/Program Files/ClaudeCode")
-    return Path("/etc/claude-code")
 
 
 def _managed_key_collisions(directory: Path, generated_keys: set[str]) -> list[tuple[str, Path]]:

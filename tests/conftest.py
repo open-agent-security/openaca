@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.parsers import settings_layers
+
 REPO_ROOT = Path(__file__).parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -41,6 +43,30 @@ def _offline_osv_for_scan_tests(monkeypatch: pytest.MonkeyPatch) -> None:
         return records, []
 
     monkeypatch.setattr("tools.scan.augment_corpus", fake_augment)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_managed_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """Point the managed-settings root at an empty per-test directory.
+
+    The machine running the suite may itself be a managed Claude Code
+    endpoint, and OpenACA's own `policy compile --host claude` installs a
+    `managed-settings.d/50-openaca-policy.json` drop-in. Without this,
+    `settings_layers.load()` merges whatever policy the host has into layers
+    the test built from `tmp_path`, so eight tests failed locally while CI
+    (no managed settings) stayed green.
+
+    `settings_layers.default_managed_dir` is the one seam every caller routes
+    through, so patching it here covers reads (`load`, `load_managed`),
+    provenance paths (`graph_build`), and the compile target (`policy_cli`)
+    at once. Callers passing an explicit directory are unaffected; a test that
+    wants the real platform default can patch the seam back.
+    """
+    root = tmp_path_factory.mktemp("managed-settings-root")
+    monkeypatch.setattr(settings_layers, "default_managed_dir", lambda: root)
+    return root
 
 
 def _osv_fixture_for_ref(ref):

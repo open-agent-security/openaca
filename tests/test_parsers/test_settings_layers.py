@@ -1,3 +1,4 @@
+import ast
 import json
 from pathlib import Path
 
@@ -225,3 +226,25 @@ def test_array_dedupe_handles_dict_items():
     )
     merged = layers.merged("repo")
     assert merged["hooks"]["X"] == [{"cmd": "a"}, {"cmd": "b"}, {"cmd": "c"}]
+
+
+def test_no_module_binds_default_managed_dir_by_name():
+    """`default_managed_dir` must stay a single patchable seam.
+
+    `tests/conftest.py` isolates the suite from the host's real managed
+    settings by patching this one attribute. A module that does
+    `from tools.parsers.settings_layers import default_managed_dir` binds its
+    own reference, which the patch cannot reach — the host's policy would leak
+    back into that module's tests without any test failing to say so. Call it
+    as `settings_layers.default_managed_dir()` instead.
+    """
+    tools_root = Path(__file__).parent.parent.parent / "tools"
+    offenders = []
+    for path in sorted(tools_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == "default_managed_dir" for alias in node.names
+            ):
+                offenders.append(str(path.relative_to(tools_root.parent)))
+    assert offenders == []

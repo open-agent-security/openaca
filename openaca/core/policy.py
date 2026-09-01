@@ -8,10 +8,12 @@ from tools.policy import (
     PolicyValidationError,
     apply_risk_gates,
     evaluate_admission,
+    loads,
     parse,
 )
 
 parse_policy = parse
+parse_policy_source = loads
 
 __all__ = [
     "Decision",
@@ -22,4 +24,5 @@ __all__ = [
     "apply_risk_gates",
     "evaluate_admission",
     "parse_policy",
+    "parse_policy_source",
 ]

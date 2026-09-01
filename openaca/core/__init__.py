@@ -32,6 +32,7 @@ from openaca.core.policy import (
     apply_risk_gates,
     evaluate_admission,
     parse_policy,
+    parse_policy_source,
 )
 from openaca.core.severity import derive_severity_label, derive_severity_score
 
@@ -58,5 +59,6 @@ __all__ = [
     "match",
     "match_coordinates",
     "parse_policy",
+    "parse_policy_source",
     "stamp_osv_query_provenance",
 ]

@@ -21,6 +21,15 @@ risk-gate evaluators, and Agent BOM graph reconstruction. A downstream
 consumer pins an OpenACA version or commit and consumes only those facade
 symbols.
 
+`parse_policy` takes an already-decoded document; a consumer validating raw
+YAML/JSON source text uses `parse_policy_source` instead, which shares the
+duplicate-key-rejecting loader `tools.policy.load` uses. This keeps duplicate-key
+validation identical between the CLI and a source-text-validating consumer
+without either side decoding independently (consistent with ADR-0028: a
+consumer must not reimplement decoding semantics). `load` itself (path-based,
+file I/O) is not re-exported, per ADR-0028's "consumers own their own
+persistence" boundary.
+
 ## Alternatives considered
 
 - **Have a downstream consumer import `tools.policy` and `tools.bom` directly.** Rejected

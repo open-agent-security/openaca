@@ -37,5 +37,6 @@ def test_facade_reexports_are_identical_objects():
     assert core.EndpointComponent is tools.policy.EndpointComponent
     assert core.Decision is tools.policy.Decision
     assert core.parse_policy is tools.policy.parse
+    assert core.parse_policy_source is tools.policy.loads
     assert core.evaluate_admission is tools.policy.evaluate_admission
     assert core.apply_risk_gates is tools.policy.apply_risk_gates

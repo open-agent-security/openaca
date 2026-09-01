@@ -152,10 +152,23 @@ class _ResolvedComponent:
 
 
 def load(path: Path) -> Policy:
-    """Load and validate a YAML or JSON policy document."""
+    """Load and validate a YAML or JSON policy document from a file."""
     try:
-        document = yaml.load(path.read_text(encoding="utf-8"), Loader=_PolicyLoader)
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise PolicyValidationError(str(exc)) from exc
+    return loads(text)
+
+
+def loads(text: str) -> Policy:
+    """Validate a YAML or JSON policy document from source text.
+
+    Uses the same duplicate-key-rejecting loader as `load`, so a consumer
+    validating source text gets the same validation semantics as the CLI.
+    """
+    try:
+        document = yaml.load(text, Loader=_PolicyLoader)
+    except yaml.YAMLError as exc:
         raise PolicyValidationError(str(exc)) from exc
     return parse(document)
 

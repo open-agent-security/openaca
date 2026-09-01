@@ -50,6 +50,7 @@ from tools.remote.config import (
 from tools.remote.upload_contract import (
     RemoteUploadContractError,
     enforce_remote_upload_contract,
+    strip_credential_tokens,
 )
 from tools.scan import _component_gap_count, _count_active_plugins
 
@@ -1145,12 +1146,15 @@ def _manifest_path(finding: PostureFinding) -> str:
 
 
 def _install_ref(finding: PostureFinding) -> str:
+    name = finding.component.get("name")
+    if isinstance(name, str) and "(" in name and name.endswith(")"):
+        install_source = name.rsplit("(", maxsplit=1)[1][:-1]
+        sanitized = strip_credential_tokens(install_source)
+        if sanitized:
+            return sanitized
     identity = finding.component.get("identity")
     if isinstance(identity, str) and identity:
         return identity
-    name = finding.component.get("name")
-    if isinstance(name, str) and "(" in name and name.endswith(")"):
-        return name.rsplit("(", maxsplit=1)[1][:-1]
     return _posture_component_identity(finding) or ""
 
 

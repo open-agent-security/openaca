@@ -108,8 +108,10 @@ def test_build_endpoint_collection_uses_endpoint_bom_and_posture_engine(tmp_path
     ]
 
 
-def test_mutable_install_payload_uses_component_identity_not_launch_arguments():
-    """The remote payload must not include credentials from an MCP launch command."""
+def test_mutable_install_payload_strips_credentials_but_keeps_the_mutable_reference():
+    """The remote payload must not include credentials from an MCP launch command,
+    but must still surface the mutable install coordinate (e.g. the unpinned
+    package spec) so remote consumers know what to pin."""
     from tools.remote.collector import _posture_finding_to_payload
     from tools.remote.upload_contract import enforce_remote_upload_contract
 
@@ -134,7 +136,10 @@ def test_mutable_install_payload_uses_component_identity_not_launch_arguments():
 
     payload = _posture_finding_to_payload(finding)
 
-    assert payload["evidence"]["install_ref"] == "mcp-server/npm/@pasympa/discord-mcp"
+    install_ref = payload["evidence"]["install_ref"]
+    assert install_ref == "npx -y @pasympa/discord-mcp"
+    assert "DISCORD_TOKEN" not in install_ref
+    assert "redacted" not in install_ref
     enforce_remote_upload_contract({"posture_findings": [payload]})
 
 

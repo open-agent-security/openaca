@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
 from tools.identity import is_mcp_package_launch_install_source, safe_unpinned_mcp_install_source
@@ -31,6 +32,30 @@ _FORBIDDEN_NAME_RE = re.compile(
     r"raw[_-]?config|config[_-]?body|settings[_-]?json|mcp[_-]?json|plugin[_-]?json"
     r")(?:$|[:_.-])"
 )
+
+
+def strip_credential_tokens(value: str) -> str:
+    """Drop whitespace-delimited tokens that look like a credential
+    assignment or a known secret value, keeping the rest of the string intact.
+
+    Used to sanitize a raw MCP launch command (launcher + package + argv)
+    before it is surfaced as posture evidence: the mutable install
+    coordinate (e.g. `npx pkg@latest`) is safe to upload, but a credential
+    passed as a positional launch argument (e.g. `DISCORD_TOKEN=...`) is not.
+    Filtering per-token — rather than rejecting the whole string when any
+    token matches — preserves the coordinate that the mutable-install rule
+    exists to report.
+    """
+    try:
+        tokens = shlex.split(value)
+    except ValueError:
+        tokens = value.split()
+    kept = [
+        token
+        for token in tokens
+        if not _SECRET_ASSIGNMENT_RE.search(token) and not _SECRET_VALUE_RE.search(token)
+    ]
+    return shlex.join(kept)
 
 
 def enforce_remote_upload_contract(payload: dict[str, Any]) -> None:

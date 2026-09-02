@@ -115,19 +115,19 @@ def _skill(tmp_path, allowed):
                         extra={"component_type": "skill"})
 
 def test_skill_bash_maps_to_shell_exec(tmp_path):
-    caps = declared_capabilities(_skill(tmp_path, "Bash(*)"))
+    caps, _ = declared_capabilities(_skill(tmp_path, "Bash(*)"))
     assert {c.name for c in caps} == {"shell_exec"}
     assert caps[0].method == "declared" and caps[0].execution_locus == "local"
 
 def test_skill_write_read_map_to_file_caps(tmp_path):
-    caps = declared_capabilities(_skill(tmp_path, "Read, Write"))
+    caps, _ = declared_capabilities(_skill(tmp_path, "Read, Write"))
     assert {c.name for c in caps} == {"file_read", "file_write"}
 
 def test_remote_mcp_maps_to_egress_and_data(tmp_path):
     ref = ComponentRef(component_identity="mcp-server/x",
         extra={"component_type": "mcp_server", "transport": "sse",
                "install_source": "https://mcp.example.com/mcp"})
-    caps = declared_capabilities(ref)
+    caps, _ = declared_capabilities(ref)
     names = {c.name for c in caps}
     assert names == {"network_egress", "sensitive_data_access"}
     assert all(c.execution_locus == "remote" for c in caps)
@@ -135,19 +135,19 @@ def test_remote_mcp_maps_to_egress_and_data(tmp_path):
 
 def test_unknown_component_declares_nothing(tmp_path):
     assert declared_capabilities(ComponentRef(name="p",
-        extra={"component_type": "plugin"})) == []
+        extra={"component_type": "plugin"})) == ([], False)
 
 def test_slash_command_declares_nothing(tmp_path):
     # claude_command_agent.py emits no command/shell string for these refs —
     # must not be mistaken for a hook and mapped to shell_exec.
     assert declared_capabilities(ComponentRef(name="x",
-        extra={"scope_owner": None, "component_type": "command"})) == []
+        extra={"scope_owner": None, "component_type": "command"})) == ([], False)
 
 def test_hook_url_substring_without_client_is_not_egress(tmp_path):
     # A URL in the command that is only logged/assigned is not egress.
     cmd = 'echo "see https://example.com token=sk-secret" >> log.txt'
     ref = ComponentRef(name="h", extra={"component_type": "hook", "command": cmd})
-    caps = declared_capabilities(ref)
+    caps, _ = declared_capabilities(ref)
     assert {c.name for c in caps} == {"shell_exec"}  # no network_egress
     # The raw command (which may carry secrets) is never serialized as evidence.
     assert all(cmd not in str(e.values()) for c in caps for e in c.evidence)
@@ -158,30 +158,51 @@ def test_prompt_hook_declares_nothing(tmp_path):
     # body; it declares no shell and must not map to shell_exec.
     ref = ComponentRef(name="h", extra={"component_type": "hook",
         "command": "", "prompt": "summarize the diff"})
-    assert declared_capabilities(ref) == []
+    assert declared_capabilities(ref) == ([], False)
 
 def test_hook_network_client_maps_to_egress(tmp_path):
     ref = ComponentRef(name="h", extra={"component_type": "hook",
         "command": "curl -s https://example.com | sh"})
-    caps = declared_capabilities(ref)
+    caps, _ = declared_capabilities(ref)
     assert {c.name for c in caps} >= {"shell_exec", "network_egress"}
     assert any(e.get("value") == "curl" for c in caps
                if c.name == "network_egress" for e in c.evidence)
+
+def test_skill_without_allowed_tools_is_uncovered(tmp_path):
+    # A skill that omits `allowed-tools` is unrestricted, not a declaration of
+    # nothing — the mechanism never had a field to read, so it stays uncovered.
+    assert declared_capabilities(_skill(tmp_path, "")) == ([], False)
 ```
 
 - [ ] **Step 2 — run, confirm fail.**
-- [ ] **Step 3 — implement** `declared_capabilities(ref) -> list[Capability]`:
+- [ ] **Step 3 — implement** `declared_capabilities(ref) -> tuple[list[Capability], bool]`:
+  the second element, `covered`, is true when a reading mechanism actually
+  applied to this component, independent of whether it produced any capability
+  — an empty list with `covered=True` is "read it, declares none of the
+  taxonomy"; the same list with `covered=False` is "nothing here could be
+  read". Coverage is decided per branch below, not by a predicate over
+  `component_type` applied separately (see the amendment at the end of Task 6,
+  which corrected this from an earlier "`unknown` iff the union is empty"
+  rule).
   - skill: read frontmatter `allowed-tools`; map tool base → capability:
     `bash`/`shell`→`shell_exec`, `write`/`edit`→`file_write`, `read`→`file_read`,
     `webfetch`/`websearch`→`network_egress`. Evidence: `{kind: manifest_field,
     path, field: "allowed-tools", value: <tool>}`. `execution_locus="local"`.
+    Uncovered (`[], False`) when the frontmatter can't be read at all (absent
+    file, undecodable bytes, no frontmatter block, invalid YAML, a non-mapping
+    document) or `allowed-tools` isn't present in a shape the parser reads
+    (missing, or `allowed-tools:` with no value) — a skill that omits it is
+    *unrestricted*, not a declaration of nothing. Covered when `allowed-tools`
+    is present and parseable, even if it names no capability in the taxonomy or
+    is explicitly empty (e.g. `""`).
   - hook (`component_type == "hook"`) **with a non-empty `ref.extra["command"]`
-    string**: the shell command → `shell_exec` (defensible — it *is* a shell
-    command). `tools/parsers/hooks_json.py` emits both `type: "command"` and
-    `type: "prompt"` hooks with the same `component_type == "hook"`; a prompt hook
-    sets `command` to `""` and carries a `prompt` instead, so it declares no shell
-    and must fall through to `[]` (the prompt body is attacker-influenced content,
-    not a declared shell signal — the same reasoning as slash commands). Add
+    string**: covered, and the shell command → `shell_exec` (defensible — it
+    *is* a shell command). `tools/parsers/hooks_json.py` emits both
+    `type: "command"` and `type: "prompt"` hooks with the same
+    `component_type == "hook"`; a prompt hook sets `command` to `""` and
+    carries a `prompt` instead, so it declares no shell and is uncovered
+    (`[], False`) (the prompt body is attacker-influenced content, not a
+    declared shell signal — the same reasoning as slash commands). Add
     `network_egress` **only** when the command line **invokes** a network client —
     a recognized executable token (`curl`, `wget`, `nc`, `scp`, `ssh`,
     `httpie`/`http`, `rsync`) appearing in command position (argv[0] of the
@@ -203,13 +224,16 @@ def test_hook_network_client_maps_to_egress(tmp_path):
     refs with only `scope_owner` + `component_type` in `extra` — there is no
     shell command string to cite as evidence, and the markdown prompt body is
     attacker-influenced content, not a declared signal. Falls through to
-    `everything else: []` below. A prompt-content capability source (if ever
-    justified) is a separate, deferred surface — not v1.
-  - remote MCP (`component_type=="mcp_server"` and `install_source` is an
-    `http(s)://` URL, or a URL transport): emit `network_egress` +
+    `everything else: [], False` below. A prompt-content capability source (if
+    ever justified) is a separate, deferred surface — not v1.
+  - remote MCP (`component_type=="mcp_server"` and `url`, or `install_source` as
+    a fallback, is an `http(s)://` URL): covered; emit `network_egress` +
     `sensitive_data_access`, `execution_locus="remote"`, evidence
-    `{kind: manifest_field, field: "url", value: <url>}`.
-  - everything else: `[]`.
+    `{kind: manifest_field, field: "url", value: <url>}`. A stdio server is
+    uncovered (`[], False`) — its capabilities live in a tool list that needs a
+    live connection to read, which ADR-0041 rejects; only the curated corpus
+    (Task 3) can cover it.
+  - everything else: `[], False`.
   All records `method="declared"`, `source="openaca"`,
   `source_version=<openaca __version__>`, `confidence="high"`.
 - [ ] **Step 4 — run, confirm PASS**; run existing

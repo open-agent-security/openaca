@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Fresh-sandbox setup for openaca — a Python CLI and overlay corpus with no
+# long-running processes, so there is nothing to supervise and no
+# .niteshift/services.yaml.
+#
+# The steps mirror what .github/workflows/ci.yml and .github/workflows/claude.yml
+# do before their gates run, so a task starts on exactly the env CI validates.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+# CONTRIBUTING.md's documented installer. The sandbox image normally ships uv
+# already; this keeps setup working on one that doesn't.
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# `--frozen` forbids re-resolution: install exactly the committed uv.lock, the
+# same dep set as ci.yml's "Sync deps" step. `.python-version` pins 3.11, which
+# uv fetches if the sandbox interpreter is newer.
+uv sync --frozen
+
+# CI parity on push: scripts/git-hooks/pre-push runs ruff / pyright / pytest and
+# the CLI smoke against a clean `git archive` of the commit being pushed, so a
+# lint, type, or test break is caught here rather than on a red PR.
+# claude.yml installs the same hook for the review bot.
+bash scripts/install-hooks.sh

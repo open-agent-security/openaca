@@ -750,3 +750,39 @@ def test_every_warning_still_reaches_the_user():
 
     assert list(g.warnings) == ["a note", "a gap"]
     assert g.warnings.gaps == ["a gap"]
+
+
+def test_every_host_config_root_env_var_is_isolated_by_conftest():
+    """Root-relocating env vars must stay in one isolated list.
+
+    `tests/conftest.py::_isolate_agent_config_roots` clears the variables that
+    point a kind's config root at a real host directory. A new kind that reads
+    its own `*_HOME` / `*_CONFIG_DIR` without being added there reintroduces
+    the leak silently: the suite passes on CI, which has no such install, and
+    fails only on a contributor's machine that happens to have that agent.
+    """
+    import ast
+
+    from tests.conftest import HOST_AGENT_ROOT_ENV_VARS
+
+    tools_root = Path(__file__).parent.parent / "tools"
+    found = set()
+    for path in sorted(tools_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr != "get":
+                continue
+            if not isinstance(func.value, ast.Attribute) or func.value.attr != "environ":
+                continue
+            name = node.args[0]
+            if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                if name.value.endswith(("_HOME", "_CONFIG_DIR", "CONFIG_HOME")):
+                    found.add(name.value)
+
+    assert found <= set(HOST_AGENT_ROOT_ENV_VARS), (
+        f"{sorted(found - set(HOST_AGENT_ROOT_ENV_VARS))} relocate a config root but are "
+        "not cleared by tests/conftest.py::_isolate_agent_config_roots"
+    )

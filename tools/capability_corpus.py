@@ -32,6 +32,16 @@ class CapabilityCorpus:
     def lookup(self, identity: str) -> list[Capability]:
         return list(self.by_identity.get(identity, []))
 
+    def has(self, identity: str) -> bool:
+        """Whether a reviewed record exists for this identity.
+
+        Distinct from a non-empty `lookup`: a reviewer who concludes a server
+        does none of these things writes a record with no capabilities, and
+        that is coverage. A miss is not -- an absent record means nobody has
+        looked, never that there was nothing to find.
+        """
+        return identity in self.by_identity
+
 
 def load_capability_corpus(root: Path | None = None) -> CapabilityCorpus:
     if root is None:

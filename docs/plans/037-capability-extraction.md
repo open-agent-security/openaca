@@ -537,8 +537,20 @@ def test_git_launch_source_yields_no_coordinate():
   matching in `tools/identity.py` / `tools/matcher.py`) instead of re-deriving
   package identity keeps this consistent with how the rest of OpenACA already
   distinguishes a verified upstream coordinate from a user-chosen local alias.
-  Coverage: `unknown` if the union is empty, else `partial` (v1 never asserts
-  `complete` — we cannot prove exhaustiveness).
+  Coverage: **from whether a reading mechanism applied, never from whether the
+  union is empty** — `partial` when a declared extractor covered this component
+  or a curated record exists for its identity, `unknown` otherwise. v1 never
+  asserts `complete`: we cannot prove exhaustiveness.
+
+  *Amended after implementation.* This step originally read "`unknown` if the
+  union is empty, else `partial`", which conflated the two cases ADR-0041
+  principle 2 requires be kept apart — *no mechanism could read this component*
+  and *a mechanism read it and it declares none of the taxonomy*. Both emitted
+  `unknown`, so no component's silence carried information and a divergence rule
+  had nothing honest to subtract from. `declared_capabilities` now returns
+  `(capabilities, covered)` so the dispatch decides both in one place, and a
+  *failed* read (unparseable frontmatter, absent manifest) stays uncovered
+  rather than becoming a covered-and-empty claim.
 - [ ] **Step 4 — run, confirm PASS.**
 - [ ] **Step 5 — commit.** `feat(capability): tier-merge orchestrator + coverage`
 

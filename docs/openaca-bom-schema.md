@@ -189,7 +189,7 @@ suffix derived from the component observation fields.
 | `openaca:source_locator` | Locator inside the source manifest. |
 | `openaca:source_provenance` | JSON-encoded source provenance recovered from lockfiles or symlink targets. |
 | `openaca:capabilities` | JSON-encoded list of capability descriptors (closed taxonomy). Component descriptor, not a finding (ADR-0041). |
-| `openaca:capability_coverage` | Capability extraction coverage: `unknown`, `partial`, or `complete`. Component descriptor, not a finding (ADR-0041). |
+| `openaca:capability_coverage` | Whether a capability-reading mechanism applied to this component: `unknown` (none did), `partial`, or `complete`. Derived from mechanism applicability, **never** from whether the resulting capability list is empty — a covered component that declares none of the taxonomy is `partial` with an empty list, which is a real answer and not the same claim as `unknown` (ADR-0041 principle 2). Component descriptor, not a finding. |
 
 ### Read for stored documents, no longer written
 

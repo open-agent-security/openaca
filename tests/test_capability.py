@@ -205,3 +205,85 @@ def test_pypi_launch_name_is_normalized_before_matching(tmp_path):
     caps, coverage = capabilities_for_ref(ref, corpus)
     assert {c.name for c in caps} == {"network_egress"}
     assert coverage == "partial"
+
+
+def _skill_with(tmp_path, body):
+    p = tmp_path / "SKILL.md"
+    p.write_text(body)
+    return ComponentRef(name="x", source_manifest=str(p), extra={"component_type": "skill"})
+
+
+def test_covered_but_declaring_nothing_is_partial_not_unknown(tmp_path):
+    """The distinction ADR-0041 principle 2 requires.
+
+    `unknown` must mean "no mechanism could read this component", never "a
+    mechanism read it and found none of the taxonomy". Deriving coverage from
+    an empty result collapsed the two and left every silent component
+    indistinguishable from an unreadable one, so no divergence rule could
+    read a component's silence as evidence.
+    """
+    ref = _skill_with(tmp_path, "---\nname: x\nallowed-tools: TodoWrite\n---\n")
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert caps == [] and coverage == "partial"
+
+
+def test_unreadable_skill_frontmatter_stays_unknown(tmp_path):
+    """A failed read is uncovered, not covered-and-empty.
+
+    The inverse error of the one above, and the worse of the two: it would
+    claim OpenACA read a declaration it could not parse.
+    """
+    ref = _skill_with(tmp_path, "---\nname: x\nallowed-tools: [unclosed\n---\n")
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert caps == [] and coverage == "unknown"
+
+
+def test_skill_without_allowed_tools_stays_unknown(tmp_path):
+    ref = _skill_with(tmp_path, "---\nname: x\ndescription: y\n---\n")
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert caps == [] and coverage == "unknown"
+
+
+def test_stdio_mcp_without_a_curated_record_stays_unknown():
+    ref = ComponentRef(
+        component_identity="mcp-server/unreviewed",
+        extra={"component_type": "mcp_server", "install_source": "uvx unreviewed-server"},
+    )
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert caps == [] and coverage == "unknown"
+
+
+def test_remote_mcp_is_partial():
+    ref = ComponentRef(
+        component_identity="mcp-server/x",
+        extra={"component_type": "mcp_server", "url": "https://mcp.example.com/mcp"},
+    )
+    caps, coverage = capabilities_for_ref(ref, load_capability_corpus())
+    assert {c.name for c in caps} == {"network_egress", "sensitive_data_access"}
+    assert coverage == "partial"
+
+
+def test_a_curated_record_listing_nothing_still_covers(tmp_path):
+    """A reviewed record is coverage even when it asserts no capability.
+
+    Coverage tracks whether a mechanism ran, so it must key on the record
+    existing rather than on the capabilities it happens to carry -- otherwise a
+    reviewer who concludes "this server does none of these things" produces the
+    same output as no review at all.
+    """
+    from tools.capability_corpus import load_capability_corpus as _load
+
+    (tmp_path / "empty.yaml").write_text(
+        'identity: mcp-server/npm/reviewed-inert\nlast_reviewed: "2026-01-01"\n'
+        'reviewed_version: "1.0.0"\ncapabilities: []\n'
+    )
+    corpus = _load(tmp_path)
+    ref = ComponentRef(
+        component_identity="mcp-server/inert",
+        extra={
+            "component_type": "mcp_server",
+            "install_source": "npx reviewed-inert",
+        },
+    )
+    caps, coverage = capabilities_for_ref(ref, corpus)
+    assert caps == [] and coverage == "partial"

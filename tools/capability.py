@@ -95,7 +95,7 @@ def capabilities_for_ref(
     from tools.identity import canonical_component_identity
 
     identity = canonical_component_identity(ref)
-    declared = declared_capabilities(ref)
+    declared, declared_covered = declared_capabilities(ref)
     curated = corpus.lookup(identity or "")
 
     merged: dict[tuple[str, str], Capability] = {}
@@ -105,5 +105,15 @@ def capabilities_for_ref(
         merged[(cap.name, cap.execution_locus)] = cap
 
     caps = list(merged.values())
-    coverage = "unknown" if not caps else "partial"
+    # Coverage records whether a mechanism read this component, never whether
+    # reading it produced a capability (ADR-0041 principle 2). Deriving it from
+    # `caps` made `unknown` mean both "nothing here can be read" and "we read it
+    # and it declares none of the taxonomy" -- so no component's silence carried
+    # information, and a divergence rule (observed and not declared) had nothing
+    # honest to subtract.
+    #
+    # `partial` and never `complete`: a component can always do more than it
+    # declares. A skill's prompt body is not bound by its `allowed-tools`.
+    covered = declared_covered or corpus.has(identity or "")
+    coverage = "partial" if covered else "unknown"
     return caps, coverage

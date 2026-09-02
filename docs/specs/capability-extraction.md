@@ -83,7 +83,12 @@ capabilities:
 - `confidence` is per-capability ("how sure this capability is real").
 - `capability_coverage` is per-component ("how complete our picture is") — a
   distinct axis; a `high`-confidence `shell_exec` can coexist with `partial`
-  coverage.
+  coverage. It records **whether a reading mechanism applied**, never whether
+  that mechanism found anything: a component whose declaration was read and
+  names none of the taxonomy is `partial` with an empty list. Only a component
+  no mechanism could read is `unknown`. Deriving coverage from an empty result
+  collapses the two and makes every component's silence uninformative, which is
+  what a divergence rule (observed and not declared) has to subtract from.
 - `method` maps to the extraction tier; `source`/`source_version` are the
   orthogonal attribution.
 - `evidence` is a structured list of citable observations.

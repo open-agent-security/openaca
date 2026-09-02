@@ -35,7 +35,22 @@ def _openaca_version() -> str:
         return "unknown"
 
 
-def declared_capabilities(ref: ComponentRef) -> list[Capability]:
+def declared_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
+    """The capabilities this component's manifest states, and whether it was read.
+
+    The two halves answer different questions and neither may be derived from
+    the other (ADR-0041 principle 2, *absence is not falsehood*). `covered` is
+    true when a reading mechanism actually applied to this component -- not when
+    it produced a capability. An empty list with `covered=True` is the real
+    answer "this declaration names none of the taxonomy"; the same list with
+    `covered=False` is "nothing here could be read".
+
+    Coverage is decided here, in the dispatch, rather than by a predicate a
+    caller applies separately: a predicate over `component_type` would answer
+    for the type while the extractor answers for the individual component, and
+    the two would drift the moment one branch declines (a stdio MCP server, a
+    prompt hook, an unparseable skill).
+    """
     extra = ref.extra or {}
     component_type = extra.get("component_type")
     if component_type == "skill":
@@ -44,7 +59,7 @@ def declared_capabilities(ref: ComponentRef) -> list[Capability]:
         return _hook_capabilities(ref)
     if component_type == "mcp_server":
         return _mcp_capabilities(ref)
-    return []
+    return [], False
 
 
 def _capability(name: str, execution_locus: str, evidence: dict[str, Any]) -> Capability:
@@ -59,8 +74,20 @@ def _capability(name: str, execution_locus: str, evidence: dict[str, Any]) -> Ca
     )
 
 
-def _skill_capabilities(ref: ComponentRef) -> list[Capability]:
+def _skill_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
     frontmatter = _read_frontmatter(Path(ref.source_manifest))
+    # A failed read is uncovered. Reporting it as covered-and-empty would claim
+    # OpenACA read a declaration it could not parse -- the inverse of the bug
+    # this function's second return value fixes, and the worse direction of it.
+    if frontmatter is None:
+        return [], False
+    # The mechanism is "parse `allowed-tools`", so it covers a skill only when
+    # that field is there to parse. A skill that omits it is *unrestricted* --
+    # it inherits the session's whole tool set -- so treating the omission as a
+    # declaration of nothing would invite a divergence rule to read every
+    # ordinary skill as having exceeded a declaration it never made.
+    if not _declares_allowed_tools(frontmatter):
+        return [], False
     caps: dict[str, Capability] = {}
     for tool in sorted(_allowed_tools(frontmatter)):
         base = _executable_tool_base(tool).lower()
@@ -77,13 +104,15 @@ def _skill_capabilities(ref: ComponentRef) -> list[Capability]:
                 "value": tool,
             },
         )
-    return list(caps.values())
+    return list(caps.values()), True
 
 
-def _hook_capabilities(ref: ComponentRef) -> list[Capability]:
+def _hook_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
     command = (ref.extra or {}).get("command")
+    # A prompt hook carries no command string, so there is no declared surface
+    # to read -- uncovered, not covered-and-empty.
     if not isinstance(command, str) or not command:
-        return []
+        return [], False
     caps = [
         _capability(
             "shell_exec",
@@ -105,10 +134,10 @@ def _hook_capabilities(ref: ComponentRef) -> list[Capability]:
                 },
             )
         )
-    return caps
+    return caps, True
 
 
-def _mcp_capabilities(ref: ComponentRef) -> list[Capability]:
+def _mcp_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
     extra = ref.extra or {}
     # `url` is the canonical remote-MCP signal (ADR-0020); `install_source` is
     # a redundant copy the parser populates for posture rules and isn't
@@ -118,13 +147,17 @@ def _mcp_capabilities(ref: ComponentRef) -> list[Capability]:
     if not isinstance(url, str) or not url:
         install_source = extra.get("install_source")
         url = install_source if isinstance(install_source, str) else ""
+    # Only the URL branch reads anything, so only a URL-bearing server is
+    # covered here. A stdio server's capabilities live in its tool list, which
+    # needs a live connection to obtain -- and ADR-0041 rejects starting the
+    # component under assessment. The curated corpus is its only cover.
     if not url.startswith(("http://", "https://")):
-        return []
+        return [], False
     evidence = {"kind": "manifest_field", "field": "url", "value": url}
     return [
         _capability("network_egress", "remote", dict(evidence)),
         _capability("sensitive_data_access", "remote", dict(evidence)),
-    ]
+    ], True
 
 
 def _network_client(command: str) -> str | None:
@@ -157,21 +190,39 @@ def _network_client(command: str) -> str | None:
     return None
 
 
-def _read_frontmatter(path: Path) -> dict[str, Any]:
+def _read_frontmatter(path: Path) -> dict[str, Any] | None:
+    """The parsed frontmatter mapping, or `None` when it could not be read.
+
+    `None` and `{}` are deliberately different: `None` is a failed read (absent
+    file, undecodable bytes, no frontmatter block, invalid YAML, a non-mapping
+    document) and `{}` cannot occur from a failure. Only the caller can decide
+    what a failure means, and it must not be able to mistake one for an empty
+    declaration.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return {}
+        return None
     if not text.startswith("---"):
-        return {}
+        return None
     end = text.find("\n---", 3)
     if end == -1:
-        return {}
+        return None
     try:
         loaded = yaml.safe_load(text[3:end].strip())
     except yaml.YAMLError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _declares_allowed_tools(frontmatter: dict[str, Any]) -> bool:
+    """Whether the frontmatter carries an `allowed-tools` value we can parse.
+
+    The shapes accepted here are exactly the ones `_allowed_tools` reads, so
+    coverage cannot claim a field the parser would have ignored. `allowed-tools:`
+    with no value parses to `None` and is not a declaration.
+    """
+    return isinstance(frontmatter.get("allowed-tools"), (str, list))
 
 
 def _allowed_tools(frontmatter: dict[str, Any]) -> set[str]:

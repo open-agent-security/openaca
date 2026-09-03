@@ -5,7 +5,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_API_URL = "https://api.openaca.dev"
+DEFAULT_API_URL = "https://api.stacktrace.ai"
 
 
 class ConfigError(Exception):

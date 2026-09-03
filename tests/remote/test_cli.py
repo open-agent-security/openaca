@@ -144,7 +144,7 @@ def test_configure_writes_token_and_default_api_url(tmp_path, monkeypatch):
     assert "ot_..." in result.output
     config = load_remote_config(config_path)
     assert config.token == "ot_TEST"
-    assert config.api_url == "https://api.openaca.dev"
+    assert config.api_url == "https://api.stacktrace.ai"
 
 
 def test_configure_masked_token_shows_last4_for_disambiguation(tmp_path, monkeypatch):
@@ -219,7 +219,7 @@ def test_configure_preserves_asset_id_when_credentials_unchanged(tmp_path, monke
         "\n".join(
             [
                 "[remote]",
-                'api_url = "https://api.openaca.dev"',
+                'api_url = "https://api.stacktrace.ai"',
                 'token = "ot_SAME"',
                 'asset_id = "asset-123"',
                 "",
@@ -243,7 +243,7 @@ def test_configure_clears_asset_id_when_token_changes(tmp_path, monkeypatch):
         "\n".join(
             [
                 "[remote]",
-                'api_url = "https://api.openaca.dev"',
+                'api_url = "https://api.stacktrace.ai"',
                 'token = "ot_OLD"',
                 'asset_id = "asset-123"',
                 "",
@@ -323,7 +323,7 @@ def test_configure_does_not_purge_pending_files_when_credentials_unchanged(tmp_p
         "\n".join(
             [
                 "[remote]",
-                'api_url = "https://api.openaca.dev"',
+                'api_url = "https://api.stacktrace.ai"',
                 'token = "ot_SAME"',
                 'asset_id = "asset-123"',
                 "",

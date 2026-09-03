@@ -150,10 +150,13 @@ stops recommending a command the same commit deletes.
 - [ ] **Retype `CollectError`.** It carries a CLI-only `exit_code`
   (`tools/remote/collector.py:104-107`), the same shape of problem Step 4 fixes
   for `click.UsageError` in `compile_endpoint_policy`. Add a plain
-  `CollectionError` (`ValueError` subclass, no `exit_code`) alongside the
-  finding types, raised when a requested external scanner is not installed;
-  the CLI layer that still needs an exit code catches it and raises
-  `click.ClickException` itself.
+  `CollectionError` (`ValueError` subclass, no `exit_code`), raised when a
+  requested external scanner is not installed; the CLI layer that still needs
+  an exit code catches it and raises `click.ClickException` itself.
+  **`CollectionError` is defined in `tools/cli_kind.py`, not `tools/collect.py`
+  — see the dependency-cycle note under the `kind_id`/`config_dir` validation
+  task below** — and `tools/collect.py` imports it from there for this case
+  and the two below.
 - [ ] **Validate `external_scanners` inside the facade, not only in the CLI.**
   Today `click.Choice(["nvidia-skillspector"])` (`tools/scan.py:419`,
   `tools/remote/cli.py:205`) is what rejects an unsupported scanner name — the
@@ -190,6 +193,21 @@ stops recommending a command the same commit deletes.
   text is unchanged, and the facade gets the same validation without a Click
   dependency. `build_endpoint_collections` calls the plain validator before
   calling `discover_agents`.
+  **Both the plain validator and `CollectionError` are defined in
+  `tools/cli_kind.py` itself, not moved into `tools/collect.py`.**
+  `tools/collect.py` already imports `_component_gap_count` and
+  `_count_active_plugins` from `tools/scan.py` (the move task above), and
+  `tools/scan.py` already imports `require_kind_for_config_dir` from
+  `tools/cli_kind.py` (`tools/scan.py:68`). Defining the plain validator in
+  `tools/collect.py` instead would force `require_kind_for_config_dir`'s thin
+  wrapper to import it from there, closing a cycle:
+  `cli_kind → collect → scan → cli_kind`. `tools/cli_kind.py` today imports
+  only `tools.agent_kinds` (`tools/cli_kind.py:21`), which depends on neither
+  `tools.scan` nor `tools.collect`, so keeping the plain validator and
+  `CollectionError` there keeps the graph acyclic —
+  `collect → cli_kind → agent_kinds` and `scan → cli_kind → agent_kinds`, with
+  no edge back to either. `tools/collect.py` imports both names from
+  `tools.cli_kind`.
 - [ ] Three tests for these cases: an unknown `kind_id` raises `CollectionError`
   rather than silently returning an empty collection; `config_dir` without
   `kind_id` raises `CollectionError`; and `config_dir` with `kind_id="cursor"`
@@ -200,6 +218,22 @@ stops recommending a command the same commit deletes.
   hardcoded `None` with the comment "the upload names no place" — the right
   decision in the wrong place. Defaulting to `True` leaves CLI behaviour
   unchanged.
+- [ ] **The two interim callers inside `tools/remote/` pass
+  `include_target=False` explicitly.** `collect_endpoint`
+  (`tools/remote/collector.py:288`) and `build_endpoint_dry_run_payloads`
+  (`tools/remote/collector.py:410`) both call `build_endpoint_collections`
+  today with no `target` argument at all, because the omission is currently
+  hardcoded two calls deeper, inside `_build_agent_collection`
+  (`tools/remote/collector.py:204`, the `target=None` this task removes).
+  Once `include_target` defaults to `True` at the top of that call chain,
+  these two untouched call sites start including the local config root in
+  every uploaded and dry-run BOM unless they are updated to pass
+  `include_target=False` in the same commit — the exact redaction-contract
+  regression the comment at the old hardcode exists to prevent, and the one
+  this step's own constraint ("the suite stays green at this commit,"
+  `tests/remote/` included) depends on `tests/remote/test_collect.py`
+  actually asserting `openaca:target`'s absence to catch. Make it a task
+  rather than leaving it to be found by a red test.
 - [ ] `openaca/core/collect.py` re-exports `collect_installed_agents`,
   `AgentCollection`, `PostureFinding`, `ObservationFinding`, `Standards` and
   `CollectionError` — six names, and nothing else. Add those six to
@@ -304,6 +338,28 @@ stops recommending a command the same commit deletes.
   `openaca policy compile` — so leaving either in place documents a sibling
   command that no longer exists right next to the one that still does. Delete
   line 161 and the paragraph at lines 220-227.
+- [ ] **`docs/specs/cursor-agent-kind.md` still lists `remote sync endpoint`
+  as a live endpoint command.** Line 147 names it alongside `scan endpoint`
+  and `bom endpoint` as one of the three commands `--kind` applies to, and the
+  bullet at line 223 ("A dry-run remote sync reflects kind selection
+  identically to a scan. The rules above are one contract across all three
+  endpoint commands...") describes its dry-run behaviour as part of that same
+  three-command contract. This spec stays active — it still governs
+  `scan endpoint`/`bom endpoint` — so it is edited, not deleted: drop
+  `remote sync endpoint` from the line-147 list (two commands remain) and
+  delete the line-223 bullet.
+- [ ] **`docs/specs/collector-agent-rooted-uploads.md` still frames
+  `remote sync endpoint` as current behaviour** — its before/after table
+  (line 17) and its verification section (`openaca remote sync endpoint
+  --dry-run`, line 147) both describe the command in the present tense. Unlike
+  `docs/remote-deployment.md`, this one cannot simply be deleted: ADR-0050 and
+  ADR-0051 both cite it as their design record (`docs/adrs/0050-…md`,
+  `docs/adrs/0051-…md`), and `docs/specs/multi-agent-support.md` links to it
+  twice for the agent-rooted wire-format rationale that outlives this removal.
+  Add a one-line note under the title marking the document historical — the
+  command it describes stopped existing as of this plan's ADR-0063 — without
+  rewriting the migration narrative itself, which is what those other three
+  documents still point to.
 - [ ] **Remove the stale next-action from `scan`.** `tools/scan.py:722`
   (`_next_actions_for`) unconditionally appends
   `"sync to remote: openaca remote sync endpoint"` to every installed-agent

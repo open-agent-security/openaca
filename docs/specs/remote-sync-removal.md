@@ -317,6 +317,22 @@ thin wrapper that calls it and translates the exception into a
 and `bom`'s error text does not change. `build_endpoint_collections` calls the
 plain validator before calling `discover_agents`.
 
+Both the plain validator and `CollectionError` itself are defined in
+`tools/cli_kind.py`, not in `tools/collect.py` alongside `build_endpoint_collections`.
+`tools/collect.py` already imports `_component_gap_count` and
+`_count_active_plugins` from `tools/scan.py` (see below), and `tools/scan.py`
+already imports `require_kind_for_config_dir` from `tools/cli_kind.py`
+(`tools/scan.py:68`). Putting the plain validator in `tools/collect.py` would
+force `require_kind_for_config_dir`'s thin wrapper to import it from there,
+closing a cycle: `cli_kind → collect → scan → cli_kind`. `tools/cli_kind.py`
+imports only `tools.agent_kinds` today (`tools/cli_kind.py:21`), which has no
+dependency on `tools.scan` or `tools.collect`, so leaving the plain validator
+and `CollectionError` there keeps the graph acyclic —
+`collect → cli_kind → agent_kinds` and `scan → cli_kind → agent_kinds`.
+`tools/collect.py` imports both from `tools.cli_kind`, and
+`openaca/core/collect.py` re-exports `CollectionError` from `tools.collect`
+like the other five names.
+
 ### Where the implementation lives
 
 In OpenACA, as it does now — it does not follow the uploader out.
@@ -327,6 +343,16 @@ behind (the install-source trimming, the payload-vocabulary mapping, and the
 hardcoded `target=None`, which becomes the `include_target` argument).
 `openaca/core/collect.py` re-exports the function, as the other facade modules
 do.
+
+Until `tools/remote/` is deleted, its two callers of `build_endpoint_collections`
+— `collect_endpoint` (`tools/remote/collector.py:288`) and
+`build_endpoint_dry_run_payloads` (`tools/remote/collector.py:410`) — must pass
+`include_target=False` explicitly. Today they call it with no `target`
+argument at all, because the omission is hardcoded two calls deeper inside
+`_build_agent_collection`; once `include_target` defaults to `True` at the top
+of the call chain, leaving those two call sites unchanged would start writing
+the local config root into every uploaded and dry-run BOM — the redaction
+regression the old hardcode exists to prevent.
 
 Its tests move too, in kind rather than in whole. `tests/remote/test_collect.py`
 tests both the producer logic moving here (a kind's posture allowlist honoured,
@@ -566,6 +592,21 @@ still compile it with `openaca policy compile`.
   this removal keeps, `openaca policy compile`; left in place, it documents a
   sibling command that no longer exists in the same breath as one that still
   does.
+- `remote sync endpoint` from the line naming it alongside `scan endpoint` and
+  `bom endpoint` as one of the three commands `--kind` applies to
+  (`docs/specs/cursor-agent-kind.md:147`, two remain), and the bullet
+  describing its dry-run behaviour as part of that three-command contract
+  (`docs/specs/cursor-agent-kind.md:223`). That spec stays active for
+  `scan endpoint`/`bom endpoint`, so it is edited, not deleted.
+- The present-tense framing in `docs/specs/collector-agent-rooted-uploads.md`
+  — its before/after table (line 17) and its verification section naming
+  `openaca remote sync endpoint --dry-run` (line 147) — both describe a
+  command this removal deletes as current. That document is not deleted like
+  `docs/remote-deployment.md`: ADR-0050 and ADR-0051 cite it as their design
+  record, and `docs/specs/multi-agent-support.md` links to it twice for the
+  agent-rooted wire-format rationale, which outlives this removal. It instead
+  gets a one-line note under the title marking it historical as of ADR-0063,
+  without rewriting the migration narrative those other documents point to.
 - The whole "When a remote policy is configured..." paragraph and shell block
   in the root `README.md` (`README.md:160-172`) — not only its
   `openaca remote configure` line. The block also runs

@@ -117,6 +117,27 @@ stops recommending a command the same commit deletes.
   `_agent_refs`, `_collect_scanner_findings`, and the collection result type.
   Leave behind everything upload-specific — install-source trimming, the
   payload-vocabulary mapping, and the hardcoded `target=None`.
+- [ ] **Give the producer-logic tests in `tests/remote/test_collect.py` a home
+  before Step 6 deletes that directory.** That file mixes two things: tests of
+  the producer logic this step moves (a kind's posture allowlist is honoured,
+  `build_agent_graph` warnings downgrade `openaca:composition_coverage` to
+  `partial`, one agent-rooted BOM is emitted per installed agent — for example
+  `test_build_endpoint_collections_respects_the_kind_posture_allowlist`,
+  `test_composition_coverage_reflects_graph_warnings`, and
+  `test_build_endpoint_collections_emits_one_agent_rooted_bom_per_agent`), and
+  tests of upload mechanics this step does not move (install-source trimming,
+  the payload-vocabulary mapping, redaction for transport, the client, the
+  pending-payload cache, dry-run remote configuration) — which *Out of scope*
+  already says are removed, not relocated. Create `tests/test_collect.py` and
+  port the first group there, against `tools.collect`. Porting is not copying:
+  any assertion written against the old upload-vocabulary dicts (`finding_id`,
+  `summary`, `fix` — e.g. in
+  `test_build_endpoint_collection_uploads_external_scanner_findings`) must be
+  rewritten against the `PostureFinding` / `ObservationFinding` objects this
+  step returns instead, since the dict mapping this step removes is exactly
+  what made the old assertion pass. Do not port the second group; deleting
+  `tests/remote/` in Step 6 is where that coverage is meant to go, per
+  *Non-goals*.
 - [ ] **`_collect_scanner_findings` stops printing.** Today
   (`tools/remote/collector.py:251-267`) a skillspector warning goes straight to
   `click.echo(f"warning: {warning}", err=True)` and is dropped from the return
@@ -273,6 +294,16 @@ stops recommending a command the same commit deletes.
   block (`README.md:160-172`), not just the `openaca remote configure` line.
   That block also runs `openaca remote policy compile`; leaving either survives
   the removal it documents.
+- [ ] **`docs/specs/policy-compiler.md` documents the deleted command too, and
+  it is not in the list above.** Line 161 gives
+  `openaca remote policy compile --target ~/.claude --host claude --output …`
+  as a runnable example alongside the surviving local `compile` invocations,
+  and lines 220-227 describe its behaviour in detail (it "reads the existing
+  remote configuration from `openaca remote configure`, fetches the current
+  policy document..."). This is the spec for the command this step keeps —
+  `openaca policy compile` — so leaving either in place documents a sibling
+  command that no longer exists right next to the one that still does. Delete
+  line 161 and the paragraph at lines 220-227.
 - [ ] **Remove the stale next-action from `scan`.** `tools/scan.py:722`
   (`_next_actions_for`) unconditionally appends
   `"sync to remote: openaca remote sync endpoint"` to every installed-agent

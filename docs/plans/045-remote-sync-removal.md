@@ -37,11 +37,17 @@ stops recommending a command the same commit deletes.
   `config.py`, a credential and `httpx` — every part of what this removes — so
   a partial removal is not a smaller version of this change, it is no version
   of it.
-- [ ] **`openaca policy` — the local command — is untouched.** `validate` and
-  `compile` over a policy file on disk stay exactly as they are, as do
-  `tools/policy.py`, `tools/policy_cli.py` and `openaca.core.policy`. What goes
-  is one network call, not the policy language, the evaluator, the risk gates or
-  the host compiler.
+- [ ] **`openaca policy` — the local command — behaves identically.** `validate`
+  and `compile` over a policy file on disk produce the same output and exit
+  status, before and after, as do `tools/policy.py` and `openaca.core.policy`,
+  which are untouched. `tools/policy_cli.py` is not: Step 4 retypes its
+  `click.ClickException` raise sites to `PolicyValidationError` /
+  `PolicyEvaluationError` and splits `emit_policy_report` into a pure
+  `render_policy_report` plus a `click.echo` in the command. Neither change is
+  visible from the command line — the command already catches both error types
+  and already prints what `render_policy_report` would return. What goes is one
+  network call, not the policy language, the evaluator, the risk gates or the
+  host compiler.
 - [ ] The facade additions are re-exports. No logic is copied into
   `openaca/core/`, and `tools/identity.py` stays the implementation.
 - [ ] The posture-manifest move changes no behaviour. Cursor's
@@ -186,15 +192,29 @@ stops recommending a command the same commit deletes.
 - [ ] Delete `tools/remote/`, `tests/remote/`, `deploy/remote/`. That removes
   all four subcommands — `configure`, `status`, `sync endpoint` and
   `policy compile` — since `remote/cli.py` holds them all.
-- [ ] Check nothing in `tools/policy.py` or `tools/policy_cli.py` moves or
-  changes. `remote policy compile` imports `parse`, `compile_endpoint_policy`
-  and `emit_policy_report` from them; deleting its caller must not disturb the
-  callees, which `openaca policy compile` also uses.
+- [ ] Check this step itself moves or changes nothing further in
+  `tools/policy.py` or `tools/policy_cli.py` — only Step 4 touched them.
+  `remote policy compile` imports `parse`, `compile_endpoint_policy` and (after
+  Step 4) `render_policy_report` from them; deleting its caller must not
+  disturb the callees, which `openaca policy compile` also uses.
 - [ ] Remove the import and `add_command` registration in `tools/cli.py:12,39`.
 - [ ] Remove the three remote tests and their imports from `tests/test_e2e.py`
   (lines 32-33, 783-784, 1714), and delete
   `test_scan_and_collector_import_the_shared_no_manifests` from
   `tests/test_posture_cursor.py`.
+- [ ] **`test_github_and_docker_mcp_refs_survive_identity_lifecycle`
+  (`tests/test_e2e.py:1126-1186`) is a fourth caller, not one of the three
+  named above.** Its first five assertions (BOM round-trip, rendering, OSV
+  federation, lines 1126-1176) exercise ordinary scan behaviour and import
+  nothing from `tools.remote`. Its last block (lines 1178-1186) calls
+  `_prepare_remote_bom` to assert that upload-specific install-source trimming
+  redacts secrets — the same trimming Step 3 explicitly leaves behind and this
+  step deletes with `tools/remote/`, and which "Out of scope" already says is
+  removed, not relocated. Deleting only the imports at lines 32-33 without
+  touching this test leaves a `NameError` at line 1178. Delete lines 1178-1186
+  and the now-dangling `prepared = ` setup; keep the rest of the test and its
+  `_props_by_name` helper (`tests/test_e2e.py:1189-1190`), which two other
+  tests still use.
 - [ ] Drop `httpx` from `pyproject.toml`; refresh `uv.lock`.
 - [ ] Delete `docs/remote-deployment.md`; remove the remote sections from
   `docs/reference/cli.md` and `docs/README.md`, and — in the root `README.md`

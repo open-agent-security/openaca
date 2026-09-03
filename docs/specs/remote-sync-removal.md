@@ -118,7 +118,12 @@ Concretely, the following must behave identically before and after:
 `openaca scan repo`, `openaca scan endpoint`,
 `openaca scan bom`, `openaca bom repo`, `openaca bom endpoint`, `openaca bom
 diff`, `openaca lint`, `openaca export`, `openaca promote`, `openaca seed`,
-`openaca triage`, `openaca policy`, and every overlay in `overlays/`.
+`openaca triage`, `openaca policy`, and every overlay in `overlays/`. One
+narrow exception: `scan endpoint`'s next-action list currently recommends
+`openaca remote sync endpoint` (`tools/scan.py:717-723`,
+`_next_actions_for`). That line is not preserved — recommending a command this
+same change deletes would be a new defect, not stability — and it is the only
+byte of `scan` output this removal touches.
 
 This is verifiable rather than aspirational, because nothing depends on the
 remote package:
@@ -154,7 +159,8 @@ No behaviour changes; `tools/identity.py` remains the implementation.
 
 ## The collection API
 
-One function, one result type, and the two finding types the result carries.
+One function, one result type, the two finding types the result carries, the
+value type one of those findings holds, and one public error.
 
 ```python
 from openaca.core import collect_installed_agents
@@ -201,8 +207,11 @@ None of the following is exposed, and none needs to be:
 | `_component_gap_count`, `_count_active_plugins` | Feed the BOM's coverage and source-unit count. **Called internally, so the two private symbols stop being a problem rather than becoming public** |
 | Posture manifest resolution per kind | An implementation of running posture rules |
 
-That is nineteen symbols a consumer would otherwise reach for, reduced to four
-public names — and zero private ones promoted.
+That is nineteen symbols a consumer would otherwise reach for, reduced to six
+public names — `collect_installed_agents`, `AgentCollection`,
+`PostureFinding`, `ObservationFinding`, `Standards` (the value type
+`PostureFinding.standards` holds — required once `PostureFinding` itself is
+public) and `CollectionError` (below) — and zero private ones promoted.
 
 ### The finding types are returned as themselves
 
@@ -218,6 +227,36 @@ OpenACA's vocabulary OpenACA's, and lets a consumer map to its own.
 `PostureFinding`, `ObservationFinding` and `Standards` therefore join the facade
 as value types. They already are frozen-ish domain records with no behaviour
 beyond a label property, which is what makes them safe to publish.
+
+### Scanner warnings are returned, not printed
+
+`_collect_scanner_findings` — one of the functions this moves verbatim from
+`tools/remote/collector.py` — currently sends each skillspector warning
+straight to `click.echo(f"warning: {warning}", err=True)`
+(`tools/remote/collector.py:265-266`) instead of returning it. Moved as-is, the
+facade function would still write to stderr on every call, and
+`collected.warnings` would omit exactly the diagnostics an external scanner
+produces — the same defect *Two CLI concerns come out of the library on the
+way* fixes for `emit_policy_report` below, in the sibling function this one
+sits next to.
+
+`_collect_scanner_findings` returns its warnings instead, and
+`_build_agent_collection` folds them into that agent's
+`AgentCollection.warnings` alongside the malformed-manifest warnings already
+there. Nothing prints on the library path; a CLI caller that wants them on
+stderr echoes `collected.warnings` itself.
+
+### A collection failure is a public, typed error
+
+`CollectError` (`tools/remote/collector.py:104-107`), raised today when a
+requested external scanner is not installed, carries an `exit_code` — a CLI
+concern baked into what would otherwise be a plain domain exception, the same
+shape of problem `compile_endpoint_policy`'s `click.UsageError` has below. It
+is not promoted as-is.
+
+A `CollectionError` (`ValueError` subclass, no `exit_code`) joins the facade
+for this case. A CLI caller that still needs a specific exit code catches it
+and raises its own `click.ClickException`.
 
 ### Where the implementation lives
 
@@ -264,11 +303,26 @@ print(render_policy_report(report, "text"))        # new, extracted
 ### Two CLI concerns come out of the library on the way
 
 `compile_endpoint_policy` is already a well-shaped function — typed arguments, a
-report returned as a dict — with one wart: it raises `click.UsageError` for
-*"output is required unless dry-run"*. That is a CLI exception in a function
-that is about to stop being CLI-only, so it becomes a `PolicyValidationError`,
-and the command layer turns that into a usage error as it already does for other
-policy failures.
+report returned as a dict — with one wart, in more places than its own body.
+It raises `click.UsageError` itself for *"output is required unless
+dry-run"*, and everything it calls does the same: `_evaluate_endpoint`
+(`tools/policy_cli.py:183,202,212,218` — no installed agent found, an
+incomplete graph, a non-queryable component under a vulnerability gate, an OSV
+federation warning) and `_managed_key_collisions`
+(`tools/policy_cli.py:133,264,268,276,281,289,301` — a managed-settings key
+collision, an unreadable managed-settings directory or file, a malformed
+managed-settings JSON file) all raise `click.ClickException`. Every one of
+those is on the path a programmatic caller of `compile_endpoint_policy` hits,
+not only the argument check at the top — retyping the top-level `UsageError`
+alone would leave the function still throwing Click exceptions from three
+levels down.
+
+Every one of these becomes a domain error instead: the `--output` check and
+the managed-settings failures become `PolicyValidationError`; the
+endpoint-evaluation failures become `PolicyEvaluationError`. `compile`'s
+`except (PolicyValidationError, PolicyEvaluationError)` clause
+(`tools/policy_cli.py:95-96`) already catches both, so the command needs no
+change beyond that — only the `raise` sites move off `click`.
 
 `emit_policy_report` cannot be promoted as it stands, because it *prints* — it
 is a presentation function, and a library that writes to stdout is a library a
@@ -278,7 +332,9 @@ caller cannot compose. It splits: a pure `render_policy_report(report, format)
 Both changes leave `openaca policy compile` behaving identically. The exception
 retype is in fact invisible from the command line, because the command performs
 the same `--output` check itself before calling the function — so the usage
-error a CLI user sees is raised by the command, not by the code being changed.
+error a CLI user sees is raised by the command, not by the code being changed,
+and every other retyped failure is still caught by the command's existing
+`except` clause and turned back into a `ClickException` there.
 
 ### These three names are sufficient, which is worth checking rather than assuming
 
@@ -419,7 +475,23 @@ policy document by whatever means can still compile it with
   `tests/test_posture_cursor.py`, which asserts a property of a module that will
   not exist.
 - `docs/remote-deployment.md`, and the remote sections of
-  `docs/reference/cli.md`.
+  `docs/reference/cli.md` and `docs/README.md`.
+- The whole "When a remote policy is configured..." paragraph and shell block
+  in the root `README.md` (`README.md:160-172`) — not only its
+  `openaca remote configure` line. The block also runs
+  `openaca remote policy compile`, so trimming just the `configure` line would
+  leave a documented invocation of a command this removal deletes.
+- The `"sync to remote: openaca remote sync endpoint"` next-action
+  `tools/scan.py:722` (`_next_actions_for`) appends to every installed-agent
+  scan. It is scan's one output-changing edit in this removal — see
+  *What OpenACA keeps* above — because the alternative is a scanner that
+  recommends a command it no longer has.
+- The remote smoke gates in `.github/workflows/ci.yml` and
+  `scripts/ci-local.sh`, which invoke `openaca remote configure` and
+  `openaca remote sync endpoint` against an unreachable port and assert a
+  clean exit. They must go in the same commit as the removal, not a
+  follow-up — both invoke a command that will not exist, so leaving either
+  breaks `main`.
 
 ADR-0024, ADR-0032, ADR-0050, ADR-0051 and ADR-0061 all decide questions about a
 subsystem that no longer exists. ADRs are immutable, so a new ADR supersedes

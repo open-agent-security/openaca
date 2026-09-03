@@ -12,8 +12,9 @@ helpers are re-exported through the facade, the collection logic moves from
 `tools/remote/collector.py` to `tools/collect.py` with one public entry point in
 `openaca.core`, policy compilation joins the facade as a pair of pure functions,
 and the existing Click group gains a supported import path. Only then is `tools/remote/` removed, so at no point does the
-tree contain a half-migrated uploader. The removal commit changes no scanner
-behaviour and adds no CLI surface.
+tree contain a half-migrated uploader. The removal commit adds no CLI surface,
+and changes scanner behaviour in exactly one place: `scan`'s next-action list
+stops recommending a command the same commit deletes.
 
 **Spec:** `docs/specs/remote-sync-removal.md`
 
@@ -22,9 +23,13 @@ behaviour and adds no CLI surface.
 
 ## Constraints
 
-- [ ] No command other than `remote` changes behaviour. `scan`, `bom`, `lint`,
-  `export`, `promote`, `seed`, `triage` and `policy` produce identical output
-  for identical input, before and after.
+- [ ] No command other than `remote` changes behaviour, with one named
+  exception: `scan`'s next-action list for an installed agent drops the
+  `sync to remote: openaca remote sync endpoint` line (`tools/scan.py:717-723`,
+  `_next_actions_for`). Recommending a command this same change deletes is a
+  bug the removal introduces if left alone, not a stability guarantee worth
+  keeping. `bom`, `lint`, `export`, `promote`, `seed`, `triage` and `policy`
+  produce identical output for identical input, before and after.
 - [ ] **All four `remote` subcommands go, including `policy compile`.** The
   group is not only an uploader: `remote policy compile` *downloads* the
   organisation policy and compiles it. Both directions are a hosted-service
@@ -48,10 +53,16 @@ behaviour and adds no CLI surface.
 - [ ] **This plan adds no CLI surface** — no new command, no new flag. A consumer
   wanting a BOM and its findings together gets both from one facade call in one
   process, so nothing is needed on the command line to serve that.
-- [ ] **The collection API is one function, one result type, and the finding
-  types it carries — four public names.** Nineteen internal symbols would
-  otherwise be reachable; none of them is promoted, and neither private counter
-  becomes public. If a review of this step is adding names, it has gone wrong.
+- [ ] **The collection API is one function, one result type, the two finding
+  types it carries, the value type one of those findings holds, and one public
+  error type — six public names, not four.** `collect_installed_agents`,
+  `AgentCollection`, `PostureFinding`, `ObservationFinding`, `Standards` (the
+  value type `PostureFinding.standards` holds — a consumer inspecting or
+  constructing a finding needs it in scope, so it is not optional once
+  `PostureFinding` is public), and a collection error (see below). Nineteen
+  internal symbols would otherwise be reachable; none of them is promoted, and
+  neither private counter becomes public. If a review of this step is adding a
+  name beyond those six, it has gone wrong.
 - [ ] **Findings are returned as `PostureFinding` and `ObservationFinding`, not
   dicts.** The removed uploader mapped them into its server's vocabulary
   (`rule_id`→`finding_id`, `title`→`summary`, `remediation`→`fix`) inside the
@@ -100,20 +111,37 @@ behaviour and adds no CLI surface.
   `_agent_refs`, `_collect_scanner_findings`, and the collection result type.
   Leave behind everything upload-specific — install-source trimming, the
   payload-vocabulary mapping, and the hardcoded `target=None`.
+- [ ] **`_collect_scanner_findings` stops printing.** Today
+  (`tools/remote/collector.py:251-267`) a skillspector warning goes straight to
+  `click.echo(f"warning: {warning}", err=True)` and is dropped from the return
+  value — a library function that writes to stderr cannot be composed, the same
+  defect Step 4 fixes in `emit_policy_report`. Change its return type to include
+  the warnings it collects, and have `_build_agent_collection` fold them into
+  that agent's `AgentCollection.warnings` instead of printing. Add a test
+  covering this case: an external scanner that runs and reports a warning
+  surfaces it in `collected.warnings`, not on stderr.
+- [ ] **Retype `CollectError`.** It carries a CLI-only `exit_code`
+  (`tools/remote/collector.py:104-107`), the same shape of problem Step 4 fixes
+  for `click.UsageError` in `compile_endpoint_policy`. Add a plain
+  `CollectionError` (`ValueError` subclass, no `exit_code`) alongside the
+  finding types, raised when a requested external scanner is not installed;
+  the CLI layer that still needs an exit code catches it and raises
+  `click.ClickException` itself.
 - [ ] `target` becomes an `include_target: bool = True` argument. The uploader
   hardcoded `None` with the comment "the upload names no place" — the right
   decision in the wrong place. Defaulting to `True` leaves CLI behaviour
   unchanged.
-- [ ] `openaca/core/collect.py` re-exports `collect_installed_agents` and
-  `AgentCollection`; add `PostureFinding`, `ObservationFinding` and `Standards`
-  as value types. Update `openaca/core/__init__.py`'s imports and `__all__`.
-- [ ] A test asserting the facade exposes **exactly** those names and that
+- [ ] `openaca/core/collect.py` re-exports `collect_installed_agents`,
+  `AgentCollection`, `PostureFinding`, `ObservationFinding`, `Standards` and
+  `CollectionError` — six names. Update `openaca/core/__init__.py`'s imports
+  and `__all__`.
+- [ ] A test asserting the facade exposes **exactly** those six names and that
   `Graph`, `AgentInstance`, `DiscoveryContext`, `WarningLog`, `kind_for`,
   `resolve_coverage` and `build_agent_graph` are **not** reachable through
   `openaca.core`. This is the test that stops the surface growing by
   convenience.
-- [ ] A test that a requested external scanner which is not installed produces a
-  public, typed error rather than an internal exception type.
+- [ ] A test that a requested external scanner which is not installed raises
+  `CollectionError`, not `CollectError` or another internal exception type.
 - [ ] Point `tools/remote/collector.py` at the new location so the uploader keeps
   working until Step 4 deletes it, and the suite stays green at this commit.
 - [ ] Four gates + full suite green. Commit.
@@ -122,7 +150,7 @@ behaviour and adds no CLI surface.
 
 - [ ] Add a failing test: `openaca.core.compile_endpoint_policy(parse_policy(doc), target=…, dry_run=True)` returns a report, and `render_policy_report(report, "text")` returns the string `openaca policy compile` prints.
 - [ ] Promote `compile_endpoint_policy` to `openaca/core/policy.py`. It is already typed and already returns its report as a dict, so this is a re-export — with one fix below.
-- [ ] **Replace its `click.UsageError`** for *"output is required unless dry-run"* with `PolicyValidationError`. A CLI exception in a library function makes the caller depend on Click; the command layer translates it into a usage error, as it already does for other policy failures.
+- [ ] **Retype every `click.ClickException` reachable from `compile_endpoint_policy`'s call graph, not only the `--output` `UsageError`.** `_evaluate_endpoint` (`tools/policy_cli.py:183,202,212,218` — no installed agent, an incomplete graph, a non-queryable component, an OSV federation warning) and `_managed_key_collisions` (`tools/policy_cli.py:133,264,268,276,281,289,301` — a key collision, an unreadable managed-settings directory or file) all raise `click.ClickException` today, and every one is on the path a programmatic caller of `compile_endpoint_policy` hits, not only the argument check at the top. A CLI exception in a library function makes the caller depend on Click. Split by kind: the `--output` check and the managed-settings failures (collision, unreadable directory/file, malformed JSON) become `PolicyValidationError`; the endpoint-evaluation failures (no agent found, incomplete graph, non-queryable component, OSV warnings) become `PolicyEvaluationError`. The command's `except (PolicyValidationError, PolicyEvaluationError)` at `tools/policy_cli.py:95-96` already catches both, so no change is needed there — only the `raise` sites move off `click`.
 - [ ] **Split `emit_policy_report`.** It prints, so it cannot be promoted as it stands — a library that writes to stdout cannot be composed. Extract a pure `render_policy_report(report, output_format) -> str` and leave the `click.echo` of its result in the command.
 - [ ] Assert `openaca policy compile` behaves identically after both changes — same output, same exit status, same usage error when `--output` is omitted without `--dry-run`. The retype is in fact invisible from the command line, since the command performs that same check itself before calling the function.
 - [ ] Do **not** add a `host` parameter to the facade, and record why with its expiry. `--host` is a different axis from `--kind`: `--kind` scopes discovery to an installed agent kind, while `--host` names whose settings format the artifact is compiled into. It does not reach `compile_endpoint_policy` because there is no dispatch to reach — the Claude compiler is called unconditionally inside the compilation path, so `Choice(["claude"])` gates the input rather than selecting anything. Adding a facade argument now would invent a contract the compiler does not have.
@@ -169,8 +197,21 @@ behaviour and adds no CLI surface.
   `tests/test_posture_cursor.py`.
 - [ ] Drop `httpx` from `pyproject.toml`; refresh `uv.lock`.
 - [ ] Delete `docs/remote-deployment.md`; remove the remote sections from
-  `docs/reference/cli.md`, `docs/README.md`, and the `openaca remote configure`
-  line in the root `README.md`.
+  `docs/reference/cli.md` and `docs/README.md`, and — in the root `README.md`
+  — the whole "When a remote policy is configured..." paragraph and its shell
+  block (`README.md:160-172`), not just the `openaca remote configure` line.
+  That block also runs `openaca remote policy compile`; leaving either survives
+  the removal it documents.
+- [ ] **Remove the stale next-action from `scan`.** `tools/scan.py:722`
+  (`_next_actions_for`) unconditionally appends
+  `"sync to remote: openaca remote sync endpoint"` to every installed-agent
+  scan's next-action list; left in place it recommends a command that no
+  longer exists. Delete the line. `tests/test_render.py:2349-2372`
+  (`test_render_text_cards_separate_agents_and_dedupe_next_actions`) uses that
+  same string as an arbitrary example next-action to test dedup rendering —
+  it is not asserting `_next_actions_for`'s real output, so it does not break,
+  but update its fixture string to something that isn't a deleted command, so
+  the test doesn't read as evidence the command still exists.
 - [ ] **Remove the remote smoke gates, or CI fails on the removal commit.**
   `.github/workflows/ci.yml` runs `openaca remote configure` and
   `openaca remote sync endpoint` against an unreachable port and asserts exit 2
@@ -192,6 +233,8 @@ behaviour and adds no CLI surface.
   run: `openaca scan endpoint --format json`, `openaca bom endpoint`,
   `openaca scan repo --target tests/fixtures/repos/repo-surface-golden`,
   `openaca lint`, `openaca export`, `openaca triage --help`. All succeed.
+- [ ] `openaca scan endpoint`'s output contains no occurrence of `remote`, since
+  Step 6 removed the one next-action that named it.
 - [ ] And specifically that local policy still works end to end, since it shares
   code with the deleted command: `openaca policy validate <file>` and
   `openaca policy compile <file> --target … --host claude --dry-run`.

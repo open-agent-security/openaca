@@ -213,6 +213,14 @@ public names — `collect_installed_agents`, `AgentCollection`,
 `PostureFinding.standards` holds — required once `PostureFinding` itself is
 public) and `CollectionError` (below) — and zero private ones promoted.
 
+Those six are `openaca/core/collect.py`'s entire surface — a test asserts that
+module exposes exactly them, and nothing else. `openaca.core` itself already
+exports an established BOM, matching, policy, severity and OSV surface
+(`openaca/core/__init__.py`'s `__all__`); this step adds the six collection
+names to that `__all__` alongside what is already there, rather than
+replacing it, and a second test asserts the addition without asserting an
+exact count against names this step did not touch.
+
 ### The finding types are returned as themselves
 
 `posture_findings` and `observations` are `PostureFinding` and
@@ -257,6 +265,19 @@ is not promoted as-is.
 A `CollectionError` (`ValueError` subclass, no `exit_code`) joins the facade
 for this case. A CLI caller that still needs a specific exit code catches it
 and raises its own `click.ClickException`.
+
+It also covers a name in `external_scanners` that OpenACA does not recognise.
+Today that validation belongs to Click alone —
+`click.Choice(["nvidia-skillspector"])` (`tools/scan.py:419`,
+`tools/remote/cli.py:205`) rejects anything else before the collection code
+ever runs it; the membership check inside that code
+(`if "nvidia-skillspector" in external_scanners:`,
+`tools/remote/collector.py:258`) silently ignores any other string, typo
+included. A CLI caller never notices, because Click already stopped a bad
+value. `collect_installed_agents` has no Click in front of it, so without this
+check a typo in `external_scanners` would return an ordinary collection while
+the caller believed the scanner had run. `CollectionError` covers both an
+unrecognised name and a recognised one that is not installed.
 
 ### Where the implementation lives
 

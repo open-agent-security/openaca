@@ -133,21 +133,42 @@ stops recommending a command the same commit deletes.
   finding types, raised when a requested external scanner is not installed;
   the CLI layer that still needs an exit code catches it and raises
   `click.ClickException` itself.
+- [ ] **Validate `external_scanners` inside the facade, not only in the CLI.**
+  Today `click.Choice(["nvidia-skillspector"])` (`tools/scan.py:419`,
+  `tools/remote/cli.py:205`) is what rejects an unsupported scanner name — the
+  membership check the moved code performs
+  (`if "nvidia-skillspector" in external_scanners:`,
+  `tools/remote/collector.py:258`) silently no-ops on anything else, including
+  a typo. A CLI caller never notices because Click already rejected the value
+  before this code runs; a programmatic caller of `collect_installed_agents`
+  has no Click in front of it, so a typo would return a normal collection
+  while the caller believes the scanner ran. Raise `CollectionError` for an
+  unrecognised name in `external_scanners`, not only for a recognised one
+  whose executable is missing.
 - [ ] `target` becomes an `include_target: bool = True` argument. The uploader
   hardcoded `None` with the comment "the upload names no place" — the right
   decision in the wrong place. Defaulting to `True` leaves CLI behaviour
   unchanged.
 - [ ] `openaca/core/collect.py` re-exports `collect_installed_agents`,
   `AgentCollection`, `PostureFinding`, `ObservationFinding`, `Standards` and
-  `CollectionError` — six names. Update `openaca/core/__init__.py`'s imports
-  and `__all__`.
-- [ ] A test asserting the facade exposes **exactly** those six names and that
-  `Graph`, `AgentInstance`, `DiscoveryContext`, `WarningLog`, `kind_for`,
-  `resolve_coverage` and `build_agent_graph` are **not** reachable through
-  `openaca.core`. This is the test that stops the surface growing by
-  convenience.
-- [ ] A test that a requested external scanner which is not installed raises
-  `CollectionError`, not `CollectError` or another internal exception type.
+  `CollectionError` — six names, and nothing else. Add those six to
+  `openaca/core/__init__.py`'s imports and `__all__`, alongside — not instead
+  of — the BOM, matching, policy, severity and OSV names `__all__` already
+  carries; this step is additive to the existing facade, which loses nothing.
+- [ ] Two tests, not one, because `openaca.core` already has an established
+  surface this step must not shrink or make ambiguous. First: a test asserting
+  `openaca.core.collect` — the module this step adds — exposes **exactly**
+  those six names. Second: a test asserting `openaca.core.__all__` gained
+  those six names and that `Graph`, `AgentInstance`, `DiscoveryContext`,
+  `WarningLog`, `kind_for`, `resolve_coverage` and `build_agent_graph` are
+  **not** reachable through `openaca.core`, without asserting an exact count
+  against the pre-existing names. This is the test that stops the surface
+  growing by convenience, scoped to the module it actually governs.
+- [ ] Two tests for the scanner-error path: a requested external scanner that
+  is recognised but not installed raises `CollectionError`, not `CollectError`
+  or another internal exception type; and a scanner name `external_scanners`
+  does not recognise (a typo, not `"nvidia-skillspector"`) also raises
+  `CollectionError`, rather than being silently dropped.
 - [ ] Point `tools/remote/collector.py` at the new location so the uploader keeps
   working until Step 4 deletes it, and the suite stays green at this commit.
 - [ ] Four gates + full suite green. Commit.
@@ -252,7 +273,10 @@ stops recommending a command the same commit deletes.
 - [ ] `uv build`, install the wheel into a clean venv **without** `httpx`, and
   run: `openaca scan endpoint --format json`, `openaca bom endpoint`,
   `openaca scan repo --target tests/fixtures/repos/repo-surface-golden`,
-  `openaca lint`, `openaca export`, `openaca triage --help`. All succeed.
+  `openaca lint overlays/`, `openaca export`, `openaca triage --help`. All
+  succeed. `target` is a required `click.argument` on `lint`
+  (`tools/lint.py:228-229`), so a bare `openaca lint` fails with a usage error
+  before it exercises anything — this must point at a real corpus path.
 - [ ] `openaca scan endpoint`'s output contains no occurrence of `remote`, since
   Step 6 removed the one next-action that named it.
 - [ ] And specifically that local policy still works end to end, since it shares

@@ -279,6 +279,44 @@ check a typo in `external_scanners` would return an ordinary collection while
 the caller believed the scanner had run. `CollectionError` covers both an
 unrecognised name and a recognised one that is not installed.
 
+### Discovery inputs are validated inside the facade too
+
+`CollectionError` also covers `kind_id` and the `config_dir`/`kind_id`
+pairing, for the same reason it covers `external_scanners`: today that
+validation belongs to Click alone.
+
+`build_endpoint_collections` calls `discover_agents`
+(`tools/agent_kinds/__init__.py:219-234`) directly. `discover_agents` treats
+`kind_id` as a filter over the registry — `if ctx.kind_id is not None and
+kind.id != ctx.kind_id: continue` — so an unknown `kind_id` matches nothing
+and returns an empty list, not an error. The check that turns an unknown kind,
+a bare `config_dir` with no `kind_id`, or a `config_dir` override for a kind
+that refuses one into an error is `require_kind_for_config_dir`
+(`tools/cli_kind.py:34-63`), and it runs only in the three CLI commands that
+call it (`scan endpoint`, `bom endpoint`, `remote sync endpoint`) — never in
+the collector.
+
+The third case is silent in a way the first two are not. Cursor's
+`root_override_refusal` is set (`tools/agent_kinds/cursor.py:134-141,228`,
+ADR-0054), but its `resolve_config_root` accepts `config_dir` as a parameter
+and ignores it (`tools/agent_kinds/cursor.py:143-157`) — the refusal is
+enforced by the CLI check rejecting the flag combination before discovery
+ever runs, not by discovery itself refusing the argument. Call
+`collect_installed_agents(kind_id="cursor", config_dir=Path("/somewhere/else"))`
+directly and nothing rejects it: Cursor's discovery resolves the root from
+`CURSOR_CONFIG_DIR`/`XDG_CONFIG_HOME`/home as it always does, silently
+scanning the real Cursor installation instead of the location the caller
+named. A CLI caller never reaches this because `require_kind_for_config_dir`
+already ran; a programmatic caller has no Click in front of it and gets back
+a collection from the wrong place with nothing to say so.
+
+The three checks `require_kind_for_config_dir` performs move into a plain
+function raising `CollectionError`; `require_kind_for_config_dir` becomes a
+thin wrapper that calls it and translates the exception into a
+`click.ClickException` carrying the same message it raises today, so `scan`'s
+and `bom`'s error text does not change. `build_endpoint_collections` calls the
+plain validator before calling `discover_agents`.
+
 ### Where the implementation lives
 
 In OpenACA, as it does now — it does not follow the uploader out.

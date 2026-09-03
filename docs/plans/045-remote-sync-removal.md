@@ -145,6 +145,36 @@ stops recommending a command the same commit deletes.
   while the caller believes the scanner ran. Raise `CollectionError` for an
   unrecognised name in `external_scanners`, not only for a recognised one
   whose executable is missing.
+- [ ] **Validate `kind_id` and the `config_dir`/`kind_id` pairing inside the
+  facade, not only in the CLI.** `discover_agents`
+  (`tools/agent_kinds/__init__.py:219-234`) silently returns an empty list for
+  an unknown `kind_id` — it just never matches a registry entry — and
+  `build_endpoint_collections` calls it directly, bypassing
+  `require_kind_for_config_dir` (`tools/cli_kind.py:34-63`), which is what
+  today rejects an unknown kind, requires `config_dir` to be paired with a
+  `kind_id`, and rejects a `config_dir` override for a kind whose
+  `root_override_refusal` is set (Cursor: `tools/agent_kinds/cursor.py:134-141,228`;
+  ADR-0054). Cursor's `resolve_config_root` accepts and ignores `config_dir`
+  (`tools/agent_kinds/cursor.py:143-157`), so a caller passing
+  `kind_id="cursor", config_dir=<override>` gets no error at all — it silently
+  scans the real Cursor home instead of the location it asked for. A CLI
+  caller never hits this because `require_kind_for_config_dir` already ran;
+  a programmatic caller of `collect_installed_agents` has no Click in front of
+  it and gets either an empty collection (unknown kind) or the wrong location
+  scanned (refusing kind + override), with no signal either happened. Extract
+  the three checks `require_kind_for_config_dir` performs into a plain
+  function raising `CollectionError`, and make `require_kind_for_config_dir`
+  a thin wrapper that calls it and re-raises as `click.ClickException` with
+  the same message it produces today — so `scan`'s and `bom`'s existing error
+  text is unchanged, and the facade gets the same validation without a Click
+  dependency. `build_endpoint_collections` calls the plain validator before
+  calling `discover_agents`.
+- [ ] Three tests for these cases: an unknown `kind_id` raises `CollectionError`
+  rather than silently returning an empty collection; `config_dir` without
+  `kind_id` raises `CollectionError`; and `config_dir` with `kind_id="cursor"`
+  raises `CollectionError` rather than silently scanning the real Cursor home.
+  A fourth test asserts `scan --config-dir … ` and `bom --config-dir …`'s
+  error text is byte-identical before and after this refactor.
 - [ ] `target` becomes an `include_target: bool = True` argument. The uploader
   hardcoded `None` with the comment "the upload names no place" — the right
   decision in the wrong place. Defaulting to `True` leaves CLI behaviour

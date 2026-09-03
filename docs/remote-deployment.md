@@ -25,13 +25,17 @@ writes share the same final payload guard. See
 ## Required Variables
 
 - `OPENACA_REMOTE_TOKEN`: Remote API token for the organization.
-- `OPENACA_REMOTE_API_URL`: optional API URL. Defaults to `https://api.openaca.dev`.
+- `OPENACA_REMOTE_API_URL`: optional API URL. Defaults to `https://api.stacktrace.ai`.
 - `OPENACA_VERSION`: optional `openaca` package version. Defaults to `latest`;
   set an exact version to pin deployment.
 
 The scripts install or update `uv`, install the selected `openaca` CLI into the
 console user's tool directory, configure the remote, and load
 `~/Library/LaunchAgents/com.openaca.remote.plist`.
+
+Existing endpoints configured with `https://api.openaca.dev` keep that explicit
+URL. Re-run `openaca remote configure --token <TOKEN>` after the Stacktrace
+endpoint is live to switch them to the new default.
 
 ## Jamf
 

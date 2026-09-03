@@ -19,6 +19,9 @@ class ScriptRun:
 def test_remote_deploy_scripts_default_to_latest_openaca():
     for path in _remote_deploy_scripts():
         text = path.read_text(encoding="utf-8")
+        assert (
+            'OPENACA_REMOTE_API_URL="${OPENACA_REMOTE_API_URL:-https://api.stacktrace.ai}"' in text
+        )
         assert 'OPENACA_VERSION="${OPENACA_VERSION:-latest}"' in text
         # latest must upgrade in place AND allow openaca's pre-releases — but
         # ONLY openaca's, not its deps. --prerelease=explicit + an explicit beta

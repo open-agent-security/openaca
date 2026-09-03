@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENACA_REMOTE_API_URL="${OPENACA_REMOTE_API_URL:-https://api.openaca.dev}"
+OPENACA_REMOTE_API_URL="${OPENACA_REMOTE_API_URL:-https://api.stacktrace.ai}"
 OPENACA_VERSION="${OPENACA_VERSION:-latest}"
 LABEL="com.openaca.remote"
 

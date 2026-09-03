@@ -48,6 +48,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 042 | [Cursor agent kind](042-cursor-agent-kind.md) | ✅ Done | 040 |
 | 043 | [Codex agent kind](043-codex-agent-kind.md) | ✅ Done | 042 |
 | 044 | [Remote policy compilation](044-remote-policy-compilation.md) | ✅ Done | 043 |
+| 045 | [Remote sync removal](045-remote-sync-removal.md) | 📋 Planned | 044 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

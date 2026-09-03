@@ -454,12 +454,18 @@ reason: keeping it means keeping `client.py`, `config.py`, a credential and
 `httpx`, which is every part of what this removes. A removal that keeps the
 download is not a smaller version of this change; it is no version of it.
 
-**`openaca policy` is untouched.** Its `validate` and `compile` over a policy
-file on disk are unchanged, as are `tools/policy.py`, `tools/policy_cli.py` and
-`openaca.core.policy`. What leaves is one network call, not the policy language,
-the evaluator, the risk gates or the host compiler — a consumer that fetches a
-policy document by whatever means can still compile it with
-`openaca policy compile`.
+**`openaca policy` behaves identically.** Its `validate` and `compile` over a
+policy file on disk produce the same output and exit status, before and after,
+as do `tools/policy.py` and `openaca.core.policy`, which are unaffected by this
+spec. `tools/policy_cli.py` is not untouched — the facade work above retypes
+its `click.ClickException` raise sites to `PolicyValidationError` /
+`PolicyEvaluationError` and splits `emit_policy_report` into a pure
+`render_policy_report` plus a `click.echo` in the command — but neither change
+is visible from the command line, since `compile` already catches both error
+types and already prints what `render_policy_report` returns. What leaves is
+one network call, not the policy language, the evaluator, the risk gates or the
+host compiler — a consumer that fetches a policy document by whatever means can
+still compile it with `openaca policy compile`.
 
 - `tools/remote/` and `tests/remote/`, which is where all four subcommands
   live.
@@ -474,6 +480,14 @@ policy document by whatever means can still compile it with
   `test_scan_and_collector_import_the_shared_no_manifests` in
   `tests/test_posture_cursor.py`, which asserts a property of a module that will
   not exist.
+- The last six lines of `test_github_and_docker_mcp_refs_survive_identity_lifecycle`
+  (`tests/test_e2e.py:1178-1186`), a fourth caller of `tools.remote` this test is
+  not one of the three above. Its earlier assertions — BOM round-trip,
+  rendering, OSV federation — exercise ordinary scan behaviour and survive; its
+  last block calls `_prepare_remote_bom` to assert that upload-specific
+  install-source trimming redacts secrets — transport redaction, which
+  *Non-goals* already says this spec removes rather than relocates. Its
+  `_props_by_name` helper stays: two other tests still use it.
 - `docs/remote-deployment.md`, and the remote sections of
   `docs/reference/cli.md` and `docs/README.md`.
 - The whole "When a remote policy is configured..." paragraph and shell block

@@ -328,6 +328,17 @@ hardcoded `target=None`, which becomes the `include_target` argument).
 `openaca/core/collect.py` re-exports the function, as the other facade modules
 do.
 
+Its tests move too, in kind rather than in whole. `tests/remote/test_collect.py`
+tests both the producer logic moving here (a kind's posture allowlist honoured,
+a graph warning downgrading `openaca:composition_coverage`, one agent-rooted
+BOM per installed agent) and upload mechanics that are not moving (install-source
+trimming, the payload-vocabulary mapping, the client, the pending-payload
+cache). Only the first group has anywhere to live once `tests/remote/` is
+deleted below, so it moves to `tests/test_collect.py` against `tools.collect` —
+adapted, not copied verbatim, where an assertion depends on the dict vocabulary
+this step removes (`finding_id`, `summary`, `fix`) rather than on the
+`PostureFinding` / `ObservationFinding` objects it returns instead.
+
 ### `include_target`
 
 A BOM's target names where it was collected from — an absolute path on this
@@ -549,6 +560,12 @@ still compile it with `openaca policy compile`.
   `_props_by_name` helper stays: two other tests still use it.
 - `docs/remote-deployment.md`, and the remote sections of
   `docs/reference/cli.md` and `docs/README.md`.
+- The `openaca remote policy compile` example (`docs/specs/policy-compiler.md:161`)
+  and the paragraph describing its behaviour
+  (`docs/specs/policy-compiler.md:220-227`). That spec documents the command
+  this removal keeps, `openaca policy compile`; left in place, it documents a
+  sibling command that no longer exists in the same breath as one that still
+  does.
 - The whole "When a remote policy is configured..." paragraph and shell block
   in the root `README.md` (`README.md:160-172`) — not only its
   `openaca remote configure` line. The block also runs

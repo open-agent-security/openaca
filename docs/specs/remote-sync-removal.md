@@ -354,6 +354,34 @@ of the call chain, leaving those two call sites unchanged would start writing
 the local config root into every uploaded and dry-run BOM — the redaction
 regression the old hardcode exists to prevent.
 
+`include_target=False` alone is not enough, because the moved function's
+return shape is not what those two callers still need. The version now in
+`tools/collect.py` returns an untrimmed `bom` and typed `PostureFinding` /
+`ObservationFinding` objects — that is the facade's whole point — but
+`collect_endpoint` and `build_endpoint_dry_run_payloads` still build the old
+`EndpointCollection`: a `bom` with install-source arguments trimmed, and
+findings in the upload payload's dict vocabulary (`rule_id`→`finding_id`,
+`title`→`summary`). Handing them the new return value as-is would either break
+on the dict-shaped upload contract or ship untrimmed install-source
+arguments — including secrets such as `--token` — across the network. Until
+Step 6 deletes it, `tools/remote/collector.py` keeps its own
+`_build_agent_collection`, now a thin wrapper: call the moved function with
+`include_target=False`, then apply `_prepare_remote_bom` to its `bom` and
+`_posture_finding_to_payload` / `_observation_to_payload` to its findings,
+exactly as today's inline version does.
+
+That wrapper also owns the `_UPLOAD_DEFERRED_RULES` filter, not the moved
+function. Today's `_build_agent_collection` excludes
+`command_policy_allow`/`project_trust` findings before payload-izing them —
+an upload-schema limitation, not a scanning one (*Deferred* already says these
+two rules "are emitted by the scanner as normal; only the removed uploader
+treated them specially"). The version in `tools/collect.py` must not carry
+that filter, or every facade consumer would silently lose two posture rules
+to a hosted-side storage limitation that was never theirs. The interim
+wrapper applies the filter itself to the combined `posture_findings` list, so
+`tests/remote/`'s existing assertions about deferred rules keep passing until
+Step 6 deletes the constant along with the rest of the uploader.
+
 Its tests move too, in kind rather than in whole. `tests/remote/test_collect.py`
 tests both the producer logic moving here (a kind's posture allowlist honoured,
 a graph warning downgrading `openaca:composition_coverage`, one agent-rooted
@@ -537,6 +565,21 @@ shared. This is a move with no behaviour change, and it is worth doing on its ow
 merits regardless of the removal: it puts posture-surface resolution in the
 posture package and lets a posture test import from the posture package.
 
+**The move must not turn a module-level `kind_for` import into an import
+cycle.** Both functions call `kind_for(agent.kind_id)` and type-hint
+`agent: AgentInstance`. `tools/posture/` is not a leaf: `claude_code.py`,
+`codex.py` and `cursor.py` already import from `tools.posture` at module
+level, and `tools/agent_kinds/__init__.py`'s module body calls `_registry()` —
+which imports those three kind modules — to build `REGISTRY` several lines
+*before* `kind_for` is defined. A module-level `from tools.agent_kinds import
+kind_for` inside the relocated posture functions would therefore try to read
+`kind_for` off `tools.agent_kinds` while that module is still mid-import and
+the name does not exist yet, breaking `import tools.agent_kinds` — and with it
+every CLI entry point — with a circular-import `ImportError`. `AgentInstance`
+is safe as a bare annotation under `from __future__ import annotations`, but
+`kind_for` must be imported inside each function body, the same lazy pattern
+`_registry()` itself already uses for the kind modules.
+
 ## Removal
 
 The `remote` group is four subcommands, and all four go: `configure`, `status`,
@@ -612,6 +655,30 @@ still compile it with `openaca policy compile`.
   `openaca remote configure` line. The block also runs
   `openaca remote policy compile`, so trimming just the `configure` line would
   leave a documented invocation of a command this removal deletes.
+- The `_UPLOAD_DEFERRED_RULES`/OpenACA Cloud framing in
+  `docs/specs/codex-agent-kind.md`'s "Approval posture is scanned, not
+  uploaded" section (lines 181-191). It says the two approval rules "do not
+  yet reach OpenACA Cloud," are "held back at the upload boundary by
+  `_UPLOAD_DEFERRED_RULES` (`tools/remote/collector.py`)," and links the
+  hosted side's tracking issue — a module this removal deletes and a
+  downstream-consumer name this spec's own constraint already forbids. That
+  spec stays active for the rest of the Codex kind, so it is edited, not
+  deleted: state plainly that both rules are ordinary scan output with no
+  upload boundary to be held back from, since `openaca scan endpoint --kind
+  codex --include-posture` already reports both unconditionally and nothing
+  else filters them after this removal.
+- The `tools/remote/cli.py` mention in `docs/specs/multi-agent-support.md:765`,
+  which counts it as one of three surviving copies of the duplicated endpoint
+  config-dir resolver alongside `tools/scan.py` and the Claude Code kind's own
+  `config_root`. Two copies remain after this removal; "Three copies remain"
+  becomes "Two copies remain," with the `tools/remote/cli.py` mention dropped.
+- The "Remote upload payload" bullet in
+  `docs/specs/default-taxonomy-surfacing.md`'s "Out Of Scope" section
+  (lines 230-234), which describes widening `_finding_taxonomies`
+  (`tools/remote/collector.py:808`) via
+  `tools/remote/upload_contract.py` as a deferred decision on code this
+  removal deletes. Reworded to say the upload payload no longer exists, so
+  there is nothing left to widen.
 - The `"sync to remote: openaca remote sync endpoint"` next-action
   `tools/scan.py:722` (`_next_actions_for`) appends to every installed-agent
   scan. It is scan's one output-changing edit in this removal — see

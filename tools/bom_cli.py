@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
-import tempfile
 from pathlib import Path
 
 import click
@@ -18,6 +16,7 @@ from tools.agent_kinds import (
     output_basenames,
     resolve_coverage,
 )
+from tools.atomic_write import write_new_temp_file as _write_new_temp_file
 from tools.bom import agent_info_from_cyclonedx, build_agent_bom
 from tools.bom_diff import BomDiffComponent, BomDiffResult, ChangedBomDiffComponent, diff_boms
 from tools.bom_lint import main as lint_cmd
@@ -119,27 +118,6 @@ def _read_bom_manifest(manifest_path: Path, output_dir: Path) -> set[str]:
     return {
         name for name in names if isinstance(name, str) and _is_safe_manifest_name(name, output_dir)
     }
-
-
-def _write_new_temp_file(directory: Path, content: str) -> Path:
-    """Write `content` to a fresh file in `directory` and return its path.
-
-    A predictable `.tmp` name plus `write_text` still follows a symlink an
-    attacker pre-planted at that exact name — `write_text` opens (and follows)
-    whatever is already there before this function's own `Path.replace` ever
-    runs, so the atomic-replace step arrives too late to help.
-    `tempfile.mkstemp` opens with `O_CREAT | O_EXCL` on an unpredictable
-    name, so it fails on any existing path entry (including a symlink)
-    instead of opening through it."""
-    fd, name = tempfile.mkstemp(dir=directory, suffix=".tmp")
-    temp_path = Path(name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-    except BaseException:
-        temp_path.unlink(missing_ok=True)
-        raise
-    return temp_path
 
 
 def _write_bom_manifest(manifest_path: Path, names: list[str]) -> None:

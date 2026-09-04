@@ -1,10 +1,10 @@
 ---
 id: 0050
 title: Register one asset per machine and upload one BOM per agent
-status: accepted
+status: superseded
 date: 2026-08-24
 supersedes: null
-superseded-by: null
+superseded-by: 0063
 ---
 
 ## Context

@@ -928,6 +928,8 @@ def test_endpoint_omits_project_by_default_and_emits_note(tmp_path, monkeypatch)
     # in test_repo_default_output_is_inventory_card_with_findings.
     assert "openaca bom endpoint --output-dir boms/" in result.output
     assert "--output openaca-bom.json" not in result.output
+    # The removed hosted-service client took its next action with it.
+    assert "sync to remote" not in result.output
     assert "--project" in result.output
 
 

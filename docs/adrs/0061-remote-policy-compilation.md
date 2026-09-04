@@ -1,10 +1,10 @@
 ---
 id: 0061
 title: Fetch remote policy documents before local endpoint compilation
-status: accepted
+status: superseded
 date: 2026-08-31
 supersedes: null
-superseded-by: null
+superseded-by: 0063
 ---
 
 ## Context

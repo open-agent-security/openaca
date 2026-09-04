@@ -21,8 +21,8 @@ from tools.posture import (
     no_manifests,
     resolve_cursor_permissions,
 )
+from tools.posture.agent_surface import agent_posture_manifests
 from tools.posture.rules.mcp_auto_approve import check_mcp_auto_approve
-from tools.remote.collector import _agent_posture_manifests as _remote_agent_posture_manifests
 from tools.scan import _agent_scan_prep as _scan_agent_scan_prep
 
 
@@ -73,14 +73,19 @@ def test_no_manifests_returns_empty_regardless_of_args():
     assert no_manifests(1, 2, three=3) == []
 
 
-def test_scan_and_collector_import_the_shared_no_manifests():
-    import tools.remote.collector as collector
+def test_scan_and_agent_surface_import_the_shared_no_manifests():
+    """`no_manifests` stays in `tools/posture/__init__.py` and stays shared.
+    Posture-surface resolution moved out of the removed hosted-service client
+    into `tools/posture/agent_surface.py`, so that module is now the second
+    importer.
+    """
+    import tools.posture.agent_surface as agent_surface
     import tools.scan as scan
 
     assert scan.no_manifests is no_manifests
-    assert collector.no_manifests is no_manifests
+    assert agent_surface.no_manifests is no_manifests
     assert not hasattr(scan, "_no_manifests")
-    assert not hasattr(collector, "_no_manifests")
+    assert not hasattr(agent_surface, "_no_manifests")
 
 
 # --- Declared MCP collector: scoped mcp.json + plugin candidate list ------
@@ -713,11 +718,11 @@ def test_mcp_auto_approve_claude_code_shape_still_unedited(tmp_path):
     assert findings[0].active_in == ["claude-code"]
 
 
-# --- The scan.py / collector.py boundaries still call through cleanly -----
+# --- The scan.py / posture agent-surface boundaries still call through cleanly ---
 
 
-def test_scan_agent_scan_prep_and_remote_collector_reference_shared_helper():
+def test_scan_agent_scan_prep_and_posture_agent_surface_reference_shared_helper():
     """Both consolidated call sites are reachable/importable post-refactor —
     a regression here would be an ImportError, not a silent behavior change."""
     assert callable(_scan_agent_scan_prep)
-    assert callable(_remote_agent_posture_manifests)
+    assert callable(agent_posture_manifests)

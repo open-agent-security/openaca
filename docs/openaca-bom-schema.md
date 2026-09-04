@@ -15,9 +15,9 @@ The current OpenACA Agent BOM schema version is `0.5`. It roots the document on
 the agent rather than the place it was scanned from (ADR-0044): `metadata.component`
 is the agent, and `bom-ref` is the exact occurrence key (ADR-0042). `openaca bom
 lint` accepts `0.1` through `0.5`; the emitter produces `0.5` for every
-agent-rooted document. The one exception is the remote collector
-(`tools/remote/collector.py`), which still emits the pre-`0.5`, place-rooted
-shape and stamps it `0.4` to match.
+agent-rooted document. The one exception is a graphless call, which produces no
+`metadata.component` at all, emits the pre-`0.5` shape and stamps it `0.4` to
+match.
 
 The machine-readable OpenACA profile lives at
 `schema/openaca-bom.schema.json`. Validate a BOM with:
@@ -70,9 +70,9 @@ today because Claude Code is the only registered kind.
 `agent/<name>` for a **subagent** the runtime loads, and the two must not share a
 namespace (ADR-0045).
 
-An agent's instance key spans two layers — the asset (which place) comes from the
-upload envelope, and `openaca:agent_kind` plus `openaca:agent_id` (which sort of
-agent) come from the document. A document deliberately carries no place identity.
+An agent's instance key spans two layers — the asset (which place) comes from
+wherever the document was collected or read from, and `openaca:agent_kind` plus
+`openaca:agent_id` (which sort of agent) come from the document. A document deliberately carries no place identity.
 
 Node-key root labels name the kind that **owns** the config root a path came from
 (`claude-code/<rel>`), so a file one runtime compat-reads from another's config
@@ -180,7 +180,7 @@ suffix derived from the component observation fields.
 | `openaca:composition_source` | `installed` (read from a place where the agent is provisioned) or `declared` (read from a repo declaration). Stored on `metadata.component`; **required and explicit** — declared results stay out of exposure counts, so a missing value would turn potential exposure into actual. |
 | `openaca:composition_coverage` | How much of this agent's composition the scan could observe: `unknown`, `partial`, or `complete` (ADR-0046). Resolved per composition source as `min(baseline, evidence)`, so a manifest that failed to parse downgrades it. Distinct from the per-component `openaca:capability_coverage`. |
 | `openaca:agent_id` | The identifier the kind's own surface uses to address one agent, for kinds that can have more than one agent in one place. **Absent** for a singleton kind such as Claude Code. Part of the instance key, never a renameable label. |
-| `openaca:target` | Where this agent's composition was read from — a path locally, a neutral literal on upload. Distinct from `openaca:composition_source`, which records whether that was a running agent or a declaration. |
+| `openaca:target` | Where this agent's composition was read from — a path when the caller asked for one, **absent** when it asked for a document that names no place. Distinct from `openaca:composition_source`, which records whether that was a running agent or a declaration. |
 | `openaca:identity` | Optional source-stable, version-independent, role-qualified cross-BOM join key (ADR-0042). Missing means the component must remain occurrence-local. |
 | `openaca:match_coordinate` | Explicit external audit or registry coordinate used for matching when no PURL or Git coordinate exists. |
 | `openaca:component_type` | Agent component type such as `plugin`, `skill`, `mcp_server`, `hook`, `command`, `agent`, or `package`. |

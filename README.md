@@ -157,20 +157,6 @@ openaca policy compile policy.yaml --target "$HOME/.claude" --host claude --outp
 sudo install -m 644 /tmp/50-openaca-policy.json "/Library/Application Support/ClaudeCode/managed-settings.d/50-openaca-policy.json"
 ```
 
-When a remote policy is configured, the equivalent endpoint command fetches
-the current organization policy before doing the same fresh local scan and
-compilation:
-
-```bash
-openaca remote configure --token "$OPENACA_REMOTE_TOKEN"
-openaca remote policy compile --target "$HOME/.claude" --host claude --output /tmp/50-openaca-policy.json
-sudo install -m 644 /tmp/50-openaca-policy.json "/Library/Application Support/ClaudeCode/managed-settings.d/50-openaca-policy.json"
-```
-
-It does not install the artifact. If the remote has no policy, cannot be
-reached, or returns an invalid policy, compilation fails without replacing an
-existing artifact.
-
 The current Claude target can enforce exact MCP admission, explicit plugin
 blocks, and a category-wide block on standalone skills. It does not provide a
 managed allowlist for already-installed plugins. A policy with

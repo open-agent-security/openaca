@@ -1,10 +1,10 @@
 ---
 id: 0032
 title: Use remote as the public upload CLI namespace
-status: accepted
+status: superseded
 date: 2026-06-09
 supersedes: 0024
-superseded-by: null
+superseded-by: 0063
 ---
 
 ## Context

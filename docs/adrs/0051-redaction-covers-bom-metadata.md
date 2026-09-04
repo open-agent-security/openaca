@@ -1,10 +1,10 @@
 ---
 id: 0051
 title: Extend the upload redaction contract to BOM metadata
-status: accepted
+status: superseded
 date: 2026-08-24
 supersedes: null
-superseded-by: null
+superseded-by: 0063
 ---
 
 ## Context

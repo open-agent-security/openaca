@@ -9,7 +9,6 @@ from tools.export import main as export_cmd
 from tools.lint import main as lint_cmd
 from tools.policy_cli import main as policy_cmd
 from tools.promote import main as promote_cmd
-from tools.remote.cli import main as remote_cmd
 from tools.scan import main as scan_cmd
 from tools.seed.__main__ import main as seed_cmd
 from tools.triage_cli import main as triage_cmd
@@ -26,7 +25,6 @@ triage_cmd.short_help = "Triage structured scan JSON into exposure reports."
 bom_cmd.short_help = "Generate an Agent BOM for a repository or endpoint."
 lint_cmd.short_help = "Validate overlay YAML against the schema."
 export_cmd.short_help = "Build the static overlay export."
-remote_cmd.short_help = "Configure remote endpoint services."
 promote_cmd.short_help = "Promote a reviewed candidate into the corpus."
 seed_cmd.short_help = "Generate review candidates from an OSV dump."
 policy_cmd.short_help = "Validate and compile restrictive endpoint policies."
@@ -36,7 +34,6 @@ main.add_command(triage_cmd, name="triage")
 main.add_command(bom_cmd, name="bom")
 main.add_command(lint_cmd, name="lint")
 main.add_command(export_cmd, name="export")
-main.add_command(remote_cmd, name="remote")
 main.add_command(promote_cmd, name="promote")
 main.add_command(seed_cmd, name="seed")
 main.add_command(policy_cmd, name="policy")

@@ -110,11 +110,4 @@ FIXTURE
                                                     || fail "openaca bom repo"
 [[ -s "$SMOKE/bom.json" ]]                          || fail "bom repo wrote no document"
 
-HOME="$SMOKE/home"; mkdir -p "$HOME"; export HOME
-OPENACA_REMOTE_TOKEN=ot_SMOKE "$openaca" remote configure --api-url http://127.0.0.1:9 >/dev/null \
-                                                    || fail "openaca remote configure"
-out="$("$openaca" remote sync endpoint 2>&1)"; code=$?
-[[ "$code" -eq 2 ]] || fail "remote sync: expected exit 2 (clean network failure), got $code"
-grep -q Traceback <<<"$out" && fail "remote sync crashed instead of failing cleanly"
-
 printf '\n\033[32m✓ both CI jobs passed locally\033[0m\n'

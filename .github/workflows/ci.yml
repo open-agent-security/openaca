@@ -85,8 +85,8 @@ jobs:
   # exercises it: build the wheel, install with deps resolved fresh (mirroring
   # scripts/install.sh's --prerelease=explicit), then run the user-facing
   # commands — so a too-loose constraint fails CI here, not a user's shell.
-  # No network calls: the scan fixture has no OSV-queryable components, and
-  # the remote sync targets an unreachable port (per linter discipline,
+  # No network calls: the scan fixture has no OSV-queryable components, so
+  # nothing here queries an advisory database (per linter discipline,
   # external APIs must not gate PRs).
   smoke-install:
     runs-on: ubuntu-latest
@@ -128,24 +128,4 @@ jobs:
           "$openaca" bom repo --target /tmp/smoke-target --output /tmp/smoke-bom.json
           test -s /tmp/smoke-bom.json
 
-          # remote configure + sync: config, endpoint collection, and the
-          # HTTP client stack. The API is an unreachable port, so a healthy
-          # CLI exits 2 with its network-failure message; a dependency
-          # breakage surfaces as a crash (exit 1 / traceback) and fails here.
-          export HOME=/tmp/smoke-home
-          mkdir -p "$HOME"
-          OPENACA_REMOTE_TOKEN=ot_SMOKE "$openaca" remote configure --api-url http://127.0.0.1:9
-          set +e
-          out=$("$openaca" remote sync endpoint 2>&1)
-          code=$?
-          set -e
-          printf '%s\n' "$out"
-          if [ "$code" -ne 2 ]; then
-            echo "expected exit 2 (clean network failure), got $code" >&2
-            exit 1
-          fi
-          if printf '%s' "$out" | grep -q "Traceback"; then
-            echo "remote sync crashed instead of failing cleanly" >&2
-            exit 1
-          fi
           echo "smoke ok: CLI surfaces work against freshly-resolved deps"

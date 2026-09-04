@@ -48,7 +48,8 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 042 | [Cursor agent kind](042-cursor-agent-kind.md) | ✅ Done | 040 |
 | 043 | [Codex agent kind](043-codex-agent-kind.md) | ✅ Done | 042 |
 | 044 | [Remote policy compilation](044-remote-policy-compilation.md) | ✅ Done | 043 |
-| 045 | [Remote sync removal](045-remote-sync-removal.md) | 📋 Planned | 044 |
+| 045 | [Published consumption surfaces](045-published-consumption-surfaces.md) | ✅ Done | 044 |
+| 046 | [Remote client removal](046-remote-client-removal.md) | ✅ Done | 045 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 
@@ -71,7 +72,6 @@ audit before implementation is marked complete:
 | OSV federation | Query eligibility is intentional; unsupported refs do not false-query. |
 | Matcher | Unsupported or non-version-like refs do not produce false findings. |
 | Posture | Mutable/immutable install-reference behavior is intentional. |
-| Fleet upload | Upload preparation preserves safe source coordinates and drops raw argv. |
 | E2E | At least one realistic fixture proves the lifecycle across multiple sinks. |
 
 ## Pre-V0 setup (already done)

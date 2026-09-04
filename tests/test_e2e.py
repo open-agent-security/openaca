@@ -29,8 +29,6 @@ from tools.export import build
 from tools.osv_federation import collect_osv_queries
 from tools.parsers.mcp_json import parse as parse_mcp
 from tools.policy_cli import main as policy_main
-from tools.remote.collector import _prepare_remote_bom, build_endpoint_dry_run_payloads
-from tools.remote.upload_contract import enforce_remote_upload_contract
 from tools.render import render_inventory_tree
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -730,87 +728,6 @@ risk_gates:
     assert any("vulnerability GHSA-3ch2-jxxc-v4xf" in d["reasons"] for d in blocked)
 
 
-def test_remote_policy_compile_blocks_a_vulnerable_standalone_mcp_server(tmp_path, monkeypatch):
-    """ADR-0061 E2E, remote variant of the test above: `openaca remote policy
-    compile` fetches a policy document over a faked `RemoteClient` (the only
-    stand-in — retrieval is an unprivileged network call the local command
-    doesn't own) and from there runs the identical compilation path as
-    `openaca policy compile`: real agent discovery, graph construction, OSV
-    lookup against the autouse offline-OSV fixture
-    (`tests/fixtures/osv/ghsa-3ch2-jxxc-v4xf.json`), the checked-in
-    `overlays/GHSA-3ch2-jxxc-v4xf.yaml` merge, advisory matching, the
-    vulnerability risk gate, and Claude managed-settings compilation. A
-    regression that only shows up once a remote-sourced policy reaches real
-    endpoint evidence — as opposed to the admission-only fake policy in
-    `tests/remote/test_cli.py` — fails this test.
-    """
-    from tools.cli import main as openaca_main
-
-    (tmp_path / ".mcp.json").write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "evil": {
-                        "command": "npx",
-                        "args": ["-y", "@akoskm/create-mcp-server-stdio@0.9.0"],
-                    }
-                }
-            }
-        )
-    )
-
-    remote_policy_document = {
-        "version": 1,
-        "admission": {
-            "mcps": {"default": "allowed"},
-            "plugins": {"default": "allowed"},
-            "skills": {"default": "allowed"},
-        },
-        "risk_gates": {"vulnerabilities": {"ids": ["CVE-2025-54994"]}},
-    }
-
-    class FakeClient:
-        def __init__(self, *, api_url: str, token: str) -> None:
-            pass
-
-        def get_policy_document(self):
-            return remote_policy_document
-
-    config_path = tmp_path / "remote.toml"
-    config_path.write_text(
-        '[remote]\napi_url = "http://remote.test"\ntoken = "ot_TEST"\n', encoding="utf-8"
-    )
-    monkeypatch.setattr("tools.remote.cli.get_config_path", lambda: config_path)
-    monkeypatch.setattr("tools.remote.cli.RemoteClient", FakeClient)
-
-    runner = CliRunner()
-    result = runner.invoke(
-        openaca_main,
-        [
-            "remote",
-            "policy",
-            "compile",
-            "--target",
-            str(tmp_path),
-            "--host",
-            "claude",
-            "--dry-run",
-            "--format",
-            "json",
-            "--managed-settings-dir",
-            str(tmp_path / "managed"),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    report = json.loads(result.stdout)
-    assert report["expected_policy"]["deniedMcpServers"] == [
-        {"serverCommand": ["npx", "-y", "@akoskm/create-mcp-server-stdio@0.9.0"]}
-    ]
-    blocked = [d for d in report["decisions"] if d["result"] == "blocked"]
-    assert any("vulnerability GHSA-3ch2-jxxc-v4xf" in d["reasons"] for d in blocked)
-
-
 def test_endpoint_json_output_explains_plugin_bundled_component_path(tmp_path):
     """Endpoint JSON output should identify the bundled MCP as the finding
     component while preserving the plugin container in component_path."""
@@ -1120,7 +1037,7 @@ def test_default_scan_text_shows_agentic_taxonomy_from_real_corpus(tmp_path):
     assert "owasp-asi: ASI02, ASI05  [owasp-agentic-top-10-2026]" in result.output
 
 
-# Identity lifecycle: BOM round-trip, rendering, OSV query filtering, and remote upload.
+# Identity lifecycle: BOM round-trip, rendering, and OSV query filtering.
 
 
 def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
@@ -1174,16 +1091,6 @@ def test_github_and_docker_mcp_refs_survive_identity_lifecycle():
     assert "hashicorp/terraform-mcp-server@0.4.0 (stdio via docker)" in rendered
     assert "uvx (stdio, args hidden)" not in rendered
     assert "docker (stdio, args hidden)" not in rendered
-
-    prepared = _prepare_remote_bom(bom)
-    github_props = _props_by_name(prepared["components"][0])
-    docker_props = _props_by_name(prepared["components"][1])
-    assert github_props["openaca:install_source"] == (
-        f"uvx git+https://github.com/oraios/serena@{sha}"
-    )
-    assert docker_props["openaca:install_source"] == ("docker hashicorp/terraform-mcp-server:0.4.0")
-    assert "secret" not in github_props["openaca:install_source"]
-    assert "TFE_TOKEN" not in docker_props["openaca:install_source"]
 
 
 def _props_by_name(component):
@@ -1319,44 +1226,6 @@ def test_declared_repo_scan_keeps_component_bom_refs(tmp_path):
     props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
     assert props["openaca:composition_source"] == "declared"
     assert any(c["bom-ref"].startswith(".claude/skills/deploy/") for c in doc["components"])
-
-
-def test_remote_upload_payload_is_agent_rooted_and_redacted(tmp_path):
-    """The uploaded document is agent-rooted, names no place, and carries no
-    absolute path. Fails if the collector, the agent registry, the BOM
-    emitter, or the redaction layer regresses."""
-    config_dir = tmp_path / ".claude"
-    (config_dir / "skills" / "demo").mkdir(parents=True)
-    (config_dir / "skills" / "demo" / "SKILL.md").write_text(
-        "---\nname: demo\ndescription: demo\n---\n", encoding="utf-8"
-    )
-
-    payloads = build_endpoint_dry_run_payloads(
-        config_dir=config_dir, kind_id="claude-code", project=None
-    )
-
-    assert len(payloads) == 1
-    payload = payloads[0]
-    assert payload["target_locator"] == "endpoint:user-scope"
-    metadata = payload["bom"]["metadata"]
-    props = {p["name"]: p["value"] for p in metadata["properties"]}
-    assert props["openaca:schema_version"] == "0.5"
-    assert "openaca:target" not in props
-    assert "openaca:target_type" not in props
-    component = metadata["component"]
-    assert component["bom-ref"] == "root/claude-code"
-    agent_props = {p["name"]: p["value"] for p in component["properties"]}
-    assert agent_props["openaca:agent_kind"] == "claude-code"
-    assert agent_props["openaca:composition_source"] == "installed"
-    assert "openaca:agent_id" not in agent_props
-    enforce_remote_upload_contract(payload)  # raises if any absolute path survived
-    # The enforcer's scope is itself part of what this change alters, so calling
-    # it alone would be self-referential. Assert the synthesized metadata
-    # strings directly, independent of the enforcer's own idea of its scope.
-    synthesized = [component["name"], *(p["value"] for p in component["properties"])]
-    synthesized += [p["value"] for p in metadata["properties"]]
-    assert not [s for s in synthesized if s.startswith("/") or s.startswith("file://")]
-    assert str(tmp_path) not in json.dumps(payload)
 
 
 def test_declared_repo_bom_covers_both_registered_kinds(tmp_path):
@@ -1699,49 +1568,11 @@ def _codex_home_with_approvals(tmp_path, **kwargs):
     return root
 
 
-def test_e2e_codex_remote_sync_payload_is_acceptable_to_the_hosted_schema(tmp_path):
-    """(c) `remote sync endpoint` is the one command Tasks 5-11 never exercise
-    directly, and the goal names it.
-
-    Asserts the payload against the hosted request contract rather than by
-    grepping a JSON blob for substrings. The blob form passed while every real
-    upload was rejected: a `component`-scoped finding with no
-    `component_bom_ref` fails the hosted schema, and the request is atomic, so
-    one such finding dropped the agent's entire BOM. Codex's two approval
-    rules produce exactly that shape and are held back at the upload boundary
-    (`_UPLOAD_DEFERRED_RULES`) until the hosted side can model an approval —
-    the sibling test below proves they still fire locally."""
-    from tools.remote.collector import build_endpoint_dry_run_payloads
-
-    root = _codex_home_with_approvals(tmp_path, disabled_plugin=True)
-
-    payloads = build_endpoint_dry_run_payloads(config_dir=root, kind_id="codex", project=None)
-
-    assert len(payloads) == 1
-    payload = payloads[0]
-    properties = payload["bom"]["metadata"]["component"]["properties"]
-    assert {"name": "openaca:agent_kind", "value": "codex"} in properties
-    # The inventory the upload exists to carry, which a rejected request loses.
-    assert payload["bom"]["components"], "an accepted upload carries the agent's components"
-
-    for finding in payload["posture_findings"]:
-        if finding["scope"] == "component":
-            assert finding.get("component_bom_ref"), (
-                f"{finding['finding_id']} claims a component it cannot name — "
-                "the hosted schema rejects the whole request for this"
-            )
-
-    uploaded = {f["finding_id"] for f in payload["posture_findings"]}
-    # Codex's policy surfaces are not MCP-specific and it has no Anthropic
-    # settings, so neither rule may appear regardless of the deferral.
-    assert "openaca-posture-mcp-auto-approve" not in uploaded
-    assert "openaca-posture-api-endpoint-override" not in uploaded
-
-
 def test_e2e_codex_approval_posture_still_reports_locally(tmp_path):
-    """The other half of the deferral: held back from the upload, never from
-    the scan. If this fails, the upload boundary has leaked into the scanner
-    and the user has lost a finding rather than deferred publishing it."""
+    """Codex's two approval rules — command policy and project trust — fire in
+    a local endpoint scan. They are the rules most easily lost to a change in
+    how approval configuration is read, and nothing else asserts that a Codex
+    endpoint scan surfaces them."""
     from tools.scan import main as scan_main
 
     root = _codex_home_with_approvals(tmp_path)
@@ -1844,3 +1675,46 @@ def test_e2e_codex_project_trust_from_profile_only_is_still_reported(tmp_path):
     assert result.exit_code in (0, 1), result.output
     assert "openaca-posture-project-trust" in result.output
     assert "profile-only-repo" in result.output
+
+
+def test_e2e_collect_installed_agents_through_the_published_facade(tmp_path):
+    """The cross-layer promise of the collection API: discovery, graph, BOM,
+    coverage and posture wired together through the one published function.
+
+    Fails if any one of them regresses. An unpinned MCP install source is the
+    vulnerable-component shape here: it lands in the BOM as a component and
+    fires `openaca-posture-mutable-install-reference`, returned as a
+    `PostureFinding` rather than as a payload dictionary.
+    """
+    from openaca.core import PostureFinding, collect_installed_agents
+
+    config_dir = tmp_path / ".claude"
+    skill_dir = config_dir / "skills" / "deploy"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: deploy\ndescription: deploy skill\n---\nrun\n", encoding="utf-8"
+    )
+    (config_dir / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"git": {"command": "npx", "args": ["-y", "@cyanheads/git-mcp-server"]}}}
+        ),
+        encoding="utf-8",
+    )
+
+    (collected,) = collect_installed_agents(config_dir=config_dir, kind_id="claude-code")
+
+    assert collected.agent_kind == "claude-code"
+    assert collected.config_root == config_dir
+    names = {c["name"] for c in collected.bom["components"]}
+    assert "@cyanheads/git-mcp-server" in names
+    assert "deploy" in names
+    assert collected.component_count == len(collected.bom["components"])
+
+    mutable = [
+        f
+        for f in collected.posture_findings
+        if f.rule_id == "openaca-posture-mutable-install-reference"
+    ]
+    assert mutable, [f.rule_id for f in collected.posture_findings]
+    assert isinstance(mutable[0], PostureFinding)
+    assert mutable[0].agent_kind == "claude-code"

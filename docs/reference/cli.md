@@ -54,7 +54,7 @@ openaca scan endpoint \
     --project /path/to/repo
 ```
 
-`scan endpoint`, `bom endpoint`, and `remote sync endpoint` all take `--kind`
+`scan endpoint` and `bom endpoint` both take `--kind`
 to limit discovery to one registered agent kind (`claude-code`, `cursor`, or
 `codex`).
 Omit `--kind` and discovery finds every installed kind whose own default root
@@ -301,3 +301,163 @@ openaca bom diff \
     --after openaca-agent-bom.json \
     --format json
 ```
+
+## Calling OpenACA from Python
+
+`openaca.core` is for a **program** calling OpenACA; the Click group is for
+offering OpenACA's commands to a **person**. A caller that already holds a
+policy document in memory wants the first: constructing flag strings for
+arguments a function takes directly is untyped where the function is typed, so
+a renamed parameter becomes a runtime failure instead of a type error at
+upgrade time.
+
+`openaca.core` is a consumption seam, not a stable public API pre-V0
+(ADR-0028). Pin a version and upgrade deliberately.
+
+### Collecting what this machine is running
+
+One function, one pass, no internals:
+
+```python
+from openaca.core import ScannerUnavailable, collect_installed_agents
+
+for collected in collect_installed_agents(
+    config_dir=None,        # default per kind when omitted
+    project=None,           # layer a project's local configuration in
+    kind_id=None,           # all installed kinds when omitted
+    external_scanners=(),   # optional third-party scanners to run
+    include_target=True,    # False omits the local config root from the BOM
+):
+    collected.agent_kind          # str
+    collected.agent_id            # str | None
+    collected.config_root         # Path — this agent's own configuration root
+    collected.bom                 # CycloneDX document, as a dict
+    collected.posture_findings    # tuple[PostureFinding, ...]
+    collected.observations        # tuple[ObservationFinding, ...]
+    collected.component_count     # int
+    collected.warnings            # tuple[str, ...] — malformed manifests and the like
+```
+
+All arguments are keyword-only. Discovering nothing returns an empty sequence —
+"nothing is installed here" is an answer, not a failure.
+
+`config_root` is **per result**, not the `config_dir` argument. On a machine
+running one agent kind the two agree; on a machine running two, the argument can
+be at most one kind's root, so a consumer relativising the other kind's paths
+against it gets bare basenames rather than an error and ships a
+partially-relativised document with nothing raised. Relativise against
+`collected.config_root`.
+
+Findings come back as `PostureFinding` and `ObservationFinding` — OpenACA's own
+vocabulary, not some server's payload shape. Both, and the `Standards` type a
+`PostureFinding` field exposes, are importable from `openaca.core`. They are
+`frozen=True` dataclasses, but shallowly: their nested lists and dictionaries
+are mutable, so copy a finding you intend to keep beyond the call and mutate.
+
+**The one exception the call raises** is `ScannerUnavailable`, when
+`external_scanners` names a scanner whose command is not installed. That is the
+only failure a caller is expected to handle.
+
+`include_target=True` (the default) records the agent's own configuration root
+in the BOM's metadata. Pass `False` when the document leaves the machine: a
+BOM's target is an absolute local path.
+
+#### Validating a kind and a config root before collecting
+
+Not every `kind_id` / `config_dir` pair is legal, and the illegal ones fail
+*silently* at the collection call rather than raising: an unknown kind collects
+nothing and looks like a machine with nothing installed, and a kind that refuses
+a root override reads its own default root instead of the one you named. Both
+are indistinguishable from success.
+
+```python
+from openaca.core import KindSelectionError, validate_kind_selection
+
+try:
+    validate_kind_selection(kind_id, config_dir)
+except KindSelectionError as exc:
+    ...  # exc carries the message OpenACA's own CLI shows
+```
+
+Three rules: the kind must be one OpenACA knows; a `config_dir` without a
+`kind_id` is ambiguous once more than one kind is installed; and a kind may
+refuse a root override outright — Cursor does, because it resolves
+`<home>/.cursor` and ignores the override (ADR-0054).
+
+Call it before `collect_installed_agents` whenever either value came from
+outside your program. OpenACA's own commands call the same function, so a
+consumer that uses it rejects exactly what the CLI rejects, with the same words.
+
+### Compiling a policy for this endpoint
+
+```python
+from openaca.core import compile_endpoint_policy, parse_policy, render_policy_report
+
+policy = parse_policy(document)
+report = compile_endpoint_policy(
+    policy,
+    target=target,
+    project=project,
+    output=output,                        # None with dry_run=True
+    managed_settings_dir=managed_dir,
+    dry_run=False,
+)
+print(render_policy_report(report, "text"))   # or "json"
+```
+
+`render_policy_report` returns exactly what `openaca policy compile` prints,
+newline for newline; the `click.echo` of it stays in the command.
+
+**Two things the command does are the command's, not the compilation's.**
+`openaca policy compile` prints a note when `--project` was omitted, because an
+operator who omits it is silently getting a narrower compile — a programmatic
+caller wanting that prints its own. And it translates
+`PolicyValidationError` / `PolicyEvaluationError` into a Click exception — a
+programmatic caller catches the domain errors itself. Every expected input and
+evaluation failure is one of those two types.
+
+Writing the artifact can additionally raise `OSError`, untranslated (an
+unwritable or read-only `output` directory being the realistic trigger), so a
+caller passing an `output` path handles it the way it handles any other write.
+
+There is no `host` argument. `--host` is a `Choice(["claude"])` gate on the
+command's input rather than a key that selects anything, since the Claude
+compiler is called unconditionally; the day a second host compiler lands, the
+function gains the argument.
+
+### Trimming an install source
+
+```python
+from openaca.core import (
+    is_mcp_package_launch_install_source,
+    safe_pinned_mcp_install_source,
+    safe_unpinned_mcp_install_source,
+)
+```
+
+These answer "is this install source a package launch, and what is the safe
+reduced form of it". Trimming one by hand diverges from OpenACA's notion of a
+safe package name the first time either side changes.
+
+### Offering OpenACA's commands under your own name
+
+```python
+import click
+
+from openaca.cli import main as openaca_main
+
+@click.group()
+def mytool() -> None: ...
+
+mytool.add_command(openaca_main.commands["scan"], name="scan")
+```
+
+Click builds a usage line from the invocation, so the command renders under
+your program's name with OpenACA's real options, output and exit codes.
+
+Promised: `openaca.cli.main` is a `click.Group`, and `scan`, `bom` and `policy`
+are reachable on it by those names. Not promised: any command's internal
+structure, option set or output format — a flag can be added, and a consumer
+re-registering the command inherits it rather than breaking — nor any
+obligation to keep a given command in the group. Registering a name that later
+disappears fails at import or lookup, which is the right moment to find out.

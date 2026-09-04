@@ -2355,7 +2355,7 @@ def test_render_text_cards_separate_agents_and_dedupe_next_actions():
     shared = "emit Agent BOM: openaca bom endpoint --output-dir boms/"
     card_a = AgentCard(
         target=RenderTarget(host_surface="Claude Code", rows=[("config", "/a")]),
-        next_actions=[shared, "sync to remote: openaca remote sync endpoint"],
+        next_actions=[shared, "include project-local config: openaca scan endpoint --project ."],
     )
     card_b = AgentCard(
         target=RenderTarget(host_surface="Runtime B", rows=[("config", "/b")]),
@@ -2366,7 +2366,7 @@ def test_render_text_cards_separate_agents_and_dedupe_next_actions():
     one = render_text([], {}, ScanStats(), cards=[card_a])
 
     assert two.count(shared) == 1
-    assert two.count("sync to remote: openaca remote sync endpoint") == 1
+    assert two.count("include project-local config: openaca scan endpoint --project .") == 1
     assert "─" * 60 in two
     # A single card renders exactly as it did before agents became the root.
     assert "─" * 60 not in one

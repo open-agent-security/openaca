@@ -280,13 +280,11 @@ and surface each item to the user (do them on request, not silently):
 2. **Downstream consumers pinning `openaca==<old-version>`**: re-pin
    them to the new version (separate PR in each consuming repo) so
    their matching semantics track what scanners now upload. Urgent
-   when the release changed BOM identity shapes or upload redaction;
-   routine otherwise.
+   when the release changed BOM identity shapes; routine otherwise.
 3. **Served install scripts**: if the release changed CLI surface that
-   `deploy/remote/*.sh` or the site's `collect.sh` invoke, confirm the
-   site has rebuilt/redeployed so served scripts and the published
-   package agree (the b6→b7 `fleet`→`remote` rename had a window where
-   scripts on main called a CLI that PyPI didn't have yet).
+   the site's `collect.sh` invokes, confirm the site has
+   rebuilt/redeployed so served scripts and the published package
+   agree.
 
 ## Failure modes the skill prevents
 

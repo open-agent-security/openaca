@@ -29,13 +29,11 @@ OPENACA_BOM_SCHEMA_VERSION = "0.5"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 # `0.5` means agent-rooted (ADR-0044): `metadata.component` is present and keyed
-# `root/<kind>[/<id>]`. Any document that isn't in that shape — a graphless call
+# `root/<kind>[/<id>]`. A document that isn't in that shape — a graphless call
 # (`build_agent_bom(refs, ...)` with no `graph=`, so there is no `metadata.component`
-# at all) or the remote collector's still-place-rooted graph (`tools/remote/
-# collector.py` calls `build_agent_bom` with a graph but no `agent_kind`, so
-# `target_bom_ref` is the synthetic target key, not a `root/`-prefixed one) — must
-# keep claiming `0.4`, the version its shape actually is, or a version-aware
-# consumer reads `0.5` and expects a `metadata.component` it isn't getting.
+# at all) — must keep claiming `0.4`, the version its shape actually is, or a
+# version-aware consumer reads `0.5` and expects a `metadata.component` it isn't
+# getting.
 _LEGACY_PLACE_ROOTED_SCHEMA_VERSION = "0.4"
 
 # The `metadata.component` bom-ref prefix marking an agent-rooted document
@@ -140,7 +138,7 @@ class AgentBOM:
     def _metadata_component(self) -> dict[str, Any]:
         assert self.target_bom_ref is not None
         if self.agent_kind is None:
-            # Legacy place-rooted document (the remote collector).
+            # Legacy place-rooted document: graph-backed, but with no `agent_kind`.
             return {
                 "type": "application",
                 "bom-ref": self.target_bom_ref,

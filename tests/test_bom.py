@@ -640,8 +640,8 @@ def test_cyclonedx_round_trips_plugin_enabled_state():
     and `False` — a kind without the key (Cursor) must not gain one.
 
     Without a dedicated property, `_component_properties` dropped the value
-    entirely, so `openaca bom endpoint` and the remote-sync payload serialized
-    a disabled Codex plugin indistinguishably from an enabled one.
+    entirely, so `openaca bom endpoint` serialized a disabled Codex plugin
+    indistinguishably from an enabled one.
     """
     original = build_agent_bom(
         [
@@ -1075,9 +1075,8 @@ def test_agent_bom_metadata_component_is_the_agent(tmp_path):
 
 
 def test_legacy_place_rooted_bom_keeps_schema_version_0_4():
-    """The remote collector (`tools/remote/collector.py`) still builds a
-    graph-backed BOM without `agent_kind`, which `_metadata_component`
-    serializes via its legacy branch: `metadata.component` keyed on the
+    """A graph-backed BOM built without `agent_kind` is serialized by
+    `_metadata_component` via its legacy branch: `metadata.component` keyed on the
     synthetic target rather than `root/<kind>`, plus `openaca:target_type`/
     `openaca:target` properties. Schema `0.5` is defined as the agent-rooted
     shape (ADR-0044), so a document in this pre-0.5 shape must keep claiming

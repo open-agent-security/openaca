@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import replace
+from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -1412,3 +1416,355 @@ risk_gates:
         "openaca-posture-api-endpoint-override" in limitation
         for limitation in report["limitations"]
     )
+
+
+# --- `openaca policy compile`, one case per exception branch -----------------
+#
+# Captured before the compilation moved out of `tools/policy_cli.py` into
+# `tools/policy_compile.py`, which retyped every `click` exception the moved
+# bodies raise into `PolicyValidationError` / `PolicyEvaluationError`. These
+# are the evidence that the command line did not move with it: the command
+# already wraps both domain types back into a `click.ClickException`, which
+# exits 1 and prints `Error: <message>`, so each stderr line and exit code
+# below must be byte-identical before and after.
+
+_ADMIT_ALL = """\
+version: 1
+admission:
+  mcps:
+    default: allowed
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+"""
+
+_BLOCK_MCPS = """\
+version: 1
+admission:
+  mcps:
+    default: blocked
+  plugins:
+    default: allowed
+  skills:
+    default: allowed
+"""
+
+_VULN_GATE = (
+    _ADMIT_ALL
+    + """\
+risk_gates:
+  vulnerabilities:
+    severity_at_least: high
+"""
+)
+
+
+def _policy_file(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "policy.yaml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _compile(tmp_path: Path, policy_path: Path, *extra: str, target: Path | None = None):
+    args = [
+        "compile",
+        str(policy_path),
+        "--target",
+        str(tmp_path if target is None else target),
+        "--host",
+        "claude",
+        "--managed-settings-dir",
+        str(tmp_path / "managed"),
+        *extra,
+    ]
+    return CliRunner().invoke(policy_main, args)
+
+
+def _skill(root: Path, name: str) -> None:
+    directory = root / "skills" / name
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+
+
+def test_policy_compile_requires_output_unless_dry_run(tmp_path):
+    """Exit code 2, not 1: the command performs this check itself before
+    calling the compilation, so a CLI user keeps getting a `UsageError` even
+    though the compilation now raises `PolicyValidationError` for the same
+    argument combination."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL))
+
+    assert result.exit_code == 2
+    assert "Error: --output is required unless --dry-run is set" in result.output
+
+
+def test_policy_compile_fails_when_no_agent_is_installed_at_the_target(tmp_path):
+    target = tmp_path / "nowhere"
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run", target=target)
+
+    assert result.exit_code == 1
+    assert result.output == f"Error: no installed agent found at {target}\n"
+
+
+def test_policy_compile_fails_on_an_incomplete_inventory(tmp_path):
+    """A malformed manifest under the target makes `build_agent_graph` warn, and
+    an incomplete inventory would otherwise be evaluated as if the missing
+    component did not exist. No `vulnerabilities` risk gate here, so the branch
+    under test is the graph one."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".mcp.json").write_text("{not json", encoding="utf-8")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output.startswith("Error: ")
+    assert ".mcp.json" in result.output
+    assert "could not parse" in result.output
+
+
+def test_policy_compile_fails_on_a_non_queryable_component_under_a_vulnerability_gate(tmp_path):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    _skill(tmp_path, "deploy")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _VULN_GATE), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        "Error: vulnerability gates cannot evaluate non-queryable component(s): deploy\n"
+    )
+
+
+def test_the_non_queryable_message_truncates_past_three_components(tmp_path):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    for name in ("a", "b", "c", "d"):
+        _skill(tmp_path, name)
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _VULN_GATE), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        "Error: vulnerability gates cannot evaluate non-queryable component(s): a, b, c, ...\n"
+    )
+
+
+def test_policy_compile_fails_on_an_osv_load_warning(tmp_path, monkeypatch):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers":{"gh":{"command":"npx","args":["-y","@x/gh@1.0.0"]}}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "tools.policy_compile._load_osv_with_overlays",
+        lambda refs: ([], ["osv.dev federation failed: boom"], 0, {}),
+    )
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _VULN_GATE), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == "Error: osv.dev federation failed: boom\n"
+
+
+def test_policy_compile_fails_when_the_managed_settings_directory_cannot_be_read(
+    tmp_path, monkeypatch
+):
+    """Branch 1 of `_managed_key_collisions`: the directory `stat()` failing
+    with an `OSError` that is not `FileNotFoundError`. A missing path is the
+    early return, not a failure, so the error has to be induced."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    real_stat = Path.stat
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == managed:
+            raise PermissionError(13, "Permission denied")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        f"Error: cannot read managed settings directory {managed}: [Errno 13] Permission denied\n"
+    )
+
+
+def test_policy_compile_fails_when_the_dropin_path_cannot_be_read(tmp_path, monkeypatch):
+    """Branch 3: the `managed-settings.d` drop-in `stat()` failing the same
+    way."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    managed = tmp_path / "managed"
+    dropins = managed / "managed-settings.d"
+    dropins.mkdir(parents=True)
+    real_stat = Path.stat
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == dropins:
+            raise PermissionError(13, "Permission denied")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        f"Error: cannot read managed settings drop-in path {dropins}: "
+        "[Errno 13] Permission denied\n"
+    )
+
+
+def test_policy_compile_fails_when_the_dropin_path_is_not_a_directory(tmp_path):
+    """Branch 4: the drop-in path exists but is not a directory."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    dropins = managed / "managed-settings.d"
+    dropins.write_text("not a directory", encoding="utf-8")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        f"Error: managed settings drop-in path is not a directory: {dropins}\n"
+    )
+
+
+def test_policy_compile_fails_when_the_dropin_glob_cannot_be_read(tmp_path, monkeypatch):
+    """Branch 5: `glob("*.json")` over the drop-in directory failing."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    dropins = tmp_path / "managed" / "managed-settings.d"
+    dropins.mkdir(parents=True)
+    real_glob = Path.glob
+
+    def flaky_glob(self, pattern, *args, **kwargs):
+        if self == dropins:
+            raise PermissionError(13, "Permission denied")
+        return real_glob(self, pattern, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "glob", flaky_glob)
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        f"Error: cannot read managed settings drop-in path {dropins}: "
+        "[Errno 13] Permission denied\n"
+    )
+
+
+def test_policy_compile_fails_when_a_managed_settings_file_cannot_be_parsed(tmp_path):
+    """Branch 6: a settings file that cannot be read, decoded or JSON-parsed."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    settings = managed / "managed-settings.json"
+    settings.write_text("{not json", encoding="utf-8")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output.startswith(f"Error: cannot read managed settings file {settings}: ")
+
+
+def test_policy_compile_fails_when_a_managed_settings_file_is_not_an_object(tmp_path):
+    """Branch 7: a settings file whose top-level JSON is not an object."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    settings = managed / "managed-settings.json"
+    settings.write_text("[]", encoding="utf-8")
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _ADMIT_ALL), "--dry-run")
+
+    assert result.exit_code == 1
+    assert result.output == (
+        f"Error: managed settings file {settings} must contain a JSON object\n"
+    )
+
+
+def test_policy_compile_text_report_and_written_artifact(tmp_path):
+    """The text report, the artifact on disk and the digest over it. The
+    `--project`-omitted note is the command's own, printed to stderr after the
+    report — a programmatic caller wanting it prints its own."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"command":"npx","args":["-y","safe-mcp"]}}}', encoding="utf-8"
+    )
+    output = tmp_path / "artifact.json"
+
+    result = _compile(tmp_path, _policy_file(tmp_path, _BLOCK_MCPS), "--output", str(output))
+
+    assert result.exit_code == 0, result.output
+    assert result.output == (
+        "Expected Claude policy:\n"
+        "{\n"
+        '  "allowManagedMcpServersOnly": true,\n'
+        '  "allowedMcpServers": [],\n'
+        '  "deniedMcpServers": [\n'
+        "    {\n"
+        '      "serverCommand": [\n'
+        '        "npx",\n'
+        '        "-y",\n'
+        '        "safe-mcp"\n'
+        "      ]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "\n"
+        "Components: 1\n"
+        "  blocked: mcp-server/npm/safe-mcp (mcps default: blocked)\n"
+        "note: project-local configuration was not scanned; pass --project to include it\n"
+    )
+    artifact = output.read_text(encoding="utf-8")
+    assert json.loads(artifact)["allowManagedMcpServersOnly"] is True
+    assert artifact.endswith("\n")
+
+
+def test_policy_compile_json_report_digest_matches_the_written_artifact(tmp_path):
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    output = tmp_path / "artifact.json"
+
+    result = _compile(
+        tmp_path,
+        _policy_file(tmp_path, _BLOCK_MCPS),
+        "--output",
+        str(output),
+        "--format",
+        "json",
+    )
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout.splitlines()[0])
+    assert report["artifact"]["written"] is True
+    assert report["artifact"]["output"] == str(output)
+    assert report["artifact"]["digest"] == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+def test_policy_compile_lets_an_artifact_write_oserror_escape(tmp_path):
+    """The one failure the domain errors deliberately do not cover.
+    `_write_artifact` translates none of `mkdir` / the temp write /
+    `Path.replace`'s `OSError`s, so it escapes the command uncaught. Wrapping it
+    in a domain error the command catches would turn a traceback into
+    `Error: ...` with exit code 1, which is a command-line behaviour change."""
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    os.chmod(readonly, 0o500)
+    try:
+        result = _compile(
+            tmp_path,
+            _policy_file(tmp_path, _BLOCK_MCPS),
+            "--output",
+            str(readonly / "artifact.json"),
+        )
+    finally:
+        os.chmod(readonly, 0o700)
+
+    assert isinstance(result.exception, OSError)
+    assert not isinstance(result.exception, click.ClickException)

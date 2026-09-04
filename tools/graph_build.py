@@ -259,9 +259,14 @@ def build_graph(
     include_gitignored: bool = False,
     warnings: list[str] | None = None,
 ) -> Graph:
-    """Legacy place-rooted graph. Retained for `tools/remote/collector.py`, whose
-    upload contract keeps `endpoint/` labels and the `openaca:target` root ref
-    until the collector is migrated to agent discovery."""
+    """Legacy place-rooted graph: `endpoint/` labels and an `openaca:target`
+    root ref rather than an agent root.
+
+    Dead production code. Its only production caller was the removed
+    hosted-service client, which kept this shape for its upload contract;
+    nothing in `tools/` or `openaca/` calls it now, and every remaining caller
+    is a test. Kept pending a decision because deleting it cascades into
+    `tools/bom.py`'s schema-0.4 branch, which is still live by another path."""
     return build_rooted_graph(
         target,
         mode,
@@ -3302,8 +3307,8 @@ def _record_codex_rules_coverage(graph: Graph, config_root: Path) -> None:
 
     The approval DSL declares no components, so it produces no ref and would
     otherwise be invisible to coverage. Appending to the graph's warnings is
-    enough for all three commands, because `scan endpoint`, `bom endpoint`, and
-    `remote sync endpoint` already fold that list into `evidence_gaps`.
+    enough for both commands, because `scan endpoint` and `bom endpoint`
+    already fold that list into `evidence_gaps`.
     """
     rules_dir = config_root / "rules"
     if not rules_dir.is_dir():

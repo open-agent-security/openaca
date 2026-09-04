@@ -38,4 +38,3 @@ specific architecture decision or implementation plan.
 - [Deploy Notes](deploy.md)
 - [SARIF Conventions](sarif-conventions.md)
 - [Seed Review Rules](seed-review-rules.md)
-- [Remote Deployment](remote-deployment.md)

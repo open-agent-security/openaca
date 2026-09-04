@@ -15,7 +15,7 @@ document is deliberately de-identified (ADR-0045):
 
 | Part | Where it comes from |
 |---|---|
-| asset | the upload envelope; for a document read off disk, wherever the file came from |
+| asset | wherever the document was collected or read from |
 | `openaca:agent_kind` | the document |
 | `openaca:agent_id` | the document, **when present** — absent for a kind with one agent per place, where asset plus kind already resolve |
 

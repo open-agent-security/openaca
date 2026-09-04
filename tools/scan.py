@@ -719,7 +719,6 @@ def _next_actions_for(agent: AgentInstance) -> list[str]:
     if agent.project_root is None:
         actions.append("include project-local config: openaca scan endpoint --project .")
     actions.append("emit Agent BOM: openaca bom endpoint --output-dir boms/")
-    actions.append("sync to remote: openaca remote sync endpoint")
     return actions
 
 

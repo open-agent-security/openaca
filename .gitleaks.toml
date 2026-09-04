@@ -1,10 +1,2 @@
-# Gitleaks config for openaca. tests/remote/ contains synthetic ot_*
-# tokens used as stand-in credentials in remote-feature tests; not real.
 [extend]
 useDefault = true
-
-[[allowlists]]
-description = "Synthetic ot_* tokens in remote tests; human-invented labels cannot be real credentials"
-condition = "AND"
-paths = ['''tests/remote/''']
-regexes = ['''ot_[A-Z][A-Z0-9_]+''', '''ot_A1b2C3d4E5f6G7h8WXYZ''']

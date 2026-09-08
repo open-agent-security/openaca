@@ -57,25 +57,56 @@ def is_ignored(rel_path: Path, spec: Optional[GitIgnoreSpec]) -> bool:
     return spec.match_file(rel_path.as_posix())
 
 
-def _has_negated_patterns(spec: Optional[GitIgnoreSpec]) -> bool:
-    if spec is None:
-        return False
-    return any(getattr(pattern, "include", None) is False for pattern in spec.patterns)
+def _negated_prefixes(spec: Optional[GitIgnoreSpec]) -> tuple[tuple[str, ...], ...]:
+    """Literal rooted prefixes; an empty prefix can affect any subtree.
+
+    Keep the existing descendant re-inclusion behavior, even below an ignored
+    parent. Only prune when a negation demonstrably cannot reach the subtree.
+    """
+    prefixes: list[tuple[str, ...]] = []
+    for pattern in spec.patterns if spec is not None else ():
+        if pattern.include is not False:
+            continue
+        text = getattr(pattern, "pattern", None)
+        if not isinstance(text, str) or not text.startswith("!") or "\\" in text:
+            return ((),)
+        text = text[1:].rstrip().removesuffix("/")
+        if "/" not in text:
+            return ((),)  # A basename pattern matches at any depth.
+        parts = text.removeprefix("/").split("/")
+        prefix: list[str] = []
+        for part in parts:
+            if not part or part in (".", "..") or any(char in part for char in "*?["):
+                break
+            prefix.append(part)
+        if not prefix:
+            return ((),)
+        prefixes.append(tuple(prefix))
+    return tuple(prefixes)
 
 
-def _is_ignored_dir(rel_path: Path, spec: Optional[GitIgnoreSpec]) -> bool:
+def _is_ignored_dir(
+    rel_path: Path,
+    spec: Optional[GitIgnoreSpec],
+    negated_prefixes: tuple[tuple[str, ...], ...],
+) -> bool:
     if rel_path.parts and rel_path.parts[0] in _ALWAYS_SKIP_DIRS:
         return True
     if spec is None:
         return False
-    if _has_negated_patterns(spec):
-        return False
     rel_posix = rel_path.as_posix().rstrip("/") + "/"
-    return spec.match_file(rel_posix)
+    if not spec.match_file(rel_posix):
+        return False
+    parts = rel_path.parts
+    return not any(
+        parts[: min(len(parts), len(prefix))] == prefix[: min(len(parts), len(prefix))]
+        for prefix in negated_prefixes
+    )
 
 
 def iter_unignored_files(root: Path, spec: Optional[GitIgnoreSpec]) -> Iterator[Path]:
     """Yield files under `root`, pruning ignored directories before descent."""
+    negated_prefixes = _negated_prefixes(spec)
     for dirpath_str, dirnames, filenames in os.walk(root):
         dirpath = Path(dirpath_str)
         dirnames.sort()
@@ -86,7 +117,7 @@ def iter_unignored_files(root: Path, spec: Optional[GitIgnoreSpec]) -> Iterator[
                 rel = child.relative_to(root)
             except ValueError:
                 rel = child
-            if _is_ignored_dir(rel, spec):
+            if _is_ignored_dir(rel, spec, negated_prefixes):
                 continue
             kept_dirnames.append(dirname)
         dirnames[:] = kept_dirnames

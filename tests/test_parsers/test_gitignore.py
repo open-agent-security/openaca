@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pathspec import GitIgnoreSpec
+
 from tools.parsers import parse_repo_grouped
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
@@ -195,3 +198,103 @@ def test_dotclaude_paths_not_accidentally_gitignored(tmp_path):
     assert ".claude/settings.json" in paths
     # settings.local.json isn't in REGISTRY anyway, but this confirms the
     # committed settings.json isn't accidentally caught by the rule.
+
+
+def test_unrelated_negations_do_not_visit_ignored_trees(tmp_path, monkeypatch):
+    import os
+
+    for relative in (
+        "package.json",
+        ".venv/lib/package.json",
+        ".worktrees/topic/package.json",
+        "candidates/ready_for_review/keep.yaml",
+        "candidates/discard/junk.yaml",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    (tmp_path / ".gitignore").write_text(
+        ".venv/\n.worktrees/\ncandidates/*\n"
+        "!candidates/ready_for_review/\ncandidates/ready_for_review/*\n"
+        "!candidates/ready_for_review/*.yaml\n"
+    )
+    scanned = []
+    original = os.scandir
+
+    def scandir(path):
+        scanned.append(Path(path).relative_to(tmp_path).as_posix())
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    paths = {
+        p.relative_to(tmp_path).as_posix()
+        for p in iter_unignored_files(tmp_path, load_gitignore_spec(tmp_path))
+    }
+    assert paths == {".gitignore", "package.json", "candidates/ready_for_review/keep.yaml"}
+    assert ".venv" not in scanned
+    assert ".worktrees" not in scanned
+    assert "candidates/discard" not in scanned
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        "!ignored/keep.json",
+        "!/ignored/keep.json",
+        "!ignored/keep/",
+        "!ignored/deep/*.json",
+        "!ignored/**/keep.json",
+        "!ignored/[dk]eep/keep.json",
+        "!ignored/d?ep/keep.json",
+        "!ignore*/deep/keep.json",
+        "!**/keep.json",
+        "!keep.json",
+        "!keep/",
+        "!/elsewhere",
+        "!elsewhere/keep.json",
+        "!ignored/keep.json   ",
+        r"!ignored/space\ dir/keep.json",
+        "! ignored/keep.json",
+    ],
+)
+def test_pruning_preserves_file_matching_with_negations(tmp_path, exception):
+    """Compare traversal to filtering every file, including legacy re-inclusions."""
+    relatives = [
+        "ignored/keep.json",
+        "ignored/junk.json",
+        "ignored/deep/keep.json",
+        "ignored/deep/junk.json",
+        "ignored/keep/child.json",
+        "ignored/space dir/keep.json",
+        " ignored/keep.json",
+        "elsewhere/keep.json",
+        ".venv/keep.json",
+        ".venv/keep/child.json",
+        "public/keep.json",
+    ]
+    for relative in relatives:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    spec = GitIgnoreSpec.from_lines(["ignored/", " ignored/", "elsewhere/", ".venv/", exception])
+    expected = {relative for relative in relatives if not spec.match_file(relative)}
+    actual = {
+        path.relative_to(tmp_path).as_posix() for path in iter_unignored_files(tmp_path, spec)
+    }
+    assert actual == expected
+
+
+def test_git_directory_stays_pruned_with_global_negations(tmp_path, monkeypatch):
+    import os
+
+    _write_package_json(tmp_path / ".git" / "package.json")
+    _write_package_json(tmp_path / "package.json")
+    original = os.scandir
+
+    def scandir(path):
+        assert Path(path) != tmp_path / ".git"
+        return original(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    spec = GitIgnoreSpec.from_lines(["!**/package.json"])
+    assert list(iter_unignored_files(tmp_path, spec)) == [tmp_path / "package.json"]

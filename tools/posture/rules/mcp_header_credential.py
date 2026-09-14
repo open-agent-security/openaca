@@ -85,9 +85,15 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                         and header.lower() in _AUTH_HEADERS
                         and _is_literal(value, static=key == "http_headers")
                     ):
-                        field = f"{key}.{header.lower()}"
-                        owner = header_owners.get(field, str(path))
-                        fields_by_owner.setdefault(owner, set()).add(field)
+                        # `header_owners` is keyed by the header's exact
+                        # spelling (see `_mcp_server_header_field_owners`) so
+                        # that `Authorization` and `authorization` set by
+                        # different scopes on the same server don't collide
+                        # into one owner. The evidence field name is still
+                        # lowercased for a stable, human-readable report.
+                        evidence_field = f"{key}.{header.lower()}"
+                        owner = header_owners.get(f"{key}.{header}", str(path))
+                        fields_by_owner.setdefault(owner, set()).add(evidence_field)
             if not fields_by_owner:
                 continue
             label = f"mcp-server/{name}"

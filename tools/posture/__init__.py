@@ -535,7 +535,19 @@ def _mcp_server_header_field_owners(
                     continue
                 scope_headers = server_entry.get(field)
                 if isinstance(scope_headers, dict) and header_name in scope_headers:
-                    owners[f"{field}.{header_name.lower()}"] = path
+                    # Keyed by the header's exact spelling, not a lowercased
+                    # form: HTTP header names are case-insensitive, so a plain
+                    # dict merge (`_deep_merge` compares keys literally) can
+                    # keep both `Authorization` and `authorization` as
+                    # distinct entries in `merged_headers` when two scopes set
+                    # the same logical header with different casing.
+                    # Lowercasing this key would collapse both onto one owner
+                    # entry, letting whichever header is processed last win
+                    # attribution for both — including a case where a lower
+                    # scope's literal credential inherits a higher scope's
+                    # indirect-reference owner. `check_mcp_header_credential`
+                    # looks this up by the same exact spelling.
+                    owners[f"{field}.{header_name}"] = path
                     break
     return owners
 

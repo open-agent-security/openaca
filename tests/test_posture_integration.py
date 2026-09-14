@@ -500,6 +500,79 @@ def test_mcp_autoapprove_provenance_higher_precedence_wins(tmp_path):
     assert "settings.local.json" in declared_path
 
 
+def test_managed_scope_credential_is_attributed_to_managed_settings(
+    tmp_path, _isolate_managed_settings
+):
+    """A literal MCP auth header declared in managed settings must be
+    attributed to the managed-settings path — the same path
+    `graph_build._seed_remote_mcps` sets as `source_manifest` for a
+    managed-scope MCP server ref — so `_attach_bom_ref` can match this
+    finding to the graph's managed-settings component instead of reporting
+    it as unenforceable during policy compilation."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    managed_dir = _isolate_managed_settings
+
+    (managed_dir / "managed-settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "corp": {
+                        "url": "https://mcp.corp.example/api",
+                        "headers": {"Authorization": "Bearer dummy-managed-token"},
+                    }
+                }
+            }
+        )
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, None)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1
+    declared_by = header_findings[0].declared_by
+    assert declared_by is not None
+    assert declared_by["path"] == str(managed_dir / "managed-settings.json")
+
+
+def test_managed_dropin_only_credential_still_attributes_to_managed_scope(
+    tmp_path, _isolate_managed_settings
+):
+    """Managed policy can arrive purely via a `managed-settings.d/*.json`
+    drop-in with no base `managed-settings.json` file on disk. Attribution
+    must still point at the representative managed path rather than falling
+    through to the user-scope settings file just because that exact file is
+    absent."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    managed_dir = _isolate_managed_settings
+
+    (managed_dir / "managed-settings.d").mkdir(parents=True)
+    (managed_dir / "managed-settings.d" / "50-corp-policy.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "corp": {
+                        "url": "https://mcp.corp.example/api",
+                        "headers": {"Authorization": "Bearer dummy-managed-token"},
+                    }
+                }
+            }
+        )
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, None)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1
+    declared_by = header_findings[0].declared_by
+    assert declared_by is not None
+    assert declared_by["path"] == str(managed_dir / "managed-settings.json")
+    assert "user-config" not in declared_by["path"]
+
+
 def test_posture_json_output_uses_unified_findings_array(tmp_path):
     runner = CliRunner()
     result = runner.invoke(

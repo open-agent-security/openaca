@@ -44,7 +44,17 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                 continue
             if not isinstance(entry.get("url"), str) or not entry["url"]:
                 continue
-            fields: set[str] = set()
+            raw_header_owners = entry.get("_header_owners")
+            header_owners = raw_header_owners if isinstance(raw_header_owners, dict) else {}
+            # `collect_endpoint_settings_manifests` deep-merges a server entry
+            # from every scope that touches it, so `headers`/`http_headers`
+            # can combine keys owned by different scope files. Grouping by
+            # `header_owners` (falling back to this manifest's own path when
+            # absent, e.g. a plain repo `mcp.json`) keeps a credential
+            # attributed to the scope that actually declared it rather than
+            # collapsing every flagged header into one finding on whichever
+            # scope the manifest tuple happens to be keyed under.
+            fields_by_owner: dict[str, set[str]] = {}
             for key in ("headers", "http_headers"):
                 headers = entry.get(key)
                 if not isinstance(headers, dict):
@@ -55,23 +65,26 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                         and header.lower() in _AUTH_HEADERS
                         and _is_literal(value, static=key == "http_headers")
                     ):
-                        fields.add(f"{key}.{header.lower()}")
-            if not fields:
+                        field = f"{key}.{header.lower()}"
+                        owner = header_owners.get(field, str(path))
+                        fields_by_owner.setdefault(owner, set()).add(field)
+            if not fields_by_owner:
                 continue
             label = f"mcp-server/{name}"
-            findings.append(
-                PostureFinding(
-                    rule_id=RULE_ID,
-                    title=TITLE,
-                    severity=SEVERITY,
-                    confidence=CONFIDENCE,
-                    component={"type": "mcp_server", "name": label},
-                    active_in=[],
-                    declared_by={"kind": "manifest", "path": str(path)},
-                    component_path=[{"type": "mcp_server", "name": label}],
-                    standards=_STANDARDS,
-                    remediation=REMEDIATION,
-                    evidence={"fields": sorted(fields)},
+            for owner_path, fields in fields_by_owner.items():
+                findings.append(
+                    PostureFinding(
+                        rule_id=RULE_ID,
+                        title=TITLE,
+                        severity=SEVERITY,
+                        confidence=CONFIDENCE,
+                        component={"type": "mcp_server", "name": label},
+                        active_in=[],
+                        declared_by={"kind": "manifest", "path": owner_path},
+                        component_path=[{"type": "mcp_server", "name": label}],
+                        standards=_STANDARDS,
+                        remediation=REMEDIATION,
+                        evidence={"fields": sorted(fields)},
+                    )
                 )
-            )
     return findings

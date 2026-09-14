@@ -422,6 +422,51 @@ def _mcp_server_field_owner(
     return None
 
 
+_MCP_HEADER_FIELDS: tuple[str, ...] = ("headers", "http_headers")
+
+
+def _mcp_server_header_field_owners(
+    scope_checks: list[tuple[dict | None, Path]],
+    key: str,
+    sub_key: str,
+    sub_value: dict,
+) -> dict[str, Path]:
+    """Map each individual header key in a merged `mcpServers.<name>` entry's
+    `headers`/`http_headers` dict to the scope that actually declares it.
+
+    `_deep_merge` recurses into `headers`/`http_headers` themselves (they are
+    plain dicts), so a merged entry can combine `headers.Authorization` from
+    one scope with an unrelated `headers.Accept` a higher-precedence scope
+    adds to the *same* server. `_mcp_server_field_owner` only checks whether a
+    scope's raw entry contains the `headers` container at all, so it would
+    attribute the whole merged entry — including a credential a lower scope
+    owns — to a higher scope that never declared that header. This resolves
+    ownership at header-key granularity so `mcp_header_credential` can
+    attribute each flagged header to the scope that actually set it, instead
+    of whichever scope happens to touch the container.
+    """
+    owners: dict[str, Path] = {}
+    for field in _MCP_HEADER_FIELDS:
+        merged_headers = sub_value.get(field)
+        if not isinstance(merged_headers, dict):
+            continue
+        for header_name in merged_headers:
+            for scope_data, path in scope_checks:
+                if scope_data is None:
+                    continue
+                scope_mcp = scope_data.get(key)
+                if not isinstance(scope_mcp, dict):
+                    continue
+                server_entry = scope_mcp.get(sub_key)
+                if not isinstance(server_entry, dict):
+                    continue
+                scope_headers = server_entry.get(field)
+                if isinstance(scope_headers, dict) and header_name in scope_headers:
+                    owners[f"{field}.{header_name.lower()}"] = path
+                    break
+    return owners
+
+
 def collect_endpoint_settings_manifests(
     config_dir: Path,
     project_root: Path | None,
@@ -472,6 +517,16 @@ def collect_endpoint_settings_manifests(
                 owner = None
                 if key == "mcpServers" and isinstance(sub_value, dict):
                     owner = _mcp_server_field_owner(scope_checks, key, sub_key, sub_value)
+                    header_owners = _mcp_server_header_field_owners(
+                        scope_checks, key, sub_key, sub_value
+                    )
+                    if header_owners:
+                        sub_value = {
+                            **sub_value,
+                            "_header_owners": {
+                                field: str(path) for field, path in header_owners.items()
+                            },
+                        }
                 if owner is not None:
                     source_path = owner
                 else:

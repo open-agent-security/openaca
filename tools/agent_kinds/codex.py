@@ -19,6 +19,7 @@ from tools.posture import (
 from tools.posture.rules import (
     command_policy_allow,
     insecure_transport,
+    mcp_header_credential,
     mutable_install,
     project_trust,
     skill_capability,
@@ -258,6 +259,7 @@ KIND = AgentKind(
     posture_rules=frozenset(
         {
             insecure_transport.RULE_ID,
+            mcp_header_credential.RULE_ID,
             mutable_install.RULE_ID,
             skill_capability.RULE_ID,
             command_policy_allow.RULE_ID,

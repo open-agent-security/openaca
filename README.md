@@ -230,8 +230,8 @@ Today it reads:
   dependencies bundled by a Claude Code plugin.
 
 Use `--include-posture` to include configuration-hygiene findings such as
-unpinned installs, insecure MCP endpoints, endpoint overrides, and MCP
-auto-approval.
+unpinned installs, insecure MCP endpoints, inline MCP authentication credentials,
+endpoint overrides, and MCP auto-approval.
 
 See [Coverage](https://github.com/open-agent-security/openaca/blob/main/docs/reference/coverage.md),
 [CLI Reference](https://github.com/open-agent-security/openaca/blob/main/docs/reference/cli.md),

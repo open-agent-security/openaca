@@ -18,6 +18,7 @@ from tools.posture import (
 from tools.posture.rules import (
     insecure_transport,
     mcp_auto_approve,
+    mcp_header_credential,
     mutable_install,
     skill_capability,
 )
@@ -232,6 +233,7 @@ KIND = AgentKind(
             mutable_install.RULE_ID,
             skill_capability.RULE_ID,
             mcp_auto_approve.RULE_ID,
+            mcp_header_credential.RULE_ID,
         }
     ),
     manifest_patterns=tuple(HOST_AGNOSTIC_REGISTRY) + tuple(CURSOR_MANIFEST_REGISTRY),

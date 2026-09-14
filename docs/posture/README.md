@@ -40,6 +40,7 @@ skills with executable tool access.
 | [`openaca-posture-insecure-transport`](openaca-posture-insecure-transport.md) | Remote MCP endpoint uses insecure transport | medium | high |
 | [`openaca-posture-api-endpoint-override`](openaca-posture-api-endpoint-override.md) | Claude API endpoint is overridden | medium/high | medium |
 | [`openaca-posture-mcp-auto-approve`](openaca-posture-mcp-auto-approve.md) | MCP server has auto-approval enabled | medium | medium |
+| [`openaca-posture-mcp-header-credential`](openaca-posture-mcp-header-credential.md) | MCP authentication header contains a literal credential | medium | high |
 | [`openaca-posture-skill-executable-tool`](openaca-posture-skill-executable-tool.md) | Skill declares executable tool access | low | high |
 
 ## Standards mapping

@@ -376,6 +376,52 @@ def collect_endpoint_mcp_manifests(
     return out
 
 
+# Risk-relevant `mcpServers.<name>` fields, in the order provenance prefers
+# them when a merged server entry carries more than one and they are owned
+# by different scopes. `headers`/`http_headers` come first because
+# mcp_header_credential's finding, if misattributed, can point
+# `_attach_bom_ref` at an unrelated component (e.g. a stdio command) in a
+# higher-precedence scope instead of the URL entry that actually carries the
+# credential — worse than mcp_auto_approve pointing at the wrong scope for an
+# approval list. `autoApprove` preserves the attribution
+# `collect_endpoint_settings_manifests` already gave that rule before this
+# field list existed.
+_MCP_SERVER_PROVENANCE_FIELDS: tuple[str, ...] = ("headers", "http_headers", "autoApprove")
+
+
+def _mcp_server_field_owner(
+    scope_checks: list[tuple[dict | None, Path]],
+    key: str,
+    sub_key: str,
+    sub_value: dict,
+) -> Path | None:
+    """The scope whose own raw entry declares the risk-relevant field a
+    posture rule evaluates for this merged `mcpServers` entry, or `None` if
+    no scope directly declares any such field (the caller then falls back to
+    server-name-level attribution).
+
+    A merged server entry can combine fields from more than one scope (e.g.
+    `command` from a higher-precedence file, `headers` from a lower one).
+    Attributing the whole entry to "the highest-precedence scope that
+    mentions this server name at all" — without this check — would point a
+    mcp_header_credential or mcp_auto_approve finding at a file that never
+    declared the flagged field.
+    """
+    for field in _MCP_SERVER_PROVENANCE_FIELDS:
+        if field not in sub_value:
+            continue
+        for scope_data, path in scope_checks:
+            if scope_data is None:
+                continue
+            scope_mcp = scope_data.get(key)
+            if not isinstance(scope_mcp, dict):
+                continue
+            server_entry = scope_mcp.get(sub_key)
+            if isinstance(server_entry, dict) and field in server_entry:
+                return path
+    return None
+
+
 def collect_endpoint_settings_manifests(
     config_dir: Path,
     project_root: Path | None,
@@ -423,38 +469,16 @@ def collect_endpoint_settings_manifests(
             # point to different source files.
             for sub_key, sub_value in merged_value.items():
                 source_path = config_dir / "settings.json"  # fallback: user scope
-                if (
-                    key == "mcpServers"
-                    and isinstance(sub_value, dict)
-                    and "autoApprove" in sub_value
-                ):
-                    # Attribute to the scope that owns autoApprove for this
-                    # server entry, since that is the field the
-                    # mcp_auto_approve rule evaluates as the risk signal.
-                    # Falls back to server-name-level attribution if no scope
-                    # directly sets autoApprove (e.g. it arrived via deep-merge
-                    # from a value that wasn't present in any raw scope).
-                    found = False
-                    for scope_data, path in scope_checks:
-                        if scope_data is None:
-                            continue
-                        scope_mcp = scope_data.get(key)
-                        if not isinstance(scope_mcp, dict):
-                            continue
-                        server_entry = scope_mcp.get(sub_key)
-                        if isinstance(server_entry, dict) and "autoApprove" in server_entry:
-                            source_path = path
-                            found = True
-                            break
-                    if not found:
-                        for scope_data, path in scope_checks:
-                            if scope_data is None:
-                                continue
-                            scope_dict = scope_data.get(key)
-                            if isinstance(scope_dict, dict) and sub_key in scope_dict:
-                                source_path = path
-                                break
+                owner = None
+                if key == "mcpServers" and isinstance(sub_value, dict):
+                    owner = _mcp_server_field_owner(scope_checks, key, sub_key, sub_value)
+                if owner is not None:
+                    source_path = owner
                 else:
+                    # Falls back to server-name-level attribution if no scope
+                    # directly sets a risk-relevant field (e.g. it arrived via
+                    # deep-merge from a value that wasn't present in any raw
+                    # scope), and unconditionally for every non-mcpServers key.
                     for scope_data, path in scope_checks:
                         if scope_data is None:
                             continue

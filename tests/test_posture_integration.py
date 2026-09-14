@@ -500,6 +500,49 @@ def test_mcp_autoapprove_provenance_higher_precedence_wins(tmp_path):
     assert "settings.local.json" in declared_path
 
 
+def test_mcp_header_credential_provenance_traces_to_headers_owning_scope(tmp_path):
+    """When local scope defines mcpServers.foo.command and user scope defines
+    mcpServers.foo.headers with a literal credential, the credential finding's
+    declared_by.path must point to the user-scope file — the scope that
+    actually declares the flagged header — not settings.local.json, even
+    though local scope is higher precedence and also mentions "foo"."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    # User scope owns the URL and the literal credential header.
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://mcp.example.com/api",
+                        "headers": {"Authorization": "Bearer dummy-token"},
+                    }
+                }
+            }
+        )
+    )
+    # Local scope (higher precedence) mentions the same server name for an
+    # unrelated field only.
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"timeout": 30}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1, "merged server with a literal header must be flagged"
+    assert header_findings[0].declared_by is not None
+    declared_path = header_findings[0].declared_by["path"]
+    assert str(config_dir / "settings.json") in declared_path, (
+        "finding must point to user-scope file that owns the headers field"
+    )
+    assert "settings.local.json" not in declared_path
+
+
 def test_managed_scope_credential_is_attributed_to_managed_settings(
     tmp_path, _isolate_managed_settings
 ):

@@ -36,6 +36,152 @@ OVERLAYS_DIR = REPO_ROOT / "overlays"
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
+@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex"])
+@pytest.mark.parametrize("include_posture", [False, True])
+def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):
+    from tools.scan import main as scan_main
+
+    token = "dummy-plain-text-bearer-token"
+    if kind == "codex":
+        config = tmp_path / ".codex" / "config.toml"
+        content = (
+            '[mcp_servers.demo]\nurl = "https://example.test/mcp"\n'
+            f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
+        )
+    else:
+        config = tmp_path / (".cursor/mcp.json" if kind == "cursor" else ".mcp.json")
+        content = json.dumps(
+            {
+                "mcpServers": {
+                    "demo": {
+                        "url": "https://example.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
+        )
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(content)
+    args = ["repo", "--target", str(tmp_path), "--format", "json", "--fail-on", "none"]
+    if include_posture:
+        args.append("--include-posture")
+    result = CliRunner().invoke(scan_main, args)
+    assert result.exit_code == 0, result.output
+    assert token not in result.output
+    findings = [
+        f
+        for f in json.loads(result.stdout)["findings"]
+        if f.get("rule_id") == "openaca-posture-mcp-header-credential"
+    ]
+    assert len(findings) == int(include_posture)
+    if findings:
+        assert findings[0]["agent"]["kind"] == kind
+        assert findings[0]["bom_ref"]
+
+
+@pytest.mark.parametrize(
+    "kind,inline",
+    [("claude-code", False), ("claude-code", True), ("cursor", False), ("codex", False)],
+)
+def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline):
+    from tools.scan import main as scan_main
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    root = tmp_path / {"claude-code": ".claude", "cursor": ".cursor", "codex": ".codex"}[kind]
+    root.mkdir()
+    token = "dummy-endpoint-token"
+    if kind == "codex":
+        (root / "config.toml").write_text(
+            '[mcp_servers.demo]\nurl = "https://example.test/mcp"\n'
+            f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
+        )
+    else:
+        filename = (
+            "settings.json" if inline else ".mcp.json" if kind == "claude-code" else "mcp.json"
+        )
+        (root / filename).write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "demo": {
+                            "url": "https://example.test/mcp",
+                            "headers": {"Authorization": f"Bearer {token}"},
+                        }
+                    }
+                }
+            )
+        )
+    args = ["endpoint", "--kind", kind, "--include-posture", "--format", "json"]
+    if kind != "cursor":
+        args.extend(["--config-dir", str(root)])
+    result = CliRunner().invoke(scan_main, args)
+    assert result.exit_code == 0, result.output
+    assert token not in result.output
+    findings = [
+        f
+        for f in json.loads(result.stdout)["findings"]
+        if f.get("rule_id") == "openaca-posture-mcp-header-credential"
+    ]
+    assert len(findings) == 1
+    assert findings[0]["agent"]["kind"] == kind
+    assert findings[0].get("bom_ref"), result.stdout
+
+
+def test_mcp_header_credential_policy_gate_blocks_only_affected_server(tmp_path):
+    root = tmp_path / ".claude"
+    root.mkdir()
+    token = "dummy-policy-token"
+    (root / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "literal": {
+                        "url": "https://literal.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    },
+                    "indirect": {
+                        "url": "https://indirect.test/mcp",
+                        "headers": {"Authorization": "Bearer ${TOKEN}"},
+                    },
+                }
+            }
+        )
+    )
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "risk_gates": {"posture": {"rules": ["openaca-posture-mcp-header-credential"]}},
+                "admission": {
+                    category: {"default": "allowed"} for category in ("mcps", "plugins", "skills")
+                },
+            }
+        )
+    )
+    output = tmp_path / "managed.json"
+    result = CliRunner().invoke(
+        policy_main,
+        [
+            "compile",
+            str(policy_path),
+            "--host",
+            "claude",
+            "--target",
+            str(root),
+            "--output",
+            str(output),
+            "--managed-settings-dir",
+            str(tmp_path / "managed"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(output.read_text()) == {
+        "deniedMcpServers": [{"serverUrl": "https://literal.test/mcp"}]
+    }
+    assert token not in result.output + output.read_text()
+
+
 def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0") -> None:
     """Write `.claude-plugin/plugin.json` to mark `root` as a plugin repo.
 

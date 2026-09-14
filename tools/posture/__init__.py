@@ -24,6 +24,7 @@ from tools.posture.rules import (
     command_policy_allow,
     insecure_transport,
     mcp_auto_approve,
+    mcp_header_credential,
     mutable_install,
     project_trust,
     skill_capability,
@@ -59,6 +60,7 @@ KNOWN_RULE_IDS: frozenset[str] = frozenset(
         mutable_install.RULE_ID,
         insecure_transport.RULE_ID,
         mcp_auto_approve.RULE_ID,
+        mcp_header_credential.RULE_ID,
         api_endpoint_override.RULE_ID,
         skill_capability.RULE_ID,
         command_policy_allow.RULE_ID,
@@ -102,6 +104,9 @@ def run_posture_rules(
     findings: list[PostureFinding] = []
     findings.extend(mutable_install.check_mutable_install(refs, agent_kind=agent_kind))
     findings.extend(insecure_transport.check_insecure_transport(manifests))
+    findings.extend(
+        mcp_header_credential.check_mcp_header_credential(manifests + settings_manifests)
+    )
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs, agent_kind=agent_kind))
@@ -524,6 +529,7 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
     would be misreported as an active exposure.
     """
     by_path: dict[str, dict] = {}
+    auth_sources: dict[str, dict] = {}
     for ref in refs:
         if (ref.extra or {}).get("component_type") != "mcp_server":
             continue
@@ -532,6 +538,13 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
         if not source or name is None:
             continue
         entry: dict = {}
+        if source not in auth_sources:
+            auth_sources[source] = _read_mcp_auth_source(Path(source))
+        original = auth_sources[source].get(name)
+        if isinstance(original, dict):
+            for key in ("headers", "http_headers"):
+                if isinstance(original.get(key), dict):
+                    entry[key] = original[key]
         url = (ref.extra or {}).get("url")
         if isinstance(url, str):
             entry["url"] = url
@@ -539,6 +552,22 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
             entry["disabled"] = True
         by_path.setdefault(source, {"mcpServers": {}})["mcpServers"][name] = entry
     return [(Path(source), manifest) for source, manifest in by_path.items()]
+
+
+def _read_mcp_auth_source(path: Path) -> dict:
+    # Read only sources selected by composition. Credentials remain in the
+    # local posture pass, never in graph properties or exported inventories.
+    try:
+        if path.suffix == ".toml":
+            from tools.parsers.codex_config import load_config
+
+            return load_config(path).mcp_servers
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(manifest, dict):
+        return {}
+    return insecure_transport._get_server_map(manifest) or {}
 
 
 def collect_cursor_endpoint_mcp_manifests(

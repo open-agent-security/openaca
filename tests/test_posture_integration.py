@@ -543,6 +543,87 @@ def test_mcp_header_credential_provenance_traces_to_headers_owning_scope(tmp_pat
     assert "settings.local.json" not in declared_path
 
 
+def test_mcp_header_credential_provenance_traces_to_header_key_not_container(tmp_path):
+    """When a higher-precedence scope adds a *different* key inside the same
+    server's `headers` dict, attribution must still trace to the scope that
+    owns the literal-credential header specifically — not whichever scope
+    happens to declare the `headers` container at all. `_deep_merge` recurses
+    into `headers` itself, so local scope adding an unrelated `Accept` header
+    must not steal attribution for user scope's `Authorization` credential."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    # User scope owns the URL and the literal credential header.
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://mcp.example.com/api",
+                        "headers": {"Authorization": "Bearer dummy-token"},
+                    }
+                }
+            }
+        )
+    )
+    # Local scope (higher precedence) adds an unrelated header on the same
+    # server's `headers` dict — not the credential header itself.
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"headers": {"Accept": "application/json"}}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1
+    assert header_findings[0].declared_by is not None
+    declared_path = header_findings[0].declared_by["path"]
+    assert str(config_dir / "settings.json") in declared_path, (
+        "finding must point to the scope that owns the Authorization header itself"
+    )
+    assert "settings.local.json" not in declared_path
+
+
+def test_mcp_header_credential_splits_findings_when_headers_span_scopes(tmp_path):
+    """When two different scopes each own a distinct literal-credential header
+    on the same merged server entry, each header must attribute to its own
+    owning scope as a separate finding rather than collapsing into one
+    finding attributed to only one of them."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://mcp.example.com/api",
+                        "headers": {"Authorization": "Bearer dummy-token"},
+                    }
+                }
+            }
+        )
+    )
+    (project_root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"mcpServers": {"foo": {"headers": {"X-Api-Key": "sk-dummy-key"}}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 2, "each scope-owned credential header must be its own finding"
+    assert all(f.declared_by is not None for f in header_findings)
+    declared_paths = {f.declared_by["path"] for f in header_findings if f.declared_by is not None}
+    assert str(config_dir / "settings.json") in declared_paths
+    assert str(project_root / ".claude" / "settings.local.json") in declared_paths
+
+
 def test_managed_scope_credential_is_attributed_to_managed_settings(
     tmp_path, _isolate_managed_settings
 ):

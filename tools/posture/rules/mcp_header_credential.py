@@ -46,6 +46,10 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                 continue
             raw_header_owners = entry.get("_header_owners")
             header_owners = raw_header_owners if isinstance(raw_header_owners, dict) else {}
+            raw_component_source = entry.get("_component_source")
+            component_source = (
+                raw_component_source if isinstance(raw_component_source, str) else None
+            )
             # `collect_endpoint_settings_manifests` deep-merges a server entry
             # from every scope that touches it, so `headers`/`http_headers`
             # can combine keys owned by different scope files. Grouping by
@@ -85,6 +89,7 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                         standards=_STANDARDS,
                         remediation=REMEDIATION,
                         evidence={"fields": sorted(fields)},
+                        component_source=component_source,
                     )
                 )
     return findings

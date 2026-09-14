@@ -56,6 +56,15 @@ class PostureFinding:
     # The agent this row belongs to (ADR-0044), mirroring `matcher.Finding`.
     agent_kind: str | None = None
     agent_id: str | None = None
+    # The manifest path `_attach_bom_ref` should match a ref's
+    # `source_manifest` against, when it differs from `declared_by.path`. A
+    # settings-layer finding can be *declared* by a scope that owns only a
+    # risk-relevant field (`headers`, `autoApprove`) and has neither `url`
+    # nor `command` of its own — `graph_build._seed_remote_mcps` never emits
+    # a ref from such a scope, so matching on `declared_by.path` alone would
+    # silently fail to attach. `None` means "use `declared_by.path`", the
+    # prior behavior.
+    component_source: str | None = None
 
     @property
     def component_label(self) -> str:

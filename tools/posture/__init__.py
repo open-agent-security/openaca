@@ -599,15 +599,27 @@ def collect_endpoint_settings_manifests(
                     component_owner = _mcp_server_component_owner(
                         scope_checks, key, sub_key, sub_value
                     )
+                    # Sidecar values are kept as `Path` objects, never `str`,
+                    # so a same-named key smuggled in from raw manifest
+                    # content (`json.loads` can only ever produce `str`, not
+                    # `Path`) can never be mistaken for collector-computed
+                    # provenance by the `isinstance(..., Path)` checks in
+                    # `mcp_header_credential`/`mcp_auto_approve`. `sub_value`
+                    # up to this point is the deep-merged effective entry,
+                    # which can itself carry an attacker-controlled literal
+                    # `_header_owners`/`_component_source`/`_auto_approve_source`
+                    # key from an untrusted scope file — `{**sub_value, **sidecar}`
+                    # below overwrites any such key, but only the type
+                    # distinction stops a *raw-walked* manifest (one that
+                    # never passes through this merge at all) from forging
+                    # the same keys with plain strings.
                     sidecar: dict[str, object] = {}
                     if header_owners:
-                        sidecar["_header_owners"] = {
-                            field: str(path) for field, path in header_owners.items()
-                        }
+                        sidecar["_header_owners"] = dict(header_owners)
                     if auto_approve_owner is not None:
-                        sidecar["_auto_approve_source"] = str(auto_approve_owner)
+                        sidecar["_auto_approve_source"] = auto_approve_owner
                     if component_owner is not None:
-                        sidecar["_component_source"] = str(component_owner)
+                        sidecar["_component_source"] = component_owner
                     if sidecar:
                         sub_value = {**sub_value, **sidecar}
                 if owner is not None:

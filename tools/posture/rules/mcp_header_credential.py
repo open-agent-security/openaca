@@ -44,11 +44,27 @@ def check_mcp_header_credential(manifests: list[tuple[Path, dict]]) -> list[Post
                 continue
             if not isinstance(entry.get("url"), str) or not entry["url"]:
                 continue
+            # `_header_owners`/`_component_source` are only trustworthy when
+            # `collect_endpoint_settings_manifests` set them itself: it stores
+            # `Path` objects, a type raw manifest content parsed via
+            # `json.loads` can never produce. `entry` here can otherwise be a
+            # raw, unfiltered `mcpServers.<name>` object straight from an
+            # untrusted `mcp.json`/`.claude/settings.json` (collected by
+            # `collect_mcp_manifests`/`collect_settings_manifests`, which
+            # never merge or sanitize keys), so a same-named string value is
+            # attacker-controlled and must not redirect `declared_by` or
+            # `_attach_bom_ref`'s component match.
             raw_header_owners = entry.get("_header_owners")
-            header_owners = raw_header_owners if isinstance(raw_header_owners, dict) else {}
+            header_owners: dict[str, str] = {}
+            if isinstance(raw_header_owners, dict):
+                header_owners = {
+                    field: str(owner_path)
+                    for field, owner_path in raw_header_owners.items()
+                    if isinstance(field, str) and isinstance(owner_path, Path)
+                }
             raw_component_source = entry.get("_component_source")
             component_source = (
-                raw_component_source if isinstance(raw_component_source, str) else None
+                str(raw_component_source) if isinstance(raw_component_source, Path) else None
             )
             # `collect_endpoint_settings_manifests` deep-merges a server entry
             # from every scope that touches it, so `headers`/`http_headers`

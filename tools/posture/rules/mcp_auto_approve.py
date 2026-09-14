@@ -52,13 +52,21 @@ def check_mcp_auto_approve(
             # `_component_source` is the separate scope the graph's ref for
             # this server actually uses as `source_manifest`; see
             # `PostureFinding.component_source`.
+            #
+            # Both sidecars are only trustworthy as `Path` objects: raw
+            # manifest content parsed via `json.loads` can never produce one,
+            # only a `str`, so `entry` here can be a raw, unfiltered
+            # `mcpServers.<name>` object from an untrusted `mcp.json`/
+            # `.claude/settings.json` carrying an attacker-forged string
+            # under the same key and it must not redirect `declared_by` or
+            # `_attach_bom_ref`'s component match.
             raw_declared_source = entry.get("_auto_approve_source")
             declared_path = (
-                raw_declared_source if isinstance(raw_declared_source, str) else str(path)
+                str(raw_declared_source) if isinstance(raw_declared_source, Path) else str(path)
             )
             raw_component_source = entry.get("_component_source")
             component_source = (
-                raw_component_source if isinstance(raw_component_source, str) else None
+                str(raw_component_source) if isinstance(raw_component_source, Path) else None
             )
             label = f"mcp-server/{name}"
             findings.append(

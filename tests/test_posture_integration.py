@@ -738,6 +738,96 @@ def test_mcp_auto_approve_attribution_independent_of_headers_owning_scope(tmp_pa
     assert approve_findings[0].bom_ref == expected_bom_ref
 
 
+def test_mcp_header_credential_ignores_forged_provenance_from_raw_manifest(tmp_path):
+    """Regression for a Codex review finding: `collect_mcp_manifests` walks a
+    raw `mcp.json` with no key filtering, so an untrusted repository's own
+    manifest could set a literal `_component_source`/`_header_owners` key
+    alongside a real credential to redirect `_attach_bom_ref` at a bogus
+    path — starving the finding of its own, real `bom_ref` and letting
+    policy compilation treat an active credential as unenforceable. Only
+    `collect_endpoint_settings_manifests` may legitimately set these
+    sidecars, and only as `Path` objects (a type raw JSON content parsed via
+    `json.loads` can never produce); a same-named string smuggled in from the
+    manifest itself must be ignored so the real, same-file component ref
+    still resolves."""
+    mcp_path = tmp_path / "mcp.json"
+    manifest = {
+        "mcpServers": {
+            "alpha": {
+                "url": "https://example.test/mcp",
+                "headers": {"Authorization": "Bearer literal-token"},
+                "_component_source": "/nonexistent/forged-manifest.json",
+                "_header_owners": {"headers.authorization": "/nonexistent/forged-manifest.json"},
+            }
+        }
+    }
+    mcp_path.write_text(json.dumps(manifest))
+    ref = ComponentRef(
+        component_identity="mcp-remote/example.test/mcp",
+        source_manifest=str(mcp_path),
+        source_locator="$.mcpServers.alpha",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "alpha"}],
+            "bom_ref": "endpoint/mcp.json#$.mcpServers.alpha#mcp-remote/example.test/mcp",
+        },
+    )
+
+    findings = [
+        f
+        for f in run_posture_rules([ref], [(mcp_path, manifest)])
+        if f.rule_id == "openaca-posture-mcp-header-credential"
+    ]
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.component_source is None
+    assert finding.declared_by == {"kind": "manifest", "path": str(mcp_path)}
+    assert finding.bom_ref == "endpoint/mcp.json#$.mcpServers.alpha#mcp-remote/example.test/mcp"
+
+
+def test_mcp_auto_approve_ignores_forged_provenance_from_raw_manifest(tmp_path):
+    """Same forged-sidecar attack as
+    `test_mcp_header_credential_ignores_forged_provenance_from_raw_manifest`,
+    against `mcp_auto_approve`'s `_auto_approve_source`/`_component_source`
+    reads: a raw manifest can set both to redirect `declared_by` and starve
+    `_attach_bom_ref` of the real, same-file component ref."""
+    mcp_path = tmp_path / "mcp.json"
+    manifest = {
+        "mcpServers": {
+            "alpha": {
+                "command": "run-alpha",
+                "autoApprove": True,
+                "_auto_approve_source": "/nonexistent/forged-manifest.json",
+                "_component_source": "/nonexistent/forged-manifest.json",
+            }
+        }
+    }
+    mcp_path.write_text(json.dumps(manifest))
+    ref = ComponentRef(
+        component_identity="mcp-stdio/local:run-alpha",
+        source_manifest=str(mcp_path),
+        source_locator="$.mcpServers.alpha",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "alpha"}],
+            "bom_ref": "endpoint/mcp.json#$.mcpServers.alpha#mcp-stdio/local:run-alpha",
+        },
+    )
+
+    findings = [
+        f
+        for f in run_posture_rules([ref], [(mcp_path, manifest)])
+        if f.rule_id == "openaca-posture-mcp-auto-approve"
+    ]
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.component_source is None
+    assert finding.declared_by == {"kind": "manifest", "path": str(mcp_path)}
+    assert finding.bom_ref == "endpoint/mcp.json#$.mcpServers.alpha#mcp-stdio/local:run-alpha"
+
+
 def test_managed_scope_credential_is_attributed_to_managed_settings(
     tmp_path, _isolate_managed_settings
 ):

@@ -222,6 +222,28 @@ def test_plugin_string_referenced_mcp_manifest_is_scanned_for_credentials(tmp_pa
     assert token not in json.dumps(asdict(findings[0]))
 
 
+def test_forged_provenance_sidecar_keys_from_raw_manifest_are_ignored(tmp_path):
+    """A raw `mcp.json` is untrusted input: `collect_mcp_manifests` never
+    filters unknown keys, so a config author could set `_component_source`/
+    `_header_owners` themselves to redirect `declared_by`/`_attach_bom_ref`.
+    Only `collect_endpoint_settings_manifests` may set these sidecars, and
+    only as `Path` objects (a type raw JSON content can never produce); a
+    same-named plain string from an untrusted manifest must be ignored."""
+    findings = check(
+        tmp_path,
+        {
+            "url": "https://example.test/mcp",
+            "headers": {"Authorization": "Bearer literal"},
+            "_component_source": "/nonexistent/forged-manifest.json",
+            "_header_owners": {"headers.authorization": "/nonexistent/forged-manifest.json"},
+        },
+    )
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.component_source is None
+    assert finding.declared_by == {"kind": "manifest", "path": str(tmp_path / "mcp.json")}
+
+
 def test_sarif_does_not_contain_header_values(tmp_path):
     from tools.sarif import to_sarif
 

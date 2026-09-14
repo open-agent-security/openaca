@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.parsers import settings_layers
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
@@ -105,7 +106,11 @@ def run_posture_rules(
     findings.extend(mutable_install.check_mutable_install(refs, agent_kind=agent_kind))
     findings.extend(insecure_transport.check_insecure_transport(manifests))
     findings.extend(
-        mcp_header_credential.check_mcp_header_credential(manifests + settings_manifests)
+        mcp_header_credential.check_mcp_header_credential(
+            manifests
+            + settings_manifests
+            + _uncovered_ref_mcp_manifests(refs, manifests + settings_manifests)
+        )
     )
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
@@ -379,10 +384,10 @@ def collect_endpoint_settings_manifests(
 
     Returns one tuple per scope file that owns at least one key in the merged
     effective view. Scalar top-level keys are attributed to the highest-precedence
-    scope (local > project > user) that defines that key. Dict-valued top-level
-    keys (e.g. ``env``, ``mcpServers``) are split at sub-key granularity so that
-    ``env.ANTHROPIC_BASE_URL`` from user scope and ``env.DEBUG`` from local scope
-    are each attributed to the file that actually defines them, preventing
+    scope (managed > local > project > user) that defines that key. Dict-valued
+    top-level keys (e.g. ``env``, ``mcpServers``) are split at sub-key granularity
+    so that ``env.ANTHROPIC_BASE_URL`` from user scope and ``env.DEBUG`` from local
+    scope are each attributed to the file that actually defines them, preventing
     remediation from being misdirected to the wrong settings file.
 
     The merged effective value is used for every entry (not the raw per-scope
@@ -394,8 +399,16 @@ def collect_endpoint_settings_manifests(
     if not effective:
         return []
 
-    # Scope order: highest precedence first.
-    scope_checks: list[tuple[dict | None, Path]] = []
+    # Scope order: highest precedence first, matching SCOPE_PRECEDENCE. Managed
+    # policy can be a merged view of a base file plus `managed-settings.d/*.json`
+    # drop-ins (settings_layers.load_managed), so the representative path below
+    # is a provenance label, not a claim that this exact file holds the value —
+    # the same convention `graph_build._seed_remote_mcps` uses so a managed MCP
+    # server's `source_manifest` and this attribution agree, letting
+    # `_attach_bom_ref` match the graph's managed-settings component.
+    scope_checks: list[tuple[dict | None, Path]] = [
+        (layers.managed, settings_layers.default_managed_dir() / "managed-settings.json"),
+    ]
     if project_root is not None:
         scope_checks.append((layers.local, project_root / ".claude" / "settings.local.json"))
         scope_checks.append((layers.project, project_root / ".claude" / "settings.json"))
@@ -429,11 +442,7 @@ def collect_endpoint_settings_manifests(
                         if not isinstance(scope_mcp, dict):
                             continue
                         server_entry = scope_mcp.get(sub_key)
-                        if (
-                            isinstance(server_entry, dict)
-                            and "autoApprove" in server_entry
-                            and path.is_file()
-                        ):
+                        if isinstance(server_entry, dict) and "autoApprove" in server_entry:
                             source_path = path
                             found = True
                             break
@@ -442,11 +451,7 @@ def collect_endpoint_settings_manifests(
                             if scope_data is None:
                                 continue
                             scope_dict = scope_data.get(key)
-                            if (
-                                isinstance(scope_dict, dict)
-                                and sub_key in scope_dict
-                                and path.is_file()
-                            ):
+                            if isinstance(scope_dict, dict) and sub_key in scope_dict:
                                 source_path = path
                                 break
                 else:
@@ -454,18 +459,14 @@ def collect_endpoint_settings_manifests(
                         if scope_data is None:
                             continue
                         scope_dict = scope_data.get(key)
-                        if (
-                            isinstance(scope_dict, dict)
-                            and sub_key in scope_dict
-                            and path.is_file()
-                        ):
+                        if isinstance(scope_dict, dict) and sub_key in scope_dict:
                             source_path = path
                             break
                 path_to_keys.setdefault(source_path, {}).setdefault(key, {})[sub_key] = sub_value
         else:
             source_path = config_dir / "settings.json"  # fallback: user scope
             for scope_data, path in scope_checks:
-                if scope_data is not None and key in scope_data and path.is_file():
+                if scope_data is not None and key in scope_data:
                     source_path = path
                     break
             path_to_keys.setdefault(source_path, {})[key] = merged_value
@@ -552,6 +553,41 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
             entry["disabled"] = True
         by_path.setdefault(source, {"mcpServers": {}})["mcpServers"][name] = entry
     return [(Path(source), manifest) for source, manifest in by_path.items()]
+
+
+def _uncovered_ref_mcp_manifests(
+    refs: list[ComponentRef], manifests: list[tuple[Path, dict]]
+) -> list[tuple[Path, dict]]:
+    """Composed `mcp_server` refs whose source manifest a directory walk missed.
+
+    Claude Code's `collect_mcp_manifests`/`collect_endpoint_mcp_manifests` walk
+    fixed filenames plus `plugin.json` itself, but a plugin's `mcpServers` may
+    be the string form pointing at an arbitrarily named file (e.g.
+    `custom/auth.json`, resolved in `claude_plugin_root._parse_manifest_refs`).
+    That file composes real `mcp_server` refs but is never one of the walked
+    filenames, so `mcp_header_credential` would silently miss any literal
+    credential it declares. `_mcp_manifests_from_refs` reconstructs a manifest
+    per composed ref regardless of filename; this filters that reconstruction
+    down to sources the walk-based `manifests` didn't already cover, so
+    Cursor/Codex (whose collectors already return `_mcp_manifests_from_refs`
+    output) never see their own entries duplicated back in.
+    """
+    covered: set[Path] = set()
+    for path, _ in manifests:
+        try:
+            covered.add(path.resolve())
+        except (OSError, RuntimeError, ValueError):
+            covered.add(path)
+    out: list[tuple[Path, dict]] = []
+    for path, manifest in _mcp_manifests_from_refs(refs):
+        try:
+            key = path.resolve()
+        except (OSError, RuntimeError, ValueError):
+            key = path
+        if key not in covered:
+            covered.add(key)
+            out.append((path, manifest))
+    return out
 
 
 def _read_mcp_auth_source(path: Path) -> dict:

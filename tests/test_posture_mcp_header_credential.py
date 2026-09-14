@@ -179,6 +179,49 @@ def test_malformed_headers_do_not_crash(tmp_path, headers):
     assert check(tmp_path, {"url": "https://example.test/mcp", "headers": headers}) == []
 
 
+def test_plugin_string_referenced_mcp_manifest_is_scanned_for_credentials(tmp_path):
+    """`.claude-plugin/plugin.json` may point `mcpServers` at an arbitrarily
+    named file (the string form — `claude_plugin_root._parse_manifest_refs`)
+    rather than one of the fixed MCP filenames. `collect_mcp_manifests`'s
+    directory walk only reads fixed filenames plus plugin.json itself, so a
+    literal credential declared in the referenced file must still be found
+    via the composed ref's own source manifest, not the walk."""
+    from tools.parsers import claude_plugin
+    from tools.posture import collect_mcp_manifests
+
+    plugin_root = tmp_path
+    plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir(parents=True)
+    plugin_json.write_text(
+        json.dumps({"name": "acme", "version": "0.1.0", "mcpServers": "config/custom-auth.json"})
+    )
+    auth_file = plugin_root / "config" / "custom-auth.json"
+    auth_file.parent.mkdir(parents=True)
+    token = "dummy-plain-text-token"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "remote": {
+                        "url": "https://example.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
+        )
+    )
+
+    refs = claude_plugin.parse(plugin_json)
+    manifests = collect_mcp_manifests([plugin_root], refs=refs)
+    assert auth_file not in [p for p, _ in manifests], (
+        "sanity check: the referenced file is not one of the walked filenames"
+    )
+
+    findings = [f for f in run_posture_rules(refs, manifests) if f.rule_id == RULE_ID]
+    assert len(findings) == 1
+    assert token not in json.dumps(asdict(findings[0]))
+
+
 def test_sarif_does_not_contain_header_values(tmp_path):
     from tools.sarif import to_sarif
 

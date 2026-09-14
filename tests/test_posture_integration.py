@@ -624,6 +624,52 @@ def test_mcp_header_credential_splits_findings_when_headers_span_scopes(tmp_path
     assert str(project_root / ".claude" / "settings.local.json") in declared_paths
 
 
+def test_mcp_header_credential_provenance_survives_header_casing_mismatch(tmp_path):
+    """Regression for a Codex review finding: HTTP header names are
+    case-insensitive, but `_deep_merge` compares dict keys literally, so a
+    user-scope `Authorization` (literal credential) and a higher-precedence
+    local-scope `authorization` (indirect reference) on the same server
+    coexist as two distinct keys in the merged `headers` dict rather than one
+    overriding the other. `_mcp_server_header_field_owners` must not collapse
+    both onto the same lowercased owner-map key, or the local scope's
+    indirect-reference owner would win attribution for the user scope's
+    literal credential."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    user_settings = config_dir / "settings.json"
+    user_settings.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://mcp.example.com/api",
+                        "headers": {"Authorization": "Bearer dummy-token"},
+                    }
+                }
+            }
+        )
+    )
+    local_settings = project_root / ".claude" / "settings.local.json"
+    local_settings.write_text(
+        json.dumps({"mcpServers": {"foo": {"headers": {"authorization": "Bearer ${TOKEN}"}}}})
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1
+    finding = header_findings[0]
+    assert finding.declared_by is not None
+    assert finding.declared_by["path"] == str(user_settings), (
+        "the literal credential's owner (user scope) must not be overwritten by the "
+        "differently-cased indirect-reference header's owner (local scope)"
+    )
+
+
 def test_mcp_header_credential_attaches_bom_ref_when_headers_owned_by_different_scope(tmp_path):
     """Regression for a Codex review finding: when local scope owns only the
     literal-credential header and user scope owns the URL, `declared_by`

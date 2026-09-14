@@ -44,6 +44,22 @@ def check_mcp_auto_approve(
             auto_approve = entry.get("autoApprove")
             if not _is_enabled(auto_approve):
                 continue
+            # `collect_endpoint_settings_manifests` places a merged server
+            # entry under a single bucket path that need not be the scope
+            # that actually declares `autoApprove` (e.g. a higher-precedence
+            # scope owning `headers` instead) — `_auto_approve_source`
+            # carries the true owner when the entry came from that collector.
+            # `_component_source` is the separate scope the graph's ref for
+            # this server actually uses as `source_manifest`; see
+            # `PostureFinding.component_source`.
+            raw_declared_source = entry.get("_auto_approve_source")
+            declared_path = (
+                raw_declared_source if isinstance(raw_declared_source, str) else str(path)
+            )
+            raw_component_source = entry.get("_component_source")
+            component_source = (
+                raw_component_source if isinstance(raw_component_source, str) else None
+            )
             label = f"mcp-server/{name}"
             findings.append(
                 PostureFinding(
@@ -56,10 +72,11 @@ def check_mcp_auto_approve(
                         "name": f"{label} autoApprove",
                     },
                     active_in=_infer_hosts(manifest),
-                    declared_by={"kind": "manifest", "path": str(path)},
+                    declared_by={"kind": "manifest", "path": declared_path},
                     component_path=[{"type": "mcp_server", "name": label}],
                     standards=_STANDARDS,
                     remediation=REMEDIATION,
+                    component_source=component_source,
                 )
             )
     return findings

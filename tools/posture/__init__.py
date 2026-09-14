@@ -188,16 +188,24 @@ def _declared_path(finding: PostureFinding) -> str | None:
     """The manifest path a candidate ref's `source_manifest` must match,
     or `None` when no such constraint applies.
 
-    Only meaningful when `declared_by.kind == "manifest"` — the finding's
-    own source file IS the manifest that also composed the component (e.g.
-    an `autoApprove` field inside `mcp.json` itself). A separate policy file
-    (Cursor's `permissions.json`, `kind: "permissions"`) names no manifest:
-    every one of its findings would otherwise fail this check against every
-    candidate ref (a server's `source_manifest` is `mcp.json`, never
-    `permissions.json`) and never attach a `bom_ref`, even when the server
-    name uniquely identifies a composed component. For those, alias +
-    component_type matching alone decides.
+    `component_source` wins when set: a settings-layer finding can be
+    declared by a scope that owns only a risk-relevant field and has neither
+    `url` nor `command`, so no ref is ever emitted with THAT scope as
+    `source_manifest` (see `PostureFinding.component_source`). Falling back
+    to `declared_by.path` there would never attach a `bom_ref`.
+
+    Otherwise, only meaningful when `declared_by.kind == "manifest"` — the
+    finding's own source file IS the manifest that also composed the
+    component (e.g. an `autoApprove` field inside `mcp.json` itself). A
+    separate policy file (Cursor's `permissions.json`, `kind: "permissions"`)
+    names no manifest: every one of its findings would otherwise fail this
+    check against every candidate ref (a server's `source_manifest` is
+    `mcp.json`, never `permissions.json`) and never attach a `bom_ref`, even
+    when the server name uniquely identifies a composed component. For
+    those, alias + component_type matching alone decides.
     """
+    if finding.component_source is not None:
+        return finding.component_source
     if not isinstance(finding.declared_by, dict):
         return None
     if finding.declared_by.get("kind") != "manifest":
@@ -376,16 +384,15 @@ def collect_endpoint_mcp_manifests(
     return out
 
 
-# Risk-relevant `mcpServers.<name>` fields, in the order provenance prefers
-# them when a merged server entry carries more than one and they are owned
-# by different scopes. `headers`/`http_headers` come first because
-# mcp_header_credential's finding, if misattributed, can point
-# `_attach_bom_ref` at an unrelated component (e.g. a stdio command) in a
-# higher-precedence scope instead of the URL entry that actually carries the
-# credential — worse than mcp_auto_approve pointing at the wrong scope for an
-# approval list. `autoApprove` preserves the attribution
-# `collect_endpoint_settings_manifests` already gave that rule before this
-# field list existed.
+# Risk-relevant `mcpServers.<name>` fields, in the order this picks a single
+# bucket to place a merged server entry under in the returned list. Which
+# field wins here no longer decides `declared_by` for `headers`/`http_headers`
+# or `autoApprove` — those now resolve independently via the
+# `_header_owners`/`_auto_approve_source` sidecars
+# (`_mcp_server_header_field_owners`/`_mcp_server_auto_approve_owner`), each
+# read by the rule it corresponds to regardless of which bucket the entry
+# landed in. This ordering only affects the server-name-level fallback used
+# when no scope directly declares any of these fields.
 _MCP_SERVER_PROVENANCE_FIELDS: tuple[str, ...] = ("headers", "http_headers", "autoApprove")
 
 
@@ -395,17 +402,13 @@ def _mcp_server_field_owner(
     sub_key: str,
     sub_value: dict,
 ) -> Path | None:
-    """The scope whose own raw entry declares the risk-relevant field a
-    posture rule evaluates for this merged `mcpServers` entry, or `None` if
-    no scope directly declares any such field (the caller then falls back to
-    server-name-level attribution).
+    """The scope whose own raw entry declares a risk-relevant field for this
+    merged `mcpServers` entry, or `None` if no scope directly declares any
+    such field (the caller then falls back to server-name-level attribution).
 
-    A merged server entry can combine fields from more than one scope (e.g.
-    `command` from a higher-precedence file, `headers` from a lower one).
-    Attributing the whole entry to "the highest-precedence scope that
-    mentions this server name at all" — without this check — would point a
-    mcp_header_credential or mcp_auto_approve finding at a file that never
-    declared the flagged field.
+    Used only to pick a single bucket path to place the merged entry under
+    in `collect_endpoint_settings_manifests`'s returned list — not to decide
+    any individual rule's `declared_by` (see `_MCP_SERVER_PROVENANCE_FIELDS`).
     """
     for field in _MCP_SERVER_PROVENANCE_FIELDS:
         if field not in sub_value:
@@ -419,6 +422,76 @@ def _mcp_server_field_owner(
             server_entry = scope_mcp.get(sub_key)
             if isinstance(server_entry, dict) and field in server_entry:
                 return path
+    return None
+
+
+_MCP_COMPONENT_FIELDS: tuple[str, ...] = ("url", "command")
+
+
+def _mcp_server_component_owner(
+    scope_checks: list[tuple[dict | None, Path]],
+    key: str,
+    sub_key: str,
+    sub_value: dict,
+) -> Path | None:
+    """The scope whose raw entry carries the field `_seed_remote_mcps` uses to
+    build this server's `mcp_server` ref (`url`, else `command` — ADR-0020's
+    same URL-over-command precedence) — i.e. the scope the graph actually
+    sets as that ref's `source_manifest`.
+
+    A finding declared by a scope that owns only `headers` or `autoApprove`
+    can never attach a `bom_ref` on its own: `_seed_remote_mcps` parses each
+    scope's raw `mcpServers` entry independently and in strict mode, and an
+    entry with neither `url` nor `command` raises rather than producing a
+    ref, so no ref is ever emitted with that scope as `source_manifest`.
+    Posture rules read this as `PostureFinding.component_source` so
+    `_attach_bom_ref` matches the scope that actually produced the ref, while
+    `declared_by` keeps pointing at the scope a human should edit.
+    """
+    for field in _MCP_COMPONENT_FIELDS:
+        if field not in sub_value:
+            continue
+        for scope_data, path in scope_checks:
+            if scope_data is None:
+                continue
+            scope_mcp = scope_data.get(key)
+            if not isinstance(scope_mcp, dict):
+                continue
+            server_entry = scope_mcp.get(sub_key)
+            if isinstance(server_entry, dict) and field in server_entry:
+                return path
+    return None
+
+
+def _mcp_server_auto_approve_owner(
+    scope_checks: list[tuple[dict | None, Path]],
+    key: str,
+    sub_key: str,
+    sub_value: dict,
+) -> Path | None:
+    """The scope whose raw entry declares `autoApprove` for this server, or
+    `None` if no scope does.
+
+    Resolved independently of `headers`/`http_headers` ownership: picking a
+    single `_mcp_server_field_owner` bucket for the whole merged entry — with
+    `headers` checked first — attributes `autoApprove` to the headers-owning
+    scope whenever the two are split across scopes, even though that scope
+    never declared `autoApprove` itself. `mcp_auto_approve` reads this
+    separately via the `_auto_approve_source` sidecar this feeds, restoring
+    the per-field attribution `collect_endpoint_settings_manifests` gave this
+    rule before `_mcp_server_field_owner` existed.
+    """
+    if "autoApprove" not in sub_value:
+        return None
+    for scope_data, path in scope_checks:
+        if scope_data is None:
+            continue
+        scope_mcp = scope_data.get(key)
+        if not isinstance(scope_mcp, dict):
+            continue
+        server_entry = scope_mcp.get(sub_key)
+        if isinstance(server_entry, dict) and "autoApprove" in server_entry:
+            return path
     return None
 
 
@@ -520,13 +593,23 @@ def collect_endpoint_settings_manifests(
                     header_owners = _mcp_server_header_field_owners(
                         scope_checks, key, sub_key, sub_value
                     )
+                    auto_approve_owner = _mcp_server_auto_approve_owner(
+                        scope_checks, key, sub_key, sub_value
+                    )
+                    component_owner = _mcp_server_component_owner(
+                        scope_checks, key, sub_key, sub_value
+                    )
+                    sidecar: dict[str, object] = {}
                     if header_owners:
-                        sub_value = {
-                            **sub_value,
-                            "_header_owners": {
-                                field: str(path) for field, path in header_owners.items()
-                            },
+                        sidecar["_header_owners"] = {
+                            field: str(path) for field, path in header_owners.items()
                         }
+                    if auto_approve_owner is not None:
+                        sidecar["_auto_approve_source"] = str(auto_approve_owner)
+                    if component_owner is not None:
+                        sidecar["_component_source"] = str(component_owner)
+                    if sidecar:
+                        sub_value = {**sub_value, **sidecar}
                 if owner is not None:
                     source_path = owner
                 else:

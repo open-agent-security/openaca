@@ -624,6 +624,120 @@ def test_mcp_header_credential_splits_findings_when_headers_span_scopes(tmp_path
     assert str(project_root / ".claude" / "settings.local.json") in declared_paths
 
 
+def test_mcp_header_credential_attaches_bom_ref_when_headers_owned_by_different_scope(tmp_path):
+    """Regression for a Codex review finding: when local scope owns only the
+    literal-credential header and user scope owns the URL, `declared_by`
+    correctly names the local-scope file (the scope to edit), but
+    `graph_build._seed_remote_mcps` only ever emits an `mcp_server` ref with
+    `source_manifest` set to the URL-owning (user) scope — a header-only
+    scope has neither `url` nor `command`, so `mcp_json.parse_mcp_servers`
+    never produces a ref for it. Without `component_source` carrying the
+    URL-owning scope separately, `_attach_bom_ref`'s path-equality gate would
+    never find a match and this finding would stay unenforceable during
+    policy compilation."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    user_settings = config_dir / "settings.json"
+    user_settings.write_text(
+        json.dumps({"mcpServers": {"foo": {"url": "https://mcp.example.com/api"}}})
+    )
+    local_settings = project_root / ".claude" / "settings.local.json"
+    local_settings.write_text(
+        json.dumps({"mcpServers": {"foo": {"headers": {"Authorization": "Bearer dummy-token"}}}})
+    )
+
+    ref = ComponentRef(
+        name="foo",
+        component_identity="mcp-remote/mcp.example.com/api",
+        source_manifest=str(user_settings),
+        source_locator="$.mcpServers.foo",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "foo"}],
+            "bom_ref": "endpoint/settings.json#$.mcpServers.foo#mcp-remote/mcp.example.com/api",
+        },
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([ref], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    assert len(header_findings) == 1
+    finding = header_findings[0]
+    assert finding.declared_by is not None
+    assert finding.declared_by["path"] == str(local_settings), (
+        "declared_by must still name the scope that owns the credential header"
+    )
+    assert (
+        finding.bom_ref == "endpoint/settings.json#$.mcpServers.foo#mcp-remote/mcp.example.com/api"
+    )
+
+
+def test_mcp_auto_approve_attribution_independent_of_headers_owning_scope(tmp_path):
+    """Regression for a Codex review finding: when user scope owns both the
+    URL and a literal-credential header, and local scope (higher precedence)
+    separately enables `autoApprove` on the same server, the headers-first
+    bucket selection in `_mcp_server_field_owner` must not steal the
+    auto-approve finding's `declared_by` for the headers-owning scope — each
+    rule's provenance is independent. Both findings must also resolve a
+    `bom_ref` against the single ref the graph emits from the URL-owning
+    scope."""
+    config_dir = tmp_path / "user-config"
+    config_dir.mkdir()
+    project_root = tmp_path / "project"
+    (project_root / ".claude").mkdir(parents=True)
+
+    user_settings = config_dir / "settings.json"
+    user_settings.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://mcp.example.com/api",
+                        "headers": {"Authorization": "Bearer dummy-token"},
+                    }
+                }
+            }
+        )
+    )
+    local_settings = project_root / ".claude" / "settings.local.json"
+    local_settings.write_text(json.dumps({"mcpServers": {"foo": {"autoApprove": True}}}))
+
+    ref = ComponentRef(
+        name="foo",
+        component_identity="mcp-remote/mcp.example.com/api",
+        source_manifest=str(user_settings),
+        source_locator="$.mcpServers.foo",
+        extra={
+            "component_type": "mcp_server",
+            "component_path": [{"type": "mcp_server", "name": "foo"}],
+            "bom_ref": "endpoint/settings.json#$.mcpServers.foo#mcp-remote/mcp.example.com/api",
+        },
+    )
+
+    settings_manifests = collect_endpoint_settings_manifests(config_dir, project_root)
+    findings = run_posture_rules([ref], [], settings_manifests)
+
+    header_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-header-credential"]
+    approve_findings = [f for f in findings if f.rule_id == "openaca-posture-mcp-auto-approve"]
+    assert len(header_findings) == 1
+    assert len(approve_findings) == 1
+
+    assert header_findings[0].declared_by is not None
+    assert header_findings[0].declared_by["path"] == str(user_settings)
+    assert approve_findings[0].declared_by is not None
+    assert approve_findings[0].declared_by["path"] == str(local_settings), (
+        "autoApprove must attribute to the scope that declares it, not the headers owner"
+    )
+
+    expected_bom_ref = "endpoint/settings.json#$.mcpServers.foo#mcp-remote/mcp.example.com/api"
+    assert header_findings[0].bom_ref == expected_bom_ref
+    assert approve_findings[0].bom_ref == expected_bom_ref
+
+
 def test_managed_scope_credential_is_attributed_to_managed_settings(
     tmp_path, _isolate_managed_settings
 ):

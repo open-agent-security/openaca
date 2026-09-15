@@ -182,8 +182,80 @@ def test_mcp_header_credential_policy_gate_blocks_only_affected_server(tmp_path)
     assert token not in result.output + output.read_text()
 
 
+def test_mcp_header_credential_endpoint_scan_ignores_uncomposed_plugin_manifest(tmp_path):
+    """An installed plugin's tree may hold fixed-name MCP files composition
+    never selects — `examples/mcp.json` beside the real `.mcp.json`.
+    `collect_endpoint_mcp_manifests` is install-state-aware at the plugin
+    level (only active plugins' roots) but its walk still returns every
+    fixed-name file beneath one, so passing the raw walk to the credential
+    rule reports a server absent from `refs` and policy compilation surfaces
+    an unenforceable risk. ADR-0065 rejected re-walking configuration for
+    posture for exactly this reason."""
+    from tools.scan import main as scan_main
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    plugin_root = config_dir / "plugins" / "cache" / "acme" / "demo"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "version": "0.1.0"})
+    )
+    (plugin_root / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"real": {"url": "https://real.example/mcp"}}})
+    )
+    token = "dummy-uncomposed-token"
+    (plugin_root / "examples").mkdir()
+    (plugin_root / "examples" / "mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "sample": {
+                        "url": "https://sample.example/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
+        )
+    )
+    (config_dir / "settings.json").write_text(json.dumps({"enabledPlugins": {"demo@acme": True}}))
+    (config_dir / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "plugins": {
+                    "demo@acme": [
+                        {"scope": "user", "version": "0.1.0", "installPath": str(plugin_root)}
+                    ]
+                },
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(config_dir),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert token not in result.output
+    findings = [
+        f
+        for f in json.loads(result.stdout)["findings"]
+        if f.get("rule_id") == "openaca-posture-mcp-header-credential"
+    ]
+    assert findings == []
+
+
 def test_mcp_header_credential_endpoint_scan_ignores_shadowed_user_scope_credential(tmp_path):
-    """Regression for a Codex review finding: `graph_build._seed_remote_mcps`
+    """Regression for a review finding: `graph_build._seed_remote_mcps`
     composes one `mcp_server` ref per settings scope straight from that
     scope's own raw `mcpServers`, independent of
     `collect_endpoint_settings_manifests`'s per-field merge. So a user-scope

@@ -359,6 +359,16 @@ def collect_endpoint_mcp_manifests(
     contains marketplace catalogs and stale cache versions, so recursively
     walking the whole directory would report posture findings for components
     that are not active on the endpoint.
+
+    Being install-state-aware at the plugin level is not enough on its own:
+    the walk beneath an active plugin still returns every fixed MCP filename
+    under it, so an unrelated `examples/mcp.json` beside the plugin's real
+    `.mcp.json` comes back even though composition selected only the latter.
+    ADR-0065 rejected re-walking configuration for posture precisely because
+    it reports components the agent did not select, so the walk's output is
+    kept to the sources that carry a composed ref. The direct config-dir and
+    project paths below are added regardless: they are the endpoint's own
+    settings files, not candidates composition chose between.
     """
     roots: list[Path] = []
     for ref in refs:
@@ -368,7 +378,12 @@ def collect_endpoint_mcp_manifests(
         if isinstance(install_path, str) and install_path:
             roots.append(Path(install_path))
 
-    out = collect_mcp_manifests(roots)
+    composed = {Path(ref.source_manifest).resolve() for ref in refs if ref.source_manifest}
+    out = [
+        (path, manifest)
+        for path, manifest in collect_mcp_manifests(roots)
+        if path.resolve() in composed
+    ]
     seen = {path.resolve() for path, _ in out}
 
     direct_paths = [

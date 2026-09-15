@@ -243,3 +243,24 @@ def test_malformed_resource_entries_count_as_parse_failures(tmp_path):
     put(tmp_path / ".pi/settings.json", {"extensions": [123]})
     counts, _ = parse_repo_registry_counts(tmp_path, {"pi": pi.KIND.manifest_patterns})
     assert counts["pi"] == (1, 1)
+
+
+def test_skill_frontmatter_matches_pi_boundaries_and_normalization(tmp_path):
+    samples = {
+        "delimiter": (
+            '---\nname: delimiter\ndescription: "Use --- to separate sections"\n---\nbody',
+            True,
+        ),
+        "bom": ("\ufeff---\nname: bom\ndescription: Valid skill\n---\nbody", True),
+        "unterminated": ("---\nname: unterminated\ndescription: No closing delimiter\n", False),
+        "cr": ("---\rname: cr\rdescription: Valid skill\r---\rbody", True),
+        "crlf": ("---\r\nname: crlf\r\ndescription: Valid skill\r\n---\r\nbody", True),
+    }
+    for name, (content, _) in samples.items():
+        put(tmp_path / f".pi/skills/{name}/SKILL.md", content)
+    graph = declared(tmp_path)
+    assert {ref.name: ref.extra["enabled"] for ref in refs(graph, "skill")} == {
+        name: enabled for name, (_, enabled) in samples.items()
+    }
+    assert len(graph.warnings.gaps) == 1
+    assert "unterminated" in graph.warnings.gaps[0]

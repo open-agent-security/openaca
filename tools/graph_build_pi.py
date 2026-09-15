@@ -195,8 +195,11 @@ def _resource_ref(file, graph: Graph, normalize) -> ComponentRef:
     if kind == "skill":
         name = file.path.parent.name
         try:
-            text = file.path.read_text(encoding="utf-8")
-            frontmatter = yaml.safe_load(text.split("---", 2)[1]) if text.startswith("---") else {}
+            text = (
+                file.path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+            )
+            end = text.find("\n---", 3) if text.startswith("---") else -1
+            frontmatter = yaml.safe_load(text[4:end]) if end != -1 else {}
             if not isinstance(frontmatter, dict):
                 frontmatter = {}
             if isinstance(frontmatter.get("name"), str) and frontmatter["name"]:
@@ -204,7 +207,7 @@ def _resource_ref(file, graph: Graph, normalize) -> ComponentRef:
             valid = isinstance(frontmatter.get("description"), str) and bool(
                 frontmatter["description"].strip()
             )
-        except (OSError, ValueError, IndexError, yaml.YAMLError):
+        except (OSError, ValueError, yaml.YAMLError):
             valid = False
     elif kind == "theme":
         try:

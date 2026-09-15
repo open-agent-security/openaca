@@ -845,22 +845,31 @@ def _read_mcp_auth_source(path: Path) -> dict:
             from tools.parsers.codex_config import load_config
 
             return load_config(path).mcp_servers
-        if path.suffix in _AGENT_FRONTMATTER_SUFFIXES:
+        text = path.read_text(encoding="utf-8")
+        try:
+            manifest = json.loads(text)
+        except ValueError:
             # A Claude Code (`.md`) or Cursor (`.md`/`.mdc`/`.markdown`)
             # subagent declares `mcpServers` in a YAML frontmatter block, not
             # in the file's own body —
             # `claude_command_agent._agent_frontmatter_child_refs` composes
-            # the real `mcp_server` refs from exactly that frontmatter.
-            # Parsing the whole file as JSON below always raises on these
-            # extensions and returns `{}`, silently dropping any headers an
-            # agent-owned server declares.
+            # the real `mcp_server` refs from exactly that frontmatter, and
+            # JSON parsing it always raises.
+            #
+            # The suffix alone cannot pick the reader: `.claude-plugin/
+            # plugin.json`'s string form resolves through `mcp_json.parse`
+            # whatever the referenced file is named, so `config/servers.md`
+            # holding JSON composes as MCP servers too. Frontmatter starts
+            # with `---` and never parses as JSON, so trying JSON first and
+            # falling back here separates the two by content.
+            if path.suffix not in _AGENT_FRONTMATTER_SUFFIXES:
+                raise
             from tools.parsers.claude_command_agent import (
                 _inline_mcp_servers,
                 _read_frontmatter,
             )
 
             return _inline_mcp_servers(_read_frontmatter(path).get("mcpServers"))
-        manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     if not isinstance(manifest, dict):

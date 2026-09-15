@@ -165,6 +165,8 @@ def collect_for_agent(
             extra_manifests=extra_manifests,
             agent_kind=agent.kind_id,
             agent_id=agent.agent_id,
+            config_dir=agent.config_root,
+            project_root=agent.project_root,
         )
     )
     observations, scanner_posture = _collect_scanner_findings(

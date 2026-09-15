@@ -939,6 +939,8 @@ def _scan_discovered_agents(
                 extra_manifests=prep.extra_manifests,
                 agent_kind=agent.kind_id,
                 agent_id=agent.agent_id,
+                config_dir=agent.config_root,
+                project_root=agent.project_root,
             )
             posture_findings.extend(agent_posture)
 

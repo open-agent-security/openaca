@@ -182,6 +182,128 @@ def test_mcp_header_credential_policy_gate_blocks_only_affected_server(tmp_path)
     assert token not in result.output + output.read_text()
 
 
+def test_mcp_header_credential_endpoint_scan_ignores_shadowed_user_scope_credential(tmp_path):
+    """Regression for a Codex review finding: `graph_build._seed_remote_mcps`
+    composes one `mcp_server` ref per settings scope straight from that
+    scope's own raw `mcpServers`, independent of
+    `collect_endpoint_settings_manifests`'s per-field merge. So a user-scope
+    literal credential a higher-precedence project scope has since replaced
+    with an indirect reference still produces a ref pointing at the user's
+    raw file. `_uncovered_ref_mcp_manifests` — built to reach a plugin's
+    string-referenced manifest, a file the settings-layer merge never reads
+    at all — must not also re-derive this scope's value straight from disk;
+    that bypasses the merge and resurfaces a credential the effective
+    configuration no longer has. Exercised through the real endpoint
+    composition path (not `refs=[]`) since that's what actually produces the
+    per-scope duplicate ref this regresses on.
+    """
+    from tools.scan import main as scan_main
+
+    config_dir = tmp_path / ".claude"
+    config_dir.mkdir()
+    project_root = tmp_path / "repo"
+    project_claude = project_root / ".claude"
+    project_claude.mkdir(parents=True)
+    token = "dummy-shadowed-user-token"
+
+    (config_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://foo.example/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
+        )
+    )
+    (project_claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "foo": {
+                        "url": "https://foo.example/mcp",
+                        "headers": {"Authorization": "Bearer ${TOKEN}"},
+                    }
+                }
+            }
+        )
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "claude-code",
+            "--config-dir",
+            str(config_dir),
+            "--project",
+            str(project_root),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert token not in result.output
+    findings = [
+        f
+        for f in json.loads(result.stdout)["findings"]
+        if f.get("rule_id") == "openaca-posture-mcp-header-credential"
+    ]
+    assert findings == []
+
+
+def test_mcp_header_credential_declared_scan_detects_agent_frontmatter_credential(tmp_path):
+    """Regression for a Codex review finding: `.claude/agents/*.md` composes
+    real `mcp_server` refs from its YAML frontmatter `mcpServers` block
+    (`claude_command_agent._agent_frontmatter_child_refs`), but
+    `_read_mcp_auth_source` parsed every non-`.toml` source as JSON, which
+    always raises on a markdown file — so an agent-owned server's literal
+    credential silently never reached this rule.
+    """
+    from tools.scan import main as scan_main
+
+    agents_dir = tmp_path / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    token = "dummy-agent-frontmatter-token"
+    (agents_dir / "demo.md").write_text(
+        "---\n"
+        "name: demo\n"
+        "mcpServers:\n"
+        "  auth-server:\n"
+        "    url: https://frontmatter.example/mcp\n"
+        "    headers:\n"
+        f"      Authorization: Bearer {token}\n"
+        "---\n\n"
+        "Demo agent body.\n"
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(tmp_path),
+            "--include-posture",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert token not in result.output
+    findings = [
+        f
+        for f in json.loads(result.stdout)["findings"]
+        if f.get("rule_id") == "openaca-posture-mcp-header-credential"
+    ]
+    assert len(findings) == 1
+
+
 def _mark_as_plugin(root: Path, name: str = "test-plugin", version: str = "1.0.0") -> None:
     """Write `.claude-plugin/plugin.json` to mark `root` as a plugin repo.
 

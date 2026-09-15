@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -93,6 +93,8 @@ def run_posture_rules(
     agent_kind: str | None = None,
     agent_id: str | None = None,
     extra_manifests: Mapping[str, list[tuple[Path, dict]]] | None = None,
+    config_dir: Path | None = None,
+    project_root: Path | None = None,
 ) -> list[PostureFinding]:
     """Run all V0 posture rules and concatenate their findings.
 
@@ -100,6 +102,12 @@ def run_posture_rules(
     but *applicability* is declared, because a settings key can mean something
     different, or nothing, in another runtime. `allowed_rules=None` means every
     rule applies.
+
+    `config_dir`/`project_root` are the installed agent's own (`None` for a
+    declared agent — see `_settings_scope_paths`); they identify settings-scope
+    files that `collect_endpoint_settings_manifests` already folded into
+    `settings_manifests`'s effective merge, so the raw-ref fallback below never
+    re-derives one of them from disk.
     """
     settings_manifests = settings_manifests or []
     findings: list[PostureFinding] = []
@@ -109,7 +117,11 @@ def run_posture_rules(
         mcp_header_credential.check_mcp_header_credential(
             manifests
             + settings_manifests
-            + _uncovered_ref_mcp_manifests(refs, manifests + settings_manifests)
+            + _uncovered_ref_mcp_manifests(
+                refs,
+                manifests + settings_manifests,
+                extra_covered=_settings_scope_paths(config_dir, project_root),
+            )
         )
     )
     findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
@@ -741,8 +753,44 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
     return [(Path(source), manifest) for source, manifest in by_path.items()]
 
 
+def _settings_scope_paths(config_dir: Path | None, project_root: Path | None) -> list[Path]:
+    """Every settings-scope representative path an installed Claude Code
+    agent's `mcpServers` layering can be attributed to, mirroring
+    `graph_build._seed_remote_mcps`'s `scope_to_settings_path` and
+    `collect_endpoint_settings_manifests`'s `scope_checks`.
+
+    `collect_endpoint_settings_manifests` attributes a merged
+    `mcpServers.<name>` entry to whichever *one* scope owns the flagged field
+    after the precedence merge — but `_seed_remote_mcps` composes one
+    `mcp_server` ref **per scope** straight from that scope's own raw
+    `mcpServers`, independent of which scope the merge credited. So a scope
+    whose literal header value a higher-precedence scope has since overridden
+    or disabled can still produce a ref pointing at itself. That scope's file
+    was already read and folded into the effective merge —
+    `_uncovered_ref_mcp_manifests` must treat every path here as covered so it
+    never re-derives that shadowed, raw (and possibly stale) value instead of
+    trusting the merge `collect_endpoint_settings_manifests` already computed.
+
+    `config_dir` is `None` for a declared (repo) agent, which has no settings
+    layering to shadow — an empty list is correct there.
+    """
+    if config_dir is None:
+        return []
+    paths = [
+        settings_layers.default_managed_dir() / "managed-settings.json",
+        config_dir / "settings.json",
+    ]
+    if project_root is not None:
+        paths.append(project_root / ".claude" / "settings.local.json")
+        paths.append(project_root / ".claude" / "settings.json")
+    return paths
+
+
 def _uncovered_ref_mcp_manifests(
-    refs: list[ComponentRef], manifests: list[tuple[Path, dict]]
+    refs: list[ComponentRef],
+    manifests: list[tuple[Path, dict]],
+    *,
+    extra_covered: Iterable[Path] = (),
 ) -> list[tuple[Path, dict]]:
     """Composed `mcp_server` refs whose source manifest a directory walk missed.
 
@@ -757,9 +805,19 @@ def _uncovered_ref_mcp_manifests(
     down to sources the walk-based `manifests` didn't already cover, so
     Cursor/Codex (whose collectors already return `_mcp_manifests_from_refs`
     output) never see their own entries duplicated back in.
+
+    `extra_covered` (see `_settings_scope_paths`) marks settings-scope files
+    as covered even when they own no key in the current effective merge, so a
+    per-scope ref `_seed_remote_mcps` composed from one of them is never
+    re-read raw here.
     """
     covered: set[Path] = set()
     for path, _ in manifests:
+        try:
+            covered.add(path.resolve())
+        except (OSError, RuntimeError, ValueError):
+            covered.add(path)
+    for path in extra_covered:
         try:
             covered.add(path.resolve())
         except (OSError, RuntimeError, ValueError):
@@ -776,6 +834,9 @@ def _uncovered_ref_mcp_manifests(
     return out
 
 
+_AGENT_FRONTMATTER_SUFFIXES = frozenset({".md", ".mdc", ".markdown"})
+
+
 def _read_mcp_auth_source(path: Path) -> dict:
     # Read only sources selected by composition. Credentials remain in the
     # local posture pass, never in graph properties or exported inventories.
@@ -784,6 +845,21 @@ def _read_mcp_auth_source(path: Path) -> dict:
             from tools.parsers.codex_config import load_config
 
             return load_config(path).mcp_servers
+        if path.suffix in _AGENT_FRONTMATTER_SUFFIXES:
+            # A Claude Code (`.md`) or Cursor (`.md`/`.mdc`/`.markdown`)
+            # subagent declares `mcpServers` in a YAML frontmatter block, not
+            # in the file's own body —
+            # `claude_command_agent._agent_frontmatter_child_refs` composes
+            # the real `mcp_server` refs from exactly that frontmatter.
+            # Parsing the whole file as JSON below always raises on these
+            # extensions and returns `{}`, silently dropping any headers an
+            # agent-owned server declares.
+            from tools.parsers.claude_command_agent import (
+                _inline_mcp_servers,
+                _read_frontmatter,
+            )
+
+            return _inline_mcp_servers(_read_frontmatter(path).get("mcpServers"))
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}

@@ -126,6 +126,11 @@ def resolve_resources(
                             row.installed_version = manifest["version"]
                         else:
                             row.gaps = ("installed npm package identity or version unavailable",)
+                    elif source.kind == "git":
+                        manifest = read_manifest(root / "package.json", allowed_root)
+                        version = manifest.get("version")
+                        if isinstance(version, str):
+                            row.installed_version = version
                 key = kind, source.identity
                 if not row.autoload and key in rows:
                     row.delta_base = rows[key]

@@ -43,6 +43,23 @@ def test_version_is_independent_and_name_checked(tmp_path):
     assert row.installed_version is None
 
 
+def test_git_source_reads_installed_version_without_touching_ref(tmp_path):
+    root = tmp_path / "agent"
+    install = root / "git/github.com/acme/tool"
+    write(install / "package.json", json.dumps({"name": "tool", "version": "2.3.1"}))
+    (row,) = resolve_resources({"packages": ["git:github:acme/tool#v2"]}, agent_root=root)
+    assert row.source.ref == "v2"
+    assert row.installed_version == "2.3.1"
+
+
+def test_git_source_without_manifest_version_leaves_installed_version_unset(tmp_path):
+    root = tmp_path / "agent"
+    install = root / "git/github.com/acme/tool"
+    write(install / "package.json", json.dumps({"name": "tool"}))
+    (row,) = resolve_resources({"packages": ["git:github:acme/tool"]}, agent_root=root)
+    assert row.installed_version is None
+
+
 def test_native_and_boundary(tmp_path):
     for path in ["extensions/a.ts", "skills/a/SKILL.md", "prompts/a.md", "themes/a.json"]:
         write(tmp_path / ".pi" / path)

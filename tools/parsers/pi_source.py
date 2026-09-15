@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,10 +48,6 @@ def parse_pi_source(raw: str, *, base_dir: Path | None = None) -> PiSource | Non
     if source.startswith("npm:"):
         return _parse_npm_source(source)
 
-    npm = _parse_npm_source(source)
-    if npm is not None:
-        return npm
-
     if source.startswith("git:") or _GIT_PROTOCOL_RE.match(source):
         return _parse_git_source(source)
 
@@ -64,8 +61,9 @@ def _parse_npm_source(source: str) -> PiSource | None:
     if not _valid_npm_name(name):
         return None
 
-    pinned = ref is not None and _EXACT_SEMVER_RE.fullmatch(ref) is not None
-    purl = _npm_purl(name, ref) if pinned and ref is not None else None
+    version = ref.removeprefix("v") if ref else None
+    pinned = version is not None and _EXACT_SEMVER_RE.fullmatch(version) is not None
+    purl = _npm_purl(name, version) if pinned and version is not None else None
     return PiSource("npm", f"npm:{name}", ref, purl, pinned)
 
 
@@ -174,4 +172,4 @@ def _parse_local_source(source: str, base_dir: Path | None) -> PiSource:
         path = Path(source).expanduser()
     if not path.is_absolute():
         path = (base_dir or Path.cwd()) / path
-    return PiSource("local", f"local:{path.resolve()}", None, None, False)
+    return PiSource("local", f"local:{os.path.abspath(path)}", None, None, False)

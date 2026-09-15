@@ -140,3 +140,62 @@ def test_scoped_shared_roots_override_and_output_priority(tmp_path):
     assert [f.path for f in files] == [native, shared, package]
     assert files[1].scope == "global"
     assert not files[1].enabled
+
+
+def test_alias_precedence_preserves_project_local_disabled_state(tmp_path):
+    target = write(tmp_path / "pkg/skills/a/SKILL.md")
+    alias = tmp_path / ".pi/alias.md"
+    alias.parent.mkdir()
+    alias.symlink_to(target)
+    settings = {"skills": ["alias.md", "!alias.md"]}
+    rows = resolve_resources({"packages": [str(tmp_path / "pkg")]}, settings, project_root=tmp_path)
+    files = expand_resources(rows, project_root=tmp_path, project_settings=settings)
+    assert len(files) == 1
+    assert files[0].path == alias
+    assert files[0].scope == "project"
+    assert files[0].origin == "local"
+    assert files[0].enabled is False
+
+
+def test_manifest_star_does_not_match_nested_basename(tmp_path):
+    write(tmp_path / "package.json", json.dumps({"pi": {"prompts": ["*.md"]}}))
+    wanted = write(tmp_path / "root.md")
+    write(tmp_path / "nested/extra.md")
+    rows = resolve_resources({"packages": [str(tmp_path)]})
+    assert [f.path for f in expand_resources(rows)] == [wanted]
+
+
+def test_standalone_local_directory_is_extension(tmp_path):
+    write(tmp_path / "ext/index.ts")
+    rows = resolve_resources({"packages": [str(tmp_path / "ext")]})
+    (file,) = expand_resources(rows)
+    assert file.path == tmp_path / "ext"
+    assert file.resource_type == "extensions"
+    assert file.owner is rows[0]
+    assert file.enabled
+
+
+def test_nested_ignore_negation_reincludes_skill(tmp_path):
+    root = tmp_path / ".pi/skills"
+    wanted = write(root / "a/SKILL.md")
+    write(root / ".gitignore", "*.md\n")
+    write(root / "a/.gitignore", "!SKILL.md\n")
+    assert [f.path for f in expand_resources([], project_root=tmp_path)] == [wanted]
+
+
+def test_excluded_parent_is_not_reopened_by_child_ignore(tmp_path):
+    root = tmp_path / ".pi/skills"
+    write(root / "a/SKILL.md")
+    write(root / ".gitignore", "a/\n")
+    write(root / "a/.gitignore", "!SKILL.md\n")
+    assert expand_resources([], project_root=tmp_path) == []
+
+
+def test_exact_path_keeps_package_first_write_before_canonical_ranking(tmp_path):
+    target = write(tmp_path / "pkg/skills/a/SKILL.md")
+    settings = {"skills": [str(target), "!SKILL.md"]}
+    rows = resolve_resources({"packages": [str(tmp_path / "pkg")]}, settings, project_root=tmp_path)
+    (file,) = expand_resources(rows, project_settings=settings)
+    assert file.path == target
+    assert file.origin == "package"
+    assert file.enabled

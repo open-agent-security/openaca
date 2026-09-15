@@ -19,9 +19,8 @@ SHA = "a" * 40
             True,
             "pkg:npm/%40scope/pkg@1.2.3",
         ),
-        ("pkg", "npm", "npm:pkg", None, False, None),
-        ("@scope/pkg", "npm", "npm:@scope/pkg", None, False, None),
-        ("pkg@^1.0.0", "npm", "npm:pkg", "^1.0.0", False, None),
+        ("npm:pkg@^1.0.0", "npm", "npm:pkg", "^1.0.0", False, None),
+        ("npm:pkg@v1.2.3", "npm", "npm:pkg", "v1.2.3", True, "pkg:npm/pkg@1.2.3"),
         ("npm:pkg@next", "npm", "npm:pkg", "next", False, None),
         (
             f"git:github.com/user/repo@{SHA}",
@@ -140,3 +139,21 @@ def test_unparseable_source_returns_none():
     assert parse_pi_source("git:github.com/team/../outside") is None
     assert parse_pi_source("git:exa%2fmple.com/team/repo") is None
     assert parse_pi_source("https://exa%2fmple.com/team/repo") is None
+
+
+@pytest.mark.parametrize("raw", ["pkg", "@scope/pkg", "pkg@^1.0.0"])
+def test_bare_package_names_are_local(raw, tmp_path):
+    source = parse_pi_source(raw, base_dir=tmp_path)
+    assert source is not None
+    assert source.kind == "local"
+    assert source.identity == f"local:{tmp_path / raw}"
+
+
+def test_local_alias_identity_is_lexical(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target)
+    source = parse_pi_source(str(alias))
+    assert source is not None
+    assert source.identity == f"local:{alias}"

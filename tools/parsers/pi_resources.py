@@ -24,6 +24,18 @@ class PiResourceFile:
     origin: str = "package"
 
 
+def _glob_expression(pattern: str) -> str:
+    return (
+        re.escape(pattern)
+        .replace(r"\*\*/", "DOUBLESTARSLASH")
+        .replace(r"\*\*", "DOUBLESTAR")
+        .replace(r"\*", "[^/]*")
+        .replace(r"\?", "[^/]")
+        .replace("DOUBLESTARSLASH", "(?:.*/)?")
+        .replace("DOUBLESTAR", ".*")
+    )
+
+
 def _match(path: Path, pattern: str, base: Path, exact: bool = False) -> bool:
 
     paths = [path]
@@ -37,16 +49,7 @@ def _match(path: Path, pattern: str, base: Path, exact: bool = False) -> bool:
         if exact and normalized in values:
             return True
         if not exact:
-            expression = (
-                re.escape(normalized)
-                .replace(r"\*\*/", "DOUBLESTARSLASH")
-                .replace(r"\*\*", "DOUBLESTAR")
-                .replace(r"\*", "[^/]*")
-                .replace(r"\?", "[^/]")
-                .replace("DOUBLESTARSLASH", "(?:.*/)?")
-                .replace("DOUBLESTAR", ".*")
-            )
-            if any(re.fullmatch(expression, value) for value in values):
+            if any(re.fullmatch(_glob_expression(normalized), value) for value in values):
                 return True
     return False
 
@@ -74,6 +77,16 @@ def _collect(
 
     seen: set[Path] = set()
 
+    def ignored(
+        path: Path, rules: list[tuple[Path, GitIgnoreSpec]], directory: bool = False
+    ) -> bool:
+        state = False
+        for base, spec in rules:
+            result = spec.check_file(path.relative_to(base).as_posix() + ("/" if directory else ""))
+            if result.include is not None:
+                state = result.include
+        return state
+
     def visit(path: Path, depth: int, rules: list[tuple[Path, GitIgnoreSpec]]) -> list[Path]:
         if not permitted(path, boundary) or not path.exists():
             return []
@@ -94,9 +107,7 @@ def _collect(
         rules = [*rules, (path, GitIgnoreSpec.from_lines(lines))]
         if kind == "skills" and (path / "SKILL.md").is_file():
             skill = path / "SKILL.md"
-            if permitted(skill, boundary) and not any(
-                spec.match_file(skill.relative_to(base).as_posix()) for base, spec in rules
-            ):
+            if permitted(skill, boundary) and not ignored(skill, rules):
                 return [skill]
         if kind == "extensions":
             manifest = read_manifest(path / "package.json", boundary).get("pi", {})
@@ -126,10 +137,7 @@ def _collect(
             ):
                 continue
             directory = child.is_dir()
-            if any(
-                spec.match_file(child.relative_to(base).as_posix() + ("/" if directory else ""))
-                for base, spec in rules
-            ):
+            if ignored(child, rules, directory):
                 continue
             if directory:
                 if kind == "extensions" and depth >= 1:
@@ -171,7 +179,7 @@ def _glob_paths(root: Path, pattern: str, boundary: Path | None) -> list[Path]:
         for child in children:
             if child.name.startswith(".") or not permitted(child, boundary):
                 continue
-            if _match(child, pattern, root):
+            if re.fullmatch(_glob_expression(pattern), child.relative_to(root).as_posix()):
                 found.append(child)
             if child.is_dir():
                 walk(child)
@@ -204,7 +212,8 @@ def expand_resources(
     ):
         if state is not None and permitted(path, allowed_root):
             found.setdefault(
-                (kind, path.resolve()), PiResourceFile(path, kind, state, scope, owner, origin)
+                (kind, Path(os.path.abspath(path))),
+                PiResourceFile(path, kind, state, scope, owner, origin),
             )
 
     def package(row: PiResource):
@@ -215,6 +224,17 @@ def expand_resources(
             add(root, "extensions", True if row.autoload else None, row.scope, row, "package")
             return
         manifest = read_manifest(root / "package.json", allowed_root).get("pi")
+        if (
+            row.source.kind == "local"
+            and row.filters is None
+            and not isinstance(manifest, dict)
+            and not any(
+                permitted(root / kind, allowed_root) and (root / kind).exists()
+                for kind in RESOURCE_TYPES
+            )
+        ):
+            add(root, "extensions", True, row.scope, row, "package")
+            return
         all_patterns = [p for values in (row.filters or {}).values() for p in values]
         if isinstance(manifest, dict):
             all_patterns.extend(
@@ -329,4 +349,7 @@ def expand_resources(
             return 4
         return (0 if file.scope == "project" else 2) + (file.origin == "auto")
 
-    return sorted(found.values(), key=priority)
+    canonical: dict[tuple[str, Path], PiResourceFile] = {}
+    for file in sorted(found.values(), key=priority):
+        canonical.setdefault((file.resource_type, file.path.resolve()), file)
+    return list(canonical.values())

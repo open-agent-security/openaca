@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -76,7 +77,7 @@ def resolve_resources(
                 else:
                     path = Path(raw).expanduser()
                     path = path if path.is_absolute() else (base or Path.cwd()) / path
-                    source = PiSource("local", f"local:{path.resolve()}", None, None, False)
+                    source = PiSource("local", f"local:{os.path.abspath(path)}", None, None, False)
                 if source is None:
                     continue
                 filters = (

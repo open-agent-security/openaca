@@ -98,12 +98,12 @@ proceed through focused tests and task review before downstream integration.
   do not produce duplicate mutable-reference findings.
 - [x] Declared scans respect gitignore and target containment; installed scans
   cannot silently combine a foreign config root with the scanner user's home.
-- [x] BOM export, lint, round-trip and policy/collection consumers accept Pi data.
+- [x] BOM export, lint, round-trip and collection consumers accept Pi data.
 - [x] CLI fixtures demonstrate both composition and posture; documentation states
   the MCP, dynamic execution and dependency coverage limits.
-- [x] Ruff, formatting, Pyright and the full pytest suite pass (2332 tests).
-- [ ] Clean-archive pre-push gate passes on the final combined commit.
-- [ ] Final branch review passes, including the skill-frontmatter review correction.
+- [x] Ruff, formatting, Pyright and the full pytest suite pass (2333 tests).
+- [x] Clean-archive pre-push gate passes on the final combined implementation commit.
+- [x] Final branch review passes, including the skill-frontmatter review correction.
 
 ## Delivery verification
 
@@ -117,6 +117,9 @@ BOM lint and CLI advisory replay pass. The existing `scan bom` posture prohibiti
 is preserved; the posture runner separately recomputes the mutable finding from
 round-tripped refs. No package execution, install, or real-home writes are used.
 
-The final clean-archive gate and branch-review acceptance remain pending until the
-skill-frontmatter correction is included. No remote push or PR is part of this
-local implementation handoff.
+The frontmatter correction is included in `2545ba2`, whose clean-archive pre-push
+gate passes all 2333 tests, lint, formatting, types, corpus validation and CLI
+smoke checks. Final branch review passed, including 111 independently run
+Pi-focused tests. Native policy compilation
+remains scoped to its existing Claude target; this plan adds no Pi policy writer.
+No remote push or PR is part of this local implementation handoff.

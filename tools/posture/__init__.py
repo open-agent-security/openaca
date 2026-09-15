@@ -841,35 +841,38 @@ def _read_mcp_auth_source(path: Path) -> dict:
     # Read only sources selected by composition. Credentials remain in the
     # local posture pass, never in graph properties or exported inventories.
     try:
-        if path.suffix == ".toml":
-            from tools.parsers.codex_config import load_config
-
-            return load_config(path).mcp_servers
         text = path.read_text(encoding="utf-8")
         try:
             manifest = json.loads(text)
         except ValueError:
-            # A Claude Code (`.md`) or Cursor (`.md`/`.mdc`/`.markdown`)
-            # subagent declares `mcpServers` in a YAML frontmatter block, not
-            # in the file's own body —
-            # `claude_command_agent._agent_frontmatter_child_refs` composes
-            # the real `mcp_server` refs from exactly that frontmatter, and
-            # JSON parsing it always raises.
+            # No suffix can pick the reader. `.claude-plugin/plugin.json`'s
+            # string form resolves its reference through `mcp_json.parse`
+            # whatever the file is named, so `config/servers.toml` or
+            # `config/servers.md` may hold JSON and compose as MCP servers.
+            # Dispatching on the extension sent those to a parser that fails
+            # and returns no servers, dropping the credential the composed
+            # server carries.
             #
-            # The suffix alone cannot pick the reader: `.claude-plugin/
-            # plugin.json`'s string form resolves through `mcp_json.parse`
-            # whatever the referenced file is named, so `config/servers.md`
-            # holding JSON composes as MCP servers too. Frontmatter starts
-            # with `---` and never parses as JSON, so trying JSON first and
-            # falling back here separates the two by content.
-            if path.suffix not in _AGENT_FRONTMATTER_SUFFIXES:
-                raise
-            from tools.parsers.claude_command_agent import (
-                _inline_mcp_servers,
-                _read_frontmatter,
-            )
+            # Codex TOML and YAML frontmatter both fail the JSON parse above,
+            # so content decides the reader and the extension only picks which
+            # fallback to try.
+            if path.suffix == ".toml":
+                from tools.parsers.codex_config import load_config
 
-            return _inline_mcp_servers(_read_frontmatter(path).get("mcpServers"))
+                return load_config(path).mcp_servers
+            if path.suffix in _AGENT_FRONTMATTER_SUFFIXES:
+                # A Claude Code (`.md`) or Cursor (`.md`/`.mdc`/`.markdown`)
+                # subagent declares `mcpServers` in a YAML frontmatter block,
+                # not in the file's own body —
+                # `claude_command_agent._agent_frontmatter_child_refs`
+                # composes the real `mcp_server` refs from that frontmatter.
+                from tools.parsers.claude_command_agent import (
+                    _inline_mcp_servers,
+                    _read_frontmatter,
+                )
+
+                return _inline_mcp_servers(_read_frontmatter(path).get("mcpServers"))
+            raise
     except (OSError, ValueError):
         return {}
     if not isinstance(manifest, dict):

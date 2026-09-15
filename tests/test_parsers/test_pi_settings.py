@@ -28,6 +28,7 @@ def test_delta_fills_unmentioned_global_files(tmp_path):
     )
     files = expand_resources(rows)
     assert {f.path.parent.name: f.enabled for f in files} == {"a": False, "b": True}
+    assert rows[0].delta_base is not None
     assert rows[0].delta_base.source.ref == "1.0.0"
 
 

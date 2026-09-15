@@ -156,7 +156,7 @@ class Graph:
         return chain
 
     _AGENT_KINDS: ClassVar[frozenset[str]] = frozenset(
-        {"plugin", "skill", "mcp_server", "hook", "command", "agent"}
+        {"plugin", "skill", "mcp_server", "hook", "command", "agent", "extension", "theme"}
     )
 
     def scope_of(self, node: Node) -> str:

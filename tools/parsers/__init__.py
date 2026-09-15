@@ -21,6 +21,7 @@ from tools.parsers import (
     mcp_json,
     package_json,
     package_lock_json,
+    pi_manifest,
     pyproject_toml,
     uv_lock,
 )
@@ -369,6 +370,13 @@ CODEX_MANIFEST_REGISTRY: list[ManifestPattern] = [
         claude_plugin.parse,
         _is_resolved_codex_plugin_format(".claude-plugin"),
     ),
+]
+
+PI_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern(
+        "**/.pi/settings.json", pi_manifest.parse_settings, pi_manifest.declaration_guard
+    ),
+    ManifestPattern("**/package.json", pi_manifest.parse_package, pi_manifest.declaration_guard),
 ]
 
 # Compat alias: today's flat registry, kept byte-identical in content so

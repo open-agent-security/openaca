@@ -167,6 +167,11 @@ def _glob_paths(root: Path, pattern: str, boundary: Path | None) -> list[Path]:
 
     found = []
     seen: set[Path] = set()
+    absolute = Path(pattern).is_absolute()
+    search_root = root
+    if absolute:
+        prefix = re.split(r"[*?]", pattern, maxsplit=1)[0]
+        search_root = Path(prefix) if prefix.endswith(os.sep) else Path(prefix).parent
 
     def walk(path: Path):
         if not permitted(path, boundary) or path.resolve() in seen:
@@ -179,12 +184,13 @@ def _glob_paths(root: Path, pattern: str, boundary: Path | None) -> list[Path]:
         for child in children:
             if child.name.startswith(".") or not permitted(child, boundary):
                 continue
-            if re.fullmatch(_glob_expression(pattern), child.relative_to(root).as_posix()):
+            candidate = child.as_posix() if absolute else child.relative_to(root).as_posix()
+            if re.fullmatch(_glob_expression(pattern), candidate):
                 found.append(child)
             if child.is_dir():
                 walk(child)
 
-    walk(root)
+    walk(search_root)
     return found
 
 

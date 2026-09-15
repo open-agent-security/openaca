@@ -199,3 +199,16 @@ def test_exact_path_keeps_package_first_write_before_canonical_ranking(tmp_path)
     assert file.path == target
     assert file.origin == "package"
     assert file.enabled
+
+
+def test_absolute_manifest_glob_stays_anchored_and_within_boundary(tmp_path):
+    package = tmp_path / "pkg"
+    wanted = write(package / "root.md")
+    write(package / "nested/extra.md")
+    outside = write(tmp_path / "outside/leak.md")
+    write(
+        package / "package.json",
+        json.dumps({"pi": {"prompts": [str(package / "*.md"), str(outside.parent / "*.md")]}}),
+    )
+    rows = resolve_resources({"packages": [str(package)]}, allowed_root=package)
+    assert [f.path for f in expand_resources(rows, allowed_root=package)] == [wanted]

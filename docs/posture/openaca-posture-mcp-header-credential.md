@@ -65,5 +65,11 @@ credential. Generic `env` values, custom authentication header names outside
 the list above, OAuth storage, and credentials embedded in launch commands are
 not covered by this rule.
 
+The finding names the settings scope that declared the flagged header. When one
+server's definition spans several scopes, that scope may not be the only file
+involved — ADR-0066 resolves provenance per header key within a scope and
+places finer splits below its bar, so look in the other scopes contributing to
+the same server if the named file does not hold the literal value.
+
 References: [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcpjson),
 [Codex MCP configuration](https://developers.openai.com/codex/mcp/).

@@ -50,6 +50,7 @@ Run them in order; later plans depend on earlier ones unless noted.
 | 044 | [Remote policy compilation](044-remote-policy-compilation.md) | ✅ Done | 043 |
 | 045 | [Published consumption surfaces](045-published-consumption-surfaces.md) | ✅ Done | 044 |
 | 046 | [Remote client removal](046-remote-client-removal.md) | ✅ Done | 045 |
+| 047 | [Pi agent kind](047-pi-agent-kind.md) | 🟡 Active | 043, 046 |
 
 Status legend: 🟡 active · ✅ done · ⏸ pending · 🔴 blocked.
 

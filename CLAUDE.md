@@ -104,7 +104,9 @@ V0 ships:
 2. Manifest parsers for `package.json`, `mcp.json`, `.claude-plugin/plugin.json`,
    `.claude/settings.json`. Cursor manifests are in scope as of plan 042
    (`cursor` is a registered agent kind) and Codex manifests as of plan 043
-   (`codex`, including TOML `config.toml` and `agents/*.toml`); Windsurf
+   (`codex`, including TOML `config.toml` and `agents/*.toml`), and Pi
+   manifests/resources as of plan 047 (`pi`, including packages, extensions,
+   skills, prompts and themes; native MCP adapters are not covered). Windsurf
    manifests remain V1.
 3. 5+ bundled OpenACA overlays (`overlays/*.yaml`) keyed on upstream OSV record
    IDs (GHSA / CVE / OSV / PYSEC / MAL), adding agent-context taxonomies and

@@ -212,6 +212,8 @@ def _evaluate_endpoint(
                 allowed_rules=kind_for(agent.kind_id).posture_rules,
                 agent_kind=agent.kind_id,
                 agent_id=agent.agent_id,
+                config_dir=agent.config_root,
+                project_root=agent.project_root,
             ):
                 if finding.rule_id not in policy.risk_gates.posture_rule_ids:
                     continue

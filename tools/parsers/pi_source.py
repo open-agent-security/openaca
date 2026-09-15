@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, unquote_to_bytes, urlsplit
 
 _EXACT_SEMVER_RE = re.compile(
     r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
@@ -17,6 +17,12 @@ _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 _NPM_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _GIT_PROTOCOL_RE = re.compile(r"^(?:https?|ssh|git)://", re.IGNORECASE)
 _SCP_GIT_RE = re.compile(r"^git@(?P<host>[^/:]+):(?P<path>.+)$")
+_HOSTED_GIT_ALIASES = {
+    "github": "github.com",
+    "gitlab": "gitlab.com",
+    "bitbucket": "bitbucket.org",
+}
+_INVALID_PERCENT_ESCAPE_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 
 @dataclass(frozen=True)
@@ -94,19 +100,24 @@ def _parse_git_source(source: str) -> PiSource | None:
         parsed = urlsplit(value)
         if not parsed.hostname:
             return None
-        path, ref = _split_git_path(unquote(parsed.path).lstrip("/"))
+        path, ref = _split_git_path(parsed.path.lstrip("/"))
         ref = ref or parsed.fragment or None
         return _git_source(parsed.hostname, path, ref)
 
     scp_match = _SCP_GIT_RE.fullmatch(value)
     if scp_match:
-        path, ref = _split_git_path(unquote(scp_match.group("path")))
+        path, ref = _split_git_path(scp_match.group("path"))
         return _git_source(scp_match.group("host"), path, ref)
+
+    alias, alias_separator, path_with_ref = value.partition(":")
+    if alias_separator and alias in _HOSTED_GIT_ALIASES:
+        path, ref = _split_git_path(path_with_ref)
+        return _git_source(_HOSTED_GIT_ALIASES[alias], path, ref)
 
     host, separator, path_with_ref = value.partition("/")
     if not separator or ("." not in host and host != "localhost"):
         return None
-    path, ref = _split_git_path(unquote(path_with_ref))
+    path, ref = _split_git_path(path_with_ref)
     return _git_source(host, path, ref)
 
 
@@ -121,7 +132,9 @@ def _split_git_path(path: str) -> tuple[str, str | None]:
 
 
 def _git_source(host: str, path: str, ref: str | None) -> PiSource | None:
-    normalized_path = path.removesuffix(".git").strip("/")
+    if _unsafe_git_part(host, allow_slash=False) or _unsafe_git_part(path, allow_slash=True):
+        return None
+    normalized_path = unquote(path).removesuffix(".git").strip("/")
     if (
         not host
         or not normalized_path
@@ -135,6 +148,23 @@ def _git_source(host: str, path: str, ref: str | None) -> PiSource | None:
         return None
     identity = f"git:{host.lower()}/{normalized_path}"
     return PiSource("git", identity, ref, None, bool(ref and _FULL_SHA_RE.fullmatch(ref)))
+
+
+def _unsafe_git_part(value: str, *, allow_slash: bool) -> bool:
+    if _INVALID_PERCENT_ESCAPE_RE.search(value):
+        return True
+    try:
+        decoded = unquote_to_bytes(value).decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    for candidate in (value, decoded):
+        if "\0" in candidate or "\\" in candidate or candidate.startswith("/"):
+            return True
+        if not allow_slash and "/" in candidate:
+            return True
+        if ".." in candidate.split("/"):
+            return True
+    return False
 
 
 def _parse_local_source(source: str, base_dir: Path | None) -> PiSource:

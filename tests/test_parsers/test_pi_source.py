@@ -63,6 +63,30 @@ SHA = "a" * 40
             False,
             None,
         ),
+        (
+            "git:github:user/repo",
+            "git",
+            "git:github.com/user/repo",
+            None,
+            False,
+            None,
+        ),
+        (
+            "git:gitlab:user/repo@main",
+            "git",
+            "git:gitlab.com/user/repo",
+            "main",
+            False,
+            None,
+        ),
+        (
+            "git:bitbucket:user/repo",
+            "git",
+            "git:bitbucket.org/user/repo",
+            None,
+            False,
+            None,
+        ),
     ],
 )
 def test_parse_pi_source(raw, kind, identity, ref, pinned, purl):
@@ -114,3 +138,5 @@ def test_unparseable_source_returns_none():
     assert parse_pi_source("   ") is None
     assert parse_pi_source("npm:../../outside") is None
     assert parse_pi_source("git:github.com/team/../outside") is None
+    assert parse_pi_source("git:exa%2fmple.com/team/repo") is None
+    assert parse_pi_source("https://exa%2fmple.com/team/repo") is None

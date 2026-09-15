@@ -38,7 +38,7 @@ from tools.observations import (
 )
 from tools.posture import PostureFinding, run_posture_rules
 from tools.posture.agent_surface import agent_extra_posture_manifests, agent_posture_manifests
-from tools.scan import _component_gap_count, _count_active_plugins
+from tools.scan import _component_gap_count, _installed_source_unit
 
 __all__ = [
     "CollectedAgent",
@@ -139,12 +139,8 @@ def collect_for_agent(
         # keeping the BOM locally wants it; a consumer shipping it elsewhere
         # must not carry an absolute path off the machine.
         target=str(agent.config_root) if include_target else None,
-        # Agent-scope refs, where the scan path passes all refs to the same
-        # counter. Not reconciled here: matching the scan path would change the
-        # source-unit count in the document this function returns. A scan-side
-        # change owns it.
-        source_unit_count=_count_active_plugins(refs),
-        source_unit_label="active plugin",
+        source_unit_count=_installed_source_unit(agent.kind_id, refs)[0],
+        source_unit_label=_installed_source_unit(agent.kind_id, refs)[1],
         graph=graph,
         agent_kind=agent.kind_id,
         agent_id=agent.agent_id,

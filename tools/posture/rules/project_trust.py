@@ -35,8 +35,10 @@ _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 
 def check_project_trust(
     manifests: list[tuple[Path, dict]],
+    *,
+    active_in: list[str] | None = None,
 ) -> list[PostureFinding]:
-    """One finding per project whose `trust_level` is `"trusted"`.
+    """Report trusted directories or Pi's global ``always`` trust default.
 
     `manifests` carries `{"projects": {path: trust_level}}`, produced by
     `tools.posture.collect_codex_project_trust_manifests`. Any other
@@ -47,6 +49,26 @@ def check_project_trust(
     findings: list[PostureFinding] = []
     seen: set[tuple[str, str]] = set()
     for path, manifest in manifests:
+        if manifest.get("default_project_trust") == "always":
+            findings.append(
+                PostureFinding(
+                    rule_id=RULE_ID,
+                    title="Global default allows project trust",
+                    severity="medium",
+                    confidence=CONFIDENCE,
+                    component={"type": "agent", "name": "pi"},
+                    active_in=active_in if active_in is not None else ["pi"],
+                    declared_by={"kind": "manifest", "path": str(path)},
+                    component_path=[{"type": "agent", "name": "pi"}],
+                    standards=_STANDARDS,
+                    remediation=(
+                        "Review the global defaultProjectTrust setting. The always default "
+                        "is the trust fallback for projects without a saved decision. "
+                        "Set it to ask to restore prompting for "
+                        "otherwise-undecided projects; saved decisions remain in effect."
+                    ),
+                )
+            )
         projects = manifest.get("projects") or {}
         for project_path, trust_level in sorted(projects.items()):
             if trust_level != _TRUSTED:
@@ -61,7 +83,7 @@ def check_project_trust(
                     severity="medium",
                     confidence=CONFIDENCE,
                     component={"type": "project", "name": project_path},
-                    active_in=["codex"],
+                    active_in=active_in if active_in is not None else ["codex"],
                     declared_by={"kind": "manifest", "path": str(path)},
                     component_path=[{"type": "project", "name": project_path}],
                     standards=_STANDARDS,

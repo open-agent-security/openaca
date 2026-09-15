@@ -315,6 +315,9 @@ def canonical_component_identity(
         return None
 
     if component_type == "plugin":
+        package_identity = _role_qualified_package_identity("plugin", ref)
+        if package_identity:
+            return package_identity
         marketplace = extra.get("marketplace")
         if isinstance(marketplace, str) and marketplace and ref.name:
             return f"plugin/{marketplace}/{ref.name}"
@@ -331,7 +334,7 @@ def canonical_component_identity(
             return provenance_identity
         return _plugin_private_identity(ref, "skill", parent_identity)
 
-    if component_type in {"command", "agent", "hook"}:
+    if component_type in {"command", "agent", "hook", "extension", "theme"}:
         return _plugin_private_identity(ref, str(component_type), parent_identity)
 
     if is_package_source_ref(ref):

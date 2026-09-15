@@ -157,7 +157,7 @@ def _component_gap_count(warnings: list[str]) -> int:
 def _count_active_plugins(refs: list[ComponentRef]) -> int:
     """Plugin refs that are actually active.
 
-    Every installed-agent path labels its plugin count "active plugin". That
+    Non-Pi installed-agent paths label their plugin count "active plugin". That
     was accurate while every kind's plugin refs existed only for plugins
     already known to be active — Claude Code never emits a ref for a non-`True`
     enable entry, and Cursor's refs carry no `enabled` key at all. ADR-0055
@@ -169,6 +169,20 @@ def _count_active_plugins(refs: list[ComponentRef]) -> int:
     counting exactly as it did before.
     """
     return sum(1 for r in refs if _is_plugin_ref(r) and (r.extra or {}).get("enabled") is not False)
+
+
+def _installed_source_unit(kind_id: str, refs: list[ComponentRef]) -> tuple[int, str]:
+    if kind_id == "pi":
+        return (
+            sum(
+                1
+                for ref in refs
+                if _component_type(ref) in {"extension", "skill", "command", "theme"}
+                and (ref.extra or {}).get("enabled") is not False
+            ),
+            "selected resource",
+        )
+    return _count_active_plugins(refs), "active plugin"
 
 
 def _is_plugin_ref(ref: ComponentRef) -> bool:
@@ -332,8 +346,8 @@ _config_dir_option = click.option(
     help=(
         "Agent host config directory for the kind selected with --kind. "
         "Requires --kind. Each kind resolves its own default root when "
-        "omitted (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude; Cursor: "
-        "~/.cursor)."
+        "omitted. Cursor and Pi refuse this override because their resources span "
+        "multiple roots."
     ),
 )
 _project_option = click.option(
@@ -341,7 +355,7 @@ _project_option = click.option(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
     help=(
-        "Project root whose .claude settings/skills/MCPs are layered into endpoint "
+        "Project root whose per-kind configuration and resources are included in endpoint "
         "resolution. Pass `--project .` to include the current directory's project "
         "context. Endpoint scan does NOT include project context by default — when "
         "this flag is omitted, scan output reminds you how to add it."
@@ -764,8 +778,8 @@ def _agent_scan_prep(
                 ),
             ],
             next_actions=_next_actions_for(agent),
-            unit_count=_count_active_plugins(refs),
-            unit_label="active plugin",
+            unit_count=_installed_source_unit(agent.kind_id, refs)[0],
+            unit_label=_installed_source_unit(agent.kind_id, refs)[1],
             parse_failed=0,
         )
 
@@ -858,6 +872,7 @@ def _scan_discovered_agents(
     total_parse_failed = 0
     total_unit_count = 0
     unit_label = "manifest"
+    unit_labels: set[str] = set()
     repo_parse_cache: dict[tuple[Path, tuple], tuple[int, int]] = {}
     counted_repo_roots: set[Path] = set()
 
@@ -914,7 +929,8 @@ def _scan_discovered_agents(
             include_gitignored=include_gitignored,
             repo_parse_cache=repo_parse_cache,
         )
-        unit_label = prep.unit_label
+        unit_labels.add(prep.unit_label)
+        unit_label = next(iter(unit_labels)) if len(unit_labels) == 1 else "unit"
         # Installed agents have no scan_root to dedupe by — each contributes its
         # own count. Declared agents' scan-wide totals come from the per-root
         # union walk above, taken once per root regardless of how many kinds
@@ -1408,8 +1424,8 @@ def endpoint(
         refs = build_agent_bom(
             _filter_agent_scope_refs(agent_all_refs),
             target=str(agent.config_root),
-            source_unit_count=_count_active_plugins(agent_all_refs),
-            source_unit_label="active plugin",
+            source_unit_count=_installed_source_unit(agent.kind_id, agent_all_refs)[0],
+            source_unit_label=_installed_source_unit(agent.kind_id, agent_all_refs)[1],
             graph=graph,
             agent_kind=agent.kind_id,
             agent_id=agent.agent_id,
@@ -1511,7 +1527,7 @@ def endpoint(
             cards=cards,
             agents=summaries,
         )
-    _stderr_summary(findings, f"resolved {stats.unit_count} active plugin(s)", output_format)
+    _stderr_summary(findings, f"resolved {stats.unit_count} {stats.unit_label}(s)", output_format)
 
     # When --project is not provided, remind the user that project-local
     # skills/MCPs/plugin manifests are NOT included in this scan. For the text
@@ -1520,7 +1536,7 @@ def endpoint(
     if project is None and (not is_text or verbose):
         click.echo(
             "\nNote: scanned user-level config only. To include project-local "
-            "skills, MCPs, and plugin manifests, pass --project /path/to/project "
+            "configuration and resources, pass --project /path/to/project "
             "(or --project . for the current directory).",
             err=True,
         )

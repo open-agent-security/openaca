@@ -222,6 +222,45 @@ def test_plugin_string_referenced_mcp_manifest_is_scanned_for_credentials(tmp_pa
     assert token not in json.dumps(asdict(findings[0]))
 
 
+def test_plugin_string_referenced_json_with_markdown_suffix_is_parsed_as_json(tmp_path):
+    """The string form resolves through `mcp_json.parse` whatever the file is
+    named, so `config/servers.md` holding JSON composes as MCP servers. Only
+    `_read_mcp_auth_source` inferred the format from the suffix, routing that
+    file to the agent-frontmatter reader and returning no headers — dropping
+    the credential the composed server actually carries."""
+    from tools.parsers import claude_plugin
+    from tools.posture import collect_mcp_manifests
+
+    plugin_root = tmp_path
+    plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir(parents=True)
+    plugin_json.write_text(
+        json.dumps({"name": "acme", "version": "0.1.0", "mcpServers": "config/servers.md"})
+    )
+    auth_file = plugin_root / "config" / "servers.md"
+    auth_file.parent.mkdir(parents=True)
+    token = "dummy-plain-text-token"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "remote": {
+                        "url": "https://example.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
+        )
+    )
+
+    refs = claude_plugin.parse(plugin_json)
+    manifests = collect_mcp_manifests([plugin_root], refs=refs)
+
+    findings = [f for f in run_posture_rules(refs, manifests) if f.rule_id == RULE_ID]
+    assert len(findings) == 1
+    assert token not in json.dumps(asdict(findings[0]))
+
+
 def test_forged_provenance_sidecar_keys_from_raw_manifest_are_ignored(tmp_path):
     """A raw `mcp.json` is untrusted input: `collect_mcp_manifests` never
     filters unknown keys, so a config author could set `_component_source`/

@@ -265,6 +265,9 @@ def expand_resources(
                         # The scan boundary is checked before enumerating glob roots.
                         anchor = re.split(r"[*?]", entry)[0]
                         if not permitted(root / anchor, allowed_root):
+                            row.gaps = tuple(
+                                dict.fromkeys((*row.gaps, "resource outside allowed root"))
+                            )
                             continue
                         paths = _glob_paths(root, entry, allowed_root)
                     for path in paths:

@@ -107,6 +107,17 @@ def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     assert len(refs(declared(repo, include_gitignored=True), "extension")) == 1
 
 
+def test_package_glob_outside_boundary_is_recorded_as_gap(tmp_path):
+    put(
+        tmp_path / "repo/package.json",
+        {"name": "bundle", "version": "1.0.0", "pi": {"prompts": ["../../secrets/*.md"]}},
+    )
+    graph = declared(tmp_path / "repo")
+    assert len(refs(graph, "plugin")) == 1
+    assert not refs(graph, "command")
+    assert any("resource outside allowed root" in g for g in graph.warnings.gaps)
+
+
 def test_missing_package_is_inventory_with_gap(tmp_path, monkeypatch):
     put(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:missing@1.0.0"]})
     graph = installed(tmp_path, monkeypatch)

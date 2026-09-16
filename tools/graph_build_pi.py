@@ -62,6 +62,7 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
     if declared:
         files = declaration_files(target, include_gitignored=include_gitignored)
         projects: set[Path] = set()
+        package_rows: dict[Path, tuple[PiResource, ComponentRef]] = {}
         for path in files:
             if path.name == "package.json":
                 source = parse_pi_source(str(path.parent), base_dir=target)
@@ -75,14 +76,7 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
                     declaration_path=path,
                     install_root=path.parent,
                 )
-                _compose_resources(
-                    graph,
-                    [row],
-                    normalize,
-                    boundary=target,
-                    spec=spec,
-                    package_refs={id(row): parse_package(path)[0]},
-                )
+                package_rows[path.parent] = (row, parse_package(path)[0])
                 continue
             relative = path.relative_to(target)
             for i, part in enumerate(relative.parts):
@@ -93,6 +87,12 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
             settings_path = project / ".pi/settings.json"
             settings = _settings(settings_path, graph, target) if settings_path in files else {}
             rows = resolve_resources({}, settings, project_root=project, allowed_root=target)
+            package_refs = None
+            package_row = package_rows.pop(project, None)
+            if package_row is not None:
+                row, ref = package_row
+                rows = [row, *rows]
+                package_refs = {id(row): ref}
             _compose_resources(
                 graph,
                 rows,
@@ -102,6 +102,16 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
                 project_root=project,
                 project_settings=settings,
                 shared_skill_roots=(project / ".agents/skills",),
+                package_refs=package_refs,
+            )
+        for row, ref in package_rows.values():
+            _compose_resources(
+                graph,
+                [row],
+                normalize,
+                boundary=target,
+                spec=spec,
+                package_refs={id(row): ref},
             )
     else:
         settings = _settings(target / "settings.json", graph)

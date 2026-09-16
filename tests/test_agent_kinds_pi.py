@@ -116,6 +116,25 @@ def test_package_repository_keeps_its_own_shared_skills(tmp_path):
     assert len(refs(graph, "plugin")) == 1
 
 
+def test_package_repository_project_skill_shadows_package_skill(tmp_path):
+    put(
+        tmp_path / "package.json",
+        {"name": "bundle", "version": "1.0.0", "pi": {"skills": ["skills/dup"]}},
+    )
+    put(
+        tmp_path / "skills/dup/SKILL.md",
+        "---\nname: dup\ndescription: package skill\n---\nbody",
+    )
+    put(
+        tmp_path / ".pi/skills/dup/SKILL.md",
+        "---\nname: dup\ndescription: project skill\n---\nbody",
+    )
+    graph = declared(tmp_path)
+    dups = [r for r in refs(graph, "skill") if r.name == "dup"]
+    assert len(dups) == 1
+    assert dups[0].extra["source_provenance"]["origin"] == "auto"
+
+
 def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     put(repo / ".pi/settings.json", {"extensions": ["../../outside.ts", "ignored.ts"]})

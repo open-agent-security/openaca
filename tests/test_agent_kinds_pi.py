@@ -81,6 +81,21 @@ def test_source_package_and_no_native_mcp(tmp_path):
     ]
 
 
+def test_package_repository_keeps_its_own_project_surface(tmp_path):
+    put(
+        tmp_path / "package.json",
+        {"name": "bundle", "version": "1.0.0", "pi": {"extensions": ["extensions/a.ts"]}},
+    )
+    put(tmp_path / "extensions/a.ts", "export default () => {}")
+    put(tmp_path / ".pi/extensions/own.ts", "export default () => {}")
+    put(tmp_path / "examples/.pi/extensions/fixture.ts", "fixture")
+    graph = declared(tmp_path)
+    extensions = {r.name: r for r in refs(graph, "extension")}
+    assert set(extensions) == {"a", "own"}
+    assert extensions["own"].extra["source_provenance"]["origin"] == "auto"
+    assert len(refs(graph, "plugin")) == 1
+
+
 def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     put(repo / ".pi/settings.json", {"extensions": ["../../outside.ts", "ignored.ts"]})

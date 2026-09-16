@@ -75,9 +75,12 @@ def declaration_guard(path: Path, root: Path | None = None, spec=None) -> bool:
         parts[i : i + 2] in ((".pi", "npm"), (".pi", "git")) for i in range(len(parts) - 1)
     ):
         return False
+    own_project_root = root.joinpath(*parts[: parts.index(".pi")]) if ".pi" in parts else None
     for parent in path.parents:
         if parent == root.parent:
             break
+        if parent == own_project_root:
+            continue
         manifest = parent / "package.json"
         if (
             manifest != path

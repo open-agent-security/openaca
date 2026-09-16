@@ -73,8 +73,9 @@ third-party extensibility flag lives in an editor state database rather than a
 file, so a scan cannot determine whether the `.claude/*` and `.codex/*` skills
 it reports are actually loaded. That gap does not close by parsing.
 
-Pi coverage is anchored to 0.85.1. It includes package declarations, native
-extensions, skills, prompt templates and themes, package resource filters and
+Pi coverage is anchored to 0.85.1; the [Pi surface audit](../specs/pi-agent-kind.md)
+records the per-source contract and deferred surfaces. It includes package
+declarations, native extensions, skills, prompt templates and themes, package resource filters and
 project overrides, and shared `.agents/skills`. Native resource directories are
 read even without settings. A Pi-bearing `package.json` also declares a package
 source repository. Static file selection cannot establish dynamic extension

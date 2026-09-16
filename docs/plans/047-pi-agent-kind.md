@@ -1,5 +1,8 @@
 # Plan 047 — Pi agent kind
 
+Surface contract: [Pi Agent Kind](../specs/pi-agent-kind.md).
+Architecture: [ADR-0067](../adrs/0067-pi-agent-kind.md).
+
 ## Goal and boundary
 
 Register `pi` for repository and endpoint composition, covering configured packages,

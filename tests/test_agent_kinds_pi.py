@@ -96,6 +96,26 @@ def test_package_repository_keeps_its_own_project_surface(tmp_path):
     assert len(refs(graph, "plugin")) == 1
 
 
+def test_package_repository_keeps_its_own_shared_skills(tmp_path):
+    put(
+        tmp_path / "package.json",
+        {"name": "bundle", "version": "1.0.0", "pi": {"extensions": ["extensions/a.ts"]}},
+    )
+    put(tmp_path / "extensions/a.ts", "export default () => {}")
+    put(
+        tmp_path / ".agents/skills/deploy/SKILL.md",
+        "---\nname: deploy\ndescription: deploys stuff\n---\nbody",
+    )
+    put(
+        tmp_path / "examples/.agents/skills/fixture/SKILL.md",
+        "---\nname: fixture\ndescription: fixture\n---\nbody",
+    )
+    graph = declared(tmp_path)
+    skills = {r.name: r for r in refs(graph, "skill")}
+    assert set(skills) == {"deploy"}
+    assert len(refs(graph, "plugin")) == 1
+
+
 def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     put(repo / ".pi/settings.json", {"extensions": ["../../outside.ts", "ignored.ts"]})

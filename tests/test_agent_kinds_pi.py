@@ -157,6 +157,24 @@ def test_package_glob_outside_boundary_is_recorded_as_gap(tmp_path):
     assert any("resource outside allowed root" in g for g in graph.warnings.gaps)
 
 
+def test_package_glob_through_symlink_outside_boundary_does_not_crash(tmp_path):
+    repo = tmp_path / "repo"
+    put(repo / "skills/real/x.md", "hello")
+    outside_link = tmp_path / "outside_link"
+    outside_link.symlink_to(repo / "skills/real", target_is_directory=True)
+    put(
+        repo / "package.json",
+        {
+            "name": "bundle",
+            "version": "1.0.0",
+            "pi": {"prompts": [f"{outside_link}/*.md"]},
+        },
+    )
+    graph = declared(repo)
+    assert len(refs(graph, "plugin")) == 1
+    assert len(refs(graph, "command")) == 1
+
+
 def test_missing_package_is_inventory_with_gap(tmp_path, monkeypatch):
     put(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:missing@1.0.0"]})
     graph = installed(tmp_path, monkeypatch)

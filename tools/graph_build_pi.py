@@ -270,8 +270,17 @@ def _compose_resources(
                 graph.record_gap(f"Pi resource declaration at {source.declaration_path}: {gap}")
     names = set()
     for file in files:
-        if boundary is not None and is_ignored(file.path.relative_to(boundary), spec):
-            continue
+        if boundary is not None:
+            try:
+                relative = file.path.relative_to(boundary)
+            except ValueError:
+                # expand_resources() only admits paths that are contained after
+                # resolving symlinks (see permitted()); a lexically outside path
+                # that is only in-bound via a symlink still needs a relative
+                # path to check against .gitignore.
+                relative = file.path.resolve().relative_to(boundary.resolve())
+            if is_ignored(relative, spec):
+                continue
         ref = _resource_ref(file, graph, normalize)
         kind = _TYPES[file.resource_type]
         if kind != "extension" and ref.extra["enabled"]:

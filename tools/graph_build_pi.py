@@ -50,13 +50,24 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
     boundary = Path(agent.scan_root) if declared else None
     target = boundary if declared else Path(agent.config_root)
     assert target is not None
+    extra_roots: tuple[tuple[str, Path], ...] = (
+        () if declared else (("agents", Path.home() / ".agents"),)
+    )
+    ancestor_roots: tuple[Path, ...] = ()
+    if not declared and agent.project_root is not None:
+        # A project subdirectory's shared roots walk up through ancestor
+        # directories to the repository root (or filesystem root); register
+        # that root so ancestor `.agents/skills` paths normalize relative to
+        # it instead of falling back to a machine-specific absolute path.
+        ancestor_roots = _shared_roots(agent.project_root)
+        extra_roots += (("repo", ancestor_roots[-1].parent),)
     normalize = make_normalizer(
         "repo" if declared else "endpoint",
         target,
         target,
         None if declared else agent.project_root,
         "pi",
-        () if declared else (("agents", Path.home() / ".agents"),),
+        extra_roots,
     )
     spec = declared_ignore_spec(target, include_gitignored=include_gitignored) if declared else None
     if declared:
@@ -133,7 +144,7 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
                 project = None
             else:
                 project_settings = _settings(project / ".pi/settings.json", graph)
-                shared += _shared_roots(project)
+                shared += ancestor_roots
         rows = resolve_resources(
             settings, project_settings, agent_root=target, project_root=project
         )

@@ -235,6 +235,23 @@ def test_shared_skills_and_name_precedence(tmp_path, monkeypatch):
     assert "project/" in next(n.key for n in graph.nodes.values() if n.kind == "skill")
 
 
+def test_ancestor_shared_skill_normalizes_relative_to_repo_root(tmp_path, monkeypatch):
+    root = tmp_path / ".pi/agent"
+    repo = tmp_path / "repo"
+    project = repo / "apps" / "web"
+    put(root / "settings.json", {"defaultProjectTrust": "always"})
+    put(repo / ".git/HEAD", "ref: refs/heads/main")
+    put(
+        repo / ".agents/skills/ancestor/SKILL.md",
+        "---\nname: ancestor\ndescription: hi\n---\nbody",
+    )
+    graph = installed(tmp_path, monkeypatch, project)
+    assert len(refs(graph, "skill")) == 1
+    key = next(n.key for n in graph.nodes.values() if n.kind == "skill")
+    assert not key.startswith(str(tmp_path))
+    assert "repo/skills/ancestor" in key
+
+
 def test_invalid_skill_is_retained_with_gap(tmp_path):
     put(tmp_path / ".pi/skills/broken/SKILL.md", "no frontmatter")
     graph = declared(tmp_path)

@@ -55,17 +55,17 @@ openaca scan endpoint \
 ```
 
 `scan endpoint` and `bom endpoint` both take `--kind`
-to limit discovery to one registered agent kind (`claude-code`, `cursor`, or
-`codex`).
+to limit discovery to one registered agent kind (`claude-code`, `cursor`,
+`codex`, or `pi`).
 Omit `--kind` and discovery finds every installed kind whose own default root
-exists — a bare `openaca scan endpoint` with Claude Code, Cursor, and Codex
+exists — a bare `openaca scan endpoint` with Claude Code, Cursor, Codex, and Pi
 installed renders one card per kind. `--config-dir` names one kind's root, so
 it **requires** `--kind`: with more than one installed kind, `--config-dir`
 alone can't say which kind's root it names, and the CLI errors rather than
 guessing. Each kind resolves its own default root when `--config-dir` is
 omitted — Claude Code from `$CLAUDE_CONFIG_DIR`, else `~/.claude`; Cursor from
 `~/.cursor` (no environment variable); Codex from `$CODEX_HOME`, else
-`~/.codex`. An unrecognized `--kind` is a hard error listing the known kinds.
+`~/.codex`; Pi from `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`. An unrecognized `--kind` is a hard error listing the known kinds.
 
 Not every kind accepts `--config-dir`. A kind declares whether naming a root
 fully specifies its target, and Cursor's does not: an installed Cursor is
@@ -75,6 +75,32 @@ only one and produce a composition stitched from two homes
 both accept it — Codex because `$CODEX_HOME` moves its whole tree and it reads
 no other runtime's config ([ADR-0056](../adrs/0056-codex-root-override.md)).
 `--kind cursor --config-dir …` is refused with the reason.
+Pi also refuses `--config-dir`: global shared skills remain under
+`~/.agents/skills` when `$PI_CODING_AGENT_DIR` relocates its agent directory.
+That variable is Pi's native relocation mechanism, not a complete foreign-home
+scan override ([ADR-0067](../adrs/0067-pi-agent-kind.md)).
+
+```bash
+openaca scan endpoint --kind pi --project . --include-posture
+openaca bom endpoint --kind pi --output pi.cdx.json
+openaca scan repo --target . --include-posture
+openaca bom repo --target . --output-dir boms
+```
+
+Repository commands discover Pi declarations automatically; they have no `--kind`
+flag. Repository composition reads no global settings or trust. Endpoint project
+resources require persisted/default trust; unresolved or denied projects are
+excluded with a coverage gap. CLI and extension trust overrides remain unobserved.
+Pi endpoint source units count selected extensions, skills, prompts and themes,
+including standalone and shared resources, and exclude disabled resources.
+Package containers remain inventory even with zero selected files. Other kinds
+retain their active-plugin counts; a mixed-kind total uses the label `unit`.
+
+Configured package sources and observed installed versions are separate BOM
+fields: observing version `1.0.0` for `npm:example` still reports a mutable install
+reference. No packages are installed or executed. See [coverage](coverage.md) for
+MCP, dynamic resource and dependency limits.
+
 
 A subcommand is required. Shared options such as `-v`, `--fail-on`, `--sarif`,
 `--format`, and `--no-color` can sit before or after the subcommand name:
@@ -223,8 +249,8 @@ Use `openaca scan --help` for the complete generated option list.
 ## Agent BOM commands
 
 A BOM describes one **agent**, and each command emits one document per agent it
-discovers — one or more, since Claude Code and Cursor are both registered
-kinds; a repo or endpoint declaring evidence for both emits two documents.
+discovers — one or more, across the registered agent kinds; a repo or endpoint
+declaring evidence for several kinds emits one document per agent.
 
 Generate an Agent BOM for each agent a repository declares:
 

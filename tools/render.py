@@ -1011,6 +1011,8 @@ _TREE_CATEGORIES: tuple[tuple[str, set[str]], ...] = (
     ("skills", {"skill"}),
     ("hooks", {"hook"}),
     ("commands", {"command"}),
+    ("extensions", {"extension"}),
+    ("themes", {"theme"}),
     ("agents", {"agent"}),
 )
 

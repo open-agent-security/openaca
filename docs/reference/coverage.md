@@ -37,6 +37,7 @@ the other source, and never set conservatively because a kind is new: a
 | `claude-code` | `complete` | `complete` |
 | `cursor` | `partial` | `partial` |
 | `codex` | `complete` | `complete` |
+| `pi` | `partial` | `partial` |
 
 Cursor is `partial` at both sources, for different reasons per source:
 installed composition is blind to plugin enable state (a server-side call),
@@ -67,10 +68,32 @@ declare `mcpServers` and `hooks`, were explicitly not loaded in V0, and are now
 composed. Without that, an MDM-managed endpoint's composition was reported as
 complete while missing components it genuinely had.
 
-Cursor is the one kind still `partial`, and that is the rule doing its job: its
+Cursor remains `partial`: its
 third-party extensibility flag lives in an editor state database rather than a
 file, so a scan cannot determine whether the `.claude/*` and `.codex/*` skills
 it reports are actually loaded. That gap does not close by parsing.
+
+Pi coverage is anchored to 0.85.1; the [Pi surface audit](../specs/pi-agent-kind.md)
+records the per-source contract and deferred surfaces. It includes package
+declarations, native extensions, skills, prompt templates and themes, package resource filters and
+project overrides, and shared `.agents/skills`. Native resource directories are
+read even without settings. A Pi-bearing `package.json` also declares a package
+source repository. Static file selection cannot establish dynamic extension
+registration or successful runtime loading, so both sources remain `partial`.
+**MCP adapters are not covered**: Pi has no native MCP composition surface here;
+third-party adapters and resources they register dynamically are deferred.
+Invocation-only resources and CLI/extension trust overrides remain unresolved.
+There is no transitive npm dependency inventory: npm advisory matching uses the
+selected package identity and available version evidence only. A configured
+range, tag or unpinned source remains mutable even when a concrete installed
+version is observed. Neither version evidence nor a selected file proves runtime
+execution.
+
+Installed project resources are excluded when persisted/default trust is denied
+or unresolved; declared scans do not consult trust or home configuration. Pi's
+`PI_CODING_AGENT_DIR` relocates its agent root but leaves global shared skills in
+`~/.agents/skills`, so `--config-dir` is refused and coherent foreign-home scanning
+is not supported. See [ADR-0067](../adrs/0067-pi-agent-kind.md).
 
 | Tier | What it reads | V0 status |
 |---|---|---|

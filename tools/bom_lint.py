@@ -26,6 +26,8 @@ _COMPONENT_TYPES = {
     "package",
     "plugin",
     "skill",
+    "extension",
+    "theme",
 }
 _SCOPES = {"agent-component", "agent-dependency", "software-dependency"}
 _COMPOSITION_SOURCES = {"installed", "declared"}

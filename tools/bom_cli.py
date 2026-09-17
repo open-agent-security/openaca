@@ -25,8 +25,8 @@ from tools.graph import WarningLog
 from tools.parsers import parse_repo_registry_counts
 from tools.scan import (
     _component_gap_count,
-    _count_active_plugins,
     _filter_agent_scope_refs,
+    _installed_source_unit,
     _refs_from_graph,
 )
 
@@ -398,15 +398,15 @@ def repo(
     help=(
         "Agent host config directory for the kind selected with --kind. "
         "Requires --kind. Each kind resolves its own default root when "
-        "omitted (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude; Cursor: "
-        "~/.cursor)."
+        "omitted. Cursor and Pi refuse this override because their resources span "
+        "multiple roots."
     ),
 )
 @click.option(
     "--project",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=None,
-    help="Project root whose .claude settings/skills/MCPs are layered into endpoint resolution.",
+    help="Project root whose per-kind configuration and resources enter endpoint resolution.",
 )
 @_output_option
 @_output_dir_option
@@ -439,8 +439,8 @@ def endpoint(
         bom = build_agent_bom(
             _filter_agent_scope_refs(refs),
             target=str(agent.config_root),
-            source_unit_count=_count_active_plugins(refs),
-            source_unit_label="active plugin",
+            source_unit_count=_installed_source_unit(agent.kind_id, refs)[0],
+            source_unit_label=_installed_source_unit(agent.kind_id, refs)[1],
             graph=graph,
             agent_kind=agent.kind_id,
             agent_id=agent.agent_id,

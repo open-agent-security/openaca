@@ -5,7 +5,9 @@ Companion ADRs: [0044](../adrs/0044-agent-bom-root.md) (BOM root),
 [0046](../adrs/0046-agent-coverage.md) (coverage).
 
 Per-kind specs written against this mechanism:
-[Cursor Agent Kind](cursor-agent-kind.md).
+[Cursor Agent Kind](cursor-agent-kind.md),
+[Codex Agent Kind](codex-agent-kind.md), and
+[Pi Agent Kind](pi-agent-kind.md).
 
 Mechanism only. A runtime's own config paths, manifest shapes, and precedence
 rules belong in a per-kind spec, so a future implementer of a managed or

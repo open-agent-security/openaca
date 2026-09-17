@@ -33,11 +33,14 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
 
     Scan projects the flat ref list as `dataclasses.replace(node.ref,
     scope=...)` copies, so the occurrence-identifying fields are untouched.
-    Keying on those fields (manifest + locator + source/display facts) lets any
+    Keying on those fields (manifest + locator + source/display facts), plus
+    selecting declaration provenance when one file has several occurrences, lets any
     output site (render, sarif, finding_output) recover a
     ref's node without recomputing the build-time occurrence key (which needs
     the source normalizer those sites do not have). Shared so every consumer
     maps a `ComponentRef` to its `Node` identically."""
+    provenance = ref.extra.get("source_provenance")
+    declaration = provenance if isinstance(provenance, dict) else {}
     return (
         str(ref.source_manifest or ""),
         ref.source_locator or "",
@@ -45,6 +48,8 @@ def ref_occurrence_key(ref: ComponentRef) -> tuple[str, ...]:
         ref.name or "",
         ref.version or "",
         ref.component_identity or "",
+        str(declaration.get("declaration", "")),
+        str(declaration.get("index", "")) if "declaration" in declaration else "",
     )
 
 
@@ -156,7 +161,7 @@ class Graph:
         return chain
 
     _AGENT_KINDS: ClassVar[frozenset[str]] = frozenset(
-        {"plugin", "skill", "mcp_server", "hook", "command", "agent"}
+        {"plugin", "skill", "mcp_server", "hook", "command", "agent", "extension", "theme"}
     )
 
     def scope_of(self, node: Node) -> str:

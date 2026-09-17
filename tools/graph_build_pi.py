@@ -320,5 +320,8 @@ def _compose_resources(
             names.add(key)
         parent = containers.get(id(_base(file.owner))) if file.owner else None
         key = occurrence_key(ref, normalize)
+        provenance = ref.extra["source_provenance"]
+        if "declaration" in provenance:
+            key += "#declaration=" + json.dumps([provenance["declaration"], provenance["index"]])
         if key not in graph.nodes:
             add_child(graph, parent or graph.root, Node(key, kind, ref))

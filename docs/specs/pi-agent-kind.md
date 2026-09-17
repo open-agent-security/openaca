@@ -299,6 +299,11 @@ An unpinned source with installed version `1.2.3` still earns the mutable findin
 An exact configured version is not fabricated as an observed installed version.
 
 Package resources retain their owning container and declaration provenance.
+When separate project settings select the same file, each selected declaration
+has its own resource occurrence. The normalized declaring manifest and entry
+index qualify the resource's path-based occurrence key and output lookup;
+they do not change its source-stable identity. This applies to both package
+resources and direct resource paths, and survives BOM export and replay.
 Occurrence keys follow the shared graph rules; stable package and package-private
 resource identities use the central identity machinery. Local resources without
 matching coordinates are still inventory. Missing advisory identity alone is not

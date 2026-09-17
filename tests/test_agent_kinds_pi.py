@@ -570,3 +570,65 @@ def test_cyclic_global_shared_root_preserves_installed_resources(tmp_path, monke
     graph = installed(tmp_path, monkeypatch)
     assert [ref.name for ref in refs(graph, "extension")] == ["valid"]
     assert graph.warnings.gaps
+
+
+@pytest.mark.parametrize("via_package", [False, True])
+@pytest.mark.parametrize(
+    "resource_type,kind,filename,content",
+    [
+        ("extensions", "extension", "shared.ts", "export default () => {}"),
+        ("skills", "skill", "shared.md", "---\nname: shared\ndescription: Shared\n---\n"),
+        ("prompts", "command", "shared.md", "Shared prompt"),
+        ("themes", "theme", "shared.json", {"name": "shared"}),
+    ],
+)
+def test_shared_file_has_an_occurrence_for_each_selecting_project(
+    tmp_path, via_package, resource_type, kind, filename, content
+):
+    from tools.bom import build_agent_bom, graph_from_cyclonedx
+
+    keys = []
+    for machine in ("one", "two"):
+        root = tmp_path / machine
+        put(root / "shared/package.json", {"pi": {resource_type: [f"{resource_type}/{filename}"]}})
+        put(root / "shared" / resource_type / filename, content)
+        for project in ("a", "b"):
+            settings = (
+                {"packages": ["../../shared"]}
+                if via_package
+                else {resource_type: [f"../../shared/{resource_type}/{filename}"]}
+            )
+            put(root / project / ".pi/settings.json", settings)
+        graph = declared(root)
+        resources = [node for node in graph.nodes.values() if node.kind == kind]
+        # A standalone package is also independently declared in the direct-path case.
+        assert len(resources) == (2 if via_package else 3)
+        declarations = {
+            node.ref.extra["source_provenance"].get("declaration")
+            for node in resources
+            if node.ref is not None
+        }
+        assert {"a/.pi/settings.json", "b/.pi/settings.json"} <= declarations
+        for node in resources:
+            assert node.ref is not None
+            assert graph.node_for_ref(node.ref) == node
+        if via_package:
+            for plugin in (node for node in graph.nodes.values() if node.kind == "plugin"):
+                assert len([edge for edge in graph.edges if edge.parent == plugin.key]) == 1
+        doc = build_agent_bom(
+            [],
+            graph=graph,
+            agent_kind="pi",
+            agent_name="Pi",
+            composition_source="declared",
+            composition_coverage="partial",
+        ).to_cyclonedx()
+        replay = graph_from_cyclonedx(doc)
+        replay.validate()
+        for node in replay.nodes.values():
+            if node.kind == kind:
+                assert node.ref is not None
+                assert replay.node_for_ref(node.ref) == node
+        keys.append({node.key for node in resources})
+        assert {node.key for node in replay.nodes.values() if node.kind == kind} == keys[-1]
+    assert keys[0] == keys[1]

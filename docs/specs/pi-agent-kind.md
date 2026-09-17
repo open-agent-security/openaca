@@ -1,7 +1,8 @@
 # Pi Agent Kind — Surface Audit
 
 Companion to [ADR-0067](../adrs/0067-pi-agent-kind.md) (composition, identity,
-trust, and scope). The mechanism is [Multi-Agent Support](multi-agent-support.md);
+trust, and scope) and [ADR-0068](../adrs/0068-pi-declaration-surface-classification.md)
+(declaration classification). The mechanism is [Multi-Agent Support](multi-agent-support.md);
 delivery is tracked in [Plan 047](../plans/047-pi-agent-kind.md).
 
 This is the per-kind contract: configuration paths, selection semantics,
@@ -80,6 +81,15 @@ shared `.agents/skills` files, or a `package.json` containing a `pi` object or t
 Managed package trees (`node_modules`, `.pi/npm`, `.pi/git`) do not independently
 declare more projects. A Pi package repository is composed as a package;
 embedded example and fixture projects do not create additional Pi surfaces.
+
+Classify a manifest by its loading surface before making a package row. A
+`package.json` inside native `.pi` resources or shared `.agents/skills` belongs
+to that project's resource surface; it does not independently create a plugin
+container. In an extension directory, its `pi.extensions` entries can establish
+project evidence even when they point outside the native directory. Other resource
+fields do not become enabled merely because that manifest exists. A directory
+explicitly referenced in `packages[]` still takes the package path through the
+selector, even if the directory is also below a native root.
 
 ### CLI surface
 
@@ -277,6 +287,13 @@ Occurrence keys follow the shared graph rules; stable package and package-privat
 resource identities use the central identity machinery. Local resources without
 matching coordinates are still inventory. Missing advisory identity alone is not
 a composition-discovery gap.
+
+Installed shared skills need a logical root for every ancestor, not only the
+topmost repository root. Project-local files use `project/`; global shared files
+use `agents/`. Other ancestor `.agents` roots use
+`project-ancestor-<distance>/agents/`, where distance counts parents from the
+selected project. This keeps intermediate-ancestor and non-Git occurrences stable
+across machines without embedding a home or checkout directory in `bom-ref`.
 
 ## Files Pi reads that another runtime also uses
 

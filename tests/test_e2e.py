@@ -2248,6 +2248,39 @@ def test_e2e_pi_declared_scan_bom_and_installed_trust_exclusion(tmp_path, monkey
     }
 
 
+def test_e2e_pi_native_extension_manifest_is_not_a_plugin(tmp_path, monkeypatch):
+    from tools.bom import graph_from_cyclonedx
+    from tools.bom_cli import main as bom_main
+    from tools.bom_lint import lint_bom, load_schema
+    from tools.scan import main as scan_main
+
+    queried = []
+
+    def load_advisories(refs, *, progress=None):
+        queried.extend(refs)
+        return [], [], 0, {}
+
+    monkeypatch.setattr("tools.scan._load_osv_with_overlays", load_advisories)
+    extension = tmp_path / ".pi/extensions/native"
+    extension.mkdir(parents=True)
+    (extension / "package.json").write_text(
+        json.dumps({"name": "native", "version": "1.0.0", "pi": {"extensions": ["entry.ts"]}})
+    )
+    (extension / "entry.ts").write_text("export default () => {}")
+    runner = CliRunner()
+    result = runner.invoke(bom_main, ["repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert lint_bom(doc, Draft202012Validator(load_schema())) == []
+    graph_from_cyclonedx(doc).validate()
+    assert [ref.extra["component_type"] for ref in component_refs_from_cyclonedx(doc)] == [
+        "extension"
+    ]
+    result = runner.invoke(scan_main, ["repo", "--target", str(tmp_path), "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert not any(ref.ecosystem == "npm" and ref.name == "native" for ref in queried)
+
+
 def test_e2e_pi_standalone_shared_and_disabled_resource_counts(tmp_path, monkeypatch):
     from openaca.core import collect_installed_agents
     from tools.bom import source_unit_from_cyclonedx

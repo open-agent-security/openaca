@@ -21,6 +21,8 @@ against the rules in effect at the time.
 
 ## Active
 
+- [ADR-0068 — Classify Pi declarations by loading surface before composing packages](0068-pi-declaration-surface-classification.md): native resource manifests select their enclosing project's resources; independent and explicitly configured package sources create package containers.
+
 - [ADR-0067 — Compose Pi from selected package and resource declarations](0067-pi-agent-kind.md): distinct Pi traversal reuses graph primitives, preserves package source/version and file overrides, bounds declared discovery, and refuses partial config-root overrides.
 
 - [ADR-0065 — Detect inline MCP credentials by authentication field](0065-inline-mcp-header-credentials.md): report literal authentication headers as posture without credential validation or exporting their values.

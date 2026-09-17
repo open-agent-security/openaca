@@ -126,3 +126,15 @@ smoke checks. Final branch review passed, including 111 independently run
 Pi-focused tests. Native policy compilation
 remains scoped to its existing Claude target; this plan adds no Pi policy writer.
 No remote push or PR is part of this local implementation handoff.
+
+## Review hardening
+
+- [x] Reproduce native resource/package classification across settings presence,
+  package repositories, extension entry points, and shared skills.
+- [x] Classify native declarations before package construction and registry
+  accounting; retain explicit package selection (ADR-0068).
+- [x] Normalize every ancestor shared-skill root; compare exported occurrence keys
+  across independent homes, with and without a Git boundary.
+- [x] Exercise native extension inventory through CLI scan, BOM lint, and graph
+  round-trip, without fabricating an npm package advisory target.
+- [x] Verify review fixes with the full test suite (2359 tests), Ruff, and Pyright.

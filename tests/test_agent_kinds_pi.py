@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.agent_kinds import DiscoveryContext, kind_for, pi
 
 
@@ -135,6 +137,105 @@ def test_package_repository_project_skill_shadows_package_skill(tmp_path):
     assert dups[0].extra["source_provenance"]["origin"] == "auto"
 
 
+@pytest.mark.parametrize("settings", [False, True])
+@pytest.mark.parametrize("package_repository", [False, True])
+@pytest.mark.parametrize("surface", [".pi/extensions", ".pi/skills", ".agents/skills"])
+def test_native_resource_manifests_do_not_declare_packages(
+    tmp_path, settings, package_repository, surface
+):
+    from tools.parsers import parse_repo_registry_counts
+
+    root = tmp_path / "repo"
+    resource = root / surface / "native"
+    put(resource / "package.json", {"name": "native", "pi": {"extensions": ["entry.ts"]}})
+    put(resource / "entry.ts", "export default () => {}")
+    skill = put(resource / "SKILL.md", "---\nname: native\ndescription: Native skill\n---\n")
+    if settings:
+        put(root / ".pi/settings.json", {})
+    if package_repository:
+        put(root / "package.json", {"name": "bundle", "pi": {}})
+    graph = declared(root)
+    counts, _ = parse_repo_registry_counts(root, {"pi": pi.KIND.manifest_patterns})
+    assert counts["pi"] == (int(settings) + int(package_repository), 0)
+    assert {ref.name for ref in refs(graph, "plugin")} == (
+        {"bundle"} if package_repository else set()
+    )
+    kind = "extension" if surface.endswith("extensions") else "skill"
+    nodes = [node for node in graph.nodes.values() if node.kind == kind]
+    assert len(nodes) == 1
+    assert graph.lineage(nodes[0]) == [nodes[0], graph.root]
+    ref = nodes[0].ref
+    assert ref is not None
+    assert ref.extra["source_provenance"]["origin"] == "auto"
+    if kind == "skill":
+        assert ref.source_manifest == str(skill)
+        assert not refs(graph, "extension")
+
+
+def test_native_extension_manifest_can_be_the_only_project_evidence(tmp_path):
+    entry = put(tmp_path / "src/entry.ts", "export default () => {}")
+    put(
+        tmp_path / ".pi/extensions/native/package.json",
+        {"pi": {"extensions": ["../../../src/entry.ts"]}},
+    )
+    graph = declared(tmp_path)
+    assert not refs(graph, "plugin")
+    assert [Path(ref.source_manifest).resolve() for ref in refs(graph, "extension")] == [
+        entry.resolve()
+    ]
+
+
+@pytest.mark.parametrize("source", ["declared", "installed"])
+def test_explicit_native_extension_package_has_one_selected_owner(tmp_path, monkeypatch, source):
+    root = tmp_path / "repo"
+    put(root / ".pi/settings.json", {"packages": ["extensions/native"]})
+    put(
+        root / ".pi/extensions/native/package.json",
+        {"name": "native", "pi": {"extensions": ["entry.ts"]}},
+    )
+    put(root / ".pi/extensions/native/entry.ts", "export default () => {}")
+    put(tmp_path / ".pi/agent/settings.json", {"defaultProjectTrust": "always"})
+    graph = declared(root) if source == "declared" else installed(tmp_path, monkeypatch, root)
+    assert len(refs(graph, "plugin")) == 1
+    (extension,) = [node for node in graph.nodes.values() if node.kind == "extension"]
+    assert [node.kind for node in graph.lineage(extension)] == ["extension", "plugin", "target"]
+    assert extension.ref is not None
+    assert extension.ref.extra["source_provenance"]["origin"] == "package"
+
+
+@pytest.mark.parametrize("with_repository", [False, True])
+def test_all_ancestor_skill_occurrences_are_portable(tmp_path, monkeypatch, with_repository):
+    from tools.bom import build_agent_bom
+
+    documents = []
+    for machine in ("first", "second"):
+        home = tmp_path / machine
+        repo = home / "checkout"
+        project = repo / "apps/web"
+        project.mkdir(parents=True)
+        put(home / ".pi/agent/settings.json", {"defaultProjectTrust": "always"})
+        if with_repository:
+            put(repo / ".git/HEAD", "ref: refs/heads/main")
+        for level, ancestor in enumerate((project, repo / "apps", repo)):
+            put(
+                ancestor / f".agents/skills/level-{level}/SKILL.md",
+                f"---\nname: level-{level}\ndescription: Shared skill\n---\n",
+            )
+        graph = installed(home, monkeypatch, project)
+        assert len(refs(graph, "skill")) == 3
+        doc = build_agent_bom(
+            [],
+            graph=graph,
+            agent_kind="pi",
+            agent_name="Pi",
+            composition_source="installed",
+            composition_coverage="partial",
+        ).to_cyclonedx()
+        documents.append({component["bom-ref"] for component in doc["components"]})
+        assert all(str(tmp_path) not in key for key in documents[-1])
+    assert documents[0] == documents[1]
+
+
 def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     put(repo / ".pi/settings.json", {"extensions": ["../../outside.ts", "ignored.ts"]})
@@ -249,7 +350,7 @@ def test_ancestor_shared_skill_normalizes_relative_to_repo_root(tmp_path, monkey
     assert len(refs(graph, "skill")) == 1
     key = next(n.key for n in graph.nodes.values() if n.kind == "skill")
     assert not key.startswith(str(tmp_path))
-    assert "repo/skills/ancestor" in key
+    assert "project-ancestor-2/agents/skills/ancestor" in key
 
 
 def test_invalid_skill_is_retained_with_gap(tmp_path):

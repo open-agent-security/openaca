@@ -66,6 +66,21 @@ def parse_package(path: Path) -> list[ComponentRef]:
     ]
 
 
+def resource_project_root(path: Path, root: Path) -> Path | None:
+    parts = path.relative_to(root).parts
+    for i in range(len(parts) - 1):
+        if (parts[i] == ".pi" and parts[i + 1] in ("settings.json", *RESOURCE_TYPES)) or parts[
+            i : i + 2
+        ] == (".agents", "skills"):
+            return root.joinpath(*parts[:i])
+    return None
+
+
+def package_declaration_guard(path: Path, root: Path | None = None, spec=None) -> bool:
+    root = root or path.parent
+    return resource_project_root(path, root) is None and declaration_guard(path, root, spec)
+
+
 def declaration_guard(path: Path, root: Path | None = None, spec=None) -> bool:
     root = root or path.parent
     if not permitted(path, root):
@@ -75,14 +90,18 @@ def declaration_guard(path: Path, root: Path | None = None, spec=None) -> bool:
         parts[i : i + 2] in ((".pi", "npm"), (".pi", "git")) for i in range(len(parts) - 1)
     ):
         return False
-    marker = next((i for i, part in enumerate(parts) if part in (".pi", ".agents")), None)
-    own_project_root = root.joinpath(*parts[:marker]) if marker is not None else None
+    own_project_root = resource_project_root(path, root)
     for parent in path.parents:
         if parent == root.parent:
             break
         if parent == own_project_root:
             continue
         manifest = parent / "package.json"
+        if (
+            own_project_root is not None
+            and resource_project_root(manifest, root) == own_project_root
+        ):
+            continue
         if (
             manifest != path
             and permitted(manifest, root)

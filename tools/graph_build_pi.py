@@ -16,6 +16,7 @@ from tools.parsers.pi_manifest import (
     declared_ignore_spec,
     parse_package,
     read_settings,
+    resource_project_root,
 )
 from tools.parsers.pi_settings import PiResource, expand_resources, permitted, resolve_resources
 from tools.parsers.pi_source import parse_pi_source
@@ -55,12 +56,11 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
     )
     ancestor_roots: tuple[Path, ...] = ()
     if not declared and agent.project_root is not None:
-        # A project subdirectory's shared roots walk up through ancestor
-        # directories to the repository root (or filesystem root); register
-        # that root so ancestor `.agents/skills` paths normalize relative to
-        # it instead of falling back to a machine-specific absolute path.
         ancestor_roots = _shared_roots(agent.project_root)
-        extra_roots += (("repo", ancestor_roots[-1].parent),)
+        extra_roots += tuple(
+            (f"project-ancestor-{distance}/agents", path.parent)
+            for distance, path in enumerate(ancestor_roots[1:], start=1)
+        )
     normalize = make_normalizer(
         "repo" if declared else "endpoint",
         target,
@@ -75,7 +75,10 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
         projects: set[Path] = set()
         package_rows: dict[Path, tuple[PiResource, ComponentRef]] = {}
         for path in files:
-            if path.name == "package.json":
+            project = resource_project_root(path, target)
+            if project is not None:
+                projects.add(project)
+            elif path.name == "package.json":
                 source = parse_pi_source(str(path.parent), base_dir=target)
                 assert source is not None
                 row = PiResource(
@@ -88,12 +91,6 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
                     install_root=path.parent,
                 )
                 package_rows[path.parent] = (row, parse_package(path)[0])
-                continue
-            relative = path.relative_to(target)
-            for i, part in enumerate(relative.parts):
-                if part in (".pi", ".agents"):
-                    projects.add(target.joinpath(*relative.parts[:i]))
-                    break
         for project in sorted(projects):
             settings_path = project / ".pi/settings.json"
             settings = _settings(settings_path, graph, target) if settings_path in files else {}

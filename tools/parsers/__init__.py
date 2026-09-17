@@ -376,7 +376,9 @@ PI_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ManifestPattern(
         "**/.pi/settings.json", pi_manifest.parse_settings, pi_manifest.declaration_guard
     ),
-    ManifestPattern("**/package.json", pi_manifest.parse_package, pi_manifest.declaration_guard),
+    ManifestPattern(
+        "**/package.json", pi_manifest.parse_package, pi_manifest.package_declaration_guard
+    ),
 ]
 
 # Compat alias: today's flat registry, kept byte-identical in content so

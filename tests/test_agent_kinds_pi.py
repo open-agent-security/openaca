@@ -236,6 +236,62 @@ def test_all_ancestor_skill_occurrences_are_portable(tmp_path, monkeypatch, with
     assert documents[0] == documents[1]
 
 
+@pytest.mark.parametrize("package_project", [False, True])
+@pytest.mark.parametrize("alias", [False, True])
+def test_declared_local_package_selection_replaces_standalone_discovery(
+    tmp_path, package_project, alias
+):
+    package = tmp_path / "pkg"
+    put(
+        package / "package.json",
+        {
+            "name": "bundle",
+            "version": "1.2.3",
+            "pi": {"extensions": ["entry.ts"], "skills": ["skills/shared"]},
+        },
+    )
+    put(package / "entry.ts", "export default () => {}")
+    put(package / "skills/shared/SKILL.md", "---\nname: shared\ndescription: Skill\n---\n")
+    if package_project:
+        put(package / ".pi/extensions/own.ts", "export default () => {}")
+    source = "../pkg"
+    if alias:
+        (tmp_path / "alias").symlink_to(package, target_is_directory=True)
+        source = "../alias"
+    put(tmp_path / ".pi/settings.json", {"packages": [{"source": source, "skills": []}]})
+    graph = declared(tmp_path)
+    (plugin,) = refs(graph, "plugin")
+    assert plugin.extra["install_source"] == source
+    assert plugin.version == "1.2.3"
+    assert len(refs(graph, "skill")) == 1
+    assert refs(graph, "skill")[0].extra["enabled"] is False
+    assert {ref.name for ref in refs(graph, "extension")} == (
+        {"entry", "own"} if package_project else {"entry"}
+    )
+
+
+@pytest.mark.parametrize(
+    "source", ["npm:bundle@latest", "git:github.com/org/bundle@v1", "./bundle"]
+)
+def test_every_installed_package_source_preserves_observed_version(tmp_path, monkeypatch, source):
+    root = tmp_path / ".pi/agent"
+    path = (
+        "npm/node_modules/bundle"
+        if source.startswith("npm:")
+        else "git/github.com/org/bundle"
+        if source.startswith("git:")
+        else "bundle"
+    )
+    put(root / "settings.json", {"packages": [source]})
+    put(root / path / "package.json", {"name": "bundle", "version": "1.2.3", "pi": {}})
+    (package,) = refs(installed(tmp_path, monkeypatch), "plugin")
+    assert package.version == "1.2.3"
+    assert package.extra["install_source"] == source
+    if source.startswith("./"):
+        assert package.component_identity is None
+        assert package.ecosystem is None
+
+
 def test_declared_containment_and_ignore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     put(repo / ".pi/settings.json", {"extensions": ["../../outside.ts", "ignored.ts"]})

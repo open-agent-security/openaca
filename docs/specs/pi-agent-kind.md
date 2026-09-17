@@ -91,6 +91,13 @@ fields do not become enabled merely because that manifest exists. A directory
 explicitly referenced in `packages[]` still takes the package path through the
 selector, even if the directory is also below a native root.
 
+Resolve all project package declarations before composing standalone package
+repositories. An in-repository package selected by settings is represented by
+that configured occurrence, not by a second implicit container from its manifest.
+Compare resolved package roots so aliases do not create an extra container. A
+selected package's own project resources remain independently eligible for the
+project pass; suppressing the implicit container does not suppress those files.
+
 ### CLI surface
 
 ```bash
@@ -272,9 +279,10 @@ package-source context, not by changing the meaning of all scanner URLs.
 
 The raw configured source survives as `install_source`. The component's `version`
 comes from observed package metadata, independently of the requested pin. npm
-install evidence checks the package name before accepting its version. Git
-installs also read `package.json` for a version, without replacing the Git ref or
-reclassifying the declaration as npm. Missing version evidence remains missing.
+install evidence checks the package name before accepting its version. Git and
+local directory packages also read `package.json` for a version, without replacing
+their source identity or reclassifying the declaration as npm. Missing version
+evidence remains missing.
 
 Selected npm package identity plus version evidence supports npm advisory
 matching. It does not guarantee an advisory exists, coverage of transitive

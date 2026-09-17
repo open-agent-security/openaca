@@ -118,18 +118,15 @@ def resolve_resources(
                         row.gaps = ("outside allowed root",)
                     elif not root.exists():
                         row.gaps = ("installation or local resource missing",)
-                    elif source.kind == "npm":
-                        manifest = read_manifest(root / "package.json", allowed_root)
-                        if manifest.get("name") == source.identity.removeprefix(
-                            "npm:"
-                        ) and isinstance(manifest.get("version"), str):
-                            row.installed_version = manifest["version"]
-                        else:
-                            row.gaps = ("installed npm package identity or version unavailable",)
-                    elif source.kind == "git":
+                    elif kind == "packages":
                         manifest = read_manifest(root / "package.json", allowed_root)
                         version = manifest.get("version")
-                        if isinstance(version, str):
+                        if source.kind == "npm" and (
+                            manifest.get("name") != source.identity.removeprefix("npm:")
+                            or not isinstance(version, str)
+                        ):
+                            row.gaps = ("installed npm package identity or version unavailable",)
+                        elif isinstance(version, str):
                             row.installed_version = version
                 key = kind, source.identity
                 if not row.autoload and key in rows:

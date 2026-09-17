@@ -138,3 +138,9 @@ No remote push or PR is part of this local implementation handoff.
 - [x] Exercise native extension inventory through CLI scan, BOM lint, and graph
   round-trip, without fabricating an npm package advisory target.
 - [x] Verify review fixes with the full test suite (2359 tests), Ruff, and Pyright.
+- [x] Resolve explicit local-package selection before standalone repository
+  discovery, including aliases and packages with their own project resources.
+- [x] Read observed package metadata uniformly for npm, Git, and local sources,
+  retaining source identity and npm name validation.
+- [x] Verify the additional selection and metadata cases with the full suite
+  (2366 tests), Ruff, and Pyright.

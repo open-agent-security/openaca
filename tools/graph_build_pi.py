@@ -91,10 +91,24 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
                     install_root=path.parent,
                 )
                 package_rows[path.parent] = (row, parse_package(path)[0])
+        project_resources = {}
+        selected_package_roots = set()
         for project in sorted(projects):
             settings_path = project / ".pi/settings.json"
             settings = _settings(settings_path, graph, target) if settings_path in files else {}
             rows = resolve_resources({}, settings, project_root=project, allowed_root=target)
+            project_resources[project] = (settings, rows)
+            selected_package_roots.update(
+                row.install_root.resolve()
+                for row in rows
+                if row.resource_type == "packages" and row.install_root is not None
+            )
+        package_rows = {
+            path: row
+            for path, row in package_rows.items()
+            if path.resolve() not in selected_package_roots
+        }
+        for project, (settings, rows) in project_resources.items():
             package_refs = None
             package_row = package_rows.pop(project, None)
             if package_row is not None:

@@ -540,3 +540,33 @@ def test_direct_skill_names_follow_pi_parent_directory_fallback(
         {"build", "deploy"} if explicit_names else {Path(surface).name}
     )
     assert len(skills) == (2 if explicit_names else 1)
+
+
+@pytest.mark.parametrize("source", ["declared", "installed"])
+@pytest.mark.parametrize("entry", ["native", "package", "shared"])
+def test_cyclic_resource_paths_preserve_other_inventory(tmp_path, monkeypatch, source, entry):
+    project = tmp_path / "repo"
+    put(project / ".pi/extensions/valid.ts", "export default () => {}")
+    put(tmp_path / ".pi/agent/settings.json", {"defaultProjectTrust": "always"})
+    if entry == "native":
+        loop = project / ".pi/extensions/loop"
+    elif entry == "shared":
+        loop = project / ".agents"
+    else:
+        loop = project / ".pi/loop"
+        put(project / ".pi/settings.json", {"packages": ["loop"]})
+    loop.symlink_to(loop.name, target_is_directory=True)
+    graph = declared(project) if source == "declared" else installed(tmp_path, monkeypatch, project)
+    assert [ref.name for ref in refs(graph, "extension")] == ["valid"]
+    if entry == "package":
+        assert len(refs(graph, "plugin")) == 1
+        assert refs(graph, "plugin")[0].extra["installed"] is False
+        assert graph.warnings.gaps
+
+
+def test_cyclic_global_shared_root_preserves_installed_resources(tmp_path, monkeypatch):
+    put(tmp_path / ".pi/agent/extensions/valid.ts", "export default () => {}")
+    (tmp_path / ".agents").symlink_to(".agents", target_is_directory=True)
+    graph = installed(tmp_path, monkeypatch)
+    assert [ref.name for ref in refs(graph, "extension")] == ["valid"]
+    assert graph.warnings.gaps

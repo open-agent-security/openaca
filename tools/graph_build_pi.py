@@ -61,13 +61,19 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
             (f"project-ancestor-{distance}/agents", path.parent)
             for distance, path in enumerate(ancestor_roots[1:], start=1)
         )
+    resolvable_roots = []
+    for label, path in extra_roots:
+        if permitted(path, None):
+            resolvable_roots.append((label, path))
+        else:
+            graph.record_gap(f"Could not resolve Pi shared resource root at {path}")
     normalize = make_normalizer(
         "repo" if declared else "endpoint",
         target,
         target,
         None if declared else agent.project_root,
         "pi",
-        extra_roots,
+        tuple(resolvable_roots),
     )
     spec = declared_ignore_spec(target, include_gitignored=include_gitignored) if declared else None
     if declared:
@@ -101,7 +107,9 @@ def build_pi_graph(agent, *, include_gitignored=False, warnings=None) -> Graph:
             selected_package_roots.update(
                 row.install_root.resolve()
                 for row in rows
-                if row.resource_type == "packages" and row.install_root is not None
+                if row.resource_type == "packages"
+                and row.install_root is not None
+                and permitted(row.install_root, target)
             )
         package_rows = {
             path: row

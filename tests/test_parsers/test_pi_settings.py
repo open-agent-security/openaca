@@ -108,7 +108,7 @@ def test_boundary_blocks_symlink_and_retains_declaration(tmp_path):
     (repo / ".pi/skills").mkdir(parents=True)
     (repo / ".pi/skills/linked").symlink_to(outside.parent)
     rows = resolve_resources({}, {"skills": [str(outside)]}, project_root=repo, allowed_root=repo)
-    assert rows[0].gaps == ("outside allowed root",)
+    assert rows[0].gaps == ("outside allowed root or path could not be resolved",)
     assert expand_resources(rows, project_root=repo, allowed_root=repo) == []
 
 

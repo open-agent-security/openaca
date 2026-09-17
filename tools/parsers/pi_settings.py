@@ -31,7 +31,11 @@ class PiResource:
 
 
 def permitted(path: Path, allowed_root: Path | None) -> bool:
-    return allowed_root is None or path.resolve().is_relative_to(allowed_root.resolve())
+    try:
+        resolved = path.resolve()
+        return allowed_root is None or resolved.is_relative_to(allowed_root.resolve())
+    except (OSError, RuntimeError):
+        return False
 
 
 def read_manifest(path: Path, allowed_root: Path | None = None) -> dict[str, Any]:
@@ -115,7 +119,7 @@ def resolve_resources(
                 )
                 if root is not None:
                     if not permitted(root, allowed_root):
-                        row.gaps = ("outside allowed root",)
+                        row.gaps = ("outside allowed root or path could not be resolved",)
                     elif not root.exists():
                         row.gaps = ("installation or local resource missing",)
                     elif kind == "packages":

@@ -521,3 +521,22 @@ def test_skill_frontmatter_matches_pi_boundaries_and_normalization(tmp_path):
     }
     assert len(graph.warnings.gaps) == 1
     assert "unterminated" in graph.warnings.gaps[0]
+
+
+@pytest.mark.parametrize("explicit_names", [False, True])
+@pytest.mark.parametrize("surface", [".pi/skills", ".agents/skills/group"])
+@pytest.mark.parametrize("source", ["declared", "installed"])
+def test_direct_skill_names_follow_pi_parent_directory_fallback(
+    tmp_path, monkeypatch, explicit_names, surface, source
+):
+    project = tmp_path / "repo"
+    for name in ("build", "deploy"):
+        frontmatter = f"name: {name}\n" if explicit_names else ""
+        put(project / surface / f"{name}.md", f"---\n{frontmatter}description: Skill\n---\n")
+    put(tmp_path / ".pi/agent/settings.json", {"defaultProjectTrust": "always"})
+    graph = declared(project) if source == "declared" else installed(tmp_path, monkeypatch, project)
+    skills = refs(graph, "skill")
+    assert {ref.name for ref in skills} == (
+        {"build", "deploy"} if explicit_names else {Path(surface).name}
+    )
+    assert len(skills) == (2 if explicit_names else 1)

@@ -259,6 +259,14 @@ first-name selection after path resolution. Extensions are not collapsed by
 filename stem. Disabled resources can remain in inventory with `enabled=false`;
 that state means excluded by observed selection, not a failed execution.
 
+For skills, an explicit frontmatter `name` wins; otherwise Pi 0.85.1 uses the
+parent directory name for both `SKILL.md` and direct Markdown files. Two unnamed
+files such as `skills/build.md` and `skills/deploy.md` therefore collide as
+`skills`, and Pi keeps the first. Do not substitute filename stems to avoid that
+collision: [the versioned skill loader](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/skills.ts#L310-L321)
+defines the fallback and its `loadSkills` function applies first-name selection.
+Explicit distinct frontmatter names preserve both files.
+
 ## Identity and advisory matching
 
 Source identity, declaration occurrence, installed version, and mutable-reference

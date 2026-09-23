@@ -38,6 +38,24 @@ overlay layer. Commercial or competitive framing in OSS artifacts erodes that.
 The test: is this content describing *what OpenACA does or how it interoperates*, or
 is it positioning OpenACA *against* something? The first is fine; the second is out.
 
+## Common commands
+
+```bash
+uv sync --frozen                      # install / update deps
+bash scripts/install-hooks.sh         # one-time, install the pre-push gate
+uv run ruff check .                   # lint
+uv run ruff format --check .          # format
+uv run pyright                        # types
+uv run pytest -q                      # tests
+```
+
+## Before pushing a PR
+
+`scripts/git-hooks/pre-push` runs the four gates above and refuses to push on a
+dirty worktree. Bypass with `git push --no-verify` only when local test
+infrastructure is broken and you are pushing the fix; that allowance is for a
+person at a keyboard, never for an automated fixer.
+
 ## Repository layout
 
 - `docs/specs/openaca-thesis.md` — what OpenACA is, the V0 → V1 roadmap.
@@ -230,3 +248,77 @@ underlying issue rather than bypassing safety checks (e.g.,
 If you discover unexpected state — unfamiliar files, branches,
 configuration — investigate before deleting or overwriting. It may
 represent the user's in-progress work.
+
+## Code Review Rules
+
+### Reviewer
+
+- Review the full PR against its base branch. Report all qualifying
+  findings together; do not deliberately reserve findings for later rounds.
+- Report concrete, actionable defects with supported failure scenarios.
+  Respect explicit scope decisions and accepted tradeoffs. Do not present
+  speculative hardening or optional improvements as correctness defects.
+- Calibrate priority by impact and urgency:
+  - P0: critical, broadly applicable failure requiring immediate action.
+  - P1: serious defect that should be fixed before this change lands.
+  - P2: normal-priority defect eligible for automatic fixing.
+  - P3: low-priority suggestion.
+  Do not inflate priority to make a finding eligible for automatic fixing.
+- On subsequent reviews, verify earlier fixes and inspect their effects on
+  callers and dependencies. Older code within the PR remains reviewable.
+- When review history supports it, identify a finding as:
+  - Regression: introduced since the previous reviewed head.
+  - Late discovery: present at a previously reviewed head but not reported.
+  - Unresolved: a previously reported defect remains.
+  If the history is unavailable or ambiguous, say so rather than guessing.
+- Deduplicate by underlying defect and remedy, not by title. Refer to an
+  existing thread for an unresolved defect instead of opening another one.
+
+### Automated Fix Rules
+
+- Automatically address actionable CI failures and verified P0, P1,
+  and P2 findings, whether raised by an automated reviewer or a human.
+- P3 findings require explicit human approval before fixing. Maintain one
+  updated summary with links to their threads. Do not mark them resolved
+  merely because they are deferred.
+- Validate each finding against the current head and relevant contracts.
+  If its reasoning or priority is wrong, explain why rather than applying
+  it solely because a reviewer requested it. Surface unresolved disputes
+  for human judgment.
+- Fix the underlying invariant across relevant call sites. Test the
+  failure class rather than only the reported example.
+- Preserve accepted fixes and regression tests when reviewing a rebased PR or
+  when replacing or simplifying its implementation. Remove a test only when
+  the behavior it protects is intentionally changed or removed, and explain
+  that decision.
+- Batch related fixes into one tested update before requesting re-review.
+  Avoid duplicate review requests for the same head.
+- An automated fixer pushes ordinary commits to the existing PR branch and
+  runs every required gate. It does not bypass gates, merge, rebase, or
+  force-push, or change workflows, permissions, credentials, or branch
+  protection. Report an environment failure or required rebase as a blocker.
+- After pushing fixes, wait for CI and a completed review of the current
+  head. Silence, an older review, or a running review is not clearance.
+- Stop and ask for human input when the same failure repeats without progress.
+- Stop the automatic fix cycle when CI passes, the current head has been
+  reviewed, and no actionable P0/P1/P2 findings remain. A reviewer
+  thumbs-up is not required.
+- If only P3 findings remain, report:
+  "Automatic fixes complete for <SHA>; CI passed. P3 suggestions await
+  author approval."
+  Do not claim the PR has no findings or has been approved.
+- Count automated fix rounds since the most recent human-authored corrective
+  commit, and stop when the count reaches seven. A round is a fix pushed as a
+  new head for review; failed local validation does not count. A human-authored
+  commit is corrective when it materially addresses the reported blockers; it
+  resets the count to zero whether it arrives before or after the cap. Merging,
+  rebasing, or otherwise synchronizing the branch does not reset the count. If
+  PR and session history are insufficient to determine the count, stop and ask
+  the author rather than guessing.
+- At the cap, remain subscribed but make no edits. Put a message in the PR:
+  "Review cap limit reached. @<author> Please take a step back to review the
+  design and push a corrective commit to reset the review cap." In the same
+  comment, explain why review has not converged and suggest concrete
+  simplifications or spec/ADR changes. Resume only after the reset defined
+  above.
+

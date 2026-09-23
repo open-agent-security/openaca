@@ -12,7 +12,7 @@ per-head Codex review marker.
 | --- | --- |
 | Routine | [trig_01B1sE9fsBxrmqNnqKdFsSu9](https://claude.ai/code/routines/trig_01B1sE9fsBxrmqNnqKdFsSu9), Anthropic-hosted Default environment (`env_01F2vbHGYXjLs9PV3hzvbvCX`), claude-sonnet-5, sole source this repository, no connectors |
 | Triggers | GitHub `pull_request.opened` and `pull_request.ready_for_review` (ids `941f1f5c-69f8-4e59-b6e8-b1e538f90a0b` opened, `fedfb341-8638-4a4a-a2dc-10d689acf1af` ready_for_review, both created 2026-09-23T06:39Z); a draft PR enrolls when marked ready. Automatic enrollment: not yet observed; verify on the first qualifying PR by reading its run log for the github-trigger-context block and a successful subscribe_pr_activity |
-| Prompt source | SHA-256 of the fenced block below: `3fb501e051929ff7ffcb3c3d335566cb98b13b7a7798a9225955e646c0f43a6d`; saved on the routine at creation, 2026-09-23T06:37:44Z, read back byte-identical |
+| Prompt source | SHA-256 of the fenced block below: `9bb22fdb5d7a43a8eda00bf9d2a3b00044f10f7b2f259882e42142c9bc513c87`; saved on the routine 2026-09-23 (neutral review-request marker), read back byte-identical |
 | Codex review | Codex has reviewed PRs in this repository; confirm all-PRs/every-push in the Codex console. The prompt's explicit request is the fallback |
 | Legacy Actions loop | `claude.yml` and `autofix.yml` disabled 2026-09-22 (files remain); routine-based fixing replaces them |
 
@@ -60,7 +60,7 @@ At enrollment and after every push, ensure the current head has one Codex
 review queued, running, or completed. Accept an existing request marker only
 when its real author is this session's GitHub identity or a trusted maintainer.
 If neither a review nor a trusted marker exists, post one `@codex review`
-request with <!-- stacktrace-codex-review:FULL_HEAD_SHA -->. Do not duplicate a
+request with <!-- managed-codex-review:FULL_HEAD_SHA -->. Do not duplicate a
 trusted request for the same SHA or use a bot @-mention in other prose.
 
 Use GitHub activity and this session's history to avoid handling the same

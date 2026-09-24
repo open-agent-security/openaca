@@ -9,7 +9,16 @@ Priority = Literal["critical", "high", "medium", "low", "info"]
 Confidence = Literal["high", "medium", "low"]
 TriageAction = Literal["remove", "pin", "upgrade", "approve", "replace", "accept", "review"]
 
-_AGENT_COMPONENT_TYPES = {"plugin", "mcp_server", "skill", "hook", "command", "agent"}
+_AGENT_COMPONENT_TYPES = {
+    "plugin",
+    "mcp_server",
+    "skill",
+    "hook",
+    "command",
+    "agent",
+    "extension",
+    "theme",
+}
 _SEVERITY_RANK = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1, "none": 0}
 _CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
 

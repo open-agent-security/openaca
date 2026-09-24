@@ -20,7 +20,7 @@ from tools.graph import Graph
 from tools.kind_selection import KindSelectionError, validate_kind_selection
 
 # Captured from `openaca scan endpoint` on commit 83ec849, before the move.
-_UNKNOWN_KIND = "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor"
+_UNKNOWN_KIND = "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, pi"
 _CONFIG_DIR_WITHOUT_KIND = (
     "--config-dir requires --kind: with more than one installed agent kind, "
     "--config-dir alone cannot say which kind's root it names."

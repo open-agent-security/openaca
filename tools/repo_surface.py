@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.parsers import agent_plugins, claude_plugin
+from tools.parsers import agent_plugins, claude_plugin, pi_manifest
 from tools.parsers.claude_command_agent import Kind
 
 
@@ -320,4 +320,18 @@ CODEX_SURFACE = RepoSurface(
     settings_rel=None,
     manifest_optional=False,
     excludes_plugin_owned_content=True,
+)
+
+PI_SURFACE = RepoSurface(
+    config_dir=".pi",
+    plugin_formats=(
+        PluginFormat("", "package.json", pi_manifest.is_package, pi_manifest.parse_package),
+    ),
+    bundled=BundledLayout("skills", (), "", "prompts", ""),
+    settings_filename=None,
+    project_skills_subdir="skills",
+    standalone_mcp_filenames=(),
+    command_agent_surfaces=(),
+    skill_config_dirs=(".pi", ".agents"),
+    settings_rel=".pi/settings.json",
 )

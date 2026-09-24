@@ -12,6 +12,7 @@ from typing import Any
 
 from tools.active_in import active_in
 from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.parsers.pi_source import parse_pi_source
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.immutability import is_mutable_reference
 
@@ -38,7 +39,7 @@ def check_mutable_install(
 ) -> list[PostureFinding]:
     findings: list[PostureFinding] = []
     for ref in refs:
-        install_source = _mutable_install_source_for(ref)
+        install_source = _mutable_install_source_for(ref, agent_kind=agent_kind)
         if install_source is None:
             continue
         findings.append(
@@ -64,8 +65,13 @@ def _bom_ref_for(ref: ComponentRef) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _mutable_install_source_for(ref: ComponentRef) -> str | None:
+def _mutable_install_source_for(ref: ComponentRef, *, agent_kind: str | None = None) -> str | None:
     install_source = (ref.extra or {}).get("install_source")
+    if agent_kind == "pi" and (ref.extra or {}).get("component_type") == "plugin":
+        if not isinstance(install_source, str) or not install_source:
+            return None
+        source = parse_pi_source(install_source)
+        return install_source if source and source.kind != "local" and not source.pinned else None
     if isinstance(install_source, str) and install_source and is_mutable_reference(install_source):
         return install_source
 

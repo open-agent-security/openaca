@@ -2058,3 +2058,263 @@ def test_e2e_collect_installed_agents_through_the_published_facade(tmp_path):
     assert mutable, [f.rule_id for f in collected.posture_findings]
     assert isinstance(mutable[0], PostureFinding)
     assert mutable[0].agent_kind == "claude-code"
+
+
+def _pi_fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("PI_CODING_AGENT_DIR", raising=False)
+    root = tmp_path / ".pi/agent"
+    root.mkdir(parents=True)
+    (root / "settings.json").write_text(
+        json.dumps({"packages": ["npm:pi-loose", "npm:pi-fixed@1.0.0"]})
+    )
+    for name in ("pi-loose", "pi-fixed"):
+        package = root / "npm/node_modules" / name
+        package.mkdir(parents=True)
+        (package / "package.json").write_text(
+            json.dumps({"name": name, "version": "1.0.0", "pi": {"extensions": ["index.ts"]}})
+        )
+        (package / "index.ts").write_text("export default () => {}")
+    advisory = {
+        "id": "GHSA-2345-2345-2345",
+        "modified": "2026-09-14T00:00:00Z",
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "pi-loose"},
+                "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "tools.scan._load_osv_with_overlays", lambda refs, *, progress=None: ([advisory], [], 0, {})
+    )
+    return root
+
+
+def test_e2e_pi_endpoint_scan_bom_collection_and_replay(tmp_path, monkeypatch):
+    from openaca.core import collect_installed_agents
+    from tools.bom import source_unit_from_cyclonedx
+    from tools.bom_cli import main as bom_main
+    from tools.bom_lint import lint_bom, load_schema
+    from tools.scan import main as scan_main
+
+    _pi_fixture(tmp_path, monkeypatch)
+    runner = CliRunner()
+    scan = runner.invoke(
+        scan_main,
+        ["endpoint", "--kind", "pi", "--include-posture", "--format", "json", "--fail-on", "none"],
+    )
+    assert scan.exit_code == 0, scan.output
+    report = json.loads(scan.stdout)
+    assert report["stats"]["unit"] == "selected resource"
+    assert report["stats"]["units"] == 2
+    assert (
+        sum(
+            f.get("rule_id") == "openaca-posture-mutable-install-reference"
+            for f in report["findings"]
+        )
+        == 1
+    )
+    assert any(
+        f.get("matched_advisory", {}).get("id") == "GHSA-2345-2345-2345" for f in report["findings"]
+    )
+    result = runner.invoke(bom_main, ["endpoint", "--kind", "pi"])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert lint_bom(doc, Draft202012Validator(load_schema())) == []
+    assert source_unit_from_cyclonedx(doc) == (2, "selected resource")
+    refs = component_refs_from_cyclonedx(doc)
+    loose = next(r for r in refs if r.name == "pi-loose")
+    assert loose.version == "1.0.0"
+    assert loose.extra["install_source"] == "npm:pi-loose"
+    from tools.agent_kinds import kind_for
+    from tools.posture import run_posture_rules
+
+    replay_posture = run_posture_rules(
+        refs, [], [], allowed_rules=kind_for("pi").posture_rules, agent_kind="pi"
+    )
+    assert (
+        sum(f.rule_id == "openaca-posture-mutable-install-reference" for f in replay_posture) == 1
+    )
+    assert {r.name for r in refs} >= {"pi-loose", "pi-fixed"}
+    (collected,) = collect_installed_agents(kind_id="pi")
+    assert source_unit_from_cyclonedx(collected.bom) == (2, "selected resource")
+    assert (
+        sum(
+            f.rule_id == "openaca-posture-mutable-install-reference"
+            for f in collected.posture_findings
+        )
+        == 1
+    )
+    path = tmp_path / "pi.cdx.json"
+    path.write_text(json.dumps(doc))
+    replay = runner.invoke(
+        scan_main, ["bom", "--input", str(path), "--format", "json", "--fail-on", "none"]
+    )
+    assert replay.exit_code == 0, replay.output
+    assert "GHSA-2345-2345-2345" in replay.stdout
+
+
+def test_e2e_pi_declared_scan_bom_and_installed_trust_exclusion(tmp_path, monkeypatch):
+    from openaca.core import collect_installed_agents
+    from tools.bom_cli import main as bom_main
+    from tools.bom_lint import lint_bom, load_schema
+    from tools.scan import main as scan_main
+
+    _pi_fixture(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    config = project / ".pi"
+    config.mkdir(parents=True)
+    (config / "settings.json").write_text(json.dumps({"packages": ["npm:pi-loose"]}))
+    package = config / "npm/node_modules/pi-loose"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(
+        json.dumps({"name": "pi-loose", "version": "1.0.0", "pi": {}})
+    )
+    for directory, name, body in (
+        ("extensions", "project.ts", "export default () => {}"),
+        ("themes", "night.json", '{"name": "night"}'),
+        ("prompts", "hello.md", "Say hello"),
+        ("skills/project", "SKILL.md", "---\nname: project\ndescription: project skill\n---\nbody"),
+    ):
+        folder = config / directory
+        folder.mkdir(parents=True)
+        (folder / name).write_text(body)
+    runner = CliRunner()
+    result = runner.invoke(bom_main, ["repo", "--target", str(project)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert lint_bom(doc, Draft202012Validator(load_schema())) == []
+    assert {r.extra["component_type"] for r in component_refs_from_cyclonedx(doc)} == {
+        "plugin",
+        "extension",
+        "theme",
+        "command",
+        "skill",
+    }
+    scan = runner.invoke(
+        scan_main,
+        [
+            "repo",
+            "--target",
+            str(project),
+            "--include-posture",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert scan.exit_code == 0, scan.output
+    findings = json.loads(scan.stdout)["findings"]
+    assert any(f.get("matched_advisory", {}).get("id") == "GHSA-2345-2345-2345" for f in findings)
+    assert (
+        sum(f.get("rule_id") == "openaca-posture-mutable-install-reference" for f in findings) == 1
+    )
+    endpoint = runner.invoke(bom_main, ["endpoint", "--kind", "pi", "--project", str(project)])
+    assert endpoint.exit_code == 0, endpoint.output
+    assert not {"project", "night", "hello"} & {
+        r.name for r in component_refs_from_cyclonedx(json.loads(endpoint.stdout))
+    }
+    endpoint_scan = runner.invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "pi",
+            "--project",
+            str(project),
+            "--include-posture",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert endpoint_scan.exit_code == 0, endpoint_scan.output
+    endpoint_report = json.loads(endpoint_scan.stdout)
+    assert endpoint_report["stats"]["units"] == 2
+    assert (
+        sum(
+            f.get("rule_id") == "openaca-posture-mutable-install-reference"
+            for f in endpoint_report["findings"]
+        )
+        == 1
+    )
+    (collected,) = collect_installed_agents(kind_id="pi", project=project)
+    assert any("unresolved" in w for w in collected.warnings)
+    assert not {"project", "night", "hello"} & {
+        r.name for r in component_refs_from_cyclonedx(collected.bom)
+    }
+
+
+def test_e2e_pi_native_extension_manifest_is_not_a_plugin(tmp_path, monkeypatch):
+    from tools.bom import graph_from_cyclonedx
+    from tools.bom_cli import main as bom_main
+    from tools.bom_lint import lint_bom, load_schema
+    from tools.scan import main as scan_main
+
+    queried = []
+
+    def load_advisories(refs, *, progress=None):
+        queried.extend(refs)
+        return [], [], 0, {}
+
+    monkeypatch.setattr("tools.scan._load_osv_with_overlays", load_advisories)
+    extension = tmp_path / ".pi/extensions/native"
+    extension.mkdir(parents=True)
+    (extension / "package.json").write_text(
+        json.dumps({"name": "native", "version": "1.0.0", "pi": {"extensions": ["entry.ts"]}})
+    )
+    (extension / "entry.ts").write_text("export default () => {}")
+    runner = CliRunner()
+    result = runner.invoke(bom_main, ["repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.stdout)
+    assert lint_bom(doc, Draft202012Validator(load_schema())) == []
+    graph_from_cyclonedx(doc).validate()
+    assert [ref.extra["component_type"] for ref in component_refs_from_cyclonedx(doc)] == [
+        "extension"
+    ]
+    result = runner.invoke(scan_main, ["repo", "--target", str(tmp_path), "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert not any(ref.ecosystem == "npm" and ref.name == "native" for ref in queried)
+
+
+def test_e2e_pi_standalone_shared_and_disabled_resource_counts(tmp_path, monkeypatch):
+    from openaca.core import collect_installed_agents
+    from tools.bom import source_unit_from_cyclonedx
+    from tools.bom_cli import main as bom_main
+    from tools.scan import main as scan_main
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("PI_CODING_AGENT_DIR", raising=False)
+    monkeypatch.setattr(
+        "tools.scan._load_osv_with_overlays", lambda refs, *, progress=None: ([], [], 0, {})
+    )
+    root = tmp_path / ".pi/agent"
+    for path, body in (
+        (root / "extensions/local.ts", "export default () => {}"),
+        (root / "skills/invalid/SKILL.md", "no description"),
+        (
+            tmp_path / ".agents/skills/shared/SKILL.md",
+            "---\nname: shared\ndescription: shared skill\n---\nbody",
+        ),
+    ):
+        path.parent.mkdir(parents=True)
+        path.write_text(body)
+    runner = CliRunner()
+    scan = runner.invoke(scan_main, ["endpoint", "--kind", "pi", "--format", "json"])
+    assert scan.exit_code == 0, scan.output
+    assert json.loads(scan.stdout)["stats"]["units"] == 2
+    bom = runner.invoke(bom_main, ["endpoint", "--kind", "pi"])
+    assert bom.exit_code == 0, bom.output
+    doc = json.loads(bom.stdout)
+    assert source_unit_from_cyclonedx(doc) == (2, "selected resource")
+    assert len(component_refs_from_cyclonedx(doc)) == 3, (
+        "invalid skill stays inventoried but is not selected"
+    )
+    (collected,) = collect_installed_agents(kind_id="pi")
+    assert source_unit_from_cyclonedx(collected.bom) == (2, "selected resource")
+    refused = runner.invoke(scan_main, ["endpoint", "--kind", "pi", "--config-dir", str(root)])
+    assert refused.exit_code != 0

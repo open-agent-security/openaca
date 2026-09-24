@@ -39,6 +39,7 @@ __all__ = [
     "collect_codex_mcp_manifests",
     "collect_codex_rules_manifests",
     "collect_codex_project_trust_manifests",
+    "collect_pi_project_trust_manifests",
     "collect_cursor_endpoint_mcp_manifests",
     "collect_cursor_endpoint_permissions_manifests",
     "collect_cursor_mcp_manifests",
@@ -137,7 +138,11 @@ def run_posture_rules(
             extras.get(command_policy_allow.RULE_ID, [])
         )
     )
-    findings.extend(project_trust.check_project_trust(extras.get(project_trust.RULE_ID, [])))
+    findings.extend(
+        project_trust.check_project_trust(
+            extras.get(project_trust.RULE_ID, []), active_in=[agent_kind] if agent_kind else None
+        )
+    )
     findings = [f for f in findings if allowed_rules is None or f.rule_id in allowed_rules]
     # `active_in` is the answer to "which agent is this active in" (ADR-0044:
     # "the agent doing the scanning is the answer" — see `tools.active_in`).
@@ -1289,3 +1294,19 @@ def collect_codex_project_trust_manifests(
         if projects:
             out.append((config_path, {"projects": projects}))
     return out
+
+
+def collect_pi_project_trust_manifests(
+    config_root: Path,
+    project_root: Path | None = None,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Read only Pi's global trust default, independent of selected components."""
+    from tools.parsers.pi_settings import read_manifest
+
+    path = config_root / "settings.json"
+    manifest = read_manifest(path)
+    value = manifest.get("defaultProjectTrust")
+    if isinstance(value, str):
+        return [(path, {"default_project_trust": value})]
+    return []

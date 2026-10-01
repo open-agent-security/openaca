@@ -192,11 +192,23 @@ deploying a policy. A policy-management UI may present the same report from a
 recent scan, but must label it with that scan time; only endpoint compilation
 uses fresh endpoint evidence.
 
-If no risk gates are configured, compilation does not require advisory
-queries. If risk gates are configured and required advisory data cannot be
-obtained or evaluated, compilation fails and does not replace a previous
+If no vulnerability gate is configured, compilation does not require advisory
+queries. With a vulnerability gate, supported components are checked against
+fresh advisory data. A component without a supported advisory lookup coordinate
+does not abort compilation or acquire a vulnerability block solely for being
+unqueryable. Admission and posture rules still apply to that component.
+
+The report includes `vulnerability_coverage` whenever a vulnerability gate is
+configured: `total_components`, `queryable_components`, and `unavailable` entries
+with the component label, source manifest, source locator, and reason. Text
+reports show the counts and every coverage gap. These counts describe lookup
+support, not proof of vulnerability-free software; an admission result of
+`allowed` is not a clean bill of health. No coverage field is emitted when
+vulnerability checking was not requested. See ADR-0064.
+
+If a supported advisory lookup fails, or a matched advisory's required severity
+cannot be evaluated, compilation still fails without replacing a previous
 artifact. A fresh admission result must not be combined with stale risk data.
-An unidentified or non-queryable component is not evidence that it is clean.
 
 Compilation also fails, without replacing a previous artifact, when a
 generated key already exists in another file at the target (see Claude Code

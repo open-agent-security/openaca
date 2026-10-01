@@ -120,6 +120,22 @@ def compile_endpoint_policy(
         directory / "managed-settings.d" / _OPENACA_FILENAME,
         dry_run,
     )
+    if policy.risk_gates.vulnerabilities is not None:
+        unavailable = [
+            {
+                "component": _component_label(component.ref),
+                "source_manifest": component.ref.source_manifest,
+                "source_locator": component.ref.source_locator,
+                "reason": "no supported advisory lookup coordinate",
+            }
+            for component in components
+            if not is_queryable(component.ref)
+        ]
+        report["vulnerability_coverage"] = {
+            "total_components": len(components),
+            "queryable_components": len(components) - len(unavailable),
+            "unavailable": unavailable,
+        }
     if not dry_run:
         assert output is not None
         _write_artifact(output, artifact_json)
@@ -173,15 +189,6 @@ def _evaluate_endpoint(
 
     advisories: list[dict[str, Any]] = []
     if policy.risk_gates.vulnerabilities is not None:
-        nonqueryable = [
-            ref for _agent, _graph, refs in refs_by_agent for ref in refs if not is_queryable(ref)
-        ]
-        if nonqueryable:
-            labels = ", ".join(_component_label(ref) for ref in nonqueryable[:3])
-            suffix = "" if len(nonqueryable) <= 3 else ", ..."
-            raise PolicyEvaluationError(
-                f"vulnerability gates cannot evaluate non-queryable component(s): {labels}{suffix}"
-            )
         all_refs = [ref for _agent, _graph, refs in refs_by_agent for ref in refs]
         advisories, warnings, _overlay_count, _aliases = _load_osv_with_overlays(all_refs)
         if warnings:
@@ -343,6 +350,16 @@ def render_policy_report(report: dict[str, Any], output_format: str) -> str:
         for decision in report["decisions"]
     )
     lines.extend(f"  not enforceable: {limitation}" for limitation in report["limitations"])
+    coverage = report.get("vulnerability_coverage")
+    if coverage is not None:
+        lines.append(
+            f"\nVulnerability lookup coverage: {coverage['queryable_components']}/"
+            f"{coverage['total_components']} components queryable"
+        )
+        lines.extend(
+            f"  vulnerability coverage unavailable: {gap['component']} ({gap['reason']})"
+            for gap in coverage["unavailable"]
+        )
     return "\n".join(lines)
 
 

@@ -23,6 +23,7 @@ against the rules in effect at the time.
 
 - [0069](0069-defer-native-windows-support.md) — **Defer native Windows support.** Target hosts are macOS and Linux; Windows-only runtime compatibility is deferred without changing existing input coverage. Read before adding platform fallbacks or treating Windows parity as a release requirement.
 
+- [ADR-0064 — Report vulnerability lookup gaps without aborting compilation](0064-report-vulnerability-coverage-gaps.md): known vulnerability matches still produce restrictions when other components lack advisory coordinates. Reports expose every coverage gap; supported lookup failures and unevaluable matched severities still preserve the prior artifact by failing compilation.
 - [ADR-0065 — Detect inline MCP credentials by authentication field](0065-inline-mcp-header-credentials.md): report literal authentication headers as posture without credential validation or exporting their values.
 - [ADR-0066 — Resolve MCP credential provenance per header key within a scope](0066-mcp-credential-provenance-bar.md): attribution bar for ADR-0065 — a missed credential is a defect, a neighbouring-scope attribution under a finer split is deferred.
 

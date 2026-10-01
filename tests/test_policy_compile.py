@@ -169,6 +169,21 @@ def test_admission_only_does_not_claim_vulnerability_coverage(tmp_path):
     assert "Vulnerability lookup coverage" not in render_policy_report(report, "text")
 
 
+def test_text_report_includes_source_location_for_coverage_gaps(tmp_path):
+    """Duplicate component labels (same dependency in multiple manifests) are
+    indistinguishable in text output without a source location per ADR-0064,
+    which requires text to render the same coverage information as JSON."""
+    target = _endpoint(tmp_path)
+    _skill(target, "deploy")
+
+    report = _compile(target, _VULN_GATE)
+    gap = report["vulnerability_coverage"]["unavailable"][0]
+
+    assert f"[{gap['source_manifest']}: {gap['source_locator']}]" in render_policy_report(
+        report, "text"
+    )
+
+
 def test_vulnerability_gate_blocks_queryable_component_despite_lookup_gap(tmp_path, monkeypatch):
     target = _endpoint(tmp_path)
     _skill(target, "deploy")

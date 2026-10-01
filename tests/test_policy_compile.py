@@ -123,29 +123,95 @@ def test_an_incomplete_inventory_is_an_evaluation_error(tmp_path):
     assert "could not parse" in str(exc.value)
 
 
-def test_a_non_queryable_component_under_a_vulnerability_gate_is_an_evaluation_error(tmp_path):
+def test_non_queryable_components_have_explicit_coverage_gaps(tmp_path):
     target = _endpoint(tmp_path)
     _skill(target, "deploy")
 
-    with pytest.raises(PolicyEvaluationError) as exc:
-        _compile(target, _VULN_GATE)
+    report = _compile(target, _VULN_GATE)
 
-    assert str(exc.value) == (
-        "vulnerability gates cannot evaluate non-queryable component(s): deploy"
-    )
+    assert report["vulnerability_coverage"] == {
+        "total_components": 1,
+        "queryable_components": 0,
+        "unavailable": [
+            {
+                "component": "deploy",
+                "source_manifest": str(target / "skills" / "deploy" / "SKILL.md"),
+                "source_locator": "$.frontmatter",
+                "reason": "no supported advisory lookup coordinate",
+            }
+        ],
+    }
+    assert report["expected_policy"] == {}
 
 
-def test_the_non_queryable_message_truncates_past_three(tmp_path):
+def test_vulnerability_coverage_gaps_are_not_truncated(tmp_path):
     target = _endpoint(tmp_path)
     for name in ("a", "b", "c", "d"):
         _skill(target, name)
 
-    with pytest.raises(PolicyEvaluationError) as exc:
-        _compile(target, _VULN_GATE)
+    report = _compile(target, _VULN_GATE)
 
-    assert str(exc.value) == (
-        "vulnerability gates cannot evaluate non-queryable component(s): a, b, c, ..."
+    assert [gap["component"] for gap in report["vulnerability_coverage"]["unavailable"]] == [
+        "a",
+        "b",
+        "c",
+        "d",
+    ]
+
+
+def test_admission_only_does_not_claim_vulnerability_coverage(tmp_path):
+    target = _endpoint(tmp_path)
+    _skill(target, "deploy")
+
+    report = _compile(target, _ADMIT_ALL)
+
+    assert "vulnerability_coverage" not in report
+    assert "Vulnerability lookup coverage" not in render_policy_report(report, "text")
+
+
+def test_vulnerability_gate_blocks_queryable_component_despite_lookup_gap(tmp_path, monkeypatch):
+    target = _endpoint(tmp_path)
+    _skill(target, "deploy")
+    command = ["npx", "-y", "@x/gh@1.0.0"]
+    (target / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"gh": {"command": command[0], "args": command[1:]}}}),
+        encoding="utf-8",
     )
+    advisory = {
+        "id": "GHSA-2345-2345-2345",
+        "database_specific": {"severity": "HIGH"},
+        "affected": [
+            {
+                "package": {"ecosystem": "npm", "name": "@x/gh"},
+                "ranges": [
+                    {
+                        "type": "ECOSYSTEM",
+                        "events": [{"introduced": "0"}, {"fixed": "2.0.0"}],
+                    }
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "tools.policy_compile._load_osv_with_overlays",
+        lambda refs: ([advisory], [], 0, {}),
+    )
+
+    report = _compile(target, _VULN_GATE)
+
+    assert report["expected_policy"]["deniedMcpServers"] == [{"serverCommand": command}]
+    assert report["vulnerability_coverage"] == {
+        "total_components": 2,
+        "queryable_components": 1,
+        "unavailable": [
+            {
+                "component": "deploy",
+                "source_manifest": str(target / "skills" / "deploy" / "SKILL.md"),
+                "source_locator": "$.frontmatter",
+                "reason": "no supported advisory lookup coordinate",
+            }
+        ],
+    }
 
 
 def test_an_osv_load_warning_is_an_evaluation_error(tmp_path, monkeypatch):

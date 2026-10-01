@@ -831,8 +831,8 @@ def test_severity_gate_fails_closed_on_an_advisory_with_no_derivable_severity():
     label nor a parseable CVSS vector derives to severity "UNKNOWN".
     Treating that as "below threshold" would silently admit a component
     with a real, matched vulnerability finding just because the severity
-    data happened to be missing — the same "not evidence that it is clean"
-    principle the non-queryable-component check already enforces."""
+    data happened to be missing. Unlike missing lookup coverage, a matched
+    advisory needs its severity evaluated to decide the configured gate."""
     policy = _policy(vulnerabilities={"severity_at_least": "high"})
     mcp = _mcp(["npx", "-y", "safe-mcp"])
 
@@ -1527,29 +1527,27 @@ def test_policy_compile_fails_on_an_incomplete_inventory(tmp_path):
     assert "could not parse" in result.output
 
 
-def test_policy_compile_fails_on_a_non_queryable_component_under_a_vulnerability_gate(tmp_path):
+def test_policy_compile_reports_unavailable_vulnerability_coverage(tmp_path):
     (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
     _skill(tmp_path, "deploy")
 
     result = _compile(tmp_path, _policy_file(tmp_path, _VULN_GATE), "--dry-run")
 
-    assert result.exit_code == 1
-    assert result.output == (
-        "Error: vulnerability gates cannot evaluate non-queryable component(s): deploy\n"
-    )
+    assert result.exit_code == 0, result.output
+    assert "Vulnerability lookup coverage: 0/1 components queryable" in result.stdout
+    assert "vulnerability coverage unavailable: deploy" in result.stdout
 
 
-def test_the_non_queryable_message_truncates_past_three_components(tmp_path):
+def test_vulnerability_coverage_warnings_are_not_truncated(tmp_path):
     (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
     for name in ("a", "b", "c", "d"):
         _skill(tmp_path, name)
 
     result = _compile(tmp_path, _policy_file(tmp_path, _VULN_GATE), "--dry-run")
 
-    assert result.exit_code == 1
-    assert result.output == (
-        "Error: vulnerability gates cannot evaluate non-queryable component(s): a, b, c, ...\n"
-    )
+    assert result.exit_code == 0, result.output
+    for name in ("a", "b", "c", "d"):
+        assert f"vulnerability coverage unavailable: {name}" in result.stdout
 
 
 def test_policy_compile_fails_on_an_osv_load_warning(tmp_path, monkeypatch):

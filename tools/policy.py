@@ -570,8 +570,8 @@ def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[s
         # Neither an upstream `database_specific.severity` label nor a
         # parseable CVSS vector is available. Treating this as "below
         # threshold" would let a component pass unblocked on missing data,
-        # not evidence of low risk (mirrors the non-queryable-component
-        # fail-closed rule: "not evidence that it is clean").
+        # not evidence of low risk. Unlike an unsupported lookup coordinate,
+        # this is a matched advisory whose configured gate cannot be evaluated.
         raise PolicyEvaluationError(
             f"cannot evaluate severity_at_least gate: {advisory.get('id')} has no upstream "
             "severity label or parseable CVSS vector"

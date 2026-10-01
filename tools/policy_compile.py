@@ -357,7 +357,8 @@ def render_policy_report(report: dict[str, Any], output_format: str) -> str:
             f"{coverage['total_components']} components queryable"
         )
         lines.extend(
-            f"  vulnerability coverage unavailable: {gap['component']} ({gap['reason']})"
+            f"  vulnerability coverage unavailable: {gap['component']} "
+            f"[{gap['source_manifest']}: {gap['source_locator']}] ({gap['reason']})"
             for gap in coverage["unavailable"]
         )
     return "\n".join(lines)

@@ -216,28 +216,12 @@ def _parse_skills(plugin_root: Path) -> list[ComponentRef]:
     return refs
 
 
-def manifest_schema_version(data: dict) -> str | None:
-    """The supported schema version a validated manifest's `$schema` names,
-    or `None`. Exported so a caller that already has a validated `plugin.json`
-    dict (e.g. posture's plugin-root walk) can look up the matching MCP
-    schema version without a private cross-module import.
-    """
-    schema = data.get("$schema")
-    return _MANIFEST_SCHEMA_VERSION_BY_URL.get(schema) if isinstance(schema, str) else None
-
-
 def validate_mcp_envelope(data: object, manifest_version: str | None) -> bool:
     """§7.2.1/§7.2.2: is `data` a valid bundled `mcp.json` envelope for
     `manifest_version`? Exactly `{"$schema", "mcpServers"}` as top-level
     keys, `$schema` matching the schema URL for `manifest_version`, and
     `mcpServers` a dict. `manifest_version=None` (an unrecognized manifest
     `$schema`) always fails — there is no schema URL to match against.
-
-    Exported so posture's `collect_cursor_mcp_manifests` can apply the
-    identical check before treating a bundled `mcp.json` as posture-relevant:
-    a malformed envelope is invisible to composition (§7.2.2 scopes the
-    failure to MCP alone, not the whole plugin) and must stay invisible to
-    posture too, or posture reports on servers the graph never composed.
     """
     if manifest_version is None:
         return False

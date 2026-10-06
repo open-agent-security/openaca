@@ -110,7 +110,7 @@ def _get_openaca_dict(record: dict) -> dict:
 
 
 def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
-    """threat_kind valid only on MAL-* ids/aliases (mirrors validator.py)."""
+    """threat_kind valid only on MAL-* ids/aliases."""
     openaca = _get_openaca_dict(overlay)
     if "threat_kind" not in openaca:
         return []
@@ -127,7 +127,7 @@ def check_threat_kind_id_coupling(overlay: dict) -> list[str]:
 
 
 def check_no_empty_taxonomy_buckets(overlay: dict) -> list[str]:
-    """Reject empty arrays/dicts under taxonomies (mirrors validator.py)."""
+    """Reject empty arrays/dicts under taxonomies; omit the key instead."""
     openaca = _get_openaca_dict(overlay)
     taxonomies = openaca.get("taxonomies")
     if not isinstance(taxonomies, dict):

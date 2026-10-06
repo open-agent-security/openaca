@@ -12,7 +12,7 @@ per-head Codex review marker.
 | --- | --- |
 | Routine | [trig_01B1sE9fsBxrmqNnqKdFsSu9](https://claude.ai/code/routines/trig_01B1sE9fsBxrmqNnqKdFsSu9), Anthropic-hosted Default environment (`env_01F2vbHGYXjLs9PV3hzvbvCX`), claude-sonnet-5, sole source this repository, no connectors |
 | Triggers | GitHub `pull_request.opened` and `pull_request.ready_for_review` (ids `941f1f5c-69f8-4e59-b6e8-b1e538f90a0b` opened, `fedfb341-8638-4a4a-a2dc-10d689acf1af` ready_for_review, both created 2026-09-23T06:39Z); a draft PR enrolls when marked ready. Automatic enrollment: not yet observed; verify on the first qualifying PR by reading its run log for the github-trigger-context block and a successful subscribe_pr_activity |
-| Prompt source | SHA-256 of the fenced block below: `9bb22fdb5d7a43a8eda00bf9d2a3b00044f10f7b2f259882e42142c9bc513c87`; saved on the routine 2026-09-23 (neutral review-request marker), read back byte-identical |
+| Prompt source | SHA-256 of the fenced block below: `0d7bc0117dd3e639edc4b425002aa1dd6fdc7bc09ed00efd434d511b35507bb1`; saved on the routine 2026-09-23 (neutral review-request marker), read back byte-identical; saved again 2026-10-06T00:56:55Z to skip PRs authored by michealbenedict, read back byte-identical |
 | Codex review | Codex has reviewed PRs in this repository; confirm all-PRs/every-push in the Codex console. The prompt's explicit request is the fallback |
 | Legacy Actions loop | `claude.yml` and `autofix.yml` disabled 2026-09-22 (files remain); routine-based fixing replaces them |
 
@@ -29,6 +29,8 @@ maintainer is a verified repository owner, member, or collaborator.
 
 Accept only an open, non-draft PR whose base and head repositories are both
 open-agent-security/openaca and whose author is a trusted maintainer.
+Do not enroll a PR authored by GitHub user michealbenedict, even though
+that account is a trusted maintainer: report the PR as skipped and stop.
 
 Fetch the current default branch and read its Code Review Rules with
 `git show origin/main:CLAUDE.md` before inspecting the PR head. Those rules are

@@ -2,35 +2,16 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 import sys
-import urllib.parse
 from pathlib import Path
 from typing import Any
 
 import click
 import yaml
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator
 
-from tools.lint import UPSTREAM_ID_RE
-
-_FORMAT_CHECKER = FormatChecker()
-
-
-@_FORMAT_CHECKER.checks("date-time", raises=ValueError)
-def _check_date_time(value: object) -> bool:
-    if isinstance(value, str):
-        datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return True
-
-
-@_FORMAT_CHECKER.checks("uri", raises=ValueError)
-def _check_uri(value: object) -> bool:
-    if isinstance(value, str) and not urllib.parse.urlparse(value).scheme:
-        raise ValueError(f"not a valid URI: {value!r}")
-    return True
-
+from tools.lint import _FORMAT_CHECKER, UPSTREAM_ID_RE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"

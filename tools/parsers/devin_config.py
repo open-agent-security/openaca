@@ -19,8 +19,10 @@ Two facts about Devin, not about the files' owners, live here:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+from tools import marketplace
 from tools.component_ref import ComponentRef
 from tools.parsers import hooks_json, jsonc, mcp_json
 
@@ -275,13 +277,18 @@ _SOURCE_FIELDS = {
     "account-upload": "bundleId",
 }
 
+#: Devin's `owner/repo` shorthand for a GitHub source string.
+_GITHUB_SHORTHAND = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$")
+
+#: Only an immutable commit is a version (ADR-0016); any other pin is a `git_ref`.
+_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+
 
 def plugin_required_refs(data: dict, *, manifest_path: Path, record_gap) -> list[ComponentRef]:
     """The plugins a Devin plugin manifest requires, one ref per
-    `requiredPlugins` entry, named by its source. Devin installs them
-    "recursively when the plugin is installed"; `optionalPlugins` and
-    `forbiddenPlugins` install nothing. An entry with no usable source is
-    recorded rather than guessed at."""
+    `requiredPlugins` entry. Devin installs them "recursively when the plugin
+    is installed"; `optionalPlugins` and `forbiddenPlugins` install nothing.
+    An entry with no usable source is recorded rather than guessed at."""
     if "requiredPlugins" not in data:
         return []
     entries = data["requiredPlugins"]
@@ -291,37 +298,78 @@ def plugin_required_refs(data: dict, *, manifest_path: Path, record_gap) -> list
     refs: list[ComponentRef] = []
     for index, entry in enumerate(entries):
         locator = f"$.requiredPlugins[{index}]"
-        source = _plugin_source(entry)
-        if source is None:
+        ref = _required_plugin_ref(entry, manifest_path=manifest_path, locator=locator)
+        if ref is None:
             record_gap(
                 f"could not parse {manifest_path}: {locator} is not a plugin source Devin accepts"
             )
             continue
-        refs.append(
-            ComponentRef(
-                name=source,
-                component_identity=f"plugin-dep/{source}",
-                source_manifest=str(manifest_path),
-                source_locator=locator,
-            )
-        )
+        refs.append(ref)
     return refs
 
 
-def _plugin_source(entry: object) -> str | None:
+def _required_plugin_ref(
+    entry: object, *, manifest_path: Path, locator: str
+) -> ComponentRef | None:
+    """One required plugin, identified as every GitHub-sourced component is:
+    `owner/repo` in the `github` ecosystem, a commit `sha` as its version and
+    any other pin as `git_ref`, a subdirectory as `source_subdirectory`. A
+    source elsewhere is named by its location and keeps its pin."""
+    subdirectory: str | None = None
+    pin: str | None = None
     if isinstance(entry, str):
-        return entry or None
-    if not isinstance(entry, dict):
+        location, _, subdirectory = entry.partition("#")
+        repo = location if _GITHUB_SHORTHAND.fullmatch(location) else _github_repo(location)
+    elif isinstance(entry, dict):
+        kind = entry.get("source")
+        field = _SOURCE_FIELDS.get(kind) if isinstance(kind, str) else None
+        location = entry.get(field) if field else None
+        if not isinstance(location, str):
+            return None
+        if kind == "git-subdir":
+            subdirectory = entry.get("path")
+            if not isinstance(subdirectory, str) or not subdirectory:
+                return None
+        repo = location if kind == "github" else None
+        if kind in ("url", "git-subdir"):
+            repo = _github_repo(location)
+        pin = next(
+            (
+                value
+                for value in (entry.get("sha"), entry.get("ref"))
+                if isinstance(value, str) and value
+            ),
+            None,
+        )
+    else:
         return None
-    kind = entry.get("source")
-    field = _SOURCE_FIELDS.get(kind) if isinstance(kind, str) else None
-    value = entry.get(field) if field else None
-    if not isinstance(value, str) or not value:
+    if not location:
         return None
-    if kind == "git-subdir":
-        path = entry.get("path")
-        return f"{value}#{path}" if isinstance(path, str) and path else None
-    return value
+    version = pin.lower() if repo and pin and _COMMIT_SHA.fullmatch(pin) else None
+    extra: dict = {}
+    if subdirectory:
+        extra["source_subdirectory"] = subdirectory
+    if pin and version is None:
+        extra["git_ref"] = pin
+    name = repo or location
+    return ComponentRef(
+        ecosystem="github" if repo else None,
+        name=name,
+        version=version,
+        component_identity=f"plugin-dep/{name}",
+        source_manifest=str(manifest_path),
+        source_locator=locator,
+        extra=extra,
+    )
+
+
+def _github_repo(url: str) -> str | None:
+    """`owner/repo` when `url` is a GitHub repository URL."""
+    try:
+        host, value = marketplace.key(url)
+    except ValueError:
+        return None
+    return value if host == "github" else None
 
 
 def plugin_mcp_refs(

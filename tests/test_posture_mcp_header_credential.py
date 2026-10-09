@@ -418,3 +418,52 @@ def test_a_devin_server_composed_from_a_file_with_comments_keeps_its_credential(
 
     assert len(findings) == 1
     assert findings[0].declared_by == {"kind": "manifest", "path": str(config)}
+
+
+def test_a_devin_imported_flat_serverurl_entry_keeps_its_credential(tmp_path):
+    """An imported flat `.mcp.json` entry can use Devin's `serverUrl` alias
+    for `url` (`devin_config.normalize_server_entry`) instead of `url` or
+    `command`. The credential pass re-reads the composed server's own file
+    through `insecure_transport._get_server_map`'s kind-neutral flat-root
+    test, which does not know that alias, so it must fall back to Devin's
+    own predicate or a literal header on such an entry is composed into the
+    BOM but never flagged."""
+    from tools.graph_build_devin import build_devin_installed_graph
+    from tools.posture import collect_devin_mcp_manifests
+
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir(parents=True)
+    (project / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "demo": {
+                    "serverUrl": "https://example.test/mcp",
+                    "headers": {"Authorization": "Bearer dummy-literal"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Agent:
+        source = "installed"
+        config_root = home / ".config" / "devin"
+        project_root = project
+        bom_ref = "root/devin-cli"
+        root_label = "devin-cli"
+
+    graph = build_devin_installed_graph(
+        _Agent(),
+        data_root=home / ".local" / "share" / "devin" / "cli",
+        legacy_config_root=home / ".config" / "cognition",
+        home=home,
+    )
+    refs = [node.ref for node in graph.nodes.values() if node.ref is not None]
+    findings = [
+        f
+        for f in run_posture_rules(refs, collect_devin_mcp_manifests([], refs=refs))
+        if f.rule_id == RULE_ID
+    ]
+
+    assert len(findings) == 1

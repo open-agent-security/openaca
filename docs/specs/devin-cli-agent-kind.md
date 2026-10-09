@@ -1,8 +1,12 @@
 # Devin CLI Agent Kind — Surface Audit
 
-*Proposed (2026-10-08). No ADR yet; [ADRs this kind needs](#adrs-this-kind-needs)
-lists them. This is the per-kind audit that
-[Multi-Agent Support](multi-agent-support.md) requires.*
+*Implemented (2026-10-09): `devin-cli` is registered. Decisions:
+[ADR-0070](../adrs/0070-devin-cli-agent-kind.md),
+[ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md),
+[ADR-0072](../adrs/0072-shared-agents-agents-directory.md),
+[ADR-0073](../adrs/0073-devin-permissions-two-rule-ids.md). Audited 2026-10-08.
+This is the per-kind audit that [Multi-Agent Support](multi-agent-support.md)
+requires.*
 
 **Devin CLI is Claude Code-shaped in its formats and Cursor-shaped in its
 reach.** Its own files use formats OpenACA already parses: the `mcpServers` map,
@@ -170,6 +174,11 @@ installation*, not *is it reachable*.
 | Approval policy | `permissions` in `.devin/config.json`, `.devin/config.local.json` | `permissions` in `<config>/config.json` | merged across levels | `allow`/`deny`/`ask` rules: `Exec(…)`, `Read(…)`, `Write(…)`, `Fetch(…)`, `mcp__<server>__<tool>` | both (scan only) |
 | Import switches | `read_config_from` in `.devin/config.json` | `read_config_from` in `<config>/config.json` | file | booleans per tool | both (scan only) |
 
+"Per directory" for skills means `<root>/<name>/SKILL.md`, one level deep, for
+Devin's own roots, the shared `.agents/skills` and Windsurf's. Devin's import
+reference documents Claude Code's and Copilot's skill imports as
+`**/SKILL.md`, so those two are walked recursively.
+
 ### Not there
 
 | A reader expects | Why it is absent |
@@ -220,8 +229,8 @@ and the project config.
 | Path | Owner | Read by Devin as | Gated |
 |---|---|---|---|
 | `.mcp.json` | Claude Code | MCP servers | ‡ `claude` |
-| `.claude/settings.json`, `.claude/settings.local.json` | Claude Code | MCP servers, hooks | ‡ `claude` (hooks: unverified whether gated) |
-| `~/.claude.json`, `~/.claude/settings*.json`, `~/.claude/mcp_servers.json` | Claude Code | MCP servers, hooks | ‡ `claude` (hooks: unverified) |
+| `.claude/settings.json`, `.claude/settings.local.json` | Claude Code | MCP servers, hooks | ‡ `claude`, hooks included |
+| `~/.claude.json`, `~/.claude/settings*.json`, `~/.claude/mcp_servers.json` | Claude Code | MCP servers, hooks | ‡ `claude`, hooks included |
 | `.claude/skills/**/SKILL.md` | Claude Code | Skills | ‡ `claude` |
 | `.claude/commands/**/*.md` | Claude Code | Skills | ‡ `claude` |
 | `.claude-plugin/plugin.json` | Claude Code | Plugin manifest, second candidate | No |
@@ -233,6 +242,10 @@ and the project config.
 | `.zed/settings.json`, `~/.config/zed/settings.json` | Zed | MCP servers | ‡ `zed` (deferred) |
 | `.agents/skills/` (project and `$HOME`) | Cross-tool | Skills | No |
 | `.agents/agents/` | Cross-tool | Subagents | No |
+
+The hooks gate is settled by Devin's own hooks reference: "Hooks from
+`.claude/` paths are loaded when `read_config_from.claude` is enabled". An
+earlier draft marked it unverified.
 
 ### Evidence and composition
 
@@ -311,7 +324,7 @@ is `permissions` and `read_config_from`, read directly.
 | `mutable_install` | **Yes** | The MCP branch keys on launch specs. Whether the plugin branch fires depends on the store recording a pinned revision, which is unverified |
 | `skill_capability` | **Yes, with one change** | Same `SKILL.md` with `allowed-tools`, but Devin's shell tool is `exec`. `EXECUTABLE_TOOLS` is `{bash, shell}`, so a Devin skill granting `exec` goes unreported. Add `exec` |
 | `mcp_auto_approve` | **Yes, via `permissions`** | `mcp__…` allow entries; see below |
-| `command_policy_allow` | **Yes, via `permissions`** | `allow` entries `Exec(<prefix>)` approve a command prefix to run unattended, the posture Codex's `prefix_rule` expresses |
+| `command_policy_allow` | **Yes, via `permissions`** | `allow` entries `Exec(<prefix>)` approve a command prefix to run unattended, the posture Codex's `prefix_rule` expresses; the bare tool name `exec` approves every command |
 | `project_trust` | **No** | Devin has no trusted-directory concept. "Allow for this project" writes ordinary permission rules |
 | `api_endpoint_override` | **No** | It matches literal Anthropic settings keys in a file Devin does not have |
 
@@ -327,7 +340,7 @@ they are about MCP servers. That is the test the Codex spec applies in
 
 | Entry | Reported under |
 |---|---|
-| `Exec(…)` | `command_policy_allow` |
+| `Exec(…)`, `exec` | `command_policy_allow` |
 | `mcp__…` | `mcp_auto_approve` |
 | `Read(…)`, `Write(…)`, `Fetch(…)` | Nothing. They approve tool classes no posture rule covers |
 
@@ -337,7 +350,12 @@ Implementation constraints:
 
 - **Merge before reporting.** The lists merge across levels, and a `deny`
   anywhere suppresses a matching `allow`. Reporting an `allow` its own deny
-  overrides over-reports.
+  overrides over-reports. An `ask` at a higher-precedence level suppresses a
+  covering `allow` too: "a lower-level allow cannot override an ask from a
+  higher-precedence level". At its own level an allow at least as specific as
+  an ask wins. A rule *covers* an allow when it matches everything the allow
+  approves: `Exec(git)` covers `Exec(git push)`, `mcp__github__*` covers
+  `mcp__github__list_issues`.
 - **`config.json` is JSON with comments.** A plain JSON loader drops a file with
   comments, as Cursor's `permissions.json` already taught.
 - **`mcp_auto_approve`'s `active_in`** must be set per kind. The Codex spec
@@ -354,6 +372,10 @@ Implementation constraints:
 | `$COPILOT_HOME` relocation | Rare | Copilot user skills under a relocated root are missing |
 | Plugin bundle layout inside the store | Needs a signed-in install to observe | Installed plugins are inventoried presence-only, from `lock.json`, until verified |
 | `system.json` machine policy | Login and proxy only; declares no components | None for composition |
+| Repo-level `requiredPlugins` in `.devin/config.json` | Devin's plugin docs name a repo level of plugin requirements; installing them needs Devin's service | A plugin a repository requires is missing from its declared BOM until installed |
+| `projects.<path>.mcpServers` in `~/.claude.json` | Whether Devin imports Claude Code's per-project servers is unverified; only the top-level `mcpServers` is read | A Claude Code local-scope server Devin loads would be missing |
+| `hooks.json` envelope inside a plugin bundle | Unverified; the declared reader takes Claude Code's `{"hooks": {...}}` envelope and records any other shape as a gap | A whole-file `hooks.json` in a repository's plugin lowers coverage instead of composing |
+| Store `lock.json` entry shape | Unverified. A `resolved` entry yields a plugin only when its `name` (or `identity`) satisfies Devin's documented plugin-name rule; any other entry is a coverage gap | Store plugins with another entry shape are counted as gaps, not inventoried |
 
 ### Not shipping
 
@@ -377,9 +399,9 @@ Implementation constraints:
 Each is a decision a reviewer could plausibly reverse, so each gets a record
 before implementation.
 
-| # | Decision | Detail |
-|---|---|---|
-| 1 | Register `devin-cli` | Coverage baseline `partial`/`partial`; the declared evidence set above |
-| 2 | Refuse `--config-dir` | Applies ADR-0054; ADR-0059's companion relocation does not extend to four independent roots |
-| 3 | `.agents/agents/` is evidence for the kinds that read it | ADR-0058's rule applied to a second shared directory, read today by one kind |
-| 4 | One `permissions` list, two posture rule ids, split by entry | Rather than a new Devin-specific id |
+| # | Decision | Detail | Record |
+|---|---|---|---|
+| 1 | Register `devin-cli` | Coverage baseline `partial`/`partial`; the declared evidence set above | [ADR-0070](../adrs/0070-devin-cli-agent-kind.md) |
+| 2 | Refuse `--config-dir` | Applies ADR-0054; ADR-0059's companion relocation does not extend to four independent roots | [ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md) |
+| 3 | `.agents/agents/` is evidence for the kinds that read it | ADR-0058's rule applied to a second shared directory, read today by one kind | [ADR-0072](../adrs/0072-shared-agents-agents-directory.md) |
+| 4 | One `permissions` list, two posture rule ids, split by entry | Rather than a new Devin-specific id | [ADR-0073](../adrs/0073-devin-permissions-two-rule-ids.md) |

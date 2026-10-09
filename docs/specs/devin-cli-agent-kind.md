@@ -180,9 +180,14 @@ installation*, not *is it reachable*.
 | Import switches | `read_config_from` in `.devin/config.json` | `read_config_from` in `<config>/config.json` | file | booleans per tool | both (scan only) |
 
 "Per directory" for skills means `<root>/<name>/SKILL.md`, one level deep, for
-Devin's own roots, the shared `.agents/skills` and Windsurf's. Devin's import
-reference documents Claude Code's and Copilot's skill imports as
-`**/SKILL.md`, so those two are walked recursively.
+every skill root. Devin's import reference writes Claude Code's and Copilot's
+skill imports as `**/SKILL.md`, but the 3000.11.3 binary's `devin skills list`
+offers no skill nested a folder deeper under `.claude/skills`,
+`~/.claude/skills`, `.github/skills` or `~/.copilot/skills`, and from a nested
+package it lists the ancestor repository's `.claude/skills` and
+`.github/skills` beside the package's own. Both imports are therefore read one
+level deep in every project layer, like Devin's own roots. A running signed-in
+session was not observed, so this rests on the CLI's own listing.
 
 ### Not there
 

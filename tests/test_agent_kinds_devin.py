@@ -350,10 +350,13 @@ def test_an_agent_plugins_manifest_of_an_unrecognized_version_is_a_parsed_source
 
 
 def test_nested_skills_devin_does_not_load_are_not_source_units(tmp_path):
+    """Neither Devin's own roots nor the Claude and Copilot imports load a
+    skill nested a folder deeper (the binary's `devin skills list`)."""
     _skill(tmp_path / ".devin" / "skills" / "group" / "nested")
     _skill(tmp_path / ".claude" / "skills" / "group" / "nested")
+    _skill(tmp_path / ".github" / "skills" / "group" / "nested")
 
-    assert _counts(tmp_path) == (1, 0)
+    assert _counts(tmp_path) == (0, 0)
 
 
 # --- Posture through the kind's own surfaces -----------------------------------------

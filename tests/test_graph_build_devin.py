@@ -301,13 +301,20 @@ def test_native_skill_roots_are_one_level_deep(tmp_path):
     assert _names(_declared(tmp_path), "skill") == ["devin-skill", "legacy-skill", "shared-skill"]
 
 
-def test_claude_and_copilot_skill_imports_are_recursive(tmp_path):
+def test_claude_and_copilot_skill_imports_are_one_level_deep(tmp_path):
+    """Devin's import reference writes these as `**/SKILL.md`, but the
+    3000.11.3 binary's `devin skills list` offers only `<root>/<name>/SKILL.md`
+    under `.claude/skills`, `.github/skills` and their home counterparts, as
+    under its own roots: a skill nested a folder deeper is not loaded. This
+    replaces the earlier test that followed the docs and expected recursion."""
+    _skill(tmp_path / ".claude" / "skills" / "flat", "flat")
+    _skill(tmp_path / ".github" / "skills" / "tool", "tool")
     _skill(tmp_path / ".claude" / "skills" / "group" / "deep", "deep")
-    _skill(tmp_path / ".github" / "skills" / "team" / "tool", "tool")
+    _skill(tmp_path / ".github" / "skills" / "team" / "nested", "nested")
     # A `SKILL.md` directly in `skills/` names no skill directory.
     _skill(tmp_path / ".claude" / "skills", "loose")
 
-    assert _names(_declared(tmp_path), "skill") == ["deep", "tool"]
+    assert _names(_declared(tmp_path), "skill") == ["flat", "tool"]
 
 
 def test_skill_roots_at_any_depth_compose(tmp_path):
@@ -920,10 +927,14 @@ def test_installed_skill_roots(tmp_path):
     _skill(home / ".config" / "cognition" / "skills" / "legacy-skill", "legacy-skill")
     _skill(home / ".agents" / "skills" / "shared-skill", "shared-skill")
     _skill(home / ".codeium" / "windsurf" / "skills" / "ws-skill", "ws-skill")
-    _skill(home / ".copilot" / "skills" / "team" / "copilot-skill", "copilot-skill")
+    _skill(home / ".copilot" / "skills" / "copilot-skill", "copilot-skill")
     _skill(home / ".claude" / "skills" / "claude-user-skill", "claude-user-skill")
     _skill(project / ".devin" / "skills" / "project-skill", "project-skill")
     _skill(project / ".claude" / "skills" / "claude-skill", "claude-skill")
+    # One level deep, as the binary lists them: none of these is loaded.
+    _skill(home / ".copilot" / "skills" / "team" / "nested-copilot", "nested-copilot")
+    _skill(home / ".claude" / "skills" / "group" / "nested-claude", "nested-claude")
+    _skill(project / ".github" / "skills" / "team" / "nested-github", "nested-github")
 
     assert _names(_installed(tmp_path, project), "skill") == [
         "claude-skill",
@@ -1083,6 +1094,23 @@ def test_installed_reads_every_devin_layer_up_to_the_repository_root(tmp_path):
     assert "repo-agent" in _names(graph, "agent")
     keys = [key for key in graph.nodes if key != graph.root.key]
     assert not [key for key in keys if str(tmp_path) in key]
+
+
+def test_installed_reads_claude_and_copilot_skills_in_every_project_layer(tmp_path):
+    """Run from a nested package, the 3000.11.3 binary lists the ancestor
+    repository's `.claude/skills` and `.github/skills` beside the package's
+    own: the imports walk the same layers as Devin's own roots."""
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _skill(app / ".claude" / "skills" / "app-claude", "app-claude")
+    _skill(repo / ".claude" / "skills" / "repo-claude", "repo-claude")
+    _skill(repo / ".github" / "skills" / "repo-github", "repo-github")
+
+    assert _names(_installed(tmp_path, app), "skill") == [
+        "app-claude",
+        "repo-claude",
+        "repo-github",
+    ]
 
 
 def test_a_nested_devin_layer_wins_over_its_ancestor_by_name(tmp_path):

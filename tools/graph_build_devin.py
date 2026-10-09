@@ -64,8 +64,10 @@ from tools.repo_surface import DEVIN_AGENT_DIRECTORY_FILENAMES, DEVIN_PLUGIN_NAM
 _NATIVE_SKILL_DIRS = frozenset({".devin", ".cognition", ".agents"})
 # Windsurf's project skills are documented one level deep as well.
 _WINDSURF_SKILL_DIR = ".windsurf"
-# Claude Code's and Copilot's skill imports are documented as `**/SKILL.md`.
-_RECURSIVE_SKILL_IMPORTS = {".claude": IMPORT_CLAUDE, ".github": IMPORT_COPILOT}
+# Claude Code's and Copilot's skill imports. Documented as `**/SKILL.md`, but
+# the 3000.11.3 binary's `devin skills list` offers only `<root>/<name>/SKILL.md`
+# here, as under its own roots, and walks them through every project layer.
+_IMPORTED_SKILL_DIRS = {".claude": IMPORT_CLAUDE, ".github": IMPORT_COPILOT}
 # Subagent roots: `.devin/agents/` and the shared `.agents/agents/` (ADR-0072).
 _AGENT_DIRS = frozenset({".devin", ".agents"})
 # A directory-form subagent's file, in Devin's documented precedence. The
@@ -227,12 +229,8 @@ def _declared_skill_gate(parts: tuple[str, ...]) -> tuple[int, str | None] | Non
             return len(parts) - 4, None
         if parts[-4] == _WINDSURF_SKILL_DIR:
             return len(parts) - 4, IMPORT_WINDSURF
-    # At least one directory between `skills/` and `SKILL.md`, as every other
-    # skill root requires.
-    for index in range(len(parts) - 4, -1, -1):
-        tool = _RECURSIVE_SKILL_IMPORTS.get(parts[index])
-        if tool is not None and parts[index + 1] == "skills":
-            return index, tool
+        if parts[-4] in _IMPORTED_SKILL_DIRS:
+            return len(parts) - 4, _IMPORTED_SKILL_DIRS[parts[-4]]
     return None
 
 
@@ -526,40 +524,39 @@ def _add_installed_skills(
     on,
     normalize,
 ) -> None:
-    """Every skill root, project first. Devin's own roots are read in every
-    project layer, nearest first; imports from the project itself. Devin's
-    own root precedes the legacy `cognition` one, so when the legacy path is
-    the symlink the rename left behind, the skill keys under Devin's own
-    label."""
-    roots: list[tuple[Path, bool, str | None]] = [
-        (layer / name / "skills", False, None)
+    """Every skill root, project first, each `<root>/<name>/SKILL.md`. Devin's
+    own roots and the Claude Code and Copilot imports are read in every
+    project layer, nearest first, as the binary lists them; Windsurf's from
+    the project itself. Devin's own root precedes the legacy `cognition` one,
+    so when the legacy path is the symlink the rename left behind, the skill
+    keys under Devin's own label."""
+    roots: list[tuple[Path, str | None]] = [
+        (layer / name / "skills", None)
         for layer in layers
         for name in (".devin", ".cognition", ".agents")
     ]
     if project is not None:
-        roots += [
-            (project / ".windsurf" / "skills", False, IMPORT_WINDSURF),
-            (project / ".claude" / "skills", True, IMPORT_CLAUDE),
-            (project / ".github" / "skills", True, IMPORT_COPILOT),
-        ]
+        roots.append((project / ".windsurf" / "skills", IMPORT_WINDSURF))
     roots += [
-        (config_root / "skills", False, None),
-        (legacy_config_root / "skills", False, None),
-        (home / ".agents" / "skills", False, None),
-        (home / ".claude" / "skills", True, IMPORT_CLAUDE),
-        (home / ".codeium" / _WINDSURF_CHANNEL / "skills", False, IMPORT_WINDSURF),
-        (home / ".copilot" / "skills", True, IMPORT_COPILOT),
+        (layer / name / "skills", gate)
+        for layer in layers
+        for name, gate in _IMPORTED_SKILL_DIRS.items()
+    ]
+    roots += [
+        (config_root / "skills", None),
+        (legacy_config_root / "skills", None),
+        (home / ".agents" / "skills", None),
+        (home / ".claude" / "skills", IMPORT_CLAUDE),
+        (home / ".codeium" / _WINDSURF_CHANNEL / "skills", IMPORT_WINDSURF),
+        (home / ".copilot" / "skills", IMPORT_COPILOT),
     ]
     seen: set[Path] = set()
-    for skills_dir, recursive, gate in roots:
+    for skills_dir, gate in roots:
         if gate is not None and not on(gate):
             continue
         if not skills_dir.is_dir():
             continue
-        skill_files = (
-            _recursive_skill_files(skills_dir) if recursive else _skill_files(graph, skills_dir)
-        )
-        for skill_md in skill_files:
+        for skill_md in _skill_files(graph, skills_dir):
             _add_skill(graph, root, skill_md, normalize, seen, project_root=project, stamp=True)
 
 
@@ -575,10 +572,6 @@ def _skill_files(graph: Graph, skills_dir: Path) -> list[Path]:
         for child in children
         if not child.name.startswith(".") and child.is_dir() and (child / "SKILL.md").is_file()
     ]
-
-
-def _recursive_skill_files(skills_dir: Path) -> list[Path]:
-    return [path for path in iter_unignored_files(skills_dir, None) if path.name == "SKILL.md"]
 
 
 def _add_store_plugins(graph: Graph, root: Node, data_root: Path, normalize) -> None:

@@ -433,6 +433,51 @@ def test_the_devin_manifest_wins_over_a_claude_manifest_in_one_root(tmp_path):
     assert _names(_declared(tmp_path), "plugin") == ["devin-name"]
 
 
+def test_a_devin_plugin_name_outside_devins_grammar_does_not_qualify(tmp_path):
+    """Devin requires lowercase alphanumerics separated by a single `-` or
+    `.`; a name outside that grammar is one Devin itself would reject, so the
+    `.devin-plugin` manifest must not qualify and the Claude-shaped fallback
+    manifest in the same root wins instead."""
+    _write_json(tmp_path / "p" / ".devin-plugin" / "plugin.json", {"name": "Bad_Name"})
+    _write_json(tmp_path / "p" / ".claude-plugin" / "plugin.json", {"name": "claude-name"})
+
+    assert _names(_declared(tmp_path), "plugin") == ["claude-name"]
+
+
+def test_a_devin_plugin_has_no_commands_surface(tmp_path):
+    """Devin generates `/<plugin>:<skill>` slash commands from skills; it has
+    no `commands/` directory. A plugin that happens to ship one anyway (a
+    fixture, an unrelated folder) must not have its contents reported as
+    command components."""
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p"})
+    _write(plugin / "commands" / "unrelated.md", "---\ndescription: not a command\n---\nx\n")
+
+    assert _refs(_declared(tmp_path), "command") == []
+
+
+def test_a_devin_plugin_directory_form_agent_is_named_for_its_directory(tmp_path):
+    """`agents/<name>/AGENT.md` is Devin's directory-form subagent, named for
+    its directory, not parsed as a flat file named `AGENT` -- the same rule
+    `_add_agents_dir` already applies to a native (non-plugin) `agents/`."""
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p"})
+    _write(plugin / "agents" / "reviewer" / "AGENT.md", "Review.\n")
+
+    assert _names(_declared(tmp_path), "agent") == ["reviewer"]
+
+
+def test_a_devin_plugin_directory_form_agent_honors_filename_precedence(tmp_path):
+    """`AGENT.md` wins over `AGENTS.md` in the same directory."""
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p"})
+    agent_dir = plugin / "agents" / "reviewer"
+    _write(agent_dir / "AGENT.md", "Primary.\n")
+    _write(agent_dir / "AGENTS.md", "Fallback.\n")
+
+    assert len(_refs(_declared(tmp_path), "agent")) == 1
+
+
 # --- Installed --------------------------------------------------------------------
 
 

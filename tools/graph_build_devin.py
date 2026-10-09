@@ -25,7 +25,6 @@ module resolves the roots and passes them in.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,7 +58,7 @@ from tools.parsers.devin_config import (
     ImportSwitches,
 )
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
-from tools.repo_surface import DEVIN_SURFACE
+from tools.repo_surface import DEVIN_AGENT_DIRECTORY_FILENAMES, DEVIN_PLUGIN_NAME, DEVIN_SURFACE
 
 # Devin's own and the shared skill roots: `<root>/<name>/SKILL.md`, one level.
 _NATIVE_SKILL_DIRS = frozenset({".devin", ".cognition", ".agents"})
@@ -69,8 +68,10 @@ _WINDSURF_SKILL_DIR = ".windsurf"
 _RECURSIVE_SKILL_IMPORTS = {".claude": IMPORT_CLAUDE, ".github": IMPORT_COPILOT}
 # Subagent roots: `.devin/agents/` and the shared `.agents/agents/` (ADR-0072).
 _AGENT_DIRS = frozenset({".devin", ".agents"})
-# A directory-form subagent's file, in Devin's documented precedence.
-_AGENT_FILENAMES = ("AGENT.md", "AGENTS.md", "agent.md", "agents.md")
+# A directory-form subagent's file, in Devin's documented precedence. The
+# canonical copy lives in `tools/repo_surface.py`, shared with the plugin
+# bundled-agent walk.
+_AGENT_FILENAMES = DEVIN_AGENT_DIRECTORY_FILENAMES
 # Only the stable Windsurf channel is read (spec: "Out of the first pass").
 _WINDSURF_CHANNEL = "windsurf"
 
@@ -80,8 +81,10 @@ _USER, _PROJECT, _LOCAL = 0, 1, 2
 # Devin's documented plugin-name rule: lowercase alphanumerics separated by a
 # single `-` or `.`. Used to accept a store lockfile entry's name, so an
 # identity of an unverified shape (`owner/repo`, a URL) can never reach a
-# `component_identity`, where two `/` would mint a cross-BOM identity.
-_PLUGIN_NAME = re.compile(r"^[a-z0-9]+(?:[-.][a-z0-9]+)*$")
+# `component_identity`, where two `/` would mint a cross-BOM identity. The
+# canonical copy lives in `tools/repo_surface.py`, shared with the declared
+# manifest's own qualification test.
+_PLUGIN_NAME = DEVIN_PLUGIN_NAME
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ this module) and never `tools.agent_kinds` (ADR-0044's one-way dependency).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,8 +58,16 @@ class BundledLayout:
     skills_dir: str
     mcp_filenames: tuple[str, ...]
     hooks_filename: str
-    commands_dir: str
+    # `None` when the kind has no commands surface at all (Devin: slash
+    # commands are generated from skills, never read from a directory), as
+    # opposed to a `str` default subdir that simply may not exist on disk.
+    commands_dir: str | None
     agents_dir: str
+    # Directory-form subagent filenames, tried in this precedence order, for
+    # a kind whose `agents_dir` holds `<name>/<filename>` profiles (Devin:
+    # `agents/<name>/AGENT.md`) alongside flat `<name>.md` files. Empty for a
+    # kind that is flat-only (Cursor, Claude Code, Codex).
+    agent_directory_filenames: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -323,14 +332,40 @@ CODEX_SURFACE = RepoSurface(
 )
 
 
-# Devin CLI's own plugin format, `.devin-plugin/plugin.json`. "Only `name` is
-# required" (Devin's plugin docs), so qualification is the named-manifest test
-# Cursor's and Codex's native formats use, and the manifest is the shape
-# `claude_plugin.parse` already reads.
+# Devin's documented plugin-name rule: lowercase alphanumerics separated by a
+# single `-` or `.`. The canonical copy — `graph_build_devin.py` imports this
+# one rather than keeping its own, so the grammar used to accept a store
+# lockfile entry and the grammar used to qualify a declared manifest can never
+# drift apart.
+DEVIN_PLUGIN_NAME = re.compile(r"^[a-z0-9]+(?:[-.][a-z0-9]+)*$")
+
+# A directory-form subagent's file, in Devin's documented precedence
+# (`docs/specs/devin-cli-agent-kind.md`). The canonical copy, imported by
+# `graph_build_devin.py` for native composition and used below for a
+# plugin's bundled `agents/` directory.
+DEVIN_AGENT_DIRECTORY_FILENAMES: tuple[str, ...] = (
+    "AGENT.md",
+    "AGENTS.md",
+    "agent.md",
+    "agents.md",
+)
+
+
+def _detect_devin_plugin_manifest(data: dict) -> bool:
+    """Only `name` is required (Devin's plugin docs), but Devin itself
+    rejects a name outside its own grammar — the same one `_store_plugin_name`
+    enforces for a lockfile entry — so a manifest Devin would not load must
+    not qualify here either."""
+    name = data.get("name")
+    return isinstance(name, str) and DEVIN_PLUGIN_NAME.fullmatch(name) is not None
+
+
+# Devin CLI's own plugin format, `.devin-plugin/plugin.json`. The manifest is
+# the shape `claude_plugin.parse` already reads.
 _DEVIN_PLUGIN_FORMAT = PluginFormat(
     manifest_dir=".devin-plugin",
     manifest_filename="plugin.json",
-    detect=_detect_named_plugin_manifest,
+    detect=_detect_devin_plugin_manifest,
     parse=claude_plugin.parse,
 )
 
@@ -347,13 +382,17 @@ DEVIN_SURFACE = RepoSurface(
     ),
     # Devin's plugin layout: `skills/`, `agents/`, a root `hooks.json` and a
     # root `.mcp.json`. The Agent Plugins format's root `mcp.json` is read by
-    # that format's own parser, not through this layout.
+    # that format's own parser, not through this layout. No `commands/`:
+    # Devin generates `/<plugin>:<skill>` slash commands from skills, it does
+    # not read a commands directory, so representing one here would report a
+    # component from an unrelated `commands/` folder a plugin happens to ship.
     bundled=BundledLayout(
         skills_dir="skills",
         mcp_filenames=(".mcp.json",),
         hooks_filename="hooks.json",
-        commands_dir="commands",
+        commands_dir=None,
         agents_dir="agents",
+        agent_directory_filenames=DEVIN_AGENT_DIRECTORY_FILENAMES,
     ),
     # Devin's repo surfaces are walked by `tools/graph_build_devin.py`, not
     # through the `config_dir`-shaped helpers, so the fields below that only

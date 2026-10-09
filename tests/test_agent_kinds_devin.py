@@ -68,11 +68,15 @@ def test_skill_roots_devin_reads_natively_are_evidence(tmp_path, root):
         ".claude-plugin/plugin.json",
         "AGENTS.md",
         ".devin/rules/style.md",
+        ".devin/agents/notes.txt",
+        ".agents/agents/example/config.json",
     ],
 )
 def test_composition_only_files_are_not_evidence(tmp_path, rel):
     """Gitignored local layers are incidental, imported files belong to
-    another runtime, and instruction files are not configuration."""
+    another runtime, instruction files are not configuration, and a file
+    under `agents/` that composition does not load (wrong extension, or a
+    directory-form profile under the wrong filename) is not evidence either."""
     content = json.dumps({"name": "p"}) if rel.endswith("plugin.json") else "{}"
     _write(tmp_path / rel, content)
 

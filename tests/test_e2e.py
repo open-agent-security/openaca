@@ -2174,3 +2174,29 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
     assert refs and not [r for r in refs if str(tmp_path) in r]
     assert any(r.startswith("home/.claude.json#") for r in refs)
     assert any(r.startswith("devin-cli/mcp_config.json#") for r in refs)
+
+
+def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
+    """A Devin skill granting `exec` is flagged executable by posture
+    (`skill_capability`) and must also carry `shell_exec` in its BOM
+    capability list, or the inventory and the posture finding disagree about
+    the same skill's access -- the gap the devin-cli-agent-kind PR itself
+    flagged as a follow-up (`capability_extract` had no `exec` entry).
+    """
+    from tools.bom_cli import main as bom_main
+
+    (tmp_path / ".devin" / "skills" / "release").mkdir(parents=True)
+    (tmp_path / ".devin" / "skills" / "release" / "SKILL.md").write_text(
+        "---\nname: release\nallowed-tools:\n  - exec\n---\nShip.\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(bom_main, ["repo", "--target", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output)
+
+    skill = next(
+        c for c in doc["components"] if _props_by_name(c).get("openaca:component_type") == "skill"
+    )
+    caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
+    assert {c["name"] for c in caps} == {"shell_exec"}

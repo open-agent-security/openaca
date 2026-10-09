@@ -39,12 +39,19 @@ ROOT_LABEL = "devin-cli"
 #     `.github/skills` load is unknown to a repo scan.
 COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
 
+# Mirrors `_AGENT_FILENAMES` in graph_build_devin.py — the directory-form
+# filenames composition actually loads. Keep the two in sync.
+_AGENT_DIRECTORY_FILENAMES: tuple[str, ...] = ("AGENT.md", "AGENTS.md", "agent.md", "agents.md")
+
 # Devin-owned surfaces, plus the two shared `.agents/` directories it reads
 # (ADR-0058, ADR-0072). Everything Devin imports from another runtime is
 # composition, never evidence: a tree holding only `.claude/skills/` declares a
 # Claude Code agent. The gitignored `.devin/*.local.json` files are
 # composition too — their presence in a tree is incidental. Instruction files
-# (`AGENTS.md`, `.devin/rules/`) are not configuration.
+# (`AGENTS.md`, `.devin/rules/`) are not configuration. The `agents/` globs
+# are narrowed to the flat `*.md` and directory-form filenames composition
+# loads (`_is_flat_agent`/`_is_directory_agent`) — an unrelated file such as
+# `agents/notes.txt` loads nothing and must not count as evidence.
 _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = tuple(
     pattern
     for owned in (
@@ -53,10 +60,12 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = tuple(
         ".devin/hooks.v1.json",
         ".devin/skills/*/SKILL.md",
         ".cognition/skills/*/SKILL.md",
-        ".devin/agents/*",
+        ".devin/agents/*.md",
+        *(f".devin/agents/*/{name}" for name in _AGENT_DIRECTORY_FILENAMES),
         ".devin-plugin/plugin.json",
         ".agents/skills/*/SKILL.md",
-        ".agents/agents/*",
+        ".agents/agents/*.md",
+        *(f".agents/agents/*/{name}" for name in _AGENT_DIRECTORY_FILENAMES),
     )
     for pattern in (owned, f"*/{owned}")
 )

@@ -86,7 +86,7 @@ class Capability:
 
 
 def capabilities_for_ref(
-    ref: ComponentRef, corpus: CapabilityCorpus
+    ref: ComponentRef, corpus: CapabilityCorpus, *, agent_kind: str | None = None
 ) -> tuple[list[Capability], str]:
     # Function-local imports break the import cycle: capability_extract already
     # imports Capability from this module, so importing it at module top would
@@ -95,7 +95,7 @@ def capabilities_for_ref(
     from tools.identity import canonical_component_identity
 
     identity = canonical_component_identity(ref)
-    declared, declared_covered = declared_capabilities(ref)
+    declared, declared_covered = declared_capabilities(ref, agent_kind=agent_kind)
     curated = corpus.lookup(identity or "")
 
     merged: dict[tuple[str, str], Capability] = {}

@@ -339,19 +339,25 @@ def _parse_bundled_command_agents(
     plugin_name: str,
     *,
     warnings: list[str] | None = None,
-    commands_dir: str = "commands",
+    commands_dir: str | None = "commands",
     agents_dir: str = "agents",
+    agent_directory_filenames: tuple[str, ...] = (),
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     try:
         plugin_root_resolved = plugin_root.resolve()
     except (OSError, RuntimeError):
         return refs
-    surfaces: tuple[tuple[Kind, str, str], ...] = (
-        ("command", commands_dir, "commands"),
-        ("agent", agents_dir, "agents"),
+    # `commands_dir=None` means the kind has no commands surface at all
+    # (Devin) — that entry is skipped rather than resolved, so an unrelated
+    # `commands/` folder a plugin happens to ship is never read as one.
+    surfaces: tuple[tuple[Kind, str | None, str, tuple[str, ...]], ...] = (
+        ("command", commands_dir, "commands", ()),
+        ("agent", agents_dir, "agents", agent_directory_filenames),
     )
-    for kind, default_subdir, plugin_key in surfaces:
+    for kind, default_subdir, plugin_key, directory_form_filenames in surfaces:
+        if default_subdir is None:
+            continue
         dirs: list[Path] = []
         default_dir = resolve_within(plugin_root, default_subdir)
         if default_dir is not None and default_dir.is_dir():
@@ -374,9 +380,39 @@ def _parse_bundled_command_agents(
                     plugin_name=plugin_name,
                     plugin_root_resolved=plugin_root_resolved,
                     warnings=warnings,
+                    directory_form_filenames=directory_form_filenames,
                 )
             )
     return refs
+
+
+def _parse_bundled_command_agent_file(
+    child: Path,
+    *,
+    kind: Kind,
+    plugin_name: str,
+    plugin_root_resolved: Path,
+    warnings: list[str] | None,
+    name_fallback: str | None = None,
+) -> list[ComponentRef]:
+    try:
+        child_resolved = child.resolve()
+    except (OSError, RuntimeError):
+        return []
+    if not child_resolved.is_relative_to(plugin_root_resolved):
+        return []
+    try:
+        return claude_command_agent.parse_file(
+            child,
+            kind=kind,
+            scope_owner=plugin_name,
+            strict=warnings is not None and kind == "agent",
+            name_fallback=name_fallback,
+        )
+    except Exception as exc:
+        if warnings is not None:
+            record_gap(warnings, f"could not parse agent definition {child}: {exc}")
+        return []
 
 
 def _enumerate_bundled_command_agent_dir(
@@ -386,29 +422,57 @@ def _enumerate_bundled_command_agent_dir(
     plugin_name: str,
     plugin_root_resolved: Path,
     warnings: list[str] | None = None,
+    directory_form_filenames: tuple[str, ...] = (),
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
-    try:
-        children = sorted(directory.rglob("*.md"))
-    except OSError:
-        return refs
-    for child in children:
+    if not directory_form_filenames:
         try:
-            child_resolved = child.resolve()
-        except (OSError, RuntimeError):
-            continue
-        if not child_resolved.is_relative_to(plugin_root_resolved):
-            continue
-        try:
+            children = sorted(directory.rglob("*.md"))
+        except OSError:
+            return refs
+        for child in children:
             refs.extend(
-                claude_command_agent.parse_file(
+                _parse_bundled_command_agent_file(
                     child,
                     kind=kind,
-                    scope_owner=plugin_name,
-                    strict=warnings is not None and kind == "agent",
+                    plugin_name=plugin_name,
+                    plugin_root_resolved=plugin_root_resolved,
+                    warnings=warnings,
                 )
             )
-        except Exception as exc:
-            if warnings is not None:
-                record_gap(warnings, f"could not parse agent definition {child}: {exc}")
+        return refs
+    # A flat `<name>.md` or a `<name>/<filename>` profile, in the caller's
+    # documented precedence (Devin: `agents/<name>/AGENT.md`, named for its
+    # directory, not for `AGENT` — mirrors `_add_agents_dir` in
+    # `graph_build_devin.py`, the same rule for native (non-plugin) agents.
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError:
+        return refs
+    for entry in entries:
+        if entry.is_file() and entry.suffix == ".md":
+            refs.extend(
+                _parse_bundled_command_agent_file(
+                    entry,
+                    kind=kind,
+                    plugin_name=plugin_name,
+                    plugin_root_resolved=plugin_root_resolved,
+                    warnings=warnings,
+                )
+            )
+        elif entry.is_dir():
+            for filename in directory_form_filenames:
+                candidate = entry / filename
+                if candidate.is_file():
+                    refs.extend(
+                        _parse_bundled_command_agent_file(
+                            candidate,
+                            kind=kind,
+                            plugin_name=plugin_name,
+                            plugin_root_resolved=plugin_root_resolved,
+                            warnings=warnings,
+                            name_fallback=entry.name,
+                        )
+                    )
+                    break
     return refs

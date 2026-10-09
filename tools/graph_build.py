@@ -2086,6 +2086,7 @@ def _add_bundled_plugin_surfaces(
             warnings=graph.warnings,
             commands_dir=surface.bundled.commands_dir,
             agents_dir=surface.bundled.agents_dir,
+            agent_directory_filenames=surface.bundled.agent_directory_filenames,
         )
     )
     refs = [r for r in refs if _component_type(r) != "skill"]

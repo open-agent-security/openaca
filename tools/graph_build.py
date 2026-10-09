@@ -2120,6 +2120,11 @@ def _add_bundled_plugin_surfaces(
                 usable=lambda path: not _is_ignored_under(path, eval_root, spec),
             )
         )
+        refs.extend(
+            devin_config.plugin_required_refs(
+                plugin_data, manifest_path=plugin_manifest_path, record_gap=graph.record_gap
+            )
+        )
     else:
         manifest_refs = _parse_manifest_refs(
             plugin_data,

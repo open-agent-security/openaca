@@ -21,7 +21,8 @@ REMEDIATION = (
     "normal code-review/change-control."
 )
 
-EXECUTABLE_TOOLS = {"bash", "shell"}
+# `exec` is Devin CLI's shell tool (docs/specs/devin-cli-agent-kind.md, Posture).
+EXECUTABLE_TOOLS = {"bash", "shell", "exec"}
 
 _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 

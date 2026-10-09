@@ -80,3 +80,37 @@ def test_skill_capability_reports_posture_metadata(tmp_path: Path) -> None:
     }
     assert finding.evidence["allowed_tools"] == ["Bash"]
     assert finding.declared_by == {"kind": "manifest", "path": str(skill_md)}
+
+
+def test_skill_capability_detects_devin_exec_tool(tmp_path: Path) -> None:
+    """Devin CLI's shell tool is `exec`, and a skill's `allowed-tools` entry
+    auto-approves it for the skill's run (docs/specs/devin-cli-agent-kind.md,
+    Posture). The YAML-list form is the one Devin's own examples use."""
+    skill_dir = tmp_path / "review"
+    skill_dir.mkdir()
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text(
+        "---\nname: review\nallowed-tools:\n  - read\n  - grep\n  - exec\n---\nReview.\n",
+        encoding="utf-8",
+    )
+
+    findings = check_skill_executable_tools(parse(skill_md), agent_kind="devin-cli")
+
+    assert len(findings) == 1
+    assert findings[0].evidence["allowed_tools"] == ["exec"]
+    assert findings[0].active_in == ["devin-cli"]
+
+
+def test_skill_capability_detects_scoped_devin_exec_tool(tmp_path: Path) -> None:
+    refs = parse(_write_skill(tmp_path, "git-helper", "read Exec(git status)"))
+
+    findings = check_skill_executable_tools(refs)
+
+    assert len(findings) == 1
+    assert findings[0].evidence["allowed_tools"] == ["Exec(git status)"]
+
+
+def test_skill_capability_ignores_devin_read_only_tools(tmp_path: Path) -> None:
+    refs = parse(_write_skill(tmp_path, "reader", "read grep glob edit"))
+
+    assert check_skill_executable_tools(refs) == []

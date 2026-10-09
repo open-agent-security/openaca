@@ -6,6 +6,8 @@ Two input shapes wrap the same inner format:
   `{"description": "...", "hooks": {<EventName>: [<entry>, ...]}}`
 - **Settings format** inside a `settings.json` (any scope):
   `{<EventName>: [<entry>, ...]}` (the value of the `hooks` key)
+- **Whole-file format**, Devin CLI's `.devin/hooks.v1.json`: the same event
+  map, but as the entire file rather than under a `hooks` key
 
 Each array entry is a matcher group, `{"matcher": "..."?, "hooks": [<handler>, ...]}`;
 a handler is `{"type": "command"|"prompt", "command": "...", ...}`. A group with
@@ -28,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 from tools.component_ref import ComponentRef
+from tools.parsers import jsonc
 
 
 def parse_plugin_hooks(
@@ -105,6 +108,33 @@ def parse_standalone_hooks(
     return _walk_events(hooks_block, source_manifest=str(hooks_json_path), scope=scope)
 
 
+def parse_whole_file_hooks(
+    hooks_path: Path, *, scope: Optional[str] = None, strict: bool = False
+) -> list[ComponentRef]:
+    """Walk a hooks file whose envelope is the whole file.
+
+    Devin CLI's `.devin/hooks.v1.json` holds the event map at its root, with
+    Claude Code's event vocabulary and matcher groups, so only the entry point
+    differs from `parse_standalone_hooks`. Read as JSON with comments, the
+    format of every Devin configuration file. A Claude-style `{"hooks": {...}}`
+    wrapper is not this format: its `hooks` key is not an event array, so
+    strict mode rejects it rather than reading a different file's shape.
+    """
+    try:
+        data = jsonc.load_path(hooks_path)
+    except (OSError, UnicodeDecodeError, ValueError):
+        if strict:
+            raise
+        return []
+    if not isinstance(data, dict):
+        if strict:
+            raise ValueError("hooks file must contain an object")
+        return []
+    if strict:
+        _validate_hook_events(data, "hook")
+    return _walk_events(data, source_manifest=str(hooks_path), scope=scope, locator_prefix="$")
+
+
 def parse_plugin_hooks_inline(
     hooks_block: dict, plugin_name: str, source_manifest: str, *, strict: bool = False
 ) -> list[ComponentRef]:
@@ -175,6 +205,7 @@ def _walk_events(
     hooks_block: dict,
     source_manifest: str,
     scope: Optional[str],
+    locator_prefix: str = "$.hooks",
 ) -> list[ComponentRef]:
     """Each event's array holds matcher groups, not handlers directly:
     `{"matcher": "...", "hooks": [<handler>, ...]}` (verified against
@@ -206,7 +237,7 @@ def _walk_events(
                             matcher=matcher,
                             scope=scope,
                             source_manifest=source_manifest,
-                            source_locator=f"$.hooks.{event}[{group_index}].hooks[{index}]",
+                            source_locator=f"{locator_prefix}.{event}[{group_index}].hooks[{index}]",
                         )
                     )
             else:
@@ -218,7 +249,7 @@ def _walk_events(
                         matcher=matcher,
                         scope=scope,
                         source_manifest=source_manifest,
-                        source_locator=f"$.hooks.{event}[{group_index}]",
+                        source_locator=f"{locator_prefix}.{event}[{group_index}]",
                     )
                 )
     return refs

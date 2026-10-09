@@ -531,35 +531,37 @@ def _add_installed_skills(
     project layer, nearest first, as the binary lists them; Windsurf's from
     the project itself. Devin's own root precedes the legacy `cognition` one,
     so when the legacy path is the symlink the rename left behind, the skill
-    keys under Devin's own label."""
-    roots: list[tuple[Path, str | None]] = [
-        (layer / name / "skills", None)
+    keys under Devin's own label. Each root carries the project directory that
+    owns it, whose `skills-lock.json` records its skills' provenance: a skill
+    in an ancestor layer was installed into that layer, not the nested one."""
+    roots: list[tuple[Path, str | None, Path | None]] = [
+        (layer / name / "skills", None, layer)
         for layer in layers
         for name in (".devin", ".cognition", ".agents")
     ]
     if project is not None:
-        roots.append((project / ".windsurf" / "skills", IMPORT_WINDSURF))
+        roots.append((project / ".windsurf" / "skills", IMPORT_WINDSURF, project))
     roots += [
-        (layer / name / "skills", gate)
+        (layer / name / "skills", gate, layer)
         for layer in layers
         for name, gate in _IMPORTED_SKILL_DIRS.items()
     ]
     roots += [
-        (config_root / "skills", None),
-        (legacy_config_root / "skills", None),
-        (home / ".agents" / "skills", None),
-        (home / ".claude" / "skills", IMPORT_CLAUDE),
-        (home / ".codeium" / _WINDSURF_CHANNEL / "skills", IMPORT_WINDSURF),
-        (home / ".copilot" / "skills", IMPORT_COPILOT),
+        (config_root / "skills", None, project),
+        (legacy_config_root / "skills", None, project),
+        (home / ".agents" / "skills", None, project),
+        (home / ".claude" / "skills", IMPORT_CLAUDE, project),
+        (home / ".codeium" / _WINDSURF_CHANNEL / "skills", IMPORT_WINDSURF, project),
+        (home / ".copilot" / "skills", IMPORT_COPILOT, project),
     ]
     seen: set[Path] = set()
-    for skills_dir, gate in roots:
+    for skills_dir, gate, owner in roots:
         if gate is not None and not on(gate):
             continue
         if not skills_dir.is_dir():
             continue
         for skill_md in _skill_files(graph, skills_dir):
-            _add_skill(graph, root, skill_md, normalize, seen, project_root=project, stamp=True)
+            _add_skill(graph, root, skill_md, normalize, seen, project_root=owner, stamp=True)
 
 
 def _skill_files(graph: Graph, skills_dir: Path) -> list[Path]:

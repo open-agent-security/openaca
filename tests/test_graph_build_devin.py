@@ -589,6 +589,36 @@ def test_a_devin_plugin_skills_string_still_replaces_the_default(tmp_path):
 # dropped unsafe paths, an invalid field disabling only MCP, first source wins.
 
 
+def test_a_disabled_server_in_an_earlier_plugin_mcp_source_shadows_a_later_one(tmp_path):
+    """First source wins by server name, and a disabled entry still names its
+    server: Devin merges by name and then skips the disabled one, so a later
+    source cannot bring it back. The same order holds between config levels,
+    where the 3000.11.3 binary lists a project `"disabled": true` entry over a
+    user definition of the same name."""
+    disabled = {"command": "npx", "args": ["-y", "pkg-mcp@1.0.0"], "disabled": True}
+    devin = tmp_path / "devin"
+    _write_json(
+        devin / ".devin-plugin" / "plugin.json", {"name": "devin", "mcpServers": ["a.json"]}
+    )
+    _write_json(devin / "a.json", {"mcpServers": {"shared": disabled}})
+    _write_json(devin / ".mcp.json", {"mcpServers": {"shared": _server(), "solo": _server()}})
+    portable = tmp_path / "portable"
+    _write_json(
+        portable / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "portable",
+        },
+    )
+    _write_json(portable / ".mcp.json", {"mcpServers": {"shared": disabled}})
+    _write_json(portable / "mcp.json", {"mcpServers": {"shared": _server(), "plain": _server()}})
+
+    assert _mcp(_declared(tmp_path)) == [
+        ("plain", "portable/mcp.json"),
+        ("solo", "devin/.mcp.json"),
+    ]
+
+
 def _mcp_plugin(tmp_path: Path, servers: object) -> Path:
     plugin = tmp_path / "p"
     manifest: dict = {"name": "p"}

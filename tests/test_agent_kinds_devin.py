@@ -321,3 +321,46 @@ def test_a_declared_scan_reports_both_permission_rules_through_the_kind(tmp_path
     # The approval names a composed server, so it attaches to that server's
     # bom-ref and a policy gate can act on it.
     assert by_rule["openaca-posture-mcp-auto-approve"].bom_ref is not None
+
+
+def test_every_allowlisted_rule_fires_on_devins_own_surfaces(tmp_path):
+    """Each rule the kind allowlists reaches a Devin-owned file through the
+    kind's own collectors — none is allowlisted but unreachable."""
+    from click.testing import CliRunner
+
+    from tools.scan import main as scan_main
+
+    _write(
+        tmp_path / ".devin" / "mcp_config.json",
+        json.dumps(
+            {
+                "mcpServers": {
+                    "unpinned": {"command": "npx", "args": ["-y", "some-mcp-server"]},
+                    "plain": {"url": "http://insecure.example.test/mcp"},
+                    "literal": {
+                        "url": "https://remote.example.test/mcp",
+                        "headers": {"Authorization": "Bearer dummy-literal-token"},
+                    },
+                }
+            }
+        ),
+    )
+    _write(
+        tmp_path / ".devin" / "skills" / "release" / "SKILL.md",
+        "---\nname: release\nallowed-tools:\n  - exec\n---\nShip.\n",
+    )
+    _write(
+        tmp_path / ".devin" / "config.json",
+        json.dumps({"permissions": {"allow": ["Exec(git push)", "mcp__unpinned__*"]}}),
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["repo", "--target", str(tmp_path), "--include-posture", "--format", "json"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    findings = json.loads(result.stdout)["findings"]
+    fired = {f["rule_id"] for f in findings if f.get("agent", {}).get("kind") == "devin-cli"}
+    assert fired == devin_cli.KIND.posture_rules
+    assert "dummy-literal-token" not in result.output

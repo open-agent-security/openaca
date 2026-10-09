@@ -283,6 +283,20 @@ def test_a_plugin_root_with_two_manifests_is_one_source_unit(tmp_path):
     assert _counts(tmp_path) == (1, 0)
 
 
+@pytest.mark.parametrize(
+    "manifest",
+    ['{"name": "Bad_Name"}', '{"name": "p", "skills": ["../outside"]}', "{broken", "[]"],
+)
+def test_a_devin_manifest_devin_rejects_is_a_failed_source_unit(tmp_path, manifest):
+    """Devin reads `.devin-plugin/plugin.json` whenever it is present and,
+    rejecting it, reads no other manifest at that root: it counts and fails,
+    while the Claude manifest beside it is not read and does neither."""
+    _write(tmp_path / "p" / ".devin-plugin" / "plugin.json", manifest)
+    _write(tmp_path / "p" / ".claude-plugin" / "plugin.json", json.dumps({"name": "claude-name"}))
+
+    assert _counts(tmp_path) == (1, 1)
+
+
 def test_nested_skills_devin_does_not_load_are_not_source_units(tmp_path):
     _skill(tmp_path / ".devin" / "skills" / "group" / "nested")
     _skill(tmp_path / ".claude" / "skills" / "group" / "nested")

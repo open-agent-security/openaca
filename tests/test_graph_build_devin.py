@@ -446,16 +446,32 @@ def test_a_devin_plugin_name_outside_devins_grammar_does_not_qualify(tmp_path):
     assert _names(_declared(tmp_path), "plugin") == []
 
 
+_REJECTED_DEVIN_MANIFESTS = (
+    '{"name": "Bad_Name"}',
+    '{"name": "p", "skills": ["../outside"]}',
+    "{not json",
+    "[]",
+)
+
+
 def test_an_invalid_devin_manifest_blocks_the_claude_fallback(tmp_path):
-    for devin_manifest in ({"name": "p", "skills": ["../outside"]}, "{not json"):
-        root = tmp_path / str(len(str(devin_manifest)))
-        manifest = root / ".devin-plugin" / "plugin.json"
-        if isinstance(devin_manifest, str):
-            _write(manifest, devin_manifest)
-        else:
-            _write_json(manifest, devin_manifest)
+    for index, devin_manifest in enumerate(_REJECTED_DEVIN_MANIFESTS):
+        root = tmp_path / str(index)
+        _write(root / ".devin-plugin" / "plugin.json", devin_manifest)
         _write_json(root / ".claude-plugin" / "plugin.json", {"name": "claude-name"})
     assert _names(_declared(tmp_path), "plugin") == []
+
+
+def test_a_devin_manifest_devin_rejects_is_a_recorded_gap(tmp_path):
+    """The rejected manifest is a surface Devin read and refused, not an
+    absent one: the plugin it would have realized is missing from the graph,
+    so composition says so and names the file."""
+    for index, devin_manifest in enumerate(_REJECTED_DEVIN_MANIFESTS):
+        _write(tmp_path / str(index) / ".devin-plugin" / "plugin.json", devin_manifest)
+    gaps = _declared(tmp_path).warnings.gaps
+    for index in range(len(_REJECTED_DEVIN_MANIFESTS)):
+        manifest = str(tmp_path / str(index) / ".devin-plugin" / "plugin.json")
+        assert sum(manifest in gap for gap in gaps) == 1, (index, gaps)
 
 
 def test_a_claude_manifest_still_loads_where_there_is_no_devin_manifest(tmp_path):

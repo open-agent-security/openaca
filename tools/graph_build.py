@@ -1077,7 +1077,9 @@ def descend(
         # root is a boundary handoff: the plugin owns its entire subtree, so its
         # bundled skills/deps hang off the plugin node, never off the target
         # (single-parent invariant).
-        plugin_roots = _find_plugin_roots(directory, surface, include_gitignored=include_gitignored)
+        plugin_roots = _find_plugin_roots(
+            directory, surface, include_gitignored=include_gitignored, record_gap=graph.record_gap
+        )
         # Only directories that actually produced a plugin node own their
         # subtree. A malformed/empty `plugin.json` yields no node, so its dir
         # must NOT be excluded from sibling discovery — otherwise one bad
@@ -1185,6 +1187,7 @@ def _resolve_plugin_format(
     *,
     eval_root: Path | None = None,
     spec: GitIgnoreSpec | None = None,
+    record_gap: Callable[[str], None] | None = None,
 ) -> PluginFormat | None:
     """The single decider of which `PluginFormat` governs `directory`: the
     first candidate in `surface.plugin_formats` **list order** (precedence,
@@ -1200,6 +1203,10 @@ def _resolve_plugin_format(
 
     `eval_root`/`spec` default to `None` (no gitignore filtering), matching
     endpoint-mode callers (installed artifacts are not repo source).
+
+    A present candidate that fails `detect` but `blocks_fallback` leaves the
+    root with no plugin. That is a surface the agent read and refused, not an
+    absent one, so composition passes `record_gap` to have it said.
 
     This is the one routine both plugin-root discovery (`_find_plugin_roots`)
     and manifest-path re-derivation (`_resolve_plugin_manifest`) call, so the
@@ -1218,6 +1225,11 @@ def _resolve_plugin_format(
         if isinstance(data, dict) and fmt.detect(data):
             return fmt
         if fmt.blocks_fallback:
+            if record_gap is not None:
+                record_gap(
+                    f"could not parse {manifest}: not a plugin manifest the agent loads, "
+                    "and while it is present no fallback manifest is read"
+                )
             return None
     return None
 
@@ -1227,7 +1239,11 @@ def _plugin_manifest_path(directory: Path, fmt: PluginFormat) -> Path:
 
 
 def _find_plugin_roots(
-    directory: Path, surface: RepoSurface, *, include_gitignored: bool = False
+    directory: Path,
+    surface: RepoSurface,
+    *,
+    include_gitignored: bool = False,
+    record_gap: Callable[[str], None] | None = None,
 ) -> list[tuple[Path, PluginFormat]]:
     """Plugin roots are dirs containing one of `surface.plugin_formats`'
     `<manifest_dir>/<manifest_filename>`, at ANY depth (parity with parse_repo).
@@ -1258,7 +1274,9 @@ def _find_plugin_roots(
             break
     roots: list[tuple[Path, PluginFormat]] = []
     for root in candidate_roots.values():
-        fmt = _resolve_plugin_format(root, surface, eval_root=directory, spec=spec)
+        fmt = _resolve_plugin_format(
+            root, surface, eval_root=directory, spec=spec, record_gap=record_gap
+        )
         if fmt is not None:
             roots.append((root, fmt))
     return sorted(roots, key=lambda entry: entry[0])

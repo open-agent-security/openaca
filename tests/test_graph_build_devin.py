@@ -1132,6 +1132,27 @@ def test_a_relative_project_path_still_reads_every_layer(tmp_path, monkeypatch):
     assert not [key for key in keys if str(tmp_path) in key]
 
 
+def test_an_ancestor_layer_skill_takes_provenance_from_its_own_layers_lock(tmp_path):
+    """A skill an ancestor layer holds was installed into that layer, so its
+    `skills-lock.json` is the layer's, not the nested package's."""
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _skill(repo / ".devin" / "skills" / "bootstrap", "bootstrap")
+    _skill(repo / ".claude" / "skills" / "imported", "imported")
+    entry = {"source": "vercel-labs/agent-skills", "sourceType": "github", "ref": "main"}
+    _write_json(
+        repo / "skills-lock.json",
+        {"version": 1, "skills": {"bootstrap": entry, "imported": entry}},
+    )
+
+    refs = {r.name: r for r in _refs(_installed(tmp_path, app), "skill")}
+
+    for name in ("bootstrap", "imported"):
+        provenance = refs[name].extra.get("source_provenance")
+        assert provenance is not None, name
+        assert provenance["source"] == "vercel-labs/agent-skills", name
+
+
 def test_a_nested_devin_layer_wins_over_its_ancestor_by_name(tmp_path):
     repo, app = _monorepo(tmp_path)
     _config(tmp_path).mkdir(parents=True)

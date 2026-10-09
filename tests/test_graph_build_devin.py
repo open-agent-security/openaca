@@ -635,6 +635,48 @@ def test_a_disabled_server_in_an_earlier_plugin_mcp_source_shadows_a_later_one(t
     ]
 
 
+def test_a_devin_plugins_required_plugins_are_inventoried(tmp_path):
+    """`requiredPlugins` are "auto-installed (recursively) when the plugin is
+    installed" (bundled `plugins/overview.mdx`), so each is part of what the
+    plugin brings, named by its source: a string, or one of the five source
+    kinds the 3000.11.3 binary accepts."""
+    required = [
+        "acme/secure-base",
+        {"source": "github", "repo": "acme/audit"},
+        {"source": "url", "url": "https://gitlab.com/acme/extra.git"},
+        {"source": "git-subdir", "url": "https://github.com/acme/vendor.git", "path": "stripe"},
+        {"source": "local", "path": "../sibling"},
+        {"source": "account-upload", "bundleId": "b-123"},
+    ]
+    _write_json(
+        tmp_path / "p" / ".devin-plugin" / "plugin.json",
+        {"name": "p", "requiredPlugins": required, "optionalPlugins": ["acme/not-installed"]},
+    )
+    graph = _declared(tmp_path)
+    assert sorted((r.name, r.source_locator) for r in _refs(graph, "component")) == [
+        ("../sibling", "$.requiredPlugins[4]"),
+        ("acme/audit", "$.requiredPlugins[1]"),
+        ("acme/secure-base", "$.requiredPlugins[0]"),
+        ("b-123", "$.requiredPlugins[5]"),
+        ("https://github.com/acme/vendor.git#stripe", "$.requiredPlugins[3]"),
+        ("https://gitlab.com/acme/extra.git", "$.requiredPlugins[2]"),
+    ]
+    assert graph.warnings.gaps == []
+
+
+def test_a_required_plugin_without_a_usable_source_is_a_gap(tmp_path):
+    for index, required in enumerate(
+        ("acme/x", ["", 7, {"source": "github"}, {"source": "ftp", "url": "x"}])
+    ):
+        _write_json(
+            tmp_path / str(index) / ".devin-plugin" / "plugin.json",
+            {"name": "p", "requiredPlugins": required},
+        )
+    graph = _declared(tmp_path)
+    assert _refs(graph, "component") == []
+    assert len([gap for gap in graph.warnings.gaps if "requiredPlugins" in gap]) == 5
+
+
 def _mcp_plugin(tmp_path: Path, servers: object) -> Path:
     plugin = tmp_path / "p"
     manifest: dict = {"name": "p"}

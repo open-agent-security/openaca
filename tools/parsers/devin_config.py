@@ -264,6 +264,66 @@ def plugin_skills_field_is_valid(value: object) -> bool:
     return all(plugin_path_is_safe(entry) for entry in entries)
 
 
+#: The field naming a plugin source of each kind the 3000.11.3 binary
+#: accepts ("expected 'github', 'url', 'git-subdir', 'local', or
+#: 'account-upload'"); `git-subdir` also needs a `path`.
+_SOURCE_FIELDS = {
+    "github": "repo",
+    "url": "url",
+    "git-subdir": "url",
+    "local": "path",
+    "account-upload": "bundleId",
+}
+
+
+def plugin_required_refs(data: dict, *, manifest_path: Path, record_gap) -> list[ComponentRef]:
+    """The plugins a Devin plugin manifest requires, one ref per
+    `requiredPlugins` entry, named by its source. Devin installs them
+    "recursively when the plugin is installed"; `optionalPlugins` and
+    `forbiddenPlugins` install nothing. An entry with no usable source is
+    recorded rather than guessed at."""
+    if "requiredPlugins" not in data:
+        return []
+    entries = data["requiredPlugins"]
+    if not isinstance(entries, list):
+        record_gap(f"could not parse {manifest_path}: requiredPlugins must be a list")
+        return []
+    refs: list[ComponentRef] = []
+    for index, entry in enumerate(entries):
+        locator = f"$.requiredPlugins[{index}]"
+        source = _plugin_source(entry)
+        if source is None:
+            record_gap(
+                f"could not parse {manifest_path}: {locator} is not a plugin source Devin accepts"
+            )
+            continue
+        refs.append(
+            ComponentRef(
+                name=source,
+                component_identity=f"plugin-dep/{source}",
+                source_manifest=str(manifest_path),
+                source_locator=locator,
+            )
+        )
+    return refs
+
+
+def _plugin_source(entry: object) -> str | None:
+    if isinstance(entry, str):
+        return entry or None
+    if not isinstance(entry, dict):
+        return None
+    kind = entry.get("source")
+    field = _SOURCE_FIELDS.get(kind) if isinstance(kind, str) else None
+    value = entry.get(field) if field else None
+    if not isinstance(value, str) or not value:
+        return None
+    if kind == "git-subdir":
+        path = entry.get("path")
+        return f"{value}#{path}" if isinstance(path, str) and path else None
+    return value
+
+
 def plugin_mcp_refs(
     data: dict,
     *,

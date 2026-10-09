@@ -770,8 +770,13 @@ def _realize_plugins(
     include_gitignored: bool,
     root_dir: Path,
     root_spec,
+    surface: RepoSurface = CURSOR_SURFACE,
 ) -> tuple[list[Path], list[tuple[Node, Path]]]:
     """Realize every qualifying plugin root under `directory`, once each.
+
+    Kind-neutral like `realized_plugin_roots`: the format list and bundled
+    layout come from `surface`, so Devin CLI's three candidates reuse this
+    walk rather than restating its exclusion rules.
 
     `find_plugin_roots` already collapses same-directory candidates to one
     entry (ADR-0053's first-qualifying-candidate precedence via
@@ -807,7 +812,7 @@ def _realize_plugins(
     can reconcile a plugin's bundled command against a same-relative-path
     workspace command instead of letting both survive in the graph.
     """
-    candidates = find_plugin_roots(directory, CURSOR_SURFACE, include_gitignored=include_gitignored)
+    candidates = find_plugin_roots(directory, surface, include_gitignored=include_gitignored)
     ordered = sorted(candidates, key=lambda entry: len(entry[0].resolve().parts))
     realized: list[Path] = []
     realized_roots: list[Path] = []
@@ -839,7 +844,7 @@ def _realize_plugins(
                 normalize,
                 root_dir=root_dir,
                 root_spec=root_spec,
-                surface=CURSOR_SURFACE,
+                surface=surface,
             )
         if node is not None:
             realized.append(root)
@@ -1155,3 +1160,8 @@ def _emit_command_agent(
             continue
         child_node = Node(key=occurrence_key(child_ref, normalize), kind=child_kind, ref=child_ref)
         add_child(graph, self_node, child_node)
+
+
+# Public alias (ADR-0053: a cross-module private import is never the contract).
+# Devin CLI's declared composer realizes its own plugin formats through it.
+realize_plugins = _realize_plugins

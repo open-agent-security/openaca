@@ -29,6 +29,8 @@ TOOLS = Path(__file__).resolve().parent.parent / "tools"
 _COMPOSITION_MODULES = (
     "graph_build.py",
     "graph_build_cursor.py",
+    "graph_build_devin.py",
+    "parsers/devin_config.py",
     "parsers/claude_install.py",
     "parsers/claude_plugin_root.py",
     "cursor_subagents.py",

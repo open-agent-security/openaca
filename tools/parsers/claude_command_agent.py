@@ -41,9 +41,14 @@ def parse_file(
     *,
     strict: bool = False,
     extensions: tuple[str, ...] = (".md",),
+    name_fallback: Optional[str] = None,
 ) -> list[ComponentRef]:
     """Emit one ref for a single file. Used by the repo-mode registry where
     `rglob` discovers paths individually.
+
+    `name_fallback` replaces the filename stem as the name used when the
+    frontmatter declares none: Devin CLI's directory-form subagent
+    `agents/<name>/AGENT.md` is named for its directory, not for `AGENT`.
 
     `extensions` defaults to Claude Code's `.md`-only surface. Cursor's two
     surfaces accept disjoint, differently-cased sets (commands: `.md`/`.txt`;
@@ -54,7 +59,7 @@ def parse_file(
     if not md_path.is_file() or md_path.suffix not in extensions:
         return []
     frontmatter = _read_frontmatter(md_path, strict=strict)
-    name = _resolve_name(md_path, frontmatter)
+    name = _resolve_name(md_path, frontmatter, fallback=name_fallback)
     ecosystem = f"claude-{kind}"
     identity = (
         f"{ecosystem}/{scope_owner}/{name}" if scope_owner is not None else f"{ecosystem}/{name}"
@@ -95,9 +100,12 @@ def enumerate_dir(
     return refs
 
 
-def _resolve_name(md_path: Path, frontmatter: Optional[dict] = None) -> str:
-    """Frontmatter `name:` wins; otherwise the filename without `.md`."""
-    fallback = md_path.stem
+def _resolve_name(
+    md_path: Path, frontmatter: Optional[dict] = None, *, fallback: Optional[str] = None
+) -> str:
+    """Frontmatter `name:` wins; otherwise `fallback`, else the filename
+    without `.md`."""
+    fallback = fallback or md_path.stem
     if frontmatter is None:
         frontmatter = _read_frontmatter(md_path)
     declared = frontmatter.get("name") if isinstance(frontmatter, dict) else None

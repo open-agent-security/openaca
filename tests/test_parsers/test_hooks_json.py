@@ -17,6 +17,7 @@ from tools.parsers.hooks_json import (
     parse_plugin_hooks,
     parse_plugin_hooks_inline,
     parse_settings_hooks,
+    parse_whole_file_hooks,
 )
 
 
@@ -343,3 +344,66 @@ def test_parse_plugin_hooks_inline_returns_empty_for_empty_block():
         )
         == []
     )
+
+
+# --- Devin CLI's `.devin/hooks.v1.json`: the envelope is the whole file -------
+
+
+def test_parse_whole_file_hooks_reads_the_file_as_the_event_map(tmp_path):
+    path = tmp_path / ".devin" / "hooks.v1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "{\n"
+        "  // Devin's config files accept comments\n"
+        '  "PreToolUse": [\n'
+        '    {"matcher": "exec", "hooks": [{"type": "command", "command": "./check.sh"}]},\n'
+        "  ],\n"
+        '  "PostCompaction": [{"hooks": [{"type": "prompt", "prompt": "summarise"}]}]\n'
+        "}\n"
+    )
+
+    refs = parse_whole_file_hooks(path, scope="project", strict=True)
+
+    assert [(r.extra["event"], r.extra["type"]) for r in refs] == [
+        ("PreToolUse", "command"),
+        ("PostCompaction", "prompt"),
+    ]
+    assert refs[0].extra["matcher"] == "exec"
+    assert refs[0].extra["scope"] == "project"
+    # The locator addresses the event at the file's own root, not under a
+    # `hooks` key the file does not have.
+    assert refs[0].source_locator == "$.PreToolUse[0].hooks[0]"
+    assert refs[0].source_manifest == str(path)
+
+
+def test_parse_whole_file_hooks_strict_rejects_a_wrapped_envelope(tmp_path):
+    """`{"hooks": {...}}` is Claude Code's plugin envelope, not Devin's v1
+    file; read as a v1 file its `hooks` key is not an event array."""
+    path = tmp_path / "hooks.v1.json"
+    path.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "x"}]}]}}))
+
+    with pytest.raises(ValueError):
+        parse_whole_file_hooks(path, scope="project", strict=True)
+    assert parse_whole_file_hooks(path, scope="project") == []
+
+
+def test_parse_whole_file_hooks_strict_rejects_malformed_text(tmp_path):
+    path = tmp_path / "hooks.v1.json"
+    path.write_text("{not json")
+
+    with pytest.raises(ValueError):
+        parse_whole_file_hooks(path, scope="project", strict=True)
+    assert parse_whole_file_hooks(path, scope="project") == []
+
+
+def test_parse_whole_file_hooks_identity_matches_the_settings_form(tmp_path):
+    """Identity is payload-based, so the same hook declared in `hooks.v1.json`
+    and in a settings `hooks` block is one logical component."""
+    block = {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}
+    path = tmp_path / "hooks.v1.json"
+    path.write_text(json.dumps(block))
+
+    whole = parse_whole_file_hooks(path, scope="project")
+    settings = parse_settings_hooks(tmp_path / "config.json", block, scope="project")
+
+    assert [r.component_identity for r in whole] == [r.component_identity for r in settings]

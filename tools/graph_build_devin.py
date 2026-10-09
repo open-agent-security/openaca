@@ -337,7 +337,9 @@ def build_devin_installed_graph(
     relocated by `--config-dir`, which Devin refuses (ADR-0071).
     """
     config_root = Path(agent.config_root)
-    project = Path(agent.project_root) if agent.project_root is not None else None
+    # Resolved, as its layers are: `--project .` must name the same directory
+    # the layers, the import switches and the normalizer start from.
+    project = Path(agent.project_root).resolve() if agent.project_root is not None else None
     # Every directory whose `.devin/` a Devin run in `project` loads, nearest
     # first, up to the repository root (devin_config.project_layers).
     layers = devin_config.project_layers(project) if project is not None else []

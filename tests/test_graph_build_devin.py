@@ -1113,6 +1113,25 @@ def test_installed_reads_claude_and_copilot_skills_in_every_project_layer(tmp_pa
     ]
 
 
+def test_a_relative_project_path_still_reads_every_layer(tmp_path, monkeypatch):
+    """`--project .` arrives as `Path(".")`, whose parent is itself; the walk
+    up to the repository root starts from the resolved directory."""
+    from tools.parsers.devin_config import project_layers
+
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _write_json(repo / ".devin" / "mcp_config.json", {"mcpServers": {"shared": _server()}})
+    _skill(repo / ".claude" / "skills" / "repo-claude", "repo-claude")
+    monkeypatch.chdir(app)
+
+    assert project_layers(Path(".")) == [app.resolve(), app.parent.resolve(), repo.resolve()]
+    graph = _installed(tmp_path, Path("."))
+    assert [name for name, _ in _mcp(graph)] == ["shared"]
+    assert _names(graph, "skill") == ["repo-claude"]
+    keys = [key for key in graph.nodes if key != graph.root.key]
+    assert not [key for key in keys if str(tmp_path) in key]
+
+
 def test_a_nested_devin_layer_wins_over_its_ancestor_by_name(tmp_path):
     repo, app = _monorepo(tmp_path)
     _config(tmp_path).mkdir(parents=True)

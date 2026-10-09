@@ -231,7 +231,10 @@ def project_layers(project: Path) -> list[Path]:
     the first that holds `.git` or `.jj`. Nested configs take precedence over
     ancestor ones. With no marker above it, `project` is its own root and the
     only layer: nothing outside the directory named is assumed to be Devin's.
+    The walk starts from the resolved directory, so `--project .` (whose
+    `Path(".").parent` is itself) still reaches the repository root.
     """
+    project = project.resolve()
     chain: list[Path] = []
     current = project
     while True:

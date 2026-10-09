@@ -41,8 +41,10 @@ ROOT_LABEL = "devin-cli"
 COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
 
 # Devin-owned surfaces, plus the two shared `.agents/` directories it reads
-# (ADR-0058, ADR-0072). Everything Devin imports from another runtime is
-# composition, never evidence: a tree holding only `.claude/skills/` declares a
+# (ADR-0058, ADR-0072) and, outside these patterns, a root Agent Plugins
+# manifest it reads (ADR-0074, `_is_agent_plugins_manifest_devin_reads`).
+# Everything Devin imports from another runtime is composition, never
+# evidence: a tree holding only `.claude/skills/` declares a
 # Claude Code agent. The gitignored `.devin/*.local.json` files are
 # composition too — their presence in a tree is incidental. Instruction files
 # (`AGENTS.md`, `.devin/rules/`) are not configuration. The `agents/` globs
@@ -110,14 +112,32 @@ def _realized_plugin_roots(scan_root: Path, *, include_gitignored: bool) -> list
     return realized_plugin_roots(scan_root, DEVIN_SURFACE, include_gitignored=include_gitignored)
 
 
-def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
+def _matches_evidence(
+    rel: str, path: Path, realized_roots: list[Path], scan_root: Path, spec
+) -> bool:
     # Content of an already-realized plugin is that plugin's, not an
     # independent Devin declaration. A plugin's own manifest stays visible.
     from tools.graph_build_cursor import is_owned_by_realized_plugin
 
     if is_owned_by_realized_plugin(path, realized_roots, DEVIN_SURFACE):
         return False
-    return _matches_evidence_pattern(rel, _DECLARED_EVIDENCE_PATTERNS)
+    return _matches_evidence_pattern(
+        rel, _DECLARED_EVIDENCE_PATTERNS
+    ) or _is_agent_plugins_manifest_devin_reads(path, scan_root, spec)
+
+
+def _is_agent_plugins_manifest_devin_reads(path: Path, scan_root: Path, spec) -> bool:
+    """ADR-0074: a root Agent Plugins `plugin.json` is evidence for every kind
+    that reads it. For Devin that is the manifest its own format resolution
+    picks at the root -- any Agent Plugins version, unless a Devin or Claude
+    manifest beside it takes precedence -- the decision composition makes."""
+    if path.name != "plugin.json":
+        return False
+    # Local import: agent_kinds -> graph_build* stays one-way (see `_compose`).
+    from tools.graph_build import resolve_plugin_format
+
+    fmt = resolve_plugin_format(path.parent, DEVIN_SURFACE, eval_root=scan_root, spec=spec)
+    return fmt is not None and fmt.manifest_dir == ""
 
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:
@@ -129,7 +149,7 @@ def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> P
             rel = path.relative_to(scan_root).as_posix()
         except ValueError:
             continue
-        if _matches_evidence(rel, path, realized_roots):
+        if _matches_evidence(rel, path, realized_roots, scan_root, spec):
             return path
     return None
 

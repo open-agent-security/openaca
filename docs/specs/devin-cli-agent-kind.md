@@ -268,6 +268,11 @@ earlier draft marked it unverified.
   three BOMs. That is ADR-0058's stated cost, applied to a third reader.
 - **`.agents/agents/` is evidence for Devin CLI alone.** Cursor's spec records
   that `.agents/` holds only skills for Cursor, and Codex declares no such root.
+- **A root Agent Plugins `plugin.json` is evidence for every kind that reads it
+  (ADR-0074).** Devin CLI counts it at any Agent Plugins version, unless a
+  `.devin-plugin` or `.claude-plugin` manifest beside it is the one Devin reads.
+  A repository holding only a 1.0.0 manifest declares Cursor and Devin CLI
+  agents; a later version declares Devin CLI alone.
 - **`.devin/mcp_config.local.json` and `.devin/config.local.json` are
   composition, not evidence.** They are gitignored by design, so their presence
   in a tree is incidental.
@@ -281,6 +286,7 @@ earlier draft marked it unverified.
 - `.devin/agents/*`
 - `.devin-plugin/plugin.json`
 - `.agents/skills/*/SKILL.md`, `.agents/agents/*`
+- a root `plugin.json` Devin's format resolution reads as Agent Plugins (ADR-0074)
 
 ### Node keys
 

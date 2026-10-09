@@ -136,6 +136,46 @@ def test_a_shared_skills_repo_declares_every_kind_that_reads_it(tmp_path):
     assert {a.kind_id for a in agents} == {"cursor", "codex", "devin-cli"}
 
 
+_AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/{}/plugin.schema.json"
+
+
+@pytest.mark.parametrize(
+    ("version", "kinds"), [("1.0.0", {"cursor", "devin-cli"}), ("1.1.0", {"devin-cli"})]
+)
+def test_an_agent_plugins_manifest_declares_every_kind_that_reads_it(tmp_path, version, kinds):
+    """ADR-0074: the portable manifest is nobody's own file, so it is evidence
+    for every kind that loads it -- Cursor at the version it supports, Devin
+    at any Agent Plugins version, read best-effort."""
+    from tools.agent_kinds import DiscoveryContext, discover_agents
+
+    _write(
+        tmp_path / "p" / "plugin.json",
+        json.dumps({"$schema": _AGENT_PLUGINS_SCHEMA.format(version), "name": "p"}),
+    )
+
+    agents = discover_agents(DiscoveryContext(source="declared", scan_root=tmp_path))
+
+    assert {a.kind_id for a in agents} == kinds
+
+
+def test_a_plugin_json_devin_does_not_read_is_not_evidence(tmp_path):
+    """Another tool's schema is no plugin; and a root `plugin.json` beside a
+    `.claude-plugin` manifest is not the one Devin reads -- the Claude
+    manifest wins, and it is another runtime's own file (ADR-0052)."""
+    _write(
+        tmp_path / "grafana" / "plugin.json",
+        json.dumps({"$schema": "https://example.com/grafana/plugin.schema.json", "name": "g"}),
+    )
+    shadowed = tmp_path / "shadowed"
+    _write(
+        shadowed / "plugin.json",
+        json.dumps({"$schema": _AGENT_PLUGINS_SCHEMA.format("1.0.0"), "name": "s"}),
+    )
+    _write(shadowed / ".claude-plugin" / "plugin.json", json.dumps({"name": "s"}))
+
+    assert devin_cli.declared_evidence(tmp_path) is None
+
+
 # --- Roots -----------------------------------------------------------------------
 
 

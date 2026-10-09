@@ -135,9 +135,16 @@ def _is_agent_plugins_manifest_devin_reads(path: Path, scan_root: Path, spec) ->
         return False
     # Local import: agent_kinds -> graph_build* stays one-way (see `_compose`).
     from tools.graph_build import resolve_plugin_format
+    from tools.graph_build_cursor import plugin_manifest_root
 
-    fmt = resolve_plugin_format(path.parent, DEVIN_SURFACE, eval_root=scan_root, spec=spec)
-    return fmt is not None and fmt.manifest_dir == ""
+    # The root this file defines, derived as composition derives it: a
+    # `.claude-plugin/plugin.json` is its outer directory's Claude candidate,
+    # never a portable root of its own.
+    root = plugin_manifest_root(path, DEVIN_SURFACE)
+    if root is None:
+        return False
+    fmt = resolve_plugin_format(root, DEVIN_SURFACE, eval_root=scan_root, spec=spec)
+    return fmt is not None and fmt.manifest_dir == "" and root / fmt.manifest_filename == path
 
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:

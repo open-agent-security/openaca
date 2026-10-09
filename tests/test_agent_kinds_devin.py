@@ -172,6 +172,12 @@ def test_a_plugin_json_devin_does_not_read_is_not_evidence(tmp_path):
         json.dumps({"$schema": _AGENT_PLUGINS_SCHEMA.format("1.0.0"), "name": "s"}),
     )
     _write(shadowed / ".claude-plugin" / "plugin.json", json.dumps({"name": "s"}))
+    # A Claude manifest carrying an Agent Plugins `$schema` is still the Claude
+    # candidate of its outer root, never a portable root of its own.
+    _write(
+        tmp_path / "claude-only" / ".claude-plugin" / "plugin.json",
+        json.dumps({"$schema": _AGENT_PLUGINS_SCHEMA.format("1.0.0"), "name": "c"}),
+    )
 
     assert devin_cli.declared_evidence(tmp_path) is None
 

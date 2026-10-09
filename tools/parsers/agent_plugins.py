@@ -42,6 +42,11 @@ _MANIFEST_SCHEMA_URL_BY_VERSION = {
     for v in SUPPORTED_SCHEMA_VERSIONS
 }
 _MANIFEST_SCHEMA_VERSION_BY_URL = {url: v for v, url in _MANIFEST_SCHEMA_URL_BY_VERSION.items()}
+# A manifest schema URL of any version, for a host that reads an unsupported
+# version best-effort under 1.0.0's rules rather than rejecting it (Devin).
+_ANY_MANIFEST_SCHEMA_URL = re.compile(
+    r"https://agent-plugins\.org/schemas/[^/\s]+/plugin\.schema\.json"
+)
 _MCP_SCHEMA_URL_BY_VERSION = {
     v: f"https://agent-plugins.org/schemas/{v}/mcp.schema.json" for v in SUPPORTED_SCHEMA_VERSIONS
 }
@@ -78,6 +83,22 @@ def is_agent_plugins_manifest(
     return isinstance(schema, str) and schema in _MANIFEST_SCHEMA_VERSION_BY_URL
 
 
+def manifest_schema_version(data: dict, *, best_effort: bool = False) -> str | None:
+    """The spec version whose rules read this manifest, or `None` when its
+    `$schema` does not make it an Agent Plugins manifest. `best_effort` reads
+    an Agent Plugins manifest of an unsupported version under 1.0.0's rules,
+    as Devin does ("an unrecognized `$schema` version is warned about and the
+    plugin still loads best-effort"); without it the allowlist is exact."""
+    schema = data.get("$schema")
+    if not isinstance(schema, str):
+        return None
+    if schema in _MANIFEST_SCHEMA_VERSION_BY_URL:
+        return _MANIFEST_SCHEMA_VERSION_BY_URL[schema]
+    if best_effort and _ANY_MANIFEST_SCHEMA_URL.fullmatch(schema):
+        return "1.0.0"
+    return None
+
+
 def validate_manifest(data: dict) -> bool:
     """§5.3/§5.5: is a schema-recognized manifest actually a valid plugin?
 
@@ -110,7 +131,7 @@ def validate_manifest(data: dict) -> bool:
     return True
 
 
-def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
+def parse(path: Path, *, strict: bool = False, best_effort: bool = False) -> list[ComponentRef]:
     """Parse a root `plugin.json` into its bundled skills and MCP servers.
 
     Returns [] on any manifest-level failure (unreadable, malformed JSON,
@@ -118,6 +139,10 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
     is rejected outright and no components are discovered. A malformed
     bundled `mcp.json` is scoped to MCP alone (§7.2.2): it costs the
     servers, not the skills.
+
+    `best_effort=True` reads an Agent Plugins manifest of an unsupported
+    version under 1.0.0's rules (`manifest_schema_version`), for a host that
+    does so; the default keeps the exact allowlist.
 
     `strict=True` raises `ValueError` instead of returning [] on a
     manifest-level failure — same contract as `mcp_json.parse`/
@@ -150,8 +175,8 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         if strict:
             raise ValueError(f"{path} is not a JSON object")
         return []
-    schema = data.get("$schema")
-    if not isinstance(schema, str) or schema not in _MANIFEST_SCHEMA_VERSION_BY_URL:
+    manifest_version = manifest_schema_version(data, best_effort=best_effort)
+    if manifest_version is None:
         if strict:
             raise ValueError(f"{path} has an unsupported or missing $schema")
         return []
@@ -161,7 +186,6 @@ def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
         return []
 
     plugin_root = path.parent
-    manifest_version = _MANIFEST_SCHEMA_VERSION_BY_URL[schema]
     name = data["name"]
     version = data.get("version") if isinstance(data.get("version"), str) else None
     refs: list[ComponentRef] = [_plugin_self_ref(name, version, path)]

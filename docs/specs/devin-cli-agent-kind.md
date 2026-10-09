@@ -218,7 +218,7 @@ than a `hooks` key.
 
 | | |
 |---|---|
-| Manifest candidates, in order | 1. `.devin-plugin/plugin.json`, new. 2. `.claude-plugin/plugin.json`, whose root `.mcp.json` is honoured. 3. A root `plugin.json` per Agent Plugins 1.0.0. OpenACA already realizes 2 and 3 for Claude Code and Cursor. Devin falls back to 2 only "if there's no `.devin-plugin/plugin.json`": a present but invalid Devin manifest leaves the root with no plugin, and is recorded as a gap and a failed source unit |
+| Manifest candidates, in order | 1. `.devin-plugin/plugin.json`, new. 2. `.claude-plugin/plugin.json`, whose root `.mcp.json` is honoured. 3. A root `plugin.json` per Agent Plugins 1.0.0; a manifest naming another Agent Plugins version is read best-effort under 1.0.0's rules ("an unrecognized `$schema` version is warned about and the plugin still loads"), while one naming another tool's schema is no plugin. OpenACA already realizes 2 and 3 for Claude Code and Cursor. Devin falls back to 2 only "if there's no `.devin-plugin/plugin.json`": a present but invalid Devin manifest leaves the root with no plugin, and is recorded as a gap and a failed source unit |
 | Agent Plugins MCP | Root `.mcp.json`, then root `mcp.json`; `.mcp.json` wins a server-name collision |
 | Plugin agents | Devin's custom subagent format (`name`, `description`, `model`, `allowed-tools`/`tools`, `max-nesting`): an agent contributes itself only, never MCP servers or hooks from its frontmatter |
 | Manifest `skills` | A path or a list of paths, replacing the default `skills/`; `[]` disables skills. "An invalid entry fails the whole manifest": an absolute, `~` or `..` entry means the `.devin-plugin` manifest does not qualify and the plugin is not realized |

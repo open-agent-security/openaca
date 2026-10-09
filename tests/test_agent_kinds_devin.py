@@ -297,6 +297,18 @@ def test_a_devin_manifest_devin_rejects_is_a_failed_source_unit(tmp_path, manife
     assert _counts(tmp_path) == (1, 1)
 
 
+def test_an_agent_plugins_manifest_of_an_unrecognized_version_is_a_parsed_source_unit(tmp_path):
+    """Devin loads it best-effort, so it counts and parses rather than fails."""
+    _write(
+        tmp_path / "p" / "plugin.json",
+        json.dumps(
+            {"$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json", "name": "p"}
+        ),
+    )
+
+    assert _counts(tmp_path) == (1, 0)
+
+
 def test_nested_skills_devin_does_not_load_are_not_source_units(tmp_path):
     _skill(tmp_path / ".devin" / "skills" / "group" / "nested")
     _skill(tmp_path / ".claude" / "skills" / "group" / "nested")

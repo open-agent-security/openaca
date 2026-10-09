@@ -40,7 +40,7 @@ class PluginFormat:
     manifest_dir: str
     manifest_filename: str
     detect: Callable[[dict], bool]
-    parse: Callable[[Path], list] | None = None
+    parse: Callable[..., list] | None = None
     # Whether this candidate, once present, decides the root on its own: it
     # qualifies, or the root is no plugin at all, never a lower-precedence
     # format's. Devin falls back to a Claude manifest only "if there's no
@@ -388,6 +388,29 @@ def _detect_devin_plugin_manifest(data: dict) -> bool:
     return "skills" not in data or devin_config.plugin_skills_field_is_valid(data["skills"])
 
 
+def _detect_devin_agent_plugins_manifest(data: dict) -> bool:
+    return agent_plugins.manifest_schema_version(data, best_effort=True) is not None
+
+
+def _parse_devin_agent_plugins(path: Path, *, strict: bool = False) -> list:
+    return agent_plugins.parse(path, strict=strict, best_effort=True)
+
+
+# The Agent Plugins format as Devin reads it: "an unrecognized `$schema`
+# version is warned about and the plugin still loads best-effort", under
+# 1.0.0's rules. Cursor's copy stays exact.
+_DEVIN_AGENT_PLUGINS_FORMAT = PluginFormat(
+    manifest_dir="",
+    manifest_filename="plugin.json",
+    detect=_detect_devin_agent_plugins_manifest,
+    parse=_parse_devin_agent_plugins,
+)
+
+#: Every host's reading of the portable Agent Plugins format: a realized
+#: candidate in this set routes through `agent_plugins.parse`.
+AGENT_PLUGINS_FORMATS = (_AGENT_PLUGINS_FORMAT, _DEVIN_AGENT_PLUGINS_FORMAT)
+
+
 # Devin CLI's own plugin format, `.devin-plugin/plugin.json`. The manifest is
 # the shape `claude_plugin.parse` already reads.
 _DEVIN_PLUGIN_FORMAT = PluginFormat(
@@ -401,13 +424,13 @@ _DEVIN_PLUGIN_FORMAT = PluginFormat(
 DEVIN_SURFACE = RepoSurface(
     config_dir=".devin",
     # Devin's documented manifest precedence: `.devin-plugin/plugin.json` >
-    # `.claude-plugin/plugin.json` > root `plugin.json` (Agent Plugins 1.0.0).
-    # Both borrowed formats are the other surfaces' own objects, so the kinds
-    # can never disagree about what qualifies them.
+    # `.claude-plugin/plugin.json` > root `plugin.json` (Agent Plugins). The
+    # Claude format is Claude Code's own object; the Agent Plugins one is
+    # Devin's best-effort reading of a version it does not recognize.
     plugin_formats=(
         _DEVIN_PLUGIN_FORMAT,
         CLAUDE_CODE_SURFACE.plugin_formats[0],
-        _AGENT_PLUGINS_FORMAT,
+        _DEVIN_AGENT_PLUGINS_FORMAT,
     ),
     # Devin's plugin layout: `skills/`, `agents/`, a root `hooks.json` and a
     # root `.mcp.json`. The Agent Plugins format's root `mcp.json` is read by

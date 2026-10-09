@@ -500,6 +500,34 @@ def test_an_agent_plugins_bundle_reads_dot_mcp_json_first_then_mcp_json(tmp_path
     ]
 
 
+def test_an_agent_plugins_bundle_of_an_unrecognized_version_loads_best_effort(tmp_path):
+    """ "An unrecognized `$schema` version is warned about and the plugin still
+    loads best-effort" (bundled `plugins/overview.mdx`); the 3000.11.3 binary
+    reads it "with Agent Plugins 1.0.0 rules". It is the version that may be
+    unknown: another tool's `plugin.json` names another schema and is no
+    plugin."""
+    future = tmp_path / "future"
+    _write_json(
+        future / "plugin.json",
+        {"$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json", "name": "future"},
+    )
+    _skill(future / "skills" / "kept", "kept")
+    _write_json(future / ".mcp.json", {"mcpServers": {"srv": _server()}})
+    _write_json(
+        tmp_path / "grafana" / "plugin.json",
+        {
+            "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/"
+            "developers/plugins/plugin.schema.json",
+            "name": "grafana",
+        },
+    )
+
+    graph = _declared(tmp_path)
+    assert _names(graph, "plugin") == ["future"]
+    assert _names(graph, "skill") == ["kept"]
+    assert _mcp(graph) == [("srv", "future/.mcp.json")]
+
+
 def test_a_devin_plugin_agent_declares_no_mcp_servers_or_hooks(tmp_path):
     """Plugin subagents use Devin's custom subagent format, whose frontmatter
     is `name`, `description`, `model`, `allowed-tools`/`tools` and

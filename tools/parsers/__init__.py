@@ -436,6 +436,12 @@ def _parse_repo_devin_plugin(path: Path) -> list[ComponentRef]:
     return claude_plugin.parse(path)
 
 
+def _parse_repo_devin_agent_plugins(path: Path) -> list[ComponentRef]:
+    # Devin reads an unrecognized Agent Plugins version best-effort, the same
+    # judgement its plugin format makes for composition.
+    return agent_plugins.parse(path, strict=True, best_effort=True)
+
+
 def _parse_repo_devin_mcp(path: Path) -> list[ComponentRef]:
     return devin_config.parse_mcp_file(path)
 
@@ -537,7 +543,7 @@ DEVIN_MANIFEST_REGISTRY: list[ManifestPattern] = [
     ),
     ManifestPattern(
         "plugin.json",
-        _parse_repo_agent_plugins,
+        _parse_repo_devin_agent_plugins,
         _is_resolved_devin_plugin_format(""),
     ),
 ]

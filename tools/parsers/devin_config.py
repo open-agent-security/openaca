@@ -196,3 +196,151 @@ def parse_settings_file(path: Path, *, scope: str = "project") -> list[Component
     if "hooks" in data:
         refs.extend(hooks_json.parse_settings_hooks(path, data["hooks"], scope=scope, strict=True))
     return refs
+
+
+# --- Project layers ----------------------------------------------------------
+
+#: What marks a project root: Devin walks up from its working directory to the
+#: first directory holding one of these (docs: Global vs. Local Configuration).
+PROJECT_ROOT_MARKERS = (".git", ".jj")
+
+
+def project_layers(project: Path) -> list[Path]:
+    """Every directory whose `.devin/` an installed Devin run in `project`
+    loads, nearest first: `project`, then each ancestor up to and including
+    the first that holds `.git` or `.jj`. Nested configs take precedence over
+    ancestor ones. With no marker above it, `project` is its own root and the
+    only layer: nothing outside the directory named is assumed to be Devin's.
+    """
+    chain: list[Path] = []
+    current = project
+    while True:
+        chain.append(current)
+        if any((current / marker).exists() for marker in PROJECT_ROOT_MARKERS):
+            return chain
+        if current.parent == current:
+            return [project]
+        current = current.parent
+
+
+# --- Plugin manifest fields ----------------------------------------------------
+
+
+def plugin_path_is_safe(entry: object) -> bool:
+    """A plugin-root-relative path Devin accepts: a string that is not
+    absolute, does not start with `~`, and has no `..` segment."""
+    if not isinstance(entry, str) or not entry:
+        return False
+    if entry.startswith(("/", "\\", "~")) or Path(entry).is_absolute():
+        return False
+    return ".." not in Path(entry).parts
+
+
+def plugin_skills_field_is_valid(value: object) -> bool:
+    """Whether a plugin manifest's `skills` field is one Devin loads. A
+    string or a list of strings, every entry a safe path; "an invalid entry
+    fails the whole manifest", so this decides whether the plugin loads at
+    all, not only its skills."""
+    entries = value if isinstance(value, list) else [value]
+    return all(plugin_path_is_safe(entry) for entry in entries)
+
+
+def plugin_mcp_refs(
+    data: dict,
+    *,
+    plugin_root: Path,
+    manifest_path: Path,
+    conventional: tuple[str, ...],
+    record_gap,
+    usable=lambda path: True,
+) -> list[ComponentRef]:
+    """The MCP servers a Devin plugin loads, by its documented source rules.
+
+    `mcpServers` takes four shapes: a declaration file, a list of them read in
+    order, `{"paths": [...], "exclusive": true}`, or an inline server map.
+    The root convention (`conventional`, `.mcp.json`) is read after any
+    declared files unless an exclusive declaration or a non-empty inline map
+    suppresses it; an empty list or map does not. Unsafe declared paths are
+    dropped. A field of any other shape disables MCP for the plugin and is
+    recorded. When one server name appears in several sources the first wins.
+
+    `usable` lets a repo scan skip a gitignored candidate before it can win.
+    """
+    field = data.get("mcpServers")
+    sources: list[list[ComponentRef]] = []
+    declared: list[object] = []
+    suppress = False
+    if "mcpServers" not in data:
+        pass
+    elif isinstance(field, str):
+        declared = [field]
+    elif isinstance(field, list):
+        declared = list(field)
+    elif isinstance(field, dict) and isinstance(field.get("paths"), list):
+        exclusive = field.get("exclusive", False)
+        if not isinstance(exclusive, bool):
+            record_gap(f"could not parse {manifest_path}: mcpServers.exclusive must be a boolean")
+            return []
+        declared, suppress = list(field["paths"]), exclusive
+    elif isinstance(field, dict):
+        suppress = bool(field)
+        inline: list[ComponentRef] = []
+        try:
+            for name, entry in field.items():
+                if not isinstance(name, str):
+                    raise ValueError("MCP server names must be strings")
+                inline.extend(
+                    parse_server(
+                        name,
+                        entry,
+                        source_manifest=str(manifest_path),
+                        locator_prefix="$.mcpServers (inlined)",
+                    )
+                )
+        except ValueError as exc:
+            record_gap(f"could not parse {manifest_path}: {exc}")
+            return []
+        sources.append(inline)
+    else:
+        record_gap(
+            f"could not parse {manifest_path}: mcpServers is not a form Devin accepts; "
+            "the plugin's MCP servers do not load"
+        )
+        return []
+
+    candidates = [
+        plugin_root / entry
+        for entry in declared
+        if isinstance(entry, str) and plugin_path_is_safe(entry)
+    ]
+    if not suppress:
+        candidates += [plugin_root / name for name in conventional]
+    for path in candidates:
+        if not path.is_file():
+            if path.name not in conventional or path.parent != plugin_root:
+                record_gap(f"could not parse {path}: referenced MCP manifest is unavailable")
+            continue
+        if not usable(path):
+            continue
+        try:
+            sources.append(parse_mcp_file(path, allow_flat=True))
+        except (OSError, ValueError) as exc:
+            record_gap(f"could not parse {path}: {exc}")
+
+    seen: set[str] = set()
+    refs: list[ComponentRef] = []
+    for source in sources:
+        for ref in source:
+            name = _server_name(ref)
+            if name in seen:
+                continue
+            seen.add(name)
+            refs.append(ref)
+    return refs
+
+
+def _server_name(ref: ComponentRef) -> str:
+    path = (ref.extra or {}).get("component_path") or []
+    if path and isinstance(path[-1], dict) and isinstance(path[-1].get("name"), str):
+        return path[-1]["name"]
+    return ref.component_identity or ref.name or ""

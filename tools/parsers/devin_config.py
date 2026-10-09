@@ -22,7 +22,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tools import marketplace
 from tools.component_ref import ComponentRef
 from tools.parsers import hooks_json, jsonc, mcp_json
 
@@ -280,6 +279,13 @@ _SOURCE_FIELDS = {
 #: Devin's `owner/repo` shorthand for a GitHub source string.
 _GITHUB_SHORTHAND = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$")
 
+#: A GitHub repository URL: HTTPS, `ssh://` or `git://`, with or without
+#: `.git`, or the SCP form `git@github.com:owner/repo`.
+_GITHUB_URL = re.compile(
+    r"(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?github\.com(?::\d+)?/|[^@/\s]+@github\.com:)"
+    r"(?P<repo>[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
+)
+
 #: Only an immutable commit is a version (ADR-0016); any other pin is a `git_ref`.
 _COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
@@ -364,12 +370,12 @@ def _required_plugin_ref(
 
 
 def _github_repo(url: str) -> str | None:
-    """`owner/repo` when `url` is a GitHub repository URL."""
-    try:
-        host, value = marketplace.key(url)
-    except ValueError:
-        return None
-    return value if host == "github" else None
+    """`owner/repo` when `url` is a GitHub repository URL in any form Devin
+    gives one identity: "All GitHub forms for the same repo (`owner/repo`,
+    the HTTPS URL, the `.git` URL, the SSH form) refer to the same plugin
+    identity" (Devin's plugin dependency reference)."""
+    match = _GITHUB_URL.fullmatch(url)
+    return match.group("repo") if match else None
 
 
 def plugin_mcp_refs(

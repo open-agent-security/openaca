@@ -654,6 +654,11 @@ def test_a_devin_plugins_required_plugins_are_inventoried(tmp_path):
         "acme/mono#plugins/billing",
         {"source": "local", "path": "./sibling"},
         {"source": "account-upload", "bundleId": "b-123"},
+        # "All GitHub forms for the same repo (`owner/repo`, the HTTPS URL,
+        # the `.git` URL, the SSH form) refer to the same plugin identity."
+        {"source": "url", "url": "git@github.com:acme/scp.git", "sha": _SHA},
+        "ssh://git@github.com/acme/ssh",
+        {"source": "url", "url": "https://github.com/acme/https"},
     ]
     _write_json(
         tmp_path / "p" / ".devin-plugin" / "plugin.json",
@@ -679,6 +684,9 @@ def test_a_devin_plugins_required_plugins_are_inventoried(tmp_path):
         "$.requiredPlugins[5]": ("github", "acme/mono", None, None, "plugins/billing"),
         "$.requiredPlugins[6]": (None, "./sibling", None, None, None),
         "$.requiredPlugins[7]": (None, "b-123", None, None, None),
+        "$.requiredPlugins[8]": ("github", "acme/scp", _SHA, None, None),
+        "$.requiredPlugins[9]": ("github", "acme/ssh", None, None, None),
+        "$.requiredPlugins[10]": ("github", "acme/https", None, None, None),
     }
     assert graph.warnings.gaps == []
 

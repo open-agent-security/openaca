@@ -167,18 +167,37 @@ def parse_server(
     )
 
 
-def parse_mcp_file(path: Path, *, allow_flat: bool = False) -> list[ComponentRef]:
-    """Every server a Devin-read MCP file declares, strictly (registry use)."""
+def _named_servers(
+    servers: dict, *, source_manifest: str, locator_prefix: str
+) -> list[tuple[str, list[ComponentRef]]]:
+    """Every server a map declares, by name, strictly. A disabled server keeps
+    its name with no refs: wherever Devin merges servers by name, a disabled
+    entry still claims it."""
+    named: list[tuple[str, list[ComponentRef]]] = []
+    for name, entry in servers.items():
+        if not isinstance(name, str):
+            raise ValueError("MCP server names must be strings")
+        refs = parse_server(
+            name, entry, source_manifest=source_manifest, locator_prefix=locator_prefix
+        )
+        named.append((name, refs))
+    return named
+
+
+def _named_mcp_file(
+    path: Path, *, allow_flat: bool = False
+) -> list[tuple[str, list[ComponentRef]]]:
+    """`_named_servers` over a Devin-read MCP file."""
     found = server_map(load(path), allow_flat=allow_flat)
     if found is None:
         return []
     servers, prefix = found
-    refs: list[ComponentRef] = []
-    for name, entry in servers.items():
-        if not isinstance(name, str):
-            raise ValueError("MCP server names must be strings")
-        refs.extend(parse_server(name, entry, source_manifest=str(path), locator_prefix=prefix))
-    return refs
+    return _named_servers(servers, source_manifest=str(path), locator_prefix=prefix)
+
+
+def parse_mcp_file(path: Path, *, allow_flat: bool = False) -> list[ComponentRef]:
+    """Every server a Devin-read MCP file declares, strictly (registry use)."""
+    return [ref for _name, refs in _named_mcp_file(path, allow_flat=allow_flat) for ref in refs]
 
 
 def parse_settings_file(path: Path, *, scope: str = "project") -> list[ComponentRef]:
@@ -262,12 +281,13 @@ def plugin_mcp_refs(
     declared files unless an exclusive declaration or a non-empty inline map
     suppresses it; an empty list or map does not. Unsafe declared paths are
     dropped. A field of any other shape disables MCP for the plugin and is
-    recorded. When one server name appears in several sources the first wins.
+    recorded. When one server name appears in several sources the first wins,
+    a disabled entry included.
 
     `usable` lets a repo scan skip a gitignored candidate before it can win.
     """
     field = data.get("mcpServers")
-    sources: list[list[ComponentRef]] = []
+    sources: list[list[tuple[str, list[ComponentRef]]]] = []
     declared: list[object] = []
     suppress = False
     if "mcpServers" not in data:
@@ -284,23 +304,17 @@ def plugin_mcp_refs(
         declared, suppress = list(field["paths"]), exclusive
     elif isinstance(field, dict):
         suppress = bool(field)
-        inline: list[ComponentRef] = []
         try:
-            for name, entry in field.items():
-                if not isinstance(name, str):
-                    raise ValueError("MCP server names must be strings")
-                inline.extend(
-                    parse_server(
-                        name,
-                        entry,
-                        source_manifest=str(manifest_path),
-                        locator_prefix="$.mcpServers (inlined)",
-                    )
+            sources.append(
+                _named_servers(
+                    field,
+                    source_manifest=str(manifest_path),
+                    locator_prefix="$.mcpServers (inlined)",
                 )
+            )
         except ValueError as exc:
             record_gap(f"could not parse {manifest_path}: {exc}")
             return []
-        sources.append(inline)
     else:
         record_gap(
             f"could not parse {manifest_path}: mcpServers is not a form Devin accepts; "
@@ -323,24 +337,18 @@ def plugin_mcp_refs(
         if not usable(path):
             continue
         try:
-            sources.append(parse_mcp_file(path, allow_flat=True))
+            sources.append(_named_mcp_file(path, allow_flat=True))
         except (OSError, ValueError) as exc:
             record_gap(f"could not parse {path}: {exc}")
 
+    # By declared name, before the disabled flag: a disabled entry in an
+    # earlier source still shadows a later definition.
     seen: set[str] = set()
     refs: list[ComponentRef] = []
     for source in sources:
-        for ref in source:
-            name = _server_name(ref)
+        for name, server_refs in source:
             if name in seen:
                 continue
             seen.add(name)
-            refs.append(ref)
+            refs.extend(server_refs)
     return refs
-
-
-def _server_name(ref: ComponentRef) -> str:
-    path = (ref.extra or {}).get("component_path") or []
-    if path and isinstance(path[-1], dict) and isinstance(path[-1].get("name"), str):
-        return path[-1]["name"]
-    return ref.component_identity or ref.name or ""

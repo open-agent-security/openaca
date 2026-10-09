@@ -327,6 +327,16 @@ def test_claude_code_commands_keep_the_command_type(tmp_path):
     assert ref.name == "deploy"
 
 
+def test_a_skill_named_file_under_commands_is_still_a_command(tmp_path):
+    """`.claude/commands/**/*.md` takes every markdown file, whatever its name."""
+    _write(tmp_path / ".claude" / "commands" / "release" / "SKILL.md", "Release.\n")
+
+    graph = _declared(tmp_path)
+
+    assert _refs(graph, "skill") == []
+    assert [Path(r.source_manifest).name for r in _refs(graph, "command")] == ["SKILL.md"]
+
+
 def test_subagents_in_both_project_roots_and_both_layouts(tmp_path):
     _write(tmp_path / ".devin" / "agents" / "reviewer.md", "---\ndescription: r\n---\nReview.\n")
     _write(tmp_path / ".devin" / "agents" / "researcher" / "AGENT.md", "Research.\n")

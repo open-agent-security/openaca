@@ -812,7 +812,9 @@ def _realize_plugins(
     can reconcile a plugin's bundled command against a same-relative-path
     workspace command instead of letting both survive in the graph.
     """
-    candidates = find_plugin_roots(directory, surface, include_gitignored=include_gitignored)
+    candidates = find_plugin_roots(
+        directory, surface, include_gitignored=include_gitignored, record_gap=graph.record_gap
+    )
     ordered = sorted(candidates, key=lambda entry: len(entry[0].resolve().parts))
     realized: list[Path] = []
     realized_roots: list[Path] = []

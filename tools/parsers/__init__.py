@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, NamedTuple, Union
@@ -426,6 +427,15 @@ def _is_resolved_devin_plugin_format(manifest_dir: str) -> GuardFn:
     return guard
 
 
+def _parse_repo_devin_plugin(path: Path) -> list[ComponentRef]:
+    from tools.repo_surface import DEVIN_SURFACE
+
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict) or not DEVIN_SURFACE.plugin_formats[0].detect(data):
+        raise ValueError(f"{path}: not a plugin manifest Devin loads")
+    return claude_plugin.parse(path)
+
+
 def _parse_repo_devin_mcp(path: Path) -> list[ComponentRef]:
     return devin_config.parse_mcp_file(path)
 
@@ -516,11 +526,10 @@ DEVIN_MANIFEST_REGISTRY: list[ManifestPattern] = [
         for dirname in (".devin", ".agents")
         for filename in ("AGENT.md", "AGENTS.md", "agent.md", "agents.md")
     ),
-    ManifestPattern(
-        "**/.devin-plugin/plugin.json",
-        claude_plugin.parse,
-        _is_resolved_devin_plugin_format(".devin-plugin"),
-    ),
+    # Unguarded: Devin reads its own manifest whenever it is present and,
+    # rejecting it, reads no other at that root, so the resolver's decision
+    # rests on this file every time. A rejected one fails here.
+    ManifestPattern("**/.devin-plugin/plugin.json", _parse_repo_devin_plugin),
     ManifestPattern(
         "**/.claude-plugin/plugin.json",
         claude_plugin.parse,

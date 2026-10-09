@@ -485,14 +485,15 @@ DEVIN_MANIFEST_REGISTRY: list[ManifestPattern] = [
         claude_skill.parse,
         _devin_import_enabled(devin_config.IMPORT_WINDSURF, ".windsurf"),
     ),
-    # Claude Code's and Copilot's skill imports are recursive.
+    # Claude Code's and Copilot's skill imports are one level deep too: the
+    # docs write `**/SKILL.md`, the binary loads `<root>/<name>/SKILL.md`.
     ManifestPattern(
-        "**/.claude/skills/*/**/SKILL.md",
+        "**/.claude/skills/*/SKILL.md",
         claude_skill.parse,
         _devin_import_enabled(devin_config.IMPORT_CLAUDE, ".claude"),
     ),
     ManifestPattern(
-        "**/.github/skills/*/**/SKILL.md",
+        "**/.github/skills/*/SKILL.md",
         claude_skill.parse,
         _devin_import_enabled(devin_config.IMPORT_COPILOT, ".github"),
     ),

@@ -1574,13 +1574,19 @@ def _add_bundled_skills(
         # An explicit `skills` field replaces the default directory outright
         # rather than adding to it, and `[]` disables skill loading for this
         # plugin entirely (Devin: docs.devin.ai/cli/extensibility/plugins/overview).
+        # One invalid entry fails the whole declaration -- Devin loads none of
+        # it rather than only the entries that do resolve -- so the directories
+        # are collected into a side list and only added once every entry has
+        # validated.
         declared = custom_skills if isinstance(custom_skills, list) else [custom_skills]
+        declared_dirs: list[Path] = []
         for entry in declared:
-            if not isinstance(entry, str):
-                continue
-            custom_dir = resolve_within(directory, entry)
-            if custom_dir is not None and custom_dir.is_dir():
-                skill_dirs.append(custom_dir)
+            custom_dir = resolve_within(directory, entry) if isinstance(entry, str) else None
+            if custom_dir is None or not custom_dir.is_dir():
+                declared_dirs = []
+                break
+            declared_dirs.append(custom_dir)
+        skill_dirs.extend(declared_dirs)
     else:
         default_skills = resolve_within(directory, surface.bundled.skills_dir)
         if default_skills is not None and default_skills.is_dir():

@@ -152,7 +152,12 @@ Notation:
 
 - `<config>` and `<data>` are the [roots](#roots).
 - **Project roots** are the working directory and its ancestors up to the
-  repository root. Devin discovers hooks, skills and rules that way.
+  repository root, the first directory holding `.git` or `.jj`; a nested
+  `.devin/` takes precedence over an ancestor's (bundled
+  `reference/configuration/global-vs-local.mdx`). An installed scan reads
+  Devin's own `.devin/`, `.cognition/skills` and `.agents/` surfaces in every
+  layer from `--project` up to that root; imports are read from `--project`
+  only. With no marker above it, `--project` is the only layer.
 - **‡** marks an import gated by `read_config_from`.
 
 The inclusion bar is *would omitting this make the inventory wrong on an ordinary
@@ -214,6 +219,8 @@ than a `hooks` key.
 | | |
 |---|---|
 | Manifest candidates, in order | 1. `.devin-plugin/plugin.json`, new. 2. `.claude-plugin/plugin.json`, whose root `.mcp.json` is honoured. 3. A root `plugin.json` per Agent Plugins 1.0.0. OpenACA already realizes 2 and 3 for Claude Code and Cursor |
+| Manifest `skills` | A path or a list of paths, replacing the default `skills/`; `[]` disables skills. "An invalid entry fails the whole manifest": an absolute, `~` or `..` entry means the `.devin-plugin` manifest does not qualify and the plugin is not realized |
+| Manifest `mcpServers` | A file, a list of files read in order, `{"paths": [...], "exclusive": true}`, or an inline map. The root `.mcp.json` is read after declared files unless `exclusive` or a non-empty inline map suppresses it; an empty list or map does not. Unsafe paths are dropped; a field of any other shape disables only MCP. The first source to name a server wins (bundled `extensibility/plugins/overview.mdx`) |
 | Install level | User only |
 | Store | `<data>/plugins/`. The binary references `lock.json`, `discovered.json` and a `cache` directory; the probe's `lock.json` has `requirements`, `resolved` and `edges` arrays |
 | Bundle layout inside the store | **Unverified.** `devin plugins install` and `devin plugins list` refuse to run without a signed-in account |

@@ -288,3 +288,25 @@ def test_a_raw_settings_file_cannot_forge_devin_permissions(tmp_path):
 )
 def test_covers(rule, allow, expected):
     assert covers(rule, allow) is expected
+
+
+def test_endpoint_an_ancestor_layer_deny_reaches_a_nested_allow(tmp_path):
+    """Installed scans load every `.devin/` from the project up to the
+    repository root, so a repo-root deny governs a nested package's allow."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    app = repo / "packages" / "app"
+    _permissions(repo / ".devin" / "config.json", deny=["Exec(git push)"])
+    _permissions(app / ".devin" / "config.json", allow=["Exec(git push)", "Exec(npm test)"])
+
+    assert _by_rule(_endpoint(tmp_path, app), COMMAND) == ["npm test"]
+
+
+def test_endpoint_an_ancestor_layer_allow_is_reported(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    app = repo / "packages" / "app"
+    app.mkdir(parents=True)
+    _permissions(repo / ".devin" / "config.json", allow=["mcp__github__*"])
+
+    assert _by_rule(_endpoint(tmp_path, app), MCP) == ["mcp-server/github autoApprove"]

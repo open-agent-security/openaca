@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+from fnmatch import fnmatch
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext, matches_evidence
+from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
 from tools.graph import Graph
 from tools.parsers import DEVIN_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -67,6 +68,39 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = tuple(
 )
 
 
+def _matches_evidence_pattern(rel: str, patterns: tuple[str, ...]) -> bool:
+    """Like `tools.agent_kinds.matches_evidence`, but each `*` matches only
+    within one path segment, never crossing `/`.
+
+    Devin's own `agents/` and `skills/` roots are not read recursively --
+    `_is_flat_agent`, `_is_directory_agent` and `_declared_skill_gate` in
+    `graph_build_devin.py` all require an exact segment count between the
+    root and the loaded file -- so `.devin/agents/*.md` must not match a
+    descendant like `.devin/agents/sub/notes.md` two levels deep, the way
+    plain `fnmatch` (used by the shared `matches_evidence`, whose patterns
+    for Cursor's recursively-read `commands/`/`agents/` genuinely want that
+    crossing) would.
+    """
+    rel_parts = rel.split("/")
+    for pattern in patterns:
+        at_any_depth = pattern.startswith("*/")
+        pattern_parts = pattern[2:].split("/") if at_any_depth else pattern.split("/")
+        if at_any_depth:
+            # Any number of unmatched leading segments: try every window of
+            # `rel_parts` exactly as long as the pattern.
+            span = len(pattern_parts)
+            windows = (rel_parts[i : i + span] for i in range(len(rel_parts) - span + 1))
+        elif len(pattern_parts) == len(rel_parts):
+            # No prefix: the pattern must account for every segment of `rel`.
+            windows = (rel_parts,)
+        else:
+            windows = ()
+        for window in windows:
+            if all(fnmatch(part, piece) for part, piece in zip(window, pattern_parts)):
+                return True
+    return False
+
+
 def _realized_plugin_roots(scan_root: Path, *, include_gitignored: bool) -> list[Path]:
     """Directories where one of Devin's plugin formats realizes — the one
     implementation composition also uses, so evidence cannot drift from it."""
@@ -83,7 +117,7 @@ def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
 
     if is_owned_by_realized_plugin(path, realized_roots, DEVIN_SURFACE):
         return False
-    return matches_evidence(rel, _DECLARED_EVIDENCE_PATTERNS)
+    return _matches_evidence_pattern(rel, _DECLARED_EVIDENCE_PATTERNS)
 
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:

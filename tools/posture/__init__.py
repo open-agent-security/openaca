@@ -909,7 +909,19 @@ def _read_mcp_auth_source(path: Path) -> dict:
         return {}
     if not isinstance(manifest, dict):
         return {}
-    return insecure_transport._get_server_map(manifest) or {}
+    server_map = insecure_transport._get_server_map(manifest)
+    if server_map is None:
+        # Devin's flat `ServerConfig` accepts `serverUrl` as an alias for
+        # `url` (`devin_config.normalize_server_entry`), a key no other
+        # kind's composed source ever carries, so a flat root using only
+        # `serverUrl` misses `_get_server_map`'s kind-neutral `command`/`url`
+        # test. Reusing Devin's own predicate here, rather than widening the
+        # shared one, keeps every other kind's flat-root matching untouched.
+        from tools.parsers import devin_config
+
+        resolved = devin_config.server_map(manifest, allow_flat=True)
+        server_map = resolved[0] if resolved is not None else None
+    return server_map or {}
 
 
 def collect_cursor_endpoint_mcp_manifests(

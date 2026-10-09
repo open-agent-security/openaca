@@ -503,6 +503,21 @@ def test_a_devin_plugin_empty_skills_list_disables_skill_loading(tmp_path):
     assert _refs(_declared(tmp_path), "skill") == []
 
 
+def test_a_devin_plugin_skills_list_with_one_invalid_entry_loads_none(tmp_path):
+    """Devin fails the whole `skills` declaration when any entry doesn't
+    resolve to a directory inside the plugin, rather than loading the
+    entries that do (docs.devin.ai/cli/extensibility/plugins/overview)."""
+    plugin = tmp_path / "p"
+    _write_json(
+        plugin / ".devin-plugin" / "plugin.json",
+        {"name": "p", "skills": ["custom-skills", "../outside"]},
+    )
+    _skill(plugin / "skills" / "default", "default")
+    _skill(plugin / "custom-skills" / "custom", "custom")
+
+    assert _refs(_declared(tmp_path), "skill") == []
+
+
 def test_a_devin_plugin_skills_string_still_replaces_the_default(tmp_path):
     plugin = tmp_path / "p"
     _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p", "skills": "custom-skills"})

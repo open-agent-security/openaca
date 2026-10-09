@@ -79,6 +79,60 @@ def test_literals_are_not_hidden_by_placeholder_or_interpolation(tmp_path, value
     )
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "${file:/run/secrets/mcp-token}",
+        "Bearer ${file:/run/secrets/mcp-token}",
+        "Bearer ${file:~/.config/tokens/github}",
+        "Bearer ${file:./secrets/token}",
+        "Bearer ${file:../secrets/token}",
+    ],
+)
+def test_a_path_shaped_file_reference_is_not_a_literal(tmp_path, value):
+    """Devin CLI expands `${file:/path}` in headers, reading the value from
+    disk at run time (docs/specs/devin-cli-agent-kind.md, Posture). The
+    configuration holds a path, not a credential."""
+    assert (
+        check(tmp_path, {"url": "https://example.test/mcp", "headers": {"Authorization": value}})
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Bearer ${file:ghp_dummyliteraltoken}",
+        "Bearer ${file:}",
+        "Bearer ${file:/run/secrets/token} trailing-literal",
+    ],
+)
+def test_a_file_reference_cannot_hide_a_literal(tmp_path, value):
+    """Only a path-shaped body reads as a reference, so recognising
+    `${file:…}` weakens detection for no kind: a token wrapped in the syntax,
+    or a literal beside a reference, is still a literal."""
+    assert (
+        len(
+            check(
+                tmp_path, {"url": "https://example.test/mcp", "headers": {"Authorization": value}}
+            )
+        )
+        == 1
+    )
+
+
+def test_codex_static_headers_stay_literal_even_with_a_file_reference(tmp_path):
+    """`http_headers` are sent verbatim, so no reference syntax applies there."""
+    findings = check(
+        tmp_path,
+        {
+            "url": "https://example.test/mcp",
+            "http_headers": {"Authorization": "Bearer ${file:/run/secrets/token}"},
+        },
+    )
+    assert len(findings) == 1
+
+
 def test_only_authentication_fields_and_remote_servers(tmp_path):
     assert (
         check(

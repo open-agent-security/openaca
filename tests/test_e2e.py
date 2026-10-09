@@ -36,7 +36,7 @@ OVERLAYS_DIR = REPO_ROOT / "overlays"
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
-@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex"])
+@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin-cli"])
 @pytest.mark.parametrize("include_posture", [False, True])
 def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):
     from tools.scan import main as scan_main
@@ -49,7 +49,14 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
             f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
         )
     else:
-        config = tmp_path / (".cursor/mcp.json" if kind == "cursor" else ".mcp.json")
+        config = (
+            tmp_path
+            / {
+                "claude-code": ".mcp.json",
+                "cursor": ".cursor/mcp.json",
+                "devin-cli": ".devin/mcp_config.json",
+            }[kind]
+        )
         content = json.dumps(
             {
                 "mcpServers": {
@@ -81,14 +88,29 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
 
 @pytest.mark.parametrize(
     "kind,inline",
-    [("claude-code", False), ("claude-code", True), ("cursor", False), ("codex", False)],
+    [
+        ("claude-code", False),
+        ("claude-code", True),
+        ("cursor", False),
+        ("codex", False),
+        ("devin-cli", False),
+        ("devin-cli", True),
+    ],
 )
 def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline):
     from tools.scan import main as scan_main
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    root = tmp_path / {"claude-code": ".claude", "cursor": ".cursor", "codex": ".codex"}[kind]
-    root.mkdir()
+    root = (
+        tmp_path
+        / {
+            "claude-code": ".claude",
+            "cursor": ".cursor",
+            "codex": ".codex",
+            "devin-cli": ".config/devin",
+        }[kind]
+    )
+    root.mkdir(parents=True)
     token = "dummy-endpoint-token"
     if kind == "codex":
         (root / "config.toml").write_text(
@@ -96,9 +118,13 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
         )
     else:
-        filename = (
-            "settings.json" if inline else ".mcp.json" if kind == "claude-code" else "mcp.json"
-        )
+        filename = {
+            # Devin's legacy `config.json` `mcpServers` is its inline form.
+            ("devin-cli", True): "config.json",
+            ("devin-cli", False): "mcp_config.json",
+            ("claude-code", True): "settings.json",
+            ("claude-code", False): ".mcp.json",
+        }.get((kind, inline), "mcp.json")
         (root / filename).write_text(
             json.dumps(
                 {
@@ -112,7 +138,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             )
         )
     args = ["endpoint", "--kind", kind, "--include-posture", "--format", "json"]
-    if kind != "cursor":
+    if kind not in ("cursor", "devin-cli"):
         args.extend(["--config-dir", str(root)])
     result = CliRunner().invoke(scan_main, args)
     assert result.exit_code == 0, result.output
@@ -2058,3 +2084,73 @@ def test_e2e_collect_installed_agents_through_the_published_facade(tmp_path):
     assert mutable, [f.rule_id for f in collected.posture_findings]
     assert isinstance(mutable[0], PostureFinding)
     assert mutable[0].agent_kind == "claude-code"
+
+
+# --- Devin CLI as the fourth agent kind ---------------------------------------
+
+
+def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, monkeypatch):
+    """Devin CLI end to end: discovery from the XDG config root, composition
+    of its own MCP layer and a Claude Code file it imports by default,
+    advisory matching against the real corpus, posture, and an emitted BOM
+    whose bom-refs carry no home path.
+
+    The vulnerable server is declared only in `~/.claude.json`, so a
+    regression that drops imports, or attributes them to no agent, loses the
+    finding a downstream "vulnerable dependency invoked" detection joins on.
+    """
+    from tools.bom_cli import main as bom_main
+    from tools.scan import main as scan_main
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    config = home / ".config" / "devin"
+    config.mkdir(parents=True)
+    (config / "mcp_config.json").write_text(
+        '{\n  // Devin reads its config as JSON with comments\n  "mcpServers": '
+        '{"plain": {"url": "http://insecure.example.test/mcp"}},\n}\n',
+        encoding="utf-8",
+    )
+    token = "dummy-devin-e2e-token"
+    (home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "git": {"command": "npx", "args": ["-y", "@cyanheads/git-mcp-server@1.1.0"]},
+                    "remote": {
+                        "url": "https://remote.example.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "devin-cli", "--include-posture", "--format", "json"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert token not in result.output
+    doc, _ = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])
+    assert [(a["kind"], a["coverage"]) for a in doc["agents"]] == [("devin-cli", "partial")]
+    kinds = {f["agent"]["kind"] for f in doc["findings"]}
+    assert kinds == {"devin-cli"}
+    rule_ids = {f.get("rule_id") for f in doc["findings"]}
+    assert "openaca-posture-insecure-transport" in rule_ids
+    assert "openaca-posture-mcp-header-credential" in rule_ids
+    assert any("GHSA-3q26-f695-pp76" in json.dumps(f) for f in doc["findings"])
+
+    out = tmp_path / "boms"
+    bom = CliRunner().invoke(
+        bom_main, ["endpoint", "--kind", "devin-cli", "--output-dir", str(out)]
+    )
+    assert bom.exit_code == 0, bom.output
+    (path,) = out.glob("*.cdx.json")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    refs = [c["bom-ref"] for c in document["components"]]
+    assert refs and not [r for r in refs if str(tmp_path) in r]
+    assert any(r.startswith("home/.claude.json#") for r in refs)
+    assert any(r.startswith("devin-cli/mcp_config.json#") for r in refs)

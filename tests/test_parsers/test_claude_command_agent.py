@@ -9,7 +9,7 @@ Identity is name-based; repo/plugin location is carried separately.
 
 from pathlib import Path
 
-from tools.parsers.claude_command_agent import enumerate_dir
+from tools.parsers.claude_command_agent import enumerate_dir, parse_file
 
 
 def _write(path: Path, content: str) -> Path:
@@ -247,3 +247,23 @@ def test_user_project_agent_frontmatter_hooks_are_emitted(tmp_path):
 
     hook = next(r for r in refs if r.extra.get("component_type") == "hook")
     assert hook.extra["event"] == "PreToolUse"
+
+
+def test_parse_file_name_fallback_replaces_the_stem(tmp_path):
+    """Devin CLI's `agents/<name>/AGENT.md` is named for its directory."""
+    path = tmp_path / "agents" / "researcher" / "AGENT.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\ndescription: research\n---\nBody\n")
+
+    refs = parse_file(path, kind="agent", name_fallback="researcher")
+
+    assert refs[0].name == "researcher"
+    assert refs[0].component_identity == "claude-agent/researcher"
+
+
+def test_parse_file_frontmatter_name_still_wins_over_the_fallback(tmp_path):
+    path = tmp_path / "agents" / "researcher" / "AGENT.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nname: deep-research\n---\nBody\n")
+
+    assert parse_file(path, kind="agent", name_fallback="researcher")[0].name == "deep-research"

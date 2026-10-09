@@ -321,3 +321,47 @@ CODEX_SURFACE = RepoSurface(
     manifest_optional=False,
     excludes_plugin_owned_content=True,
 )
+
+
+# Devin CLI's own plugin format, `.devin-plugin/plugin.json`. "Only `name` is
+# required" (Devin's plugin docs), so qualification is the named-manifest test
+# Cursor's and Codex's native formats use, and the manifest is the shape
+# `claude_plugin.parse` already reads.
+_DEVIN_PLUGIN_FORMAT = PluginFormat(
+    manifest_dir=".devin-plugin",
+    manifest_filename="plugin.json",
+    detect=_detect_named_plugin_manifest,
+    parse=claude_plugin.parse,
+)
+
+DEVIN_SURFACE = RepoSurface(
+    config_dir=".devin",
+    # Devin's documented manifest precedence: `.devin-plugin/plugin.json` >
+    # `.claude-plugin/plugin.json` > root `plugin.json` (Agent Plugins 1.0.0).
+    # Both borrowed formats are the other surfaces' own objects, so the kinds
+    # can never disagree about what qualifies them.
+    plugin_formats=(
+        _DEVIN_PLUGIN_FORMAT,
+        CLAUDE_CODE_SURFACE.plugin_formats[0],
+        _AGENT_PLUGINS_FORMAT,
+    ),
+    # Devin's plugin layout: `skills/`, `agents/`, a root `hooks.json` and a
+    # root `.mcp.json`. The Agent Plugins format's root `mcp.json` is read by
+    # that format's own parser, not through this layout.
+    bundled=BundledLayout(
+        skills_dir="skills",
+        mcp_filenames=(".mcp.json",),
+        hooks_filename="hooks.json",
+        commands_dir="commands",
+        agents_dir="agents",
+    ),
+    # Devin's repo surfaces are walked by `tools/graph_build_devin.py`, not
+    # through the `config_dir`-shaped helpers, so the fields below that only
+    # those helpers read carry absences.
+    settings_filename=None,
+    project_skills_subdir="skills",
+    standalone_mcp_filenames=(),
+    command_agent_surfaces=(),
+    manifest_optional=False,
+    excludes_plugin_owned_content=True,
+)

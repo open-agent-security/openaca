@@ -186,10 +186,11 @@ def test_posture_rules_exclude_mcp_auto_approve_and_endpoint_override():
     assert project_trust.RULE_ID in rules
 
 
-def test_three_kinds_are_registered_and_the_others_are_unchanged():
+def test_every_kind_is_registered_and_the_others_are_unchanged():
     from tools.agent_kinds import REGISTRY
     from tools.parsers import (
         CURSOR_MANIFEST_REGISTRY,
+        DEVIN_MANIFEST_REGISTRY,
         HOST_AGNOSTIC_REGISTRY,
     )
     from tools.parsers import (
@@ -198,10 +199,13 @@ def test_three_kinds_are_registered_and_the_others_are_unchanged():
 
     by_id = {k.id: k for k in REGISTRY}
 
-    assert set(by_id) == {"claude-code", "cursor", "codex"}
+    assert set(by_id) == {"claude-code", "cursor", "codex", "devin-cli"}
     assert by_id["claude-code"].manifest_patterns == tuple(FLAT_REGISTRY)
     assert by_id["cursor"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         CURSOR_MANIFEST_REGISTRY
+    )
+    assert by_id["devin-cli"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
+        DEVIN_MANIFEST_REGISTRY
     )
 
 

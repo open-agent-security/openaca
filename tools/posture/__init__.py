@@ -43,6 +43,8 @@ __all__ = [
     "collect_cursor_endpoint_permissions_manifests",
     "collect_cursor_mcp_manifests",
     "collect_cursor_permissions_manifests",
+    "collect_devin_endpoint_mcp_manifests",
+    "collect_devin_mcp_manifests",
     "collect_endpoint_mcp_manifests",
     "collect_endpoint_settings_manifests",
     "collect_mcp_manifests",
@@ -887,7 +889,11 @@ def _read_mcp_auth_source(path: Path) -> dict:
                 )
 
                 return _inline_mcp_servers(_read_frontmatter(path).get("mcpServers"))
-            raise
+            # Devin CLI reads every file it composes MCP servers from as JSON
+            # with comments, so a composed server's own file may carry them.
+            # No other kind composes a server from a file `json.loads`
+            # rejects, so this changes nothing for them.
+            manifest = jsonc.loads(text)
     except (OSError, ValueError):
         return {}
     if not isinstance(manifest, dict):
@@ -1206,3 +1212,37 @@ def collect_codex_project_trust_manifests(
         if projects:
             out.append((config_path, {"projects": projects}))
     return out
+
+
+# --- Devin CLI posture surfaces (ADR-0070) ----------------------------------
+#
+# `insecure_transport` and `mcp_header_credential` derive from the graph's own
+# `mcp_server` refs, for the reason Cursor's and Codex's collectors give: Devin
+# merges its own layers by name, gates every import by `read_config_from`, and
+# records an import beside a same-named native server. A re-walk would have to
+# restate all of it.
+
+
+def collect_devin_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Devin CLI's declared MCP posture surface, derived from composed refs.
+
+    `roots` and `include_gitignored` are accepted and unused — the graph they
+    would have searched was already built under those same settings.
+    """
+    del roots, include_gitignored
+    return _mcp_manifests_from_refs(refs or [])
+
+
+def collect_devin_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Devin CLI's installed MCP posture surface, derived from composed refs."""
+    del config_dir, project_root
+    return _mcp_manifests_from_refs(refs)

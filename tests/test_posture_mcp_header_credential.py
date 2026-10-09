@@ -385,3 +385,36 @@ def test_sarif_does_not_contain_header_values(tmp_path):
     output = json.dumps(to_sarif([], {}, posture_findings=findings))
     assert RULE_ID in output
     assert token not in output
+
+
+def test_a_devin_server_composed_from_a_file_with_comments_keeps_its_credential(tmp_path):
+    """Devin reads `mcp_config.json` as JSON with comments. The credential
+    pass re-reads the composed server's own file, so it must read it the same
+    way or a commented file would hide every header in it."""
+    from tools.graph_build_devin import build_devin_declared_graph
+    from tools.posture import collect_devin_mcp_manifests
+
+    config = tmp_path / ".devin" / "mcp_config.json"
+    config.parent.mkdir()
+    config.write_text(
+        '{\n  // personal server\n  "mcpServers": {"demo": {"url": "https://example.test/mcp", '
+        '"headers": {"Authorization": "Bearer dummy-literal"}}},\n}\n',
+        encoding="utf-8",
+    )
+
+    class _Agent:
+        source = "declared"
+        scan_root = tmp_path
+        bom_ref = "root/devin-cli"
+        root_label = "devin-cli"
+
+    graph = build_devin_declared_graph(_Agent())
+    refs = [node.ref for node in graph.nodes.values() if node.ref is not None]
+    findings = [
+        f
+        for f in run_posture_rules(refs, collect_devin_mcp_manifests([], refs=refs))
+        if f.rule_id == RULE_ID
+    ]
+
+    assert len(findings) == 1
+    assert findings[0].declared_by == {"kind": "manifest", "path": str(config)}

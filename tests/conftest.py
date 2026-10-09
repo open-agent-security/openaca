@@ -46,6 +46,19 @@ def _offline_osv_for_scan_tests(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_xdg_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear `XDG_CONFIG_HOME` and `XDG_DATA_HOME` for every test.
+
+    Devin CLI's config and data roots, and Cursor's `permissions.json`, follow
+    these variables. A machine that sets them would otherwise point an
+    installed discovery at its own real configuration, whatever home directory
+    the test faked. Tests that exercise the variables set them in-test.
+    """
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_managed_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> Path:

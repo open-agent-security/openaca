@@ -478,6 +478,40 @@ def test_a_devin_plugin_directory_form_agent_honors_filename_precedence(tmp_path
     assert len(_refs(_declared(tmp_path), "agent")) == 1
 
 
+def test_a_devin_plugin_skills_list_replaces_the_default_directory(tmp_path):
+    """A list-valued `skills` field names the plugin's skill roots outright,
+    replacing (not adding to) the default `skills/` directory
+    (docs.devin.ai/cli/extensibility/plugins/overview)."""
+    plugin = tmp_path / "p"
+    _write_json(
+        plugin / ".devin-plugin" / "plugin.json",
+        {"name": "p", "skills": ["custom-skills", "extra/skills"]},
+    )
+    _skill(plugin / "skills" / "default", "default")
+    _skill(plugin / "custom-skills" / "custom", "custom")
+    _skill(plugin / "extra" / "skills" / "extra", "extra")
+
+    assert _names(_declared(tmp_path), "skill") == ["custom", "extra"]
+
+
+def test_a_devin_plugin_empty_skills_list_disables_skill_loading(tmp_path):
+    """`"skills": []` disables skill loading for the plugin entirely."""
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p", "skills": []})
+    _skill(plugin / "skills" / "default", "default")
+
+    assert _refs(_declared(tmp_path), "skill") == []
+
+
+def test_a_devin_plugin_skills_string_still_replaces_the_default(tmp_path):
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p", "skills": "custom-skills"})
+    _skill(plugin / "skills" / "default", "default")
+    _skill(plugin / "custom-skills" / "custom", "custom")
+
+    assert _names(_declared(tmp_path), "skill") == ["custom"]
+
+
 # --- Installed --------------------------------------------------------------------
 
 

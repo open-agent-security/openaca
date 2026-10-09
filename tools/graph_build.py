@@ -1568,15 +1568,27 @@ def _add_bundled_skills(
     deduped.
     """
     skill_dirs: list[Path] = []
-    default_skills = resolve_within(directory, surface.bundled.skills_dir)
-    if default_skills is not None and default_skills.is_dir():
-        skill_dirs.append(default_skills)
     eval_root, spec = _ignore_context(directory, False, root_dir, root_spec)
     custom_skills = _plugin_custom_skills_field(directory, surface, eval_root=eval_root, spec=spec)
-    if isinstance(custom_skills, str):
-        custom_dir = resolve_within(directory, custom_skills)
-        if custom_dir is not None and custom_dir.is_dir():
-            skill_dirs.append(custom_dir)
+    if surface.bundled.skills_field_overrides_default and custom_skills is not None:
+        # An explicit `skills` field replaces the default directory outright
+        # rather than adding to it, and `[]` disables skill loading for this
+        # plugin entirely (Devin: docs.devin.ai/cli/extensibility/plugins/overview).
+        declared = custom_skills if isinstance(custom_skills, list) else [custom_skills]
+        for entry in declared:
+            if not isinstance(entry, str):
+                continue
+            custom_dir = resolve_within(directory, entry)
+            if custom_dir is not None and custom_dir.is_dir():
+                skill_dirs.append(custom_dir)
+    else:
+        default_skills = resolve_within(directory, surface.bundled.skills_dir)
+        if default_skills is not None and default_skills.is_dir():
+            skill_dirs.append(default_skills)
+        if isinstance(custom_skills, str):
+            custom_dir = resolve_within(directory, custom_skills)
+            if custom_dir is not None and custom_dir.is_dir():
+                skill_dirs.append(custom_dir)
 
     seen_dirs: set[Path] = set()
     for skills_dir in skill_dirs:
@@ -2033,16 +2045,28 @@ def _add_bundled_plugin_surfaces(
     plugin_manifest_path = _resolve_plugin_manifest(
         plugin_root, surface, eval_root=eval_root, spec=spec
     )
+
+    def _resolves_to_dir(entry: object) -> bool:
+        resolved = resolve_within(plugin_root, entry) if isinstance(entry, str) else None
+        return resolved is not None and resolved.is_dir()
+
     # `field`, not `surface`: this loop is over manifest field NAMES and would
     # otherwise shadow the `RepoSurface` parameter it sits beside.
     for field in ("skills", "commands", "agents"):
         if field not in plugin_data:
             continue
         declared_path = plugin_data[field]
-        resolved = (
-            resolve_within(plugin_root, declared_path) if isinstance(declared_path, str) else None
-        )
-        if resolved is None or not resolved.is_dir():
+        if field == "skills" and surface.bundled.skills_field_overrides_default:
+            # A list (or `[]`, which disables skill loading outright) is
+            # Devin's own override shape, not a parse failure.
+            entries = declared_path if isinstance(declared_path, list) else [declared_path]
+            if entries and not all(_resolves_to_dir(entry) for entry in entries):
+                graph.record_gap(
+                    f"could not parse {plugin_manifest_path}: "
+                    f"{field} must name an available directory"
+                )
+            continue
+        if not _resolves_to_dir(declared_path):
             graph.record_gap(
                 f"could not parse {plugin_manifest_path}: {field} must name an available directory"
             )

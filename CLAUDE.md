@@ -261,9 +261,10 @@ represent the user's in-progress work.
 - Calibrate priority by impact and urgency:
   - P0: critical, broadly applicable failure requiring immediate action.
   - P1: serious defect that should be fixed before this change lands.
-  - P2: normal-priority defect eligible for automatic fixing.
+  - P2: normal-priority defect.
   - P3: low-priority suggestion.
-  Do not inflate priority to make a finding eligible for automatic fixing.
+- Report only P0 and P1 findings. Do not post P2 or P3 findings, inline or
+  in the review summary. Do not inflate priority to get a finding reported.
 - On subsequent reviews, verify earlier fixes and inspect their effects on
   callers and dependencies. Older code within the PR remains reviewable.
 - When review history supports it, identify a finding as:

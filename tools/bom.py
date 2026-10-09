@@ -176,12 +176,12 @@ def _is_annotated(extra: dict[str, Any]) -> bool:
     return True
 
 
-def _annotate_capabilities(refs: Iterable[ComponentRef]) -> None:
+def _annotate_capabilities(refs: Iterable[ComponentRef], *, agent_kind: str | None = None) -> None:
     corpus = load_capability_corpus()
     for ref in refs:
         if _is_annotated(ref.extra):
             continue
-        caps, coverage = capabilities_for_ref(ref, corpus)
+        caps, coverage = capabilities_for_ref(ref, corpus, agent_kind=agent_kind)
         ref.extra["capabilities"] = [c.to_dict() for c in caps]
         ref.extra["capability_coverage"] = coverage
 
@@ -213,7 +213,7 @@ def build_agent_bom(
             composition_source=composition_source,
             composition_coverage=composition_coverage,
         )
-    _annotate_capabilities(refs)
+    _annotate_capabilities(refs, agent_kind=agent_kind)
     components = [
         BOMComponent(ref=ref, bom_ref=bom_ref)
         for ref, bom_ref in zip(refs, _stable_bom_refs(refs), strict=True)
@@ -267,7 +267,7 @@ def _build_agent_bom_from_graph(
         for node in graph.nodes.values()
         if node.ref is not None and graph.scope_of(node) in _AGENT_SCOPES
     ]
-    _annotate_capabilities(ref for _, ref in included_refs)
+    _annotate_capabilities((ref for _, ref in included_refs), agent_kind=agent_kind)
     for node, node_ref in included_refs:
         ref = replace(
             node_ref,

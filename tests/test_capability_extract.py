@@ -19,6 +19,26 @@ def test_skill_write_read_map_to_file_caps(tmp_path):
     assert {c.name for c in caps} == {"file_read", "file_write"}
 
 
+def test_skill_devin_exec_maps_to_shell_exec(tmp_path):
+    """`exec` is Devin CLI's shell tool; an unscoped call and a Devin scan
+    both map it, matching `skill_capability`'s posture matcher."""
+    ref = _skill(tmp_path, "exec")
+
+    caps, _ = declared_capabilities(ref)
+    assert {c.name for c in caps} == {"shell_exec"}
+
+    caps, _ = declared_capabilities(ref, agent_kind="devin-cli")
+    assert {c.name for c in caps} == {"shell_exec"}
+
+
+def test_skill_exec_does_not_map_to_shell_exec_for_other_kinds(tmp_path):
+    """A Cursor or Codex skill has no `exec` tool, so the same `allowed-tools:
+    exec` entry on a shared skill must not produce a capability for them."""
+    caps, covered = declared_capabilities(_skill(tmp_path, "exec"), agent_kind="cursor")
+    assert caps == []
+    assert covered is True
+
+
 def test_remote_mcp_maps_to_egress_and_data(tmp_path):
     ref = ComponentRef(
         component_identity="mcp-server/x",

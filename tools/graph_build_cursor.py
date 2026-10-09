@@ -25,6 +25,7 @@ already fully `RepoSurface`-parameterized and needs no Cursor-specific code.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -52,7 +53,12 @@ from tools.graph_build import (
 from tools.parsers import agent_plugins, devin_config, mcp_json
 from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
-from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE, RepoSurface
+from tools.repo_surface import (
+    AGENT_PLUGINS_FORMAT,
+    AGENT_PLUGINS_FORMATS,
+    CURSOR_SURFACE,
+    RepoSurface,
+)
 
 # Cache bundles are gated on this zero-byte sentinel, Cursor's own cache-reuse
 # check (docs/specs/cursor-agent-kind.md "Exclusions"): a directory without it
@@ -827,7 +833,7 @@ def _realize_plugins(
     for root, fmt in ordered:
         if _strictly_below_realized(root):
             continue
-        if fmt is AGENT_PLUGINS_FORMAT:
+        if fmt in AGENT_PLUGINS_FORMATS:
             node = _realize_agent_plugins_root(
                 graph,
                 parent,
@@ -835,6 +841,7 @@ def _realize_plugins(
                 normalize,
                 root_dir=root_dir,
                 root_spec=root_spec,
+                parse=fmt.parse or agent_plugins.parse,
                 conventional_mcp=(
                     (*surface.bundled.mcp_filenames, "mcp.json")
                     if surface.bundled.mcp_servers_field_selects_sources
@@ -856,7 +863,7 @@ def _realize_plugins(
         if node is not None:
             realized.append(root)
             realized_roots.append(root.resolve())
-            if fmt is not AGENT_PLUGINS_FORMAT:
+            if fmt not in AGENT_PLUGINS_FORMATS:
                 commands_dir = _plugin_commands_dir(root, fmt)
                 if commands_dir is not None:
                     realized_plugin_commands.append((node, commands_dir))
@@ -872,6 +879,7 @@ def _realize_agent_plugins_root(
     root_dir: Path | None,
     root_spec,
     plugin_extra: dict | None = None,
+    parse: Callable[..., list] = agent_plugins.parse,
     conventional_mcp: tuple[str, ...] | None = None,
 ) -> Node | None:
     """Realize an Agent Plugins bundle: `agent_plugins.parse` returns the
@@ -888,7 +896,7 @@ def _realize_agent_plugins_root(
     silently reporting a clean, empty composition for it.
     """
     manifest = plugin_root / "plugin.json"
-    refs = safe_parse(graph, lambda path: agent_plugins.parse(path, strict=True), manifest)
+    refs = safe_parse(graph, lambda path: parse(path, strict=True), manifest)
     if conventional_mcp is not None and any(component_type_of(r) == "plugin" for r in refs):
         # A kind that reads more conventional MCP sources than the Agent
         # Plugins spec's one `mcp.json` (Devin: `.mcp.json`, then `mcp.json`,

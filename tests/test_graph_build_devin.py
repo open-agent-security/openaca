@@ -635,17 +635,24 @@ def test_a_disabled_server_in_an_earlier_plugin_mcp_source_shadows_a_later_one(t
     ]
 
 
+_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
 def test_a_devin_plugins_required_plugins_are_inventoried(tmp_path):
     """`requiredPlugins` are "auto-installed (recursively) when the plugin is
     installed" (bundled `plugins/overview.mdx`), so each is part of what the
-    plugin brings, named by its source: a string, or one of the five source
-    kinds the 3000.11.3 binary accepts."""
+    plugin brings. A source on GitHub keeps the identity every GitHub-sourced
+    component has -- `owner/repo`, a commit `sha` as its version, a mutable
+    `ref` as `git_ref`, a subdirectory -- so a pinned one is matched; any
+    other source is named by its location, its pin kept."""
     required = [
         "acme/secure-base",
-        {"source": "github", "repo": "acme/audit"},
-        {"source": "url", "url": "https://gitlab.com/acme/extra.git"},
+        {"source": "github", "repo": "acme/audit", "sha": _SHA},
+        {"source": "github", "repo": "acme/tagged", "sha": "", "ref": "v1.2.0"},
+        {"source": "url", "url": "https://gitlab.com/acme/extra.git", "sha": _SHA},
         {"source": "git-subdir", "url": "https://github.com/acme/vendor.git", "path": "stripe"},
-        {"source": "local", "path": "../sibling"},
+        "acme/mono#plugins/billing",
+        {"source": "local", "path": "./sibling"},
         {"source": "account-upload", "bundleId": "b-123"},
     ]
     _write_json(
@@ -653,15 +660,38 @@ def test_a_devin_plugins_required_plugins_are_inventoried(tmp_path):
         {"name": "p", "requiredPlugins": required, "optionalPlugins": ["acme/not-installed"]},
     )
     graph = _declared(tmp_path)
-    assert sorted((r.name, r.source_locator) for r in _refs(graph, "component")) == [
-        ("../sibling", "$.requiredPlugins[4]"),
-        ("acme/audit", "$.requiredPlugins[1]"),
-        ("acme/secure-base", "$.requiredPlugins[0]"),
-        ("b-123", "$.requiredPlugins[5]"),
-        ("https://github.com/acme/vendor.git#stripe", "$.requiredPlugins[3]"),
-        ("https://gitlab.com/acme/extra.git", "$.requiredPlugins[2]"),
-    ]
+    refs = {r.source_locator: r for r in _refs(graph, "component")}
+    assert {
+        locator: (
+            r.ecosystem,
+            r.name,
+            r.version,
+            r.extra.get("git_ref"),
+            r.extra.get("source_subdirectory"),
+        )
+        for locator, r in refs.items()
+    } == {
+        "$.requiredPlugins[0]": ("github", "acme/secure-base", None, None, None),
+        "$.requiredPlugins[1]": ("github", "acme/audit", _SHA, None, None),
+        "$.requiredPlugins[2]": ("github", "acme/tagged", None, "v1.2.0", None),
+        "$.requiredPlugins[3]": (None, "https://gitlab.com/acme/extra.git", None, _SHA, None),
+        "$.requiredPlugins[4]": ("github", "acme/vendor", None, None, "stripe"),
+        "$.requiredPlugins[5]": ("github", "acme/mono", None, None, "plugins/billing"),
+        "$.requiredPlugins[6]": (None, "./sibling", None, None, None),
+        "$.requiredPlugins[7]": (None, "b-123", None, None, None),
+    }
     assert graph.warnings.gaps == []
+
+    from tools.identity import match_coordinates
+
+    pinned = match_coordinates(refs["$.requiredPlugins[1]"])
+    assert [(c.kind, c.git_repo, c.git_ref) for c in pinned] == [
+        ("git_commit", "github.com/acme/audit", _SHA)
+    ]
+    tagged = match_coordinates(refs["$.requiredPlugins[2]"])
+    assert [(c.kind, c.git_repo, c.git_ref) for c in tagged] == [
+        ("git_version", "github.com/acme/tagged", "v1.2.0")
+    ]
 
 
 def test_a_required_plugin_without_a_usable_source_is_a_gap(tmp_path):

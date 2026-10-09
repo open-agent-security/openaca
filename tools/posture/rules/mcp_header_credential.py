@@ -21,7 +21,13 @@ _STANDARDS = Standards(cwe=["CWE-798"])
 _AUTH_HEADERS = frozenset(
     {"authorization", "proxy-authorization", "authz", "x-api-key", "api-key", "x-auth-token"}
 )
-_REFERENCE = re.compile(r"\$\{(?:env:|input:)?[A-Za-z_][A-Za-z0-9_.-]*(?::-)?\}")
+# `${file:…}` is Devin CLI's read-from-disk expansion. Its body must be
+# path-shaped (absolute, home-relative or explicitly relative), so a token
+# wrapped in the syntax is still a literal: a runtime that does not expand it
+# sends the string verbatim, and a path is not a credential either way.
+_REFERENCE = re.compile(
+    r"\$\{(?:(?:env:|input:)?[A-Za-z_][A-Za-z0-9_.-]*(?::-)?|file:(?:~?/|\.{1,2}/)[^}\s]*)\}"
+)
 
 
 def _is_literal(value: object, *, static: bool) -> bool:

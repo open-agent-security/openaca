@@ -435,13 +435,69 @@ def test_the_devin_manifest_wins_over_a_claude_manifest_in_one_root(tmp_path):
 
 def test_a_devin_plugin_name_outside_devins_grammar_does_not_qualify(tmp_path):
     """Devin requires lowercase alphanumerics separated by a single `-` or
-    `.`; a name outside that grammar is one Devin itself would reject, so the
-    `.devin-plugin` manifest must not qualify and the Claude-shaped fallback
-    manifest in the same root wins instead."""
+    `.`; a name outside that grammar is one Devin itself rejects. Devin falls
+    back to `.claude-plugin/plugin.json` only "if there's no
+    `.devin-plugin/plugin.json`" (bundled `plugins/overview.mdx`), so a
+    present but invalid Devin manifest leaves the root with no plugin rather
+    than handing it to the Claude manifest."""
     _write_json(tmp_path / "p" / ".devin-plugin" / "plugin.json", {"name": "Bad_Name"})
     _write_json(tmp_path / "p" / ".claude-plugin" / "plugin.json", {"name": "claude-name"})
 
+    assert _names(_declared(tmp_path), "plugin") == []
+
+
+def test_an_invalid_devin_manifest_blocks_the_claude_fallback(tmp_path):
+    for devin_manifest in ({"name": "p", "skills": ["../outside"]}, "{not json"):
+        root = tmp_path / str(len(str(devin_manifest)))
+        manifest = root / ".devin-plugin" / "plugin.json"
+        if isinstance(devin_manifest, str):
+            _write(manifest, devin_manifest)
+        else:
+            _write_json(manifest, devin_manifest)
+        _write_json(root / ".claude-plugin" / "plugin.json", {"name": "claude-name"})
+    assert _names(_declared(tmp_path), "plugin") == []
+
+
+def test_a_claude_manifest_still_loads_where_there_is_no_devin_manifest(tmp_path):
+    _write_json(tmp_path / "p" / ".claude-plugin" / "plugin.json", {"name": "claude-name"})
     assert _names(_declared(tmp_path), "plugin") == ["claude-name"]
+
+
+def test_an_agent_plugins_bundle_reads_dot_mcp_json_first_then_mcp_json(tmp_path):
+    """For Agent Plugins, Devin reads root `mcp.json` "after `.mcp.json`,
+    which wins on a server-name collision" (bundled `plugins/overview.mdx`)."""
+    root = tmp_path / "portable"
+    _write_json(
+        root / "plugin.json",
+        {
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "portable",
+        },
+    )
+    _write_json(root / ".mcp.json", {"mcpServers": {"dot": _server(), "shared": _server("dot")}})
+    _write_json(root / "mcp.json", {"mcpServers": {"plain": _server(), "shared": _server("plain")}})
+
+    assert _mcp(_declared(tmp_path)) == [
+        ("dot", "portable/.mcp.json"),
+        ("plain", "portable/mcp.json"),
+        ("shared", "portable/.mcp.json"),
+    ]
+
+
+def test_a_devin_plugin_agent_declares_no_mcp_servers_or_hooks(tmp_path):
+    """Plugin subagents use Devin's custom subagent format, whose frontmatter
+    is `name`, `description`, `model`, `allowed-tools`/`tools` and
+    `max-nesting` (bundled `subagents.mdx`): no `mcpServers`, no `hooks`."""
+    plugin = tmp_path / "p"
+    _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p"})
+    _write(
+        plugin / "agents" / "reviewer.md",
+        "---\nname: reviewer\nmcpServers:\n  sneaky:\n    command: npx\n"
+        '    args: ["-y", "sneaky-mcp"]\n---\nReview.\n',
+    )
+    graph = _declared(tmp_path)
+    assert _names(graph, "agent") == ["reviewer"]
+    assert _mcp(graph) == []
 
 
 def test_a_devin_plugin_has_no_commands_surface(tmp_path):
@@ -896,3 +952,21 @@ def test_without_a_repository_marker_only_the_project_layer_is_read(tmp_path):
     _write_json(app / ".devin" / "mcp_config.json", {"mcpServers": {"app": _server()}})
 
     assert [name for name, _ in _mcp(_installed(tmp_path, app))] == ["app"]
+
+
+def test_an_ancestor_layer_mcp_server_resolves_its_launch_dependencies(tmp_path):
+    """Dependencies resolve within the repository the layers come from, not
+    only beneath `--project`."""
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _write_json(
+        repo / ".devin" / "mcp_config.json",
+        {"mcpServers": {"tool": {"command": "npx", "args": ["@scope/tool@1.2.3"]}}},
+    )
+    _write_json(
+        repo / "packages" / "tool" / "package.json",
+        {"name": "@scope/tool", "version": "1.2.3", "dependencies": {"left-pad": "1.0.0"}},
+    )
+    graph = _installed(tmp_path, app)
+    (server_key,) = [k for k, n in graph.nodes.items() if n.kind == "mcp_server"]
+    assert [e for e in graph.edges if e.parent == server_key]

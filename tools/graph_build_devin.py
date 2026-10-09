@@ -401,7 +401,9 @@ def build_devin_installed_graph(
         graph,
         config_root,
         normalize,
-        project_root=project,
+        # The repository the layers come from: an ancestor layer's MCP server
+        # resolves its launch dependencies there, not only beneath --project.
+        project_root=top,
         include_gitignored=include_gitignored,
         attach_include_gitignored=True,
         root_dir=None,

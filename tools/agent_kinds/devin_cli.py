@@ -23,7 +23,7 @@ from tools.posture.rules import (
     mutable_install,
     skill_capability,
 )
-from tools.repo_surface import DEVIN_SURFACE
+from tools.repo_surface import DEVIN_AGENT_DIRECTORY_FILENAMES, DEVIN_SURFACE
 
 KIND_ID = "devin-cli"
 DISPLAY_NAME = "Devin CLI"
@@ -38,10 +38,6 @@ ROOT_LABEL = "devin-cli"
 #     so whether the imported `.claude/*`, `.cursor/*`, `.windsurf/*` and
 #     `.github/skills` load is unknown to a repo scan.
 COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
-
-# Mirrors `_AGENT_FILENAMES` in graph_build_devin.py — the directory-form
-# filenames composition actually loads. Keep the two in sync.
-_AGENT_DIRECTORY_FILENAMES: tuple[str, ...] = ("AGENT.md", "AGENTS.md", "agent.md", "agents.md")
 
 # Devin-owned surfaces, plus the two shared `.agents/` directories it reads
 # (ADR-0058, ADR-0072). Everything Devin imports from another runtime is
@@ -61,11 +57,11 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = tuple(
         ".devin/skills/*/SKILL.md",
         ".cognition/skills/*/SKILL.md",
         ".devin/agents/*.md",
-        *(f".devin/agents/*/{name}" for name in _AGENT_DIRECTORY_FILENAMES),
+        *(f".devin/agents/*/{name}" for name in DEVIN_AGENT_DIRECTORY_FILENAMES),
         ".devin-plugin/plugin.json",
         ".agents/skills/*/SKILL.md",
         ".agents/agents/*.md",
-        *(f".agents/agents/*/{name}" for name in _AGENT_DIRECTORY_FILENAMES),
+        *(f".agents/agents/*/{name}" for name in DEVIN_AGENT_DIRECTORY_FILENAMES),
     )
     for pattern in (owned, f"*/{owned}")
 )

@@ -893,13 +893,13 @@ def test_installed_skill_roots(tmp_path):
     _skill(home / ".agents" / "skills" / "shared-skill", "shared-skill")
     _skill(home / ".codeium" / "windsurf" / "skills" / "ws-skill", "ws-skill")
     _skill(home / ".copilot" / "skills" / "team" / "copilot-skill", "copilot-skill")
+    _skill(home / ".claude" / "skills" / "claude-user-skill", "claude-user-skill")
     _skill(project / ".devin" / "skills" / "project-skill", "project-skill")
     _skill(project / ".claude" / "skills" / "claude-skill", "claude-skill")
-    # Not a Devin root: Claude Code's user skills are not imported.
-    _skill(home / ".claude" / "skills" / "claude-user-skill", "claude-user-skill")
 
     assert _names(_installed(tmp_path, project), "skill") == [
         "claude-skill",
+        "claude-user-skill",
         "copilot-skill",
         "legacy-skill",
         "project-skill",

@@ -546,6 +546,7 @@ def _add_installed_skills(
         (config_root / "skills", False, None),
         (legacy_config_root / "skills", False, None),
         (home / ".agents" / "skills", False, None),
+        (home / ".claude" / "skills", True, IMPORT_CLAUDE),
         (home / ".codeium" / _WINDSURF_CHANNEL / "skills", False, IMPORT_WINDSURF),
         (home / ".copilot" / "skills", True, IMPORT_COPILOT),
     ]

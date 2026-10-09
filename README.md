@@ -218,16 +218,16 @@ no modification of your Claude Code settings.
 
 ## Current coverage
 
-OpenACA V0 focuses on declared and installed agent composition for Claude Code
-and Claude-family filesystem conventions.
+OpenACA V0 supports declared and installed agent composition for multiple agent
+kinds: Claude Code, Cursor, Codex, and Devin CLI.
 
 Today it reads:
 
 - host-specific agent config such as `.claude/settings.json`, `.mcp.json`,
   `mcp.json`, `claude_desktop_config.json`, `installed_plugins.json`,
-  `SKILL.md`, hooks, commands, and subagents;
+  `SKILL.md`, hooks, commands, and subagents (Claude Code, Cursor, Codex, Devin CLI);
 - package manifests and lockfiles when they belong to agent components, such as
-  dependencies bundled by a Claude Code plugin.
+  dependencies bundled by a plugin.
 
 Use `--include-posture` to include configuration-hygiene findings such as
 unpinned installs, insecure MCP endpoints, inline MCP authentication credentials,
@@ -243,8 +243,7 @@ for the full details.
 OpenACA V0 does not yet see:
 
 - programmatic SDK configuration embedded directly in source code;
-- non-Claude agent-host local state such as Codex CLI, Cursor, Windsurf, or VS
-  Code agent-mode config;
+- non-Claude agent-host local state such as Windsurf or VS Code agent-mode config;
 - vulnerabilities for local-only or source-less components that do not provide
   a package, Git, or external match coordinate;
 - live tool invocations or runtime blocking.

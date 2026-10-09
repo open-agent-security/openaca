@@ -2111,6 +2111,19 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
         '{"plain": {"url": "http://insecure.example.test/mcp"}},\n}\n',
         encoding="utf-8",
     )
+    # One permissions list, two rule ids (ADR-0073); the denied allow is not
+    # an exposure.
+    (config / "config.json").write_text(
+        json.dumps(
+            {
+                "permissions": {
+                    "allow": ["Exec(git)", "Exec(rm -rf)", "mcp__git__*"],
+                    "deny": ["Exec(rm)"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     token = "dummy-devin-e2e-token"
     (home / ".claude.json").write_text(
         json.dumps(
@@ -2141,6 +2154,13 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
     rule_ids = {f.get("rule_id") for f in doc["findings"]}
     assert "openaca-posture-insecure-transport" in rule_ids
     assert "openaca-posture-mcp-header-credential" in rule_ids
+    assert "openaca-posture-mcp-auto-approve" in rule_ids
+    commands = [
+        f["component"]["name"]
+        for f in doc["findings"]
+        if f.get("rule_id") == "openaca-posture-command-policy-allow"
+    ]
+    assert commands == ["git"]
     assert any("GHSA-3q26-f695-pp76" in json.dumps(f) for f in doc["findings"])
 
     out = tmp_path / "boms"

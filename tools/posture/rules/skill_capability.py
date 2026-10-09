@@ -21,8 +21,14 @@ REMEDIATION = (
     "normal code-review/change-control."
 )
 
+EXECUTABLE_TOOLS = {"bash", "shell"}
+
 # `exec` is Devin CLI's shell tool (docs/specs/devin-cli-agent-kind.md, Posture).
-EXECUTABLE_TOOLS = {"bash", "shell", "exec"}
+# Cursor and Codex allowlist this same rule but have no `exec` tool of their
+# own, so a shared `.agents/skills` skill granting Devin's `exec` must not be
+# reported as executable under their scans. An unscoped call (no agent_kind)
+# still recognizes it, matching the rule's behavior before Devin existed.
+_EXEC_RECOGNIZING_KINDS = {None, "devin-cli"}
 
 _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 
@@ -45,8 +51,11 @@ def _allowed_executable_tool_finding(
 ) -> PostureFinding | None:
     frontmatter = _read_frontmatter(Path(ref.source_manifest))
     allowed_tools = _allowed_tools(frontmatter)
+    executable_tools = EXECUTABLE_TOOLS | (
+        {"exec"} if agent_kind in _EXEC_RECOGNIZING_KINDS else set()
+    )
     executable = sorted(
-        tool for tool in allowed_tools if _executable_tool_base(tool).lower() in EXECUTABLE_TOOLS
+        tool for tool in allowed_tools if _executable_tool_base(tool).lower() in executable_tools
     )
     if not executable:
         return None

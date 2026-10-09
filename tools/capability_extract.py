@@ -25,6 +25,12 @@ _SKILL_TOOL_CAPABILITIES = {
     "websearch": "network_egress",
 }
 
+# `exec` is Devin CLI's shell tool. It is scoped the same way as
+# `tools/posture/rules/skill_capability.py`'s executable-tool matcher: a
+# shared `.agents/skills` skill granting it declares a Devin capability, not
+# a Cursor or Codex one, so only an unscoped call or a Devin scan maps it.
+_EXEC_RECOGNIZING_KINDS = {None, "devin-cli"}
+
 _NETWORK_CLIENTS = frozenset({"curl", "wget", "nc", "scp", "ssh", "httpie", "http", "rsync"})
 
 
@@ -35,7 +41,9 @@ def _openaca_version() -> str:
         return "unknown"
 
 
-def declared_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
+def declared_capabilities(
+    ref: ComponentRef, *, agent_kind: str | None = None
+) -> tuple[list[Capability], bool]:
     """The capabilities this component's manifest states, and whether it was read.
 
     The two halves answer different questions and neither may be derived from
@@ -54,7 +62,7 @@ def declared_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
     extra = ref.extra or {}
     component_type = extra.get("component_type")
     if component_type == "skill":
-        return _skill_capabilities(ref)
+        return _skill_capabilities(ref, agent_kind=agent_kind)
     if component_type == "hook":
         return _hook_capabilities(ref)
     if component_type == "mcp_server":
@@ -74,7 +82,9 @@ def _capability(name: str, execution_locus: str, evidence: dict[str, Any]) -> Ca
     )
 
 
-def _skill_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
+def _skill_capabilities(
+    ref: ComponentRef, *, agent_kind: str | None = None
+) -> tuple[list[Capability], bool]:
     frontmatter = _read_frontmatter(Path(ref.source_manifest))
     # A failed read is uncovered. Reporting it as covered-and-empty would claim
     # OpenACA read a declaration it could not parse -- the inverse of the bug
@@ -92,6 +102,8 @@ def _skill_capabilities(ref: ComponentRef) -> tuple[list[Capability], bool]:
     for tool in sorted(_allowed_tools(frontmatter)):
         base = _executable_tool_base(tool).lower()
         name = _SKILL_TOOL_CAPABILITIES.get(base)
+        if name is None and base == "exec" and agent_kind in _EXEC_RECOGNIZING_KINDS:
+            name = "shell_exec"
         if name is None or name in caps:
             continue
         caps[name] = _capability(

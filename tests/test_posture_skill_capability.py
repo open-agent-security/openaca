@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.claude_skill import parse
 from tools.posture.rules.skill_capability import check_skill_executable_tools
 
@@ -114,3 +116,15 @@ def test_skill_capability_ignores_devin_read_only_tools(tmp_path: Path) -> None:
     refs = parse(_write_skill(tmp_path, "reader", "read grep glob edit"))
 
     assert check_skill_executable_tools(refs) == []
+
+
+@pytest.mark.parametrize("agent_kind", ["cursor", "codex"])
+def test_skill_capability_does_not_attribute_devin_exec_to_other_kinds(
+    tmp_path: Path, agent_kind: str
+) -> None:
+    """A shared `.agents/skills` skill granting Devin's `exec` tool must not
+    be reported as executable under a Cursor or Codex scan: both allowlist
+    this rule but have no `exec` tool of their own."""
+    refs = parse(_write_skill(tmp_path, "release", "read exec"))
+
+    assert check_skill_executable_tools(refs, agent_kind=agent_kind) == []

@@ -340,17 +340,23 @@ def build_devin_installed_graph(
     """
     config_root = Path(agent.config_root)
     project = Path(agent.project_root) if agent.project_root is not None else None
+    # Every directory whose `.devin/` a Devin run in `project` loads, nearest
+    # first, up to the repository root (devin_config.project_layers).
+    layers = devin_config.project_layers(project) if project is not None else []
+    top = layers[-1] if layers else None
     root = Node(key=agent.bom_ref, kind="target", ref=None)
     graph = Graph(nodes={root.key: root})
     normalize = make_normalizer(
         "endpoint",
         config_root,
         config_root,
-        project,
+        # Keyed from the repository root, so an ancestor layer's file keys
+        # under `project/` like the nested project's own, never absolute.
+        top,
         agent.root_label,
         extra_roots=_installed_root_labels(config_root, data_root, legacy_config_root, home),
     )
-    switches = ImportSwitches(stop_at=project, user_config=config_root / CONFIG_FILENAME)
+    switches = ImportSwitches(stop_at=top, user_config=config_root / CONFIG_FILENAME)
 
     def on(tool: str) -> bool:
         return switches.enabled(project, tool)
@@ -359,26 +365,30 @@ def build_devin_installed_graph(
 
     _add_store_plugins(graph, root, data_root, normalize)
     _add_installed_skills(
-        graph, root, config_root, legacy_config_root, home, project, on, normalize
+        graph, root, config_root, legacy_config_root, home, project, layers, on, normalize
     )
     _add_mcp_servers(
         graph,
         root,
         files,
-        _installed_mcp_sources(config_root, home, project, on),
+        _installed_mcp_sources(config_root, home, project, layers, on),
         normalize,
     )
     for agents_dir in (
-        *((project / ".devin" / "agents", project / ".agents" / "agents") if project else ()),
+        *(
+            d
+            for layer in layers
+            for d in (layer / ".devin" / "agents", layer / ".agents" / "agents")
+        ),
         config_root / "agents",
     ):
         _add_agents_dir(graph, root, agents_dir, normalize)
 
-    if project is not None:
+    for layer in layers:
         _add_v1_hooks(
-            graph, root, project / PROJECT_CONFIG_DIR / HOOKS_FILENAME, "project", normalize
+            graph, root, layer / PROJECT_CONFIG_DIR / HOOKS_FILENAME, "project", normalize
         )
-    for path, scope in _installed_settings_hook_sources(config_root, home, project, on):
+    for path, scope in _installed_settings_hook_sources(config_root, home, project, layers, on):
         _add_settings_hooks(graph, root, files, path, scope, normalize)
     if project is not None and on(IMPORT_CLAUDE):
         commands_dir = project / ".claude" / "commands"
@@ -439,19 +449,23 @@ def _same_directory(left: Path, right: Path) -> bool:
 
 
 def _installed_mcp_sources(
-    config_root: Path, home: Path, project: Path | None, on
+    config_root: Path, home: Path, project: Path | None, layers: list[Path], on
 ) -> list[_McpSource]:
     sources = [
         _McpSource(config_root / MCP_CONFIG_FILENAME, _USER),
         _McpSource(config_root / CONFIG_FILENAME, _USER),
     ]
-    if project is not None:
-        devin = project / PROJECT_CONFIG_DIR
+    # Ranked so a nested layer outranks its ancestors, and within a layer the
+    # project-local files outrank the project ones: the farthest layer takes
+    # `_PROJECT`/`_LOCAL`, each nearer one the next pair above.
+    for depth, layer in enumerate(reversed(layers)):
+        devin = layer / PROJECT_CONFIG_DIR
+        project_rank, local_rank = _PROJECT + 2 * depth, _LOCAL + 2 * depth
         sources += [
-            _McpSource(devin / MCP_CONFIG_FILENAME, _PROJECT),
-            _McpSource(devin / CONFIG_FILENAME, _PROJECT),
-            _McpSource(devin / LOCAL_MCP_CONFIG_FILENAME, _LOCAL),
-            _McpSource(devin / LOCAL_CONFIG_FILENAME, _LOCAL),
+            _McpSource(devin / MCP_CONFIG_FILENAME, project_rank),
+            _McpSource(devin / CONFIG_FILENAME, project_rank),
+            _McpSource(devin / LOCAL_MCP_CONFIG_FILENAME, local_rank),
+            _McpSource(devin / LOCAL_CONFIG_FILENAME, local_rank),
         ]
     if on(IMPORT_CLAUDE):
         if project is not None:
@@ -474,15 +488,15 @@ def _installed_mcp_sources(
 
 
 def _installed_settings_hook_sources(
-    config_root: Path, home: Path, project: Path | None, on
+    config_root: Path, home: Path, project: Path | None, layers: list[Path], on
 ) -> list[tuple[Path, str]]:
     """`hooks` blocks in settings-shaped files. Hooks are collected from every
     source and all run, so nothing here merges (docs: Configuration
     Precedence). Claude Code's are gated by `read_config_from.claude`, which
     Devin's hooks docs state outright."""
     sources: list[tuple[Path, str]] = []
-    if project is not None:
-        devin = project / PROJECT_CONFIG_DIR
+    for layer in layers:
+        devin = layer / PROJECT_CONFIG_DIR
         sources += [(devin / CONFIG_FILENAME, "project"), (devin / LOCAL_CONFIG_FILENAME, "local")]
     sources.append((config_root / CONFIG_FILENAME, "user"))
     if on(IMPORT_CLAUDE):
@@ -506,18 +520,22 @@ def _add_installed_skills(
     legacy_config_root: Path,
     home: Path,
     project: Path | None,
+    layers: list[Path],
     on,
     normalize,
 ) -> None:
-    """Every skill root, project first. Devin's own root precedes the legacy
-    `cognition` one, so when the legacy path is the symlink the rename left
-    behind, the skill keys under Devin's own label."""
-    roots: list[tuple[Path, bool, str | None]] = []
+    """Every skill root, project first. Devin's own roots are read in every
+    project layer, nearest first; imports from the project itself. Devin's
+    own root precedes the legacy `cognition` one, so when the legacy path is
+    the symlink the rename left behind, the skill keys under Devin's own
+    label."""
+    roots: list[tuple[Path, bool, str | None]] = [
+        (layer / name / "skills", False, None)
+        for layer in layers
+        for name in (".devin", ".cognition", ".agents")
+    ]
     if project is not None:
         roots += [
-            (project / ".devin" / "skills", False, None),
-            (project / ".cognition" / "skills", False, None),
-            (project / ".agents" / "skills", False, None),
             (project / ".windsurf" / "skills", False, IMPORT_WINDSURF),
             (project / ".claude" / "skills", True, IMPORT_CLAUDE),
             (project / ".github" / "skills", True, IMPORT_COPILOT),

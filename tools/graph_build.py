@@ -39,6 +39,7 @@ from tools.parsers import (
     codex_agent,
     codex_config,
     codex_rules,
+    devin_config,
     hooks_json,
     mcp_json,
     package_json,
@@ -2078,26 +2079,48 @@ def _add_bundled_plugin_surfaces(
             )
 
     refs: list[ComponentRef] = []
-    manifest_refs = _parse_manifest_refs(
-        plugin_data,
-        plugin_json_path=plugin_manifest_path,
-        plugin_root=plugin_root,
-        warnings=graph.warnings,
-    )
-    refs.extend(manifest_refs)
-    # The one deliberate crossing of the placement/content boundary (ADR-0053):
-    # the bundled MCP filename(s) are placement data (`surface.bundled.mcp_filenames`)
-    # threaded into a leaf parser.
-    refs.extend(
-        _parse_default_mcp(
-            plugin_root,
-            manifest_refs,
-            warnings=graph.warnings,
-            mcp_filenames=surface.bundled.mcp_filenames,
-            eval_root=eval_root,
-            spec=spec,
+    if surface.bundled.mcp_servers_field_selects_sources:
+        # Devin's own MCP source rules replace the additive Claude Code walk;
+        # the rest of the manifest (dependencies) is read as before.
+        refs.extend(
+            _parse_manifest_refs(
+                {key: value for key, value in plugin_data.items() if key != "mcpServers"},
+                plugin_json_path=plugin_manifest_path,
+                plugin_root=plugin_root,
+                warnings=graph.warnings,
+            )
         )
-    )
+        refs.extend(
+            devin_config.plugin_mcp_refs(
+                plugin_data,
+                plugin_root=plugin_root,
+                manifest_path=plugin_manifest_path,
+                conventional=surface.bundled.mcp_filenames,
+                record_gap=graph.record_gap,
+                usable=lambda path: not _is_ignored_under(path, eval_root, spec),
+            )
+        )
+    else:
+        manifest_refs = _parse_manifest_refs(
+            plugin_data,
+            plugin_json_path=plugin_manifest_path,
+            plugin_root=plugin_root,
+            warnings=graph.warnings,
+        )
+        refs.extend(manifest_refs)
+        # The one deliberate crossing of the placement/content boundary
+        # (ADR-0053): the bundled MCP filename(s) are placement data
+        # (`surface.bundled.mcp_filenames`) threaded into a leaf parser.
+        refs.extend(
+            _parse_default_mcp(
+                plugin_root,
+                manifest_refs,
+                warnings=graph.warnings,
+                mcp_filenames=surface.bundled.mcp_filenames,
+                eval_root=eval_root,
+                spec=spec,
+            )
+        )
     refs.extend(
         _parse_bundled_hooks(
             plugin_root,

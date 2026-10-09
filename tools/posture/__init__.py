@@ -1352,14 +1352,15 @@ def collect_devin_endpoint_permissions_manifests(
     project_root: Path | None,
 ) -> list[tuple[Path, dict]]:
     """Devin CLI's installed approval policy: the user's `config.json`, then
-    the project's `.devin/config.json` and `.devin/config.local.json`, lowest
-    precedence first. Organisation-level rules come from Devin's service and
-    are not on disk."""
+    each project layer's `.devin/config.json` and `.devin/config.local.json`
+    from the repository root down to the project, lowest precedence first --
+    the same layers composition reads (`devin_config.project_layers`).
+    Organisation-level rules come from Devin's service and are not on disk."""
+    from tools.parsers import devin_config
+
     paths = [config_dir / "config.json"]
     if project_root is not None:
-        paths += [
-            project_root / ".devin" / "config.json",
-            project_root / ".devin" / "config.local.json",
-        ]
+        for layer in reversed(devin_config.project_layers(project_root)):
+            paths += [layer / ".devin" / "config.json", layer / ".devin" / "config.local.json"]
     chain = [level for path in paths if (level := devin_permissions.read_level(path)) is not None]
     return _devin_permissions_manifest([(chain, chain)])

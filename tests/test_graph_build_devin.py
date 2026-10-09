@@ -527,6 +527,116 @@ def test_a_devin_plugin_skills_string_still_replaces_the_default(tmp_path):
     assert _names(_declared(tmp_path), "skill") == ["custom"]
 
 
+# Plugin `mcpServers` source selection, as Devin CLI 3000.11.3's bundled
+# `extensibility/plugins/overview.mdx` documents it: four shapes, the root
+# `.mcp.json` convention, suppression by `exclusive` or a non-empty inline map,
+# dropped unsafe paths, an invalid field disabling only MCP, first source wins.
+
+
+def _mcp_plugin(tmp_path: Path, servers: object) -> Path:
+    plugin = tmp_path / "p"
+    manifest: dict = {"name": "p"}
+    if servers is not _ABSENT:
+        manifest["mcpServers"] = servers
+    _write_json(plugin / ".devin-plugin" / "plugin.json", manifest)
+    _write_json(
+        plugin / ".mcp.json", {"mcpServers": {"root": _server(), "shared": _server("root")}}
+    )
+    _write_json(
+        plugin / "config" / "a.json", {"mcpServers": {"a": _server(), "shared": _server("a")}}
+    )
+    _write_json(plugin / "config" / "b.json", {"mcpServers": {"b": _server()}})
+    _skill(plugin / "skills" / "kept", "kept")
+    return plugin
+
+
+_ABSENT = object()
+
+
+def _mcp_names(graph: Graph) -> list[tuple[str, str]]:
+    return [(name, manifest.split("/", 1)[-1]) for name, manifest in _mcp(graph)]
+
+
+def test_a_devin_plugin_without_mcp_servers_reads_the_root_convention(tmp_path):
+    _mcp_plugin(tmp_path, _ABSENT)
+    assert _mcp_names(_declared(tmp_path)) == [("root", ".mcp.json"), ("shared", ".mcp.json")]
+
+
+def test_a_devin_plugin_mcp_list_reads_each_file_in_order_then_the_root(tmp_path):
+    _mcp_plugin(tmp_path, ["config/a.json", "config/b.json"])
+    assert _mcp_names(_declared(tmp_path)) == [
+        ("a", "a.json"),
+        ("b", "b.json"),
+        ("root", ".mcp.json"),
+        # First source wins: `a.json` precedes the root convention.
+        ("shared", "a.json"),
+    ]
+
+
+def test_a_devin_plugin_mcp_string_is_one_declaration_file(tmp_path):
+    _mcp_plugin(tmp_path, "config/b.json")
+    assert ("b", "b.json") in _mcp_names(_declared(tmp_path))
+
+
+def test_an_exclusive_devin_plugin_mcp_declaration_suppresses_the_root(tmp_path):
+    _mcp_plugin(tmp_path, {"paths": ["config/a.json"], "exclusive": True})
+    assert _mcp_names(_declared(tmp_path)) == [("a", "a.json"), ("shared", "a.json")]
+
+
+def test_a_non_exclusive_paths_declaration_keeps_the_root(tmp_path):
+    _mcp_plugin(tmp_path, {"paths": ["config/b.json"]})
+    assert _mcp_names(_declared(tmp_path)) == [
+        ("b", "b.json"),
+        ("root", ".mcp.json"),
+        ("shared", ".mcp.json"),
+    ]
+
+
+def test_a_non_empty_inline_devin_plugin_mcp_map_suppresses_the_root(tmp_path):
+    _mcp_plugin(tmp_path, {"inline": _server()})
+    assert _mcp_names(_declared(tmp_path)) == [("inline", "plugin.json")]
+
+
+def test_an_empty_inline_map_or_list_leaves_the_root_enabled(tmp_path):
+    for value in ({}, []):
+        _mcp_plugin(tmp_path, value)
+        assert _mcp_names(_declared(tmp_path)) == [
+            ("root", ".mcp.json"),
+            ("shared", ".mcp.json"),
+        ]
+
+
+def test_an_unsafe_devin_plugin_mcp_path_is_dropped_not_fatal(tmp_path):
+    _mcp_plugin(tmp_path, ["../outside.json", "/etc/mcp.json", "~/mcp.json", "config/b.json"])
+    graph = _declared(tmp_path)
+    assert ("b", "b.json") in _mcp_names(graph)
+    assert _names(graph, "plugin") == ["p"]
+
+
+def test_an_invalid_devin_plugin_mcp_field_disables_only_mcp(tmp_path):
+    _mcp_plugin(tmp_path, 42)
+    graph = _declared(tmp_path)
+    assert _mcp(graph) == []
+    assert _names(graph, "skill") == ["kept"]
+
+
+def test_a_devin_plugin_with_an_invalid_skills_entry_does_not_load_at_all(tmp_path):
+    """ "An invalid entry fails the whole manifest", where an invalid
+    `mcpServers` only disables MCP: the plugin Devin rejects is not realized,
+    so neither it nor anything it bundles is reported as a plugin's."""
+    for invalid in (["custom", "../outside"], ["/abs"], ["~/skills"], [7], 7):
+        plugin = tmp_path / "p"
+        _write_json(plugin / ".devin-plugin" / "plugin.json", {"name": "p", "skills": invalid})
+        _write_json(plugin / ".mcp.json", {"mcpServers": {"root": _server()}})
+        _skill(plugin / "custom" / "c", "c")
+        graph = _declared(tmp_path)
+        assert _names(graph, "plugin") == [], invalid
+        assert _names(graph, "skill") == [], invalid
+        assert not [
+            n for n in graph.nodes.values() if n.kind == "mcp_server" and "(inlined)" in n.key
+        ], invalid
+
+
 # --- Installed --------------------------------------------------------------------
 
 
@@ -732,3 +842,57 @@ def test_installed_node_keys_carry_no_home_path(tmp_path):
         "project",
         "windsurf",
     }
+
+
+# Installed project layers: Devin finds the project root by walking up from the
+# working directory to a `.git` or `.jj` directory and loads every `.devin/`
+# on the way, a nested one taking precedence over its ancestors (bundled
+# `reference/configuration/global-vs-local.mdx`).
+
+
+def _monorepo(tmp_path: Path) -> tuple[Path, Path]:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    app = repo / "packages" / "app"
+    app.mkdir(parents=True)
+    return repo, app
+
+
+def test_installed_reads_every_devin_layer_up_to_the_repository_root(tmp_path):
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _write_json(repo / ".devin" / "mcp_config.json", {"mcpServers": {"shared": _server()}})
+    _write_json(app / ".devin" / "mcp_config.json", {"mcpServers": {"app": _server()}})
+    _skill(repo / ".devin" / "skills" / "repo-skill", "repo-skill")
+    _write(repo / ".devin" / "agents" / "repo-agent.md", "Agent.\n")
+
+    graph = _installed(tmp_path, app)
+
+    assert [name for name, _ in _mcp(graph)] == ["app", "shared"]
+    assert "repo-skill" in _names(graph, "skill")
+    assert "repo-agent" in _names(graph, "agent")
+    keys = [key for key in graph.nodes if key != graph.root.key]
+    assert not [key for key in keys if str(tmp_path) in key]
+
+
+def test_a_nested_devin_layer_wins_over_its_ancestor_by_name(tmp_path):
+    repo, app = _monorepo(tmp_path)
+    _config(tmp_path).mkdir(parents=True)
+    _write_json(repo / ".devin" / "mcp_config.local.json", {"mcpServers": {"s": _server("repo")}})
+    _write_json(app / ".devin" / "mcp_config.json", {"mcpServers": {"s": _server("app")}})
+
+    graph = _installed(tmp_path, app)
+
+    (ref,) = _refs(graph, "mcp_server")
+    assert "packages/app" in (ref.source_manifest or "")
+
+
+def test_without_a_repository_marker_only_the_project_layer_is_read(tmp_path):
+    outer = tmp_path / "outer"
+    app = outer / "app"
+    app.mkdir(parents=True)
+    _config(tmp_path).mkdir(parents=True)
+    _write_json(outer / ".devin" / "mcp_config.json", {"mcpServers": {"outer": _server()}})
+    _write_json(app / ".devin" / "mcp_config.json", {"mcpServers": {"app": _server()}})
+
+    assert [name for name, _ in _mcp(_installed(tmp_path, app))] == ["app"]

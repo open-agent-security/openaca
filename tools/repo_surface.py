@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.parsers import agent_plugins, claude_plugin
+from tools.parsers import agent_plugins, claude_plugin, devin_config
 from tools.parsers.claude_command_agent import Kind
 
 
@@ -75,6 +75,12 @@ class BundledLayout:
     # `skills` field (unverified either way) keeps the existing additive
     # behavior rather than risk changing it on a guess.
     skills_field_overrides_default: bool = False
+    # Devin's manifest `mcpServers` field selects the plugin's MCP sources:
+    # a file, a list of files, `{paths, exclusive}` or an inline map, with the
+    # root convention read last unless suppressed and the first source winning
+    # (`devin_config.plugin_mcp_refs`, from Devin's bundled plugin docs).
+    # `False` for every other kind, which keeps its additive behavior.
+    mcp_servers_field_selects_sources: bool = False
 
 
 @dataclass(frozen=True)
@@ -364,7 +370,12 @@ def _detect_devin_plugin_manifest(data: dict) -> bool:
     enforces for a lockfile entry — so a manifest Devin would not load must
     not qualify here either."""
     name = data.get("name")
-    return isinstance(name, str) and DEVIN_PLUGIN_NAME.fullmatch(name) is not None
+    if not isinstance(name, str) or DEVIN_PLUGIN_NAME.fullmatch(name) is None:
+        return False
+    # "An invalid entry fails the whole manifest" for `skills`, unlike
+    # `mcpServers`, whose invalid field only disables MCP: a manifest Devin
+    # rejects realizes no plugin at all.
+    return "skills" not in data or devin_config.plugin_skills_field_is_valid(data["skills"])
 
 
 # Devin CLI's own plugin format, `.devin-plugin/plugin.json`. The manifest is
@@ -401,6 +412,7 @@ DEVIN_SURFACE = RepoSurface(
         agents_dir="agents",
         agent_directory_filenames=DEVIN_AGENT_DIRECTORY_FILENAMES,
         skills_field_overrides_default=True,
+        mcp_servers_field_selects_sources=True,
     ),
     # Devin's repo surfaces are walked by `tools/graph_build_devin.py`, not
     # through the `config_dir`-shaped helpers, so the fields below that only

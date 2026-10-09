@@ -11,11 +11,14 @@ from tools.parsers import DEVIN_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.posture import (
     collect_devin_endpoint_mcp_manifests,
+    collect_devin_endpoint_permissions_manifests,
     collect_devin_mcp_manifests,
-    no_manifests,
+    collect_devin_permissions_manifests,
 )
 from tools.posture.rules import (
+    command_policy_allow,
     insecure_transport,
+    mcp_auto_approve,
     mcp_header_credential,
     mutable_install,
     skill_capability,
@@ -206,17 +209,26 @@ KIND = AgentKind(
     root_override_refusal=ROOT_OVERRIDE_REFUSAL,
     # Not `project_trust`: Devin has no trusted-directory concept. Not
     # `api_endpoint_override`: it matches literal Anthropic settings keys in a
-    # file Devin does not have (spec: Posture).
+    # file Devin does not have (spec: Posture). `mcp_auto_approve` and
+    # `command_policy_allow` both read the one `permissions` list, split by
+    # entry (ADR-0073).
     posture_rules=frozenset(
         {
             insecure_transport.RULE_ID,
             mcp_header_credential.RULE_ID,
             mutable_install.RULE_ID,
             skill_capability.RULE_ID,
+            mcp_auto_approve.RULE_ID,
+            command_policy_allow.RULE_ID,
         }
     ),
     manifest_patterns=tuple(HOST_AGNOSTIC_REGISTRY) + tuple(DEVIN_MANIFEST_REGISTRY),
     repo_surface=DEVIN_SURFACE,
-    posture_manifest_collectors=(collect_devin_mcp_manifests, no_manifests),
-    installed_posture_collectors=(collect_devin_endpoint_mcp_manifests, no_manifests),
+    # The settings slot carries the merged `permissions` view, as Cursor's
+    # carries `permissions.json`: it is read at both composition sources.
+    posture_manifest_collectors=(collect_devin_mcp_manifests, collect_devin_permissions_manifests),
+    installed_posture_collectors=(
+        collect_devin_endpoint_mcp_manifests,
+        collect_devin_endpoint_permissions_manifests,
+    ),
 )

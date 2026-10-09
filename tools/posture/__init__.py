@@ -19,6 +19,7 @@ from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.parsers import jsonc, settings_layers
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
+from tools.posture import devin_permissions
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.rules import (
     api_endpoint_override,
@@ -44,7 +45,9 @@ __all__ = [
     "collect_cursor_mcp_manifests",
     "collect_cursor_permissions_manifests",
     "collect_devin_endpoint_mcp_manifests",
+    "collect_devin_endpoint_permissions_manifests",
     "collect_devin_mcp_manifests",
+    "collect_devin_permissions_manifests",
     "collect_endpoint_mcp_manifests",
     "collect_endpoint_settings_manifests",
     "collect_mcp_manifests",
@@ -126,7 +129,11 @@ def run_posture_rules(
             )
         )
     )
-    findings.extend(mcp_auto_approve.check_mcp_auto_approve(manifests + settings_manifests))
+    findings.extend(
+        mcp_auto_approve.check_mcp_auto_approve(
+            manifests + settings_manifests, agent_kind=agent_kind
+        )
+    )
     findings.extend(api_endpoint_override.check_api_endpoint_override(settings_manifests))
     findings.extend(skill_capability.check_skill_executable_tools(refs, agent_kind=agent_kind))
     # Surfaces that declare no components and so have no manifest channel of
@@ -134,9 +141,13 @@ def run_posture_rules(
     # `(mcp, settings)` pair has no room for a third or fourth, and overloading
     # either slot would make one rule's input depend on another's shape.
     extras = extra_manifests or {}
+    # Devin CLI's `permissions` view travels in the settings slot, as Cursor's
+    # `permissions.json` view does, because it is read at both composition
+    # sources; its `Exec(…)` entries are command policy (ADR-0073).
     findings.extend(
         command_policy_allow.check_command_policy_allow(
-            extras.get(command_policy_allow.RULE_ID, [])
+            extras.get(command_policy_allow.RULE_ID, []) + settings_manifests,
+            agent_kind=agent_kind,
         )
     )
     findings.extend(project_trust.check_project_trust(extras.get(project_trust.RULE_ID, [])))
@@ -1074,7 +1085,7 @@ def _realized_plugin_roots(refs: list[ComponentRef]) -> list[Path]:
         # `<root>/.cursor-plugin/plugin.json` and `<root>/plugin.json` both
         # resolve to `<root>`; a presence-only ref names the bundle directory.
         root = manifest.parent
-        if root.name in {".cursor-plugin", ".claude-plugin"}:
+        if root.name in {".cursor-plugin", ".claude-plugin", ".devin-plugin"}:
             root = root.parent
         elif manifest.is_dir():
             root = manifest
@@ -1246,3 +1257,97 @@ def collect_devin_endpoint_mcp_manifests(
     """Devin CLI's installed MCP posture surface, derived from composed refs."""
     del config_dir, project_root
     return _mcp_manifests_from_refs(refs)
+
+
+# Devin CLI's `permissions` lists declare no components, so, like Cursor's
+# `permissions.json`, they are read directly rather than derived from the
+# graph. What composition already claimed — realized plugin subtrees — still
+# comes from the graph's own `plugin` refs.
+
+
+def _devin_permissions_manifest(
+    chains: list[tuple[list[devin_permissions.PermissionLevel], list]],
+) -> list[tuple[Path, dict]]:
+    allows: list[devin_permissions.EffectiveAllow] = []
+    for chain, own in chains:
+        allows.extend(devin_permissions.effective_allows(chain, own))
+    if not allows:
+        return []
+    view = devin_permissions.DevinPermissions(allows=tuple(allows))
+    return [(allows[0].path, {devin_permissions.MANIFEST_KEY: view})]
+
+
+def collect_devin_permissions_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Devin CLI's declared approval policy: `.devin/config.json` and
+    `.devin/config.local.json` at any depth, honouring `include_gitignored`.
+
+    Repo-relative only — a declared scan never reads the scanning machine's
+    user config. Each project directory's lists are judged against its own
+    chain: its ancestors' project configs (loaded when Devin runs in a nested
+    project, the nested one taking precedence) and its own two files.
+    """
+    plugin_roots = _realized_plugin_roots(refs or [])
+    chains: list[tuple[list[devin_permissions.PermissionLevel], list]] = []
+    for root in roots:
+        if root is None or not root.exists():
+            continue
+        spec = None if include_gitignored else load_gitignore_spec(root)
+        projects: set[Path] = set()
+        for name in ("config.json", "config.local.json"):
+            for path in root.rglob(f".devin/{name}"):
+                if is_ignored(path.relative_to(root), spec) or _is_under_any(path, plugin_roots):
+                    continue
+                projects.add(path.parent.parent)
+        for project in sorted(projects):
+            own = _devin_project_levels(project, root, spec)
+            chain = [
+                level
+                for ancestor in _ancestors_from(root, project)
+                for level in _devin_project_levels(ancestor, root, spec)
+            ]
+            if own:
+                chains.append((chain, own))
+    return _devin_permissions_manifest(chains)
+
+
+def _ancestors_from(root: Path, project: Path) -> list[Path]:
+    """`root`, then each directory down to and including `project`."""
+    relative = project.relative_to(root)
+    return [root.joinpath(*relative.parts[:depth]) for depth in range(len(relative.parts) + 1)]
+
+
+def _devin_project_levels(
+    project: Path, root: Path, spec
+) -> list[devin_permissions.PermissionLevel]:
+    levels = []
+    for name in ("config.json", "config.local.json"):
+        path = project / ".devin" / name
+        if path.is_file() and is_ignored(path.relative_to(root), spec):
+            continue
+        level = devin_permissions.read_level(path)
+        if level is not None:
+            levels.append(level)
+    return levels
+
+
+def collect_devin_endpoint_permissions_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+) -> list[tuple[Path, dict]]:
+    """Devin CLI's installed approval policy: the user's `config.json`, then
+    the project's `.devin/config.json` and `.devin/config.local.json`, lowest
+    precedence first. Organisation-level rules come from Devin's service and
+    are not on disk."""
+    paths = [config_dir / "config.json"]
+    if project_root is not None:
+        paths += [
+            project_root / ".devin" / "config.json",
+            project_root / ".devin" / "config.local.json",
+        ]
+    chain = [level for path in paths if (level := devin_permissions.read_level(path)) is not None]
+    return _devin_permissions_manifest([(chain, chain)])

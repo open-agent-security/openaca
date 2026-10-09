@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tools.posture import devin_permissions
 from tools.posture.finding import PostureFinding, Standards
 
 RULE_ID = "openaca-posture-mcp-auto-approve"
@@ -24,14 +25,25 @@ _STANDARDS = Standards(
 
 def check_mcp_auto_approve(
     manifests: list[tuple[Path, dict]],
+    *,
+    agent_kind: str | None = None,
 ) -> list[PostureFinding]:
+    """`agent_kind`, when known, is the `active_in` answer for every branch
+    (ADR-0044: the scanning agent is the answer); without it each branch
+    names the runtime its manifest shape belongs to."""
     findings: list[PostureFinding] = []
     for path, manifest in manifests:
+        devin = manifest.get(devin_permissions.MANIFEST_KEY)
+        if isinstance(devin, devin_permissions.DevinPermissions):
+            findings.extend(_check_devin_permissions(devin, agent_kind=agent_kind))
+            continue
         cursor_permissions = manifest.get("cursor_permissions")
         if isinstance(cursor_permissions, dict):
             raw_sources = manifest.get("cursor_permissions_sources")
             sources = raw_sources if isinstance(raw_sources, dict) else {}
-            findings.extend(_check_cursor_permissions(path, cursor_permissions, sources))
+            findings.extend(
+                _check_cursor_permissions(path, cursor_permissions, sources, agent_kind=agent_kind)
+            )
             continue
         servers = _get_server_map(manifest)
         if servers is None:
@@ -79,7 +91,7 @@ def check_mcp_auto_approve(
                         "type": "mcp_server",
                         "name": f"{label} autoApprove",
                     },
-                    active_in=_infer_hosts(manifest),
+                    active_in=[agent_kind] if agent_kind else _infer_hosts(manifest),
                     declared_by={"kind": "manifest", "path": declared_path},
                     component_path=[{"type": "mcp_server", "name": label}],
                     standards=_STANDARDS,
@@ -103,6 +115,8 @@ def _check_cursor_permissions(
     path: Path,
     permissions: dict,
     sources: dict[str, Path] | None = None,
+    *,
+    agent_kind: str | None = None,
 ) -> list[PostureFinding]:
     names: set[str] = set()
     for field in CURSOR_ALLOW_FIELDS:
@@ -124,7 +138,7 @@ def _check_cursor_permissions(
                     "type": "mcp_server",
                     "name": f"{label} autoApprove",
                 },
-                active_in=["cursor"],
+                active_in=[agent_kind or "cursor"],
                 # kind "permissions", not "manifest": `declared_path` is
                 # `permissions.json`, a separate policy file that never
                 # equals a composed server's `source_manifest` (`mcp.json`).
@@ -135,6 +149,43 @@ def _check_cursor_permissions(
                 component_path=[{"type": "mcp_server", "name": label}],
                 standards=_STANDARDS,
                 remediation=REMEDIATION,
+            )
+        )
+    return findings
+
+
+def _check_devin_permissions(
+    permissions: devin_permissions.DevinPermissions, *, agent_kind: str | None = None
+) -> list[PostureFinding]:
+    """Devin CLI's `mcp__…` allow entries (ADR-0073), already merged across
+    levels with denies and higher-precedence asks applied. One finding per
+    server per file, so each names the file a reader edits; `mcp__*` reports
+    as server `*`, every server."""
+    entries_by_server: dict[tuple[str, Path], list[str]] = {}
+    for allow in permissions.allows:
+        server = devin_permissions.mcp_server(allow.entry)
+        if server is not None:
+            entries_by_server.setdefault((server, allow.path), []).append(allow.entry)
+    findings: list[PostureFinding] = []
+    for (server, path), entries in sorted(
+        entries_by_server.items(), key=lambda item: (item[0][0], str(item[0][1]))
+    ):
+        label = f"mcp-server/{server}"
+        findings.append(
+            PostureFinding(
+                rule_id=RULE_ID,
+                title=TITLE,
+                severity=SEVERITY,
+                confidence=CONFIDENCE,
+                component={"type": "mcp_server", "name": f"{label} autoApprove"},
+                active_in=[agent_kind or "devin-cli"],
+                # `config.json` is a policy file, never a server's own
+                # manifest, so `_attach_bom_ref` matches by server alias.
+                declared_by={"kind": "permissions", "path": str(path)},
+                component_path=[{"type": "mcp_server", "name": label}],
+                standards=_STANDARDS,
+                remediation=REMEDIATION,
+                evidence={"permissions": sorted(set(entries))},
             )
         )
     return findings

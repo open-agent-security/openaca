@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -191,27 +192,14 @@ def test_the_kind_is_a_registered_singleton():
     assert devin_cli.KIND.display_name == "Devin CLI"
 
 
-def test_posture_rules_exclude_project_trust_and_endpoint_override():
-    from tools.posture.rules import (
-        api_endpoint_override,
-        insecure_transport,
-        mcp_header_credential,
-        mutable_install,
-        project_trust,
-        skill_capability,
-    )
+def test_every_rule_that_applies_to_devin_is_allowlisted():
+    from tools.posture import KNOWN_RULE_IDS
+    from tools.posture.rules import api_endpoint_override, project_trust
 
-    rules = devin_cli.KIND.posture_rules
-
-    assert rules is not None
-    assert project_trust.RULE_ID not in rules
-    assert api_endpoint_override.RULE_ID not in rules
-    assert {
-        insecure_transport.RULE_ID,
-        mcp_header_credential.RULE_ID,
-        mutable_install.RULE_ID,
-        skill_capability.RULE_ID,
-    } <= rules
+    assert devin_cli.KIND.posture_rules == KNOWN_RULE_IDS - {
+        project_trust.RULE_ID,
+        api_endpoint_override.RULE_ID,
+    }
 
 
 def test_compose_passes_every_resolved_root(tmp_path, monkeypatch):
@@ -290,3 +278,46 @@ def test_nested_skills_devin_does_not_load_are_not_source_units(tmp_path):
     _skill(tmp_path / ".claude" / "skills" / "group" / "nested")
 
     assert _counts(tmp_path) == (1, 0)
+
+
+# --- Posture through the kind's own surfaces -----------------------------------------
+
+
+def test_a_declared_scan_reports_both_permission_rules_through_the_kind(tmp_path):
+    from tools.agent_kinds import build_agent_graph
+    from tools.posture import run_posture_rules
+
+    _write(
+        tmp_path / ".devin" / "mcp_config.json",
+        json.dumps({"mcpServers": {"github": {"command": "npx", "args": ["-y", "gh-mcp@1.0.0"]}}}),
+    )
+    _write(
+        tmp_path / ".devin" / "config.json",
+        json.dumps({"permissions": {"allow": ["Exec(git push)", "mcp__github__*", "Read(**)"]}}),
+    )
+    (agent,) = _declared(tmp_path)
+    graph = build_agent_graph(agent)
+    refs = [
+        replace(node.ref, extra={**(node.ref.extra or {}), "bom_ref": key})
+        for key, node in graph.nodes.items()
+        if node.ref is not None
+    ]
+    assert devin_cli.KIND.posture_manifest_collectors is not None
+    mcp_collector, settings_collector = devin_cli.KIND.posture_manifest_collectors
+
+    findings = run_posture_rules(
+        refs,
+        mcp_collector([tmp_path], refs=refs),
+        settings_collector([tmp_path], refs=refs),
+        allowed_rules=devin_cli.KIND.posture_rules,
+        agent_kind="devin-cli",
+    )
+    by_rule = {f.rule_id: f for f in findings}
+
+    assert set(by_rule) == {
+        "openaca-posture-command-policy-allow",
+        "openaca-posture-mcp-auto-approve",
+    }
+    # The approval names a composed server, so it attaches to that server's
+    # bom-ref and a policy gate can act on it.
+    assert by_rule["openaca-posture-mcp-auto-approve"].bom_ref is not None

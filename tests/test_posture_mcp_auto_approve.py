@@ -76,3 +76,19 @@ def test_settings_file_mcp_autoapprove_flagged(tmp_path):
     assert len(findings) == 1
     assert findings[0].rule_id == "openaca-posture-mcp-auto-approve"
     assert "inline-server" in findings[0].component_label
+
+
+def test_active_in_comes_from_the_scanning_kind_for_every_branch(tmp_path):
+    """No branch hardcodes another kind once the scanning agent is known: a
+    second reader of a shape reports itself, not the shape's first owner."""
+    manifests = [
+        (tmp_path / "permissions.json", {"cursor_permissions": {"mcpAllowlist": ["a"]}}),
+        (
+            tmp_path / ".mcp.json",
+            {"mcpServers": {"b": {"url": "https://b.test", "autoApprove": True}}},
+        ),
+    ]
+
+    findings = check_mcp_auto_approve(manifests, agent_kind="synthetic")
+
+    assert [f.active_in for f in findings] == [["synthetic"], ["synthetic"]]

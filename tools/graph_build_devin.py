@@ -147,10 +147,8 @@ def build_devin_declared_graph(
         if _owned(path, owned):
             continue
         parts = path.relative_to(scan_root).parts
-        if path.name == "SKILL.md":
-            gate = _declared_skill_gate(parts)
-            if gate is None:
-                continue
+        gate = _declared_skill_gate(parts) if path.name == "SKILL.md" else None
+        if gate is not None:
             owner_index, tool = gate
             if tool is None or switches.enabled(scan_root.joinpath(*parts[:owner_index]), tool):
                 _add_skill(

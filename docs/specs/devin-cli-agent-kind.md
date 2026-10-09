@@ -218,7 +218,9 @@ than a `hooks` key.
 
 | | |
 |---|---|
-| Manifest candidates, in order | 1. `.devin-plugin/plugin.json`, new. 2. `.claude-plugin/plugin.json`, whose root `.mcp.json` is honoured. 3. A root `plugin.json` per Agent Plugins 1.0.0. OpenACA already realizes 2 and 3 for Claude Code and Cursor |
+| Manifest candidates, in order | 1. `.devin-plugin/plugin.json`, new. 2. `.claude-plugin/plugin.json`, whose root `.mcp.json` is honoured. 3. A root `plugin.json` per Agent Plugins 1.0.0. OpenACA already realizes 2 and 3 for Claude Code and Cursor. Devin falls back to 2 only "if there's no `.devin-plugin/plugin.json`": a present but invalid Devin manifest leaves the root with no plugin |
+| Agent Plugins MCP | Root `.mcp.json`, then root `mcp.json`; `.mcp.json` wins a server-name collision |
+| Plugin agents | Devin's custom subagent format (`name`, `description`, `model`, `allowed-tools`/`tools`, `max-nesting`): an agent contributes itself only, never MCP servers or hooks from its frontmatter |
 | Manifest `skills` | A path or a list of paths, replacing the default `skills/`; `[]` disables skills. "An invalid entry fails the whole manifest": an absolute, `~` or `..` entry means the `.devin-plugin` manifest does not qualify and the plugin is not realized |
 | Manifest `mcpServers` | A file, a list of files read in order, `{"paths": [...], "exclusive": true}`, or an inline map. The root `.mcp.json` is read after declared files unless `exclusive` or a non-empty inline map suppresses it; an empty list or map does not. Unsafe paths are dropped; a field of any other shape disables only MCP. The first source to name a server wins (bundled `extensibility/plugins/overview.mdx`) |
 | Install level | User only |

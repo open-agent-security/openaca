@@ -1214,9 +1214,11 @@ def _resolve_plugin_format(
         try:
             data = json.loads(manifest.read_text())
         except (OSError, ValueError, UnicodeDecodeError):
-            continue
+            data = None
         if isinstance(data, dict) and fmt.detect(data):
             return fmt
+        if fmt.blocks_fallback:
+            return None
     return None
 
 
@@ -2131,17 +2133,20 @@ def _add_bundled_plugin_surfaces(
             hooks_filename=surface.bundled.hooks_filename,
         )
     )
-    refs.extend(
-        _parse_bundled_command_agents(
-            plugin_root,
-            plugin_data,
-            plugin_name,
-            warnings=graph.warnings,
-            commands_dir=surface.bundled.commands_dir,
-            agents_dir=surface.bundled.agents_dir,
-            agent_directory_filenames=surface.bundled.agent_directory_filenames,
-        )
+    command_agent_refs = _parse_bundled_command_agents(
+        plugin_root,
+        plugin_data,
+        plugin_name,
+        warnings=graph.warnings,
+        commands_dir=surface.bundled.commands_dir,
+        agents_dir=surface.bundled.agents_dir,
+        agent_directory_filenames=surface.bundled.agent_directory_filenames,
     )
+    if not surface.bundled.agents_declare_components:
+        command_agent_refs = [
+            ref for ref in command_agent_refs if _component_type(ref) in {"agent", "command"}
+        ]
+    refs.extend(command_agent_refs)
     refs = [r for r in refs if _component_type(r) != "skill"]
     # Stamp plugin-container context (declared_by.kind=plugin + a
     # plugin-prefixed component_path) onto each bundled ref. This is placement

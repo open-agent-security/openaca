@@ -41,6 +41,11 @@ class PluginFormat:
     manifest_filename: str
     detect: Callable[[dict], bool]
     parse: Callable[[Path], list] | None = None
+    # Whether this candidate, once present, decides the root on its own: it
+    # qualifies, or the root is no plugin at all, never a lower-precedence
+    # format's. Devin falls back to a Claude manifest only "if there's no
+    # `.devin-plugin/plugin.json`", so its own manifest sets this.
+    blocks_fallback: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,11 @@ class BundledLayout:
     # (`devin_config.plugin_mcp_refs`, from Devin's bundled plugin docs).
     # `False` for every other kind, which keeps its additive behavior.
     mcp_servers_field_selects_sources: bool = False
+    # Whether a bundled agent's frontmatter can declare components of its own
+    # (Claude Code's `mcpServers` and `hooks`). Devin's subagent frontmatter
+    # is `name`, `description`, `model`, `allowed-tools`/`tools` and
+    # `max-nesting` only, so a Devin plugin agent contributes itself alone.
+    agents_declare_components: bool = True
 
 
 @dataclass(frozen=True)
@@ -385,6 +395,7 @@ _DEVIN_PLUGIN_FORMAT = PluginFormat(
     manifest_filename="plugin.json",
     detect=_detect_devin_plugin_manifest,
     parse=claude_plugin.parse,
+    blocks_fallback=True,
 )
 
 DEVIN_SURFACE = RepoSurface(
@@ -413,6 +424,7 @@ DEVIN_SURFACE = RepoSurface(
         agent_directory_filenames=DEVIN_AGENT_DIRECTORY_FILENAMES,
         skills_field_overrides_default=True,
         mcp_servers_field_selects_sources=True,
+        agents_declare_components=False,
     ),
     # Devin's repo surfaces are walked by `tools/graph_build_devin.py`, not
     # through the `config_dir`-shaped helpers, so the fields below that only

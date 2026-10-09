@@ -49,7 +49,7 @@ from tools.graph_build import (
     safe_parse,
     same_path,
 )
-from tools.parsers import agent_plugins, mcp_json
+from tools.parsers import agent_plugins, devin_config, mcp_json
 from tools.parsers.claude_plugin_root import resolve_within
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.repo_surface import AGENT_PLUGINS_FORMAT, CURSOR_SURFACE, RepoSurface
@@ -833,6 +833,11 @@ def _realize_plugins(
                 normalize,
                 root_dir=root_dir,
                 root_spec=root_spec,
+                conventional_mcp=(
+                    (*surface.bundled.mcp_filenames, "mcp.json")
+                    if surface.bundled.mcp_servers_field_selects_sources
+                    else None
+                ),
             )
         else:
             manifest = root / fmt.manifest_dir / fmt.manifest_filename
@@ -865,6 +870,7 @@ def _realize_agent_plugins_root(
     root_dir: Path | None,
     root_spec,
     plugin_extra: dict | None = None,
+    conventional_mcp: tuple[str, ...] | None = None,
 ) -> Node | None:
     """Realize an Agent Plugins bundle: `agent_plugins.parse` returns the
     plugin self-ref, its (one-level) skill refs, and its MCP server refs as
@@ -881,6 +887,20 @@ def _realize_agent_plugins_root(
     """
     manifest = plugin_root / "plugin.json"
     refs = safe_parse(graph, lambda path: agent_plugins.parse(path, strict=True), manifest)
+    if conventional_mcp is not None and any(component_type_of(r) == "plugin" for r in refs):
+        # A kind that reads more conventional MCP sources than the Agent
+        # Plugins spec's one `mcp.json` (Devin: `.mcp.json`, then `mcp.json`,
+        # first source winning) replaces the parser's MCP refs with its own.
+        eval_root_mcp, spec_mcp = ignore_context(plugin_root, False, root_dir, root_spec)
+        refs = [r for r in refs if component_type_of(r) != "mcp_server"]
+        refs += devin_config.plugin_mcp_refs(
+            {},
+            plugin_root=plugin_root,
+            manifest_path=manifest,
+            conventional=conventional_mcp,
+            record_gap=graph.record_gap,
+            usable=lambda path: not is_ignored_under(path, eval_root_mcp, spec_mcp),
+        )
     original_self_ref = next((r for r in refs if component_type_of(r) == "plugin"), None)
     if original_self_ref is None:
         return None

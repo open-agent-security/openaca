@@ -70,13 +70,19 @@ def test_skill_roots_devin_reads_natively_are_evidence(tmp_path, root):
         ".devin/rules/style.md",
         ".devin/agents/notes.txt",
         ".agents/agents/example/config.json",
+        ".devin/agents/sub/notes.md",
+        ".devin/skills/sub/extra/SKILL.md",
     ],
 )
 def test_composition_only_files_are_not_evidence(tmp_path, rel):
     """Gitignored local layers are incidental, imported files belong to
-    another runtime, instruction files are not configuration, and a file
-    under `agents/` that composition does not load (wrong extension, or a
-    directory-form profile under the wrong filename) is not evidence either."""
+    another runtime, instruction files are not configuration, a file under
+    `agents/` that composition does not load (wrong extension, or a
+    directory-form profile under the wrong filename) is not evidence, and
+    neither is one nested a level deeper than composition ever reads (a flat
+    `.md` two directories under `agents/`, or a `SKILL.md` two directories
+    under `skills/`) -- `*` in these patterns matches within one path
+    segment, never across a `/`."""
     content = json.dumps({"name": "p"}) if rel.endswith("plugin.json") else "{}"
     _write(tmp_path / rel, content)
 

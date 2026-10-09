@@ -167,9 +167,9 @@ def parse_server(
     )
 
 
-def parse_mcp_file(path: Path) -> list[ComponentRef]:
+def parse_mcp_file(path: Path, *, allow_flat: bool = False) -> list[ComponentRef]:
     """Every server a Devin-read MCP file declares, strictly (registry use)."""
-    found = server_map(load(path), allow_flat=True)
+    found = server_map(load(path), allow_flat=allow_flat)
     if found is None:
         return []
     servers, prefix = found

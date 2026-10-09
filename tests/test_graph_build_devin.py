@@ -411,7 +411,7 @@ def test_a_devin_plugin_manifest_realizes_with_its_bundle(tmp_path):
     (plugin_node,) = [n for n in graph.nodes.values() if n.kind == "plugin"]
     children = {c.kind: c for c in graph.children_of(plugin_node)}
 
-    assert plugin_node.ref.name == "review-tools"
+    assert plugin_node.ref is not None and plugin_node.ref.name == "review-tools"
     assert set(children) == {"skill", "mcp_server"}
     assert _mcp(graph) == [("bundled", "review-tools/.mcp.json")]
 

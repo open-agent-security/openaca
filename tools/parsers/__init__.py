@@ -17,6 +17,7 @@ from tools.parsers import (
     claude_settings,
     claude_skill,
     codex_config,
+    devin_config,
     hooks_json,
     mcp_json,
     package_json,
@@ -368,6 +369,167 @@ CODEX_MANIFEST_REGISTRY: list[ManifestPattern] = [
         "**/.claude-plugin/plugin.json",
         claude_plugin.parse,
         _is_resolved_codex_plugin_format(".claude-plugin"),
+    ),
+]
+
+
+def _import_owner(path: Path, marker: str | None) -> Path:
+    """The directory an imported file configures: the one holding the nearest
+    `marker` directory above it, or the file's own directory."""
+    if marker is not None:
+        parts = path.parts
+        for index in range(len(parts) - 2, -1, -1):
+            if parts[index] == marker:
+                return Path(*parts[:index]) if index else Path(".")
+    return path.parent
+
+
+def _devin_import_enabled(tool: str, marker: str | None) -> GuardFn:
+    """Claim an imported file only while Devin's `read_config_from` switch for
+    `tool` is on where the file sits, the same judgement composition makes
+    (`tools.graph_build_devin`), so a switched-off import neither counts as a
+    source unit nor registers a parse failure for a file Devin does not read."""
+
+    def guard(path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None) -> bool:
+        _ = spec
+        owner = _import_owner(path, marker)
+        return devin_config.ImportSwitches(stop_at=root if root is not None else owner).enabled(
+            owner, tool
+        )
+
+    return guard
+
+
+def _is_first_devin_agent_file(path: Path, root=None, spec=None) -> bool:
+    """A directory-form subagent reads one file: `AGENT.md`, then `AGENTS.md`,
+    `agent.md`, `agents.md`."""
+    _ = (root, spec)
+    for filename in ("AGENT.md", "AGENTS.md", "agent.md", "agents.md"):
+        if (path.parent / filename).is_file():
+            return path.name == filename
+    return False
+
+
+def _is_resolved_devin_plugin_format(manifest_dir: str) -> GuardFn:
+    """Claim a Devin plugin-root candidate only if it is the one composition's
+    first-qualifying-candidate resolution picks — the same guard Codex's two
+    candidates use, over Devin's three."""
+
+    def guard(path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None) -> bool:
+        from tools.graph_build import resolve_plugin_format
+        from tools.repo_surface import DEVIN_SURFACE
+
+        plugin_root = path.parent.parent if manifest_dir else path.parent
+        fmt = resolve_plugin_format(plugin_root, DEVIN_SURFACE, eval_root=root, spec=spec)
+        return fmt is not None and fmt.manifest_dir == manifest_dir
+
+    return guard
+
+
+def _parse_repo_devin_mcp(path: Path) -> list[ComponentRef]:
+    return devin_config.parse_mcp_file(path)
+
+
+def _parse_repo_claude_mcp(path: Path) -> list[ComponentRef]:
+    # Claude Code's `.mcp.json` may be a bare `{name: server}` map.
+    return devin_config.parse_mcp_file(path, allow_flat=True)
+
+
+def _parse_repo_devin_settings(path: Path) -> list[ComponentRef]:
+    scope = "local" if path.name.endswith(".local.json") else "project"
+    return devin_config.parse_settings_file(path, scope=scope)
+
+
+def _parse_repo_devin_hooks(path: Path) -> list[ComponentRef]:
+    return hooks_json.parse_whole_file_hooks(path, scope="project", strict=True)
+
+
+def _parse_repo_devin_agent(path: Path) -> list[ComponentRef]:
+    fallback = path.parent.name if path.parent.parent.name == "agents" else None
+    return claude_command_agent.parse_file(path, kind="agent", name_fallback=fallback)[:1]
+
+
+# Devin CLI's manifest surface, mirroring `tools/graph_build_devin.py`. Every
+# file Devin reads is JSON with comments, so its own and imported MCP and
+# settings files go through `devin_config` rather than `mcp_json.parse`. No
+# `.claude/agents` route: the Claude Code import names rules, skills, commands
+# and MCP servers, not subagents.
+DEVIN_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("**/.devin/mcp_config.json", _parse_repo_devin_mcp),
+    ManifestPattern("**/.devin/mcp_config.local.json", _parse_repo_devin_mcp),
+    ManifestPattern("**/.devin/config.json", _parse_repo_devin_settings),
+    ManifestPattern("**/.devin/config.local.json", _parse_repo_devin_settings),
+    ManifestPattern("**/.devin/hooks.v1.json", _parse_repo_devin_hooks),
+    # Devin's own and the shared skill roots are one level deep.
+    ManifestPattern("**/.devin/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.cognition/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern("**/.agents/skills/*/SKILL.md", claude_skill.parse),
+    ManifestPattern(
+        "**/.windsurf/skills/*/SKILL.md",
+        claude_skill.parse,
+        _devin_import_enabled(devin_config.IMPORT_WINDSURF, ".windsurf"),
+    ),
+    # Claude Code's and Copilot's skill imports are recursive.
+    ManifestPattern(
+        "**/.claude/skills/*/**/SKILL.md",
+        claude_skill.parse,
+        _devin_import_enabled(devin_config.IMPORT_CLAUDE, ".claude"),
+    ),
+    ManifestPattern(
+        "**/.github/skills/*/**/SKILL.md",
+        claude_skill.parse,
+        _devin_import_enabled(devin_config.IMPORT_COPILOT, ".github"),
+    ),
+    ManifestPattern(
+        "**/.claude/commands/**/*.md",
+        _parse_repo_command,
+        _devin_import_enabled(devin_config.IMPORT_CLAUDE, ".claude"),
+    ),
+    ManifestPattern(
+        ".mcp.json",
+        _parse_repo_claude_mcp,
+        _devin_import_enabled(devin_config.IMPORT_CLAUDE, None),
+    ),
+    *(
+        ManifestPattern(
+            f"**/.claude/{filename}",
+            _parse_repo_devin_settings,
+            _devin_import_enabled(devin_config.IMPORT_CLAUDE, ".claude"),
+        )
+        for filename in ("settings.json", "settings.local.json")
+    ),
+    ManifestPattern(
+        "**/.cursor/mcp.json",
+        _parse_repo_devin_mcp,
+        _devin_import_enabled(devin_config.IMPORT_CURSOR, ".cursor"),
+    ),
+    *(
+        ManifestPattern(f"**/{dirname}/agents/*.md", _parse_repo_devin_agent)
+        for dirname in (".devin", ".agents")
+    ),
+    *(
+        ManifestPattern(
+            f"**/{dirname}/agents/*/{filename}",
+            _parse_repo_devin_agent,
+            _is_first_devin_agent_file,
+        )
+        for dirname in (".devin", ".agents")
+        for filename in ("AGENT.md", "AGENTS.md", "agent.md", "agents.md")
+    ),
+    ManifestPattern(
+        "**/.devin-plugin/plugin.json",
+        claude_plugin.parse,
+        _is_resolved_devin_plugin_format(".devin-plugin"),
+    ),
+    ManifestPattern(
+        "**/.claude-plugin/plugin.json",
+        claude_plugin.parse,
+        _is_resolved_devin_plugin_format(".claude-plugin"),
+    ),
+    ManifestPattern(
+        "plugin.json",
+        _parse_repo_agent_plugins,
+        _is_resolved_devin_plugin_format(""),
     ),
 ]
 

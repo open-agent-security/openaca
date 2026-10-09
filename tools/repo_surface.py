@@ -68,6 +68,13 @@ class BundledLayout:
     # `agents/<name>/AGENT.md`) alongside flat `<name>.md` files. Empty for a
     # kind that is flat-only (Cursor, Claude Code, Codex).
     agent_directory_filenames: tuple[str, ...] = ()
+    # Devin's manifest `skills` field (string or array) REPLACES the default
+    # `skills/` directory rather than adding to it, and `[]` disables skill
+    # loading for the plugin entirely (docs.devin.ai/cli/extensibility/
+    # plugins/overview). `False` for every other kind, whose own manifest
+    # `skills` field (unverified either way) keeps the existing additive
+    # behavior rather than risk changing it on a guess.
+    skills_field_overrides_default: bool = False
 
 
 @dataclass(frozen=True)
@@ -393,6 +400,7 @@ DEVIN_SURFACE = RepoSurface(
         commands_dir=None,
         agents_dir="agents",
         agent_directory_filenames=DEVIN_AGENT_DIRECTORY_FILENAMES,
+        skills_field_overrides_default=True,
     ),
     # Devin's repo surfaces are walked by `tools/graph_build_devin.py`, not
     # through the `config_dir`-shaped helpers, so the fields below that only

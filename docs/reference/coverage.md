@@ -72,6 +72,64 @@ third-party extensibility flag lives in an editor state database rather than a
 file, so a scan cannot determine whether the `.claude/*` and `.codex/*` skills
 it reports are actually loaded. That gap does not close by parsing.
 
+## Coverage by agent kind
+
+What each kind reads, what posture it reports, and where it stops. Use this to
+see what is and is not covered, kind by kind. The per-kind specs remain the
+authority for every cell. `devin-cli` is **proposed** and not registered; its
+column states what
+[`docs/specs/devin-cli-agent-kind.md`](../specs/devin-cli-agent-kind.md)
+specifies, not what the scanner does today.
+
+Cell markers:
+
+- **†** marks a root Cursor reads only behind its extensibility flag.
+- **‡** marks an import Devin CLI reads only while its `read_config_from`
+  switch for that tool is on (the default).
+- **—** means the kind has no such surface.
+
+### Composition
+
+| | `claude-code` | `codex` | `cursor` | `devin-cli` *(proposed)* |
+|---|---|---|---|---|
+| Config root | `--config-dir`, else `$CLAUDE_CONFIG_DIR`, else `~/.claude` | `--config-dir`, else `$CODEX_HOME`, else `~/.codex` | `~/.cursor` | `$XDG_CONFIG_HOME/devin`, else `~/.config/devin` |
+| `--config-dir` | Accepted | Accepted; `.agents` moves with it (ADR-0059) | Refused (ADR-0054) | Refused |
+| Coverage, declared / installed | `complete` / `complete` | `complete` / `complete` | `partial` / `partial` | `partial` / `partial` |
+| What keeps it from `complete` | — | — | Plugin enable state and runtime MCP registration (installed); the extensibility flag (both) | Managed plugins and runtime MCP registration (installed); `read_config_from` (declared) |
+| MCP servers | `.mcp.json`, `mcp.json`, `claude_desktop_config.json`, settings `mcpServers`, managed settings | `config.toml` `[mcp_servers]`: user, project, profiles | `.cursor/mcp.json`, `~/.cursor/mcp.json` | `mcp_config.json`: user, project, project-local; Claude Code‡, Cursor‡ and Windsurf‡ files |
+| Skills | `.claude/skills/`, plugin skills | `<root>/skills/`, `.codex/skills/`, `.agents/skills/`, `$HOME/.agents/skills/` | `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`†, `.codex/skills/`† | `.devin/skills/`, `.cognition/skills/`, `.agents/skills/`, user roots; `.claude/skills/`‡, `.windsurf/skills/`‡, `.github/skills/`‡ |
+| Subagents | `.claude/agents/*.md` | `<root>/agents/*.toml`, `[agents.*] config_file` | `.cursor/agents/`, `.claude/agents/`† | `.devin/agents/`, `.agents/agents/`, `<config>/agents/` |
+| Commands | `.claude/commands/*.md` | — | `.cursor/commands/`, `.claude/commands/`† | `.claude/commands/`‡, loaded as skills |
+| Plugins | `installed_plugins.json`; `.claude-plugin` | `plugins/cache/`; two manifests | `plugins/local/`, `plugins/cache/`; two manifests, presence-only | User-level plugin store; three manifests |
+| Hooks | settings `hooks`, plugin `hooks/hooks.json`, managed settings | `hooks.json`, `.codex/hooks.json`, plugin hooks | Plugin hooks | `.devin/hooks.v1.json`, config `hooks`, Claude Code settings `hooks`, plugin `hooks.json` |
+| Reads another runtime's files | No | `.agents/skills/` only (shared convention) | Claude Code and Codex, behind the extensibility flag | Claude Code, Cursor, Windsurf, Copilot, OpenCode, Zed, behind `read_config_from` |
+| Declared evidence includes `.agents/skills/` (ADR-0058) | No | Yes | Yes | Yes |
+
+### Posture
+
+| Rule (`openaca-posture-…`) | `claude-code` | `codex` | `cursor` | `devin-cli` *(proposed)* |
+|---|---|---|---|---|
+| `insecure-transport` | Yes | Yes | Yes | Yes |
+| `mcp-header-credential` | Yes | Yes | Yes | Yes, once `${file:…}` reads as a reference |
+| `mutable-install-reference` | Yes | Yes | Yes | Yes |
+| `skill-executable-tool` | Yes | Yes | Yes | Yes, once `exec` counts as executable |
+| `mcp-auto-approve` | Yes: `autoApprove` on a server entry | — | Yes: `permissions.json` | Yes: `permissions` `mcp__…` allows |
+| `command-policy-allow` | — | Yes: `rules/*.rules` | — | Yes: `permissions` `Exec(…)` allows |
+| `project-trust` | — | Yes: `[projects.*] trust_level` | — | — |
+| `api-endpoint-override` | Yes | — | — | — |
+
+### Not covered, for any kind
+
+- **Instruction files**: `CLAUDE.md`, `AGENTS.md`, rules directories. They are
+  instructions, not components.
+- **Components a server delivers at run time and never writes to a file the
+  scan reads**: Cursor's team configuration, MCP servers an editor registers
+  over a protocol, and Devin's managed plugins where uncached.
+- **Windsurf as its own kind.** Its files appear only where a registered kind
+  imports them.
+
+## Tiers
+
 | Tier | What it reads | V0 status |
 |---|---|---|
 | **1. Declarative manifests** (host-specific) | `.claude/settings.json`, `.claude-plugin/plugin.json`, `mcp.json`, `.mcp.json`, `claude_desktop_config.json`, `installed_plugins.json` in endpoint mode, `SKILL.md`, `hooks/hooks.json`, `.claude/commands/*.md`, `.claude/agents/*.md` | V0 |

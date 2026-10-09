@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from tools.component_ref import ComponentRef, canonical_component_identity
-from tools.parsers import settings_layers
+from tools.parsers import jsonc, settings_layers
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
 from tools.posture.finding import PostureFinding, Standards
@@ -938,99 +938,16 @@ def _cursor_permissions_config_dir() -> Path:
     return Path.home() / ".cursor"
 
 
-def _parse_jsonc(text: str) -> object:
-    """Parse JSON that may carry `//` and `/* */` comments and trailing
-    commas — both documented as supported in `permissions.json`
-    (docs/specs/cursor-agent-kind.md "Precedence"). A plain `json.loads`
-    raises on a documented-valid file, so this strips comments and trailing
-    commas in two string-aware passes (never touching either inside a JSON
-    string literal) before handing the result to `json.loads`.
-    """
-    return json.loads(_strip_trailing_commas(_strip_jsonc_comments(text)))
-
-
-def _strip_jsonc_comments(text: str) -> str:
-    out: list[str] = []
-    i = 0
-    n = len(text)
-    in_string = False
-    escape = False
-    while i < n:
-        ch = text[i]
-        if in_string:
-            out.append(ch)
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            i += 1
-            continue
-        if ch == '"':
-            in_string = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "/" and i + 1 < n and text[i + 1] == "/":
-            i += 2
-            while i < n and text[i] not in "\r\n":
-                i += 1
-            continue
-        if ch == "/" and i + 1 < n and text[i + 1] == "*":
-            i += 2
-            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
-                i += 1
-            i += 2
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
-def _strip_trailing_commas(text: str) -> str:
-    out: list[str] = []
-    i = 0
-    n = len(text)
-    in_string = False
-    escape = False
-    while i < n:
-        ch = text[i]
-        if in_string:
-            out.append(ch)
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            i += 1
-            continue
-        if ch == '"':
-            in_string = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == ",":
-            j = i + 1
-            while j < n and text[j] in " \t\r\n":
-                j += 1
-            if j < n and text[j] in "}]":
-                i += 1
-                continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
 def _load_cursor_permissions(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return {}
     try:
-        data = _parse_jsonc(text)
-    except (json.JSONDecodeError, ValueError):
+        # JSONC: comments and trailing commas are documented as supported in
+        # `permissions.json` (docs/specs/cursor-agent-kind.md "Precedence").
+        data = jsonc.loads(text)
+    except ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 

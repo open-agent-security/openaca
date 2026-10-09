@@ -229,24 +229,6 @@ def collect_skillspector_findings(
     )
 
 
-def collect_skillspector_observations(
-    refs: list[ComponentRef],
-    *,
-    command: str = DEFAULT_COMMAND,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    run_command: RunCommand | None = None,
-    progress: ProgressCallback | None = None,
-) -> tuple[list[ObservationFinding], list[str]]:
-    result = collect_skillspector_findings(
-        refs,
-        command=command,
-        timeout_seconds=timeout_seconds,
-        run_command=run_command,
-        progress=progress,
-    )
-    return result.observations, result.warnings
-
-
 def _run_command(args: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(args),

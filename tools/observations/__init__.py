@@ -4,7 +4,6 @@ from tools.observations.skillspector import (
     SkillSpectorCommandNotFound,
     SkillSpectorFindings,
     collect_skillspector_findings,
-    collect_skillspector_observations,
 )
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "SkillSpectorFindings",
     "collect_skill_observations",
     "collect_skillspector_findings",
-    "collect_skillspector_observations",
 ]

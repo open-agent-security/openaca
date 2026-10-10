@@ -26,8 +26,8 @@ class _FakeAgent:
     scan_root: Optional[Path] = None
     config_root: Optional[Path] = None
     project_root: Optional[Path] = None
-    bom_ref: str = "root/devin-cli"
-    root_label: str = "devin-cli"
+    bom_ref: str = "root/devin"
+    root_label: str = "devin"
 
 
 def _write(path: Path, content: str = "") -> Path:
@@ -958,7 +958,7 @@ def test_a_legacy_root_symlinked_to_the_config_root_is_one_skill(tmp_path):
 
     assert _names(graph, "skill") == ["user-skill"]
     (node,) = [n for n in graph.nodes.values() if n.kind == "skill"]
-    assert node.key.startswith("devin-cli/skills/user-skill/SKILL.md#")
+    assert node.key.startswith("devin/skills/user-skill/SKILL.md#")
 
 
 def test_installed_subagents_hooks_and_commands(tmp_path):
@@ -1056,9 +1056,9 @@ def test_installed_node_keys_carry_no_home_path(tmp_path):
         "agents",
         "claude-code",
         "copilot",
-        "devin-cli",
-        "devin-cli-data",
-        "devin-cli-legacy",
+        "devin",
+        "devin-data",
+        "devin-legacy",
         "home",
         "project",
         "windsurf",

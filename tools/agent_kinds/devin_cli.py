@@ -26,9 +26,9 @@ from tools.posture.rules import (
 )
 from tools.repo_surface import DEVIN_AGENT_DIRECTORY_FILENAMES, DEVIN_SURFACE
 
-KIND_ID = "devin-cli"
-DISPLAY_NAME = "Devin CLI"
-ROOT_LABEL = "devin-cli"
+KIND_ID = "devin"
+DISPLAY_NAME = "Devin"
+ROOT_LABEL = "devin"
 
 # Argued per source, from a named gap at that source (ADR-0070):
 #   * installed — managed org and personal plugins arrive from Devin's service

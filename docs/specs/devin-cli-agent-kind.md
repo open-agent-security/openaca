@@ -1,8 +1,8 @@
 # Devin CLI Agent Kind — Surface Audit
 
-*Implemented (2026-10-09): `devin-cli` is registered. Decisions:
+*Implemented (2026-10-09): `devin` is registered. Decisions:
 [ADR-0070](../adrs/0070-devin-cli-agent-kind.md),
-[ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md),
+[ADR-0071](../adrs/0071-devin-refuses-config-dir.md),
 [ADR-0072](../adrs/0072-shared-agents-agents-directory.md),
 [ADR-0073](../adrs/0073-devin-permissions-two-rule-ids.md). Audited 2026-10-08.
 This is the per-kind audit that [Multi-Agent Support](multi-agent-support.md)
@@ -20,7 +20,7 @@ Most of its risk is attribution: what is Devin's *evidence* and what is only its
 
 | | |
 |---|---|
-| Kind, root node | `devin-cli`, `agent:devin-cli` |
+| Kind, root node | `devin`, `agent:devin` |
 | Front ends | `devin` REPL and `devin -p`; Devin Local, Devin Desktop's default agent, over ACP; ACP editors (JetBrains, Zed, Xcode) via `devin acp` |
 | Config root | `$XDG_CONFIG_HOME/devin`, else `~/.config/devin` |
 | Data root | `$XDG_DATA_HOME/devin/cli`, else `~/.local/share/devin/cli`; holds the plugin store |
@@ -130,7 +130,7 @@ states. Hold this kind to it.
 
 ### `--config-dir` is refused
 
-`--kind devin-cli` selects the kind. `--config-dir` is refused with
+`--kind devin` selects the kind. `--config-dir` is refused with
 `root_override_refusal`, as Cursor's is under ADR-0054.
 
 Codex keeps the override (ADR-0059) by moving its one home-derived companion,
@@ -422,7 +422,7 @@ before implementation.
 
 | # | Decision | Detail | Record |
 |---|---|---|---|
-| 1 | Register `devin-cli` | Coverage baseline `partial`/`partial`; the declared evidence set above | [ADR-0070](../adrs/0070-devin-cli-agent-kind.md) |
-| 2 | Refuse `--config-dir` | Applies ADR-0054; ADR-0059's companion relocation does not extend to four independent roots | [ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md) |
+| 1 | Register `devin` | Coverage baseline `partial`/`partial`; the declared evidence set above | [ADR-0070](../adrs/0070-devin-cli-agent-kind.md) |
+| 2 | Refuse `--config-dir` | Applies ADR-0054; ADR-0059's companion relocation does not extend to four independent roots | [ADR-0071](../adrs/0071-devin-refuses-config-dir.md) |
 | 3 | `.agents/agents/` is evidence for the kinds that read it | ADR-0058's rule applied to a second shared directory, read today by one kind | [ADR-0072](../adrs/0072-shared-agents-agents-directory.md) |
 | 4 | One `permissions` list, two posture rule ids, split by entry | Rather than a new Devin-specific id | [ADR-0073](../adrs/0073-devin-permissions-two-rule-ids.md) |

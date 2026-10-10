@@ -405,8 +405,8 @@ def test_a_devin_server_composed_from_a_file_with_comments_keeps_its_credential(
     class _Agent:
         source = "declared"
         scan_root = tmp_path
-        bom_ref = "root/devin-cli"
-        root_label = "devin-cli"
+        bom_ref = "root/devin"
+        root_label = "devin"
 
     graph = build_devin_declared_graph(_Agent())
     refs = [node.ref for node in graph.nodes.values() if node.ref is not None]
@@ -450,8 +450,8 @@ def test_a_devin_imported_flat_serverurl_entry_keeps_its_credential(tmp_path):
         source = "installed"
         config_root = home / ".config" / "devin"
         project_root = project
-        bom_ref = "root/devin-cli"
-        root_label = "devin-cli"
+        bom_ref = "root/devin"
+        root_label = "devin"
 
     graph = build_devin_installed_graph(
         _Agent(),

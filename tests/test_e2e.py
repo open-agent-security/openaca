@@ -36,7 +36,7 @@ OVERLAYS_DIR = REPO_ROOT / "overlays"
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
-@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin-cli"])
+@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin"])
 @pytest.mark.parametrize("include_posture", [False, True])
 def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):
     from tools.scan import main as scan_main
@@ -54,7 +54,7 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
             / {
                 "claude-code": ".mcp.json",
                 "cursor": ".cursor/mcp.json",
-                "devin-cli": ".devin/mcp_config.json",
+                "devin": ".devin/mcp_config.json",
             }[kind]
         )
         content = json.dumps(
@@ -93,8 +93,8 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
         ("claude-code", True),
         ("cursor", False),
         ("codex", False),
-        ("devin-cli", False),
-        ("devin-cli", True),
+        ("devin", False),
+        ("devin", True),
     ],
 )
 def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline):
@@ -107,7 +107,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             "claude-code": ".claude",
             "cursor": ".cursor",
             "codex": ".codex",
-            "devin-cli": ".config/devin",
+            "devin": ".config/devin",
         }[kind]
     )
     root.mkdir(parents=True)
@@ -120,8 +120,8 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
     else:
         filename = {
             # Devin's legacy `config.json` `mcpServers` is its inline form.
-            ("devin-cli", True): "config.json",
-            ("devin-cli", False): "mcp_config.json",
+            ("devin", True): "config.json",
+            ("devin", False): "mcp_config.json",
             ("claude-code", True): "settings.json",
             ("claude-code", False): ".mcp.json",
         }.get((kind, inline), "mcp.json")
@@ -138,7 +138,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             )
         )
     args = ["endpoint", "--kind", kind, "--include-posture", "--format", "json"]
-    if kind not in ("cursor", "devin-cli"):
+    if kind not in ("cursor", "devin"):
         args.extend(["--config-dir", str(root)])
     result = CliRunner().invoke(scan_main, args)
     assert result.exit_code == 0, result.output
@@ -2142,15 +2142,15 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
 
     result = CliRunner().invoke(
         scan_main,
-        ["endpoint", "--kind", "devin-cli", "--include-posture", "--format", "json"],
+        ["endpoint", "--kind", "devin", "--include-posture", "--format", "json"],
     )
 
     assert result.exit_code in (0, 1), result.output
     assert token not in result.output
     doc, _ = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])
-    assert [(a["kind"], a["coverage"]) for a in doc["agents"]] == [("devin-cli", "partial")]
+    assert [(a["kind"], a["coverage"]) for a in doc["agents"]] == [("devin", "partial")]
     kinds = {f["agent"]["kind"] for f in doc["findings"]}
-    assert kinds == {"devin-cli"}
+    assert kinds == {"devin"}
     rule_ids = {f.get("rule_id") for f in doc["findings"]}
     assert "openaca-posture-insecure-transport" in rule_ids
     assert "openaca-posture-mcp-header-credential" in rule_ids
@@ -2164,16 +2164,14 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
     assert any("GHSA-3q26-f695-pp76" in json.dumps(f) for f in doc["findings"])
 
     out = tmp_path / "boms"
-    bom = CliRunner().invoke(
-        bom_main, ["endpoint", "--kind", "devin-cli", "--output-dir", str(out)]
-    )
+    bom = CliRunner().invoke(bom_main, ["endpoint", "--kind", "devin", "--output-dir", str(out)])
     assert bom.exit_code == 0, bom.output
     (path,) = out.glob("*.cdx.json")
     document = json.loads(path.read_text(encoding="utf-8"))
     refs = [c["bom-ref"] for c in document["components"]]
     assert refs and not [r for r in refs if str(tmp_path) in r]
     assert any(r.startswith("home/.claude.json#") for r in refs)
-    assert any(r.startswith("devin-cli/mcp_config.json#") for r in refs)
+    assert any(r.startswith("devin/mcp_config.json#") for r in refs)
 
 
 def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):

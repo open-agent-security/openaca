@@ -430,10 +430,10 @@ def _installed_root_labels(
     """
     legacy = ()
     if not _same_directory(legacy_config_root, config_root):
-        legacy = (("devin-cli-legacy", legacy_config_root),)
+        legacy = (("devin-legacy", legacy_config_root),)
     return (
-        ("devin-cli", config_root),
-        ("devin-cli-data", data_root),
+        ("devin", config_root),
+        ("devin-data", data_root),
         *legacy,
         ("agents", home / ".agents"),
         ("claude-code", home / ".claude"),

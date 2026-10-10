@@ -28,7 +28,7 @@ EXECUTABLE_TOOLS = {"bash", "shell"}
 # own, so a shared `.agents/skills` skill granting Devin's `exec` must not be
 # reported as executable under their scans. An unscoped call (no agent_kind)
 # still recognizes it, matching the rule's behavior before Devin existed.
-_EXEC_RECOGNIZING_KINDS = {None, "devin-cli"}
+_EXEC_RECOGNIZING_KINDS = {None, "devin"}
 
 _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 

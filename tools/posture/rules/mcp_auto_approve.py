@@ -178,7 +178,7 @@ def _check_devin_permissions(
                 severity=SEVERITY,
                 confidence=CONFIDENCE,
                 component={"type": "mcp_server", "name": f"{label} autoApprove"},
-                active_in=[agent_kind or "devin-cli"],
+                active_in=[agent_kind or "devin"],
                 # `config.json` is a policy file, never a server's own
                 # manifest, so `_attach_bom_ref` matches by server alias.
                 declared_by={"kind": "permissions", "path": str(path)},

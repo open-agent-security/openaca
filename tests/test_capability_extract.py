@@ -27,7 +27,7 @@ def test_skill_devin_exec_maps_to_shell_exec(tmp_path):
     caps, _ = declared_capabilities(ref)
     assert {c.name for c in caps} == {"shell_exec"}
 
-    caps, _ = declared_capabilities(ref, agent_kind="devin")
+    caps, _ = declared_capabilities(ref, agent_kind="devin-cli")
     assert {c.name for c in caps} == {"shell_exec"}
 
 

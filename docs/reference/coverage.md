@@ -37,7 +37,7 @@ the other source, and never set conservatively because a kind is new: a
 | `claude-code` | `complete` | `complete` |
 | `cursor` | `partial` | `partial` |
 | `codex` | `complete` | `complete` |
-| `devin` | `partial` | `partial` |
+| `devin-cli` | `partial` | `partial` |
 
 Cursor is `partial` at both sources, for different reasons per source:
 installed composition is blind to plugin enable state (a server-side call),
@@ -97,7 +97,7 @@ Cell markers:
 
 ### Composition
 
-| | `claude-code` | `codex` | `cursor` | `devin` |
+| | `claude-code` | `codex` | `cursor` | `devin-cli` |
 |---|---|---|---|---|
 | Config root | `--config-dir`, else `$CLAUDE_CONFIG_DIR`, else `~/.claude` | `--config-dir`, else `$CODEX_HOME`, else `~/.codex` | `~/.cursor` | `$XDG_CONFIG_HOME/devin`, else `~/.config/devin` |
 | `--config-dir` | Accepted | Accepted; `.agents` moves with it (ADR-0059) | Refused (ADR-0054) | Refused (ADR-0071) |
@@ -114,7 +114,7 @@ Cell markers:
 
 ### Posture
 
-| Rule (`openaca-posture-…`) | `claude-code` | `codex` | `cursor` | `devin` |
+| Rule (`openaca-posture-…`) | `claude-code` | `codex` | `cursor` | `devin-cli` |
 |---|---|---|---|---|
 | `insecure-transport` | Yes | Yes | Yes | Yes |
 | `mcp-header-credential` | Yes | Yes | Yes | Yes; a path-shaped `${file:…}` reads as a reference |

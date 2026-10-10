@@ -96,11 +96,11 @@ def test_skill_capability_detects_devin_exec_tool(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    findings = check_skill_executable_tools(parse(skill_md), agent_kind="devin")
+    findings = check_skill_executable_tools(parse(skill_md), agent_kind="devin-cli")
 
     assert len(findings) == 1
     assert findings[0].evidence["allowed_tools"] == ["exec"]
-    assert findings[0].active_in == ["devin"]
+    assert findings[0].active_in == ["devin-cli"]
 
 
 def test_skill_capability_detects_scoped_devin_exec_tool(tmp_path: Path) -> None:

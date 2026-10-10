@@ -122,7 +122,7 @@ def test_a_shared_agents_agents_repo_declares_only_devin(tmp_path):
 
     agents = discover_agents(DiscoveryContext(source="declared", scan_root=tmp_path))
 
-    assert [a.kind_id for a in agents] == ["devin"]
+    assert [a.kind_id for a in agents] == ["devin-cli"]
 
 
 def test_a_shared_skills_repo_declares_every_kind_that_reads_it(tmp_path):
@@ -133,14 +133,14 @@ def test_a_shared_skills_repo_declares_every_kind_that_reads_it(tmp_path):
 
     agents = discover_agents(DiscoveryContext(source="declared", scan_root=tmp_path))
 
-    assert {a.kind_id for a in agents} == {"cursor", "codex", "devin"}
+    assert {a.kind_id for a in agents} == {"cursor", "codex", "devin-cli"}
 
 
 _AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/{}/plugin.schema.json"
 
 
 @pytest.mark.parametrize(
-    ("version", "kinds"), [("1.0.0", {"cursor", "devin"}), ("1.1.0", {"devin"})]
+    ("version", "kinds"), [("1.0.0", {"cursor", "devin-cli"}), ("1.1.0", {"devin-cli"})]
 )
 def test_an_agent_plugins_manifest_declares_every_kind_that_reads_it(tmp_path, version, kinds):
     """ADR-0074: the portable manifest is nobody's own file, so it is evidence
@@ -225,7 +225,7 @@ def test_an_empty_installed_root_still_yields_an_agent(tmp_path, monkeypatch):
 
     agents = devin_cli.discover(DiscoveryContext(source="installed"))
 
-    assert [a.kind_id for a in agents] == ["devin"]
+    assert [a.kind_id for a in agents] == ["devin-cli"]
     assert agents[0].config_root == tmp_path / "devin"
 
 
@@ -242,10 +242,10 @@ def test_coverage_baseline_is_partial_at_both_sources():
 def test_the_kind_is_a_registered_singleton():
     from tools.agent_kinds import REGISTRY, kind_for
 
-    assert kind_for("devin") is devin_cli.KIND
+    assert kind_for("devin-cli") is devin_cli.KIND
     assert devin_cli.KIND in REGISTRY
     assert devin_cli.KIND.cardinality == "singleton"
-    assert devin_cli.KIND.display_name == "Devin"
+    assert devin_cli.KIND.display_name == "Devin CLI"
 
 
 def test_every_rule_that_applies_to_devin_is_allowlisted():
@@ -395,7 +395,7 @@ def test_a_declared_scan_reports_both_permission_rules_through_the_kind(tmp_path
         mcp_collector([tmp_path], refs=refs),
         settings_collector([tmp_path], refs=refs),
         allowed_rules=devin_cli.KIND.posture_rules,
-        agent_kind="devin",
+        agent_kind="devin-cli",
     )
     by_rule = {f.rule_id: f for f in findings}
 
@@ -446,6 +446,6 @@ def test_every_allowlisted_rule_fires_on_devins_own_surfaces(tmp_path):
 
     assert result.exit_code in (0, 1), result.output
     findings = json.loads(result.stdout)["findings"]
-    fired = {f["rule_id"] for f in findings if f.get("agent", {}).get("kind") == "devin"}
+    fired = {f["rule_id"] for f in findings if f.get("agent", {}).get("kind") == "devin-cli"}
     assert fired == devin_cli.KIND.posture_rules
     assert "dummy-literal-token" not in result.output

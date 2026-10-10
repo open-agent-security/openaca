@@ -29,7 +29,7 @@ _SKILL_TOOL_CAPABILITIES = {
 # `tools/posture/rules/skill_capability.py`'s executable-tool matcher: a
 # shared `.agents/skills` skill granting it declares a Devin capability, not
 # a Cursor or Codex one, so only an unscoped call or a Devin scan maps it.
-_EXEC_RECOGNIZING_KINDS = {None, "devin"}
+_EXEC_RECOGNIZING_KINDS = {None, "devin-cli"}
 
 _NETWORK_CLIENTS = frozenset({"curl", "wget", "nc", "scp", "ssh", "httpie", "http", "rsync"})
 

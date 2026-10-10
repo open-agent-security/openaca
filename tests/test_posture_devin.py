@@ -36,7 +36,7 @@ def _permissions(path: Path, **lists: list[str]) -> Path:
     return _write(path, json.dumps({"permissions": lists}))
 
 
-def _findings(manifests, *, agent_kind: str | None = "devin") -> list:
+def _findings(manifests, *, agent_kind: str | None = "devin-cli") -> list:
     return run_posture_rules([], [], manifests, agent_kind=agent_kind)
 
 
@@ -92,7 +92,7 @@ def test_findings_name_the_file_to_edit_and_the_entry(tmp_path):
 def test_active_in_is_the_scanning_kind(tmp_path):
     _permissions(tmp_path / "config" / "config.json", allow=["Exec(git)", "mcp__*"])
 
-    assert {tuple(f.active_in) for f in _endpoint(tmp_path)} == {("devin",)}
+    assert {tuple(f.active_in) for f in _endpoint(tmp_path)} == {("devin-cli",)}
 
 
 def test_the_rules_alone_name_devin_for_its_own_shape(tmp_path):
@@ -104,7 +104,7 @@ def test_the_rules_alone_name_devin_for_its_own_shape(tmp_path):
     mcp = mcp_auto_approve.check_mcp_auto_approve(manifests)
     command = command_policy_allow.check_command_policy_allow(manifests)
 
-    assert [f.active_in for f in mcp + command] == [["devin"], ["devin"]]
+    assert [f.active_in for f in mcp + command] == [["devin-cli"], ["devin-cli"]]
 
 
 def test_unparseable_or_undocumented_entries_report_nothing(tmp_path):

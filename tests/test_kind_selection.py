@@ -20,9 +20,9 @@ from tools.graph import Graph
 from tools.kind_selection import KindSelectionError, validate_kind_selection
 
 # Captured from `openaca scan endpoint` on commit 83ec849, before the move. The
-# known-kinds list is the registry's, so it grew when `devin` registered.
+# known-kinds list is the registry's, so it grew when `devin-cli` registered.
 _UNKNOWN_KIND = (
-    "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, devin"
+    "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, devin-cli"
 )
 _CONFIG_DIR_WITHOUT_KIND = (
     "--config-dir requires --kind: with more than one installed agent kind, "
@@ -39,7 +39,7 @@ _CURSOR_REFUSAL = (
 
 # ADR-0071: Devin CLI refuses for its own reason, not Cursor's.
 _DEVIN_REFUSAL = (
-    "--config-dir is not supported for --kind devin: an installed Devin CLI's "
+    "--config-dir is not supported for --kind devin-cli: an installed Devin CLI's "
     "composition is gathered from four places — its config root, its plugin store "
     "under a different XDG variable, ~/.agents/skills, and other runtimes' trees "
     "under your home — and a root override moves only the first, producing a "
@@ -138,7 +138,7 @@ def test_the_cli_adapter_translates_the_domain_error(tmp_path):
         (["--kind", "not-a-real-kind"], _UNKNOWN_KIND),
         (["--config-dir", "<TMP>"], _CONFIG_DIR_WITHOUT_KIND),
         (["--kind", "cursor", "--config-dir", "<TMP>"], _CURSOR_REFUSAL),
-        (["--kind", "devin", "--config-dir", "<TMP>"], _DEVIN_REFUSAL),
+        (["--kind", "devin-cli", "--config-dir", "<TMP>"], _DEVIN_REFUSAL),
     ],
     ids=["unknown-kind", "config-dir-without-kind", "refusing-kind", "refusing-devin"],
 )

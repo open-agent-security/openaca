@@ -199,12 +199,12 @@ def test_every_kind_is_registered_and_the_others_are_unchanged():
 
     by_id = {k.id: k for k in REGISTRY}
 
-    assert set(by_id) == {"claude-code", "cursor", "codex", "devin"}
+    assert set(by_id) == {"claude-code", "cursor", "codex", "devin-cli"}
     assert by_id["claude-code"].manifest_patterns == tuple(FLAT_REGISTRY)
     assert by_id["cursor"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         CURSOR_MANIFEST_REGISTRY
     )
-    assert by_id["devin"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
+    assert by_id["devin-cli"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         DEVIN_MANIFEST_REGISTRY
     )
 

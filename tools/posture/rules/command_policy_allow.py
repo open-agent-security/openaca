@@ -106,7 +106,7 @@ def _check_devin_permissions(
                 severity="medium",
                 confidence=CONFIDENCE,
                 component={"type": "command_policy", "name": label},
-                active_in=[agent_kind or "devin"],
+                active_in=[agent_kind or "devin-cli"],
                 declared_by={"kind": "permissions", "path": str(allow.path)},
                 component_path=[{"type": "command_policy", "name": label}],
                 standards=_STANDARDS,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tools.posture import devin_permissions
 from tools.posture.finding import PostureFinding, Standards
+from tools.posture.rules.insecure_transport import _get_server_map, _infer_hosts
 
 RULE_ID = "openaca-posture-mcp-auto-approve"
 TITLE = "MCP server has auto-approval enabled"
@@ -197,21 +198,3 @@ def _is_enabled(value: object) -> bool:
     if isinstance(value, list) and value:
         return True
     return False
-
-
-def _infer_hosts(manifest: dict) -> list[str]:
-    if isinstance(manifest.get("mcpServers"), dict):
-        return ["claude-code"]
-    return []
-
-
-def _get_server_map(manifest: dict) -> dict | None:
-    for key in ("mcpServers", "servers"):
-        val = manifest.get(key)
-        if isinstance(val, dict):
-            return val
-    if manifest and all(
-        isinstance(v, dict) and ("command" in v or "url" in v) for v in manifest.values()
-    ):
-        return manifest
-    return None

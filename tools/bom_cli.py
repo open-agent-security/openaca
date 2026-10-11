@@ -11,6 +11,7 @@ import click
 from tools.agent_kinds import (
     DiscoveryContext,
     build_agent_graph,
+    builtins_of,
     discover_agents,
     kind_for,
     output_basenames,
@@ -436,6 +437,7 @@ def endpoint(
         for w in warnings:
             click.echo(f"warning: {w}", err=True)
         refs = _refs_from_graph(graph)
+        builtins = builtins_of(agent)
         bom = build_agent_bom(
             _filter_agent_scope_refs(refs),
             target=str(agent.config_root),
@@ -449,6 +451,8 @@ def endpoint(
             composition_coverage=resolve_coverage(
                 agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
             ),
+            builtin_agents=builtins.agents,
+            builtin_skills=builtins.skills,
         )
         documents.append((basenames[agent.bom_ref], bom.to_cyclonedx()))
     emit_bom_documents(documents, output_path=output_path, output_dir=output_dir)

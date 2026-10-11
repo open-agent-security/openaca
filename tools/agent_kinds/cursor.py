@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext, matches_evidence
+from tools.agent_kinds import (
+    AgentInstance,
+    AgentKind,
+    Builtins,
+    DiscoveryContext,
+    matches_evidence,
+)
 from tools.graph import Graph
-from tools.parsers import CURSOR_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
+from tools.parsers import CURSOR_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY, claude_skill
 from tools.parsers.agent_plugins import is_agent_plugins_manifest
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.posture import (
@@ -215,6 +221,22 @@ def _compose(
     return build_cursor_graph(agent, include_gitignored=include_gitignored, warnings=warnings)
 
 
+def _builtins(agent: AgentInstance) -> Builtins:
+    """The skills Cursor syncs into its vendor root (ADR-0076), the same root
+    ADR-0052 keeps out of the composition. Read, not listed: Cursor rewrites it."""
+    assert agent.config_root is not None
+    vendor = agent.config_root / "skills-cursor"
+    if not vendor.is_dir():
+        return Builtins()
+    names = {
+        ref.name
+        for manifest in sorted(vendor.rglob("SKILL.md"))
+        for ref in claude_skill.parse(manifest)
+        if ref.name
+    }
+    return Builtins(skills=tuple(sorted(names)))
+
+
 KIND = AgentKind(
     id=KIND_ID,
     display_name=DISPLAY_NAME,
@@ -246,4 +268,5 @@ KIND = AgentKind(
         collect_cursor_endpoint_mcp_manifests,
         collect_cursor_endpoint_permissions_manifests,
     ),
+    builtins=_builtins,
 )

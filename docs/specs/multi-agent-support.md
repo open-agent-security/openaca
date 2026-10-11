@@ -401,8 +401,26 @@ so there is no collision.
 A kind is a registry entry in scanner code — the generalisation of today's flat
 manifest registry. It declares discovery, composition, its manifest patterns (as
 polymorphic surface variants, so a control-plane kind holds no empty filesystem
-fields), a posture-rule allowlist, cardinality, and coverage. Of that, only kind
-and coverage reach a BOM; the rest never leaves the scanner.
+fields), a posture-rule allowlist, cardinality, coverage, and the sub-agents and
+skills an installed agent of it provides itself. Of that, only kind, coverage and
+those built-ins reach a BOM; the rest never leaves the scanner.
+
+The built-ins go on the BOM root as `openaca:builtin_agents` and
+`openaca:builtin_skills`, never as components (ADR-0076). A kind that keeps them
+on disk reads them from there. Codex reads its marker-bearing `skills/.system/`
+and Cursor reads `skills-cursor/`. A kind that keeps them inside its executable
+lists them, read from a named release:
+
+| Kind | Read from | Sub-agents | Skills |
+|---|---|---|---|
+| Claude Code | 2.1.283: definitions with `source:"built-in"`, and bundled-skill registrations | 12, including `output-style-setup` from earlier releases | 39 |
+| Devin | 3000.10.48: the binary's subagent profiles. The shipped `docs/subagents.mdx` documents `subagent_explore` and `subagent_general` | 4 | none on disk |
+| Codex | 0.157.1: the binary's agent roles | 4 | the marked root |
+| Cursor | — | none known | `skills-cursor/` |
+
+To re-audit a list, read the definitions from the release, not names that
+appear in it. Claude Code's plugin-authoring docs show example skills as
+frontmatter, and those are not built-ins.
 
 Posture rule *reach* becomes structural — an agent's graph holds only its own
 manifests — but rule *applicability* still needs declaring, since a settings key

@@ -196,6 +196,7 @@ session was not observed, so this rests on the CLI's own listing.
 | `.devin/commands` | Devin has no commands surface of its own; Claude Code's commands load as skills |
 | `.claude/agents` | The Claude Code import names rules, skills, commands and MCP servers, not subagents |
 | `~/.claude/plugins/installed_plugins.json` | Zero references, and the docs agree. Devin reads Claude Code's plugin *manifest* format, not its install state |
+| Its own subagent profiles | Defined inside the binary: `subagent_explore`, `subagent_general`, `subagent_review`, `subagent_sidekick` at 3000.10.48. Listed on the BOM root as `openaca:builtin_agents` (ADR-0076), never as components |
 
 ### Precedence
 

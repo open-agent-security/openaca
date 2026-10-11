@@ -6,7 +6,7 @@ import os
 from fnmatch import fnmatch
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext
+from tools.agent_kinds import AgentInstance, AgentKind, Builtins, DiscoveryContext
 from tools.graph import Graph
 from tools.parsers import DEVIN_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -264,6 +264,14 @@ def _compose(
     )
 
 
+# The sub-agent profiles the binary defines itself (ADR-0076), read from Devin
+# 3000.10.48; its shipped `docs/subagents.mdx` documents the first two. Devin
+# bundles no skills on disk.
+_BUILTINS = Builtins(
+    agents=("subagent_explore", "subagent_general", "subagent_review", "subagent_sidekick"),
+)
+
+
 KIND = AgentKind(
     id=KIND_ID,
     display_name=DISPLAY_NAME,
@@ -297,4 +305,5 @@ KIND = AgentKind(
         collect_devin_endpoint_mcp_manifests,
         collect_devin_endpoint_permissions_manifests,
     ),
+    builtins=lambda _agent: _BUILTINS,
 )

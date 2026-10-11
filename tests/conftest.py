@@ -97,11 +97,6 @@ def _osv_fixture_for_ref(ref):
 
 
 @pytest.fixture
-def repo_root() -> Path:
-    return REPO_ROOT
-
-
-@pytest.fixture
 def schema_path() -> Path:
     return SCHEMA_PATH
 

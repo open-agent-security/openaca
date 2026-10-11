@@ -60,10 +60,13 @@ def test_claude_code_names_its_own_subagent_types_and_skills(tmp_path):
     assert {"verify", "artifact-design", "simplify"} <= set(builtins.skills)
 
 
-def test_devin_names_its_subagent_profiles(tmp_path):
+def test_devin_names_its_subagent_profiles_and_skills(tmp_path):
     builtins = builtins_of(_installed("devin", tmp_path))
 
     assert {"subagent_explore", "subagent_general"} <= set(builtins.agents)
+    # A real Devin session called `devin-cli` and read as absent until it was
+    # listed here.
+    assert set(builtins.skills) == {"declarative-repo-setup", "devin-cli", "upload-secrets"}
 
 
 def test_codex_reads_its_skills_from_the_marked_root_not_a_list(tmp_path):

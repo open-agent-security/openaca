@@ -264,11 +264,15 @@ def _compose(
     )
 
 
-# The sub-agent profiles the binary defines itself (ADR-0076), read from Devin
-# 3000.10.48; its shipped `docs/subagents.mdx` documents the first two. Devin
-# bundles no skills on disk.
+# What the binary defines itself (ADR-0076). The sub-agent profiles were read
+# from Devin 3000.10.48; its shipped `docs/subagents.mdx` documents the first
+# two. The skills were read from Devin 3000.11.3's own `devin skills list`,
+# which names them with no directory of their own, and they are registered in
+# the binary as `builtin:<name>`. Its changelog has carried Declarative Repo
+# Setup as a built-in skill since April 2026.
 _BUILTINS = Builtins(
     agents=("subagent_explore", "subagent_general", "subagent_review", "subagent_sidekick"),
+    skills=("declarative-repo-setup", "devin-cli", "upload-secrets"),
 )
 
 

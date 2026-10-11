@@ -23,6 +23,7 @@ from tools.agent_kinds import (
     AgentInstance,
     DiscoveryContext,
     build_agent_graph,
+    builtins_of,
     discover_agents,
     kind_for,
     resolve_coverage,
@@ -133,6 +134,7 @@ def collect_for_agent(
         raise ValueError(f"agent kind {agent.kind_id!r} resolved no config_root")
     warnings: WarningLog = WarningLog()
     graph, refs = _agent_refs(agent, warnings)
+    builtins = builtins_of(agent)
     bom = build_agent_bom(
         refs,
         # The caller decides whether the document names a place. A consumer
@@ -153,6 +155,8 @@ def collect_for_agent(
         composition_coverage=resolve_coverage(
             agent.coverage_baseline, evidence_gaps=_component_gap_count(warnings)
         ),
+        builtin_agents=builtins.agents,
+        builtin_skills=builtins.skills,
     ).to_cyclonedx()
     mcp_manifests, settings_manifests = agent_posture_manifests(agent, refs)
     extra_manifests = agent_extra_posture_manifests(agent, refs)

@@ -3,8 +3,9 @@
 A *kind* is what reads a composition (ADR-0044): two runtimes are the same kind
 only if they read the same surface with the same schema. A kind declares its
 discovery, composition, cardinality, coverage baseline per composition source,
-node-key root label, display label, and posture-rule allowlist. Of that, only the
-kind id and the resolved coverage reach a BOM.
+node-key root label, display label, posture-rule allowlist, and the sub-agents and
+skills it provides itself. Of that, only the kind id, the resolved coverage and
+those built-ins (ADR-0076) reach a BOM.
 
 Discovery returns a *list* of `AgentInstance`. That is the property that cannot be
 retrofitted, so it is a list even while every registered kind is a singleton.
@@ -55,6 +56,17 @@ InstalledPostureCollector = Callable[..., list[tuple[Path, dict]]]
 InstalledPostureCollectors = tuple[InstalledPostureCollector, InstalledPostureCollector]
 
 COMPOSITION_SOURCES: frozenset[str] = frozenset({"installed", "declared"})
+
+
+@dataclass(frozen=True)
+class Builtins:
+    """The sub-agents and skills an agent provides itself (ADR-0076). Listed on
+    the BOM root, never as components: nothing installed them and nothing can
+    remove them."""
+
+    agents: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
+
 
 _SLUG_UNSAFE = re.compile(r"[^a-z0-9._-]+")
 
@@ -169,6 +181,9 @@ class AgentKind:
     # input depend on another's manifest shape. `None` means the kind has no
     # such surfaces — every existing kind is unaffected.
     extra_installed_posture_collectors: Mapping[str, InstalledPostureCollector] | None = None
+    # What an installed agent of this kind provides itself. `None` means the
+    # kind lists none.
+    builtins: Callable[[AgentInstance], Builtins] | None = None
 
     def __post_init__(self) -> None:
         """A typo in an allowlist would silently disable an intended rule rather
@@ -243,6 +258,15 @@ def build_agent_graph(
     return kind_for(agent.kind_id).compose(
         agent, include_gitignored=include_gitignored, warnings=warnings
     )
+
+
+def builtins_of(agent: AgentInstance) -> Builtins:
+    """What `agent` provides itself, for an installed agent only: a repository
+    declares what it adds to an agent, and the agent's own are not part of it."""
+    read = kind_for(agent.kind_id).builtins
+    if agent.source != "installed" or read is None:
+        return Builtins()
+    return read(agent)
 
 
 def resolve_coverage(baseline: str, *, evidence_gaps: int) -> str:

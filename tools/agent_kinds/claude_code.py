@@ -5,7 +5,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext, matches_evidence
+from tools.agent_kinds import (
+    AgentInstance,
+    AgentKind,
+    Builtins,
+    DiscoveryContext,
+    matches_evidence,
+)
 from tools.graph import Graph
 from tools.parsers import REGISTRY as _MANIFEST_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -158,6 +164,71 @@ def _compose(
     )
 
 
+# Shipped inside the executable, so no scan of the filesystem can see them
+# (ADR-0076). Read from Claude Code 2.1.283: each sub-agent is a definition
+# with `source:"built-in"`, each skill a bundled-skill registration. A name
+# that appears there only as example frontmatter in the plugin-authoring docs
+# is not one. `output-style-setup` shipped in earlier releases, and sessions
+# recorded then still name it.
+_BUILTINS = Builtins(
+    agents=(
+        "Explore",
+        "Plan",
+        "claude",
+        "claude-code-guide",
+        "comment-thread-analyst",
+        "fork",
+        "general-purpose",
+        "output-style-setup",
+        "statusline-setup",
+        "web-fetch",
+        "worker",
+        "workflow-subagent",
+    ),
+    skills=(
+        "artifact-capabilities",
+        "artifact-components",
+        "artifact-dashboard",
+        "artifact-data-table",
+        "artifact-design",
+        "artifact-diagramming",
+        "artifact-explainer",
+        "artifact-pr-review",
+        "artifact-report",
+        "batch",
+        "claude-api",
+        "claude-code-docs",
+        "claude-in-chrome",
+        "code-review",
+        "commit",
+        "cowork-plugin",
+        "dataviz",
+        "debug",
+        "design",
+        "design-sync",
+        "doc",
+        "doctor",
+        "explain-usage",
+        "fewer-permission-prompts",
+        "keybindings-help",
+        "loop",
+        "memory-types",
+        "pr",
+        "prototype",
+        "run",
+        "run-skill-generator",
+        "schedule",
+        "setup-claude",
+        "simplify",
+        "update-config",
+        "verify",
+        "whiteboard",
+        "workflow-authoring",
+        "workshop",
+    ),
+)
+
+
 KIND = AgentKind(
     id=KIND_ID,
     display_name=DISPLAY_NAME,
@@ -179,4 +250,5 @@ KIND = AgentKind(
         collect_endpoint_mcp_manifests,
         collect_endpoint_settings_manifests,
     ),
+    builtins=lambda _agent: _BUILTINS,
 )

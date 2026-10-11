@@ -306,7 +306,7 @@ Present on disk, deliberately not inventoried.
 
 | Path | Why |
 |---|---|
-| `<root>/skills/.system/` | Vendor built-ins, marked by a `.codex-system-skills.marker` file. A **sibling** of `skills/`, not a variant spelling. Excluded structurally by the marker, not by a name list |
+| `<root>/skills/.system/` | Vendor built-ins, marked by a `.codex-system-skills.marker` file. A **sibling** of `skills/`, not a variant spelling. Excluded structurally by the marker, not by a name list. Their names are listed on the BOM root as `openaca:builtin_skills` instead (ADR-0076) |
 | `<root>/sessions/`, `logs_*.sqlite`, `dictation-history/` | Session and telemetry state; declares nothing |
 | `<root>/packages/standalone/` | Codex's own runtime install, not user composition |
 

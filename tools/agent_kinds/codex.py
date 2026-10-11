@@ -5,7 +5,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, DiscoveryContext, matches_evidence
+from tools.agent_kinds import (
+    AgentInstance,
+    AgentKind,
+    Builtins,
+    DiscoveryContext,
+    matches_evidence,
+)
 from tools.graph import Graph
 from tools.parsers import CODEX_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
@@ -243,6 +249,19 @@ def _compose(
     )
 
 
+# The agent roles Codex defines itself, read from Codex 0.157.1. Its skills are
+# read from the marker-bearing root instead of listed, as ADR-0055 excludes
+# them: a list drifts where the marker does not.
+_BUILTIN_AGENTS = ("awaiter", "default", "explorer", "worker")
+
+
+def _builtins(agent: AgentInstance) -> Builtins:
+    from tools.graph_build import codex_system_skill_names
+
+    assert agent.config_root is not None
+    return Builtins(agents=_BUILTIN_AGENTS, skills=codex_system_skill_names(agent.config_root))
+
+
 KIND = AgentKind(
     id=KIND_ID,
     display_name=DISPLAY_NAME,
@@ -279,4 +298,5 @@ KIND = AgentKind(
         command_policy_allow.RULE_ID: collect_codex_rules_manifests,
         project_trust.RULE_ID: collect_codex_project_trust_manifests,
     },
+    builtins=_builtins,
 )

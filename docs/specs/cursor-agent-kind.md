@@ -320,7 +320,8 @@ Two, both cheap enough that skipping them buys nothing.
 ~/.cursor/skills-cursor... managed automatically by the system."* It is a
 **sibling** of `skills/`, not a variant spelling, and it is commonly populated
 while the user root is empty. Inventorying it reports a couple of dozen vendor
-skills as user composition on every Cursor endpoint scanned.
+skills as user composition on every Cursor endpoint scanned. Their names are
+listed on the BOM root as `openaca:builtin_skills` instead (ADR-0076).
 
 A plugin bundle **without its `.cache-complete` sentinel** is not inventoried.
 Cursor treats such a directory as a cache miss and reinstalls rather than loading

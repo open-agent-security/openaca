@@ -1557,16 +1557,47 @@ def test_endpoint_scan_emits_the_migrated_agent_document(tmp_path):
     component = doc["metadata"]["component"]
     assert component["bom-ref"] == "root/claude-code"
     assert component["name"] == "Claude Code"
+    # The migration's three, and the agent's own built-ins added since (ADR-0076).
     assert {p["name"] for p in component["properties"]} == {
         "openaca:agent_kind",
         "openaca:composition_source",
         "openaca:composition_coverage",
+        "openaca:builtin_agents",
+        "openaca:builtin_skills",
     }
 
     refs = [c["bom-ref"] for c in doc["components"]]
     assert refs and all(r.startswith("claude-code/") or r.startswith("project/") for r in refs)
     names = {p["name"] for c in doc["components"] for p in c.get("properties", [])}
     assert {"openaca:agent_host", "openaca:runtime_hosts"} & names == set()
+
+    lint_path = tmp_path / "agent.cdx.json"
+    lint_path.write_text(json.dumps(doc), encoding="utf-8")
+    from tools.cli import main as openaca_main
+
+    lint = CliRunner().invoke(openaca_main, ["bom", "lint", str(lint_path)])
+    assert lint.exit_code == 0, lint.output
+
+
+def test_endpoint_bom_lists_the_agents_builtins_on_its_root_and_never_as_components(tmp_path):
+    """ADR-0076 across the kind, the BOM writer and the lint: the agent's own
+    sub-agents and skills reach the root, stay out of `components[]`, and lint."""
+    from tools.bom_cli import main as bom_main
+
+    root = tmp_path / ".claude"
+    root.mkdir()
+
+    out = CliRunner().invoke(
+        bom_main, ["endpoint", "--kind", "claude-code", "--config-dir", str(root)]
+    )
+    assert out.exit_code == 0, out.output
+    doc = json.loads(out.output.strip())
+
+    root_props = {p["name"]: p["value"] for p in doc["metadata"]["component"]["properties"]}
+    listed = set(json.loads(root_props["openaca:builtin_agents"]))
+    listed |= set(json.loads(root_props["openaca:builtin_skills"]))
+    assert {"Explore", "verify"} <= listed
+    assert not {c["name"] for c in doc["components"]} & listed
 
     lint_path = tmp_path / "agent.cdx.json"
     lint_path.write_text(json.dumps(doc), encoding="utf-8")

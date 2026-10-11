@@ -2509,6 +2509,19 @@ def _codex_system_skill_roots(config_root: Path) -> list[Path]:
     return roots
 
 
+def codex_system_skill_names(config_root: Path) -> tuple[str, ...]:
+    """The skills Codex ships in its marker-bearing root (ADR-0076): the same
+    content `_prune_codex_system_skills` keeps out of the composition."""
+    names = {
+        ref.name
+        for root in _codex_system_skill_roots(config_root)
+        for manifest in sorted(root.rglob("SKILL.md"))
+        for ref in claude_skill.parse(manifest)
+        if ref.name
+    }
+    return tuple(sorted(names))
+
+
 def _seed_codex_shared_agent_skills(
     graph: Graph, target: Node, shared_root: Path, normalize: SourceNormalizer
 ) -> None:

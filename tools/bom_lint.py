@@ -150,6 +150,13 @@ def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
             f"{sorted(_COMPOSITION_SOURCES)}, got {source!r}"
         )
 
+    for name in ("openaca:builtin_agents", "openaca:builtin_skills"):
+        if name in props and not _is_unique_names(props[name]):
+            errors.append(
+                f"metadata.component: {name} must be a JSON array of unique non-empty "
+                f"strings, got {props[name]!r}"
+            )
+
     if agent_kind:
         agent_id = props.get("openaca:agent_id")
         expected = (
@@ -175,6 +182,18 @@ def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
                 "openaca:agent_id is required"
             )
     return errors
+
+
+def _is_unique_names(value: object) -> bool:
+    try:
+        names = json.loads(value) if isinstance(value, str) else None
+    except json.JSONDecodeError:
+        return False
+    return (
+        isinstance(names, list)
+        and all(isinstance(n, str) and n for n in names)
+        and len(set(names)) == len(names)
+    )
 
 
 def _check_agent_root_required(doc: dict[str, Any], *, schema_version: str | None) -> list[str]:

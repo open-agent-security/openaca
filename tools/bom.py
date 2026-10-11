@@ -80,6 +80,10 @@ class AgentBOM:
     agent_name: str | None = None
     composition_source: str | None = None
     composition_coverage: str | None = None
+    #: What the agent provides itself (ADR-0076), listed on the root and never
+    #: as components.
+    builtin_agents: tuple[str, ...] = ()
+    builtin_skills: tuple[str, ...] = ()
 
     def component_refs(self) -> list[ComponentRef]:
         return [component.ref for component in self.components]
@@ -154,6 +158,12 @@ class AgentBOM:
         properties.append(
             {"name": "openaca:composition_coverage", "value": self.composition_coverage or ""}
         )
+        for name, listed in (
+            ("openaca:builtin_agents", self.builtin_agents),
+            ("openaca:builtin_skills", self.builtin_skills),
+        ):
+            if listed:
+                properties.append({"name": name, "value": json.dumps(sorted(set(listed)))})
         return {
             "type": "application",
             "bom-ref": self.target_bom_ref,
@@ -199,6 +209,8 @@ def build_agent_bom(
     agent_name: str | None = None,
     composition_source: str | None = None,
     composition_coverage: str | None = None,
+    builtin_agents: tuple[str, ...] = (),
+    builtin_skills: tuple[str, ...] = (),
 ) -> AgentBOM:
     if graph is not None:
         return _build_agent_bom_from_graph(
@@ -212,6 +224,8 @@ def build_agent_bom(
             agent_name=agent_name,
             composition_source=composition_source,
             composition_coverage=composition_coverage,
+            builtin_agents=builtin_agents,
+            builtin_skills=builtin_skills,
         )
     _annotate_capabilities(refs, agent_kind=agent_kind)
     components = [
@@ -248,6 +262,8 @@ def _build_agent_bom_from_graph(
     agent_name: str | None = None,
     composition_source: str | None = None,
     composition_coverage: str | None = None,
+    builtin_agents: tuple[str, ...] = (),
+    builtin_skills: tuple[str, ...] = (),
 ) -> AgentBOM:
     """Encode the composition graph: node.key == bom-ref (the V1 invariant).
 
@@ -295,6 +311,8 @@ def _build_agent_bom_from_graph(
         agent_name=agent_name,
         composition_source=composition_source,
         composition_coverage=composition_coverage,
+        builtin_agents=builtin_agents,
+        builtin_skills=builtin_skills,
     )
 
 

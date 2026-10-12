@@ -35,10 +35,10 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
 
 from tools.component_ref import ComponentRef
 from tools.identity import match_coordinates
+from tools.matcher import _normalize_git_repo
 from tools.overlays import id_set
 
 _QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
@@ -274,15 +274,6 @@ def _record_has_git_repo(record: dict[str, Any], repo: str) -> bool:
             if isinstance(candidate, str) and _normalize_git_repo(candidate) == repo:
                 return True
     return False
-
-
-def _normalize_git_repo(repo: str) -> str:
-    parsed = urlparse(repo)
-    if parsed.netloc:
-        normalized = f"{parsed.netloc}{parsed.path}"
-    else:
-        normalized = repo
-    return normalized.rstrip("/").removesuffix(".git").lower()
 
 
 def _get_vuln(vuln_id: str) -> dict[str, Any]:

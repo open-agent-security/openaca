@@ -50,6 +50,7 @@ from tools.parsers import (
     uv_lock,
 )
 from tools.parsers.claude_plugin_root import walk_plugin_root
+from tools.parsers.claude_settings import _plugin_identity
 from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
 from tools.parsers.settings_layers import (
     SCOPE_PRECEDENCE,
@@ -642,12 +643,6 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
         name, marketplace = plugin_key.rsplit("@", 1)
         return name, marketplace or None
     return plugin_key, None
-
-
-def _plugin_identity(plugin_name: str, marketplace: Optional[str]) -> str:
-    if marketplace:
-        return f"plugin/{marketplace}/{plugin_name}"
-    return f"plugin/{plugin_name}"
 
 
 def _marketplace_source(

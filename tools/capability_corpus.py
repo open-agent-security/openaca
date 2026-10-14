@@ -3,26 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from tools.capability import Capability
+from tools.capability_extract import _openaca_version
 
 __all__ = ["CapabilityCorpus", "load_capability_corpus", "default_capabilities_dir"]
 
 
 def default_capabilities_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "capabilities"
-
-
-def _openaca_version() -> str:
-    try:
-        return version("openaca")
-    except PackageNotFoundError:
-        return "unknown"
 
 
 @dataclass(frozen=True)

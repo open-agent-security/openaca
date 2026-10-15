@@ -17,11 +17,11 @@ collects runtime-reachable keys. Entries not in that set are
 runtime seeds, all entries are emitted (safe degradation).
 
 Bun lockfiles observed in the wild are strict JSON with trailing commas — no
-comments, single quotes, or unquoted keys. We therefore strip trailing commas
-with a small string-aware preprocessor and hand the result to the stdlib JSON
-parser, rather than taking a JSON5 dependency. If Bun ever emits broader
-JSONC/JSON5 syntax, `json.loads` raises and this parser fails closed (returns
-[]), matching the other lockfile parsers.
+comments, single quotes, or unquoted keys. Trailing commas are stripped with
+the string-aware helper in `tools.parsers.jsonc`, then handed to the stdlib
+JSON parser. This does not call `jsonc.loads`: comments stay in the text, so
+broader JSONC/JSON5 syntax still makes `json.loads` raise and this parser
+fails closed (returns []), matching the other lockfile parsers.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ import json
 from pathlib import Path
 
 from tools.component_ref import ComponentRef
+from tools.parsers.jsonc import _strip_trailing_commas
 
 
 def parse(path: Path, *, strict: bool = False) -> list[ComponentRef]:
@@ -127,35 +128,3 @@ def _collect_runtime_keys(packages: dict, workspaces: dict) -> set[str] | None:
                         if dep_name not in reachable:
                             queue.append(dep_name)
     return reachable
-
-
-def _strip_trailing_commas(text: str) -> str:
-    """Remove trailing commas (a comma whose next non-whitespace char is `}` or
-    `]`) that appear OUTSIDE string literals. Tracks string state and escapes so
-    a literal comma inside a string value is never touched."""
-    out: list[str] = []
-    n = len(text)
-    in_string = False
-    escaped = False
-    for i, ch in enumerate(text):
-        if in_string:
-            out.append(ch)
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-            out.append(ch)
-            continue
-        if ch == ",":
-            j = i + 1
-            while j < n and text[j] in " \t\r\n":
-                j += 1
-            if j < n and text[j] in "}]":
-                continue  # drop the trailing comma
-        out.append(ch)
-    return "".join(out)

@@ -5,10 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from tools.active_in import active_in
-from tools.capability_extract import _allowed_tools, _executable_tool_base
+from tools.capability_extract import _allowed_tools, _executable_tool_base, _read_frontmatter
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 
@@ -49,7 +47,9 @@ def check_skill_executable_tools(
 def _allowed_executable_tool_finding(
     ref: ComponentRef, *, agent_kind: str | None = None
 ) -> PostureFinding | None:
-    frontmatter = _read_frontmatter(Path(ref.source_manifest))
+    # `_read_frontmatter` returns None for a failed read. No declaration means
+    # no executable tools for this rule.
+    frontmatter = _read_frontmatter(Path(ref.source_manifest)) or {}
     allowed_tools = _allowed_tools(frontmatter)
     executable_tools = EXECUTABLE_TOOLS | (
         {"exec"} if agent_kind in _EXEC_RECOGNIZING_KINDS else set()
@@ -88,23 +88,6 @@ def _allowed_executable_tool_finding(
 def _bom_ref_for(ref: ComponentRef) -> str | None:
     value = (ref.extra or {}).get("bom_ref")
     return value if isinstance(value, str) and value else None
-
-
-def _read_frontmatter(path: Path) -> dict[str, Any]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return {}
-    if not text.startswith("---"):
-        return {}
-    end = text.find("\n---", 3)
-    if end == -1:
-        return {}
-    try:
-        loaded = yaml.safe_load(text[3:end].strip())
-    except yaml.YAMLError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
 
 
 def _component_path(ref: ComponentRef) -> list[dict[str, str]]:

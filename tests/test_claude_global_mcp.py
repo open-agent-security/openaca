@@ -35,6 +35,35 @@ def test_scopes_and_project_key_are_preserved_without_reading_other_projects(tmp
     assert local_ref.source_locator.startswith("$.projects[")
 
 
+def test_a_name_defined_in_both_user_and_local_scope_emits_only_the_local_entry(tmp_path):
+    """Claude Code connects to a same-named server once, using the entry from
+    the highest-precedence scope (local > project > user); it never merges
+    or runs both. The user-scope entry a local one shadows must not emit as
+    a second, dormant active ref."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {"url": "https://user-shadowed.test"},
+                    "user-only": {"url": "https://user-only.test"},
+                },
+                "projects": {
+                    str(project): {"mcpServers": {"shared": {"url": "https://local-wins.test"}}},
+                },
+            }
+        )
+    )
+    refs = global_mcp_refs(root, project)
+    by_name = {r.extra["component_path"][-1]["name"]: r for r in refs}
+    assert set(by_name) == {"shared", "user-only"}
+    assert by_name["shared"].extra["claude_mcp_scope"] == "local"
+    assert by_name["shared"].extra["url"] == "https://local-wins.test"
+
+
 def test_local_scope_locator_is_stable_across_machines_but_keeps_the_real_project_key(tmp_path):
     """The real project key is an absolute path; it must not leak into
     `source_locator` (identity — feeds the occurrence key/bom-ref unnormalized)

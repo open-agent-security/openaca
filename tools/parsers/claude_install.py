@@ -287,6 +287,12 @@ def global_mcp_refs(
     or the project's own local-scope one — that a project opted out of is
     excluded from that project's entries, though a disabled user-scoped
     server's definition remains for every other project.
+
+    A name the local map also defines excludes the user-scope entry: Claude
+    Code connects to a same-named server once, from the highest-precedence
+    scope (local > project > user), never both. Precedence against the
+    project's own `.mcp.json` (the "project" scope) is not resolved here —
+    that file is a separate composition source this function does not read.
     """
     paths = [install_root / ".claude.json"]
     if (
@@ -307,7 +313,7 @@ def global_mcp_refs(
         user_servers = document.get("mcpServers", {})
         project: Optional[dict] = None
         key: Optional[str] = None
-        disabled: list = []
+        local_servers: dict = {}
         if project_root is not None:
             projects = document.get("projects", {})
             if not isinstance(projects, dict):
@@ -331,15 +337,26 @@ def global_mcp_refs(
                 user_servers = {
                     name: entry for name, entry in user_servers.items() if name not in disabled
                 }
-        maps: list[tuple[Any, str, str, Optional[str]]] = [
-            (user_servers, "$.mcpServers", "user", None)
-        ]
-        if project is not None:
             local_servers = project.get("mcpServers", {})
             if isinstance(local_servers, dict) and disabled:
                 local_servers = {
                     name: entry for name, entry in local_servers.items() if name not in disabled
                 }
+            # Claude Code connects to a same-named server once, using the
+            # single entry from the highest-precedence scope (local > project
+            # > user; project is a separate .mcp.json this function doesn't
+            # read) — never both. A name the local map also defines would
+            # otherwise emit the user-scope entry too, as a dormant
+            # never-connected duplicate the graph/policy compiler can still
+            # report or block.
+            if isinstance(user_servers, dict) and isinstance(local_servers, dict):
+                user_servers = {
+                    name: entry for name, entry in user_servers.items() if name not in local_servers
+                }
+        maps: list[tuple[Any, str, str, Optional[str]]] = [
+            (user_servers, "$.mcpServers", "user", None)
+        ]
+        if project is not None:
             # The real project key is an absolute path, which would make the
             # occurrence key (bom-ref) machine-specific if interpolated into
             # `source_locator` (unlike `source_manifest`, it is not passed

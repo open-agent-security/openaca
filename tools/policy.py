@@ -476,7 +476,7 @@ def _category(ref: ComponentRef) -> ComponentCategory | None:
         return "mcps"
     if component_type == "plugin":
         return "plugins"
-    if component_type == "skill":
+    if component_type in {"skill", "command"}:
         return "skills"
     return None
 

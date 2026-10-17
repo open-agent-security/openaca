@@ -2229,3 +2229,30 @@ def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
     )
     caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
     assert {c["name"] for c in caps} == {"shell_exec"}
+
+
+def test_legacy_command_decision_matches_native_skill_default_restriction(tmp_path):
+    from openaca.core import compile_endpoint_policy, parse_policy
+
+    command = tmp_path / "commands" / "deploy.md"
+    command.parent.mkdir()
+    command.write_text("---\ndescription: Deploy fixture\n---\nDeploy.\n")
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "blocked"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    report = compile_endpoint_policy(
+        policy,
+        target=tmp_path,
+        project=None,
+        output=None,
+        managed_settings_dir=tmp_path / "managed",
+        dry_run=True,
+    )
+    decisions = report["decisions"]
+    assert any(
+        d["component"] == "deploy" and d["category"] == "skills" and d["result"] == "blocked"
+        for d in decisions
+    )

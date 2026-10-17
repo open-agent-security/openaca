@@ -409,3 +409,10 @@ admission allowlist.
 - Hooks and invocation-time policy decisions.
 - Automatic installation of generated settings.
 - Host compilers beyond Claude Code.
+
+
+Legacy Claude custom slash commands (`commands/*.md`) use the `skills` admission
+category. Claude Code 2.1.302 loads them through its skill registry and suppresses
+that loader under `strictPluginOnlyCustomization: ["skills"]`. Their evaluator
+result must therefore follow the same default as the existing native artifact.
+Plugin-bundled commands continue to inherit the owning plugin's decision.

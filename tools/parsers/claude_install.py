@@ -283,9 +283,10 @@ def global_mcp_refs(
     reserved for.
 
     The selected project's `disabledMcpServers` (Claude Code's per-project
-    `/mcp` disable toggle) is honored: a user-scoped server a project opted
-    out of is excluded from that project's "user" scope entries, though its
-    definition remains for every project that did not disable it.
+    `/mcp` disable toggle) is honored for both scopes: a server — user-scoped
+    or the project's own local-scope one — that a project opted out of is
+    excluded from that project's entries, though a disabled user-scoped
+    server's definition remains for every other project.
     """
     paths = [install_root / ".claude.json"]
     if (
@@ -306,6 +307,7 @@ def global_mcp_refs(
         user_servers = document.get("mcpServers", {})
         project: Optional[dict] = None
         key: Optional[str] = None
+        disabled: list = []
         if project_root is not None:
             projects = document.get("projects", {})
             if not isinstance(projects, dict):
@@ -315,10 +317,11 @@ def global_mcp_refs(
             if not isinstance(project, dict):
                 raise ValueError("native MCP project must be an object")
             # Claude Code's per-project `/mcp` disable toggle opts a project
-            # out of an otherwise-inherited user-scoped server without
-            # removing its definition; the selected project's
-            # `disabledMcpServers` must be honored or a deliberately
-            # disabled server reads as active evidence for this project.
+            # out of a server — user-scoped or the project's own local-scope
+            # one — without removing its definition; the selected project's
+            # `disabledMcpServers` must be honored for both, or a
+            # deliberately disabled server reads as active evidence for this
+            # project.
             disabled = project.get("disabledMcpServers", [])
             if not isinstance(disabled, list) or not all(
                 isinstance(name, str) for name in disabled
@@ -332,6 +335,11 @@ def global_mcp_refs(
             (user_servers, "$.mcpServers", "user", None)
         ]
         if project is not None:
+            local_servers = project.get("mcpServers", {})
+            if isinstance(local_servers, dict) and disabled:
+                local_servers = {
+                    name: entry for name, entry in local_servers.items() if name not in disabled
+                }
             # The real project key is an absolute path, which would make the
             # occurrence key (bom-ref) machine-specific if interpolated into
             # `source_locator` (unlike `source_manifest`, it is not passed
@@ -339,9 +347,7 @@ def global_mcp_refs(
             # identity and carry the literal key as evidence instead — the
             # scan already pins exactly one project, so no locator need
             # distinguish between several.
-            maps.append(
-                (project.get("mcpServers", {}), "$.projects[<project>].mcpServers", "local", key)
-            )
+            maps.append((local_servers, "$.projects[<project>].mcpServers", "local", key))
         for servers, locator, scope, project_key in maps:
             parsed = mcp_json.parse_mcp_servers(servers, str(path), locator, strict=True)
             extra = {"claude_mcp_scope": scope}

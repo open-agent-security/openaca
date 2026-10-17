@@ -63,13 +63,16 @@ def test_malformed_selected_native_state_fails_instead_of_becoming_clean(tmp_pat
         global_mcp_refs(tmp_path, None)
 
 
-def test_default_install_reads_both_native_global_config_locations(tmp_path, monkeypatch):
+def test_default_install_selects_the_native_global_config_location(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     root = tmp_path / ".claude"
     root.mkdir()
     for path in (tmp_path / ".claude.json", root / ".claude.json"):
         path.write_text('{"mcpServers":{"server":{"url":"https://example.test"}}}')
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     assert {r.source_manifest for r in global_mcp_refs(root, None)} == {
-        str(tmp_path / ".claude.json"),
-        str(root / ".claude.json"),
+        str(tmp_path / ".claude.json")
     }
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root))
+    (tmp_path / ".claude.json").write_text("invalid unused file")
+    assert {r.source_manifest for r in global_mcp_refs(root, None)} == {str(root / ".claude.json")}

@@ -2294,3 +2294,35 @@ def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):
 
     with pytest.raises(PolicyEvaluationError):
         collect_policy_evidence(policy, target=root, project=project)
+
+
+def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_path, monkeypatch):
+    """`~/.claude.json` (`global_mcp_refs`'s home-level file, read only when
+    the install root IS the default `~/.claude`) sits outside `install_root`,
+    so the endpoint normalizer must carry it as a labeled extra root — as
+    Codex's own endpoint builder already does for its home-scoped
+    `~/.agents` — or the node key falls back to the machine-specific absolute
+    path, breaking bom-ref stability and cross-machine dedup."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"server": {"url": "https://example.test"}}})
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build.Path.home", lambda: fake_home)
+
+    (agent,) = [
+        a
+        for a in discover_agents(DiscoveryContext(source="installed"))
+        if a.kind_id == "claude-code"
+    ]
+    graph = build_agent_graph(agent)
+
+    mcp_nodes = [n for n in graph.nodes.values() if n.kind == "mcp_server" and n.ref]
+    assert len(mcp_nodes) == 1
+    assert mcp_nodes[0].key.startswith("home/.claude.json#")
+    assert str(fake_home) not in mcp_nodes[0].key

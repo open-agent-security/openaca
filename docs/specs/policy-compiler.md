@@ -118,6 +118,12 @@ carve an allowed exception out of a blocked marketplace; it can only add
 narrower blocks. This keeps the more specific target from ever loosening the
 broader one, consistent with compilation only adding restrictions.
 
+Legacy Claude custom slash commands (`commands/*.md`) use the `skills` admission
+category. Claude Code 2.1.302 loads them through its skill registry and suppresses
+that loader under `strictPluginOnlyCustomization: ["skills"]`. Their evaluator
+result must therefore follow the same default as the existing native artifact.
+Plugin-bundled commands continue to inherit the owning plugin's decision.
+
 `skills` deliberately has only `default`. It means skills installed outside a
 plugin; plugin-bundled skills inherit the plugin’s policy. Current hosts do not
 offer a portable, managed way to block or allow individual skills in this
@@ -480,10 +486,3 @@ admission allowlist.
 - Hooks and invocation-time policy decisions.
 - Automatic installation of generated settings.
 - Host compilers beyond Claude Code.
-
-
-Legacy Claude custom slash commands (`commands/*.md`) use the `skills` admission
-category. Claude Code 2.1.302 loads them through its skill registry and suppresses
-that loader under `strictPluginOnlyCustomization: ["skills"]`. Their evaluator
-result must therefore follow the same default as the existing native artifact.
-Plugin-bundled commands continue to inherit the owning plugin's decision.

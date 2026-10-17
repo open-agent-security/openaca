@@ -281,6 +281,11 @@ def global_mcp_refs(
     happening to equal the default path is still a named root that must fully
     specify the scan, not the default-resolution path the home-level file is
     reserved for.
+
+    The selected project's `disabledMcpServers` (Claude Code's per-project
+    `/mcp` disable toggle) is honored: a user-scoped server a project opted
+    out of is excluded from that project's "user" scope entries, though its
+    definition remains for every project that did not disable it.
     """
     paths = [install_root / ".claude.json"]
     if (
@@ -298,9 +303,9 @@ def global_mcp_refs(
         document = json.loads(raw)
         if not isinstance(document, dict):
             raise ValueError("native MCP configuration must be an object")
-        maps: list[tuple[Any, str, str, Optional[str]]] = [
-            (document.get("mcpServers", {}), "$.mcpServers", "user", None)
-        ]
+        user_servers = document.get("mcpServers", {})
+        project: Optional[dict] = None
+        key: Optional[str] = None
         if project_root is not None:
             projects = document.get("projects", {})
             if not isinstance(projects, dict):
@@ -309,6 +314,24 @@ def global_mcp_refs(
             project = projects.get(key, {})
             if not isinstance(project, dict):
                 raise ValueError("native MCP project must be an object")
+            # Claude Code's per-project `/mcp` disable toggle opts a project
+            # out of an otherwise-inherited user-scoped server without
+            # removing its definition; the selected project's
+            # `disabledMcpServers` must be honored or a deliberately
+            # disabled server reads as active evidence for this project.
+            disabled = project.get("disabledMcpServers", [])
+            if not isinstance(disabled, list) or not all(
+                isinstance(name, str) for name in disabled
+            ):
+                raise ValueError("native MCP disabledMcpServers must be a list of strings")
+            if isinstance(user_servers, dict) and disabled:
+                user_servers = {
+                    name: entry for name, entry in user_servers.items() if name not in disabled
+                }
+        maps: list[tuple[Any, str, str, Optional[str]]] = [
+            (user_servers, "$.mcpServers", "user", None)
+        ]
+        if project is not None:
             # The real project key is an absolute path, which would make the
             # occurrence key (bom-ref) machine-specific if interpolated into
             # `source_locator` (unlike `source_manifest`, it is not passed

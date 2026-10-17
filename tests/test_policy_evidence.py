@@ -76,3 +76,15 @@ def test_failed_collection_propagates_instead_of_returning_empty_clean_evidence(
     monkeypatch.setattr(policy_compile, "_evaluate_endpoint", fail)
     with pytest.raises(PolicyEvaluationError, match="incomplete inventory"):
         policy_compile.collect_policy_evidence(_policy(), target=Path("/config"), project=None)
+
+
+def test_default_root_collection_does_not_force_an_explicit_configuration_directory(monkeypatch):
+    seen = []
+
+    def collect(policy, target, project):
+        seen.append((target, project))
+        return [], [], [], [], []
+
+    monkeypatch.setattr(policy_compile, "_evaluate_endpoint", collect)
+    policy_compile.collect_policy_evidence(_policy(), project=Path("/project"))
+    assert seen == [(None, Path("/project"))]

@@ -86,7 +86,7 @@ class PolicyEvidence:
 
 
 def collect_policy_evidence(
-    policy: Policy, *, target: Path, project: Path | None
+    policy: Policy, *, target: Path | None = None, project: Path | None
 ) -> PolicyEvidence:
     """Collect the compiler's inputs without rendering or writing settings.
 
@@ -192,7 +192,7 @@ def compile_endpoint_policy(
 
 
 def _evaluate_endpoint(
-    policy: Policy, target: Path, project: Path | None
+    policy: Policy, target: Path | None, project: Path | None
 ) -> tuple[
     list[EndpointComponent],
     list[tuple[ComponentRef, str]],

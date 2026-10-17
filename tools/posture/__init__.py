@@ -382,6 +382,13 @@ def collect_endpoint_mcp_manifests(
     kept to the sources that carry a composed ref. The direct config-dir and
     project paths below are added regardless: they are the endpoint's own
     settings files, not candidates composition chose between.
+
+    Native `.claude.json` user/local MCP maps (`claude_install.global_mcp_refs`)
+    live outside every path above — not a walked filename, not a plugin
+    install path, not a settings file — so their composed refs are
+    reconstructed here the same way Cursor's and Codex's collectors already
+    derive from refs (`_mcp_manifests_from_refs`), or an insecure native
+    server composes into the inventory with no `insecure_transport` finding.
     """
     roots: list[Path] = []
     for ref in refs:
@@ -421,6 +428,8 @@ def collect_endpoint_mcp_manifests(
         if isinstance(data, dict):
             out.append((path, data))
 
+    native_refs = [ref for ref in refs if (ref.extra or {}).get("claude_mcp_scope") is not None]
+    out.extend(_uncovered_ref_mcp_manifests(native_refs, out))
     return out
 
 

@@ -2367,3 +2367,70 @@ def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file
         if n.kind == "mcp_server" and n.ref
     }
     assert mcp_names == {"explicit"}
+
+
+def test_e2e_claude_code_enabled_native_insecure_mcp_endpoint_fires_insecure_transport(tmp_path):
+    """Regression for a Codex review finding (parallel to the Codex-kind one
+    above): `collect_endpoint_mcp_manifests` only walked fixed filenames, the
+    endpoint's settings files, and active plugin install paths, none of which
+    cover native `.claude.json` user/local MCP maps. An http:// native server
+    composed into the inventory with no `insecure_transport` finding."""
+    from tools.scan import main as scan_main
+
+    root = tmp_path / ".claude"
+    root.mkdir(parents=True)
+    (root / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"on_remote": {"url": "http://insecure.test/mcp"}}})
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert "openaca-posture-insecure-transport" in result.output
+
+
+def test_a_server_defined_in_both_local_and_user_native_scope_emits_once(tmp_path):
+    """Claude Code's scope hierarchy connects to a same-named server once,
+    using the highest-precedence definition (local > project > user); it
+    does not merge or run both. Emitting both as separate active refs lets
+    the graph/policy compiler report or block a dormant, never-connected
+    user-scope entry alongside the real local one."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"shared": {"url": "https://user-wins-if-unshadowed.test"}},
+                "projects": {
+                    str(project): {"mcpServers": {"shared": {"url": "https://local-wins.test"}}}
+                },
+            }
+        )
+    )
+
+    (agent,) = [
+        a
+        for a in discover_agents(
+            DiscoveryContext(source="installed", config_dir=root, project_root=project)
+        )
+        if a.kind_id == "claude-code"
+    ]
+    graph = build_agent_graph(agent)
+
+    shared_refs = [
+        n.ref
+        for n in graph.nodes.values()
+        if n.kind == "mcp_server"
+        and n.ref
+        and n.ref.extra["component_path"][-1]["name"] == "shared"
+    ]
+    assert len(shared_refs) == 1
+    assert shared_refs[0].extra["claude_mcp_scope"] == "local"
+    assert shared_refs[0].extra["url"] == "https://local-wins.test"

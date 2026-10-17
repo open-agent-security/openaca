@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -56,9 +57,58 @@ from tools.scan import (
     _refs_from_graph,
 )
 
-__all__ = ["compile_endpoint_policy", "render_policy_report"]
+__all__ = [
+    "PolicyEvidence",
+    "collect_policy_evidence",
+    "compile_endpoint_policy",
+    "render_policy_report",
+]
 
 _OPENACA_FILENAME = "50-openaca-policy.json"
+
+
+@dataclass(frozen=True)
+class PolicyEvidence:
+    """Owned domain inputs from one endpoint collection, before host rendering.
+
+    Collections are detached tuples. Nested domain objects belong to this
+    result and must not be mutated by consumers. A missing vulnerability
+    coverage result means that gate was not requested; an empty tuple means
+    collection succeeded and every component had supported lookup coordinates.
+    """
+
+    components: tuple[EndpointComponent, ...]
+    advisory_matches: tuple[tuple[ComponentRef, str], ...]
+    advisories: tuple[dict[str, Any], ...]
+    posture_matches: tuple[tuple[ComponentRef, str], ...]
+    unmapped_posture: tuple[str, ...]
+    vulnerability_unavailable: tuple[ComponentRef, ...] | None
+
+
+def collect_policy_evidence(
+    policy: Policy, *, target: Path, project: Path | None
+) -> PolicyEvidence:
+    """Collect the compiler's inputs without rendering or writing settings.
+
+    Incomplete inventory and advisory collection retain the compiler's
+    `PolicyEvaluationError` behavior. No finding is not evidence of coverage
+    for a component whose advisory coordinates are unsupported.
+    """
+    components, advisory_matches, advisories, posture_matches, unmapped_posture = (
+        _evaluate_endpoint(policy, target, project)
+    )
+    return PolicyEvidence(
+        components=tuple(components),
+        advisory_matches=tuple(advisory_matches),
+        advisories=tuple(advisories),
+        posture_matches=tuple(posture_matches),
+        unmapped_posture=tuple(unmapped_posture),
+        vulnerability_unavailable=(
+            tuple(component.ref for component in components if not is_queryable(component.ref))
+            if policy.risk_gates.vulnerabilities is not None
+            else None
+        ),
+    )
 
 
 def compile_endpoint_policy(
@@ -78,15 +128,14 @@ def compile_endpoint_policy(
         # exception type. The command keeps its own identical check ahead of
         # the call, so a CLI user still gets the usage error and exit code 2.
         raise PolicyValidationError("--output is required unless --dry-run is set")
-    components, advisory_matches, advisories, posture_matches, unmapped_posture = (
-        _evaluate_endpoint(policy, target, project)
-    )
+    evidence = collect_policy_evidence(policy, target=target, project=project)
+    components = list(evidence.components)
     decisions = apply_risk_gates(
         policy,
         components,
-        advisories=advisories,
-        advisory_matches=advisory_matches,
-        posture_matches=posture_matches,
+        advisories=list(evidence.advisories),
+        advisory_matches=list(evidence.advisory_matches),
+        posture_matches=list(evidence.posture_matches),
     )
     # `--host` is a `Choice(["claude"])` on the command — a gate on the input
     # rather than a key that selects anything, since the Claude compiler is
@@ -107,7 +156,7 @@ def compile_endpoint_policy(
     # mapped to a `Decision` at all; per spec ("Map the result to a host-native
     # target. If no exact target exists, preserve the finding and report it as
     # not enforceable") they must still surface, not silently disappear.
-    limitations = (*rendered.limitations, *unmapped_posture)
+    limitations = (*rendered.limitations, *evidence.unmapped_posture)
     artifact_json = json.dumps(rendered.settings, indent=2, sort_keys=True) + "\n"
     artifact_digest = hashlib.sha256(artifact_json.encode()).hexdigest()
     report = _report(

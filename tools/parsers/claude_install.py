@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from tools.component_ref import ComponentRef
 from tools.graph import WarningLog, record_gap
@@ -284,7 +284,9 @@ def global_mcp_refs(install_root: Path, project_root: Path | None) -> list[Compo
         document = json.loads(raw)
         if not isinstance(document, dict):
             raise ValueError("native MCP configuration must be an object")
-        maps = [(document.get("mcpServers", {}), "$.mcpServers", "user")]
+        maps: list[tuple[Any, str, str, Optional[str]]] = [
+            (document.get("mcpServers", {}), "$.mcpServers", "user", None)
+        ]
         if project_root is not None:
             projects = document.get("projects", {})
             if not isinstance(projects, dict):
@@ -293,12 +295,22 @@ def global_mcp_refs(install_root: Path, project_root: Path | None) -> list[Compo
             project = projects.get(key, {})
             if not isinstance(project, dict):
                 raise ValueError("native MCP project must be an object")
-            maps.append((project.get("mcpServers", {}), f"$.projects[{key!r}].mcpServers", "local"))
-        for servers, locator, scope in maps:
-            parsed = mcp_json.parse_mcp_servers(servers, str(path), locator, strict=True)
-            refs.extend(
-                replace(ref, extra={**ref.extra, "claude_mcp_scope": scope}) for ref in parsed
+            # The real project key is an absolute path, which would make the
+            # occurrence key (bom-ref) machine-specific if interpolated into
+            # `source_locator` (unlike `source_manifest`, it is not passed
+            # through the node-key normalizer). Use a fixed placeholder for
+            # identity and carry the literal key as evidence instead — the
+            # scan already pins exactly one project, so no locator need
+            # distinguish between several.
+            maps.append(
+                (project.get("mcpServers", {}), "$.projects[<project>].mcpServers", "local", key)
             )
+        for servers, locator, scope, project_key in maps:
+            parsed = mcp_json.parse_mcp_servers(servers, str(path), locator, strict=True)
+            extra = {"claude_mcp_scope": scope}
+            if project_key is not None:
+                extra["claude_mcp_project_key"] = project_key
+            refs.extend(replace(ref, extra={**ref.extra, **extra}) for ref in parsed)
     return refs
 
 

@@ -30,6 +30,7 @@ Settings layering is mode-specific:
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -268,13 +269,16 @@ def _walk_active_plugins(
 def global_mcp_refs(install_root: Path, project_root: Path | None) -> list[ComponentRef]:
     """Read native user/local MCP maps, retaining their exact config file.
 
-    The default root also admits the legacy home-level file. Consumers must
-    select the file their runtime uses; these are separate observations, never
-    merged definitions. No unrelated project's MCP entries are traversed.
+    With the default root and no CLAUDE_CONFIG_DIR, the native global file is
+    home-level. An explicitly configured directory uses its own file instead.
+    No unrelated project's MCP entries are traversed.
     """
     paths = [install_root / ".claude.json"]
-    if install_root.resolve() == (Path.home() / ".claude").resolve():
-        paths.append(Path.home() / ".claude.json")
+    if (
+        not os.environ.get("CLAUDE_CONFIG_DIR")
+        and install_root.resolve() == (Path.home() / ".claude").resolve()
+    ):
+        paths = [Path.home() / ".claude.json"]
     refs: list[ComponentRef] = []
     for path in paths:
         try:

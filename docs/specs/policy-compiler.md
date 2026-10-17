@@ -430,3 +430,13 @@ admission allowlist.
 - Hooks and invocation-time policy decisions.
 - Automatic installation of generated settings.
 - Host compilers beyond Claude Code.
+
+Native Claude user and project-local MCP maps in `.claude.json` are also
+inventoried. An explicit config root reads its own file; the default
+`~/.claude` root additionally exposes the home-level file as separate
+observations. The exact source file and `claude_mcp_scope` (`user` or `local`)
+remain attached, so a runtime consumer can select its actual configuration
+without merging those alternatives. Only the selected project's local map is
+read. Invalid selected maps are incomplete evidence, never a clean scan.
+The file locations and project-key shape were checked against Claude Code
+2.1.302's distributed runtime and `claude mcp add --scope user/local` behavior.

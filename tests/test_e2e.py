@@ -2258,3 +2258,39 @@ def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
     )
     caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
     assert {c["name"] for c in caps} == {"shell_exec"}
+
+
+def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"user": {"url": "https://user.test"}},
+                "projects": {
+                    str(project): {"mcpServers": {"local": {"url": "https://local.test"}}}
+                },
+            }
+        )
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=project)
+    refs = [c.ref for c in evidence.components if c.ref.extra.get("component_type") == "mcp_server"]
+    assert {(r.extra["component_path"][-1]["name"], r.extra["claude_mcp_scope"]) for r in refs} == {
+        ("user", "user"),
+        ("local", "local"),
+    }
+    (root / ".claude.json").write_text('{"mcpServers": []}')
+    from openaca.core import PolicyEvaluationError
+
+    with pytest.raises(PolicyEvaluationError):
+        collect_policy_evidence(policy, target=root, project=project)

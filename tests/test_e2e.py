@@ -2434,3 +2434,51 @@ def test_a_server_defined_in_both_local_and_user_native_scope_emits_once(tmp_pat
     assert len(shared_refs) == 1
     assert shared_refs[0].extra["claude_mcp_scope"] == "local"
     assert shared_refs[0].extra["url"] == "https://local-wins.test"
+
+
+def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tmp_path):
+    """Regression for a Codex review finding on the insecure-transport fix
+    above: reconstructing a posture manifest for a native ref read its
+    header from the file's top-level `mcpServers` (the "user" scope)
+    regardless of the ref's actual scope. A project-local entry's real
+    headers live under `projects[<project>].mcpServers`; a same-named
+    user-scope entry (shadowed, so no ref composes for it — see the
+    precedence test above) still physically exists in the raw file and must
+    not have its headers misattributed to the local ref."""
+    from tools.parsers.claude_install import global_mcp_refs
+    from tools.posture import collect_endpoint_mcp_manifests
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {
+                        "url": "https://user.test",
+                        "headers": {"Authorization": "Bearer user-side-token"},
+                    }
+                },
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "shared": {
+                                "url": "https://local.test",
+                                "headers": {"Authorization": "Bearer local-side-token"},
+                            }
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    refs = global_mcp_refs(root, project)
+    manifests = collect_endpoint_mcp_manifests(root, project, refs)
+
+    (manifest,) = [m for _, m in manifests]
+    assert manifest["mcpServers"]["shared"]["headers"] == {
+        "Authorization": "Bearer local-side-token"
+    }

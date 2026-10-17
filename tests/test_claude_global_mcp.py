@@ -57,6 +57,57 @@ def test_local_scope_locator_is_stable_across_machines_but_keeps_the_real_projec
     assert local_ref.extra["claude_mcp_project_key"] == str(project.resolve())
 
 
+def test_a_project_disabled_server_is_excluded_from_that_projects_user_scope(tmp_path):
+    """Claude Code's per-project `/mcp` disable toggle records an opt-out in
+    `projects[<project>].disabledMcpServers` without removing the server's
+    user-scoped definition. A project that disabled it must not see it as
+    active evidence, but the definition must still apply to other projects
+    that did not disable it."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    other_project = tmp_path / "other-project"
+    other_project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "kept": {"url": "https://kept.test"},
+                    "disabled-here": {"url": "https://disabled.test"},
+                },
+                "projects": {
+                    str(project): {"disabledMcpServers": ["disabled-here"]},
+                    str(other_project): {},
+                },
+            }
+        )
+    )
+    names = {r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, project)}
+    assert names == {"kept"}
+    other_names = {
+        r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, other_project)
+    }
+    assert other_names == {"kept", "disabled-here"}
+
+
+def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path):
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"server": {"url": "https://example.test"}},
+                "projects": {str(project): {"disabledMcpServers": "not-a-list"}},
+            }
+        )
+    )
+    with pytest.raises(ValueError):
+        global_mcp_refs(root, project)
+
+
 def test_malformed_selected_native_state_fails_instead_of_becoming_clean(tmp_path):
     (tmp_path / ".claude.json").write_text('{"mcpServers": []}')
     with pytest.raises(ValueError):

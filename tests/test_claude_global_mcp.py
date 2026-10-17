@@ -31,7 +31,30 @@ def test_scopes_and_project_key_are_preserved_without_reading_other_projects(tmp
         ("user", "user"),
         ("local", "local"),
     }
-    assert refs[1].source_locator.startswith("$.projects[")
+    local_ref = refs[1]
+    assert local_ref.source_locator.startswith("$.projects[")
+
+
+def test_local_scope_locator_is_stable_across_machines_but_keeps_the_real_project_key(tmp_path):
+    """The real project key is an absolute path; it must not leak into
+    `source_locator` (identity — feeds the occurrence key/bom-ref unnormalized)
+    while still being recoverable as evidence."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "projects": {
+                    str(project): {"mcpServers": {"local": {"url": "https://local.test"}}},
+                },
+            }
+        )
+    )
+    (local_ref,) = global_mcp_refs(root, project)
+    assert str(project.resolve()) not in local_ref.source_locator
+    assert local_ref.extra["claude_mcp_project_key"] == str(project.resolve())
 
 
 def test_malformed_selected_native_state_fails_instead_of_becoming_clean(tmp_path):

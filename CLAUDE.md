@@ -249,6 +249,34 @@ If you discover unexpected state — unfamiliar files, branches,
 configuration — investigate before deleting or overwriting. It may
 represent the user's in-progress work.
 
+## Writing documents
+
+Write all Markdown documents in ASD-STE100 Simplified Technical English.
+This includes specs, ADRs, READMEs, plans and release notes. The rule
+applies to every author, human or agent.
+
+- Write one idea in each sentence.
+- Use a maximum of 20 words in an instruction and 25 words in a
+  description.
+- Use a maximum of six sentences in a paragraph.
+- Use the active voice and the present tense.
+- Start an instruction with a verb, for example "Run the tests."
+- Use "a", "an" and "the". Do not remove them to make the text shorter.
+- Use one term for one thing, and use it the same way in all of the
+  document.
+- Use simple, common words. Do not use filler, such as "in order to" or
+  "utilize".
+- Do not use em-dash asides. Write a new sentence.
+- Do not change technical names, commands or code. Code blocks, tables and
+  quoted text do not have to obey these rules.
+
+Apply these rules to the text that you write or change. Do not rewrite an
+existing document only to change its style. Do not edit an accepted ADR to
+change its style.
+
+These rules are for authors. They are not a code review topic. Reviewers
+do not report style findings.
+
 ## Code Review Rules
 
 **The goal of review is to converge.** The reviewer and the fixer both work

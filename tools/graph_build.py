@@ -778,6 +778,16 @@ def _seed_remote_mcps(
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
+    for ref in _safe_parse(
+        graph,
+        lambda _path: claude_install.global_mcp_refs(install_root, project_root),
+        install_root / ".claude.json",
+    ):
+        if _component_type(ref) == "mcp_server":
+            _add_child(
+                graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+            )
+
 
 def _seed_direct_components(
     graph: Graph,

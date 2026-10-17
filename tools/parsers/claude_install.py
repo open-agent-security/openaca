@@ -111,6 +111,11 @@ def parse_install(
         # not just a note, and `extend` alone cannot carry that distinction.
         warnings.absorb(plugin_walk_warnings)
 
+    if mode == "endpoint":
+        try:
+            refs.extend(global_mcp_refs(install_root, project_root))
+        except (OSError, ValueError, UnicodeError):
+            warnings.gap("could not read native user/local MCP configuration")
     refs.extend(_walk_direct_components(install_root, project_root, layers, mode))
     return refs, warnings
 
@@ -258,6 +263,43 @@ def _walk_active_plugins(
                 refs.extend(tier2_refs)
 
     return refs, warnings
+
+
+def global_mcp_refs(install_root: Path, project_root: Path | None) -> list[ComponentRef]:
+    """Read native user/local MCP maps, retaining their exact config file.
+
+    The default root also admits the legacy home-level file. Consumers must
+    select the file their runtime uses; these are separate observations, never
+    merged definitions. No unrelated project's MCP entries are traversed.
+    """
+    paths = [install_root / ".claude.json"]
+    if install_root.resolve() == (Path.home() / ".claude").resolve():
+        paths.append(Path.home() / ".claude.json")
+    refs: list[ComponentRef] = []
+    for path in paths:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        document = json.loads(raw)
+        if not isinstance(document, dict):
+            raise ValueError("native MCP configuration must be an object")
+        maps = [(document.get("mcpServers", {}), "$.mcpServers", "user")]
+        if project_root is not None:
+            projects = document.get("projects", {})
+            if not isinstance(projects, dict):
+                raise ValueError("native MCP projects must be an object")
+            key = str(project_root.resolve())
+            project = projects.get(key, {})
+            if not isinstance(project, dict):
+                raise ValueError("native MCP project must be an object")
+            maps.append((project.get("mcpServers", {}), f"$.projects[{key!r}].mcpServers", "local"))
+        for servers, locator, scope in maps:
+            parsed = mcp_json.parse_mcp_servers(servers, str(path), locator, strict=True)
+            refs.extend(
+                replace(ref, extra={**ref.extra, "claude_mcp_scope": scope}) for ref in parsed
+            )
+    return refs
 
 
 def _walk_direct_components(

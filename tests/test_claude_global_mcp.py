@@ -91,6 +91,33 @@ def test_a_project_disabled_server_is_excluded_from_that_projects_user_scope(tmp
     assert other_names == {"kept", "disabled-here"}
 
 
+def test_a_project_disabled_server_is_excluded_from_its_own_local_scope_too(tmp_path):
+    """`disabledMcpServers` disables a server by name regardless of which
+    scope defines it — including the project's own local-scope entry, not
+    only an inherited user-scoped one."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "kept-local": {"url": "https://kept-local.test"},
+                            "disabled-local": {"url": "https://disabled-local.test"},
+                        },
+                        "disabledMcpServers": ["disabled-local"],
+                    },
+                },
+            }
+        )
+    )
+    names = {r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, project)}
+    assert names == {"kept-local"}
+
+
 def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path):
     root = tmp_path / "config"
     root.mkdir()

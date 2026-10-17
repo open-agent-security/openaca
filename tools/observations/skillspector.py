@@ -27,6 +27,7 @@ from tools.observations.finding import (
 )
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.finding import Severity as PostureSeverity
+from tools.posture.rules.skill_capability import _component_path
 
 DEFAULT_COMMAND = "skillspector"
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -451,20 +452,6 @@ def _subject_coordinate(ref: ComponentRef) -> str:
             if isinstance(value, str) and value:
                 return value
     return canonical_component_identity(ref) or ref.source_manifest
-
-
-def _component_path(ref: ComponentRef) -> list[dict[str, str]]:
-    raw = (ref.extra or {}).get("component_path")
-    if isinstance(raw, list):
-        return [
-            {"type": str(item.get("type")), "name": str(item.get("name"))}
-            for item in raw
-            if isinstance(item, dict)
-            and item.get("type") is not None
-            and item.get("name") is not None
-        ]
-    name = ref.name or canonical_component_identity(ref)
-    return [{"type": "skill", "name": name}] if name else []
 
 
 def _first_location(result: dict[str, Any], scan_path: Path) -> dict[str, Any]:

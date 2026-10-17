@@ -432,9 +432,10 @@ admission allowlist.
 - Host compilers beyond Claude Code.
 
 Native Claude user and project-local MCP maps in `.claude.json` are also
-inventoried. With `CLAUDE_CONFIG_DIR`, its directory owns the file. With the
-default `~/.claude` root and no explicit environment override, the home-level
-file is selected instead. The exact source file and `claude_mcp_scope` (`user`
+inventoried. With an explicit `--config-dir` or `CLAUDE_CONFIG_DIR`, that
+directory owns the file (ADR-0054: a named root fully specifies the scan).
+Only with the unoverridden default `~/.claude` root is the home-level file
+selected instead. The exact source file and `claude_mcp_scope` (`user`
 or `local`) remain attached; unused alternative files are not merged or parsed. Only the selected project's local map is
 read. Invalid selected maps are incomplete evidence, never a clean scan.
 The file locations and project-key shape were checked against Claude Code

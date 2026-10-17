@@ -292,6 +292,7 @@ def build_rooted_graph(
     warnings: list[str] | None = None,
     surface: RepoSurface = CLAUDE_CODE_SURFACE,
     endpoint_surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
+    config_root_overridden: bool = False,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -322,6 +323,7 @@ def build_rooted_graph(
             normalize,
             surface=endpoint_surface,
             warnings=graph.warnings,
+            config_root_overridden=config_root_overridden,
         )
         # Endpoint has no single repo root; installed artifacts are not
         # gitignore-filtered (parity with the descent's root_dir=None behavior).
@@ -424,6 +426,7 @@ def _seed_endpoint(
     *,
     surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
     warnings: list[str] | None = None,
+    config_root_overridden: bool = False,
 ) -> None:
     """Endpoint mode: the target's children are seeded from resolved Claude
     config, not a filesystem glob. Recursive descent (the SAME `descend` used
@@ -504,7 +507,15 @@ def _seed_endpoint(
         by_scope=by_scope,
     )
 
-    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
+    _seed_remote_mcps(
+        graph,
+        target,
+        install_root,
+        project_root,
+        by_scope,
+        normalize,
+        config_root_overridden=config_root_overridden,
+    )
 
 
 def _seed_shared_endpoint_surfaces(
@@ -727,6 +738,8 @@ def _seed_remote_mcps(
     project_root: Path | None,
     by_scope: dict,
     normalize: SourceNormalizer,
+    *,
+    config_root_overridden: bool = False,
 ) -> None:
     scope_to_settings_path = {
         # An administrator's system-wide policy. It can declare `mcpServers`
@@ -788,7 +801,9 @@ def _seed_remote_mcps(
 
     for ref in _safe_parse(
         graph,
-        lambda _path: claude_install.global_mcp_refs(install_root, project_root),
+        lambda _path: claude_install.global_mcp_refs(
+            install_root, project_root, config_root_overridden=config_root_overridden
+        ),
         install_root / ".claude.json",
     ):
         if _component_type(ref) == "mcp_server":

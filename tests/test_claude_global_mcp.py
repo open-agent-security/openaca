@@ -76,3 +76,29 @@ def test_default_install_selects_the_native_global_config_location(tmp_path, mon
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root))
     (tmp_path / ".claude.json").write_text("invalid unused file")
     assert {r.source_manifest for r in global_mcp_refs(root, None)} == {str(root / ".claude.json")}
+
+
+def test_an_explicit_config_dir_matching_the_default_path_still_uses_its_own_file(
+    tmp_path, monkeypatch
+):
+    """A named `--config-dir` must fully specify the scan (ADR-0054), even when
+    it happens to equal the default `~/.claude` path: `install_root ==
+    ~/.claude` and `CLAUDE_CONFIG_DIR` unset are not enough on their own to
+    prove this is the unoverridden default-resolution path, since an explicit
+    `--kind claude-code --config-dir ~/.claude` looks identical on those two
+    signals alone."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    root = tmp_path / ".claude"
+    root.mkdir()
+    (tmp_path / ".claude.json").write_text('{"mcpServers":{"host":{"url":"https://host.test"}}}')
+    (root / ".claude.json").write_text(
+        '{"mcpServers":{"explicit":{"url":"https://explicit.test"}}}'
+    )
+
+    assert {r.source_manifest for r in global_mcp_refs(root, None)} == {
+        str(tmp_path / ".claude.json")
+    }
+    assert {
+        r.source_manifest for r in global_mcp_refs(root, None, config_root_overridden=True)
+    } == {str(root / ".claude.json")}

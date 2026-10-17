@@ -251,10 +251,25 @@ represent the user's in-progress work.
 
 ## Code Review Rules
 
+**The goal of review is to converge.** The reviewer and the fixer both work
+toward a PR that can merge in few rounds. Each round costs a full CI run and
+a review, and a finding on text that was already reviewed starts another
+round. Converging does not mean letting a serious defect through. The first
+review catches the glaring issues, and later reviews check only what changed.
+
 ### Reviewer
 
-- Review the full PR against its base branch. Report all qualifying
-  findings together; do not deliberately reserve findings for later rounds.
+- **The first review of a PR is the complete one.** Review the full PR
+  against its base branch. Report every qualifying finding together. Do not
+  reserve findings for later rounds.
+- **A later review covers only what changed since the previous reviewed
+  head.** That is the PR's new commits, plus existing code whose behavior
+  those commits change, such as a caller or dependency of changed code.
+  Changes that a merge or rebase brings in from the base branch are not part
+  of it.
+- **Do not report a defect that existed at the previous reviewed head**,
+  unless the new commits change its behavior. Exception: report a P0 or P1
+  even if it existed before, and label it a late discovery.
 - Report concrete, actionable defects with supported failure scenarios.
   Respect explicit scope decisions and accepted tradeoffs. Do not present
   speculative hardening or optional improvements as correctness defects.
@@ -265,12 +280,16 @@ represent the user's in-progress work.
   - P3: low-priority suggestion.
 - Report only P0 and P1 findings. Do not post P2 or P3 findings, inline or
   in the review summary. Do not inflate priority to get a finding reported.
-- On subsequent reviews, verify earlier fixes and inspect their effects on
-  callers and dependencies. Older code within the PR remains reviewable.
+- A missing detail or an optional improvement is never P1. This applies to
+  code and to documentation. A P1 is something wrong: a defect, or a false
+  statement.
+- On later reviews, verify that the earlier fixes work. Check their effects on
+  callers and dependencies.
 - When review history supports it, identify a finding as:
   - Regression: introduced since the previous reviewed head.
-  - Late discovery: present at a previously reviewed head but not reported.
   - Unresolved: a previously reported defect remains.
+  - Late discovery: present at a previously reviewed head but not reported.
+    Only a P0 or P1 may be a late discovery.
   If the history is unavailable or ambiguous, say so rather than guessing.
 - Deduplicate by underlying defect and remedy, not by title. Refer to an
   existing thread for an unresolved defect instead of opening another one.
@@ -286,6 +305,13 @@ represent the user's in-progress work.
   If its reasoning or priority is wrong, explain why rather than applying
   it solely because a reviewer requested it. Surface unresolved disputes
   for human judgment.
+- Decline a late discovery that is not P0 or P1. If the defect existed at the
+  previous reviewed head and the new commits do not change its behavior,
+  reply that the review rules exclude it, and do not fix it. A declined
+  finding does not count as a fix round.
+- Keep each fix to what its finding needs. Do not rewrite or extend nearby
+  code or text. A change beyond the finding gives the next review new
+  material to report, and the PR does not converge.
 - Fix the underlying invariant across relevant call sites. Test the
   failure class rather than only the reported example.
 - Preserve accepted fixes and regression tests when reviewing a rebased PR or

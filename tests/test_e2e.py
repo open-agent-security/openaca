@@ -36,6 +36,35 @@ OVERLAYS_DIR = REPO_ROOT / "overlays"
 SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
+def test_policy_evidence_drives_posture_admission_without_a_settings_artifact(tmp_path):
+    from openaca.core import apply_risk_gates, collect_policy_evidence, parse_policy
+
+    (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"demo": {"url": "http://example.test/mcp"}}}),
+        encoding="utf-8",
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+            "risk_gates": {"posture": {"rules": ["openaca-posture-insecure-transport"]}},
+        }
+    )
+    before = set(tmp_path.rglob("*"))
+    evidence = collect_policy_evidence(policy, target=tmp_path, project=None)
+    decisions = apply_risk_gates(
+        policy,
+        list(evidence.components),
+        advisories=list(evidence.advisories),
+        advisory_matches=list(evidence.advisory_matches),
+        posture_matches=list(evidence.posture_matches),
+    )
+    assert evidence.posture_matches
+    assert any(decision.category == "mcps" and decision.blocked for decision in decisions)
+    assert set(tmp_path.rglob("*")) == before
+
+
 @pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin"])
 @pytest.mark.parametrize("include_posture", [False, True])
 def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):

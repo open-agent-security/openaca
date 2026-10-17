@@ -81,6 +81,13 @@ def test_collection_api_is_reexported():
     assert core.ScannerUnavailable is tools.collect.ScannerUnavailable
 
 
+def test_policy_evidence_is_reexported_without_exposing_collection_internals():
+    import tools.policy_compile
+
+    assert core.PolicyEvidence is tools.policy_compile.PolicyEvidence
+    assert core.collect_policy_evidence is tools.policy_compile.collect_policy_evidence
+
+
 # The surface is defined as much by what is absent as by what is present, and
 # absence is exactly what rots without a test.
 _INTERNAL_TO_COLLECTION = (

@@ -32,7 +32,12 @@ from tools.policy import (
     loads,
     parse,
 )
-from tools.policy_compile import compile_endpoint_policy, render_policy_report
+from tools.policy_compile import (
+    PolicyEvidence,
+    collect_policy_evidence,
+    compile_endpoint_policy,
+    render_policy_report,
+)
 
 parse_policy = parse
 parse_policy_source = loads
@@ -42,8 +47,10 @@ __all__ = [
     "EndpointComponent",
     "Policy",
     "PolicyEvaluationError",
+    "PolicyEvidence",
     "PolicyValidationError",
     "apply_risk_gates",
+    "collect_policy_evidence",
     "compile_endpoint_policy",
     "evaluate_admission",
     "parse_policy",

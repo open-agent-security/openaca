@@ -610,6 +610,10 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
     _append_prop(props, "openaca:plugin_scope", (ref.extra or {}).get("scope"))
     _append_prop(props, "openaca:git_commit_sha", (ref.extra or {}).get("gitCommitSha"))
+    _append_prop(props, "openaca:claude_mcp_scope", (ref.extra or {}).get("claude_mcp_scope"))
+    _append_prop(
+        props, "openaca:claude_mcp_project_key", (ref.extra or {}).get("claude_mcp_project_key")
+    )
     # A kind with readable enable state (ADR-0055) sets `extra["enabled"]` as an
     # actual bool; a kind without one (Cursor) omits the key entirely, and that
     # absence must survive — emitting only for `True`/`False` keeps "unknown"
@@ -721,6 +725,8 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         ("openaca:url", "url"),
         ("openaca:plugin_scope", "scope"),
         ("openaca:git_commit_sha", "gitCommitSha"),
+        ("openaca:claude_mcp_scope", "claude_mcp_scope"),
+        ("openaca:claude_mcp_project_key", "claude_mcp_project_key"),
     ):
         value = props.get(prop_name)
         if value:

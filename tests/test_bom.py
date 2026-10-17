@@ -475,6 +475,35 @@ def test_skill_artifact_coordinates_round_trip_through_bom():
     ]
 
 
+def test_native_claude_mcp_scope_and_project_key_survive_the_bom_round_trip():
+    """`global_mcp_refs` replaces the real (absolute) project path with a
+    stable `<project>` placeholder in `source_locator` so it never leaks into
+    the bom-ref, but the exact key must still reach BOM consumers as
+    evidence — otherwise exporting to CycloneDX silently drops it."""
+    ref = ComponentRef(
+        ecosystem="mcp",
+        name="local",
+        source_manifest="/home/alice/.claude/.claude.json",
+        source_locator="$.projects[<project>].mcpServers.local",
+        extra={
+            "component_type": "mcp_server",
+            "claude_mcp_scope": "local",
+            "claude_mcp_project_key": "/home/alice/repo",
+        },
+    )
+
+    doc = build_agent_bom(
+        [ref], target_type="endpoint", target="endpoint:user-scope"
+    ).to_cyclonedx()
+
+    component = doc["components"][0]
+    assert _property(component, "openaca:claude_mcp_scope") == "local"
+    assert _property(component, "openaca:claude_mcp_project_key") == "/home/alice/repo"
+    (round_tripped,) = component_refs_from_cyclonedx(doc)
+    assert round_tripped.extra["claude_mcp_scope"] == "local"
+    assert round_tripped.extra["claude_mcp_project_key"] == "/home/alice/repo"
+
+
 def test_duplicate_preferred_bom_refs_get_stable_suffixes():
     refs = [
         ComponentRef(

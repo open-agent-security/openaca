@@ -30,9 +30,10 @@ Settings layering is mode-specific:
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from tools.component_ref import ComponentRef
 from tools.graph import WarningLog, record_gap
@@ -111,6 +112,11 @@ def parse_install(
         # not just a note, and `extend` alone cannot carry that distinction.
         warnings.absorb(plugin_walk_warnings)
 
+    if mode == "endpoint":
+        try:
+            refs.extend(global_mcp_refs(install_root, project_root))
+        except (OSError, ValueError, UnicodeError):
+            warnings.gap("could not read native user/local MCP configuration")
     refs.extend(_walk_direct_components(install_root, project_root, layers, mode))
     return refs, warnings
 
@@ -258,6 +264,114 @@ def _walk_active_plugins(
                 refs.extend(tier2_refs)
 
     return refs, warnings
+
+
+def global_mcp_refs(
+    install_root: Path, project_root: Path | None, *, config_root_overridden: bool = False
+) -> list[ComponentRef]:
+    """Read native user/local MCP maps, retaining their exact config file.
+
+    With the default root and no CLAUDE_CONFIG_DIR, the native global file is
+    home-level. An explicitly configured directory uses its own file instead.
+    No unrelated project's MCP entries are traversed.
+
+    `config_root_overridden` must be true whenever `install_root` came from an
+    explicit `--config-dir` flag (ADR-0054's `AgentInstance.config_root_overridden`)
+    rather than env-var/default resolution — an explicit `--config-dir ~/.claude`
+    happening to equal the default path is still a named root that must fully
+    specify the scan, not the default-resolution path the home-level file is
+    reserved for.
+
+    The selected project's `disabledMcpServers` (Claude Code's per-project
+    `/mcp` disable toggle) is honored for both scopes: a server — user-scoped
+    or the project's own local-scope one — that a project opted out of is
+    excluded from that project's entries, though a disabled user-scoped
+    server's definition remains for every other project.
+
+    A name the local map also defines excludes the user-scope entry: Claude
+    Code connects to a same-named server once, from the highest-precedence
+    scope (local > project > user), never both. Precedence against the
+    project's own `.mcp.json` (the "project" scope) is not resolved here —
+    that file is a separate composition source this function does not read.
+    """
+    paths = [install_root / ".claude.json"]
+    if (
+        not config_root_overridden
+        and not os.environ.get("CLAUDE_CONFIG_DIR")
+        and install_root.resolve() == (Path.home() / ".claude").resolve()
+    ):
+        paths = [Path.home() / ".claude.json"]
+    refs: list[ComponentRef] = []
+    for path in paths:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        document = json.loads(raw)
+        if not isinstance(document, dict):
+            raise ValueError("native MCP configuration must be an object")
+        user_servers = document.get("mcpServers", {})
+        project: Optional[dict] = None
+        key: Optional[str] = None
+        local_servers: dict = {}
+        if project_root is not None:
+            projects = document.get("projects", {})
+            if not isinstance(projects, dict):
+                raise ValueError("native MCP projects must be an object")
+            key = str(project_root.resolve())
+            project = projects.get(key, {})
+            if not isinstance(project, dict):
+                raise ValueError("native MCP project must be an object")
+            # Claude Code's per-project `/mcp` disable toggle opts a project
+            # out of a server — user-scoped or the project's own local-scope
+            # one — without removing its definition; the selected project's
+            # `disabledMcpServers` must be honored for both, or a
+            # deliberately disabled server reads as active evidence for this
+            # project.
+            disabled = project.get("disabledMcpServers", [])
+            if not isinstance(disabled, list) or not all(
+                isinstance(name, str) for name in disabled
+            ):
+                raise ValueError("native MCP disabledMcpServers must be a list of strings")
+            if isinstance(user_servers, dict) and disabled:
+                user_servers = {
+                    name: entry for name, entry in user_servers.items() if name not in disabled
+                }
+            local_servers = project.get("mcpServers", {})
+            if isinstance(local_servers, dict) and disabled:
+                local_servers = {
+                    name: entry for name, entry in local_servers.items() if name not in disabled
+                }
+            # Claude Code connects to a same-named server once, using the
+            # single entry from the highest-precedence scope (local > project
+            # > user; project is a separate .mcp.json this function doesn't
+            # read) — never both. A name the local map also defines would
+            # otherwise emit the user-scope entry too, as a dormant
+            # never-connected duplicate the graph/policy compiler can still
+            # report or block.
+            if isinstance(user_servers, dict) and isinstance(local_servers, dict):
+                user_servers = {
+                    name: entry for name, entry in user_servers.items() if name not in local_servers
+                }
+        maps: list[tuple[Any, str, str, Optional[str]]] = [
+            (user_servers, "$.mcpServers", "user", None)
+        ]
+        if project is not None:
+            # The real project key is an absolute path, which would make the
+            # occurrence key (bom-ref) machine-specific if interpolated into
+            # `source_locator` (unlike `source_manifest`, it is not passed
+            # through the node-key normalizer). Use a fixed placeholder for
+            # identity and carry the literal key as evidence instead — the
+            # scan already pins exactly one project, so no locator need
+            # distinguish between several.
+            maps.append((local_servers, "$.projects[<project>].mcpServers", "local", key))
+        for servers, locator, scope, project_key in maps:
+            parsed = mcp_json.parse_mcp_servers(servers, str(path), locator, strict=True)
+            extra = {"claude_mcp_scope": scope}
+            if project_key is not None:
+                extra["claude_mcp_project_key"] = project_key
+            refs.extend(replace(ref, extra={**ref.extra, **extra}) for ref in parsed)
+    return refs
 
 
 def _walk_direct_components(

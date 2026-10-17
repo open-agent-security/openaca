@@ -2258,3 +2258,227 @@ def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
     )
     caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
     assert {c["name"] for c in caps} == {"shell_exec"}
+
+
+def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"user": {"url": "https://user.test"}},
+                "projects": {
+                    str(project): {"mcpServers": {"local": {"url": "https://local.test"}}}
+                },
+            }
+        )
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=project)
+    refs = [c.ref for c in evidence.components if c.ref.extra.get("component_type") == "mcp_server"]
+    assert {(r.extra["component_path"][-1]["name"], r.extra["claude_mcp_scope"]) for r in refs} == {
+        ("user", "user"),
+        ("local", "local"),
+    }
+    (root / ".claude.json").write_text('{"mcpServers": []}')
+    from openaca.core import PolicyEvaluationError
+
+    with pytest.raises(PolicyEvaluationError):
+        collect_policy_evidence(policy, target=root, project=project)
+
+
+def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_path, monkeypatch):
+    """`~/.claude.json` (`global_mcp_refs`'s home-level file, read only when
+    the install root IS the default `~/.claude`) sits outside `install_root`,
+    so the endpoint normalizer must carry it as a labeled extra root — as
+    Codex's own endpoint builder already does for its home-scoped
+    `~/.agents` — or the node key falls back to the machine-specific absolute
+    path, breaking bom-ref stability and cross-machine dedup."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"server": {"url": "https://example.test"}}})
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build.Path.home", lambda: fake_home)
+
+    (agent,) = [
+        a
+        for a in discover_agents(DiscoveryContext(source="installed"))
+        if a.kind_id == "claude-code"
+    ]
+    graph = build_agent_graph(agent)
+
+    mcp_nodes = [n for n in graph.nodes.values() if n.kind == "mcp_server" and n.ref]
+    assert len(mcp_nodes) == 1
+    assert mcp_nodes[0].key.startswith("home/.claude.json#")
+    assert str(fake_home) not in mcp_nodes[0].key
+
+
+def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file(
+    tmp_path, monkeypatch
+):
+    """ADR-0054: a named `--config-dir` must fully specify the scan, even when
+    it happens to equal the default `~/.claude` path. `AgentInstance.
+    config_root_overridden` must reach `global_mcp_refs` through discovery →
+    `_compose` → `build_rooted_graph` → `_seed_endpoint` so an explicit
+    `--config-dir ~/.claude` cannot be mistaken for the unoverridden default
+    and pull in the invoking user's home-level `~/.claude.json`."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"host": {"url": "https://host.test"}}})
+    )
+    explicit_root = fake_home / ".claude"
+    (explicit_root / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"explicit": {"url": "https://explicit.test"}}})
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build.Path.home", lambda: fake_home)
+
+    (agent,) = [
+        a
+        for a in discover_agents(DiscoveryContext(source="installed", config_dir=explicit_root))
+        if a.kind_id == "claude-code"
+    ]
+    assert agent.config_root_overridden is True
+    graph = build_agent_graph(agent)
+
+    mcp_names = {
+        n.ref.extra["component_path"][-1]["name"]
+        for n in graph.nodes.values()
+        if n.kind == "mcp_server" and n.ref
+    }
+    assert mcp_names == {"explicit"}
+
+
+def test_e2e_claude_code_enabled_native_insecure_mcp_endpoint_fires_insecure_transport(tmp_path):
+    """Regression for a Codex review finding (parallel to the Codex-kind one
+    above): `collect_endpoint_mcp_manifests` only walked fixed filenames, the
+    endpoint's settings files, and active plugin install paths, none of which
+    cover native `.claude.json` user/local MCP maps. An http:// native server
+    composed into the inventory with no `insecure_transport` finding."""
+    from tools.scan import main as scan_main
+
+    root = tmp_path / ".claude"
+    root.mkdir(parents=True)
+    (root / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"on_remote": {"url": "http://insecure.test/mcp"}}})
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        ["endpoint", "--kind", "claude-code", "--config-dir", str(root), "--include-posture"],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    assert "openaca-posture-insecure-transport" in result.output
+
+
+def test_a_server_defined_in_both_local_and_user_native_scope_emits_once(tmp_path):
+    """Claude Code's scope hierarchy connects to a same-named server once,
+    using the highest-precedence definition (local > project > user); it
+    does not merge or run both. Emitting both as separate active refs lets
+    the graph/policy compiler report or block a dormant, never-connected
+    user-scope entry alongside the real local one."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"shared": {"url": "https://user-wins-if-unshadowed.test"}},
+                "projects": {
+                    str(project): {"mcpServers": {"shared": {"url": "https://local-wins.test"}}}
+                },
+            }
+        )
+    )
+
+    (agent,) = [
+        a
+        for a in discover_agents(
+            DiscoveryContext(source="installed", config_dir=root, project_root=project)
+        )
+        if a.kind_id == "claude-code"
+    ]
+    graph = build_agent_graph(agent)
+
+    shared_refs = [
+        n.ref
+        for n in graph.nodes.values()
+        if n.kind == "mcp_server"
+        and n.ref
+        and n.ref.extra["component_path"][-1]["name"] == "shared"
+    ]
+    assert len(shared_refs) == 1
+    assert shared_refs[0].extra["claude_mcp_scope"] == "local"
+    assert shared_refs[0].extra["url"] == "https://local-wins.test"
+
+
+def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tmp_path):
+    """Regression for a Codex review finding on the insecure-transport fix
+    above: reconstructing a posture manifest for a native ref read its
+    header from the file's top-level `mcpServers` (the "user" scope)
+    regardless of the ref's actual scope. A project-local entry's real
+    headers live under `projects[<project>].mcpServers`; a same-named
+    user-scope entry (shadowed, so no ref composes for it — see the
+    precedence test above) still physically exists in the raw file and must
+    not have its headers misattributed to the local ref."""
+    from tools.parsers.claude_install import global_mcp_refs
+    from tools.posture import collect_endpoint_mcp_manifests
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {
+                        "url": "https://user.test",
+                        "headers": {"Authorization": "Bearer user-side-token"},
+                    }
+                },
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "shared": {
+                                "url": "https://local.test",
+                                "headers": {"Authorization": "Bearer local-side-token"},
+                            }
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    refs = global_mcp_refs(root, project)
+    manifests = collect_endpoint_mcp_manifests(root, project, refs)
+
+    (manifest,) = [m for _, m in manifests]
+    assert manifest["mcpServers"]["shared"]["headers"] == {
+        "Authorization": "Bearer local-side-token"
+    }

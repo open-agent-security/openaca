@@ -166,10 +166,13 @@ def _make_normalizer(
       `project_root`, `endpoint/<rel>` under `install_root`. A path under neither
       falls back to the absolute path (last resort).
 
-    `extra_roots` are additional labeled roots checked (longest path first, so a
-    nested root wins over an ancestor) after `project_root` and before
-    `install_root`. Claude Code passes none; a second kind with more than one
-    config root threads them here instead of forking the normalizer.
+    `extra_roots` are additional labeled roots, compared alongside
+    `install_root` itself by path length (longest first) so a nested root wins
+    over an ancestor — this is what lets `install_root` win over an
+    `extra_roots` entry that happens to be one of its ancestors (e.g. Claude
+    Code's default `install_root` is `<home>/.claude`, nested under the `home`
+    extra root used for `~/.claude.json`), rather than only disambiguating
+    extra roots from each other. Checked after `project_root`.
     """
     # Keep BOTH the logical (un-resolved) and resolved forms of each root.
     # Resolved roots make prefix-matching symlink-stable for genuinely-nested
@@ -181,10 +184,12 @@ def _make_normalizer(
     # relativize the logical path against the logical root FIRST, and only fall
     # back to the resolved/resolved match.
     target_r = target.resolve()
-    install_r = install_root.resolve()
     project_r = project_root.resolve() if project_root is not None else None
-    extra_roots_sorted = sorted(
-        ((label, root, root.resolve()) for label, root in extra_roots),
+    endpoint_roots_sorted = sorted(
+        (
+            (label, root, root.resolve())
+            for label, root in (*extra_roots, (root_label, install_root))
+        ),
         key=lambda entry: len(str(entry[1])),
         reverse=True,
     )
@@ -216,13 +221,10 @@ def _make_normalizer(
             rel = _rel(abs_path, project_root, project_r)
             if rel is not None:
                 return f"project/{rel}"
-        for label, root_logical, root_resolved in extra_roots_sorted:
+        for label, root_logical, root_resolved in endpoint_roots_sorted:
             rel = _rel(abs_path, root_logical, root_resolved)
             if rel is not None:
                 return f"{label}/{rel}"
-        rel = _rel(abs_path, install_root, install_r)
-        if rel is not None:
-            return f"{root_label}/{rel}"
         return abs_path
 
     return normalize
@@ -290,6 +292,7 @@ def build_rooted_graph(
     warnings: list[str] | None = None,
     surface: RepoSurface = CLAUDE_CODE_SURFACE,
     endpoint_surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
+    config_root_overridden: bool = False,
 ) -> Graph:
     if mode not in ("repo", "endpoint"):
         raise ValueError(f"unknown mode: {mode!r}")
@@ -300,7 +303,13 @@ def build_rooted_graph(
     # root so node keys — which become CycloneDX bom-refs — are reproducible.
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
-    normalize = _make_normalizer(mode, Path(target), Path(target), project_root, root_label)
+    # `global_mcp_refs` (ADR-0054's one exception: the default root's legacy
+    # `~/.claude.json`) reads outside `install_root` only when `install_root`
+    # IS `~/.claude`, so this extra root only ever matches that file.
+    extra_roots = (("home", Path.home()),) if mode == "endpoint" else ()
+    normalize = _make_normalizer(
+        mode, Path(target), Path(target), project_root, root_label, extra_roots=extra_roots
+    )
     # ADR-0039 launch resolution context, set per-branch below.
     attach_root_dir: Path | None = None
     attach_root_spec: GitIgnoreSpec | None = None
@@ -314,6 +323,7 @@ def build_rooted_graph(
             normalize,
             surface=endpoint_surface,
             warnings=graph.warnings,
+            config_root_overridden=config_root_overridden,
         )
         # Endpoint has no single repo root; installed artifacts are not
         # gitignore-filtered (parity with the descent's root_dir=None behavior).
@@ -416,6 +426,7 @@ def _seed_endpoint(
     *,
     surface: EndpointSurface = CLAUDE_CODE_ENDPOINT,
     warnings: list[str] | None = None,
+    config_root_overridden: bool = False,
 ) -> None:
     """Endpoint mode: the target's children are seeded from resolved Claude
     config, not a filesystem glob. Recursive descent (the SAME `descend` used
@@ -496,7 +507,15 @@ def _seed_endpoint(
         by_scope=by_scope,
     )
 
-    _seed_remote_mcps(graph, target, install_root, project_root, by_scope, normalize)
+    _seed_remote_mcps(
+        graph,
+        target,
+        install_root,
+        project_root,
+        by_scope,
+        normalize,
+        config_root_overridden=config_root_overridden,
+    )
 
 
 def _seed_shared_endpoint_surfaces(
@@ -719,6 +738,8 @@ def _seed_remote_mcps(
     project_root: Path | None,
     by_scope: dict,
     normalize: SourceNormalizer,
+    *,
+    config_root_overridden: bool = False,
 ) -> None:
     scope_to_settings_path = {
         # An administrator's system-wide policy. It can declare `mcpServers`
@@ -777,6 +798,18 @@ def _seed_remote_mcps(
                 continue
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
+
+    for ref in _safe_parse(
+        graph,
+        lambda _path: claude_install.global_mcp_refs(
+            install_root, project_root, config_root_overridden=config_root_overridden
+        ),
+        install_root / ".claude.json",
+    ):
+        if _component_type(ref) == "mcp_server":
+            _add_child(
+                graph, target, Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
+            )
 
 
 def _seed_direct_components(

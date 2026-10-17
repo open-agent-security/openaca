@@ -382,6 +382,13 @@ def collect_endpoint_mcp_manifests(
     kept to the sources that carry a composed ref. The direct config-dir and
     project paths below are added regardless: they are the endpoint's own
     settings files, not candidates composition chose between.
+
+    Native `.claude.json` user/local MCP maps (`claude_install.global_mcp_refs`)
+    live outside every path above — not a walked filename, not a plugin
+    install path, not a settings file — so their composed refs are
+    reconstructed here the same way Cursor's and Codex's collectors already
+    derive from refs (`_mcp_manifests_from_refs`), or an insecure native
+    server composes into the inventory with no `insecure_transport` finding.
     """
     roots: list[Path] = []
     for ref in refs:
@@ -421,6 +428,8 @@ def collect_endpoint_mcp_manifests(
         if isinstance(data, dict):
             out.append((path, data))
 
+    native_refs = [ref for ref in refs if (ref.extra or {}).get("claude_mcp_scope") is not None]
+    out.extend(_uncovered_ref_mcp_manifests(native_refs, out))
     return out
 
 
@@ -754,9 +763,18 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
     inventories a disabled server anyway (ADR-0055) and needs the
     reconstruction to say so — otherwise a disabled-but-insecure Codex server
     would be misreported as an active exposure.
+
+    A native Claude `claude_mcp_scope: "local"` ref's real entry lives under
+    `projects[claude_mcp_project_key].mcpServers`, not the file's top-level
+    `mcpServers` `_read_mcp_auth_source` reads — the same name can exist at
+    both (that's the shadowing `global_mcp_refs` itself resolves for which
+    ref composes), so a naive top-level lookup can attribute the wrong
+    (shadowed) scope's headers, or miss a local-only server's headers
+    entirely. Such a ref's auth source is read from its own scope instead.
     """
     by_path: dict[str, dict] = {}
     auth_sources: dict[str, dict] = {}
+    native_local_auth_sources: dict[tuple[str, str], dict] = {}
     for ref in refs:
         if (ref.extra or {}).get("component_type") != "mcp_server":
             continue
@@ -765,9 +783,18 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
         if not source or name is None:
             continue
         entry: dict = {}
-        if source not in auth_sources:
-            auth_sources[source] = _read_mcp_auth_source(Path(source))
-        original = auth_sources[source].get(name)
+        project_key = (ref.extra or {}).get("claude_mcp_project_key")
+        if (ref.extra or {}).get("claude_mcp_scope") == "local" and isinstance(project_key, str):
+            cache_key = (source, project_key)
+            if cache_key not in native_local_auth_sources:
+                native_local_auth_sources[cache_key] = _read_native_local_auth_source(
+                    Path(source), project_key
+                )
+            original = native_local_auth_sources[cache_key].get(name)
+        else:
+            if source not in auth_sources:
+                auth_sources[source] = _read_mcp_auth_source(Path(source))
+            original = auth_sources[source].get(name)
         if isinstance(original, dict):
             for key in ("headers", "http_headers"):
                 if isinstance(original.get(key), dict):
@@ -922,6 +949,27 @@ def _read_mcp_auth_source(path: Path) -> dict:
         resolved = devin_config.server_map(manifest, allow_flat=True)
         server_map = resolved[0] if resolved is not None else None
     return server_map or {}
+
+
+def _read_native_local_auth_source(path: Path, project_key: str) -> dict:
+    """The literal `projects[project_key].mcpServers` map in a native
+    `.claude.json`, mirroring `claude_install.global_mcp_refs`'s own lookup —
+    unlike `_read_mcp_auth_source`, which only ever reads the file's
+    top-level `mcpServers` (the "user" scope)."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(document, dict):
+        return {}
+    projects = document.get("projects")
+    if not isinstance(projects, dict):
+        return {}
+    project = projects.get(project_key)
+    if not isinstance(project, dict):
+        return {}
+    servers = project.get("mcpServers")
+    return servers if isinstance(servers, dict) else {}
 
 
 def collect_cursor_endpoint_mcp_manifests(

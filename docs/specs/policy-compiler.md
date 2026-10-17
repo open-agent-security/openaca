@@ -205,6 +205,28 @@ complete endpoint policy in that case. As with `scan endpoint`, omitting
 `--project` prints a reminder note rather than failing or defaulting to the
 current directory.
 
+### Native Claude MCP inventory
+
+Inventory the native user and project-local MCP maps in `.claude.json`.
+An explicit `--config-dir` or `CLAUDE_CONFIG_DIR` selects the file in that directory.
+Default discovery selects the home-level file only when no root override applies.
+Use `collect_policy_evidence(policy, target=None, project=...)` for that default discovery.
+Pass a path for an explicit root.
+A named root retains its isolation even when it equals the default pathname.
+
+Keep the exact source file and `claude_mcp_scope` with each observation.
+Read only the selected project's local map.
+Keep its actual project key as evidence, outside the stable source locator.
+Retain those fields in a serialized BOM.
+Do not merge or parse an unused alternative global file.
+Treat invalid selected maps as incomplete evidence.
+
+Apply native MCP precedence: local, then project, then user.
+Honor the selected project's `disabledMcpServers` entries.
+Read local-scope header credentials from that scope's own configuration.
+Include native entries in component posture checks.
+The source paths and project keys were checked against Claude Code 2.1.302 and its native `mcp add` commands.
+
 `--dry-run` performs that same validation, scan, advisory lookup, and policy
 evaluation, but writes no artifact. It prints the complete expected policy:
 the rendered host settings, every component decision and its reason, and every
@@ -430,13 +452,3 @@ admission allowlist.
 - Hooks and invocation-time policy decisions.
 - Automatic installation of generated settings.
 - Host compilers beyond Claude Code.
-
-Native Claude user and project-local MCP maps in `.claude.json` are also
-inventoried. With an explicit `--config-dir` or `CLAUDE_CONFIG_DIR`, that
-directory owns the file (ADR-0054: a named root fully specifies the scan).
-Only with the unoverridden default `~/.claude` root is the home-level file
-selected instead. The exact source file and `claude_mcp_scope` (`user`
-or `local`) remain attached; unused alternative files are not merged or parsed. Only the selected project's local map is
-read. Invalid selected maps are incomplete evidence, never a clean scan.
-The file locations and project-key shape were checked against Claude Code
-2.1.302's distributed runtime and `claude mcp add --scope user/local` behavior.

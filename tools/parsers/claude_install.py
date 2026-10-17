@@ -266,16 +266,26 @@ def _walk_active_plugins(
     return refs, warnings
 
 
-def global_mcp_refs(install_root: Path, project_root: Path | None) -> list[ComponentRef]:
+def global_mcp_refs(
+    install_root: Path, project_root: Path | None, *, config_root_overridden: bool = False
+) -> list[ComponentRef]:
     """Read native user/local MCP maps, retaining their exact config file.
 
     With the default root and no CLAUDE_CONFIG_DIR, the native global file is
     home-level. An explicitly configured directory uses its own file instead.
     No unrelated project's MCP entries are traversed.
+
+    `config_root_overridden` must be true whenever `install_root` came from an
+    explicit `--config-dir` flag (ADR-0054's `AgentInstance.config_root_overridden`)
+    rather than env-var/default resolution — an explicit `--config-dir ~/.claude`
+    happening to equal the default path is still a named root that must fully
+    specify the scan, not the default-resolution path the home-level file is
+    reserved for.
     """
     paths = [install_root / ".claude.json"]
     if (
-        not os.environ.get("CLAUDE_CONFIG_DIR")
+        not config_root_overridden
+        and not os.environ.get("CLAUDE_CONFIG_DIR")
         and install_root.resolve() == (Path.home() / ".claude").resolve()
     ):
         paths = [Path.home() / ".claude.json"]

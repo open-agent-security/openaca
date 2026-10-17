@@ -2326,3 +2326,44 @@ def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_pat
     assert len(mcp_nodes) == 1
     assert mcp_nodes[0].key.startswith("home/.claude.json#")
     assert str(fake_home) not in mcp_nodes[0].key
+
+
+def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file(
+    tmp_path, monkeypatch
+):
+    """ADR-0054: a named `--config-dir` must fully specify the scan, even when
+    it happens to equal the default `~/.claude` path. `AgentInstance.
+    config_root_overridden` must reach `global_mcp_refs` through discovery →
+    `_compose` → `build_rooted_graph` → `_seed_endpoint` so an explicit
+    `--config-dir ~/.claude` cannot be mistaken for the unoverridden default
+    and pull in the invoking user's home-level `~/.claude.json`."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    (fake_home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"host": {"url": "https://host.test"}}})
+    )
+    explicit_root = fake_home / ".claude"
+    (explicit_root / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"explicit": {"url": "https://explicit.test"}}})
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build.Path.home", lambda: fake_home)
+
+    (agent,) = [
+        a
+        for a in discover_agents(DiscoveryContext(source="installed", config_dir=explicit_root))
+        if a.kind_id == "claude-code"
+    ]
+    assert agent.config_root_overridden is True
+    graph = build_agent_graph(agent)
+
+    mcp_names = {
+        n.ref.extra["component_path"][-1]["name"]
+        for n in graph.nodes.values()
+        if n.kind == "mcp_server" and n.ref
+    }
+    assert mcp_names == {"explicit"}

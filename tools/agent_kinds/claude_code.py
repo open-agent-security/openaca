@@ -112,6 +112,7 @@ def _discover_installed(ctx: DiscoveryContext) -> list[AgentInstance]:
             coverage_baseline=COVERAGE_BASELINE["installed"],
             config_root=root,
             project_root=ctx.project_root,
+            config_root_overridden=ctx.config_dir is not None,
         )
     ]
 
@@ -152,6 +153,7 @@ def _compose(
             project_root=agent.project_root,
             include_gitignored=include_gitignored,
             warnings=warnings,
+            config_root_overridden=agent.config_root_overridden,
         )
     assert agent.scan_root is not None
     return build_rooted_graph(

@@ -10,7 +10,28 @@ configuration artifact for one endpoint.
 
 The same policy file works locally and with a hosted control plane. OpenACA
 owns the policy schema, validation, scan-backed evaluation, and host compiler.
-It does not own a long-running enforcement service.
+
+Library callers can use `openaca.core.collect_policy_evidence` without rendering a host settings artifact.
+Its `PolicyEvidence` result contains components, advisory records and matches, posture matches, and unmapped posture findings.
+Pass those inputs to `apply_risk_gates`.
+The native compiler uses the same collection boundary.
+
+Omit `target`, or pass `None`, to use Claude's default configuration discovery.
+Pass a path to select an explicit configuration root.
+A named root keeps its isolation even when it equals the default pathname.
+Pass `project` explicitly to include project configuration.
+
+`vulnerability_unavailable` is `None` when the policy requests no vulnerability gate.
+Otherwise, it contains components without supported advisory coordinates.
+An empty tuple means that collection found no such coverage gaps.
+Incomplete collection still raises `PolicyEvaluationError`.
+Missing coordinates do not add a vulnerability block in the evaluator.
+They do not prove that a component is vulnerability-free.
+
+The result collections are detached tuples.
+The caller owns the nested domain objects and must not mutate shared values.
+The caller also owns evidence freshness and refresh scheduling.
+The library provides no resident enforcement service.
 
 The first compiler target is Claude Code. Other hosts may add compilers only
 when OpenACA can produce a precise host-native restriction and verify it.

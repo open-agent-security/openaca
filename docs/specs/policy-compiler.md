@@ -10,6 +10,20 @@ configuration artifact for one endpoint.
 
 The same policy file works locally and with a hosted control plane. OpenACA
 owns the policy schema, validation, scan-backed evaluation, and host compiler.
+
+Library callers can collect the same endpoint inputs through
+`openaca.core.collect_policy_evidence(policy, target=..., project=...)` without
+rendering or writing a host settings artifact. Its `PolicyEvidence` result
+carries components, advisory records/matches, posture matches, and unmapped
+posture limitations. Pass those inputs to the existing `apply_risk_gates`
+evaluator; do not reconstruct domain decisions from compiled native settings.
+`vulnerability_unavailable` is `None` when that gate was not requested, or a
+tuple of components without supported advisory coordinates when it was. An
+empty tuple means the requested collection succeeded with no such gaps;
+incomplete collection still raises `PolicyEvaluationError`. Result collections
+are detached tuples; consumers own the nested domain objects and must not mutate
+them while sharing the result. Freshness and refresh scheduling belong to the
+caller. The existing compiler consumes this same collection boundary.
 It does not own a long-running enforcement service.
 
 The first compiler target is Claude Code. Other hosts may add compilers only

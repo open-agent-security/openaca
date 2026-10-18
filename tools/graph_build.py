@@ -2778,8 +2778,6 @@ def _seed_codex_mcp_servers(
     config_root: Path,
     project_root: Path | None,
     normalize: SourceNormalizer,
-    *,
-    warnings: list[str] | None = None,
 ) -> None:
     """Codex's MCP servers, from `config.toml` rather than JSON settings layers.
 
@@ -3112,8 +3110,6 @@ def _seed_cache_plugins(
     config_root: Path,
     project_root: Path | None,
     normalize: SourceNormalizer,
-    *,
-    warnings: list[str] | None = None,
 ) -> None:
     """Codex's installed plugins, walking the **cache** as the traversal root.
 
@@ -3192,7 +3188,6 @@ def _seed_cache_plugins(
                         version_dir,
                         name=name,
                         marketplace=marketplace,
-                        version=version_dir.name,
                         plugins=plugins,
                         marketplaces=marketplaces,
                         normalize=normalize,
@@ -3201,13 +3196,10 @@ def _seed_cache_plugins(
 
     # An enable-map entry naming a plugin with nothing on disk is not a node —
     # there is no artifact to inventory — but it is a real discrepancy.
-    for (marketplace, name), entry in sorted(
-        plugins.items(), key=lambda kv: (kv[0][0] or "", kv[0][1])
-    ):
+    for marketplace, name in sorted(plugins, key=lambda key: (key[0] or "", key[1])):
         if (marketplace, name) not in seen:
             key = f"{name}@{marketplace}" if marketplace else name
             graph.record_gap(f"plugin {key} is configured but missing from plugins/cache")
-        _ = entry
 
     _record_codex_rules_coverage(graph, config_root)
 
@@ -3301,7 +3293,6 @@ def _realize_codex_plugin(
     *,
     name: str,
     marketplace: str,
-    version: str,
     plugins: dict,
     marketplaces: dict,
     normalize: SourceNormalizer,
@@ -3517,10 +3508,8 @@ def build_codex_installed_graph(
     _seed_codex_subagents(graph, root, config_root, normalize, project_root)
     _seed_codex_shared_agent_skills(graph, root, shared_root, normalize)
     _record_codex_admin_skills_gap(graph)
-    _seed_cache_plugins(graph, root, config_root, project_root, normalize, warnings=graph.warnings)
-    _seed_codex_mcp_servers(
-        graph, root, config_root, project_root, normalize, warnings=graph.warnings
-    )
+    _seed_cache_plugins(graph, root, config_root, project_root, normalize)
+    _seed_codex_mcp_servers(graph, root, config_root, project_root, normalize)
     _seed_codex_hooks(graph, root, config_root, project_root, normalize)
     _seed_codex_standalone_hooks(graph, root, config_root, project_root, normalize)
     _prune_codex_system_skills(graph, config_root)

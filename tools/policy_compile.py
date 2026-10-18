@@ -373,6 +373,7 @@ def _report(
                     else "allowed"
                 ),
                 "reasons": list(decision.reasons),
+                "rule_paths": list(decision.rule_paths),
             }
             for decision in decisions
         ],

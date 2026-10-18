@@ -424,6 +424,22 @@ def test_a_successful_compile_writes_the_artifact_and_reports_its_digest(tmp_pat
     assert json.loads(output.read_text(encoding="utf-8"))["allowManagedMcpServersOnly"] is True
 
 
+def test_the_report_carries_each_decisions_rule_paths(tmp_path):
+    """Regression for a Codex review finding: `Decision.rule_paths` reached
+    every caller of `compile_endpoint_policy` except the one `openaca policy
+    compile --format json` itself prints, so a report consumer still could
+    not explain a decision without repeating policy matching."""
+    target = _endpoint(tmp_path)
+    (target / ".mcp.json").write_text(
+        '{"mcpServers":{"gh":{"command":"npx","args":["-y","@x/gh"]}}}', encoding="utf-8"
+    )
+
+    report = _compile(target, _BLOCK_MCPS)
+
+    (decision,) = report["decisions"]
+    assert decision["rule_paths"] == ["admission.mcps.default"]
+
+
 # --- the extracted renderer --------------------------------------------------
 
 _REPORT = {

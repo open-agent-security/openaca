@@ -224,6 +224,42 @@ def test_an_explicit_config_dir_matching_the_default_path_still_uses_its_own_fil
     } == {str(root / ".claude.json")}
 
 
+def test_an_interpolated_local_url_blocks_the_shadowed_user_entry_instead_of_falling_through(
+    tmp_path,
+):
+    """Claude Code expands `${VAR}` in a url at load time and activates the
+    entry regardless — even an unresolved reference loads with the literal
+    text, per Claude Code's own docs. The local entry is real and active;
+    this parser just can't normalize its url without that resolution. That
+    must not read as "invalid, fall through to the next scope": selecting
+    the shadowed user-scope entry instead would report policy/posture
+    findings against an endpoint the project never actually connects to."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {"type": "http", "url": "https://user-shadowed.test"},
+                },
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "shared": {"type": "http", "url": "${MCP_URL}/mcp"},
+                        }
+                    },
+                },
+            }
+        )
+    )
+
+    refs = effective_mcp_refs(root, project)
+
+    assert refs == []
+
+
 @pytest.mark.parametrize(
     "entry,selected",
     [

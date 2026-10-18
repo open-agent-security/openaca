@@ -303,7 +303,7 @@ def build_rooted_graph(
     # root so node keys — which become CycloneDX bom-refs — are reproducible.
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
-    # `global_mcp_refs` (ADR-0054's one exception: the default root's legacy
+    # `effective_mcp_refs` (ADR-0054's one exception: the default root's legacy
     # `~/.claude.json`) reads outside `install_root` only when `install_root`
     # IS `~/.claude`, so this extra root only ever matches that file.
     extra_roots = (("home", Path.home()),) if mode == "endpoint" else ()
@@ -784,12 +784,9 @@ def _seed_remote_mcps(
             node = Node(key=occurrence_key(ref, normalize), kind="mcp_server", ref=ref)
             _add_child(graph, target, node)
 
-    # Standalone .mcp.json: user-scoped (<install_root>/.mcp.json) and
-    # project-scoped (<project_root>/.mcp.json) — parity with
-    # _walk_direct_components in claude_install.
+    # Preserve legacy install-root declarations. The native/project resolver
+    # below selects project .mcp.json alongside native local/user entries.
     mcp_paths: list[Path] = [install_root / ".mcp.json"]
-    if project_root is not None:
-        mcp_paths.append(project_root / ".mcp.json")
     for mcp_path in mcp_paths:
         if not mcp_path.is_file():
             continue
@@ -801,7 +798,7 @@ def _seed_remote_mcps(
 
     for ref in _safe_parse(
         graph,
-        lambda _path: claude_install.global_mcp_refs(
+        lambda _path: claude_install.effective_mcp_refs(
             install_root, project_root, config_root_overridden=config_root_overridden
         ),
         install_root / ".claude.json",

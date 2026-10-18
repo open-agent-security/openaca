@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.parsers.claude_install import global_mcp_refs
+from tools.parsers.claude_install import effective_mcp_refs
 
 
 def test_scopes_and_project_key_are_preserved_without_reading_other_projects(tmp_path):
@@ -16,22 +16,24 @@ def test_scopes_and_project_key_are_preserved_without_reading_other_projects(tmp
     (root / ".claude.json").write_text(
         json.dumps(
             {
-                "mcpServers": {"user": {"url": "https://user.test/mcp"}},
+                "mcpServers": {"user": {"type": "http", "url": "https://user.test/mcp"}},
                 "projects": {
                     str(project): {
                         "mcpServers": {"local": {"command": "node", "args": ["local.js"]}}
                     },
-                    "/other": {"mcpServers": {"excluded": {"url": "https://other.test"}}},
+                    "/other": {
+                        "mcpServers": {"excluded": {"type": "http", "url": "https://other.test"}}
+                    },
                 },
             }
         )
     )
-    refs = global_mcp_refs(root, project)
+    refs = effective_mcp_refs(root, project)
     assert {(r.extra["component_path"][-1]["name"], r.extra["claude_mcp_scope"]) for r in refs} == {
         ("user", "user"),
         ("local", "local"),
     }
-    local_ref = refs[1]
+    local_ref = next(ref for ref in refs if ref.extra["claude_mcp_scope"] == "local")
     assert local_ref.source_locator.startswith("$.projects[")
 
 
@@ -48,16 +50,18 @@ def test_a_name_defined_in_both_user_and_local_scope_emits_only_the_local_entry(
         json.dumps(
             {
                 "mcpServers": {
-                    "shared": {"url": "https://user-shadowed.test"},
-                    "user-only": {"url": "https://user-only.test"},
+                    "shared": {"type": "http", "url": "https://user-shadowed.test"},
+                    "user-only": {"type": "http", "url": "https://user-only.test"},
                 },
                 "projects": {
-                    str(project): {"mcpServers": {"shared": {"url": "https://local-wins.test"}}},
+                    str(project): {
+                        "mcpServers": {"shared": {"type": "http", "url": "https://local-wins.test"}}
+                    },
                 },
             }
         )
     )
-    refs = global_mcp_refs(root, project)
+    refs = effective_mcp_refs(root, project)
     by_name = {r.extra["component_path"][-1]["name"]: r for r in refs}
     assert set(by_name) == {"shared", "user-only"}
     assert by_name["shared"].extra["claude_mcp_scope"] == "local"
@@ -76,12 +80,14 @@ def test_local_scope_locator_is_stable_across_machines_but_keeps_the_real_projec
         json.dumps(
             {
                 "projects": {
-                    str(project): {"mcpServers": {"local": {"url": "https://local.test"}}},
+                    str(project): {
+                        "mcpServers": {"local": {"type": "http", "url": "https://local.test"}}
+                    },
                 },
             }
         )
     )
-    (local_ref,) = global_mcp_refs(root, project)
+    (local_ref,) = effective_mcp_refs(root, project)
     assert str(project.resolve()) not in local_ref.source_locator
     assert local_ref.extra["claude_mcp_project_key"] == str(project.resolve())
 
@@ -102,8 +108,8 @@ def test_a_project_disabled_server_is_excluded_from_that_projects_user_scope(tmp
         json.dumps(
             {
                 "mcpServers": {
-                    "kept": {"url": "https://kept.test"},
-                    "disabled-here": {"url": "https://disabled.test"},
+                    "kept": {"type": "http", "url": "https://kept.test"},
+                    "disabled-here": {"type": "http", "url": "https://disabled.test"},
                 },
                 "projects": {
                     str(project): {"disabledMcpServers": ["disabled-here"]},
@@ -112,10 +118,10 @@ def test_a_project_disabled_server_is_excluded_from_that_projects_user_scope(tmp
             }
         )
     )
-    names = {r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, project)}
+    names = {r.extra["component_path"][-1]["name"] for r in effective_mcp_refs(root, project)}
     assert names == {"kept"}
     other_names = {
-        r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, other_project)
+        r.extra["component_path"][-1]["name"] for r in effective_mcp_refs(root, other_project)
     }
     assert other_names == {"kept", "disabled-here"}
 
@@ -134,8 +140,11 @@ def test_a_project_disabled_server_is_excluded_from_its_own_local_scope_too(tmp_
                 "projects": {
                     str(project): {
                         "mcpServers": {
-                            "kept-local": {"url": "https://kept-local.test"},
-                            "disabled-local": {"url": "https://disabled-local.test"},
+                            "kept-local": {"type": "http", "url": "https://kept-local.test"},
+                            "disabled-local": {
+                                "type": "http",
+                                "url": "https://disabled-local.test",
+                            },
                         },
                         "disabledMcpServers": ["disabled-local"],
                     },
@@ -143,7 +152,7 @@ def test_a_project_disabled_server_is_excluded_from_its_own_local_scope_too(tmp_
             }
         )
     )
-    names = {r.extra["component_path"][-1]["name"] for r in global_mcp_refs(root, project)}
+    names = {r.extra["component_path"][-1]["name"] for r in effective_mcp_refs(root, project)}
     assert names == {"kept-local"}
 
 
@@ -155,19 +164,19 @@ def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path
     (root / ".claude.json").write_text(
         json.dumps(
             {
-                "mcpServers": {"server": {"url": "https://example.test"}},
+                "mcpServers": {"server": {"type": "http", "url": "https://example.test"}},
                 "projects": {str(project): {"disabledMcpServers": "not-a-list"}},
             }
         )
     )
     with pytest.raises(ValueError):
-        global_mcp_refs(root, project)
+        effective_mcp_refs(root, project)
 
 
 def test_malformed_selected_native_state_fails_instead_of_becoming_clean(tmp_path):
     (tmp_path / ".claude.json").write_text('{"mcpServers": []}')
     with pytest.raises(ValueError):
-        global_mcp_refs(tmp_path, None)
+        effective_mcp_refs(tmp_path, None)
 
 
 def test_default_install_selects_the_native_global_config_location(tmp_path, monkeypatch):
@@ -175,14 +184,16 @@ def test_default_install_selects_the_native_global_config_location(tmp_path, mon
     root = tmp_path / ".claude"
     root.mkdir()
     for path in (tmp_path / ".claude.json", root / ".claude.json"):
-        path.write_text('{"mcpServers":{"server":{"url":"https://example.test"}}}')
+        path.write_text('{"mcpServers":{"server":{"type": "http", "url":"https://example.test"}}}')
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    assert {r.source_manifest for r in global_mcp_refs(root, None)} == {
+    assert {r.source_manifest for r in effective_mcp_refs(root, None)} == {
         str(tmp_path / ".claude.json")
     }
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root))
     (tmp_path / ".claude.json").write_text("invalid unused file")
-    assert {r.source_manifest for r in global_mcp_refs(root, None)} == {str(root / ".claude.json")}
+    assert {r.source_manifest for r in effective_mcp_refs(root, None)} == {
+        str(root / ".claude.json")
+    }
 
 
 def test_an_explicit_config_dir_matching_the_default_path_still_uses_its_own_file(
@@ -198,14 +209,39 @@ def test_an_explicit_config_dir_matching_the_default_path_still_uses_its_own_fil
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     root = tmp_path / ".claude"
     root.mkdir()
-    (tmp_path / ".claude.json").write_text('{"mcpServers":{"host":{"url":"https://host.test"}}}')
+    (tmp_path / ".claude.json").write_text(
+        '{"mcpServers":{"host":{"type": "http", "url":"https://host.test"}}}'
+    )
     (root / ".claude.json").write_text(
-        '{"mcpServers":{"explicit":{"url":"https://explicit.test"}}}'
+        '{"mcpServers":{"explicit":{"type": "http", "url":"https://explicit.test"}}}'
     )
 
-    assert {r.source_manifest for r in global_mcp_refs(root, None)} == {
+    assert {r.source_manifest for r in effective_mcp_refs(root, None)} == {
         str(tmp_path / ".claude.json")
     }
     assert {
-        r.source_manifest for r in global_mcp_refs(root, None, config_root_overridden=True)
+        r.source_manifest for r in effective_mcp_refs(root, None, config_root_overridden=True)
     } == {str(root / ".claude.json")}
+
+
+@pytest.mark.parametrize(
+    "entry,selected",
+    [
+        ({"url": "https://example.test/mcp"}, False),
+        ({"type": "stdio", "url": "https://example.test/mcp"}, False),
+        ({"type": "sdk", "url": "https://example.test/mcp"}, False),
+        ({"type": "http"}, False),
+        ({"command": "node", "args": "not-an-array"}, False),
+        ({"command": "node", "args": ["server.js"]}, True),
+        ({"type": "stdio", "command": "node", "args": ["server.js"]}, True),
+        ({"type": "http", "url": "https://example.test/mcp"}, True),
+        ({"type": "streamable-http", "url": "https://example.test/mcp"}, True),
+        ({"type": "sse", "url": "https://example.test/mcp"}, True),
+        ({"type": "ws", "url": "wss://example.test/mcp"}, True),
+    ],
+)
+def test_native_transport_requirements_do_not_use_the_generic_url_default(
+    tmp_path, entry, selected
+):
+    (tmp_path / ".claude.json").write_text(json.dumps({"mcpServers": {"test": entry}}))
+    assert bool(effective_mcp_refs(tmp_path, None)) is selected

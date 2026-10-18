@@ -490,9 +490,8 @@ def parse_mcp_servers(
             continue
         locator = f"{locator_prefix}.{server_name}"
         # ADR-0020: URL-bearing entries are remote MCPs and take precedence
-        # over any stdio fields in the same entry. The MCP spec treats
-        # transport as mutually exclusive; favoring URL matches Claude
-        # Code's runtime resolution.
+        # over stdio fields in this permissive declaration parser. Host
+        # selectors validate their own transport requirements first.
         raw_url = entry.get("url")
         if isinstance(raw_url, str) and raw_url:
             remote_ref = _make_remote_mcp_ref(
@@ -747,8 +746,8 @@ def _normalize_remote_identity(url: str) -> str | None:
 def _classify_remote_transport(entry: dict) -> str:
     """Return the transport label for a URL-bearing entry.
 
-    Defaults to "http" when no explicit `type` is provided — matches the
-    common shorthand for plain-URL entries in Claude Code configs.
+    Defaults to "http" for permissive inventory parsing. Host-specific
+    selection validates transport requirements before calling this parser.
     """
     raw_type = entry.get("type")
     if isinstance(raw_type, str) and raw_type:

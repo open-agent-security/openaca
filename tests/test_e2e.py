@@ -2270,9 +2270,11 @@ def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):
     (root / ".claude.json").write_text(
         json.dumps(
             {
-                "mcpServers": {"user": {"url": "https://user.test"}},
+                "mcpServers": {"user": {"type": "http", "url": "https://user.test"}},
                 "projects": {
-                    str(project): {"mcpServers": {"local": {"url": "https://local.test"}}}
+                    str(project): {
+                        "mcpServers": {"local": {"type": "http", "url": "https://local.test"}}
+                    }
                 },
             }
         )
@@ -2297,7 +2299,7 @@ def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):
 
 
 def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_path, monkeypatch):
-    """`~/.claude.json` (`global_mcp_refs`'s home-level file, read only when
+    """`~/.claude.json` (`effective_mcp_refs`'s home-level file, read only when
     the install root IS the default `~/.claude`) sits outside `install_root`,
     so the endpoint normalizer must carry it as a labeled extra root — as
     Codex's own endpoint builder already does for its home-scoped
@@ -2308,7 +2310,7 @@ def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_pat
     fake_home = tmp_path / "home"
     (fake_home / ".claude").mkdir(parents=True)
     (fake_home / ".claude.json").write_text(
-        json.dumps({"mcpServers": {"server": {"url": "https://example.test"}}})
+        json.dumps({"mcpServers": {"server": {"type": "http", "url": "https://example.test"}}})
     )
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
@@ -2333,7 +2335,7 @@ def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file
 ):
     """ADR-0054: a named `--config-dir` must fully specify the scan, even when
     it happens to equal the default `~/.claude` path. `AgentInstance.
-    config_root_overridden` must reach `global_mcp_refs` through discovery →
+    config_root_overridden` must reach `effective_mcp_refs` through discovery →
     `_compose` → `build_rooted_graph` → `_seed_endpoint` so an explicit
     `--config-dir ~/.claude` cannot be mistaken for the unoverridden default
     and pull in the invoking user's home-level `~/.claude.json`."""
@@ -2342,11 +2344,11 @@ def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file
     fake_home = tmp_path / "home"
     (fake_home / ".claude").mkdir(parents=True)
     (fake_home / ".claude.json").write_text(
-        json.dumps({"mcpServers": {"host": {"url": "https://host.test"}}})
+        json.dumps({"mcpServers": {"host": {"type": "http", "url": "https://host.test"}}})
     )
     explicit_root = fake_home / ".claude"
     (explicit_root / ".claude.json").write_text(
-        json.dumps({"mcpServers": {"explicit": {"url": "https://explicit.test"}}})
+        json.dumps({"mcpServers": {"explicit": {"type": "http", "url": "https://explicit.test"}}})
     )
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
@@ -2380,7 +2382,9 @@ def test_e2e_claude_code_enabled_native_insecure_mcp_endpoint_fires_insecure_tra
     root = tmp_path / ".claude"
     root.mkdir(parents=True)
     (root / ".claude.json").write_text(
-        json.dumps({"mcpServers": {"on_remote": {"url": "http://insecure.test/mcp"}}})
+        json.dumps(
+            {"mcpServers": {"on_remote": {"type": "http", "url": "http://insecure.test/mcp"}}}
+        )
     )
 
     result = CliRunner().invoke(
@@ -2407,9 +2411,13 @@ def test_a_server_defined_in_both_local_and_user_native_scope_emits_once(tmp_pat
     (root / ".claude.json").write_text(
         json.dumps(
             {
-                "mcpServers": {"shared": {"url": "https://user-wins-if-unshadowed.test"}},
+                "mcpServers": {
+                    "shared": {"type": "http", "url": "https://user-wins-if-unshadowed.test"}
+                },
                 "projects": {
-                    str(project): {"mcpServers": {"shared": {"url": "https://local-wins.test"}}}
+                    str(project): {
+                        "mcpServers": {"shared": {"type": "http", "url": "https://local-wins.test"}}
+                    }
                 },
             }
         )
@@ -2445,7 +2453,7 @@ def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tm
     user-scope entry (shadowed, so no ref composes for it — see the
     precedence test above) still physically exists in the raw file and must
     not have its headers misattributed to the local ref."""
-    from tools.parsers.claude_install import global_mcp_refs
+    from tools.parsers.claude_install import effective_mcp_refs
     from tools.posture import collect_endpoint_mcp_manifests
 
     root = tmp_path / "config"
@@ -2457,6 +2465,7 @@ def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tm
             {
                 "mcpServers": {
                     "shared": {
+                        "type": "http",
                         "url": "https://user.test",
                         "headers": {"Authorization": "Bearer user-side-token"},
                     }
@@ -2465,6 +2474,7 @@ def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tm
                     str(project): {
                         "mcpServers": {
                             "shared": {
+                                "type": "http",
                                 "url": "https://local.test",
                                 "headers": {"Authorization": "Bearer local-side-token"},
                             }
@@ -2475,10 +2485,149 @@ def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tm
         )
     )
 
-    refs = global_mcp_refs(root, project)
+    refs = effective_mcp_refs(root, project)
     manifests = collect_endpoint_mcp_manifests(root, project, refs)
 
     (manifest,) = [m for _, m in manifests]
     assert manifest["mcpServers"]["shared"]["headers"] == {
         "Authorization": "Bearer local-side-token"
     }
+
+
+@pytest.mark.parametrize(
+    "local,project_entry,disabled,expected",
+    [
+        (None, {"type": "http", "url": "https://project.test/mcp"}, [], "project"),
+        (
+            {"type": "http", "url": "https://local.test/mcp"},
+            {"type": "http", "url": "https://project.test/mcp"},
+            [],
+            "local",
+        ),
+        (
+            {"url": "http://invalid-local.test/mcp"},
+            {"type": "http", "url": "https://project.test/mcp"},
+            [],
+            "project",
+        ),
+        (None, {"type": "http", "url": "http://disabled.test/mcp"}, ["shared"], None),
+        ({"url": "http://invalid-local.test/mcp"}, None, [], "user"),
+    ],
+)
+def test_policy_and_posture_use_the_same_effective_claude_mcp(
+    tmp_path, local, project_entry, disabled, expected
+):
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    state = {"disabledMcpServers": disabled, "mcpServers": {"shared": local} if local else {}}
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"shared": {"type": "http", "url": "https://user.test/mcp"}},
+                "projects": {str(project): state},
+            }
+        )
+    )
+    if project_entry:
+        (project / ".mcp.json").write_text(json.dumps({"mcpServers": {"shared": project_entry}}))
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+            "risk_gates": {"posture": {"rules": ["openaca-posture-insecure-transport"]}},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=project)
+    refs = [c.ref for c in evidence.components if c.ref.extra.get("component_type") == "mcp_server"]
+    assert len(refs) == (0 if expected is None else 1)
+    if expected:
+        assert refs[0].extra["url"] == f"https://{expected}.test/mcp"
+    assert evidence.posture_matches == ()
+    assert evidence.unmapped_posture == ()
+
+
+def test_invalid_native_mcp_entries_do_not_become_policy_subjects(tmp_path):
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    (tmp_path / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "missing-type": {"url": "http://missing-type.test/mcp"},
+                    "valid": {"type": "http", "url": "https://valid.test/mcp"},
+                }
+            }
+        )
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=tmp_path, project=None)
+    assert [
+        c.ref.extra["url"]
+        for c in evidence.components
+        if c.ref.extra.get("component_type") == "mcp_server"
+    ] == ["https://valid.test/mcp"]
+
+
+@pytest.mark.parametrize("local_override", [False, True])
+def test_selected_project_mcp_retains_posture_fields_without_reviving_shadowed_entries(
+    tmp_path, local_override
+):
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    config, project = tmp_path / "config", tmp_path / "project"
+    config.mkdir()
+    project.mkdir()
+    (project / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {
+                        "type": "http",
+                        "url": "http://project.test/mcp",
+                        "autoApprove": ["read"],
+                        "headers": {"Authorization": "Bearer fixture-only"},
+                    }
+                }
+            }
+        )
+    )
+    if local_override:
+        (config / ".claude.json").write_text(
+            json.dumps(
+                {
+                    "projects": {
+                        str(project): {
+                            "mcpServers": {
+                                "shared": {"type": "http", "url": "https://local.test/mcp"}
+                            }
+                        }
+                    }
+                }
+            )
+        )
+    rules = [
+        "openaca-posture-insecure-transport",
+        "openaca-posture-mcp-header-credential",
+        "openaca-posture-mcp-auto-approve",
+    ]
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+            "risk_gates": {"posture": {"rules": rules}},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=config, project=project)
+    assert {rule for _, rule in evidence.posture_matches} == (
+        set() if local_override else set(rules)
+    )
+    assert evidence.unmapped_posture == ()

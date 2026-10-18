@@ -230,8 +230,26 @@ Retain those fields in a serialized BOM.
 Do not merge or parse an unused alternative global file.
 Treat invalid selected maps as incomplete evidence.
 
-Apply native MCP precedence: local, then project, then user.
-Honor the selected project's `disabledMcpServers` entries.
+Select native local, project `.mcp.json`, and native user entries through one resolver.
+Apply precedence by server name: local, then project, then user.
+Select the whole entry; do not merge fields across scopes.
+Honor the selected project's `disabledMcpServers` entries in all three scopes.
+Skip invalid entries before selection, so a valid lower scope can supply the server.
+
+Require a command for stdio entries and an explicit supported type for URL entries.
+Accept `http`, `streamable-http`, `sse`, and `ws` URL transports.
+A URL without a type does not become a policy subject.
+Keep valid sibling entries when another entry is invalid.
+Malformed configuration containers still produce incomplete evidence.
+
+Derive native and project posture inputs from the selected refs.
+Do not reread all project entries as active posture inputs.
+The generic MCP parser remains permissive for declared inventory and other hosts.
+See [ADR-0077](../adrs/0077-select-claude-mcp-policy-evidence.md) for this boundary.
+
+This resolver selects configured entries; it does not certify a live connection or project approval.
+Session-specific overrides, workspace trust, and connector discovery remain outside this selection contract.
+Legacy settings-based inventory and plugin selection retain their existing contracts.
 Read local-scope header credentials from that scope's own configuration.
 Include native entries in component posture checks.
 The source paths and project keys were checked against Claude Code 2.1.302 and its native `mcp add` commands.

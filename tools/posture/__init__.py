@@ -366,29 +366,10 @@ def collect_endpoint_mcp_manifests(
     project_root: Path | None,
     refs: list[ComponentRef],
 ) -> list[tuple[Path, dict]]:
-    """Collect MCP manifests that belong to the resolved endpoint inventory.
+    """Use composed native/project refs and the selected plugin sources.
 
-    Endpoint mode is install-state-aware. The Claude config directory also
-    contains marketplace catalogs and stale cache versions, so recursively
-    walking the whole directory would report posture findings for components
-    that are not active on the endpoint.
-
-    Being install-state-aware at the plugin level is not enough on its own:
-    the walk beneath an active plugin still returns every fixed MCP filename
-    under it, so an unrelated `examples/mcp.json` beside the plugin's real
-    `.mcp.json` comes back even though composition selected only the latter.
-    ADR-0065 rejected re-walking configuration for posture precisely because
-    it reports components the agent did not select, so the walk's output is
-    kept to the sources that carry a composed ref. The direct config-dir and
-    project paths below are added regardless: they are the endpoint's own
-    settings files, not candidates composition chose between.
-
-    Native `.claude.json` user/local MCP maps (`claude_install.global_mcp_refs`)
-    live outside every path above — not a walked filename, not a plugin
-    install path, not a settings file — so their composed refs are
-    reconstructed here the same way Cursor's and Codex's collectors already
-    derive from refs (`_mcp_manifests_from_refs`), or an insecure native
-    server composes into the inventory with no `insecure_transport` finding.
+    Reconstruct native/project entries from refs so posture cannot revive a
+    disabled, invalid or shadowed declaration. Credentials remain transient.
     """
     roots: list[Path] = []
     for ref in refs:
@@ -411,8 +392,6 @@ def collect_endpoint_mcp_manifests(
         config_dir / "mcp.json",
         config_dir / "claude_desktop_config.json",
     ]
-    if project_root is not None:
-        direct_paths.append(project_root / ".mcp.json")
 
     for path in direct_paths:
         if not path.is_file():
@@ -767,7 +746,7 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
     A native Claude `claude_mcp_scope: "local"` ref's real entry lives under
     `projects[claude_mcp_project_key].mcpServers`, not the file's top-level
     `mcpServers` `_read_mcp_auth_source` reads — the same name can exist at
-    both (that's the shadowing `global_mcp_refs` itself resolves for which
+    both (that's the shadowing `effective_mcp_refs` itself resolves for which
     ref composes), so a naive top-level lookup can attribute the wrong
     (shadowed) scope's headers, or miss a local-only server's headers
     entirely. Such a ref's auth source is read from its own scope instead.
@@ -799,6 +778,8 @@ def _mcp_manifests_from_refs(refs: list[ComponentRef]) -> list[tuple[Path, dict]
             for key in ("headers", "http_headers"):
                 if isinstance(original.get(key), dict):
                     entry[key] = original[key]
+            if ref.extra.get("claude_mcp_scope") == "project" and "autoApprove" in original:
+                entry["autoApprove"] = original["autoApprove"]
         url = (ref.extra or {}).get("url")
         if isinstance(url, str):
             entry["url"] = url
@@ -953,7 +934,7 @@ def _read_mcp_auth_source(path: Path) -> dict:
 
 def _read_native_local_auth_source(path: Path, project_key: str) -> dict:
     """The literal `projects[project_key].mcpServers` map in a native
-    `.claude.json`, mirroring `claude_install.global_mcp_refs`'s own lookup —
+    `.claude.json`, mirroring `claude_install.effective_mcp_refs`'s own lookup —
     unlike `_read_mcp_auth_source`, which only ever reads the file's
     top-level `mcpServers` (the "user" scope)."""
     try:

@@ -21,6 +21,8 @@ against the rules in effect at the time.
 
 ## Active
 
+- [ADR-0077 — Select Claude MCP policy evidence before evaluation](0077-select-claude-mcp-policy-evidence.md): select valid native local, project, and user entries once. Use the selected refs for posture. Keep generic declaration parsing permissive.
+
 - [0069](0069-defer-native-windows-support.md) — **Defer native Windows support.** Target hosts are macOS and Linux; Windows-only runtime compatibility is deferred without changing existing input coverage. Read before adding platform fallbacks or treating Windows parity as a release requirement.
 
 - [ADR-0064 — Report vulnerability lookup gaps without aborting compilation](0064-report-vulnerability-coverage-gaps.md): known vulnerability matches still produce restrictions when other components lack advisory coordinates. Reports expose every coverage gap; supported lookup failures and unevaluable matched severities still preserve the prior artifact by failing compilation.

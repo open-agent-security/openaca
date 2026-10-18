@@ -180,6 +180,42 @@ def test_disabled_mcp_servers_does_not_affect_the_project_scope(tmp_path):
     assert ref.extra["url"] == "https://project.test/mcp"
 
 
+def test_a_valid_entry_the_generic_parser_cannot_represent_still_blocks_fallthrough(
+    tmp_path,
+):
+    """`npx -c '<cmd>'` is valid per npm's own docs, but the generic,
+    kind-neutral parser's npx branch has no fallback for it and silently
+    returns no ref — not a ValueError, just an empty parse. A valid entry
+    must reserve its name as soon as it is seen, before the generic parser
+    ever runs, or this failure mode (parse succeeds with zero refs, not an
+    exception) would let a same-named lower-scope entry be selected in its
+    place exactly like an invalid one would."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {"type": "http", "url": "https://user-shadowed.test"},
+                },
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "shared": {"command": "npx", "args": ["-c", "node server.js"]},
+                        }
+                    },
+                },
+            }
+        )
+    )
+
+    refs = effective_mcp_refs(root, project)
+
+    assert refs == []
+
+
 def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path):
     root = tmp_path / "config"
     root.mkdir()

@@ -312,13 +312,15 @@ def effective_mcp_refs(
         )
     maps.append((document.get("mcpServers", {}), path, "$.mcpServers", "user"))
     selected: dict[str, ComponentRef] = {}
-    # Claude Code expands `${VAR}` in a url at load time and activates the
-    # entry regardless (even an unset reference loads with the literal
-    # text) — it is not invalid, only unresolvable by this static parser.
-    # Claiming the name here, without emitting a ref for it, keeps a
-    # same-named lower-scope entry from being selected as if it were the
-    # real active one.
-    unresolved: set[str] = set()
+    # A valid entry (per Claude Code's own rules, not this generic parser's
+    # narrower understanding of a command/url) reserves its name as soon as
+    # it is seen, before the generic parser ever runs — regardless of
+    # whether that parser then raises (e.g. an interpolated url it can't
+    # normalize), or silently returns no ref for a form it doesn't
+    # recognize (e.g. `npx -c '<cmd>'`, valid per npm's own docs). Either
+    # way the entry is real and active; claiming the name here keeps a
+    # same-named lower-scope entry from being selected in its place.
+    claimed: set[str] = set()
     for servers, source, locator, scope in maps:
         if not isinstance(servers, dict):
             raise ValueError("MCP servers must be an object")
@@ -327,14 +329,11 @@ def effective_mcp_refs(
             # (disabledMcpjsonServers/enabledMcpjsonServers) cover disjoint
             # server sets; applying it to the "project" scope would drop an
             # active project server that merely shares a name.
-            if (scope != "project" and name in disabled) or name in selected or name in unresolved:
+            if (scope != "project" and name in disabled) or name in claimed:
                 continue
             if not _valid_claude_mcp_entry(entry):
                 continue
-            url = entry.get("url")
-            if isinstance(url, str) and mcp_json._has_interpolation(url):
-                unresolved.add(name)
-                continue
+            claimed.add(name)
             try:
                 parsed = mcp_json.parse_mcp_servers(
                     {name: entry}, str(source), locator, strict=True

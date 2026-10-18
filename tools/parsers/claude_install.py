@@ -323,7 +323,11 @@ def effective_mcp_refs(
         if not isinstance(servers, dict):
             raise ValueError("MCP servers must be an object")
         for name, entry in servers.items():
-            if name in disabled or name in selected or name in unresolved:
+            # disabledMcpServers and the project .mcp.json approval lists
+            # (disabledMcpjsonServers/enabledMcpjsonServers) cover disjoint
+            # server sets; applying it to the "project" scope would drop an
+            # active project server that merely shares a name.
+            if (scope != "project" and name in disabled) or name in selected or name in unresolved:
                 continue
             if not _valid_claude_mcp_entry(entry):
                 continue

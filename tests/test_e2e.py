@@ -2510,7 +2510,10 @@ def test_a_native_local_scope_refs_header_credential_reads_from_its_own_scope(tm
             [],
             "project",
         ),
-        (None, {"type": "http", "url": "http://disabled.test/mcp"}, ["shared"], None),
+        # disabledMcpServers and the project .mcp.json approval lists cover
+        # disjoint server sets (Codex review, PR #229): listing "shared"
+        # there must not drop the project-scope entry.
+        (None, {"type": "http", "url": "https://project.test/mcp"}, ["shared"], "project"),
         ({"url": "http://invalid-local.test/mcp"}, None, [], "user"),
     ],
 )

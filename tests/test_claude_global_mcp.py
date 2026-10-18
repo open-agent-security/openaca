@@ -156,6 +156,30 @@ def test_a_project_disabled_server_is_excluded_from_its_own_local_scope_too(tmp_
     assert names == {"kept-local"}
 
 
+def test_disabled_mcp_servers_does_not_affect_the_project_scope(tmp_path):
+    """`disabledMcpServers` and the project `.mcp.json` approval lists
+    (`disabledMcpjsonServers`/`enabledMcpjsonServers`) cover disjoint server
+    sets. Listing a name in `disabledMcpServers` must not drop that name's
+    entry in the project's own `.mcp.json` — an active, higher-precedence
+    project server would otherwise disappear from evidence for no reason
+    Claude Code itself recognizes."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps({"projects": {str(project): {"disabledMcpServers": ["shared"]}}})
+    )
+    (project / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"shared": {"type": "http", "url": "https://project.test/mcp"}}})
+    )
+
+    (ref,) = effective_mcp_refs(root, project)
+
+    assert ref.extra["claude_mcp_scope"] == "project"
+    assert ref.extra["url"] == "https://project.test/mcp"
+
+
 def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path):
     root = tmp_path / "config"
     root.mkdir()

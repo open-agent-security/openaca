@@ -233,7 +233,8 @@ Treat invalid selected maps as incomplete evidence.
 Select native local, project `.mcp.json`, and native user entries through one resolver.
 Apply precedence by server name: local, then project, then user.
 Select the whole entry; do not merge fields across scopes.
-Honor the selected project's `disabledMcpServers` entries in all three scopes.
+Honor the selected project's `disabledMcpServers` entries in the local and user scopes.
+A project `.mcp.json` entry uses a different approval list. The disable list does not control it.
 Skip invalid entries before selection, so a valid lower scope can supply the server.
 
 Require a command for stdio entries and an explicit supported type for URL entries.

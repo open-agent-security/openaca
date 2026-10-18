@@ -353,10 +353,13 @@ def _valid_claude_mcp_entry(entry: Any) -> bool:
         return False
     transport = entry.get("type", "stdio")
     if transport == "stdio":
+        args = entry.get("args", [])
         return (
             not entry.get("url")
             and isinstance(entry.get("command"), str)
             and bool(entry["command"])
+            and isinstance(args, list)
+            and all(isinstance(arg, str) for arg in args)
         )
     return (
         transport in ("http", "sse", "ws", "streamable-http")

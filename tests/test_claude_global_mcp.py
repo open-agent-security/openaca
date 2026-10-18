@@ -216,6 +216,40 @@ def test_a_valid_entry_the_generic_parser_cannot_represent_still_blocks_fallthro
     assert refs == []
 
 
+def test_a_malformed_higher_scope_entry_still_lets_a_lower_scope_entry_through(tmp_path):
+    """Regression: claiming a name before the generic parser runs must not
+    extend to an entry that is genuinely malformed, only to one Claude Code
+    would actually load. A stdio entry with a non-array `args` fails strict
+    parsing, but `_valid_claude_mcp_entry` must reject it up front so the
+    name is never claimed — otherwise a malformed local entry would block a
+    perfectly valid, lower-precedence user entry from ever being selected."""
+    root = tmp_path / "config"
+    root.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    (root / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shared": {"type": "http", "url": "https://user-wins.test"},
+                },
+                "projects": {
+                    str(project): {
+                        "mcpServers": {
+                            "shared": {"command": "node", "args": "not-an-array"},
+                        }
+                    },
+                },
+            }
+        )
+    )
+
+    (ref,) = effective_mcp_refs(root, project)
+
+    assert ref.extra["claude_mcp_scope"] == "user"
+    assert ref.extra["url"] == "https://user-wins.test"
+
+
 def test_malformed_disabled_mcp_servers_fails_instead_of_becoming_clean(tmp_path):
     root = tmp_path / "config"
     root.mkdir()

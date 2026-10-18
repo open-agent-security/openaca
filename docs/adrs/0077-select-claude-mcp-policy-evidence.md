@@ -24,7 +24,8 @@ Claude Code 2.1.302 probes confirm native source locations and selection of vali
 Use one Claude resolver for native local, project `.mcp.json`, and native user entries.
 Select valid entries by server name in that precedence order.
 Use the whole winning entry, without merging fields.
-Apply the selected project's disable list to all three scopes.
+Apply the selected project's disable list to the local and user scopes.
+A project `.mcp.json` entry uses a different approval list. The disable list does not control it.
 Skip invalid entries without suppressing their valid siblings or lower-scope alternatives.
 Malformed containers still report incomplete evidence.
 

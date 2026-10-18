@@ -2330,6 +2330,39 @@ def test_default_root_legacy_claude_json_keys_by_label_not_absolute_path(tmp_pat
     assert str(fake_home) not in mcp_nodes[0].key
 
 
+def test_an_explicit_config_dir_equal_to_home_keys_by_its_own_root_label(tmp_path, monkeypatch):
+    """The `home` extra root exists only to label the default root's
+    external `~/.claude.json`. An explicit `--config-dir` that happens to
+    equal `$HOME` itself must not share that root's path with "home" —
+    `_make_normalizer`'s stable sort would otherwise key every ordinary
+    file under it as `home/...` instead of `claude-code/...`, making its
+    bom-refs depend on where that root is mounted (Codex review, PR #229)."""
+    from tools.agent_kinds import DiscoveryContext, build_agent_graph, discover_agents
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(parents=True)
+    (fake_home / "settings.json").write_text(json.dumps({"mcpServers": {}}))
+    (fake_home / "skills" / "deploy").mkdir(parents=True)
+    (fake_home / "skills" / "deploy" / "SKILL.md").write_text(
+        "---\nname: deploy\n---\nbody\n", encoding="utf-8"
+    )
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr("tools.agent_kinds.claude_code.Path.home", lambda: fake_home)
+    monkeypatch.setattr("tools.graph_build.Path.home", lambda: fake_home)
+
+    (agent,) = [
+        a
+        for a in discover_agents(DiscoveryContext(source="installed", config_dir=fake_home))
+        if a.kind_id == "claude-code"
+    ]
+    graph = build_agent_graph(agent)
+
+    skill_nodes = [n for n in graph.nodes.values() if n.kind == "skill" and n.ref]
+    assert len(skill_nodes) == 1
+    assert skill_nodes[0].key.startswith("claude-code/skills/deploy/SKILL.md#")
+
+
 def test_explicit_config_dir_matching_the_default_path_never_reads_the_home_file(
     tmp_path, monkeypatch
 ):

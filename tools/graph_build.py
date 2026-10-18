@@ -17,6 +17,7 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -305,8 +306,18 @@ def build_rooted_graph(
     # from the same scan root; they're separate concerns threaded in parallel.
     # `effective_mcp_refs` (ADR-0054's one exception: the default root's legacy
     # `~/.claude.json`) reads outside `install_root` only when `install_root`
-    # IS `~/.claude`, so this extra root only ever matches that file.
-    extra_roots = (("home", Path.home()),) if mode == "endpoint" else ()
+    # IS the unoverridden default `~/.claude` — the same condition it checks
+    # itself. An explicit `--config-dir` that happens to equal `$HOME` would
+    # otherwise share this root's own path with "home", and the stable sort
+    # in `_make_normalizer` would key every ordinary file under it as
+    # `home/...` instead of `<root_label>/...`, making bom-refs depend on
+    # where that root is mounted.
+    is_default_root = (
+        not config_root_overridden
+        and not os.environ.get("CLAUDE_CONFIG_DIR")
+        and Path(target).resolve() == (Path.home() / ".claude").resolve()
+    )
+    extra_roots = (("home", Path.home()),) if mode == "endpoint" and is_default_root else ()
     normalize = _make_normalizer(
         mode, Path(target), Path(target), project_root, root_label, extra_roots=extra_roots
     )

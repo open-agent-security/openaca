@@ -141,6 +141,7 @@ class Decision:
     blocked: bool
     reasons: tuple[str, ...]
     risk_reasons: tuple[str, ...] = ()
+    rule_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -258,14 +259,19 @@ def apply_risk_gates(
             continue
         subject_index = _subject_index_for_ref(ref, resolved)
         if subject_index is not None:
-            _block_subject(decisions, subject_index, f"vulnerability {advisory_id}")
+            _block_subject(
+                decisions,
+                subject_index,
+                f"vulnerability {advisory_id}",
+                "risk_gates.vulnerabilities",
+            )
 
     for ref, rule_id in posture_matches:
         if rule_id not in policy.risk_gates.posture_rule_ids:
             continue
         subject_index = _subject_index_for_ref(ref, resolved)
         if subject_index is not None:
-            _block_subject(decisions, subject_index, f"posture {rule_id}")
+            _block_subject(decisions, subject_index, f"posture {rule_id}", "risk_gates.posture")
 
     return _component_decisions(resolved, decisions)
 
@@ -501,13 +507,19 @@ def _admission_decision(policy: Policy, subject: PolicySubject) -> Decision:
             controlled_by_plugin=False,
             blocked=blocked,
             reasons=(f"skills default: {policy.skills_default}",),
+            rule_paths=("admission.skills.default",),
         )
     rule = policy.mcps if category == "mcps" else policy.plugins
-    matches = _matching_targets(subject.ref, rule)
-    blocked = any(state == "blocked" for state in matches) or (
+    matches: list[tuple[str, str]] = []
+    for state, targets in (("allowed", rule.allowed), ("blocked", rule.blocked)):
+        for index, target in enumerate(targets):
+            if _target_matches(subject.ref, target):
+                matches.append((state, f"admission.{category}.{state}[{index}]"))
+                break
+    blocked = any(state == "blocked" for state, _ in matches) or (
         not matches and rule.default == "blocked"
     )
-    reasons = tuple(f"admission {state}" for state in matches) or (
+    reasons = tuple(f"admission {state}" for state, _ in matches) or (
         f"{category} default: {rule.default}",
     )
     return Decision(
@@ -517,16 +529,11 @@ def _admission_decision(policy: Policy, subject: PolicySubject) -> Decision:
         controlled_by_plugin=False,
         blocked=blocked,
         reasons=reasons,
+        rule_paths=tuple(
+            path for state, path in matches if state == ("blocked" if blocked else "allowed")
+        )
+        or (f"admission.{category}.default",),
     )
-
-
-def _matching_targets(ref: ComponentRef, rule: AdmissionRule) -> list[AdmissionDefault]:
-    result: list[AdmissionDefault] = []
-    if any(_target_matches(ref, target) for target in rule.allowed):
-        result.append("allowed")
-    if any(_target_matches(ref, target) for target in rule.blocked):
-        result.append("blocked")
-    return result
 
 
 def _target_matches(ref: ComponentRef, target: McpTarget | PluginTarget) -> bool:
@@ -672,12 +679,15 @@ def _component_decisions(
                 blocked=subject_decision.blocked,
                 reasons=reasons,
                 risk_reasons=subject_decision.risk_reasons,
+                rule_paths=subject_decision.rule_paths,
             )
         )
     return result
 
 
-def _block_subject(decisions: list[Decision], subject_index: int, reason: str) -> None:
+def _block_subject(
+    decisions: list[Decision], subject_index: int, reason: str, rule_path: str
+) -> None:
     current = decisions[subject_index]
     decisions[subject_index] = Decision(
         ref=current.ref,
@@ -687,4 +697,7 @@ def _block_subject(decisions: list[Decision], subject_index: int, reason: str) -
         blocked=True,
         reasons=(*current.reasons, reason),
         risk_reasons=(*current.risk_reasons, reason),
+        rule_paths=tuple(
+            dict.fromkeys((*(current.rule_paths if current.blocked else ()), rule_path))
+        ),
     )

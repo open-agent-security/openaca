@@ -39,7 +39,12 @@ def validate(policy_path: Path) -> None:
 
 @main.command()
 @click.argument("policy_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--target", type=click.Path(file_okay=False, path_type=Path), required=True)
+@click.option(
+    "--target",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Claude config directory to scan. Omit to use Claude's default: "
+    "$CLAUDE_CONFIG_DIR, else ~/.claude plus ~/.claude.json.",
+)
 @click.option("--project", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--host", type=click.Choice(["claude"]), required=True)
 @click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
@@ -48,7 +53,7 @@ def validate(policy_path: Path) -> None:
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
 def compile(
     policy_path: Path,
-    target: Path,
+    target: Path | None,
     project: Path | None,
     host: str,
     output: Path | None,

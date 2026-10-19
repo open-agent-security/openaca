@@ -190,6 +190,7 @@ restriction.
 
 ```text
 openaca policy validate policy.yaml
+openaca policy compile policy.yaml --host claude --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --project . --output managed-settings.json
 openaca policy compile policy.yaml --target ~/.claude --host claude --dry-run
@@ -205,7 +206,11 @@ host-specific artifact. There is no separate public `check` command: an
 endpoint scan is the evidence-gathering operation.
 
 `--target` is the endpoint's agent configuration location to scan. It is not
-the system-managed settings location. `--managed-settings-dir` separately
+the system-managed settings location. `--target` is optional. Without it,
+compilation uses Claude's default discovery. That is `$CLAUDE_CONFIG_DIR` when
+it is set, else `~/.claude` with the home-level `~/.claude.json`. An explicit
+`--target` reads `.claude.json` only in that directory, even when it names
+`~/.claude`. `--managed-settings-dir` separately
 selects the host directory whose existing managed settings files are inspected
 for generated-key collisions; it defaults to Claude's operating-system-specific
 system directory. An absent directory has no file-based policy to collide with;
@@ -225,7 +230,7 @@ current directory.
 Inventory the native user and project-local MCP maps in `.claude.json`.
 An explicit `--config-dir` or `CLAUDE_CONFIG_DIR` selects the file in that directory.
 Default discovery selects the home-level file only when no root override applies.
-Use `collect_policy_evidence(policy, target=None, project=...)` for that default discovery.
+Omit `--target`, or use `collect_policy_evidence(policy, target=None, project=...)`, for that default discovery.
 Pass a path for an explicit root.
 A named root retains its isolation even when it equals the default pathname.
 

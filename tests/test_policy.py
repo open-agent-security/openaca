@@ -1511,6 +1511,25 @@ def test_policy_compile_fails_when_no_agent_is_installed_at_the_target(tmp_path)
     assert result.output == f"Error: no installed agent found at {target}\n"
 
 
+def test_policy_compile_without_target_names_the_missing_default_root(tmp_path, monkeypatch):
+    default_root = tmp_path / "config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(default_root))
+    args = [
+        "compile",
+        str(_policy_file(tmp_path, _ADMIT_ALL)),
+        "--host",
+        "claude",
+        "--managed-settings-dir",
+        str(tmp_path / "managed"),
+        "--dry-run",
+    ]
+
+    result = CliRunner().invoke(policy_main, args)
+
+    assert result.exit_code == 1
+    assert result.output == f"Error: no installed agent found at {default_root}\n"
+
+
 def test_policy_compile_fails_on_an_incomplete_inventory(tmp_path):
     """A malformed manifest under the target makes `build_agent_graph` warn, and
     an incomplete inventory would otherwise be evaluated as if the missing

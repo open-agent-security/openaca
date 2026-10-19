@@ -33,6 +33,7 @@ from tools.agent_kinds import (
     discover_agents,
     kind_for,
 )
+from tools.agent_kinds.claude_code import resolve_config_root
 from tools.atomic_write import write_new_temp_file
 from tools.component_ref import ComponentRef
 from tools.graph import Graph
@@ -114,7 +115,7 @@ def collect_policy_evidence(
 def compile_endpoint_policy(
     policy: Policy,
     *,
-    target: Path,
+    target: Path | None,
     project: Path | None,
     output: Path | None,
     managed_settings_dir: Path | None,
@@ -200,11 +201,12 @@ def _evaluate_endpoint(
     list[tuple[ComponentRef, str]],
     list[str],
 ]:
-    # `kind_id` is pinned, not left open: the policy compiler targets a named
-    # root via `--target` and compiles Claude-managed settings (`--host claude`
-    # is a required Choice). Open discovery would additionally return every
-    # other registered kind resolved at ITS own root — Cursor ignores
-    # `config_dir` entirely (ADR-0054) — so a compile aimed at one directory
+    # `kind_id` is pinned, not left open: the policy compiler targets one Claude
+    # root (`--target`, or Claude's default when omitted) and compiles
+    # Claude-managed settings (`--host claude` is a required Choice). Open
+    # discovery would additionally return every other registered kind resolved
+    # at ITS own root — Cursor ignores `config_dir` entirely (ADR-0054) — so a
+    # compile aimed at one directory
     # would silently pull in components from the invoking user's home.
     agents = discover_agents(
         DiscoveryContext(
@@ -215,7 +217,7 @@ def _evaluate_endpoint(
         )
     )
     if not agents:
-        raise PolicyEvaluationError(f"no installed agent found at {target}")
+        raise PolicyEvaluationError(f"no installed agent found at {resolve_config_root(target)}")
 
     components: list[EndpointComponent] = []
     findings: list[tuple[ComponentRef, str]] = []

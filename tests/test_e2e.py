@@ -2694,3 +2694,50 @@ def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
     )
     caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
     assert {c["name"] for c in caps} == {"shell_exec"}
+
+
+def test_policy_compile_without_target_reads_the_default_root_and_home_file(tmp_path, monkeypatch):
+    """Omitting `--target` uses Claude's default discovery, so a server that
+    `claude mcp add --scope user` wrote to `~/.claude.json` is a policy subject.
+    Naming the same `~/.claude` root keeps ADR-0054 isolation and omits it."""
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"native": {"type": "http", "url": "https://native.test/mcp"}}})
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "admission": {
+                    category: {"default": "allowed"} for category in ("mcps", "plugins", "skills")
+                },
+            }
+        )
+    )
+
+    def compiled_components(*target_args: str) -> set[str]:
+        result = CliRunner().invoke(
+            policy_main,
+            [
+                "compile",
+                str(policy_path),
+                "--host",
+                "claude",
+                *target_args,
+                "--dry-run",
+                "--format",
+                "json",
+                "--managed-settings-dir",
+                str(tmp_path / "managed"),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        report = json.loads(result.stdout.splitlines()[0])
+        return {decision["component"] for decision in report["decisions"]}
+
+    assert compiled_components() == {"mcp-remote/native.test/mcp"}
+    assert compiled_components("--target", str(home / ".claude")) == set()

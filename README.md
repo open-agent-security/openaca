@@ -153,9 +153,13 @@ device-management tool installs it into Claude Code's system settings directory.
 
 ```bash
 openaca policy validate policy.yaml
-openaca policy compile policy.yaml --target "$HOME/.claude" --host claude --output /tmp/50-openaca-policy.json
+openaca policy compile policy.yaml --host claude --output /tmp/50-openaca-policy.json
 sudo install -m 644 /tmp/50-openaca-policy.json "/Library/Application Support/ClaudeCode/managed-settings.d/50-openaca-policy.json"
 ```
+
+Without `--target`, compilation scans Claude's default configuration. That is
+`$CLAUDE_CONFIG_DIR` when it is set. Otherwise it is `~/.claude` and the MCP
+servers in `~/.claude.json`. Pass `--target <dir>` to scan only that directory.
 
 The current Claude target can enforce exact MCP admission, explicit plugin
 blocks, and a category-wide block on standalone skills. It does not provide a

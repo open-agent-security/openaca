@@ -63,7 +63,7 @@
                   "required": ["name", "value"],
                   "properties": {
                     "name": {"const": "openaca:schema_version"},
-                    "value": {"const": "0.5"}
+                    "value": {"enum": ["0.5", "0.6"]}
                   }
                 }
               }
@@ -92,7 +92,7 @@
   "$defs": {
     "schemaVersionRule": {
       "if": {"properties": {"name": {"const": "openaca:schema_version"}}, "required": ["name"]},
-      "then": {"properties": {"value": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5"]}}}
+      "then": {"properties": {"value": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"]}}}
     },
     "targetTypeRule": {
       "if": {"properties": {"name": {"const": "openaca:target_type"}}, "required": ["name"]},

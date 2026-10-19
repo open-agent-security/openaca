@@ -11,10 +11,11 @@ The external interchange format is CycloneDX JSON. OpenACA emits CycloneDX with
 OpenACA-owned metadata in `properties[]` entries whose names start with
 `openaca:`.
 
-The current OpenACA Agent BOM schema version is `0.5`. It roots the document on
-the agent rather than the place it was scanned from (ADR-0044): `metadata.component`
-is the agent, and `bom-ref` is the exact occurrence key (ADR-0042). `openaca bom
-lint` accepts `0.1` through `0.5`; the emitter produces `0.5` for every
+The current OpenACA Agent BOM schema version is `0.6`. Since `0.5`, it roots the
+document on the agent rather than the place it was scanned from (ADR-0044):
+`metadata.component` is the agent, and `bom-ref` is the exact occurrence key
+(ADR-0042). `0.6` adds the native Claude MCP scope properties (ADR-0077). `openaca
+bom lint` accepts `0.1` through `0.6`; the emitter produces `0.6` for every
 agent-rooted document. The one exception is a graphless call, which produces no
 `metadata.component` at all, emits the pre-`0.5` shape and stamps it `0.4` to
 match.
@@ -39,7 +40,7 @@ openaca bom lint agent.bom.json
       }
     ],
     "properties": [
-      {"name": "openaca:schema_version", "value": "0.5"}
+      {"name": "openaca:schema_version", "value": "0.6"}
     ],
     "component": {
       "type": "application",
@@ -59,7 +60,7 @@ openaca bom lint agent.bom.json
 
 ## The document's subject is one agent
 
-At `0.5` a BOM describes one **agent** — one runtime plus the composed context it
+From `0.5` a BOM describes one **agent** — one runtime plus the composed context it
 loads — not one place (ADR-0044). `metadata.component` *is* that agent: its
 `bom-ref` is `root/<kind>` (or `root/<kind>/<agent_id>` for a kind that can have
 more than one agent in one place), and its `name` is the agent's human-readable
@@ -189,6 +190,8 @@ suffix derived from the component observation fields.
 | `openaca:scope` | Component scope from `ComponentRef.scope`. |
 | `openaca:source_manifest` | Manifest or file path where the component was observed. |
 | `openaca:source_locator` | Locator inside the source manifest. |
+| `openaca:claude_mcp_scope` | The native Claude MCP scope, `local` or `user`, of an MCP server read from `.claude.json` (ADR-0077). **Absent** on every other component. Added in `0.6`. |
+| `openaca:claude_mcp_project_key` | The `projects` key in `.claude.json` that holds a `local`-scope MCP server. Evidence only: the `source_locator` uses a fixed `<project>` placeholder, so the `bom-ref` stays machine-independent. Added in `0.6`. |
 | `openaca:source_provenance` | JSON-encoded source provenance recovered from lockfiles or symlink targets. |
 | `openaca:capabilities` | JSON-encoded list of capability descriptors (closed taxonomy). Component descriptor, not a finding (ADR-0041). |
 | `openaca:capability_coverage` | Whether a capability-reading mechanism applied to this component: `unknown` (none did), `partial`, or `complete`. Derived from mechanism applicability, **never** from whether the resulting capability list is empty — a covered component that declares none of the taxonomy is `partial` with an empty list, which is a real answer and not the same claim as `unknown` (ADR-0041 principle 2). Component descriptor, not a finding. |
@@ -196,7 +199,7 @@ suffix derived from the component observation fields.
 ### Read for stored documents, no longer written
 
 These are still restored when reading a stored `0.4` document, and are never
-emitted at `0.5` — removing a property means stopping the write, not the read.
+emitted at `0.5` or later — removing a property means stopping the write, not the read.
 
 | Property | Replaced by |
 |---|---|

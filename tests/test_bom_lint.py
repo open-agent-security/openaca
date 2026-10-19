@@ -536,6 +536,32 @@ def test_lint_rejects_agent_root_labeled_as_schema_0_4(tmp_path):
     assert "root/" in result.output
 
 
+def test_lint_accepts_current_and_stored_agent_rooted_versions(tmp_path):
+    for version in ("0.5", "0.6"):
+        doc = _agent_doc()
+        doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": version}]
+        path = tmp_path / f"agent-{version}.cdx.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+
+        result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+        assert result.exit_code == 0, (version, result.output)
+
+
+def test_lint_rejects_schema_0_6_without_an_agent_root(tmp_path):
+    doc = _agent_doc()
+    doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": "0.6"}]
+    del doc["metadata"]["component"]
+    doc["dependencies"] = []
+    path = tmp_path / "no-root.cdx.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    result = CliRunner().invoke(openaca_main, ["bom", "lint", str(path)])
+
+    assert result.exit_code == 1
+    assert "root/" in result.output
+
+
 def test_lint_rejects_bad_composition_source(tmp_path):
     doc = _agent_doc(metadata_component_props={"openaca:composition_source": "sandbox"})
     path = tmp_path / "bad.cdx.json"

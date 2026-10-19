@@ -41,11 +41,7 @@ def walk_plugin_root(
     )
     refs.extend(_parse_default_mcp(plugin_root, refs))
     refs.extend(_parse_bundled_skills(plugin_root, plugin_data))
-    refs.extend(
-        _parse_bundled_hooks(
-            plugin_root, plugin_data, plugin_name, plugin_json_path=plugin_json_path
-        )
-    )
+    refs.extend(_parse_bundled_hooks(plugin_root, plugin_data, plugin_json_path=plugin_json_path))
     refs.extend(_parse_bundled_command_agents(plugin_root, plugin_data, plugin_name))
     return refs
 
@@ -272,7 +268,6 @@ def _parse_bundled_skills(plugin_root: Path, data: dict) -> list[ComponentRef]:
 def _parse_bundled_hooks(
     plugin_root: Path,
     data: dict,
-    plugin_name: str,
     *,
     warnings: list[str] | None = None,
     plugin_json_path: Path,
@@ -284,13 +279,7 @@ def _parse_bundled_hooks(
     if default_hooks is not None and default_hooks.is_file():
         walked_hook_files.add(default_hooks.resolve())
         try:
-            refs.extend(
-                hooks_json.parse_plugin_hooks(
-                    default_hooks,
-                    plugin_name=plugin_name,
-                    strict=True,
-                )
-            )
+            refs.extend(hooks_json.parse_plugin_hooks(default_hooks, strict=True))
         except Exception as exc:
             if warnings is not None:
                 record_gap(warnings, f"could not parse {default_hooks}: {exc}")
@@ -300,7 +289,6 @@ def _parse_bundled_hooks(
             refs.extend(
                 hooks_json.parse_plugin_hooks_inline(
                     hooks_block=inline_hooks,
-                    plugin_name=plugin_name,
                     source_manifest=str(plugin_json_path),
                     strict=warnings is not None,
                 )
@@ -314,13 +302,7 @@ def _parse_bundled_hooks(
             resolved = custom_hooks_file.resolve()
             if resolved not in walked_hook_files:
                 try:
-                    refs.extend(
-                        hooks_json.parse_plugin_hooks(
-                            custom_hooks_file,
-                            plugin_name=plugin_name,
-                            strict=True,
-                        )
-                    )
+                    refs.extend(hooks_json.parse_plugin_hooks(custom_hooks_file, strict=True))
                 except Exception as exc:
                     if warnings is not None:
                         record_gap(warnings, f"could not parse {custom_hooks_file}: {exc}")

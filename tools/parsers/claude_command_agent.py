@@ -165,7 +165,6 @@ def _agent_frontmatter_child_refs(
         refs.extend(
             hooks_json.parse_plugin_hooks_inline(
                 hooks_block=hooks_block,
-                plugin_name="",
                 source_manifest=str(md_path),
                 strict=strict,
             )

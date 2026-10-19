@@ -2191,7 +2191,6 @@ def _add_bundled_plugin_surfaces(
         _parse_bundled_hooks(
             plugin_root,
             plugin_data,
-            plugin_name,
             warnings=graph.warnings,
             plugin_json_path=plugin_manifest_path,
             hooks_filename=surface.bundled.hooks_filename,

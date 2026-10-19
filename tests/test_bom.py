@@ -1098,7 +1098,7 @@ def test_agent_bom_metadata_component_is_the_agent(tmp_path):
         "openaca:composition_coverage": "complete",
     }
     metadata_props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
-    assert metadata_props["openaca:schema_version"] == "0.5"
+    assert metadata_props["openaca:schema_version"] == "0.6"
     assert "openaca:target_type" not in metadata_props
     assert any(c["bom-ref"].startswith("claude-code/") for c in doc["components"])
 

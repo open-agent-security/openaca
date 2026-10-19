@@ -11,7 +11,7 @@ import click
 from jsonschema import Draft202012Validator
 
 from tools.agent_kinds import REGISTRY
-from tools.bom import AGENT_ROOT_PREFIX, OPENACA_BOM_SCHEMA_VERSION
+from tools.bom import AGENT_ROOT_PREFIX, AGENT_ROOTED_SCHEMA_VERSIONS, OPENACA_BOM_SCHEMA_VERSION
 from tools.capability import COVERAGE_LEVELS, Capability
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -197,7 +197,7 @@ def _is_unique_names(value: object) -> bool:
 
 
 def _check_agent_root_required(doc: dict[str, Any], *, schema_version: str | None) -> list[str]:
-    """The agent-rooted shape and schema `0.5` imply each other (ADR-0044,
+    """The agent-rooted shape and schema `0.5` or later imply each other (ADR-0044,
     ADR-0045): `check_agent_metadata` only fires once `metadata.component`
     already has a `root/`-prefixed bom-ref, so it has no opinion on a `0.5`
     document that is missing one entirely, and nothing elsewhere checks the
@@ -209,12 +209,14 @@ def _check_agent_root_required(doc: dict[str, Any], *, schema_version: str | Non
     component = metadata.get("component") if isinstance(metadata, dict) else None
     bom_ref = component.get("bom-ref") if isinstance(component, dict) else None
     is_agent_rooted = isinstance(bom_ref, str) and bom_ref.startswith(AGENT_ROOT_PREFIX)
-    if schema_version == OPENACA_BOM_SCHEMA_VERSION and not is_agent_rooted:
+    if schema_version in AGENT_ROOTED_SCHEMA_VERSIONS and not is_agent_rooted:
         return [
             f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref is required "
-            f"when openaca:schema_version is {OPENACA_BOM_SCHEMA_VERSION!r}"
+            f"when openaca:schema_version is {schema_version!r}"
         ]
-    is_other_version = schema_version is not None and schema_version != OPENACA_BOM_SCHEMA_VERSION
+    is_other_version = (
+        schema_version is not None and schema_version not in AGENT_ROOTED_SCHEMA_VERSIONS
+    )
     if is_other_version and is_agent_rooted:
         return [
             f"metadata.component with a {AGENT_ROOT_PREFIX!r}-prefixed bom-ref requires "

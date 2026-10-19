@@ -1555,7 +1555,7 @@ def test_agent_bom_carries_capability_descriptors_for_both_tiers(tmp_path):
         assert curated[name]["execution_locus"] == "local"
 
     meta_props = _props_by_name(doc["metadata"])
-    assert meta_props["openaca:schema_version"] == "0.5"
+    assert meta_props["openaca:schema_version"] == "0.6"
 
 
 def test_endpoint_scan_emits_the_migrated_agent_document(tmp_path):
@@ -1580,7 +1580,7 @@ def test_endpoint_scan_emits_the_migrated_agent_document(tmp_path):
     doc = json.loads(out.output.strip())
 
     metadata_props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
-    assert metadata_props["openaca:schema_version"] == "0.5"
+    assert metadata_props["openaca:schema_version"] == "0.6"
     assert "openaca:target_type" not in metadata_props
 
     component = doc["metadata"]["component"]

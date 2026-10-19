@@ -33,13 +33,11 @@ from tools.component_ref import ComponentRef
 from tools.parsers import jsonc
 
 
-def parse_plugin_hooks(
-    hooks_json_path: Path, plugin_name: str, *, strict: bool = False
-) -> list[ComponentRef]:
+def parse_plugin_hooks(hooks_json_path: Path, *, strict: bool = False) -> list[ComponentRef]:
     """Walk a plugin's `hooks/hooks.json` file.
 
     Returns [] for any read/parse error or shape violation (non-object root,
-    missing or non-object `hooks` key). Identity uses the plugin name.
+    missing or non-object `hooks` key). Hook identity is the payload hash.
     """
     try:
         raw = hooks_json_path.read_text()
@@ -136,7 +134,7 @@ def parse_whole_file_hooks(
 
 
 def parse_plugin_hooks_inline(
-    hooks_block: dict, plugin_name: str, source_manifest: str, *, strict: bool = False
+    hooks_block: dict, source_manifest: str, *, strict: bool = False
 ) -> list[ComponentRef]:
     """Walk a plugin.json's inline `hooks` key.
 

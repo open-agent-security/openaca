@@ -272,6 +272,7 @@ def _parse_bundled_hooks(
     warnings: list[str] | None = None,
     plugin_json_path: Path,
     hooks_filename: str = "hooks/hooks.json",
+    inline_hooks_use_file_envelope: bool = False,
 ) -> list[ComponentRef]:
     refs: list[ComponentRef] = []
     walked_hook_files: set[Path] = set()
@@ -286,11 +287,13 @@ def _parse_bundled_hooks(
     inline_hooks = data.get("hooks")
     if isinstance(inline_hooks, dict):
         try:
+            wrapped = inline_hooks_use_file_envelope and "hooks" in inline_hooks
             refs.extend(
                 hooks_json.parse_plugin_hooks_inline(
-                    hooks_block=inline_hooks,
+                    hooks_block=inline_hooks["hooks"] if wrapped else inline_hooks,
                     source_manifest=str(plugin_json_path),
                     strict=warnings is not None,
+                    locator_prefix="$.hooks.hooks" if wrapped else "$.hooks",
                 )
             )
         except ValueError as exc:

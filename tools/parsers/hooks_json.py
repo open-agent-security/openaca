@@ -134,7 +134,11 @@ def parse_whole_file_hooks(
 
 
 def parse_plugin_hooks_inline(
-    hooks_block: dict, source_manifest: str, *, strict: bool = False
+    hooks_block: dict,
+    source_manifest: str,
+    *,
+    strict: bool = False,
+    locator_prefix: str = "$.hooks",
 ) -> list[ComponentRef]:
     """Walk a plugin.json's inline `hooks` key.
 
@@ -152,6 +156,7 @@ def parse_plugin_hooks_inline(
         hooks_block,
         source_manifest=source_manifest,
         scope=None,
+        locator_prefix=locator_prefix,
     )
 
 

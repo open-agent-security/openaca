@@ -2757,3 +2757,54 @@ def test_codex_policy_evidence_preserves_profile_aliases_and_plugin_ownership(tm
     ]
     assert len(owned) == 1
     assert owned[0].blocked and owned[0].subject.ref.name == "alpha"
+
+
+def test_codex_policy_evidence_reports_unmapped_endpoint_posture(tmp_path):
+    from tools.policy import parse
+    from tools.policy_compile import collect_policy_evidence
+
+    root = _codex_home(tmp_path)
+    project = tmp_path / "trusted"
+    project.mkdir()
+    with (root / "config.toml").open("a") as stream:
+        stream.write(f'\n[projects."{project}"]\ntrust_level="trusted"\n')
+    (root / "rules").mkdir()
+    (root / "rules/default.rules").write_text('prefix_rule(pattern=["git"], decision="allow")\n')
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+            "risk_gates": {
+                "posture": {
+                    "rules": [
+                        "openaca-posture-command-policy-allow",
+                        "openaca-posture-project-trust",
+                    ]
+                }
+            },
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=project, agent_kind="codex")
+    assert any("command-policy-allow" in message for message in evidence.unmapped_posture)
+    assert any("project-trust" in message for message in evidence.unmapped_posture)
+    assert not evidence.posture_matches, "endpoint settings have no attributable component"
+
+
+def test_codex_policy_evidence_accepts_inventory_notes_but_rejects_real_gaps(tmp_path):
+    from tools.policy import PolicyEvaluationError, parse
+    from tools.policy_compile import collect_policy_evidence
+
+    root = _codex_home(tmp_path)
+    config = root / "config.toml"
+    config.write_text(config.read_text().replace('[plugins."alpha@mkt"]\nenabled = true\n', ""))
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    assert any(item.ref.name == "alpha" for item in evidence.components)
+    (root / "broken.config.toml").write_text("[not valid toml")
+    with pytest.raises(PolicyEvaluationError):
+        collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")

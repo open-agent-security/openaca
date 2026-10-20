@@ -29,6 +29,9 @@ Pass `agent_kind="codex"` to collect Codex evidence through the same library bou
 The default remains `"claude-code"`.
 Unsupported agent kinds fail before discovery.
 This selector changes collection only; the managed-settings compiler still targets Claude.
+Codex inventory notes do not fail collection; actual component gaps still fail.
+The collector passes each registered posture input channel to the rule runner.
+Endpoint findings without a component target remain in `unmapped_posture`.
 Codex profile alternatives remain separate inventory occurrences.
 Consumers must preserve ambiguity instead of treating the union as one active launch configuration.
 

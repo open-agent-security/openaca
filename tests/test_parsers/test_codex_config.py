@@ -37,6 +37,29 @@ def _by_server(refs):
     return {r.extra["component_path"][0]["name"]: r for r in refs}
 
 
+@pytest.mark.parametrize(
+    "events",
+    [
+        "",
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
+        'type="command"\ncommand="echo ready"\n',
+    ],
+)
+def test_native_hook_trust_state_is_not_an_event(tmp_path, events):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        events
+        + '\n[hooks.state."plugin@market:hooks/hooks.json:session_start:0:0"]\n'
+        + 'trusted_hash="sha256:fixture"\nenabled=false\n'
+    )
+    config = codex_config.load_config(path)
+    assert config.malformed == ()
+    assert set(config.hooks) == ({"SessionStart"} if events else set())
+    if events:
+        assert config.hooks["SessionStart"][0]["hooks"][0]["command"] == "echo ready"
+    assert 'trusted_hash="sha256:fixture"' in path.read_text()
+
+
 def test_stdio_and_remote_servers_both_yield_refs(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text(STDIO_AND_REMOTE, encoding="utf-8")

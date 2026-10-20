@@ -2808,3 +2808,33 @@ def test_codex_policy_evidence_accepts_inventory_notes_but_rejects_real_gaps(tmp
     (root / "broken.config.toml").write_text("[not valid toml")
     with pytest.raises(PolicyEvaluationError):
         collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+
+
+def test_unreadable_endpoint_command_policy_does_not_starve_component_decisions(tmp_path):
+    from tools.policy import apply_risk_gates, parse
+    from tools.policy_compile import collect_policy_evidence
+
+    root = tmp_path / "config"
+    (root / "rules").mkdir(parents=True)
+    (root / "rules/default.rules").write_text("unsupported endpoint rule syntax\n")
+    (root / "config.toml").write_text('[mcp_servers.api]\nurl="https://example.test/mcp"\n')
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                name: {"default": "blocked" if name == "mcps" else "allowed"}
+                for name in ("mcps", "plugins", "skills")
+            },
+            "risk_gates": {"posture": {"rules": ["openaca-posture-command-policy-allow"]}},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    decisions = apply_risk_gates(
+        policy,
+        list(evidence.components),
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=list(evidence.posture_matches),
+    )
+    assert len(decisions) == 1 and decisions[0].blocked
+    assert decisions[0].rule_paths == ("admission.mcps.default",)

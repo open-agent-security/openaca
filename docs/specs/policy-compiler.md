@@ -32,6 +32,11 @@ This selector changes collection only; the managed-settings compiler still targe
 Codex inventory notes do not fail collection; actual component gaps still fail.
 The collector passes each registered posture input channel to the rule runner.
 Endpoint findings without a component target remain in `unmapped_posture`.
+Codex command-approval and project-trust findings have no component target.
+Unreadable command-approval text does not establish a component restriction.
+It must not prevent independent component admission decisions from updating.
+The evidence result does not certify clean endpoint settings or complete command-approval coverage.
+The scan command retains the parser's coverage warnings.
 Codex profile alternatives remain separate inventory occurrences.
 Consumers must preserve ambiguity instead of treating the union as one active launch configuration.
 

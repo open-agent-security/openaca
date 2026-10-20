@@ -2720,6 +2720,42 @@ def test_codex_selection_is_explicit_and_never_collects_claude(monkeypatch, tmp_
     assert mcps[0].extra["component_path"][-1]["name"] == "fixture"
 
 
+def test_codex_native_hook_trust_does_not_prevent_mcp_policy_evaluation(tmp_path):
+    from openaca.core import apply_risk_gates, collect_policy_evidence, parse_policy
+
+    root = tmp_path / "codex"
+    root.mkdir()
+    (root / "config.toml").write_text(
+        '[mcp_servers.smoke]\ncommand="uvx"\nargs=["mcp-server-fetch"]\n'
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n"
+        'type="command"\ncommand="echo ready"\n'
+        '[hooks.state."plugin@market:hooks/hooks.json:session_start:0:0"]\n'
+        'trusted_hash="sha256:fixture"\nenabled=false\n'
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "allowed",
+                    "blocked": [{"command": ["uvx", "mcp-server-fetch"]}],
+                },
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    decisions = apply_risk_gates(
+        policy, list(evidence.components), advisories=[], advisory_matches=[], posture_matches=[]
+    )
+    mcps = [d for d in decisions if d.ref.extra.get("component_type") == "mcp_server"]
+    assert len(mcps) == 1 and mcps[0].blocked
+    hooks = [c for c in evidence.components if c.ref.extra.get("component_type") == "hook"]
+    assert len(hooks) == 1
+    assert "enabled=false" in (root / "config.toml").read_text()
+
+
 def test_codex_policy_evidence_preserves_profile_aliases_and_plugin_ownership(tmp_path):
     from tools.policy import apply_risk_gates, parse
     from tools.policy_compile import collect_policy_evidence

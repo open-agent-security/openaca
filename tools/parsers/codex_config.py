@@ -277,7 +277,13 @@ def load_config(path: Path) -> CodexConfig:
     # be preserved raw so a downstream `strict=True` parse would reject it, but
     # that only worked for TRUTHY malformed values — `hooks = []` passed the
     # callers' `if not config.hooks` gate and was never validated at all.
-    hooks = _table(data, "hooks", malformed)
+    # Codex stores per-definition trust and disablement beside events in
+    # `hooks.state`. These records are metadata, not hook declarations.
+    hooks = {
+        event: entries
+        for event, entries in _table(data, "hooks", malformed).items()
+        if event != "state"
+    }
 
     return CodexConfig(
         malformed=tuple(malformed),

@@ -29,7 +29,14 @@ Pass `agent_kind="codex"` to collect Codex evidence through the same library bou
 The default remains `"claude-code"`.
 Unsupported agent kinds fail before discovery.
 This selector changes collection only; the managed-settings compiler still targets Claude.
-Codex inventory notes do not fail collection; actual component gaps still fail.
+Codex inventory notes do not fail collection.
+Actual component gaps fail collection by default.
+Runtime callers can pass `allow_partial_inventory=True` to evaluate readable components independently.
+The result records incomplete component coverage in `inventory_gaps`.
+Callers must report these gaps and apply their uncertainty behavior to unresolved subjects.
+Partial inventory does not resolve ambiguous identities or establish complete coverage.
+The native managed-settings compiler retains strict collection.
+It does not request partial inventory.
 The collector passes each registered posture input channel to the rule runner.
 Endpoint findings without a component target remain in `unmapped_posture`.
 Codex command-approval and project-trust findings have no component target.
@@ -48,7 +55,8 @@ Pass `project` explicitly to include project configuration.
 `vulnerability_unavailable` is `None` when the policy requests no vulnerability gate.
 Otherwise, it contains components without supported advisory coordinates.
 An empty tuple means that collection found no such coverage gaps.
-Incomplete collection still raises `PolicyEvaluationError`.
+Incomplete inventory raises `PolicyEvaluationError` unless the caller requests partial inventory.
+Advisory collection failures still raise in both modes.
 Missing coordinates do not add a vulnerability block in the evaluator.
 They do not prove that a component is vulnerability-free.
 

@@ -2756,6 +2756,73 @@ def test_codex_native_hook_trust_does_not_prevent_mcp_policy_evaluation(tmp_path
     assert "enabled=false" in (root / "config.toml").read_text()
 
 
+@pytest.mark.parametrize("incomplete_cache", [False, True])
+def test_codex_bundled_hook_envelopes_and_partial_inventory_keep_known_mcp_blocks(
+    tmp_path, incomplete_cache
+):
+    from openaca.core import (
+        PolicyEvaluationError,
+        apply_risk_gates,
+        collect_policy_evidence,
+        parse_policy,
+    )
+
+    root = tmp_path / "codex"
+    root.mkdir()
+    (root / "config.toml").write_text(
+        '[mcp_servers.smoke]\ncommand="uvx"\nargs=["mcp-server-fetch"]\n'
+        '[plugins."browser@bundled"]\nenabled=true\n'
+        '[marketplaces.bundled]\nsource_type="local"\nsource="/fixture"\n'
+    )
+    plugin = root / "plugins/cache/bundled/browser/1.0.0/.codex-plugin"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "browser",
+                "hooks": {
+                    "description": "Native inline hook file",
+                    "hooks": {
+                        event: [{"hooks": [{"type": "command", "command": "true"}]}]
+                        for event in ("Interrupt", "SubagentStop", "Stop")
+                    },
+                },
+            }
+        )
+    )
+    if incomplete_cache:
+        (root / "plugins/cache/bundled/missing/1.0.0").mkdir(parents=True)
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "allowed",
+                    "blocked": [{"command": ["uvx", "mcp-server-fetch"]}],
+                },
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    if incomplete_cache:
+        with pytest.raises(PolicyEvaluationError, match="file is unavailable"):
+            collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    else:
+        complete = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+        assert not complete.inventory_gaps
+    evidence = collect_policy_evidence(
+        policy, target=root, project=None, agent_kind="codex", allow_partial_inventory=True
+    )
+    assert bool(evidence.inventory_gaps) == incomplete_cache
+    assert len([c for c in evidence.components if c.ref.extra.get("component_type") == "hook"]) == 3
+    decisions = apply_risk_gates(
+        policy, list(evidence.components), advisories=[], advisory_matches=[], posture_matches=[]
+    )
+    mcps = [d for d in decisions if d.ref.extra.get("component_type") == "mcp_server"]
+    assert len(mcps) == 1 and mcps[0].blocked
+
+
 def test_codex_policy_evidence_preserves_profile_aliases_and_plugin_ownership(tmp_path):
     from tools.policy import apply_risk_gates, parse
     from tools.policy_compile import collect_policy_evidence

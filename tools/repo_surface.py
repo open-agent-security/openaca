@@ -91,6 +91,7 @@ class BundledLayout:
     # is `name`, `description`, `model`, `allowed-tools`/`tools` and
     # `max-nesting` only, so a Devin plugin agent contributes itself alone.
     agents_declare_components: bool = True
+    inline_hooks_use_file_envelope: bool = False
 
 
 @dataclass(frozen=True)
@@ -319,6 +320,7 @@ CODEX_SURFACE = RepoSurface(
         hooks_filename="hooks/hooks.json",
         commands_dir="commands",
         agents_dir="agents",
+        inline_hooks_use_file_envelope=True,
     ),
     # `None`, not `"config.toml"`: Codex's settings-equivalent is TOML, read
     # directly by `tools/parsers/codex_config.py` (via

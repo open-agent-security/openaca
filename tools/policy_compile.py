@@ -83,6 +83,7 @@ class PolicyEvidence:
     posture_matches: tuple[tuple[ComponentRef, str], ...]
     unmapped_posture: tuple[str, ...]
     vulnerability_unavailable: tuple[ComponentRef, ...] | None
+    inventory_gaps: tuple[str, ...] = ()
 
 
 def collect_policy_evidence(
@@ -91,17 +92,25 @@ def collect_policy_evidence(
     target: Path | None = None,
     project: Path | None,
     agent_kind: str = "claude-code",
+    allow_partial_inventory: bool = False,
 ) -> PolicyEvidence:
     """Collect the compiler's inputs without rendering or writing settings.
 
-    Incomplete inventory and advisory collection retain the compiler's
-    `PolicyEvaluationError` behavior. No finding is not evidence of coverage
-    for a component whose advisory coordinates are unsupported.
+    Incomplete inventory raises unless the caller requests partial inventory.
+    Partial results retain inventory gaps and the readable components.
+    Advisory collection errors still raise. Missing advisory coordinates do
+    not establish vulnerability coverage.
     """
     if agent_kind not in {"claude-code", "codex"}:
         raise PolicyEvaluationError(f"unsupported policy evidence agent kind: {agent_kind}")
-    components, advisory_matches, advisories, posture_matches, unmapped_posture = (
-        _evaluate_endpoint(policy, target, project, agent_kind=agent_kind)
+    components, advisory_matches, advisories, posture_matches, unmapped_posture, gaps = (
+        _evaluate_endpoint(
+            policy,
+            target,
+            project,
+            agent_kind=agent_kind,
+            allow_partial_inventory=allow_partial_inventory,
+        )
     )
     return PolicyEvidence(
         components=tuple(components),
@@ -109,6 +118,7 @@ def collect_policy_evidence(
         advisories=tuple(advisories),
         posture_matches=tuple(posture_matches),
         unmapped_posture=tuple(unmapped_posture),
+        inventory_gaps=tuple(gaps),
         vulnerability_unavailable=(
             tuple(component.ref for component in components if not is_queryable(component.ref))
             if policy.risk_gates.vulnerabilities is not None
@@ -203,11 +213,13 @@ def _evaluate_endpoint(
     project: Path | None,
     *,
     agent_kind: str = "claude-code",
+    allow_partial_inventory: bool = False,
 ) -> tuple[
     list[EndpointComponent],
     list[tuple[ComponentRef, str]],
     list[dict[str, Any]],
     list[tuple[ComponentRef, str]],
+    list[str],
     list[str],
 ]:
     # Select exactly one host. The native settings compiler keeps the Claude default.
@@ -227,14 +239,16 @@ def _evaluate_endpoint(
     posture: list[tuple[ComponentRef, str]] = []
     unmapped_posture: list[str] = []
     refs_by_agent: list[tuple[AgentInstance, Graph, list[ComponentRef]]] = []
-    graph_warnings: list[str] = WarningLog() if agent_kind == "codex" else []
+    graph_warnings: list[str] = (
+        WarningLog() if agent_kind == "codex" or allow_partial_inventory else []
+    )
     for agent in agents:
         graph = build_agent_graph(agent, warnings=graph_warnings)
         refs = _filter_agent_scope_refs(_refs_from_graph(graph))
         components.extend(EndpointComponent(ref, graph) for ref in refs)
         refs_by_agent.append((agent, graph, refs))
     gaps = graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings
-    if gaps:
+    if gaps and not allow_partial_inventory:
         # A dropped or malformed inventory entry means `components` is an
         # incomplete endpoint inventory: admission and risk gates would be
         # evaluated as if the missing component didn't exist, silently
@@ -287,7 +301,7 @@ def _evaluate_endpoint(
                         f"{finding.component_label}: posture {finding.rule_id} is not "
                         "enforceable (no discovered component target)"
                     )
-    return components, findings, advisories, posture, unmapped_posture
+    return components, findings, advisories, posture, unmapped_posture, list(gaps)
 
 
 def _managed_key_collisions(directory: Path, generated_keys: set[str]) -> list[tuple[str, Path]]:

@@ -24,9 +24,9 @@ def test_collection_returns_domain_inputs_without_compiling_host_settings(monkey
     advisory = {"id": "CVE-2026-1234"}
     seen = []
 
-    def collect(policy, target, project, *, agent_kind):
-        seen.append((policy, target, project))
-        return components, findings, [advisory], [(ref, "rule")], ["unmapped"]
+    def collect(policy, target, project, *, agent_kind, allow_partial_inventory):
+        seen.append((policy, target, project, allow_partial_inventory))
+        return components, findings, [advisory], [(ref, "rule")], ["unmapped"], []
 
     def no_render(*args, **kwargs):
         pytest.fail("evidence collection must not compile host settings")
@@ -37,13 +37,14 @@ def test_collection_returns_domain_inputs_without_compiling_host_settings(monkey
     result = policy_compile.collect_policy_evidence(
         policy, target=Path("/config"), project=Path("/project")
     )
-    assert seen == [(policy, Path("/config"), Path("/project"))]
+    assert seen == [(policy, Path("/config"), Path("/project"), False)]
     assert result.components == tuple(components)
     assert result.advisory_matches == tuple(findings)
     assert result.advisories == (advisory,)
     assert result.posture_matches == ((ref, "rule"),)
     assert result.unmapped_posture == ("unmapped",)
     assert result.vulnerability_unavailable is None
+    assert result.inventory_gaps == ()
     components.clear()
     findings.clear()
     assert len(result.components) == len(result.advisory_matches) == 1
@@ -57,6 +58,7 @@ def test_unqueryable_coordinates_are_not_a_clean_vulnerability_result(monkeypatc
         "_evaluate_endpoint",
         lambda *args, **kwargs: (
             [EndpointComponent(queryable), EndpointComponent(unavailable)],
+            [],
             [],
             [],
             [],
@@ -81,9 +83,9 @@ def test_failed_collection_propagates_instead_of_returning_empty_clean_evidence(
 def test_default_root_collection_does_not_force_an_explicit_configuration_directory(monkeypatch):
     seen = []
 
-    def collect(policy, target, project, *, agent_kind):
+    def collect(policy, target, project, *, agent_kind, allow_partial_inventory):
         seen.append((target, project))
-        return [], [], [], [], []
+        return [], [], [], [], [], []
 
     monkeypatch.setattr(policy_compile, "_evaluate_endpoint", collect)
     policy_compile.collect_policy_evidence(_policy(), project=Path("/project"))

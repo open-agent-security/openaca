@@ -2194,6 +2194,7 @@ def _add_bundled_plugin_surfaces(
             warnings=graph.warnings,
             plugin_json_path=plugin_manifest_path,
             hooks_filename=surface.bundled.hooks_filename,
+            inline_hooks_use_file_envelope=surface.bundled.inline_hooks_use_file_envelope,
         )
     )
     command_agent_refs = _parse_bundled_command_agents(

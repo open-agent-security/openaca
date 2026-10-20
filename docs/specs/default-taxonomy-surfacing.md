@@ -227,11 +227,8 @@ regresses — no single module test covers that wiring.
 - **Summary rollup.** An aggregate ASI-coverage line in the Summary section was
   considered and rejected for this change; per-finding omission is the chosen
   behavior when no overlay exists.
-- **Remote upload payload.** `_finding_taxonomies` at
-  `tools/remote/collector.py:808` is a different concept — it carries
-  `openaca_categories`, not overlay taxonomies. Changing it would widen the
-  upload contract in `tools/remote/upload_contract.py` and belongs to its own
-  decision.
+- **Hosted upload payload.** ADR-0063 removed the hosted-service client.
+  This repository has no upload payload to extend.
 - **`openaca.core` facade.** `finding_output` is not exported by
   `openaca/core/__init__.py`, so the ADR-0028 facade is untouched. Consumers
   read the JSON envelope directly.

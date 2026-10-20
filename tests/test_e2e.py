@@ -2694,3 +2694,66 @@ def test_e2e_devin_cli_skill_exec_maps_to_shell_exec_capability(tmp_path):
     )
     caps = json.loads(_props_by_name(skill)["openaca:capabilities"])
     assert {c["name"] for c in caps} == {"shell_exec"}
+
+
+def test_codex_selection_is_explicit_and_never_collects_claude(monkeypatch, tmp_path):
+    root = tmp_path / "codex"
+    root.mkdir()
+    (root / "config.toml").write_text('[mcp_servers.fixture]\ncommand = "fixture-mcp"\n')
+    from tools.policy import parse
+    from tools.policy_compile import collect_policy_evidence
+
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    mcps = [
+        item.ref
+        for item in evidence.components
+        if item.ref.extra.get("component_type") == "mcp_server"
+    ]
+    assert len(mcps) == 1
+    assert mcps[0].source_manifest == str(root / "config.toml")
+    assert mcps[0].extra["component_path"][-1]["name"] == "fixture"
+
+
+def test_codex_policy_evidence_preserves_profile_aliases_and_plugin_ownership(tmp_path):
+    from tools.policy import apply_risk_gates, parse
+    from tools.policy_compile import collect_policy_evidence
+
+    root = _codex_home(tmp_path)
+    (root / "config.toml").write_text(
+        (root / "config.toml").read_text() + '\n[mcp_servers.same]\ncommand = "base"\n'
+    )
+    (root / "alternate.config.toml").write_text('[mcp_servers.same]\ncommand = "alternate"\n')
+    plugin = root / "plugins/cache/mkt/alpha/1.0.0"
+    (plugin / ".mcp.json").write_text(json.dumps({"mcpServers": {"owned": {"command": "plugin"}}}))
+    policy = parse(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "blocked"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    evidence = collect_policy_evidence(policy, target=root, project=None, agent_kind="codex")
+    mcps = [
+        item for item in evidence.components if item.ref.extra.get("component_type") == "mcp_server"
+    ]
+    same = [item for item in mcps if item.ref.extra["component_path"][-1]["name"] == "same"]
+    assert len(same) == 2
+    decisions = apply_risk_gates(
+        policy, list(evidence.components), advisories=[], advisory_matches=[], posture_matches=[]
+    )
+    owned = [
+        item
+        for item in decisions
+        if item.ref.extra.get("component_type") == "mcp_server" and item.controlled_by_plugin
+    ]
+    assert len(owned) == 1
+    assert owned[0].blocked and owned[0].subject.ref.name == "alpha"

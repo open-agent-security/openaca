@@ -111,6 +111,8 @@ person at a keyboard, never for an automated fixer.
   (some marketplace flows, some MCP server identities), OpenACA's contributors
   pursue upstream disclosure first; the overlay lands once an upstream record
   exists.
+- Specs are living documents in `docs/specs/<topic>.md`. A feature that
+  changes a documented design updates that spec in the same PR.
 
 ## V0 scope (read `docs/specs/openaca-thesis.md` and `docs/adrs/0009-overlay-only-v0.md` for detail)
 
@@ -287,6 +289,40 @@ of the replaced clause, and the old ADR's "When to revisit" text do not
 change the result. A reviewer reports the choice only when the finding
 names every numbered decision in the old ADR and shows that none still
 binds.
+
+## Specs and ADRs
+
+A spec holds the design. An ADR holds one decision and its rejected
+alternatives.
+
+- **Spec** (`docs/specs/`): what the system does and how. It has the
+  contracts, the data model, the flows, the commands, the failure
+  behavior and the verification. An agent can implement from the spec
+  alone. Start a new spec from `docs/specs/TEMPLATE.md`.
+- **ADR** (`docs/adrs/`): a choice where the rejected alternative is
+  plausible. Keep the Decision section short. Write one paragraph, or a
+  short numbered list of choices. Put mechanisms, flags and test plans
+  in the spec.
+
+**Write the spec first.** Write or update the spec. Then write ADRs for
+the decisions that meet the ADR bar. List those ADRs in the "Decisions"
+table of the spec. Link each ADR to the spec section that has the
+detail. Do not write "This spec implements ADR-NNNN". If you write that
+sentence, the design is in the wrong document.
+
+**The project section of CLAUDE.md names the spec layout.** Use one of
+these:
+
+- Dated design specs, `docs/specs/YYYY-MM-DD-<topic>.md`, one for each
+  design effort.
+- Living component specs, `docs/specs/<component>.md`, updated in place.
+  A feature that changes a component updates the spec of that component
+  in the same PR.
+
+**Not every change needs a spec or an ADR.** Bug fixes, cleanups,
+wording changes and UI changes get no ADR. The ADR hooks at compaction
+and at session end tell you to look for decisions. They do not tell you
+to write an ADR.
 
 ## Code Review Rules
 

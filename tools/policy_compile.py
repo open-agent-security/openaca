@@ -35,7 +35,7 @@ from tools.agent_kinds import (
 )
 from tools.atomic_write import write_new_temp_file
 from tools.component_ref import ComponentRef
-from tools.graph import Graph
+from tools.graph import Graph, WarningLog
 from tools.matcher import match
 from tools.osv_federation import is_queryable
 from tools.parsers import settings_layers
@@ -227,19 +227,20 @@ def _evaluate_endpoint(
     posture: list[tuple[ComponentRef, str]] = []
     unmapped_posture: list[str] = []
     refs_by_agent: list[tuple[AgentInstance, Graph, list[ComponentRef]]] = []
-    graph_warnings: list[str] = []
+    graph_warnings: list[str] = WarningLog() if agent_kind == "codex" else []
     for agent in agents:
         graph = build_agent_graph(agent, warnings=graph_warnings)
         refs = _filter_agent_scope_refs(_refs_from_graph(graph))
         components.extend(EndpointComponent(ref, graph) for ref in refs)
         refs_by_agent.append((agent, graph, refs))
-    if graph_warnings:
+    gaps = graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings
+    if gaps:
         # A dropped or malformed inventory entry means `components` is an
         # incomplete endpoint inventory: admission and risk gates would be
         # evaluated as if the missing component didn't exist, silently
         # implying a complete policy artifact (spec: compilation fails and
         # does not replace a previous artifact when evaluation is incomplete).
-        raise PolicyEvaluationError("; ".join(graph_warnings))
+        raise PolicyEvaluationError("; ".join(gaps))
 
     advisories: list[dict[str, Any]] = []
     if policy.risk_gates.vulnerabilities is not None:
@@ -270,6 +271,7 @@ def _evaluate_endpoint(
                 refs,
                 prep.manifests,
                 prep.settings_manifests,
+                extra_manifests=prep.extra_manifests,
                 allowed_rules=kind_for(agent.kind_id).posture_rules,
                 agent_kind=agent.kind_id,
                 agent_id=agent.agent_id,

@@ -86,7 +86,11 @@ class PolicyEvidence:
 
 
 def collect_policy_evidence(
-    policy: Policy, *, target: Path | None = None, project: Path | None
+    policy: Policy,
+    *,
+    target: Path | None = None,
+    project: Path | None,
+    agent_kind: str = "claude-code",
 ) -> PolicyEvidence:
     """Collect the compiler's inputs without rendering or writing settings.
 
@@ -94,8 +98,10 @@ def collect_policy_evidence(
     `PolicyEvaluationError` behavior. No finding is not evidence of coverage
     for a component whose advisory coordinates are unsupported.
     """
+    if agent_kind not in {"claude-code", "codex"}:
+        raise PolicyEvaluationError(f"unsupported policy evidence agent kind: {agent_kind}")
     components, advisory_matches, advisories, posture_matches, unmapped_posture = (
-        _evaluate_endpoint(policy, target, project)
+        _evaluate_endpoint(policy, target, project, agent_kind=agent_kind)
     )
     return PolicyEvidence(
         components=tuple(components),
@@ -192,7 +198,11 @@ def compile_endpoint_policy(
 
 
 def _evaluate_endpoint(
-    policy: Policy, target: Path | None, project: Path | None
+    policy: Policy,
+    target: Path | None,
+    project: Path | None,
+    *,
+    agent_kind: str = "claude-code",
 ) -> tuple[
     list[EndpointComponent],
     list[tuple[ComponentRef, str]],
@@ -200,18 +210,13 @@ def _evaluate_endpoint(
     list[tuple[ComponentRef, str]],
     list[str],
 ]:
-    # `kind_id` is pinned, not left open: the policy compiler targets a named
-    # root via `--target` and compiles Claude-managed settings (`--host claude`
-    # is a required Choice). Open discovery would additionally return every
-    # other registered kind resolved at ITS own root — Cursor ignores
-    # `config_dir` entirely (ADR-0054) — so a compile aimed at one directory
-    # would silently pull in components from the invoking user's home.
+    # Select exactly one host. The native settings compiler keeps the Claude default.
     agents = discover_agents(
         DiscoveryContext(
             source="installed",
             config_dir=target,
             project_root=project,
-            kind_id="claude-code",
+            kind_id=agent_kind,
         )
     )
     if not agents:

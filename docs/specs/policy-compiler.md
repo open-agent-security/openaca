@@ -25,7 +25,14 @@ A risk block names the matching vulnerability or posture gate.
 Plugin contents inherit the owning plugin's rule paths.
 Consumers can display these paths without repeating policy matching.
 
-Omit `target`, or pass `None`, to use Claude's default configuration discovery.
+Pass `agent_kind="codex"` to collect Codex evidence through the same library boundary.
+The default remains `"claude-code"`.
+Unsupported agent kinds fail before discovery.
+This selector changes collection only; the managed-settings compiler still targets Claude.
+Codex profile alternatives remain separate inventory occurrences.
+Consumers must preserve ambiguity instead of treating the union as one active launch configuration.
+
+Omit `target`, or pass `None`, to use the selected agent's default configuration discovery.
 Pass a path to select an explicit configuration root.
 A named root keeps its isolation even when it equals the default pathname.
 Pass `project` explicitly to include project configuration.

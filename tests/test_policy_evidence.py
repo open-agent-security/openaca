@@ -24,7 +24,7 @@ def test_collection_returns_domain_inputs_without_compiling_host_settings(monkey
     advisory = {"id": "CVE-2026-1234"}
     seen = []
 
-    def collect(policy, target, project):
+    def collect(policy, target, project, *, agent_kind):
         seen.append((policy, target, project))
         return components, findings, [advisory], [(ref, "rule")], ["unmapped"]
 
@@ -55,7 +55,7 @@ def test_unqueryable_coordinates_are_not_a_clean_vulnerability_result(monkeypatc
     monkeypatch.setattr(
         policy_compile,
         "_evaluate_endpoint",
-        lambda *args: (
+        lambda *args, **kwargs: (
             [EndpointComponent(queryable), EndpointComponent(unavailable)],
             [],
             [],
@@ -70,7 +70,7 @@ def test_unqueryable_coordinates_are_not_a_clean_vulnerability_result(monkeypatc
 
 
 def test_failed_collection_propagates_instead_of_returning_empty_clean_evidence(monkeypatch):
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise PolicyEvaluationError("incomplete inventory")
 
     monkeypatch.setattr(policy_compile, "_evaluate_endpoint", fail)
@@ -81,10 +81,19 @@ def test_failed_collection_propagates_instead_of_returning_empty_clean_evidence(
 def test_default_root_collection_does_not_force_an_explicit_configuration_directory(monkeypatch):
     seen = []
 
-    def collect(policy, target, project):
+    def collect(policy, target, project, *, agent_kind):
         seen.append((target, project))
         return [], [], [], [], []
 
     monkeypatch.setattr(policy_compile, "_evaluate_endpoint", collect)
     policy_compile.collect_policy_evidence(_policy(), project=Path("/project"))
     assert seen == [(None, Path("/project"))]
+
+
+def test_unknown_agent_kind_fails_before_discovery(monkeypatch):
+    def discover(*args):
+        pytest.fail("unsupported kind must not discover another host")
+
+    monkeypatch.setattr(policy_compile, "discover_agents", discover)
+    with pytest.raises(PolicyEvaluationError, match="unsupported policy evidence agent kind"):
+        policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="unknown")

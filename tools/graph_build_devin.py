@@ -194,7 +194,6 @@ def build_devin_declared_graph(
             root,
             scan_root,
             normalize,
-            include_gitignored=include_gitignored,
             root_dir=scan_root,
             root_spec=root_spec,
         )

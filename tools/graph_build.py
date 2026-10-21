@@ -411,7 +411,6 @@ def finalize_graph(
         normalize,
         name_index,
         project_root=project_root,
-        include_gitignored=attach_include_gitignored,
         project_root_include_gitignored=include_gitignored,
         root_dir=root_dir,
         root_spec=root_spec,
@@ -1146,7 +1145,6 @@ def descend(
             directory,
             normalize=normalize,
             exclude_under=realized_roots,
-            include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
             surface=surface,
@@ -1162,7 +1160,6 @@ def descend(
                 parent,
                 directory,
                 normalize,
-                include_gitignored=include_gitignored,
                 root_dir=root_dir,
                 root_spec=root_spec,
             )
@@ -1172,7 +1169,6 @@ def descend(
             directory,
             normalize,
             exclude_under=realized_roots,
-            include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
             surface=surface,
@@ -1202,7 +1198,6 @@ def descend(
                 parent,
                 directory,
                 normalize,
-                include_gitignored=include_gitignored,
                 root_dir=root_dir,
                 root_spec=root_spec,
             )
@@ -1212,7 +1207,6 @@ def descend(
             parent,
             directory,
             normalize,
-            include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
         )
@@ -1330,7 +1324,6 @@ def _attach_mcp_launch_deps(
     name_index: dict[tuple[str, str], Path],
     *,
     project_root: Path | None = None,
-    include_gitignored: bool = False,
     project_root_include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
@@ -1376,13 +1369,11 @@ def _attach_mcp_launch_deps(
         # Project-scoped MCPs (effective_scan_root is project_root) use the
         # project-root gitignore context, matching project-skills and project
         # name-index filtering. Install-root MCPs use the endpoint-wide context
-        # (include_gitignored=True; installed artifacts are never filtered).
+        # the caller threaded. Installed artifacts are not gitignore-filtered.
         if effective_scan_root is not scan_root:
-            eff_include = project_root_include_gitignored
             eff_root = project_root
             eff_spec = project_root_spec
         else:
-            eff_include = include_gitignored
             eff_root = root_dir
             eff_spec = root_spec
         before = {e.child for e in graph.edges if e.parent == mcp.key}
@@ -1391,7 +1382,6 @@ def _attach_mcp_launch_deps(
             mcp,
             resolved,
             normalize,
-            include_gitignored=eff_include,
             root_dir=eff_root,
             root_spec=eff_spec,
         )
@@ -1532,7 +1522,6 @@ def _add_project_skills(
     normalize: SourceNormalizer,
     project_root: Path | None = None,
     stamp_provenance: bool = False,
-    include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
     surface: RepoSurface = CLAUDE_CODE_SURFACE,
@@ -1548,7 +1537,7 @@ def _add_project_skills(
     skills inside any of those subtrees belong to the plugin branch
     (single-parent invariant), so they are skipped here to avoid double-discovery.
     """
-    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = _ignore_context(directory, root_dir, root_spec)
     # The walk yields paths relative to `directory`; ignore checks evaluate
     # relative to `eval_root` (the scan root in repo mode). When the walk root and
     # eval root differ, evaluate the absolute path against eval_root.
@@ -1630,7 +1619,7 @@ def _add_bundled_skills(
     deduped.
     """
     skill_dirs: list[Path] = []
-    eval_root, spec = _ignore_context(directory, False, root_dir, root_spec)
+    eval_root, spec = _ignore_context(directory, root_dir, root_spec)
     custom_skills = _plugin_custom_skills_field(directory, surface, eval_root=eval_root, spec=spec)
     if surface.bundled.skills_field_overrides_default and custom_skills is not None:
         # An explicit `skills` field replaces the default directory outright
@@ -1712,7 +1701,7 @@ def _add_skills_from_dir(
         plugin_root_resolved = plugin_root.resolve() if plugin_root is not None else None
     except (OSError, RuntimeError):
         return
-    eval_root, spec = _ignore_context(skills_dir, False, root_dir, root_spec)
+    eval_root, spec = _ignore_context(skills_dir, root_dir, root_spec)
     for skill_subdir in sorted(skills_dir.iterdir()):
         if skill_subdir.name.startswith("."):  # skip .DS_Store, .git, etc.
             continue
@@ -1781,7 +1770,7 @@ def _add_project_skills_from_dir_following_symlinks(
     """
     if not skills_dir.is_dir():
         return
-    eval_root, spec = _ignore_context(skills_dir, False, root_dir, root_spec)
+    eval_root, spec = _ignore_context(skills_dir, root_dir, root_spec)
     for skill_subdir in sorted(
         _iter_skill_subdirs_following_symlinks(graph, skills_dir), key=lambda p: str(p)
     ):
@@ -1865,7 +1854,6 @@ def _add_dep_manifest_packages(
     directory: Path,
     normalize: SourceNormalizer,
     *,
-    include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
 ) -> None:
@@ -1884,7 +1872,7 @@ def _add_dep_manifest_packages(
     parsers produce them (`transitive=True` on lockfile refs) — only the
     file-selection logic is shared.
     """
-    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = _ignore_context(directory, root_dir, root_spec)
 
     def _present(filename: str) -> Path | None:
         manifest = directory / filename
@@ -1925,7 +1913,6 @@ def _add_dep_manifest_packages(
 
 def _ignore_context(
     directory: Path,
-    include_gitignored: bool,
     root_dir: Path | None,
     root_spec: GitIgnoreSpec | None,
 ) -> tuple[Path, GitIgnoreSpec | None]:
@@ -1986,7 +1973,6 @@ def _add_repo_standalone_components(
     normalize: SourceNormalizer,
     *,
     exclude_under: list[Path] | None = None,
-    include_gitignored: bool = False,
     root_dir: Path | None = None,
     root_spec: GitIgnoreSpec | None = None,
     surface: RepoSurface = CLAUDE_CODE_SURFACE,
@@ -1999,7 +1985,7 @@ def _add_repo_standalone_components(
     roots already descended from the target) so a plugin's bundled MCP/command
     surfaces stay under the plugin node (single-parent).
     """
-    eval_root, spec = _ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = _ignore_context(directory, root_dir, root_spec)
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
     for path in iter_unignored_files(directory, walk_spec):
@@ -2108,7 +2094,7 @@ def _add_bundled_plugin_surfaces(
     # or default-MCP resolution over an unignored lower-precedence one — the
     # same "gitignored candidate hides an unignored one" hazard the command/
     # subagent precedence resolvers guard against.
-    eval_root, spec = _ignore_context(plugin_root, False, root_dir, root_spec)
+    eval_root, spec = _ignore_context(plugin_root, root_dir, root_spec)
     plugin_data = _plugin_manifest_data(graph, plugin_root, surface, eval_root=eval_root, spec=spec)
     plugin_manifest_path = _resolve_plugin_manifest(
         plugin_root, surface, eval_root=eval_root, spec=spec

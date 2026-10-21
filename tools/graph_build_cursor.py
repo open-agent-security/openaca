@@ -629,7 +629,6 @@ def _descend_cursor_declared(
         directory,
         normalize,
         exclude_under=realized_roots,
-        include_gitignored=include_gitignored,
         root_dir=root_dir,
         root_spec=root_spec,
     )
@@ -639,7 +638,6 @@ def _descend_cursor_declared(
         directory,
         normalize,
         exclude_under=realized_roots,
-        include_gitignored=include_gitignored,
         root_dir=root_dir,
         root_spec=root_spec,
     )
@@ -649,7 +647,6 @@ def _descend_cursor_declared(
         directory,
         normalize,
         exclude_under=realized_roots,
-        include_gitignored=include_gitignored,
         root_dir=root_dir,
         root_spec=root_spec,
         realized_plugin_commands=realized_plugin_commands,
@@ -664,7 +661,6 @@ def _descend_cursor_declared(
             parent,
             directory,
             normalize,
-            include_gitignored=include_gitignored,
             root_dir=root_dir,
             root_spec=root_spec,
         )
@@ -901,7 +897,7 @@ def _realize_agent_plugins_root(
         # A kind that reads more conventional MCP sources than the Agent
         # Plugins spec's one `mcp.json` (Devin: `.mcp.json`, then `mcp.json`,
         # first source winning) replaces the parser's MCP refs with its own.
-        eval_root_mcp, spec_mcp = ignore_context(plugin_root, False, root_dir, root_spec)
+        eval_root_mcp, spec_mcp = ignore_context(plugin_root, root_dir, root_spec)
         refs = [r for r in refs if component_type_of(r) != "mcp_server"]
         refs += devin_config.plugin_mcp_refs(
             {},
@@ -915,7 +911,7 @@ def _realize_agent_plugins_root(
     if original_self_ref is None:
         return None
     self_ref = original_self_ref
-    eval_root, spec = ignore_context(plugin_root, False, root_dir, root_spec)
+    eval_root, spec = ignore_context(plugin_root, root_dir, root_spec)
     if self_ref.source_manifest and is_ignored_under(
         Path(self_ref.source_manifest), eval_root, spec
     ):
@@ -960,7 +956,6 @@ def _add_cursor_skills(
     normalize,
     *,
     exclude_under: list[Path],
-    include_gitignored: bool,
     root_dir: Path,
     root_spec,
 ) -> None:
@@ -975,7 +970,7 @@ def _add_cursor_skills(
     field is still consulted explicitly so a future loosening of that match
     can't silently start inventorying it.
     """
-    eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = ignore_context(directory, root_dir, root_spec)
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under]
     for path in iter_unignored_files(directory, walk_spec):
@@ -1023,7 +1018,6 @@ def _add_scoped_mcps(
     normalize,
     *,
     exclude_under: list[Path],
-    include_gitignored: bool,
     root_dir: Path,
     root_spec,
     surface: RepoSurface = CURSOR_SURFACE,
@@ -1034,7 +1028,7 @@ def _add_scoped_mcps(
     is exactly this one path (docs/specs/cursor-agent-kind.md "Where each
     surface loads from").
     """
-    eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = ignore_context(directory, root_dir, root_spec)
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under]
     for path in iter_unignored_files(directory, walk_spec):
@@ -1069,7 +1063,6 @@ def _add_commands_and_subagents(
     normalize,
     *,
     exclude_under: list[Path],
-    include_gitignored: bool,
     root_dir: Path,
     root_spec,
     realized_plugin_commands: list[tuple[Node, Path]] | None = None,
@@ -1100,7 +1093,7 @@ def _add_commands_and_subagents(
     the same precedence walk.
     """
     exclude_resolved = [p.resolve() for p in exclude_under]
-    eval_root, spec = ignore_context(directory, include_gitignored, root_dir, root_spec)
+    eval_root, spec = ignore_context(directory, root_dir, root_spec)
 
     def _is_ignored(path: Path) -> bool:
         try:

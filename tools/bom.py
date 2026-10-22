@@ -234,9 +234,12 @@ def build_agent_bom(
         BOMComponent(ref=ref, bom_ref=bom_ref)
         for ref, bom_ref in zip(refs, _stable_bom_refs(refs), strict=True)
     ]
+    # Composition edges come from the graph. A flat ref list (the `graph is None`
+    # path) carries no composition information now that `attributed_to` is gone,
+    # so a graphless BOM has no edges. Callers that need edges pass a `Graph`.
     return AgentBOM(
         components=components,
-        edges=_build_edges(components),
+        edges=[],
         target_type=target_type,
         target=target,
         source_unit_count=source_unit_count,
@@ -551,13 +554,6 @@ def _short_component_hash(ref: ComponentRef, index: int) -> str:
 
 def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
-
-
-def _build_edges(components: list[BOMComponent]) -> list[BOMEdge]:
-    # Composition edges come from the graph. A flat ref list (the `graph is None`
-    # path) carries no composition information now that `attributed_to` is gone,
-    # so a graphless BOM has no edges. Callers that need edges pass a `Graph`.
-    return []
 
 
 def _component_to_cyclonedx(component: BOMComponent) -> dict[str, Any]:

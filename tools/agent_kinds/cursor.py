@@ -42,9 +42,9 @@ COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
 # EVIDENCE: a tree containing only `.claude/agents/` declares a Claude Code
 # agent, not a Cursor one, and treating a compat-read path as evidence would
 # emit a phantom near-empty Cursor BOM for every Claude-only repository.
-# `.agents/skills/` is the one exception — Cursor is currently the only
-# registered kind that reads it, so it *is* evidence (revisit if a Codex kind
-# lands). A bare `mcp.json`/`.mcp.json` is excluded for the same reason
+# `.agents/skills/` is evidence for every registered kind that reads it
+# (ADR-0058). Codex and Devin CLI read the same directory and count it as
+# evidence too. A bare `mcp.json`/`.mcp.json` is excluded for the same reason
 # `_DECLARED_EVIDENCE_PATTERNS` excludes it in `claude_code.py`: no kind owns
 # it exclusively.
 #

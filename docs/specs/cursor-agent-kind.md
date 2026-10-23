@@ -612,12 +612,12 @@ the normalizer must learn the foreign root's label, or the path falls through to
 an absolute path that is machine-specific and leaks a home directory into a
 `bom-ref`.
 
-Cross-reads are **composition, never evidence.** A tree containing only
-`.claude/agents/` declares a Claude Code agent, not a Cursor one; treating a
-compat-read path as evidence would emit a phantom near-empty Cursor BOM for every
-Claude-only repository. `.agents/skills/` is the exception and *is* evidence,
-because Cursor is currently the only registered kind that reads it — a claim to
-revisit if a Codex kind lands.
+Cross-reads are **composition, never evidence.** A tree that contains only
+`.claude/agents/` declares a Claude Code agent. Treating a compat-read path as
+evidence emits a Cursor BOM for a Claude-only repository. `.agents/skills/` is
+evidence for every registered kind that reads it (ADR-0058). Cursor, Codex, and
+Devin CLI read that directory. A repository that contains only `.agents/skills/`
+declares each of those agents.
 
 ## Posture derives from composition
 

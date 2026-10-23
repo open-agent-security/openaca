@@ -26,8 +26,13 @@ Plugin contents inherit the owning plugin's rule paths.
 Consumers can display these paths without repeating policy matching.
 
 Pass `agent_kind="codex"` to collect Codex evidence through the same library boundary.
+Pass `agent_kind="cursor"` to collect Cursor evidence.
 The default remains `"claude-code"`.
+`POLICY_EVIDENCE_AGENT_KINDS` lists the accepted kinds.
 Unsupported agent kinds fail before discovery.
+Cursor has no relocatable configuration root (ADR-0054).
+Omit `target`, or pass `<home>/.cursor`, for Cursor.
+Another Cursor `target` fails before discovery.
 This selector changes collection only; the managed-settings compiler still targets Claude.
 Codex inventory notes do not fail collection.
 Actual component gaps fail collection by default.

@@ -2756,6 +2756,66 @@ def test_codex_native_hook_trust_does_not_prevent_mcp_policy_evaluation(tmp_path
     assert "enabled=false" in (root / "config.toml").read_text()
 
 
+def test_cursor_selection_collects_user_project_and_plugin_mcps_and_never_claude(
+    monkeypatch, tmp_path
+):
+    from openaca.core import apply_risk_gates, collect_policy_evidence, parse_policy
+
+    home, project = tmp_path / "home", tmp_path / "project"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"claude-only": {"command": "x"}}})
+    )
+    (home / ".cursor").mkdir()
+    (home / ".cursor/mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"user-fixture": {"command": "uvx", "args": ["mcp-server-fetch"]}}}
+        )
+    )
+    (project / ".cursor").mkdir(parents=True)
+    (project / ".cursor/mcp.json").write_text(
+        json.dumps({"mcpServers": {"proj-fixture": {"command": "proj-mcp"}}})
+    )
+    plugin = home / ".cursor/plugins/cache/native-test/owner/0123abc"
+    (plugin / ".cursor-plugin").mkdir(parents=True)
+    (plugin / ".cursor-plugin/plugin.json").write_text(json.dumps({"name": "owner"}))
+    (plugin / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"owned": {"command": "owned-mcp"}}})
+    )
+    (plugin / ".cache-complete").write_text("")
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "allowed",
+                    "blocked": [{"command": ["uvx", "mcp-server-fetch"]}],
+                },
+                "plugins": {"default": "allowed", "blocked": [{"plugin": "owner@native-test"}]},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+    evidence = collect_policy_evidence(
+        policy, project=project, agent_kind="cursor", allow_partial_inventory=True
+    )
+    decisions = apply_risk_gates(
+        policy, list(evidence.components), advisories=[], advisory_matches=[], posture_matches=[]
+    )
+    mcps = {
+        d.ref.extra["component_path"][-1]["name"]: d
+        for d in decisions
+        if d.ref.extra.get("component_type") == "mcp_server"
+    }
+    assert set(mcps) == {"user-fixture", "proj-fixture", "owned"}
+    assert mcps["user-fixture"].blocked and not mcps["user-fixture"].controlled_by_plugin
+    assert not mcps["proj-fixture"].blocked
+    assert mcps["proj-fixture"].ref.source_manifest == str(project / ".cursor/mcp.json")
+    assert mcps["owned"].blocked and mcps["owned"].controlled_by_plugin
+    assert mcps["owned"].subject.ref.name == "owner"
+
+
 @pytest.mark.parametrize("incomplete_cache", [False, True])
 def test_codex_bundled_hook_envelopes_and_partial_inventory_keep_known_mcp_blocks(
     tmp_path, incomplete_cache

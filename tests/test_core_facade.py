@@ -86,6 +86,8 @@ def test_policy_evidence_is_reexported_without_exposing_collection_internals():
 
     assert core.PolicyEvidence is tools.policy_compile.PolicyEvidence
     assert core.collect_policy_evidence is tools.policy_compile.collect_policy_evidence
+    assert core.POLICY_EVIDENCE_AGENT_KINDS is tools.policy_compile.POLICY_EVIDENCE_AGENT_KINDS
+    assert {"claude-code", "codex", "cursor"} <= core.POLICY_EVIDENCE_AGENT_KINDS
 
 
 # The surface is defined as much by what is absent as by what is present, and

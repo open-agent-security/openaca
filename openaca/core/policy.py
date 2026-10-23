@@ -33,6 +33,7 @@ from tools.policy import (
     parse,
 )
 from tools.policy_compile import (
+    POLICY_EVIDENCE_AGENT_KINDS,
     PolicyEvidence,
     collect_policy_evidence,
     compile_endpoint_policy,
@@ -43,6 +44,7 @@ parse_policy = parse
 parse_policy_source = loads
 
 __all__ = [
+    "POLICY_EVIDENCE_AGENT_KINDS",
     "Decision",
     "EndpointComponent",
     "Policy",

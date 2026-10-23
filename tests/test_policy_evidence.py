@@ -99,3 +99,31 @@ def test_unknown_agent_kind_fails_before_discovery(monkeypatch):
     monkeypatch.setattr(policy_compile, "discover_agents", discover)
     with pytest.raises(PolicyEvaluationError, match="unsupported policy evidence agent kind"):
         policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="unknown")
+
+
+def test_cursor_is_a_policy_evidence_kind_with_its_fixed_root(monkeypatch, tmp_path):
+    seen = []
+
+    def collect(policy, target, project, *, agent_kind, allow_partial_inventory):
+        seen.append((target, agent_kind))
+        return [], [], [], [], [], []
+
+    monkeypatch.setattr(policy_compile.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(policy_compile, "_evaluate_endpoint", collect)
+    policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="cursor")
+    policy_compile.collect_policy_evidence(
+        _policy(), target=tmp_path / ".cursor", project=None, agent_kind="cursor"
+    )
+    assert seen == [(None, "cursor"), (tmp_path / ".cursor", "cursor")]
+
+
+def test_a_relocated_cursor_root_fails_before_discovery(monkeypatch, tmp_path):
+    def discover(*args):
+        pytest.fail("a relocated Cursor root must not discover the home directory's Cursor")
+
+    monkeypatch.setattr(policy_compile.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(policy_compile, "discover_agents", discover)
+    with pytest.raises(PolicyEvaluationError, match="no relocatable configuration root"):
+        policy_compile.collect_policy_evidence(
+            _policy(), target=tmp_path / "elsewhere", project=None, agent_kind="cursor"
+        )

@@ -33,6 +33,7 @@ from tools.agent_kinds import (
     discover_agents,
     kind_for,
 )
+from tools.agent_kinds.cursor import resolve_config_root as resolve_cursor_root
 from tools.atomic_write import write_new_temp_file
 from tools.component_ref import ComponentRef
 from tools.graph import Graph, WarningLog
@@ -58,6 +59,7 @@ from tools.scan import (
 )
 
 __all__ = [
+    "POLICY_EVIDENCE_AGENT_KINDS",
     "PolicyEvidence",
     "collect_policy_evidence",
     "compile_endpoint_policy",
@@ -65,6 +67,10 @@ __all__ = [
 ]
 
 _OPENACA_FILENAME = "50-openaca-policy.json"
+
+#: The agent kinds `collect_policy_evidence` accepts. A consumer reads this
+#: instead of probing the collector with a kind it may reject.
+POLICY_EVIDENCE_AGENT_KINDS = frozenset({"claude-code", "codex", "cursor"})
 
 
 @dataclass(frozen=True)
@@ -101,8 +107,16 @@ def collect_policy_evidence(
     Advisory collection errors still raise. Missing advisory coordinates do
     not establish vulnerability coverage.
     """
-    if agent_kind not in {"claude-code", "codex"}:
+    if agent_kind not in POLICY_EVIDENCE_AGENT_KINDS:
         raise PolicyEvaluationError(f"unsupported policy evidence agent kind: {agent_kind}")
+    # Cursor's root is always `<home>/.cursor` (ADR-0054). Discovery ignores
+    # another root, so refuse it rather than return the wrong endpoint's evidence.
+    if (
+        agent_kind == "cursor"
+        and target is not None
+        and target.resolve() != resolve_cursor_root().resolve()
+    ):
+        raise PolicyEvaluationError("cursor policy evidence has no relocatable configuration root")
     components, advisory_matches, advisories, posture_matches, unmapped_posture, gaps = (
         _evaluate_endpoint(
             policy,

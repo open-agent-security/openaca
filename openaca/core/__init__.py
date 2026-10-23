@@ -37,6 +37,7 @@ from openaca.core.osv_queries import (
     stamp_osv_query_provenance,
 )
 from openaca.core.policy import (
+    POLICY_EVIDENCE_AGENT_KINDS,
     Decision,
     EndpointComponent,
     Policy,
@@ -54,6 +55,7 @@ from openaca.core.policy import (
 from openaca.core.severity import derive_severity_label, derive_severity_score
 
 __all__ = [
+    "POLICY_EVIDENCE_AGENT_KINDS",
     "BOMComponent",
     "CollectedAgent",
     "ComponentRef",

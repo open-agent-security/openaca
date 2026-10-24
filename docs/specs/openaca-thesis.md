@@ -226,7 +226,7 @@ License decisions:
 | **V0** | Overlay-only. Each canonical record sits at `overlays/<upstream-id>.yaml`, keyed by an upstream OSV record ID (GHSA / CVE / OSV / PYSEC / MAL), and contains only `database_specific.openaca` metadata: taxonomies, evidence level, and (for malicious packages) threat_kind. Schema, linter, static export, reference scanner (CLI + Action). Disclosure policy doc; private-pilot operation only. See [ADR-0009](../adrs/0009-overlay-only-v0.md) and the implementation plans under [`docs/plans/`](../plans/) for the V0 deliverable list. |
 | **V1 entry** | Active disclosure pipeline. Triggered when V0 ships ≥ 25 overlays across 3+ component types, the disclosure framework is documented + tabletop-rehearsed, and ≥ 5 external ecosystem signals materialize. |
 | **V1 scaling** | Programmatic disclosure sweeps; first real coordinated disclosure completed end-to-end. |
-| **V1 manifest coverage** | Cursor + Windsurf + ChatGPT-style plugin manifests join the V0 set (`package.json`, `mcp.json`, `.claude-plugin/plugin.json`, `.claude/settings.json`). |
+| **V1 manifest coverage** | Cursor, Codex, and Devin CLI manifests are in V0. Windsurf manifests and ChatGPT-style plugin manifests stay in V1. |
 | **V1 hash-based identity** | Content-hash-keyed overlays for skill manifests, exported flows, and copy-pasted IDE rule templates. |
 
 V0 is the credibility floor. V1 is when OpenACA becomes the corpus

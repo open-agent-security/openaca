@@ -124,23 +124,6 @@ def collect_osv_queries(refs: list[ComponentRef]) -> list[OsvQuery]:
     return out
 
 
-def collect_target_purls(refs: list[ComponentRef]) -> list[str]:
-    """Deduplicated package PURLs still queried through OSV's PURL path.
-
-    Kept for callers/tests that only need the package-query subset. Git and
-    Docker source identities may still have internal PURLs, but OSV does not
-    accept those generic PURL forms.
-    """
-    out: list[str] = []
-    for query in collect_osv_queries(refs):
-        package = query.payload.get("package")
-        if isinstance(package, dict):
-            purl = package.get("purl")
-            if isinstance(purl, str):
-                out.append(purl)
-    return out
-
-
 def collect_osv_query_labels(refs: list[ComponentRef]) -> list[str]:
     """Readable labels for verbose output, in OSV query order."""
     return [query.label for query in collect_osv_queries(refs)]

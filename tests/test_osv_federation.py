@@ -11,7 +11,6 @@ from tools.osv_federation import (
     OsvQuery,
     augment_corpus,
     collect_osv_queries,
-    collect_target_purls,
     is_queryable,
     stamp_osv_query_provenance,
 )
@@ -80,25 +79,6 @@ def test_is_queryable_requires_supported_osv_query_shape():
     )
     # Identity-only refs (no ecosystem) → not queryable
     assert is_queryable(ComponentRef(component_identity="claude-hook/command:abcd1234")) is False
-
-
-def test_collect_target_purls_dedupes_and_preserves_order():
-    refs = [
-        _ref("npm", "lodash", "4.17.20"),
-        _ref("PyPI", "requests", "2.31.0"),
-        _ref("docker", "ghcr.io/org/server", "1.0"),  # skipped
-        _ref("npm", "lodash", "4.17.20"),  # dup
-        ComponentRef(
-            name="supabase", version="0.1.6", extra={"component_type": "plugin"}
-        ),  # skipped
-        ComponentRef(
-            ecosystem="npm",
-            name="left-pad",
-            extra={"component_type": "mcp_server", "install_source": "npx left-pad"},
-        ),  # no version → package query, not PURL
-    ]
-    purls = collect_target_purls(refs)
-    assert purls == ["pkg:npm/lodash@4.17.20", "pkg:pypi/requests@2.31.0"]
 
 
 def test_collect_osv_queries_uses_supported_query_shapes():

@@ -2114,9 +2114,17 @@ def _add_bundled_plugin_surfaces(
         declared_path = plugin_data[field]
         if field == "skills" and surface.bundled.skills_field_overrides_default:
             # A list (or `[]`, which disables skill loading outright) is
-            # Devin's own override shape, not a parse failure.
+            # Devin's own override shape, not a parse failure. An
+            # independent-entries surface (Cursor) skips an unresolvable
+            # entry and loads the rest, mirroring `_add_bundled_skills`, so
+            # only a non-independent surface treats one bad entry as
+            # invalidating the whole declaration.
             entries = declared_path if isinstance(declared_path, list) else [declared_path]
-            if entries and not all(_resolves_to_dir(entry) for entry in entries):
+            if (
+                entries
+                and not surface.bundled.skills_field_entries_independent
+                and not all(_resolves_to_dir(entry) for entry in entries)
+            ):
                 graph.record_gap(
                     f"could not parse {plugin_manifest_path}: "
                     f"{field} must name an available directory"

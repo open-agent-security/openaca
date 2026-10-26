@@ -80,6 +80,11 @@ class BundledLayout:
     # `skills` field (unverified either way) keeps the existing additive
     # behavior rather than risk changing it on a guess.
     skills_field_overrides_default: bool = False
+    # Cursor loads each declared skills directory that exists and skips one that
+    # does not (Cursor CLI 2026.10.22). Devin loads none when one entry is
+    # invalid, which is the default. Read only with
+    # `skills_field_overrides_default`.
+    skills_field_entries_independent: bool = False
     # Devin's manifest `mcpServers` field selects the plugin's MCP sources:
     # a file, a list of files, `{paths, exclusive}` or an inline map, with the
     # root convention read last unless suppressed and the first source winning
@@ -270,6 +275,10 @@ CURSOR_SURFACE = RepoSurface(
         hooks_filename="hooks/hooks.json",
         commands_dir="commands",
         agents_dir="agents",
+        # docs/specs/cursor-agent-kind.md "Folder discovery": a manifest field
+        # replaces discovery, and `"skills": []` loads no skills.
+        skills_field_overrides_default=True,
+        skills_field_entries_independent=True,
     ),
     # Unused by Cursor's own composer — carried for dataclass completeness,
     # matching CLAUDE_CODE_SURFACE's values so a stray read isn't silently

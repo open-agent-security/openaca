@@ -2816,6 +2816,55 @@ def test_cursor_selection_collects_user_project_and_plugin_mcps_and_never_claude
     assert mcps["owned"].subject.ref.name == "owner"
 
 
+def test_a_cursor_plugin_skills_field_replaces_folder_discovery(monkeypatch, tmp_path):
+    """The four cases the Cursor CLI 2026.10.22-27dcf5f indexed from real manifests."""
+    from openaca.core import collect_policy_evidence, parse_policy
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    cache = home / ".cursor/plugins/cache/probe"
+    cases = {
+        "empty": ([], ["skills/default-a"]),
+        "custom": ("./custom", ["skills/default-b", "custom/custom-b"]),
+        "partial": (["./custom", "./missing"], ["skills/default-c", "custom/custom-c"]),
+        "absent": (None, ["skills/default-d"]),
+    }
+    for name, (field, skills) in cases.items():
+        plugin = cache / name / "0123abc"
+        (plugin / ".cursor-plugin").mkdir(parents=True)
+        manifest = {"name": name} if field is None else {"name": name, "skills": field}
+        (plugin / ".cursor-plugin/plugin.json").write_text(json.dumps(manifest))
+        (plugin / ".cache-complete").write_text("")
+        for skill in skills:
+            (plugin / skill).mkdir(parents=True)
+            (plugin / skill / "SKILL.md").write_text(
+                f"---\nname: {skill.split('/')[-1]}\ndescription: d\n---\nbody\n"
+            )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {name: {"default": "allowed"} for name in ("mcps", "plugins", "skills")},
+        }
+    )
+    evidence = collect_policy_evidence(
+        policy, project=None, agent_kind="cursor", allow_partial_inventory=True
+    )
+    loaded: dict[str, set[str]] = {name: set() for name in cases}
+    for component in evidence.components:
+        ref = component.ref
+        if ref.extra.get("component_type") != "skill":
+            continue
+        owner = Path(ref.source_manifest).relative_to(cache).parts[0]
+        loaded[owner].add(str(ref.name))
+    assert loaded == {
+        "empty": set(),
+        "custom": {"custom-b"},
+        "partial": {"custom-c"},
+        "absent": {"default-d"},
+    }
+    assert not [gap for gap in evidence.inventory_gaps if "/empty/" in gap or "/custom/" in gap]
+
+
 @pytest.mark.parametrize("incomplete_cache", [False, True])
 def test_codex_bundled_hook_envelopes_and_partial_inventory_keep_known_mcp_blocks(
     tmp_path, incomplete_cache

@@ -2862,7 +2862,11 @@ def test_a_cursor_plugin_skills_field_replaces_folder_discovery(monkeypatch, tmp
         "partial": {"custom-c"},
         "absent": {"default-d"},
     }
-    assert not [gap for gap in evidence.inventory_gaps if "/empty/" in gap or "/custom/" in gap]
+    assert not [
+        gap
+        for gap in evidence.inventory_gaps
+        if "/empty/" in gap or "/custom/" in gap or "/partial/" in gap
+    ]
 
 
 @pytest.mark.parametrize("incomplete_cache", [False, True])

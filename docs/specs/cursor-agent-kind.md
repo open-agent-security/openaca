@@ -387,6 +387,8 @@ from how Cursor treats its own surfaces:
 `agents/`, `hooks/hooks.json`, `commands/`, `rules/`, a root `SKILL.md`, and a
 root `.mcp.json` **or** `mcp.json`. A manifest field **replaces** discovery for
 that type — `"skills": "./custom-skills"` means `skills/` is not also scanned. A
+`"skills": []` field loads no skills. A list entry that names no directory is
+skipped, and the other entries still load (Cursor CLI `2026.10.22-27dcf5f`). A
 manifest-less bundle is discovered entirely this way, which is common enough that
 treating the manifest as required would drop real plugins *(docs disagree — they
 call the manifest required)*.

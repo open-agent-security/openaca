@@ -1634,6 +1634,8 @@ def _add_bundled_skills(
         for entry in declared:
             custom_dir = resolve_within(directory, entry) if isinstance(entry, str) else None
             if custom_dir is None or not custom_dir.is_dir():
+                if surface.bundled.skills_field_entries_independent:
+                    continue
                 declared_dirs = []
                 break
             declared_dirs.append(custom_dir)

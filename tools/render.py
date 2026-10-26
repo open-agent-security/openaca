@@ -1528,7 +1528,6 @@ def _append_tier2_nodes(
 
 def _build_plugin_node(
     plugin_ref: ComponentRef,
-    all_refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
     view: Optional["_GraphView"] = None,
@@ -1768,7 +1767,7 @@ def render_inventory_tree(
     )
     out.append("")
     blocks = [
-        _build_plugin_node(plugin_ref, refs, findings_by_ref, use_color, view=view)
+        _build_plugin_node(plugin_ref, findings_by_ref, use_color, view=view)
         for plugin_ref in plugins
     ]
     if direct_node is not None:
@@ -1822,7 +1821,6 @@ def render_repo_inventory_tree(
     for plugin_ref in plugin_refs:
         node, assigned = _build_repo_plugin_node(
             plugin_ref,
-            all_refs,
             findings_by_ref,
             use_color,
             root,
@@ -1893,7 +1891,6 @@ def _repo_tree_ref_key(ref: ComponentRef) -> tuple:
 
 def _build_repo_plugin_node(
     plugin_ref: ComponentRef,
-    all_refs: list[ComponentRef],
     findings_by_ref: dict[tuple, list[str]],
     use_color: bool,
     source_note_root: Path | None = None,
@@ -2021,16 +2018,6 @@ def _build_repo_plugin_node_from_graph(
     if not root.children:
         root.children.append(_TreeNode(label="(no declared components)"))
     return root, assigned
-
-
-def _ref_under_dir(ref: ComponentRef, directory: Path) -> bool:
-    """True when ref.source_manifest lives anywhere under `directory` (including subdirectories)."""
-    if not ref.source_manifest:
-        return False
-    try:
-        return Path(ref.source_manifest).resolve().is_relative_to(directory.resolve())
-    except OSError:
-        return False
 
 
 def _repo_rel(path: Path, root: Path) -> str:

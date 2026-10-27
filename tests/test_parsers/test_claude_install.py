@@ -632,9 +632,10 @@ def test_install_walks_plugin_json_inline_mcp_servers(tmp_path):
 
 
 def test_install_does_not_double_emit_when_plugin_json_points_at_default_mcp(tmp_path):
-    """If plugin.json says mcpServers='./.mcp.json' and that file exists at
-    the install root, the same file gets walked once via parse_at_install_root
-    and skipped by the default-path walk via dedupe on (source_manifest, identity)."""
+    """plugin.json sets mcpServers to './.mcp.json' at the install root.
+    walk_plugin_root reads that file from the string path.
+    The default-path walk then skips the same file.
+    The skip key is source_manifest and component identity."""
     install_path = _build_install_with_plugin(
         tmp_path, plugin_key="superpowers@m", plugin_name="superpowers", version="5.1.0"
     )

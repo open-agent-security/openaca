@@ -27,7 +27,7 @@ from tools.observations.finding import (
 )
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.finding import Severity as PostureSeverity
-from tools.posture.rules.skill_capability import _component_path
+from tools.posture.rules.skill_capability import _bom_ref_for, _component_path
 
 DEFAULT_COMMAND = "skillspector"
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -354,11 +354,6 @@ def _posture_from_result(
         evidence=evidence,
         bom_ref=_bom_ref_for(ref),
     )
-
-
-def _bom_ref_for(ref: ComponentRef) -> str | None:
-    value = (ref.extra or {}).get("bom_ref")
-    return value if isinstance(value, str) and value else None
 
 
 def _finding_component(ref: ComponentRef) -> dict[str, Any]:

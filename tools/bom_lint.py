@@ -11,7 +11,12 @@ import click
 from jsonschema import Draft202012Validator
 
 from tools.agent_kinds import REGISTRY
-from tools.bom import AGENT_ROOT_PREFIX, AGENT_ROOTED_SCHEMA_VERSIONS, OPENACA_BOM_SCHEMA_VERSION
+from tools.bom import (
+    AGENT_ROOT_PREFIX,
+    AGENT_ROOTED_SCHEMA_VERSIONS,
+    OPENACA_BOM_SCHEMA_VERSION,
+    _properties_by_name,
+)
 from tools.capability import COVERAGE_LEVELS, Capability
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -314,18 +319,6 @@ def _check_capability_descriptors(props: dict[str, str], index: int) -> list[str
                 f"components[{index}]: openaca:capabilities[{entry_index}] is invalid: {exc}"
             )
     return errors
-
-
-def _properties_by_name(component: dict[str, Any]) -> dict[str, str]:
-    props: dict[str, str] = {}
-    for prop in component.get("properties") or []:
-        if not isinstance(prop, dict):
-            continue
-        name = prop.get("name")
-        value = prop.get("value")
-        if isinstance(name, str) and isinstance(value, str):
-            props[name] = value
-    return props
 
 
 @click.command(name="lint")

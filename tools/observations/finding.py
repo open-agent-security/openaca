@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from tools.posture.finding import _component_label, _location
+
 Severity = Literal["info", "low", "medium", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
 
@@ -38,14 +40,8 @@ class ObservationFinding:
 
     @property
     def component_label(self) -> str:
-        name = self.component.get("name")
-        if isinstance(name, str) and name:
-            return name
-        return "<unidentified>"
+        return _component_label(self.component)
 
     @property
     def location(self) -> str:
-        if self.declared_by is None:
-            return ""
-        path = self.declared_by.get("path")
-        return path if isinstance(path, str) else ""
+        return _location(self.declared_by)

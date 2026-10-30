@@ -36,6 +36,20 @@ class Standards:
         return {k: v for k, v in self.__dict__.items() if v}
 
 
+def _component_label(component: dict[str, Any]) -> str:
+    name = component.get("name")
+    if isinstance(name, str) and name:
+        return name
+    return "<unidentified>"
+
+
+def _location(declared_by: dict[str, Any] | None) -> str:
+    if declared_by is None:
+        return ""
+    path = declared_by.get("path")
+    return path if isinstance(path, str) else ""
+
+
 @dataclass(frozen=True)
 class PostureFinding:
     rule_id: str
@@ -68,14 +82,8 @@ class PostureFinding:
 
     @property
     def component_label(self) -> str:
-        name = self.component.get("name")
-        if isinstance(name, str) and name:
-            return name
-        return "<unidentified>"
+        return _component_label(self.component)
 
     @property
     def location(self) -> str:
-        if self.declared_by is None:
-            return ""
-        path = self.declared_by.get("path")
-        return path if isinstance(path, str) else ""
+        return _location(self.declared_by)

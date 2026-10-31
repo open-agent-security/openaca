@@ -435,7 +435,7 @@ Strict collection fails when the store holds a plugin.
 With `allow_partial_inventory=True`, the result keeps the readable components and the gaps.
 A hook call to a plugin's MCP server then resolves to no collected subject.
 The consumer applies its uncertainty behavior to that call.
-See [ADR-0078](../adrs/0078-devin-store-plugins-are-policy-evidence-gaps.md).
+See [ADR-0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md).
 
 Devin's documentation does not say if a plugin's server name has a prefix in `mcp__<server>__<tool>`.
 Verify the name before the collector inventories plugin servers.
@@ -461,7 +461,7 @@ A finding with no component target stays in `unmapped_posture`.
 
 | Decision | ADR |
 |---|---|
-| A Devin store plugin is a policy evidence gap until its bundle layout is verified | [ADR-0078](../adrs/0078-devin-store-plugins-are-policy-evidence-gaps.md) |
+| A Devin store plugin is a policy evidence gap until its bundle layout is verified | [ADR-0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md) |
 | Devin refuses a relocated configuration root | [ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md) |
 
 ## Claude Code target

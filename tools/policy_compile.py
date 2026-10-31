@@ -265,7 +265,7 @@ def _evaluate_endpoint(
     gaps = list(graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings)
     if agent_kind == "devin":
         # The store's bundle layout is unverified, so a plugin's MCP servers,
-        # skills and hooks are absent from these components (ADR-0078).
+        # skills and hooks are absent from these components (ADR-0079).
         gaps.extend(
             f"{c.ref.source_manifest}: {c.ref.source_locator}: contents of Devin plugin "
             f"{c.ref.name} are not inventoried"

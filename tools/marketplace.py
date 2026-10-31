@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from urllib.parse import urlparse
 
@@ -43,3 +45,15 @@ def setting(value: str) -> dict[str, str]:
     """Return Claude's managed-settings representation for a marketplace source."""
     source, location = key(value)
     return {"source": source, "repo" if source == "github" else "url": location}
+
+
+def source_digest(value: str) -> str | None:
+    """A non-secret inventory fingerprint with admission's source normalization."""
+    try:
+        parsed = urlparse(value)
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        canonical = key(value)
+    except ValueError:
+        return None
+    return hashlib.sha256(json.dumps(canonical, separators=(",", ":")).encode()).hexdigest()

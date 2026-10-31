@@ -34,6 +34,7 @@ from tools.agent_kinds import (
     kind_for,
 )
 from tools.agent_kinds.cursor import resolve_config_root as resolve_cursor_root
+from tools.agent_kinds.devin_cli import resolve_config_root as resolve_devin_root
 from tools.atomic_write import write_new_temp_file
 from tools.component_ref import ComponentRef
 from tools.graph import Graph, WarningLog
@@ -70,7 +71,7 @@ _OPENACA_FILENAME = "50-openaca-policy.json"
 
 #: The agent kinds `collect_policy_evidence` accepts. A consumer reads this
 #: instead of probing the collector with a kind it may reject.
-POLICY_EVIDENCE_AGENT_KINDS = frozenset({"claude-code", "codex", "cursor"})
+POLICY_EVIDENCE_AGENT_KINDS = frozenset({"claude-code", "codex", "cursor", "devin"})
 
 
 @dataclass(frozen=True)
@@ -109,14 +110,14 @@ def collect_policy_evidence(
     """
     if agent_kind not in POLICY_EVIDENCE_AGENT_KINDS:
         raise PolicyEvaluationError(f"unsupported policy evidence agent kind: {agent_kind}")
-    # Cursor's root is always `<home>/.cursor` (ADR-0054). Discovery ignores
-    # another root, so refuse it rather than return the wrong endpoint's evidence.
-    if (
-        agent_kind == "cursor"
-        and target is not None
-        and target.resolve() != resolve_cursor_root().resolve()
-    ):
-        raise PolicyEvaluationError("cursor policy evidence has no relocatable configuration root")
+    # Cursor's root is always `<home>/.cursor` (ADR-0054) and Devin's is its XDG
+    # root (ADR-0071). Discovery ignores another root, so refuse it rather than
+    # return the wrong endpoint's evidence.
+    fixed_root = {"cursor": resolve_cursor_root, "devin": resolve_devin_root}.get(agent_kind)
+    if fixed_root is not None and target is not None and target.resolve() != fixed_root().resolve():
+        raise PolicyEvaluationError(
+            f"{agent_kind} policy evidence has no relocatable configuration root"
+        )
     components, advisory_matches, advisories, posture_matches, unmapped_posture, gaps = (
         _evaluate_endpoint(
             policy,
@@ -261,7 +262,16 @@ def _evaluate_endpoint(
         refs = _filter_agent_scope_refs(_refs_from_graph(graph))
         components.extend(EndpointComponent(ref, graph) for ref in refs)
         refs_by_agent.append((agent, graph, refs))
-    gaps = graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings
+    gaps = list(graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings)
+    if agent_kind == "devin":
+        # The store's bundle layout is unverified, so a plugin's MCP servers,
+        # skills and hooks are absent from these components (ADR-0078).
+        gaps.extend(
+            f"{c.ref.source_manifest}: {c.ref.source_locator}: contents of Devin plugin "
+            f"{c.ref.name} are not inventoried"
+            for c in components
+            if c.ref.extra.get("component_type") == "plugin"
+        )
     if gaps and not allow_partial_inventory:
         # A dropped or malformed inventory entry means `components` is an
         # incomplete endpoint inventory: admission and risk gates would be
@@ -315,7 +325,7 @@ def _evaluate_endpoint(
                         f"{finding.component_label}: posture {finding.rule_id} is not "
                         "enforceable (no discovered component target)"
                     )
-    return components, findings, advisories, posture, unmapped_posture, list(gaps)
+    return components, findings, advisories, posture, unmapped_posture, gaps
 
 
 def _managed_key_collisions(directory: Path, generated_keys: set[str]) -> list[tuple[str, Path]]:

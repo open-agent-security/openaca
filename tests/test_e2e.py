@@ -2816,6 +2816,116 @@ def test_cursor_selection_collects_user_project_and_plugin_mcps_and_never_claude
     assert mcps["owned"].subject.ref.name == "owner"
 
 
+def test_devin_selection_collects_its_layers_imports_and_store_plugin_gap(monkeypatch, tmp_path):
+    """Devin evidence: native layers merged by name, gated imports, and a store
+    plugin whose servers are an inventory gap (ADR-0078)."""
+    from openaca.core import (
+        PolicyEvaluationError,
+        apply_risk_gates,
+        collect_policy_evidence,
+        parse_policy,
+    )
+
+    home, project = tmp_path / "home", tmp_path / "project"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    config = home / ".config/devin"
+    config.mkdir(parents=True)
+    (config / "mcp_config.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
+                    "shared": {"command": "user-shared"},
+                    "muted": {"command": "user-muted"},
+                }
+            }
+        )
+    )
+    (config / "config.json").write_text(
+        "// Devin's config is JSON with comments\n"
+        '{"permissions": {"allow": ["mcp__notes__*"]}, "read_config_from": {"cursor": false}}\n'
+    )
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"claude-user": {"command": "claude-mcp"}}})
+    )
+    (project / ".git").mkdir(parents=True)
+    (project / ".devin").mkdir()
+    (project / ".devin/mcp_config.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "notes": {"url": "https://mcp.example.com/mcp", "transport": "http"},
+                    "shared": {"command": "project-shared"},
+                }
+            }
+        )
+    )
+    (project / ".devin/mcp_config.local.json").write_text(
+        json.dumps({"mcpServers": {"muted": {"command": "user-muted", "disabled": True}}})
+    )
+    (project / ".cursor").mkdir()
+    (project / ".cursor/mcp.json").write_text(
+        json.dumps({"mcpServers": {"cursor-only": {"command": "cursor-mcp"}}})
+    )
+    lock = home / ".local/share/devin/cli/plugins/lock.json"
+    lock.parent.mkdir(parents=True)
+    lock.write_text(
+        json.dumps({"requirements": [], "resolved": [{"name": "review-tools"}], "edges": []})
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {
+                    "default": "allowed",
+                    "blocked": [{"command": ["uvx", "mcp-server-fetch"]}],
+                },
+                "plugins": {"default": "allowed"},
+                "skills": {"default": "allowed"},
+            },
+            "risk_gates": {"posture": {"rules": ["openaca-posture-mcp-auto-approve"]}},
+        }
+    )
+
+    with pytest.raises(PolicyEvaluationError, match="contents of Devin plugin review-tools"):
+        collect_policy_evidence(policy, project=project, agent_kind="devin")
+    evidence = collect_policy_evidence(
+        policy, project=project, agent_kind="devin", allow_partial_inventory=True
+    )
+    assert evidence.inventory_gaps == (
+        f"{lock}: $.resolved[0]: contents of Devin plugin review-tools are not inventoried",
+    )
+    decisions = apply_risk_gates(
+        policy,
+        list(evidence.components),
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=list(evidence.posture_matches),
+    )
+    mcps = {
+        d.ref.extra["component_path"][-1]["name"]: d
+        for d in decisions
+        if d.ref.extra.get("component_type") == "mcp_server"
+    }
+    # A hook's `mcp__<server>__<tool>` names these keys. The project layer wins
+    # `shared`, the local layer's disabled entry removes `muted`, and the user
+    # config's switch turns the Cursor import off.
+    assert set(mcps) == {"fetch", "shared", "notes", "claude-user"}
+    assert mcps["shared"].ref.source_manifest == str(project / ".devin/mcp_config.json")
+    assert mcps["notes"].ref.source_manifest == str(project / ".devin/mcp_config.json")
+    assert mcps["fetch"].ref.source_manifest == str(config / "mcp_config.json")
+    assert mcps["claude-user"].ref.source_manifest == str(home / ".claude.json")
+    assert mcps["fetch"].blocked and "admission blocked" in mcps["fetch"].reasons
+    assert mcps["notes"].blocked
+    assert "posture openaca-posture-mcp-auto-approve" in mcps["notes"].reasons
+    assert not mcps["shared"].blocked and not mcps["claude-user"].blocked
+    assert not any(d.controlled_by_plugin for d in mcps.values())
+    plugins = [d for d in decisions if d.ref.extra.get("component_type") == "plugin"]
+    assert [d.ref.name for d in plugins] == ["review-tools"]
+
+
 def test_a_cursor_plugin_skills_field_replaces_folder_discovery(monkeypatch, tmp_path):
     """The four cases the Cursor CLI 2026.10.22-27dcf5f indexed from real manifests."""
     from openaca.core import collect_policy_evidence, parse_policy

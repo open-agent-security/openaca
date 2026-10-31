@@ -64,8 +64,7 @@ From `0.5` a BOM describes one **agent** — one runtime plus the composed conte
 loads — not one place (ADR-0044). `metadata.component` *is* that agent: its
 `bom-ref` is `root/<kind>` (or `root/<kind>/<agent_id>` for a kind that can have
 more than one agent in one place), and its `name` is the agent's human-readable
-label. A scan emits one document per agent it discovers, which is one document
-today because Claude Code is the only registered kind.
+label. A scan emits one document per agent it discovers.
 
 `root/` is deliberately not `agent/`: the closed component-type set already uses
 `agent/<name>` for a **subagent** the runtime loads, and the two must not share a

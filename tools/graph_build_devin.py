@@ -25,6 +25,7 @@ module resolves the roots and passes them in.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,10 +40,11 @@ from tools.graph_build import (
     finalize_graph,
     make_normalizer,
     occurrence_key,
+    resolve_plugin_format,
     safe_parse,
     same_path,
 )
-from tools.graph_build_cursor import realize_plugins
+from tools.graph_build_cursor import realize_plugin_root, realize_plugins
 from tools.parsers import claude_command_agent, devin_config, hooks_json
 from tools.parsers.devin_config import (
     CONFIG_FILENAME,
@@ -87,6 +89,15 @@ _USER, _PROJECT, _LOCAL = 0, 1, 2
 # canonical copy lives in `tools/repo_surface.py`, shared with the declared
 # manifest's own qualification test.
 _PLUGIN_NAME = DEVIN_PLUGIN_NAME
+
+# The `lock.json` `resolved.kind` values whose store copy was observed, in
+# Devin CLI 3000.11.234: a `--local` install links
+# `cache/<entry>/<version_dir>` to its source folder, and a git install or an
+# account upload copies the bundle there. An entry of any other kind stays
+# presence-only (spec, Plugins).
+_COMPOSED_STORE_KINDS = frozenset({"local", "git", "accountUpload"})
+# The node-key label of a realized store plugin's files.
+_STORE_PLUGIN_LABEL = "devin-plugin"
 
 
 @dataclass(frozen=True)
@@ -578,15 +589,17 @@ def _skill_files(graph: Graph, skills_dir: Path) -> list[Path]:
 
 
 def _add_store_plugins(graph: Graph, root: Node, data_root: Path, normalize) -> None:
-    """Plugins in Devin's store, presence-only, from `<data>/plugins/lock.json`.
+    """Plugins in Devin's store, from `<data>/plugins/lock.json`.
 
-    The bundle layout inside the store could not be observed without a
-    signed-in account (spec, Plugins), so neither contents nor enable state is
-    claimed. A `resolved` entry yields a plugin when it carries a name that
-    satisfies Devin's documented plugin-name rule; the entry shape itself is
-    unverified, so any other entry lowers coverage rather than vanishing.
+    A `resolved` entry yields a plugin when it carries a name that satisfies
+    Devin's documented plugin-name rule; any other entry lowers coverage
+    rather than vanishing. An entry of an observed install kind whose copy is
+    found in the store's cache is realized with its bundle, as a declared
+    plugin is (spec, Plugins). Any other entry stays presence-only, marked
+    `contents_inventoried: False`, and enable state is never claimed.
     """
-    lock = data_root / "plugins" / "lock.json"
+    plugins_dir = data_root / "plugins"
+    lock = plugins_dir / "lock.json"
     if not lock.is_file():
         return
     try:
@@ -598,17 +611,24 @@ def _add_store_plugins(graph: Graph, root: Node, data_root: Path, normalize) -> 
     if not isinstance(resolved, list):
         graph.record_gap(f"could not parse {lock}: resolved must be an array")
         return
+    cache_dirs = _store_cache_dirs(plugins_dir / "cache")
     for index, entry in enumerate(resolved):
         name = _store_plugin_name(entry)
         if name is None:
             graph.record_gap(f"could not read a plugin name from {lock} $.resolved[{index}]")
+            continue
+        plugin_root = _store_plugin_root(entry, cache_dirs)
+        if plugin_root is not None and _realize_store_plugin(graph, root, plugin_root, name):
             continue
         ref = ComponentRef(
             name=name,
             component_identity=f"plugin/{name}",
             source_manifest=str(lock),
             source_locator=f"$.resolved[{index}]",
-            extra={"component_type": "plugin"},
+            # Read by Devin policy evidence, which reports this plugin's
+            # contents as an inventory gap (ADR-0079, ADR-0080). Never emitted
+            # to the BOM.
+            extra={"component_type": "plugin", "contents_inventoried": False},
         )
         add_child(graph, root, Node(key=occurrence_key(ref, normalize), kind="plugin", ref=ref))
 
@@ -621,6 +641,66 @@ def _store_plugin_name(entry: object) -> str | None:
         if isinstance(value, str) and _PLUGIN_NAME.fullmatch(value):
             return value
     return None
+
+
+def _store_cache_dirs(cache: Path) -> list[Path]:
+    try:
+        return sorted(path for path in cache.iterdir() if path.is_dir())
+    except OSError:
+        return []
+
+
+def _store_plugin_root(entry: dict, cache_dirs: list[Path]) -> Path | None:
+    """`cache/<entry>/<version_dir>` for an entry of an observed install kind.
+
+    Devin names `<entry>` for the sanitized, truncated `identity`, then `-` and
+    the first 8 hex digits of `sha256(identity)`. Only the hash suffix is
+    matched, so the sanitizing and the truncation length do not matter. No
+    match, or more than one, leaves the entry presence-only.
+    """
+    resolved = entry.get("resolved")
+    if not isinstance(resolved, dict) or resolved.get("kind") not in _COMPOSED_STORE_KINDS:
+        return None
+    identity, version_dir = entry.get("identity"), entry.get("version_dir")
+    if not isinstance(identity, str) or not isinstance(version_dir, str):
+        return None
+    if version_dir in ("", ".", "..") or any(char in version_dir for char in "/\\\0"):
+        return None
+    suffix = "-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
+    matches = [path for path in cache_dirs if path.name.endswith(suffix)]
+    if len(matches) != 1:
+        return None
+    plugin_root = matches[0] / version_dir
+    # A `--local` install's version directory is a symlink to the source
+    # folder; `is_dir` and the bundle walk follow it.
+    return plugin_root if plugin_root.is_dir() else None
+
+
+def _realize_store_plugin(graph: Graph, parent: Node, plugin_root: Path, name: str) -> bool:
+    """Realize a store plugin root with the declared bundle walk.
+
+    Its node keys take a label of their own, `devin-plugin/<name>`, never the
+    path: a `--local` entry's cache folder name and its symlink target both
+    spell the source folder's absolute path. The label also keeps a plugin
+    whose source sits inside `--project` from keying as a project file.
+    """
+    fmt = resolve_plugin_format(plugin_root, DEVIN_SURFACE, record_gap=graph.record_gap)
+    if fmt is None:
+        return False
+    normalize = make_normalizer(
+        "endpoint", plugin_root, plugin_root, None, f"{_STORE_PLUGIN_LABEL}/{name}"
+    )
+    node = realize_plugin_root(
+        graph,
+        parent,
+        plugin_root,
+        fmt,
+        normalize,
+        root_dir=None,
+        root_spec=None,
+        surface=DEVIN_SURFACE,
+    )
+    return node is not None
 
 
 # --- Shared emission -----------------------------------------------------------

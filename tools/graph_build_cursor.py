@@ -57,6 +57,7 @@ from tools.repo_surface import (
     AGENT_PLUGINS_FORMAT,
     AGENT_PLUGINS_FORMATS,
     CURSOR_SURFACE,
+    PluginFormat,
     RepoSurface,
 )
 
@@ -829,33 +830,16 @@ def _realize_plugins(
     for root, fmt in ordered:
         if _strictly_below_realized(root):
             continue
-        if fmt in AGENT_PLUGINS_FORMATS:
-            node = _realize_agent_plugins_root(
-                graph,
-                parent,
-                root,
-                normalize,
-                root_dir=root_dir,
-                root_spec=root_spec,
-                parse=fmt.parse or agent_plugins.parse,
-                conventional_mcp=(
-                    (*surface.bundled.mcp_filenames, "mcp.json")
-                    if surface.bundled.mcp_servers_field_selects_sources
-                    else None
-                ),
-            )
-        else:
-            manifest = root / fmt.manifest_dir / fmt.manifest_filename
-            node = descend_into_plugin(
-                graph,
-                parent,
-                root,
-                manifest,
-                normalize,
-                root_dir=root_dir,
-                root_spec=root_spec,
-                surface=surface,
-            )
+        node = realize_plugin_root(
+            graph,
+            parent,
+            root,
+            fmt,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+            surface=surface,
+        )
         if node is not None:
             realized.append(root)
             realized_roots.append(root.resolve())
@@ -864,6 +848,48 @@ def _realize_plugins(
                 if commands_dir is not None:
                     realized_plugin_commands.append((node, commands_dir))
     return realized, realized_plugin_commands
+
+
+def realize_plugin_root(
+    graph: Graph,
+    parent: Node,
+    root: Path,
+    fmt: PluginFormat,
+    normalize,
+    *,
+    root_dir: Path | None,
+    root_spec,
+    surface: RepoSurface,
+) -> Node | None:
+    """Realize one plugin root whose governing format `fmt` is already
+    resolved. This is the bundle walk `_realize_plugins` applies to each root
+    it finds, shared with a kind that locates its roots another way (Devin's
+    plugin store). Returns `None` when the manifest realizes no plugin."""
+    if fmt in AGENT_PLUGINS_FORMATS:
+        return _realize_agent_plugins_root(
+            graph,
+            parent,
+            root,
+            normalize,
+            root_dir=root_dir,
+            root_spec=root_spec,
+            parse=fmt.parse or agent_plugins.parse,
+            conventional_mcp=(
+                (*surface.bundled.mcp_filenames, "mcp.json")
+                if surface.bundled.mcp_servers_field_selects_sources
+                else None
+            ),
+        )
+    return descend_into_plugin(
+        graph,
+        parent,
+        root,
+        plugin_manifest_path(root, fmt),
+        normalize,
+        root_dir=root_dir,
+        root_spec=root_spec,
+        surface=surface,
+    )
 
 
 def _realize_agent_plugins_root(

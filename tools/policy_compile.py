@@ -264,13 +264,14 @@ def _evaluate_endpoint(
         refs_by_agent.append((agent, graph, refs))
     gaps = list(graph_warnings.gaps if isinstance(graph_warnings, WarningLog) else graph_warnings)
     if agent_kind == "devin":
-        # The store's bundle layout is unverified, so a plugin's MCP servers,
-        # skills and hooks are absent from these components (ADR-0079).
+        # A store plugin the composer left presence-only has its MCP servers,
+        # skills and hooks absent from these components (ADR-0079, ADR-0080).
         gaps.extend(
             f"{c.ref.source_manifest}: {c.ref.source_locator}: contents of Devin plugin "
             f"{c.ref.name} are not inventoried"
             for c in components
             if c.ref.extra.get("component_type") == "plugin"
+            and c.ref.extra.get("contents_inventoried") is False
         )
     if gaps and not allow_partial_inventory:
         # A dropped or malformed inventory entry means `components` is an

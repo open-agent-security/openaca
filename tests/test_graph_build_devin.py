@@ -8,10 +8,11 @@ installed-mode node keys that carry no home path.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from tools.graph import Graph
 from tools.graph_build_devin import build_devin_declared_graph, build_devin_installed_graph
@@ -1026,6 +1027,217 @@ def test_a_malformed_lockfile_is_a_gap(tmp_path):
 
     assert _refs(graph, "plugin") == []
     assert graph.warnings.gaps
+
+
+# The store layout observed with Devin CLI 3000.11.234 (spec, Plugins): each
+# plugin's copy sits at `cache/<entry>/<version_dir>`, where `<entry>` is the
+# sanitized, truncated `identity`, `-`, and the first 8 hex digits of
+# `sha256(identity)`. A `--local` copy is a symlink to its source folder.
+
+
+def _store(tmp_path: Path) -> Path:
+    return _home(tmp_path) / ".local" / "share" / "devin" / "cli" / "plugins"
+
+
+def _cache_entry(tmp_path: Path, identity: str) -> Path:
+    sanitized = identity.removeprefix("https://").lstrip("/")
+    for char in "/#:":
+        sanitized = sanitized.replace(char, "_")
+    sanitized = sanitized[:99]
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
+    return _store(tmp_path) / "cache" / f"{sanitized}-{digest}"
+
+
+def _lock_entry(name: str, identity: str, kind: str, version_dir: str = "0.0.1") -> dict:
+    return {
+        "name": name,
+        "identity": identity,
+        "resolved": {"kind": kind},
+        "version_dir": version_dir,
+    }
+
+
+def _local_plugin(tmp_path: Path, source: Path, name: str = "probe-plugin") -> dict:
+    """A `--local` install: the version directory links to `source`."""
+    _write_json(source / ".devin-plugin" / "plugin.json", {"name": name})
+    _write_json(source / ".mcp.json", {"mcpServers": {"probe": _server()}})
+    _skill(source / "skills" / "hello", "hello")
+    _write_json(
+        source / "hooks.json",
+        {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "probe-hook"}]}]}},
+    )
+    entry = _cache_entry(tmp_path, str(source))
+    entry.mkdir(parents=True)
+    (entry / "0.0.1").symlink_to(source, target_is_directory=True)
+    return _lock_entry(name, str(source), "local")
+
+
+def _write_lock(tmp_path: Path, *entries: dict) -> Path:
+    _config(tmp_path).mkdir(parents=True, exist_ok=True)
+    return _write_json(
+        _store(tmp_path) / "lock.json",
+        {"requirements": [], "resolved": list(entries), "edges": []},
+    )
+
+
+def _plugin_nodes(graph: Graph) -> list[Any]:
+    """Plugin nodes, each of which carries a ref."""
+    return [n for n in graph.nodes.values() if n.kind == "plugin"]
+
+
+def _store_plugin(graph: Graph, name: str) -> Any:
+    (node,) = [n for n in _plugin_nodes(graph) if n.ref.name == name]
+    return node
+
+
+def test_a_local_store_plugin_is_realized_through_its_symlink(tmp_path):
+    source = tmp_path / "work" / "probe-plugin"
+    _write_lock(tmp_path, _local_plugin(tmp_path, source))
+
+    graph = _installed(tmp_path)
+    node = _store_plugin(graph, "probe-plugin")
+
+    assert "contents_inventoried" not in node.ref.extra
+    assert sorted(c.kind for c in graph.children_of(node)) == ["hook", "mcp_server", "skill"]
+    # A plugin server's hook name has no plugin prefix, so the selector name is
+    # the configured server name, last in `component_path`.
+    (server,) = _refs(graph, "mcp_server")
+    assert server.extra["component_path"][-1] == {"type": "mcp_server", "name": "probe"}
+    assert graph.warnings.gaps == []
+
+
+def test_a_store_plugin_keys_by_its_name_never_by_its_source_path(tmp_path):
+    """The cache folder name and the symlink target both spell the source path.
+    A source inside `--project` must not key as a project file either: its
+    `.mcp.json` is also the project's imported Claude Code `.mcp.json`."""
+    project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True)
+    _write_lock(tmp_path, _local_plugin(tmp_path, project))
+
+    graph = _installed(tmp_path, project)
+    plugin = _store_plugin(graph, "probe-plugin")
+    owned = {c.key for c in graph.children_of(plugin)} | {plugin.key}
+
+    assert owned and all(key.startswith("devin-plugin/probe-plugin/") for key in owned)
+    assert not [key for key in graph.nodes if "work" in key or str(tmp_path) in key]
+    # The same `.mcp.json`, read as the project's import, is its own occurrence.
+    assert sorted(_mcp(graph)) == [("probe", "0.0.1/.mcp.json"), ("probe", "project/.mcp.json")]
+
+
+def test_an_account_upload_store_plugin_is_realized_from_its_copy(tmp_path):
+    identity = "account-upload:team-bundle"
+    copy = _cache_entry(tmp_path, identity) / "rev-3"
+    _write_json(
+        copy / ".devin-plugin" / "plugin.json",
+        {"name": "team-tools", "mcpServers": {"paths": ["servers.json"], "exclusive": True}},
+    )
+    _write_json(copy / "servers.json", {"mcpServers": {"declared": _server()}})
+    _write_json(copy / ".mcp.json", {"mcpServers": {"suppressed": _server()}})
+    _write_lock(tmp_path, _lock_entry("team-tools", identity, "accountUpload", "rev-3"))
+
+    graph = _installed(tmp_path)
+
+    assert "contents_inventoried" not in _store_plugin(graph, "team-tools").ref.extra
+    assert _mcp(graph) == [("declared", "rev-3/servers.json")]
+
+
+def test_a_git_store_plugin_of_the_claude_layout_is_realized(tmp_path):
+    """A git install is a real copy. Its identity is `<url>#<subdir>`."""
+    identity = "https://git.example.com/acme/plugins#tools/lookup"
+    copy = _cache_entry(tmp_path, identity) / "0.0.0-unversioned"
+    _write_json(copy / ".claude-plugin" / "plugin.json", {"name": "lookup"})
+    _write_json(copy / ".mcp.json", {"mcpServers": {"lookup": _server()}})
+    _write_lock(tmp_path, _lock_entry("lookup", identity, "git", "0.0.0-unversioned"))
+
+    graph = _installed(tmp_path)
+
+    assert "contents_inventoried" not in _store_plugin(graph, "lookup").ref.extra
+    assert _mcp(graph) == [("lookup", "0.0.0-unversioned/.mcp.json")]
+
+
+def test_a_shadowed_plugin_server_stays_an_occurrence(tmp_path):
+    """Devin drops a plugin server whose name a config server or an earlier
+    plugin already uses. One install order was observed, so every occurrence
+    stays and the consumer keeps the ambiguity (spec, Plugins)."""
+    entries = []
+    for name in ("first-plugin", "second-plugin"):
+        identity = f"account-upload:{name}"
+        copy = _cache_entry(tmp_path, identity) / "1"
+        _write_json(copy / ".devin-plugin" / "plugin.json", {"name": name})
+        _write_json(copy / ".mcp.json", {"mcpServers": {"probe": _server(name)}})
+        entries.append(_lock_entry(name, identity, "accountUpload", "1"))
+    _write_json(_home(tmp_path) / ".claude.json", {"mcpServers": {"probe": _server("config")}})
+    _write_lock(tmp_path, *entries)
+
+    graph = _installed(tmp_path)
+
+    assert [name for name, _manifest in _mcp(graph)] == ["probe", "probe", "probe"]
+
+
+def test_a_store_entry_of_an_unobserved_kind_stays_presence_only(tmp_path):
+    """Only the `local`, `git` and `accountUpload` kinds were observed, so the
+    copy of another kind is not read even when a cache folder matches."""
+    identity = "registry:market-tools"
+    _write_json(
+        _cache_entry(tmp_path, identity) / "1.0.0" / ".devin-plugin" / "plugin.json",
+        {"name": "market-tools"},
+    )
+    _write_lock(
+        tmp_path,
+        _lock_entry("market-tools", identity, "registry", "1.0.0"),
+        {"name": "shapeless"},
+    )
+
+    graph = _installed(tmp_path)
+
+    for name in ("market-tools", "shapeless"):
+        node = _store_plugin(graph, name)
+        assert node.ref.extra["contents_inventoried"] is False
+        assert node.key.startswith("devin-data/plugins/lock.json#")
+        assert graph.children_of(node) == []
+    # As ADR-0079 decided, the scan records no gap for it.
+    assert graph.warnings.gaps == []
+
+
+def test_a_store_entry_without_exactly_one_hash_match_stays_presence_only(tmp_path):
+    source = tmp_path / "work" / "probe-plugin"
+    entry = _local_plugin(tmp_path, source)
+    # Another identity's folder, and two folders for one identity.
+    wrong = _lock_entry("wrong-hash", "/elsewhere/wrong-hash", "local")
+    twice = _lock_entry("twice", "/elsewhere/twice", "accountUpload")
+    for suffix in ("", "-copy"):
+        folder = _cache_entry(tmp_path, twice["identity"])
+        _write_json(
+            folder.with_name(f"x{suffix}{folder.name}") / "0.0.1" / ".devin-plugin/plugin.json",
+            {"name": "twice"},
+        )
+    _write_lock(
+        tmp_path,
+        {**entry, "name": "wrong-hash", "identity": wrong["identity"]},
+        twice,
+        {**entry, "version_dir": ".."},
+    )
+
+    graph = _installed(tmp_path)
+
+    plugins = _plugin_nodes(graph)
+    assert sorted(n.ref.name for n in plugins) == ["probe-plugin", "twice", "wrong-hash"]
+    assert all(n.ref.extra["contents_inventoried"] is False for n in plugins)
+    assert _refs(graph, "mcp_server") == []
+
+
+def test_a_store_copy_without_a_manifest_devin_loads_stays_presence_only(tmp_path):
+    source = tmp_path / "work" / "probe-plugin"
+    entry = _local_plugin(tmp_path, source)
+    # A Devin manifest Devin rejects blocks the fallbacks, and is said.
+    _write_json(source / ".devin-plugin" / "plugin.json", {"name": "Not_A_Name"})
+    _write_lock(tmp_path, entry)
+
+    graph = _installed(tmp_path)
+
+    assert _store_plugin(graph, "probe-plugin").ref.extra["contents_inventoried"] is False
+    assert _refs(graph, "mcp_server") == []
+    assert [gap for gap in graph.warnings.gaps if "no fallback manifest is read" in gap]
 
 
 def test_installed_node_keys_carry_no_home_path(tmp_path):

@@ -1,0 +1,63 @@
+name: conflict-wake
+
+# GitHub sends no event when a pull request becomes conflicted because its
+# base branch moved, so the managed Auto-fix watcher on that PR never wakes
+# to resolve it. A comment on the PR does wake it. This workflow posts one,
+# once per PR head, when a push leaves an open PR targeting the pushed branch
+# unable to merge. The comment is only a wake-up signal: the watcher reads the
+# PR's mergeable state itself before it acts. See .github/managed-autofix.md.
+
+on:
+  push:
+    # A tag is never a PR base.
+    branches: ['**']
+
+concurrency:
+  group: conflict-wake-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE: ${{ github.ref_name }}
+    steps:
+      - name: Comment on PRs this push left conflicted
+        run: |
+          set -euo pipefail
+          # Only a same-repository PR from a trusted maintainer has a managed
+          # watcher to wake. Opening a same-repository PR takes write access, so
+          # excluding forks and bots matches the routine's eligibility checks in
+          # .github/managed-autofix.md, as does its michealbenedict exclusion.
+          # author_association is not used: it can read CONTRIBUTOR for an org
+          # member whose membership is private, and a missed wake is silent.
+          for n in $(gh pr list --repo "$REPO" --base "$BASE" --state open --limit 100 \
+                       --json number,isDraft,isCrossRepository,author \
+                       --jq '.[] | select((.isDraft | not) and (.isCrossRepository | not) and (.author.is_bot | not) and (.author.login != "michealbenedict")) | .number'); do
+            # `mergeable` is null while GitHub recomputes it in the background
+            # after the base moved; ask again until it settles.
+            mergeable=null
+            for _ in $(seq 12); do
+              read -r mergeable head < <(gh api "repos/$REPO/pulls/$n" --jq '"\(.mergeable) \(.head.sha)"')
+              [ "$mergeable" != null ] && break
+              sleep 5
+            done
+            [ "$mergeable" = false ] || continue
+
+            marker="<!-- base-conflict:$head -->"
+            # Plain grep reads every page; -q would exit early, and under pipefail
+            # the broken pipe in gh would post a duplicate comment.
+            if gh api --paginate "repos/$REPO/issues/$n/comments" --jq '.[].body' | grep -F "$marker" >/dev/null; then
+              continue
+            fi
+            gh api "repos/$REPO/issues/$n/comments" -f body="This PR conflicts with \`$BASE\` as of ${GITHUB_SHA:0:7}.
+
+          $marker"
+            echo "Commented on #$n (head ${head:0:7})"
+          done

@@ -103,6 +103,19 @@ class VulnerabilityGate:
     severity_at_least: str | None = None
     ids: frozenset[str] = frozenset()
 
+    def __post_init__(self) -> None:
+        # A consumer can build a gate from its own copy of the policy
+        # parameters, where the floor is written as `high`. Normalize it here
+        # so `matches_vulnerability_gate` never meets a floor it cannot rank.
+        floor = self.severity_at_least
+        if floor is None:
+            return
+        if not isinstance(floor, str) or floor.upper() not in _SEVERITY_ORDER:
+            raise PolicyValidationError(
+                "policy.risk_gates.vulnerabilities.severity_at_least must be a severity"
+            )
+        object.__setattr__(self, "severity_at_least", floor.upper())
+
 
 @dataclass(frozen=True)
 class RiskGates:
@@ -251,11 +264,10 @@ def apply_risk_gates(
         record.get("id"): record for record in advisories if isinstance(record.get("id"), str)
     }
 
+    gate = policy.risk_gates.vulnerabilities
     for ref, advisory_id in advisory_matches:
         advisory = advisory_by_id.get(advisory_id)
-        if advisory is None or not _matches_vulnerability_gate(
-            policy.risk_gates.vulnerabilities, advisory
-        ):
+        if advisory is None or gate is None or not matches_vulnerability_gate(gate, advisory):
             continue
         subject_index = _subject_index_for_ref(ref, resolved)
         if subject_index is not None:
@@ -565,9 +577,17 @@ def _target_matches(ref: ComponentRef, target: McpTarget | PluginTarget) -> bool
     )
 
 
-def _matches_vulnerability_gate(gate: VulnerabilityGate | None, advisory: dict[str, Any]) -> bool:
-    if gate is None:
-        return False
+def matches_vulnerability_gate(gate: VulnerabilityGate, advisory: dict[str, Any]) -> bool:
+    """Does one OSV-shaped advisory match the vulnerability risk gate?
+
+    `apply_risk_gates` calls this for every matched advisory, so a consumer
+    calling it gets the evaluator's answer. An id in `gate.ids` matches the
+    advisory's id or any alias, whatever its severity. Otherwise the advisory
+    matches when its derived severity is at or above `gate.severity_at_least`.
+    Raises `PolicyEvaluationError` when that floor is set, no id matched, and
+    the advisory has neither an upstream severity label nor a parseable CVSS
+    vector.
+    """
     if gate.ids & id_set(advisory):
         return True
     if gate.severity_at_least is None:

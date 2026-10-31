@@ -49,6 +49,8 @@ def test_facade_reexports_are_identical_objects():
     assert core.parse_policy_source is tools.policy.loads
     assert core.evaluate_admission is tools.policy.evaluate_admission
     assert core.apply_risk_gates is tools.policy.apply_risk_gates
+    assert core.VulnerabilityGate is tools.policy.VulnerabilityGate
+    assert core.matches_vulnerability_gate is tools.policy.matches_vulnerability_gate
 
 
 def test_install_source_helpers_are_reexported_from_identity():

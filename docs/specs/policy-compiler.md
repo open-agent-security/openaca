@@ -43,6 +43,8 @@ Unsupported agent kinds fail before discovery.
 Cursor has no relocatable configuration root (ADR-0054).
 Omit `target`, or pass `<home>/.cursor`, for Cursor.
 Another Cursor `target` fails before discovery.
+Pass `agent_kind="devin"` to collect Devin CLI evidence.
+[Devin policy evidence](#devin-policy-evidence) gives its sources, its root rule and its gaps.
 This selector changes collection only; the managed-settings compiler still targets Claude.
 Codex inventory notes do not fail collection.
 Actual component gaps fail collection by default.
@@ -384,6 +386,93 @@ that final atomic write. The artifact and report together are the endpoint's
 **expected policy**: the settings OpenACA intends the host to enforce for that
 endpoint. The logical policy document is an input to this result, not a second
 policy to compare in the user interface.
+
+## Devin policy evidence
+
+`collect_policy_evidence(policy, project=..., agent_kind="devin")` collects the
+installed composition of the [Devin CLI kind](devin-cli-agent-kind.md).
+The collector adds no Devin parser. It uses the kind's walk, layer merge and
+import gates.
+
+### Root
+
+Devin has no relocatable configuration root (ADR-0071).
+Omit `target`, or pass the root that Devin reads.
+That root is `$XDG_CONFIG_HOME/devin` when the variable holds an absolute path, else `~/.config/devin`.
+Another `target` fails with `PolicyEvaluationError` before discovery.
+The plugin store root follows `$XDG_DATA_HOME` in the same way.
+Pass `project` to include the project layers.
+
+### MCP sources
+
+| Scope | Files | Selection |
+|---|---|---|
+| User | `<config>/mcp_config.json`; the legacy `mcpServers` key of `<config>/config.json` | Native layer |
+| Project | `.devin/mcp_config.json`; the legacy key of `.devin/config.json` | Native layer, in each project layer |
+| Project local | `.devin/mcp_config.local.json`; the legacy key of `.devin/config.local.json` | Native layer, in each project layer |
+| Imports | `.mcp.json`, `.claude/settings*.json`, `~/.claude.json`, `~/.claude/settings*.json`, `~/.claude/mcp_servers.json`, `.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json` | One `read_config_from` switch for each owner. Never merged |
+
+Native layers merge by server name, and the highest layer wins.
+The order is project local, then project, then user.
+A nearer project layer wins over an ancestor layer.
+In one layer, the dedicated file and the legacy key both stay as occurrences.
+A `"disabled": true` entry gives no subject.
+It also removes the same name from each lower native layer.
+
+An imported server never merges with a native server of the same name.
+Devin's documentation does not state their order.
+Each stays as an occurrence with its own `source_manifest`.
+
+### Selector
+
+Devin names an MCP tool `mcp__<server>__<tool>` in a `PreToolUse` hook.
+Its generic `mcp_call_tool` names the server in `tool_input.server_name`.
+Each MCP component keeps the configured server name in the last `component_path` entry.
+The consumer matches the hook's server name to that entry.
+When two occurrences have the name, the collector does not choose one.
+The consumer keeps that ambiguity and applies its uncertainty behavior.
+Use `source_manifest` to tell the user, project, local and import scopes apart.
+
+### Plugins
+
+Devin installs plugins at user level only.
+The collector reads plugin names from `<data>/plugins/lock.json` (spec: [Devin CLI kind, Plugins](devin-cli-agent-kind.md#plugins)).
+The bundle layout in the store is not verified.
+The collector therefore does not inventory a store plugin's MCP servers, skills, agents or hooks.
+
+Each store plugin adds one entry to `inventory_gaps`.
+Strict collection fails when the store holds a plugin.
+With `allow_partial_inventory=True`, the result keeps the readable components and the gaps.
+A hook call to a plugin's MCP server then resolves to no collected subject.
+The consumer applies its uncertainty behavior to that call.
+See [ADR-0078](../adrs/0078-devin-store-plugins-are-policy-evidence-gaps.md).
+
+Devin's documentation does not say if a plugin's server name has a prefix in `mcp__<server>__<tool>`.
+Verify the name before the collector inventories plugin servers.
+
+### Not collected
+
+These sources have no file that the collector reads, or the Devin CLI kind spec defers them:
+
+- MCP servers and personal plugins from the Devin Cloud account (`read_config_from.cloud`).
+- MCP servers that an ACP client passes in `session/new` or `session/load`.
+- Team settings MCP allowlists and registries.
+- OpenCode and Zed MCP imports.
+
+### Posture
+
+The kind's posture rules apply to the selected native and imported servers.
+These rules are `insecure_transport`, `mcp_header_credential`, `mutable_install`,
+`skill_capability`, `mcp_auto_approve` and `command_policy_allow`.
+`mcp_auto_approve` reads `mcp__…` allow entries in the merged `permissions` lists.
+A finding with no component target stays in `unmapped_posture`.
+
+### Decisions
+
+| Decision | ADR |
+|---|---|
+| A Devin store plugin is a policy evidence gap until its bundle layout is verified | [ADR-0078](../adrs/0078-devin-store-plugins-are-policy-evidence-gaps.md) |
+| Devin refuses a relocated configuration root | [ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md) |
 
 ## Claude Code target
 

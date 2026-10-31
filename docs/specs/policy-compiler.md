@@ -83,6 +83,12 @@ The first version does not provide a general rule language, policy scopes,
 per-component approvals, exceptions, expiry, hooks, a daemon, or runtime
 interception. It does not delete or rewrite agent configuration.
 
+## Decisions
+
+| ADR | Decision |
+|---|---|
+| [0078](../adrs/0078-export-the-vulnerability-gate-matcher.md) | The vulnerability gate matcher is public, the evaluator calls it, and an unevaluable severity raises ([Matching one advisory against the vulnerability gate](#matching-one-advisory-against-the-vulnerability-gate)) |
+
 ## Policy document
 
 A policy document is YAML or JSON. YAML is the convenient form for a local
@@ -206,6 +212,42 @@ lists the CVE as an alias). The evaluator must compare against the full set of
 identifiers OSV records for the match, not only the ID surfaced as the
 finding's primary advisory ID; comparing the primary ID alone would silently
 fail to block an advisory reached under an alternate identifier.
+
+### Matching one advisory against the vulnerability gate
+
+`openaca.core.matches_vulnerability_gate(gate, advisory) -> bool` gives the
+vulnerability gate's answer for one OSV-shaped advisory record.
+`apply_risk_gates` calls it for each matched advisory. There is no second
+implementation. A consumer that watches a gate without blocking calls the same
+function, so it sees exactly the advisories that the gate blocks.
+
+The function applies these steps in order:
+
+1. If an entry in `gate.ids` is the advisory's `id` or one of its `aliases`,
+   return `True`. Severity is not read.
+2. If `gate.severity_at_least` is not set, return `False`.
+3. Derive the advisory's severity with `derive_severity_label`. An upstream
+   `database_specific.severity` label wins, and `MODERATE` reads as `MEDIUM`.
+   Otherwise the first parseable CVSS v3 or v4 vector gives the label.
+4. If no label is derived, raise `PolicyEvaluationError`.
+5. Return `True` when the label is at or above the floor. The order is `NONE`,
+   `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+
+Step 4 is the fail-closed rule of the evaluator. A matched advisory with no
+severity data is not evidence of low risk, so compilation fails and keeps the
+previous artifact ([ADR-0064](../adrs/0064-report-vulnerability-coverage-gaps.md)).
+The exported function raises the same error. A consumer that must not fail
+catches it and decides for itself. An advisory listed by id never raises.
+
+`gate` is a `VulnerabilityGate`. Read it from a parsed policy as
+`policy.risk_gates.vulnerabilities`, or build one from the same parameters.
+The constructor accepts the floor in any case, as the policy document does,
+and stores it in upper case. It raises `PolicyValidationError` for a floor
+that the policy document rejects. Build `ids` as a `frozenset`.
+
+`tests/test_policy.py` runs every floor, every way an id can match, and every
+severity an advisory can derive to. For each case, it checks that the exported
+function and `apply_risk_gates` give the same answer as an independent table.
 
 When a finding is on a component contained by a plugin, the compiler blocks the
 owning plugin. It must not attempt to allow a plugin while blocking one of its

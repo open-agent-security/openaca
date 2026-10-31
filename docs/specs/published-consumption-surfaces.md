@@ -83,6 +83,16 @@ written against.
 
 No behaviour changes; `tools/identity.py` remains the implementation.
 
+### The vulnerability gate matcher
+
+`openaca.core` exports `matches_vulnerability_gate` and its `VulnerabilityGate`
+argument from `tools/policy.py`. A consumer that watches the vulnerability gate
+without blocking needs the evaluator's answer for each advisory. Without the
+export, it copies the alias and severity rules, and the two copies drift. The
+policy evaluator calls the same function, so there is one implementation.
+`docs/specs/policy-compiler.md` gives the matching rules and the failure
+behavior.
+
 ## The collection API
 
 One function, one result type, and the two finding types the result carries.

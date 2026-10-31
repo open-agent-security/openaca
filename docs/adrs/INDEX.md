@@ -21,6 +21,7 @@ against the rules in effect at the time.
 
 ## Active
 
+- [ADR-0078 — Export the vulnerability gate matcher, and keep its unevaluable-severity error](0078-export-the-vulnerability-gate-matcher.md): `openaca.core.matches_vulnerability_gate` is the one implementation, called by `apply_risk_gates`, so a consumer that watches a gate matches what the gate blocks. An unevaluable severity raises `PolicyEvaluationError`, as in the evaluator. Rejects a consumer copy, returning `False` or `None` for unknown severity, and exporting raw parameters only.
 - [ADR-0077 — Select Claude MCP policy evidence before evaluation](0077-select-claude-mcp-policy-evidence.md): select valid native local, project, and user entries once. Use the selected refs for posture. Keep generic declaration parsing permissive.
 
 - [0069](0069-defer-native-windows-support.md) — **Defer native Windows support.** Target hosts are macOS and Linux; Windows-only runtime compatibility is deferred without changing existing input coverage. Read before adding platform fallbacks or treating Windows parity as a release requirement.

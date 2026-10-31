@@ -1,5 +1,25 @@
 # Codex Agent Kind — Surface Audit
 
+## Connected app declarations
+
+Read the manifest's `apps` file as a plugin-owned component source.
+Validate each app reference by its native app ID.
+Join app IDs to schema-4 records in `cache/codex_apps_tools` for exact runtime namespaces.
+Do not derive namespaces from reference aliases or display names.
+Keep missing or malformed namespace evidence visible as composition gaps.
+Represent connected apps as plugin-owned MCP components with the `codex-app` transport.
+Do not invent a command or service URL for them.
+
+The native `.codex-remote-plugin-install.json` record identifies a remotely materialized plugin.
+Validate its schema and remote plugin ID before using its native cache namespace.
+A cache directory alone still grants no marketplace identity.
+An absent enable record does not establish active status in a specific account.
+Inventory a remotely materialized plugin as potentially active, as with other declared marketplaces.
+An explicit local disable remains effective.
+
+Native evidence includes the [app reference contract](https://learn.chatgpt.com/docs/enterprise/plugin-management),
+the observed remote installation record, and the local schema-4 tool cache.
+
 Companion to [ADR-0055](../adrs/0055-codex-agent-kind.md) (register the kind,
 emit enable state, scope), [ADR-0056](../adrs/0056-codex-root-override.md)
 (`$CODEX_HOME` and `--config-dir`), and

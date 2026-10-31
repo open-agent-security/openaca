@@ -1,4 +1,4 @@
-"""The Claude Code kind. The only registered kind (ADR-0044)."""
+"""The Claude Code kind (ADR-0044)."""
 
 from __future__ import annotations
 
@@ -240,11 +240,8 @@ KIND = AgentKind(
     discover=discover,
     compose=_compose,
     posture_rules=None,  # None = every rule applies; an allowlist is per-kind
-    # The kind's declared manifest surface is today's whole registry and all
-    # four posture collectors — byte-identical to what `scan endpoint`/`scan
-    # repo` already read, since Claude Code is still the only kind. A future
-    # second kind registers its own subset here instead of these module-level
-    # functions being called unconditionally for every agent regardless of kind.
+    # The original registry is host-agnostic patterns plus Claude Code's own.
+    # Each other kind registers its own manifest patterns and collectors.
     manifest_patterns=tuple(_MANIFEST_REGISTRY),
     repo_surface=CLAUDE_CODE_SURFACE,
     posture_manifest_collectors=(collect_mcp_manifests, collect_settings_manifests),

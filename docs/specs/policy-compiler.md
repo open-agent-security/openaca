@@ -101,6 +101,7 @@ interception. It does not delete or rewrite agent configuration.
 |---|---|
 | [0078](../adrs/0078-export-the-vulnerability-gate-matcher.md) | The vulnerability gate matcher is public, the evaluator calls it, and an unevaluable severity raises ([Matching one advisory against the vulnerability gate](#matching-one-advisory-against-the-vulnerability-gate)) |
 | [0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md) | A Devin store plugin is a policy evidence gap until its bundle layout is verified ([Devin policy evidence](#devin-policy-evidence)) |
+| [0080](../adrs/0080-compose-devin-store-plugins-from-the-cache.md) | A Devin store plugin of an observed install kind is composed from its cache copy, and a shadowed plugin server stays an occurrence ([Plugins](#plugins)) |
 | [0071](../adrs/0071-devin-cli-refuses-config-dir.md) | Devin refuses a relocated configuration root ([Devin policy evidence](#devin-policy-evidence)) |
 
 ## Policy document
@@ -438,19 +439,53 @@ Use `source_manifest` to tell the user, project, local and import scopes apart.
 ### Plugins
 
 Devin installs plugins at user level only.
-The collector reads plugin names from `<data>/plugins/lock.json` (spec: [Devin CLI kind, Plugins](devin-cli-agent-kind.md#plugins)).
-The bundle layout in the store is not verified.
-The collector therefore does not inventory a store plugin's MCP servers, skills, agents or hooks.
+The collector reads the plugins in `<data>/plugins/lock.json` (spec: [Devin CLI kind, Store layout](devin-cli-agent-kind.md#store-layout)).
+The store layout was observed with Devin CLI 3000.11.234 in two live runs on 2026-10-31.
 
-Each store plugin adds one entry to `inventory_gaps`.
-Strict collection fails when the store holds a plugin.
+A store plugin's contents are components when the kind composes its copy.
+That is so for a `resolved.kind` of `local`, `git` or `accountUpload` whose cache folder resolves.
+The kind finds the one `cache/` folder whose name ends in `-<sha256(identity)[:8]>`, then its `<version_dir>`.
+A `--local` copy is a symlink to the source folder, and the kind follows it.
+The plugin's MCP servers, skills, agents and hooks then come from the bundle walk of a plugin in a repository.
+
+These MCP declarations loaded in the live runs:
+
+| Declaration | Observed |
+|---|---|
+| A root `.mcp.json` | Yes |
+| An inline `mcpServers` map in `.devin-plugin/plugin.json` | Yes |
+| `mcpServers` as one file path | Yes |
+| `.claude-plugin/plugin.json` with a root `.mcp.json` | Yes |
+| `mcpServers` as a list of paths | No. Composed from Devin's documentation |
+| `mcpServers` as `{paths, exclusive}` | No. Composed from Devin's documentation |
+
+A store plugin stays presence-only in these cases:
+
+- Its `resolved.kind` is another value, or is absent.
+- No cache folder ends in the hash, or more than one does.
+- Its `version_dir` is not one path segment, or the root is not a directory.
+- No manifest candidate qualifies at the root.
+
+Each presence-only store plugin adds one entry to `inventory_gaps`.
+Strict collection fails when the store holds one.
 With `allow_partial_inventory=True`, the result keeps the readable components and the gaps.
-A hook call to a plugin's MCP server then resolves to no collected subject.
+A hook call to that plugin's MCP server resolves to no collected subject.
 The consumer applies its uncertainty behavior to that call.
-See [ADR-0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md).
+See [ADR-0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md) and [ADR-0080](../adrs/0080-compose-devin-store-plugins-from-the-cache.md).
 
-Devin's documentation does not say if a plugin's server name has a prefix in `mcp__<server>__<tool>`.
-Verify the name before the collector inventories plugin servers.
+A plugin server's tool reaches a `PreToolUse` hook as `mcp__<server>__<tool>`.
+The name has no plugin prefix, for each install kind and declaration form.
+The [Selector](#selector) rule therefore applies unchanged.
+The last `component_path` entry holds the configured server name.
+The component's `controlled_by_plugin` is true, and its decision follows the owning plugin's decision.
+The component's `source_manifest` is the path in the cache.
+The hook's `tool_provenance.path` can name the source folder instead, so match by the server name.
+
+Devin drops a plugin server whose name a configuration server or an earlier plugin uses.
+The evidence keeps each occurrence of the name.
+Only one install order was tested, so the collector does not choose the winner.
+The consumer gets more than one subject for the name, and applies its uncertainty behavior.
+The hook's `tool_provenance.plugin` holds the plugin's `lock.json` `identity`, and the evidence does not carry it.
 
 ### Not collected
 

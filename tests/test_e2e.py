@@ -2926,6 +2926,159 @@ def test_devin_selection_collects_its_layers_imports_and_store_plugin_gap(monkey
     assert [d.ref.name for d in plugins] == ["review-tools"]
 
 
+def test_devin_store_plugins_compose_into_policy_evidence_and_scan(monkeypatch, tmp_path):
+    """The Devin store layout observed with Devin CLI 3000.11.234 (ADR-0080): a
+    `--local` copy is a symlink to its source, a git install and an account
+    upload are real copies, and a cache folder ends in `-<sha256(identity)[:8]>`.
+    Their MCP servers become evidence under their configured names. An entry of
+    an unobserved kind and one with no matching folder stay inventory gaps
+    (ADR-0079)."""
+    import hashlib
+
+    from openaca.core import (
+        PolicyEvaluationError,
+        apply_risk_gates,
+        collect_policy_evidence,
+        parse_policy,
+    )
+    from tools.cli import main as cli_main
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    config = home / ".config/devin"
+    config.mkdir(parents=True)
+    # A native server with a plugin server's name: both stay occurrences.
+    (config / "mcp_config.json").write_text(
+        json.dumps({"mcpServers": {"probe": {"command": "native-probe"}}})
+    )
+    store = home / ".local/share/devin/cli/plugins"
+
+    def cache_folder(identity: str) -> Path:
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
+        folder = re.sub("[/#:]", "_", identity.removeprefix("https://").lstrip("/"))[:99]
+        return store / "cache" / f"{folder}-{digest}"
+
+    def entry(name: str, identity: str, kind: str, version_dir: str = "0.0.1") -> dict:
+        return {
+            "name": name,
+            "identity": identity,
+            "resolved": {"kind": kind},
+            "version_dir": version_dir,
+        }
+
+    # `--local`: the cache links to the source folder, whose root `.mcp.json`
+    # declares the server.
+    source = tmp_path / "work/probe-plugin"
+    (source / ".devin-plugin").mkdir(parents=True)
+    (source / ".devin-plugin/plugin.json").write_text('{"name": "probe-plugin"}')
+    (source / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"probe": {"command": "uvx", "args": ["probe-mcp"]}}})
+    )
+    cache_folder(str(source)).mkdir(parents=True)
+    (cache_folder(str(source)) / "0.0.1").symlink_to(source, target_is_directory=True)
+    # Account upload: a real copy, its servers inline in `mcpServers`.
+    upload = cache_folder("account-upload:team-bundle") / "rev-7"
+    (upload / ".devin-plugin").mkdir(parents=True)
+    (upload / ".devin-plugin/plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "team-tools",
+                "mcpServers": {"tickets": {"url": "https://mcp.example.com/mcp"}},
+            }
+        )
+    )
+    # Git: a real copy of a Claude-layout plugin with a root `.mcp.json`.
+    git_identity = "https://git.example.com/acme/plugins#tools/lookup"
+    clone = cache_folder(git_identity) / "0.0.0-unversioned"
+    (clone / ".claude-plugin").mkdir(parents=True)
+    (clone / ".claude-plugin/plugin.json").write_text('{"name": "lookup"}')
+    (clone / ".mcp.json").write_text('{"mcpServers": {"lookup": {"command": "lookup-mcp"}}}')
+    # An install kind that was not observed: its folder is never read.
+    market = cache_folder("registry:market-tools") / "1.0.0"
+    (market / ".devin-plugin").mkdir(parents=True)
+    (market / ".devin-plugin/plugin.json").write_text('{"name": "market-tools"}')
+    lock = store / "lock.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "requirements": [],
+                "resolved": [
+                    entry("probe-plugin", str(source), "local"),
+                    entry("team-tools", "account-upload:team-bundle", "accountUpload", "rev-7"),
+                    entry("lookup", git_identity, "git", "0.0.0-unversioned"),
+                    entry("market-tools", "registry:market-tools", "registry", "1.0.0"),
+                    # No cache folder ends in this identity's hash.
+                    entry("moved-plugin", str(tmp_path / "work/moved"), "local"),
+                ],
+                "edges": [],
+            }
+        )
+    )
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "allowed"},
+                "plugins": {"default": "blocked"},
+                "skills": {"default": "allowed"},
+            },
+        }
+    )
+
+    with pytest.raises(PolicyEvaluationError, match="contents of Devin plugin market-tools"):
+        collect_policy_evidence(policy, project=None, agent_kind="devin")
+    evidence = collect_policy_evidence(
+        policy, project=None, agent_kind="devin", allow_partial_inventory=True
+    )
+    assert evidence.inventory_gaps == (
+        f"{lock}: $.resolved[3]: contents of Devin plugin market-tools are not inventoried",
+        f"{lock}: $.resolved[4]: contents of Devin plugin moved-plugin are not inventoried",
+    )
+    decisions = apply_risk_gates(
+        policy,
+        list(evidence.components),
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=list(evidence.posture_matches),
+    )
+    servers: dict[str, list] = {}
+    for d in decisions:
+        if d.ref.extra.get("component_type") == "mcp_server":
+            servers.setdefault(d.ref.extra["component_path"][-1]["name"], []).append(d)
+    # A hook names a plugin server `mcp__probe__<tool>`, with no plugin prefix.
+    assert sorted(servers) == ["lookup", "probe", "tickets"]
+    # A plugin's server takes its plugin's decision; the native one its own.
+    by_plugin = {d.controlled_by_plugin: d for d in servers["probe"]}
+    assert set(by_plugin) == {True, False}
+    assert by_plugin[True].blocked and not by_plugin[False].blocked
+    assert by_plugin[False].ref.source_manifest == str(config / "mcp_config.json")
+    assert servers["tickets"][0].controlled_by_plugin and servers["tickets"][0].blocked
+    plugins = [d.ref.name for d in decisions if d.ref.extra.get("component_type") == "plugin"]
+    assert sorted(map(str, plugins)) == [
+        "lookup",
+        "market-tools",
+        "moved-plugin",
+        "probe-plugin",
+        "team-tools",
+    ]
+
+    # The scan's BOM carries the same composition, keyed by plugin name.
+    out = tmp_path / "bom.json"
+    result = CliRunner().invoke(
+        cli_main, ["bom", "endpoint", "--kind", "devin", "--output", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    refs = [c["bom-ref"] for c in json.loads(out.read_text())["components"]]
+    assert [ref for ref in refs if ref.startswith("devin-plugin/probe-plugin/.mcp.json#")]
+    assert [ref for ref in refs if ref.startswith("devin-plugin/team-tools/")]
+    assert [ref for ref in refs if ref.startswith("devin-plugin/lookup/.mcp.json#")]
+    assert not [ref for ref in refs if "work" in ref or str(tmp_path) in ref]
+    assert "contents_inventoried" not in out.read_text()
+
+
 def test_a_cursor_plugin_skills_field_replaces_folder_discovery(monkeypatch, tmp_path):
     """The four cases the Cursor CLI 2026.10.22-27dcf5f indexed from real manifests."""
     from openaca.core import collect_policy_evidence, parse_policy

@@ -1,3 +1,5 @@
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -207,3 +209,42 @@ def test_devin_without_store_plugins_has_no_inventory_gap(monkeypatch, tmp_path)
     evidence = policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="devin")
     assert evidence.inventory_gaps == ()
     assert len(evidence.components) == 1
+
+
+def _devin_store_plugin(tmp_path, *, kind, identity, name="probe-plugin"):
+    """One `lock.json` entry and, for an observed install kind, its cache copy
+    named as Devin CLI 3000.11.234 names it."""
+    lock = tmp_path / ".local/share/devin/cli/plugins/lock.json"
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
+    copy = lock.parent / "cache" / f"{identity.replace(':', '_')}-{digest}" / "1"
+    (copy / ".devin-plugin").mkdir(parents=True)
+    (copy / ".devin-plugin/plugin.json").write_text(json.dumps({"name": name}))
+    (copy / ".mcp.json").write_text('{"mcpServers": {"probe": {"command": "probe"}}}')
+    entry = {"name": name, "identity": identity, "resolved": {"kind": kind}, "version_dir": "1"}
+    lock.write_text(json.dumps({"requirements": [], "resolved": [entry], "edges": []}))
+    return lock
+
+
+def test_a_devin_store_plugin_with_a_found_copy_is_inventoried(monkeypatch, tmp_path):
+    _devin_home(monkeypatch, tmp_path)
+    _devin_store_plugin(tmp_path, kind="accountUpload", identity="account-upload:probe")
+    evidence = policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="devin")
+    assert evidence.inventory_gaps == ()
+    (server,) = [
+        c for c in evidence.components if c.ref.extra.get("component_type") == "mcp_server"
+    ]
+    assert server.ref.extra["component_path"][-1]["name"] == "probe"
+
+
+def test_a_devin_store_plugin_of_an_unobserved_kind_is_still_a_gap(monkeypatch, tmp_path):
+    _devin_home(monkeypatch, tmp_path)
+    lock = _devin_store_plugin(tmp_path, kind="registry", identity="registry:probe-plugin")
+    with pytest.raises(PolicyEvaluationError, match="contents of Devin plugin probe-plugin"):
+        policy_compile.collect_policy_evidence(_policy(), project=None, agent_kind="devin")
+    evidence = policy_compile.collect_policy_evidence(
+        _policy(), project=None, agent_kind="devin", allow_partial_inventory=True
+    )
+    assert evidence.inventory_gaps == (
+        f"{lock}: $.resolved[0]: contents of Devin plugin probe-plugin are not inventoried",
+    )
+    assert [c.ref.name for c in evidence.components] == ["probe-plugin"]

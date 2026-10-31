@@ -2818,7 +2818,7 @@ def test_cursor_selection_collects_user_project_and_plugin_mcps_and_never_claude
 
 def test_devin_selection_collects_its_layers_imports_and_store_plugin_gap(monkeypatch, tmp_path):
     """Devin evidence: native layers merged by name, gated imports, and a store
-    plugin whose servers are an inventory gap (ADR-0078)."""
+    plugin whose servers are an inventory gap (ADR-0079)."""
     from openaca.core import (
         PolicyEvaluationError,
         apply_risk_gates,

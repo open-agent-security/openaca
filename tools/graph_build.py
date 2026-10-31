@@ -38,6 +38,7 @@ from tools.parsers import (
     claude_settings,
     claude_skill,
     codex_agent,
+    codex_apps,
     codex_config,
     codex_rules,
     devin_config,
@@ -2136,6 +2137,11 @@ def _add_bundled_plugin_surfaces(
             )
 
     refs: list[ComponentRef] = []
+    if surface == CODEX_SURFACE:
+        try:
+            refs.extend(codex_apps.app_refs(plugin_root, plugin_data))
+        except (OSError, ValueError) as exc:
+            graph.record_gap(f"could not parse app references in {plugin_manifest_path}: {exc}")
     if surface.bundled.mcp_servers_field_selects_sources:
         # Devin's own MCP source rules replace the additive Claude Code walk;
         # the rest of the manifest (dependencies) is read as before.
@@ -3197,7 +3203,31 @@ def _seed_cache_plugins(
             key = f"{name}@{marketplace}" if marketplace else name
             graph.record_gap(f"plugin {key} is configured but missing from plugins/cache")
 
+    _bind_codex_app_namespaces(graph, config_root)
     _record_codex_rules_coverage(graph, config_root)
+
+
+def _bind_codex_app_namespaces(graph: Graph, config_root: Path) -> None:
+    apps = [
+        node
+        for node in graph.nodes.values()
+        if node.ref is not None and node.ref.extra.get("transport") == "codex-app"
+    ]
+    if not apps:
+        return
+    try:
+        namespaces = codex_apps.app_namespaces(config_root)
+    except (OSError, ValueError) as exc:
+        graph.record_gap(f"could not read app namespaces: {exc}")
+        namespaces = {}
+    for node in apps:
+        assert node.ref is not None
+        bound = sorted(namespaces.get(node.ref.extra["codex_app_id"], []))
+        graph.nodes[node.key] = replace(
+            node, ref=replace(node.ref, extra={**node.ref.extra, "codex_app_namespaces": bound})
+        )
+        if not bound and node.ref.extra.get("enabled") is not False:
+            graph.record_gap(f"missing app namespace for {node.ref.name}")
 
 
 # Codex names a locally-sourced bundle's cache directory `local` instead of a
@@ -3296,7 +3326,16 @@ def _realize_codex_plugin(
 ) -> None:
     registered = marketplaces.get(marketplace)
     declared_by_manifest = (discovered_marketplaces or {}).get(marketplace)
-    known_marketplace = registered is not None or declared_by_manifest is not None
+    try:
+        remote_id = codex_apps.remote_install_id(version_dir.parent)
+    except (OSError, ValueError) as exc:
+        graph.record_gap(
+            f"could not read remote plugin installation in {version_dir.parent}: {exc}"
+        )
+        remote_id = None
+    known_marketplace = (
+        registered is not None or declared_by_manifest is not None or remote_id is not None
+    )
     orphaned = False
 
     entry = plugins.get((marketplace, name))
@@ -3347,6 +3386,8 @@ def _realize_codex_plugin(
     # convention the rest of the `openaca:*` optional properties follow.
     if orphaned:
         extra["installed"] = False
+    if remote_id is not None:
+        extra["remote_plugin_id"] = remote_id
     if registered is not None:
         extra["marketplace"] = marketplace
         if registered.last_revision:
@@ -3354,10 +3395,9 @@ def _realize_codex_plugin(
         if registered.source:
             extra["marketplace_source"] = registered.source
         component_identity = f"plugin/{marketplace}/{name}"
-    elif declared_by_manifest is not None:
-        # Declared by its own manifest but not by config. Identity is granted —
-        # the manifest names the marketplace — but no `last_revision` or
-        # `source` is available, because those are registry bookkeeping
+    elif declared_by_manifest is not None or remote_id is not None:
+        # Native manifest or installation evidence supplies the marketplace.
+        # No `last_revision` or `source` is available; those are registry bookkeeping
         # `[marketplaces.*]` carries and a manifest does not.
         extra["marketplace"] = marketplace
         component_identity = f"plugin/{marketplace}/{name}"

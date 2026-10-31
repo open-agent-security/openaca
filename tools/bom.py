@@ -605,6 +605,10 @@ def _component_properties(ref: ComponentRef) -> list[dict[str, str]]:
     )
     _append_prop(props, "openaca:git_ref", (ref.extra or {}).get("git_ref"))
     _append_prop(props, "openaca:transport", (ref.extra or {}).get("transport"))
+    _append_prop(props, "openaca:codex_app_id", (ref.extra or {}).get("codex_app_id"))
+    _append_json_prop(
+        props, "openaca:codex_app_namespaces", (ref.extra or {}).get("codex_app_namespaces")
+    )
     _append_prop(props, "openaca:url", (ref.extra or {}).get("url"))
     _append_prop(props, "openaca:plugin_scope", (ref.extra or {}).get("scope"))
     _append_prop(props, "openaca:git_commit_sha", (ref.extra or {}).get("gitCommitSha"))
@@ -708,6 +712,7 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         ("openaca:component_path", "component_path"),
         ("openaca:source", "source"),
         ("openaca:artifact_coordinates", "artifact_coordinates"),
+        ("openaca:codex_app_namespaces", "codex_app_namespaces"),
     ):
         value = props.get(prop_name)
         if value:
@@ -720,6 +725,7 @@ def _extra_from_properties(props: dict[str, str]) -> dict[str, Any]:
         ("openaca:source_subdirectory", "source_subdirectory"),
         ("openaca:git_ref", "git_ref"),
         ("openaca:transport", "transport"),
+        ("openaca:codex_app_id", "codex_app_id"),
         ("openaca:url", "url"),
         ("openaca:plugin_scope", "scope"),
         ("openaca:git_commit_sha", "gitCommitSha"),

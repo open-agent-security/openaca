@@ -2,6 +2,16 @@
 
 Status: proposed
 
+## Marketplace source evidence
+
+Export `openaca:marketplace_source_digest` for a plugin with a valid marketplace source.
+Hash the UTF-8 compact JSON array returned by `tools.marketplace.key` with SHA-256.
+The digest identifies a source for catalog grouping without exporting its URL or local configuration.
+Keep GitHub URL normalization identical to admission matching, including optional `.git` and trailing slashes.
+Omit the property for a missing, invalid, or credential-bearing source.
+Restore the digest when reading a CycloneDX document.
+Do not use the digest to replace local source evidence during admission evaluation.
+
 ## Goal
 
 Let an administrator describe which agent components may be used and which

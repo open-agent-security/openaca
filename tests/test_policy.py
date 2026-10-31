@@ -17,8 +17,10 @@ from tools.policy import (
     PluginTarget,
     PolicyEvaluationError,
     PolicyValidationError,
+    VulnerabilityGate,
     apply_risk_gates,
     load,
+    matches_vulnerability_gate,
     parse,
 )
 from tools.policy_claude import compile_policy
@@ -844,6 +846,133 @@ def test_severity_gate_fails_closed_on_an_advisory_with_no_derivable_severity():
             advisory_matches=[(mcp, "GHSA-1234")],
             posture_matches=[],
         )
+
+
+_GATE_PRIMARY = "GHSA-aaaa-bbbb-cccc"
+_GATE_ALIAS = "CVE-2026-10001"
+_GATE_UNRELATED = "CVE-2026-99999"
+_RANK = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
+# (case name, advisory body beyond id/aliases, severity the advisory derives to).
+# `None` is an unevaluable severity: no upstream label and no parseable vector.
+_GATE_ADVISORIES: list[tuple[str, dict, str | None]] = [
+    *(
+        (f"label {label}", {"database_specific": {"severity": label}}, derived)
+        for label, derived in [
+            ("NONE", "NONE"),
+            ("LOW", "LOW"),
+            ("MODERATE", "MEDIUM"),
+            ("moderate", "MEDIUM"),
+            ("MEDIUM", "MEDIUM"),
+            ("HIGH", "HIGH"),
+            ("CRITICAL", "CRITICAL"),
+        ]
+    ),
+    (
+        "cvss v3 critical",
+        {
+            "severity": [
+                {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}
+            ]
+        },
+        "CRITICAL",
+    ),
+    (
+        "cvss v3 low",
+        {
+            "severity": [
+                {"type": "CVSS_V3", "score": "CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:L/I:N/A:N"}
+            ]
+        },
+        "LOW",
+    ),
+    ("no severity data", {}, None),
+    ("unrecognised label", {"database_specific": {"severity": "IMPORTANT"}}, None),
+    ("unparseable vector", {"severity": [{"type": "CVSS_V3", "score": "not-a-vector"}]}, None),
+]
+
+_GATE_ID_SETS: list[tuple[str, list[str]]] = [
+    ("no ids", []),
+    ("primary id", [_GATE_PRIMARY]),
+    ("alias", [_GATE_ALIAS]),
+    ("unrelated id", [_GATE_UNRELATED]),
+]
+
+_GATE_FLOORS: list[str | None] = [None, "none", "low", "medium", "high", "critical"]
+
+
+def _gate_cases():
+    for floor in _GATE_FLOORS:
+        for ids_name, ids in _GATE_ID_SETS:
+            if floor is None and not ids:
+                continue
+            for advisory_name, body, derived in _GATE_ADVISORIES:
+                yield pytest.param(
+                    floor, ids, body, derived, id=f"{floor}-{ids_name}-{advisory_name}"
+                )
+
+
+def _expected_gate_outcome(floor: str | None, ids: list[str], derived: str | None) -> object:
+    if {_GATE_PRIMARY, _GATE_ALIAS} & set(ids):
+        return True
+    if floor is None:
+        return False
+    if derived is None:
+        return PolicyEvaluationError
+    return _RANK[derived] >= _RANK[floor.upper()]
+
+
+@pytest.mark.parametrize(("floor", "ids", "body", "derived"), list(_gate_cases()))
+def test_the_exported_gate_matcher_and_the_evaluator_give_one_answer(floor, ids, body, derived):
+    """`matches_vulnerability_gate` is public so a consumer that watches a gate
+    matches exactly what the gate blocks. This walks every floor, every way an
+    id can match, and every severity an advisory can derive to, and checks the
+    export, the evaluator and an independent expectation agree on each."""
+    gate_document: dict[str, object] = {"ids": ids}
+    if floor is not None:
+        gate_document["severity_at_least"] = floor
+    policy = _policy(vulnerabilities=gate_document)
+    gate = policy.risk_gates.vulnerabilities
+    assert gate is not None
+    advisory = {"id": _GATE_PRIMARY, "aliases": [_GATE_ALIAS], **body}
+    mcp = _mcp(["npx", "-y", "safe-mcp"])
+
+    def exported() -> object:
+        try:
+            return matches_vulnerability_gate(gate, advisory)
+        except PolicyEvaluationError:
+            return PolicyEvaluationError
+
+    def evaluated() -> object:
+        try:
+            (decision,) = apply_risk_gates(
+                policy,
+                [EndpointComponent(mcp)],
+                advisories=[advisory],
+                advisory_matches=[(mcp, _GATE_PRIMARY)],
+                posture_matches=[],
+            )
+        except PolicyEvaluationError:
+            return PolicyEvaluationError
+        return decision.blocked
+
+    expected = _expected_gate_outcome(floor, ids, derived)
+    assert exported() == expected
+    assert evaluated() == expected
+
+
+def test_a_gate_built_directly_takes_the_floor_the_policy_document_takes():
+    """A consumer can hold the gate's parameters itself rather than a parsed
+    policy. The policy document accepts `high`, so a directly built gate must
+    too, and must reject what the document rejects."""
+    assert VulnerabilityGate(severity_at_least="high").severity_at_least == "HIGH"
+    assert matches_vulnerability_gate(
+        VulnerabilityGate(severity_at_least="high"),
+        {"id": _GATE_PRIMARY, "database_specific": {"severity": "CRITICAL"}},
+    )
+    for floor in ("MODERATE", "severe", ""):
+        with pytest.raises(PolicyValidationError, match="severity_at_least must be a severity"):
+            VulnerabilityGate(severity_at_least=floor)
 
 
 def test_standalone_skill_risk_block_is_reported_unenforceable_when_skills_default_allowed():

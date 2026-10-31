@@ -100,6 +100,8 @@ interception. It does not delete or rewrite agent configuration.
 | ADR | Decision |
 |---|---|
 | [0078](../adrs/0078-export-the-vulnerability-gate-matcher.md) | The vulnerability gate matcher is public, the evaluator calls it, and an unevaluable severity raises ([Matching one advisory against the vulnerability gate](#matching-one-advisory-against-the-vulnerability-gate)) |
+| [0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md) | A Devin store plugin is a policy evidence gap until its bundle layout is verified ([Devin policy evidence](#devin-policy-evidence)) |
+| [0071](../adrs/0071-devin-cli-refuses-config-dir.md) | Devin refuses a relocated configuration root ([Devin policy evidence](#devin-policy-evidence)) |
 
 ## Policy document
 
@@ -466,13 +468,6 @@ These rules are `insecure_transport`, `mcp_header_credential`, `mutable_install`
 `skill_capability`, `mcp_auto_approve` and `command_policy_allow`.
 `mcp_auto_approve` reads `mcp__…` allow entries in the merged `permissions` lists.
 A finding with no component target stays in `unmapped_posture`.
-
-### Decisions
-
-| Decision | ADR |
-|---|---|
-| A Devin store plugin is a policy evidence gap until its bundle layout is verified | [ADR-0079](../adrs/0079-devin-store-plugins-are-policy-evidence-gaps.md) |
-| Devin refuses a relocated configuration root | [ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md) |
 
 ## Claude Code target
 

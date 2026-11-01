@@ -64,9 +64,12 @@ implementation:
 | The binary | `devin` 3000.11.3, `x86_64-unknown-linux`, commit `9c803229faa4`, downloaded from the vendor's install manifest with its published SHA-256 verified. It retains string literals and its embedded documentation (`share/devin/docs/`), the docs that version ships with |
 | The CLI's own path reports | `devin skills paths`, `devin rules paths` and `devin mcp list`, run in an isolated `$HOME`, with and without `$XDG_CONFIG_HOME` |
 | An ACP probe | `devin acp` driven with `initialize` and `session/new` against three test MCP servers. No account needed, no model call made |
+| A signed-in plugin store | Devin CLI 3000.11.234 (`92c83011d113`), macOS arm64, two live runs on 2026-10-31. `--local`, git-subdir, personal-upload and account-wide-upload installs, with the store diffed before and after each. `PreToolUse` hook input recorded for a call to each install's MCP server. See [Store layout](#store-layout) |
 
 - Implementation-derived claims hold at 3000.11.3. They are not a contract
   Devin owes us; re-audit on a major release.
+- The store claims hold at 3000.11.234 on macOS. The store root moves with
+  `$XDG_DATA_HOME` as on Linux, and the Linux store was not observed.
 - None of it is reproducible from this repository: the evidence is a shipped
   binary, not a fixture.
 - Linux only. The docs give Windows paths under `%APPDATA%\devin\` and macOS
@@ -231,9 +234,62 @@ than a `hooks` key.
 | Manifest `mcpServers` | A file, a list of files read in order, `{"paths": [...], "exclusive": true}`, or an inline map. The root `.mcp.json` is read after declared files unless `exclusive` or a non-empty inline map suppresses it; an empty list or map does not. Unsafe paths are dropped; a field of any other shape disables only MCP. The first source to name a server wins (bundled `extensibility/plugins/overview.mdx`), a `"disabled": true` entry included: Devin skips a disabled server at discovery, after names merge, as the binary shows between config levels |
 | Manifest `requiredPlugins` | Each entry is a plugin Devin installs "recursively when the plugin is installed", inventoried by its source: a string (`owner/repo[#path]`, a git URL or a local path), or `github` (`repo`), `url`, `git-subdir` (`url` and `path`), `local` (`path`) or `account-upload` (`bundleId`), the kinds the binary accepts. A GitHub source, in any of the forms Devin gives one identity (`owner/repo`, HTTPS with or without `.git`, `ssh://`, `git@github.com:`), takes the identity every GitHub-sourced component has: `owner/repo`, a commit `sha` as its version, another pin as `git_ref`, a subdirectory as `source_subdirectory`; any other source keeps its pin as `git_ref`. An entry with no usable source is a gap. `optionalPlugins` and `forbiddenPlugins` install nothing |
 | Install level | User only |
-| Store | `<data>/plugins/`. The binary references `lock.json`, `discovered.json` and a `cache` directory; the probe's `lock.json` has `requirements`, `resolved` and `edges` arrays |
-| Bundle layout inside the store | **Unverified.** `devin plugins install` and `devin plugins list` refuse to run without a signed-in account |
+| Store | `<data>/plugins/`: `lock.json`, `discovered.json`, `cache/`, `data/` and `discovered/`. [Store layout](#store-layout) gives the observed shape |
+| Bundle layout inside the store | `cache/<key>/<version_dir>/` is the plugin root, with the layout of a plugin in a repository. Observed at 3000.11.234 ([Store layout](#store-layout)) |
 | Org and personal plugins | Delivered by Devin's service. The binary names "managed org plugin discovery", "managed personal plugin discovery" and a "managed plugins manifest cache". The scan sees whatever that cache holds; [Coverage](#coverage) records the gap |
+
+### Store layout
+
+Observed with Devin CLI 3000.11.234 on 2026-10-31 (see [Evidence](#evidence)).
+
+| Item | Observation |
+|---|---|
+| `lock.json` | `{requirements, resolved, edges}`. Each `resolved[]` entry has `name`, `spec`, `identity`, `resolved`, `version_dir` and `dependencies` |
+| `identity` by install | `--local`: the absolute source path. Git: `<url>#<subdir>`. Personal upload: `account-upload:user:<bundleId>`. Account-wide upload: `account-upload:<bundleId>` |
+| `resolved.kind` by install | `local`; `git`, with `sha`; `accountUpload`, with `content_hash` and `revision` |
+| `cache/<key>/` | The `identity` with `/`, `#` and `:` replaced by `_`, a leading `/` and an `https://` scheme dropped, and the result truncated. Then `-` and the first 8 hex digits of `sha256(identity)`. The hash was checked for six identities, one of each kind |
+| `<version_dir>` | The manifest's `version`, else `0.0.0-unversioned`. `lock.json` repeats it as `version_dir` |
+| `cache/<key>/<version_dir>` | For `--local`, a symlink to the source folder. For a git install or an upload, a real copy. Devin sets `PLUGIN_ROOT` to this path |
+| `data/<key>/` | Created at the plugin's first session. Holds no configuration |
+| `discovered/<key>/<content_hash>/` | Present only for an account-wide upload |
+| Plugin MCP declarations that loaded | A root `.mcp.json`; an inline `mcpServers` map in `.devin-plugin/plugin.json`; `mcpServers` as one file path; a `.claude-plugin/plugin.json` beside a root `.mcp.json` |
+| Plugin MCP declarations not tested | `mcpServers` as a list of paths, and as `{paths, exclusive}`. They follow Devin's documentation only |
+| Tool name in a hook | `mcp__<server>__<tool>`, with no plugin prefix, for each install kind and each declaration form |
+| `tool_provenance.plugin` | Present only for a plugin server. It equals the plugin's `lock.json` `identity`, which is not always a folder |
+| Name clash | A server in `~/.claude.json` won over a plugin server of the same name. Between two plugins, the first installed won. Devin dropped the loser silently. One install order was tested |
+
+**Composition reads a store plugin's copy.** For each `resolved[]` entry
+whose `resolved.kind` is `local`, `git` or `accountUpload`, the composer finds
+the one `cache/` folder whose name ends in `-<sha256(identity)[:8]>`. Only the
+suffix is matched, so the sanitizing and the truncation length do not matter.
+The plugin root is that folder's `<version_dir>`, and a symlink is followed. The
+root is realized with the bundle walk of a plugin in a repository: the
+manifest candidates, the `mcpServers` rules, skills, agents and `hooks.json`.
+
+The entry stays presence-only, from `lock.json`, when one of these is true:
+
+- Its `resolved.kind` is another value, or is absent.
+- No `cache/` folder ends in the hash, or more than one does.
+- `version_dir` is not one path segment, or the root is not a directory.
+- No manifest candidate qualifies at the root.
+
+A presence-only store plugin records no gap in the scan (ADR-0079). The policy
+collector reports it as an inventory gap.
+
+**A store plugin's files key under `devin-plugin/<name>/`**, with `<name>` from
+`lock.json`. The cache folder name and a `--local` symlink target both spell
+the source folder's absolute path, so a path-derived key leaks a home
+directory. A source folder inside `--project` would also key as a project file.
+Its `.mcp.json` is then the same occurrence as the imported Claude Code
+`.mcp.json`, and the graph has two parents for one node.
+
+**A shadowed plugin server stays an occurrence.** Devin drops a plugin server
+whose name a configuration server or an earlier plugin uses. The composer keeps
+each occurrence, as for an imported and a native server of one name. One
+install order was tested, and `lock.json` does not record install order as a
+field. A consumer that matches a hook's server name to these occurrences gets
+more than one, and applies its uncertainty behavior. ADR-0080 records the
+choice.
 
 ## Files another runtime owns
 
@@ -299,7 +355,7 @@ earlier draft marked it unverified.
 | Mode | Requirement |
 |---|---|
 | Declared | None new. A shared file's node key is byte-identical in each graph, because the normalizer is scan-root-relative (ADR-0045) |
-| Installed | The normalizer must learn each foreign root's label: `~/.claude`, `~/.codeium`, `~/.copilot`, `~/.config/opencode`, `~/.config/zed`. Otherwise the path falls through to an absolute one and leaks a home directory into a `bom-ref`. Cursor's foreign roots already impose this |
+| Installed | The normalizer must learn each foreign root's label: `~/.claude`, `~/.codeium`, `~/.copilot`, `~/.config/opencode`, `~/.config/zed`. Otherwise the path falls through to an absolute one and leaks a home directory into a `bom-ref`. Cursor's foreign roots already impose this. A realized store plugin keys under `devin-plugin/<name>` ([Store layout](#store-layout)) |
 
 ## Coverage
 
@@ -307,7 +363,7 @@ earlier draft marked it unverified.
 
 | Gap | Affects | Source | Closable by parsing? |
 |---|---|---|---|
-| Managed org and personal plugins | plugins and their contents | installed | **Partly.** A cache exists, but a server call fills it and its layout is unverified |
+| Managed org and personal plugins | plugins and their contents | installed | **Partly.** A server call fills the store. An upload that reached `cache/` is composed ([Store layout](#store-layout)); one that did not is invisible |
 | MCP servers an ACP client passes in `session/new` | MCP servers | installed | **No.** Runtime registration: the probe connected a server that appears in no file |
 | Team-settings MCP allowlists and registries | which servers load | installed | **No.** Server-side policy. It restricts and does not add, so under the baseline rule it is posture, not composition |
 | `read_config_from` in the user config | every import | declared | **No.** A repository scan cannot see the user's switches, so whether imported `.claude/*`, `.cursor/*`, `.windsurf/*` and `.github/skills` load is unknown. Cursor's extensibility flag is the same kind of gap |
@@ -324,11 +380,10 @@ earlier draft marked it unverified.
 - **Every surface maps into the closed set**: `mcp_server`, `plugin`, `skill`,
   `hook`, `command`, `agent`. No new component type and no new source ecosystem,
   so no taxonomy ADR blocks this kind.
-- **A store-installed plugin** sets `extra["marketplace"]` only if the store
-  records the source it was resolved from, which is unverified until the store
-  layout is. Until then it takes the occurrence-local `plugin/{name}` form, with
-  no cross-BOM identity. For a self-declared name that is the correct answer,
-  for the reason the Cursor spec gives.
+- **A store-installed plugin** takes the identity its manifest gives, as a
+  plugin in a repository does. The composer does not read the install source
+  that `lock.json` records ([Deferred and out of scope](#out-of-the-first-pass)),
+  so no store plugin sets `extra["marketplace"]`.
 - **Claude Code commands** load as skills but keep the `command` type, as in the
   Claude Code BOM. Their bytes are Claude Code's, and the type describes the
   file, not how a consumer invokes it.
@@ -343,7 +398,7 @@ is `permissions` and `read_config_from`, read directly.
 |---|---|---|
 | `insecure_transport` | **Yes** | `mcp_config.json` carries `url`; an `http://` remote server is the same exposure |
 | `mcp_header_credential` | **Yes, with one change** | Devin expands `${env:VAR}` and `${file:/path}` in `headers`. `_REFERENCE` recognises `${env:…}` and `${input:…}` but not `${file:…}`, so a file reference reads as a literal credential. Add `file:` with a path-shaped body to the reference pattern |
-| `mutable_install` | **Yes** | The MCP branch keys on launch specs. Whether the plugin branch fires depends on the store recording a pinned revision, which is unverified |
+| `mutable_install` | **Yes** | The MCP branch keys on launch specs. The plugin branch does not fire for a store plugin: `lock.json` records a git `sha`, but the composer does not read it yet |
 | `skill_capability` | **Yes, with one change** | Same `SKILL.md` with `allowed-tools`, but Devin's shell tool is `exec`. `EXECUTABLE_TOOLS` is `{bash, shell}`, so a Devin skill granting `exec` goes unreported. Add `exec` |
 | `mcp_auto_approve` | **Yes, via `permissions`** | `mcp__…` allow entries; see below |
 | `command_policy_allow` | **Yes, via `permissions`** | `allow` entries `Exec(<prefix>)` approve a command prefix to run unattended, the posture Codex's `prefix_rule` expresses; the bare tool name `exec` approves every command |
@@ -392,12 +447,12 @@ Implementation constraints:
 | OpenCode and Zed MCP imports | Two schemas OpenACA does not parse (`mcp` with `environment`/`enabled`; `context_servers`), on few installations | Those servers are missing from a Devin BOM; installed and declared stay `partial` regardless |
 | `windsurf-next` and `windsurf-insiders` channels | Devin reads the channel matching its own release; only stable is ordinary | A non-stable build's Windsurf imports are missing |
 | `$COPILOT_HOME` relocation | Rare | Copilot user skills under a relocated root are missing |
-| Plugin bundle layout inside the store | Needs a signed-in install to observe | Installed plugins are inventoried presence-only, from `lock.json`, until verified |
 | `system.json` machine policy | Login and proxy only; declares no components | None for composition |
 | Repo-level `requiredPlugins` in `.devin/config.json` | Devin's plugin docs name a repo level of plugin requirements; installing them needs Devin's service | A plugin a repository requires is missing from its declared BOM until installed |
 | `projects.<path>.mcpServers` in `~/.claude.json` | Whether Devin imports Claude Code's per-project servers is unverified; only the top-level `mcpServers` is read | A Claude Code local-scope server Devin loads would be missing |
 | `hooks.json` envelope inside a plugin bundle | Unverified; the declared reader takes Claude Code's `{"hooks": {...}}` envelope and records any other shape as a gap | A whole-file `hooks.json` in a repository's plugin lowers coverage instead of composing |
-| Store `lock.json` entry shape | Unverified. A `resolved` entry yields a plugin only when its `name` (or `identity`) satisfies Devin's documented plugin-name rule; any other entry is a coverage gap | Store plugins with another entry shape are counted as gaps, not inventoried |
+| Store `lock.json` entry shape | A `resolved` entry yields a plugin only when its `name` (or `identity`) satisfies Devin's documented plugin-name rule; any other entry is a coverage gap. An entry of an unobserved `resolved.kind` stays presence-only | Store plugins with another entry shape are counted as gaps, not inventoried |
+| A store plugin's install source | `lock.json` records the git URL, subdirectory and commit `sha`, but the composer does not read them yet | A store plugin keeps the occurrence-local `plugin/{name}` identity, and `mutable_install` does not see its pin |
 
 ### Not shipping
 
@@ -427,3 +482,4 @@ before implementation.
 | 2 | Refuse `--config-dir` | Applies ADR-0054; ADR-0059's companion relocation does not extend to four independent roots | [ADR-0071](../adrs/0071-devin-refuses-config-dir.md) |
 | 3 | `.agents/agents/` is evidence for the kinds that read it | ADR-0058's rule applied to a second shared directory, read today by one kind | [ADR-0072](../adrs/0072-shared-agents-agents-directory.md) |
 | 4 | One `permissions` list, two posture rule ids, split by entry | Rather than a new Devin-specific id | [ADR-0073](../adrs/0073-devin-permissions-two-rule-ids.md) |
+| 5 | Compose a store plugin from its cache copy for the observed install kinds; keep a shadowed plugin server | [Store layout](#store-layout) | [ADR-0080](../adrs/0080-compose-devin-store-plugins-from-the-cache.md) |

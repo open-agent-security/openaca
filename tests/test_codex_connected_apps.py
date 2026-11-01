@@ -93,6 +93,18 @@ def test_app_inherits_exact_plugin_decision_with_opposite_mcp_default(tmp_path, 
     assert app.blocked is (outcome == "blocked")
 
 
+def test_documented_remote_plugin_id_format_is_accepted(tmp_path):
+    root, plugin, _ = endpoint(tmp_path)
+    (plugin.parent / ".codex-remote-plugin-install.json").write_text(
+        json.dumps({"schema_version": 1, "remote_plugin_id": "plugins~Plugin_connector_github"})
+    )
+    graph = build_codex_installed_graph(root)
+    plugin_node = next(n for n in graph.nodes.values() if n.kind == "plugin")
+    assert plugin_node.ref is not None
+    assert plugin_node.ref.extra["remote_plugin_id"] == "plugins~Plugin_connector_github"
+    assert "marketplace" in plugin_node.ref.extra
+
+
 def test_cache_directory_alone_does_not_grant_remote_plugin_identity(tmp_path):
     root, _, _ = endpoint(tmp_path, marker=False)
     graph = build_codex_installed_graph(root)
@@ -120,7 +132,7 @@ def test_missing_tool_cache_keeps_app_inventory_and_reports_gap(tmp_path):
     [
         [],
         {"schema_version": 2, "remote_plugin_id": "plugin_x"},
-        {"schema_version": 1, "remote_plugin_id": "connector_x"},
+        {"schema_version": 1, "remote_plugin_id": "connector x"},
     ],
 )
 def test_invalid_installation_records_do_not_grant_a_marketplace_identity(tmp_path, record):

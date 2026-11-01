@@ -19,7 +19,6 @@ consumer can resolve.
 
 from __future__ import annotations
 
-import re
 import tomllib
 from pathlib import Path
 from typing import Iterable
@@ -27,11 +26,7 @@ from typing import Iterable
 from packaging.requirements import InvalidRequirement, Requirement
 
 from tools.component_ref import ComponentRef
-
-
-def _canonical_name(name: str) -> str:
-    """PEP 503 canonical form: lowercase, collapse [-_.] runs to a single hyphen."""
-    return re.sub(r"[-_.]+", "-", name).lower()
+from tools.mcp_launch_resolve import normalize_pypi_name
 
 
 def _pinned_version(req: Requirement) -> str | None:
@@ -69,7 +64,7 @@ def _emit_specs(
         refs.append(
             ComponentRef(
                 ecosystem="PyPI",
-                name=_canonical_name(req.name),
+                name=normalize_pypi_name(req.name),
                 version=_pinned_version(req),
                 source_manifest=source_manifest,
                 source_locator=locator,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -1880,18 +1879,16 @@ def test_policy_compile_lets_an_artifact_write_oserror_escape(tmp_path):
     in a domain error the command catches would turn a traceback into
     `Error: ...` with exit code 1, which is a command-line behaviour change."""
     (tmp_path / "settings.json").write_text("{}", encoding="utf-8")
-    readonly = tmp_path / "readonly"
-    readonly.mkdir()
-    os.chmod(readonly, 0o500)
-    try:
-        result = _compile(
-            tmp_path,
-            _policy_file(tmp_path, _BLOCK_MCPS),
-            "--output",
-            str(readonly / "artifact.json"),
-        )
-    finally:
-        os.chmod(readonly, 0o700)
+    # A file where the parent directory belongs fails `mkdir` for root too,
+    # which a read-only directory does not.
+    not_a_directory = tmp_path / "not-a-directory"
+    not_a_directory.write_text("", encoding="utf-8")
+    result = _compile(
+        tmp_path,
+        _policy_file(tmp_path, _BLOCK_MCPS),
+        "--output",
+        str(not_a_directory / "artifact.json"),
+    )
 
     assert isinstance(result.exception, OSError)
     assert not isinstance(result.exception, click.ClickException)

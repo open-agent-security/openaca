@@ -27,18 +27,19 @@ from tools.graph import Edge, Graph, Node
 from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
 from tools.marketplace import source_digest
 
-OPENACA_BOM_SCHEMA_VERSION = "0.6"
+OPENACA_BOM_SCHEMA_VERSION = "0.7"
 CYCLONEDX_SPEC_VERSION = "1.7"
 
 # `0.5` and later mean agent-rooted (ADR-0044): `metadata.component` is present
 # and keyed `root/<kind>[/<id>]`. `0.6` adds the native Claude MCP scope
+# properties. `0.7` adds the Codex app and marketplace source digest
 # properties. A document that isn't in that shape — a graphless call
 # (`build_agent_bom(refs, ...)` with no `graph=`, so there is no `metadata.component`
 # at all) — must keep claiming `0.4`, the version its shape actually is, or a
 # version-aware consumer reads `0.5` and expects a `metadata.component` it isn't
 # getting.
 _LEGACY_PLACE_ROOTED_SCHEMA_VERSION = "0.4"
-AGENT_ROOTED_SCHEMA_VERSIONS = frozenset({"0.5", OPENACA_BOM_SCHEMA_VERSION})
+AGENT_ROOTED_SCHEMA_VERSIONS = frozenset({"0.5", "0.6", OPENACA_BOM_SCHEMA_VERSION})
 
 # The `metadata.component` bom-ref prefix marking an agent-rooted document
 # (ADR-0045). Not `agent/`: the closed component-type set already uses that for a

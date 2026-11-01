@@ -214,6 +214,7 @@ def test_documented_app_id_forms_bind_by_exact_identity(tmp_path, identifier):
     app = next(
         n for n in graph.nodes.values() if n.ref and n.ref.extra.get("codex_app_id") == identifier
     )
+    assert app.ref is not None
     assert app.ref.extra["codex_app_namespaces"] == ["codex_apps__registered"]
 
 
@@ -242,5 +243,6 @@ def test_an_app_id_never_joins_by_removing_a_plugin_prefix(tmp_path):
         for n in graph.nodes.values()
         if n.ref and n.ref.extra.get("codex_app_id") == "plugin_asdk_app_example"
     )
+    assert app.ref is not None
     assert app.ref.extra["codex_app_namespaces"] == []
     assert any("missing app namespace" in gap for gap in graph.warnings.gaps)

@@ -187,3 +187,60 @@ def test_exported_inventory_preserves_app_identity_namespace_and_plugin_ownershi
     assert len(owners) == 1
     assert owners[0].ref is not None
     assert owners[0].ref.component_identity == "plugin/openai-curated-remote/github"
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["connector_example", "asdk_app_example", "plugin_asdk_app_example", "templated_apps_example"],
+)
+def test_documented_app_id_forms_bind_by_exact_identity(tmp_path, identifier):
+    root, plugin, cache = endpoint(tmp_path)
+    (plugin / ".app.json").write_text(json.dumps({"apps": {"registered-mcp": {"id": identifier}}}))
+    (cache / "account.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "tools": [
+                    {
+                        "server_name": "codex_apps",
+                        "connector_id": identifier,
+                        "tool_namespace": "codex_apps__registered",
+                    }
+                ],
+            }
+        )
+    )
+    graph = build_codex_installed_graph(root)
+    app = next(
+        n for n in graph.nodes.values() if n.ref and n.ref.extra.get("codex_app_id") == identifier
+    )
+    assert app.ref.extra["codex_app_namespaces"] == ["codex_apps__registered"]
+
+
+def test_an_app_id_never_joins_by_removing_a_plugin_prefix(tmp_path):
+    root, plugin, cache = endpoint(tmp_path)
+    (plugin / ".app.json").write_text(
+        json.dumps({"apps": {"registered-mcp": {"id": "plugin_asdk_app_example"}}})
+    )
+    (cache / "account.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "tools": [
+                    {
+                        "server_name": "codex_apps",
+                        "connector_id": "asdk_app_example",
+                        "tool_namespace": "codex_apps__different",
+                    }
+                ],
+            }
+        )
+    )
+    graph = build_codex_installed_graph(root)
+    app = next(
+        n
+        for n in graph.nodes.values()
+        if n.ref and n.ref.extra.get("codex_app_id") == "plugin_asdk_app_example"
+    )
+    assert app.ref.extra["codex_app_namespaces"] == []
+    assert any("missing app namespace" in gap for gap in graph.warnings.gaps)

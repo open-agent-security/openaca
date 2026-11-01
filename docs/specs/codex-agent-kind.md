@@ -667,3 +667,8 @@ Permanently excluded, not deferred.
 - **Desktop-only feature state** — `computer-use/`, `visualizations/`, `pets/`.
   None declares a component.
 - **`auth.json` and credentials** — never read, never inventoried, never emitted.
+
+Registered app IDs include `plugin_asdk_app_*` in the documented custom-MCP plugin flow.
+Read the [current packaging documentation](https://developers.openai.com/plugins/build/plugins#create-and-test-a-plugin-locally-with-an-mcp-server).
+Treat app IDs and remote installation IDs as separate fields.
+Join each app ID to the tool cache by exact equality, without removing prefixes.

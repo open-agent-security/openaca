@@ -11,7 +11,7 @@ from tools.parsers.claude_plugin_root import resolve_within
 
 MAX_FILE_BYTES = 16 * 1024 * 1024
 NAMESPACE = re.compile(r"(?:mcp__)?codex_apps__[A-Za-z0-9-]+(?:_[A-Za-z0-9-]+)*")
-APP_ID = re.compile(r"(?:connector_|asdk_app_|templated_apps_)[A-Za-z0-9_-]+")
+APP_ID = re.compile(r"(?:connector_|(?:plugin_)?asdk_app_|templated_apps_)[A-Za-z0-9_-]+")
 
 
 def read_object(path: Path) -> dict:

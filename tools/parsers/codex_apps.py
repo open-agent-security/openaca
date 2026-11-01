@@ -12,6 +12,10 @@ from tools.parsers.claude_plugin_root import resolve_within
 MAX_FILE_BYTES = 16 * 1024 * 1024
 NAMESPACE = re.compile(r"(?:mcp__)?codex_apps__[A-Za-z0-9-]+(?:_[A-Za-z0-9-]+)*")
 APP_ID = re.compile(r"(?:connector_|(?:plugin_)?asdk_app_|templated_apps_)[A-Za-z0-9_-]+")
+# Matches the character set Codex's own remote-ID validator accepts
+# (codex-rs/core-plugins/src/remote.rs: ASCII alnum, `-`, `_`, `~`), not a
+# fixed prefix. The documented backend form is `plugins~Plugin_...`.
+REMOTE_PLUGIN_ID = re.compile(r"[A-Za-z0-9_~-]{1,256}")
 
 
 def read_object(path: Path) -> dict:
@@ -35,7 +39,7 @@ def remote_install_id(plugin_root: Path) -> str | None:
         type(data.get("schema_version")) is not int
         or data["schema_version"] != 1
         or not isinstance(identifier, str)
-        or not re.fullmatch(r"plugin_[A-Za-z0-9_-]{1,256}", identifier)
+        or not REMOTE_PLUGIN_ID.fullmatch(identifier)
     ):
         raise ValueError("invalid remote plugin installation record")
     return identifier

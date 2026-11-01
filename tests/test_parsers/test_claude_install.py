@@ -7,6 +7,8 @@ and lockfile transitive scanning are plans 008 and 009.
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.parsers.claude_install import parse_install
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "installs"
@@ -1492,3 +1494,78 @@ def test_project_symlinked_skill_uses_project_skills_lock(tmp_path):
     )
     assert skill.extra["source_provenance"]["source"] == "vercel-labs/agent-skills"
     assert skill.extra["source_provenance"]["hash_type"] == "computedHash"
+
+
+def _registered_install(root, source=None):
+    import shutil
+
+    shutil.copytree(FIXTURES / "minimal", root, dirs_exist_ok=True)
+    registration = {
+        "test-marketplace": {"source": source or {"source": "github", "repo": "acme/plugins"}}
+    }
+    (root / "plugins/known_marketplaces.json").write_text(json.dumps(registration))
+
+
+def test_native_registry_supplies_an_installed_plugins_marketplace_source(tmp_path):
+    _registered_install(tmp_path)
+    refs, warnings = parse_install(tmp_path)
+    plugin = next(ref for ref in refs if ref.extra.get("component_type") == "plugin")
+    assert plugin.extra["marketplace_source"] == "https://github.com/acme/plugins.git"
+    assert warnings == []
+
+
+def test_repo_mode_does_not_read_native_marketplace_registrations(tmp_path):
+    _registered_install(tmp_path)
+    refs, _ = parse_install(tmp_path, mode="repo")
+    assert all("marketplace_source" not in ref.extra for ref in refs)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"source": "github", "repo": "different/repository"},
+        {"source": "github", "repo": "acme/plugins", "ref": "release-1"},
+        {"source": "git"},
+    ],
+)
+def test_explicit_settings_registration_never_falls_back_to_native_registry(tmp_path, source):
+    _registered_install(tmp_path)
+    settings = json.loads((tmp_path / "settings.json").read_text())
+    settings["extraKnownMarketplaces"] = {"test-marketplace": {"source": source}}
+    (tmp_path / "settings.json").write_text(json.dumps(settings))
+    refs, _ = parse_install(tmp_path)
+    plugin = next(ref for ref in refs if ref.extra.get("component_type") == "plugin")
+    expected = (
+        "https://github.com/different/repository.git"
+        if source.get("repo") == "different/repository"
+        else None
+    )
+    assert plugin.extra.get("marketplace_source") == expected
+
+
+@pytest.mark.parametrize(
+    "registration",
+    [
+        [],
+        {"test-marketplace": None},
+        {"other-marketplace": {"source": {"source": "github", "repo": "acme/plugins"}}},
+    ],
+)
+def test_missing_or_malformed_native_registration_has_no_source(tmp_path, registration):
+    _registered_install(tmp_path)
+    (tmp_path / "plugins/known_marketplaces.json").write_text(json.dumps(registration))
+    refs, _ = parse_install(tmp_path)
+    assert all("marketplace_source" not in ref.extra for ref in refs)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"source": "github", "repo": "acme/plugins", "ref": "release-1"},
+        {"source": "git", "url": "https://example.test/plugins?token=secret"},
+    ],
+)
+def test_native_source_does_not_flatten_refs_or_credentials(tmp_path, source):
+    _registered_install(tmp_path, source)
+    refs, _ = parse_install(tmp_path)
+    assert all("marketplace_source" not in ref.extra for ref in refs)

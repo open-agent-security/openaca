@@ -678,7 +678,9 @@ def _seed_active_plugins(
             continue
         component_identity = claude_install._plugin_identity(plugin_name, marketplace)
         try:
-            marketplace_source = claude_install._marketplace_source(layers, "endpoint", marketplace)
+            marketplace_source = claude_install._marketplace_source(
+                layers, "endpoint", marketplace, install_root=lockfile_path.parent.parent
+            )
         except ValueError as exc:
             if warnings is not None:
                 warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")

@@ -10,6 +10,12 @@ The digest identifies a source for catalog grouping without exporting its URL or
 Keep GitHub URL normalization identical to admission matching, including optional `.git` and trailing slashes.
 Omit the property for a missing, invalid, or credential-bearing source.
 Restore the digest when reading a CycloneDX document.
+For installed Claude plugins, resolve undeclared marketplace names through `plugins/known_marketplaces.json`.
+Use the exact registration key under the selected Claude configuration root.
+An explicit settings registration takes precedence, including unsupported or malformed declarations.
+Read the native registry only in endpoint mode.
+Keep missing, invalid, credential-bearing, or ref-qualified sources unmatched.
+Do not infer an official source from the marketplace name.
 Do not use the digest to replace local source evidence during admission evaluation.
 
 ## Goal

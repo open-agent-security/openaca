@@ -3317,3 +3317,65 @@ def test_unreadable_endpoint_command_policy_does_not_starve_component_decisions(
     )
     assert len(decisions) == 1 and decisions[0].blocked
     assert decisions[0].rule_paths == ("admission.mcps.default",)
+
+
+def test_native_claude_marketplace_registration_reaches_admission_and_bom(tmp_path):
+    import hashlib
+
+    from openaca.core import EndpointComponent, evaluate_admission, parse_policy
+    from tools.graph_build import build_rooted_graph
+
+    plugin_root = tmp_path / "plugins/cache/claude-plugins-official/code-review/1.0"
+    (plugin_root / ".claude-plugin").mkdir(parents=True)
+    (plugin_root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "code-review"}))
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"code-review@claude-plugins-official": True}})
+    )
+    (tmp_path / "plugins/installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "code-review@claude-plugins-official": [
+                        {"scope": "user", "version": "1.0", "installPath": str(plugin_root)}
+                    ]
+                }
+            }
+        )
+    )
+    (tmp_path / "plugins/known_marketplaces.json").write_text(
+        json.dumps(
+            {
+                "claude-plugins-official": {
+                    "source": {"source": "github", "repo": "anthropics/claude-plugins-official"}
+                }
+            }
+        )
+    )
+    graph = build_rooted_graph(tmp_path, "endpoint", root_key="agent/claude-code")
+    plugin = next(node.ref for node in graph.nodes.values() if node.kind == "plugin")
+    assert plugin is not None
+    policy = parse_policy(
+        {
+            "version": 1,
+            "admission": {
+                "mcps": {"default": "blocked"},
+                "plugins": {
+                    "default": "blocked",
+                    "allowed": [
+                        {"marketplace": "https://github.com/anthropics/claude-plugins-official"}
+                    ],
+                },
+                "skills": {"default": "blocked"},
+            },
+        }
+    )
+    (decision,) = evaluate_admission(policy, [EndpointComponent(plugin)])
+    assert not decision.blocked
+    document = build_agent_bom([], graph=graph).to_cyclonedx()
+    component = next(c for c in document["components"] if c["name"] == "code-review")
+    props = {p["name"]: p["value"] for p in component["properties"]}
+    assert (
+        props["openaca:marketplace_source_digest"]
+        == hashlib.sha256(b'["github","anthropics/claude-plugins-official"]').hexdigest()
+    )
+    assert "https://github.com/anthropics/claude-plugins-official" not in json.dumps(document)

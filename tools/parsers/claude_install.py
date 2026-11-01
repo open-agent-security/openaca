@@ -223,7 +223,9 @@ def _walk_active_plugins(
         # no version) or endpoint mode (installed_plugins.json, version known).
         component_identity = _plugin_identity(plugin_name, marketplace)
         try:
-            marketplace_source = _marketplace_source(layers, mode, marketplace)
+            marketplace_source = _marketplace_source(
+                layers, mode, marketplace, install_root=lockfile_path.parent.parent
+            )
         except ValueError as exc:
             warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
             marketplace_source = None
@@ -754,24 +756,42 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:
 
 
 def _marketplace_source(
-    layers: SettingsLayers, mode: Mode, marketplace: Optional[str]
+    layers: SettingsLayers,
+    mode: Mode,
+    marketplace: Optional[str],
+    *,
+    install_root: Path | None = None,
 ) -> Optional[str]:
     """Return the source value a managed marketplace policy can match.
 
     The installed-plugin lockfile records only the marketplace's local name.
-    Claude settings retain the source object that supplied that name, so use
-    the merged active settings rather than guessing from a plugin identity.
+    Use active settings or the native endpoint registry for source evidence.
+    A plugin identity alone cannot establish the source.
     """
     if marketplace is None:
         return None
     settings = layers.merged(mode)
     marketplaces = settings.get("extraKnownMarketplaces")
     if marketplaces is None:
-        return None
+        marketplaces = {}
     if not isinstance(marketplaces, dict):
         raise ValueError("marketplace registrations must be an object")
-    entry = marketplaces.get(marketplace)
-    if entry is None:
+    if marketplace in marketplaces:
+        entry = marketplaces[marketplace]
+    elif mode == "endpoint" and install_root is not None:
+        registry = install_root / "plugins" / "known_marketplaces.json"
+        if not registry.exists():
+            return None
+        try:
+            registered = json.loads(registry.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("could not read native marketplace registrations") from exc
+        if not isinstance(registered, dict):
+            raise ValueError("native marketplace registrations must be an object")
+        if marketplace not in registered:
+            return None
+        entry = registered[marketplace]
+    else:
         return None
     if not isinstance(entry, dict):
         raise ValueError("marketplace registration must be an object")

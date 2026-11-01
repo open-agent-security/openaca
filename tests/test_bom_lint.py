@@ -537,7 +537,7 @@ def test_lint_rejects_agent_root_labeled_as_schema_0_4(tmp_path):
 
 
 def test_lint_accepts_current_and_stored_agent_rooted_versions(tmp_path):
-    for version in ("0.5", "0.6"):
+    for version in ("0.5", "0.6", "0.7"):
         doc = _agent_doc()
         doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": version}]
         path = tmp_path / f"agent-{version}.cdx.json"
@@ -548,9 +548,9 @@ def test_lint_accepts_current_and_stored_agent_rooted_versions(tmp_path):
         assert result.exit_code == 0, (version, result.output)
 
 
-def test_lint_rejects_schema_0_6_without_an_agent_root(tmp_path):
+def test_lint_rejects_schema_0_7_without_an_agent_root(tmp_path):
     doc = _agent_doc()
-    doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": "0.6"}]
+    doc["metadata"]["properties"] = [{"name": "openaca:schema_version", "value": "0.7"}]
     del doc["metadata"]["component"]
     doc["dependencies"] = []
     path = tmp_path / "no-root.cdx.json"

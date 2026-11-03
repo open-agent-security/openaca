@@ -19,6 +19,7 @@ __all__ = [
     "ComponentRef",
     "canonical_component_identity",
     "canonical_ecosystem",
+    "component_name_for",
     "encode_purl_name",
     "is_package_source_ref",
     "purl_type_for_ecosystem",
@@ -68,3 +69,16 @@ class ComponentRef:
         if self.version:
             return f"pkg:{purl_eco}/{encoded}@{self.version}"
         return f"pkg:{purl_eco}/{encoded}"
+
+
+def component_name_for(ref: ComponentRef) -> str:
+    component_path = (ref.extra or {}).get("component_path")
+    if isinstance(component_path, list) and component_path:
+        last = component_path[-1]
+        if isinstance(last, dict) and isinstance(last.get("name"), str):
+            return last["name"]
+    if ref.name:
+        return ref.name
+    if ref.component_identity:
+        return ref.component_identity
+    return "<unidentified>"

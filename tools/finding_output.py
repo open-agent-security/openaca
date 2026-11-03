@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, component_name_for
 from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -46,19 +46,6 @@ def component_type_for(ref: ComponentRef) -> str:
     if ref.ecosystem in _PACKAGE_ECOSYSTEMS:
         return "package"
     return "component"
-
-
-def component_name_for(ref: ComponentRef) -> str:
-    component_path = (ref.extra or {}).get("component_path")
-    if isinstance(component_path, list) and component_path:
-        last = component_path[-1]
-        if isinstance(last, dict) and isinstance(last.get("name"), str):
-            return last["name"]
-    if ref.name:
-        return ref.name
-    if ref.component_identity:
-        return ref.component_identity
-    return "<unidentified>"
 
 
 def source_for(ref: ComponentRef) -> dict[str, Any]:

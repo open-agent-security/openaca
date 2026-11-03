@@ -35,7 +35,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, component_name_for
 from tools.graph import WarningLog, record_gap
 from tools.marketplace import key as marketplace_key
 from tools.parsers import (
@@ -715,7 +715,7 @@ def _with_plugin_context(
     plugin_node = {"type": "plugin", "name": plugin_name}
     for ref in refs:
         child_type = _component_type_for_child(ref)
-        child_name = _component_name_for_child(ref)
+        child_name = component_name_for(ref)
         extra = dict(ref.extra)
         extra["component_type"] = child_type
         extra["declared_by"] = {
@@ -733,19 +733,6 @@ def _component_type_for_child(ref: ComponentRef) -> str:
     if isinstance(extra_type, str) and extra_type:
         return extra_type
     return "component"
-
-
-def _component_name_for_child(ref: ComponentRef) -> str:
-    component_path = ref.extra.get("component_path")
-    if isinstance(component_path, list) and component_path:
-        last = component_path[-1]
-        if isinstance(last, dict) and isinstance(last.get("name"), str):
-            return last["name"]
-    if ref.name:
-        return ref.name
-    if ref.component_identity:
-        return ref.component_identity
-    return "<unidentified>"
 
 
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:

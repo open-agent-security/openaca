@@ -287,7 +287,7 @@ wheels = [
 
 [[package]]
 name = "openaca"
-version = "0.14.2"
+version = "0.14.3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

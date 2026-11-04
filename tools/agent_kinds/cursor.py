@@ -11,6 +11,8 @@ from tools.agent_kinds import (
     DiscoveryContext,
     matches_evidence,
 )
+from tools.cursor_commands import _COMMAND_EXTENSIONS
+from tools.cursor_subagents import _AGENT_EXTENSIONS
 from tools.graph import Graph
 from tools.parsers import CURSOR_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY, claude_skill
 from tools.parsers.agent_plugins import is_agent_plugins_manifest
@@ -48,14 +50,9 @@ COVERAGE_BASELINE = {"installed": "partial", "declared": "partial"}
 # `_DECLARED_EVIDENCE_PATTERNS` excludes it in `claude_code.py`: no kind owns
 # it exclusively.
 #
-# Mirrors `_COMMAND_EXTENSIONS` in `tools/cursor_commands.py` and
-# `_AGENT_EXTENSIONS` in `tools/cursor_subagents.py` exactly (same mirroring
-# `tools/parsers/__init__.py` already does for its own registry counts) so a
-# file extension composition never loads — e.g. `.cursor/commands/README.rst`
-# — can't stand alone as evidence of a declared Cursor agent.
-_CURSOR_COMMAND_EXTENSIONS = (".md", ".txt")
-_CURSOR_AGENT_EXTENSIONS = (".md", ".mdc", ".markdown")
-
+# The evidence globs use the resolver extension tuples. A file those
+# resolvers never load is not evidence of a declared Cursor agent. For
+# example, `.cursor/commands/README.rst` is not evidence.
 _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     ".cursor/mcp.json",
     "*/.cursor/mcp.json",
@@ -65,10 +62,10 @@ _DECLARED_EVIDENCE_PATTERNS: tuple[str, ...] = (
     "*/.cursor/skills/*/SKILL.md",
     ".agents/skills/*/SKILL.md",
     "*/.agents/skills/*/SKILL.md",
-    *(f".cursor/commands/*{ext}" for ext in _CURSOR_COMMAND_EXTENSIONS),
-    *(f"*/.cursor/commands/*{ext}" for ext in _CURSOR_COMMAND_EXTENSIONS),
-    *(f".cursor/agents/*{ext}" for ext in _CURSOR_AGENT_EXTENSIONS),
-    *(f"*/.cursor/agents/*{ext}" for ext in _CURSOR_AGENT_EXTENSIONS),
+    *(f".cursor/commands/*{ext}" for ext in _COMMAND_EXTENSIONS),
+    *(f"*/.cursor/commands/*{ext}" for ext in _COMMAND_EXTENSIONS),
+    *(f".cursor/agents/*{ext}" for ext in _AGENT_EXTENSIONS),
+    *(f"*/.cursor/agents/*{ext}" for ext in _AGENT_EXTENSIONS),
     ".cursor-plugin/plugin.json",
     "*/.cursor-plugin/plugin.json",
 )

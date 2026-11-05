@@ -10,9 +10,11 @@ from tools.identity import (
     canonical_ecosystem,
     encode_purl_name,
     is_package_source_ref,
-    purl_type_for_ecosystem,
     safe_pinned_mcp_install_source,
     unpinned_mcp_package,
+)
+from tools.identity import (
+    purl_type_for_ecosystem as _purl_type_for_ecosystem,
 )
 
 __all__ = [
@@ -22,7 +24,6 @@ __all__ = [
     "component_name_for",
     "encode_purl_name",
     "is_package_source_ref",
-    "purl_type_for_ecosystem",
     "safe_pinned_mcp_install_source",
     "unpinned_mcp_package",
 ]
@@ -62,7 +63,7 @@ class ComponentRef:
     def purl(self) -> Optional[str]:
         if not (self.ecosystem and self.name):
             return None
-        purl_eco = purl_type_for_ecosystem(self.ecosystem)
+        purl_eco = _purl_type_for_ecosystem(self.ecosystem)
         if not purl_eco:
             return None
         encoded = encode_purl_name(self.name)

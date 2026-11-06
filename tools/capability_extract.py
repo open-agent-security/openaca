@@ -25,10 +25,9 @@ _SKILL_TOOL_CAPABILITIES = {
     "websearch": "network_egress",
 }
 
-# `exec` is Devin CLI's shell tool. It is scoped the same way as
-# `tools/posture/rules/skill_capability.py`'s executable-tool matcher: a
-# shared `.agents/skills` skill granting it declares a Devin capability, not
-# a Cursor or Codex one, so only an unscoped call or a Devin scan maps it.
+# `exec` is Devin CLI's shell tool. The skill posture rule imports this set.
+# A shared `.agents/skills` skill granting `exec` declares a Devin capability,
+# not a Cursor or Codex one. Only an unscoped call or a Devin scan maps it.
 _EXEC_RECOGNIZING_KINDS = {None, "devin"}
 
 _NETWORK_CLIENTS = frozenset({"curl", "wget", "nc", "scp", "ssh", "httpie", "http", "rsync"})

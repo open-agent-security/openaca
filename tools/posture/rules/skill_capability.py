@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from tools.active_in import active_in
-from tools.capability_extract import _allowed_tools, _executable_tool_base, _read_frontmatter
+from tools.capability_extract import (
+    _EXEC_RECOGNIZING_KINDS,
+    _allowed_tools,
+    _executable_tool_base,
+    _read_frontmatter,
+)
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 
@@ -20,13 +25,6 @@ REMEDIATION = (
 )
 
 EXECUTABLE_TOOLS = {"bash", "shell"}
-
-# `exec` is Devin CLI's shell tool (docs/specs/devin-cli-agent-kind.md, Posture).
-# Cursor and Codex allowlist this same rule but have no `exec` tool of their
-# own, so a shared `.agents/skills` skill granting Devin's `exec` must not be
-# reported as executable under their scans. An unscoped call (no agent_kind)
-# still recognizes it, matching the rule's behavior before Devin existed.
-_EXEC_RECOGNIZING_KINDS = {None, "devin"}
 
 _STANDARDS = Standards(owasp_agentic_top10=["asi03"])
 
@@ -51,6 +49,11 @@ def _allowed_executable_tool_finding(
     # no executable tools for this rule.
     frontmatter = _read_frontmatter(Path(ref.source_manifest)) or {}
     allowed_tools = _allowed_tools(frontmatter)
+    # `exec` is Devin CLI's shell tool (docs/specs/devin-cli-agent-kind.md, Posture).
+    # Cursor and Codex allowlist this same rule but have no `exec` tool of their
+    # own, so a shared `.agents/skills` skill granting Devin's `exec` must not be
+    # reported as executable under their scans. An unscoped call (no agent_kind)
+    # still recognizes it, matching the rule's behavior before Devin existed.
     executable_tools = EXECUTABLE_TOOLS | (
         {"exec"} if agent_kind in _EXEC_RECOGNIZING_KINDS else set()
     )

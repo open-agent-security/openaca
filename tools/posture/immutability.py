@@ -18,10 +18,10 @@ from __future__ import annotations
 import re
 
 from tools.parsers.mcp_json import (
-    _UV_VALUE_FLAGS,
     _parse_npx_args,
     _parse_uvx_args,
     _parse_uvx_github_from,
+    _skip_leading_uv_options,
 )
 
 _SHA_RE = re.compile(r"^[a-f0-9]{40}$")
@@ -58,16 +58,11 @@ def is_mutable_reference(ref: str) -> bool:
             return True
         return _is_mutable_pkg_spec(f"{name}=={version}")
 
-    # `uv tool run <spec>` — equivalent to uvx; skip any leading uv global
-    # options (those start with `-`) to reach `tool run`.
+    # `uv tool run <spec>` is equivalent to uvx. Skip leading uv global
+    # options with the MCP parser's walker, then read `tool run`.
     if ref.startswith("uv "):
         tokens = ref.split()
-        i = 1
-        while i < len(tokens) and tokens[i].startswith("-"):
-            if "=" not in tokens[i] and tokens[i] in _UV_VALUE_FLAGS:
-                i += 2  # value-taking flag: skip flag and its separate value token
-            else:
-                i += 1
+        i = 1 + _skip_leading_uv_options(tokens[1:])
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
             # Delegate to _parse_uvx_args: handles --from, --python, --with, etc.
             # (uv tool run is semantically equivalent to uvx).

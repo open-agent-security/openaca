@@ -162,6 +162,10 @@ Each MCP server and plugin category has an optional `allowed` list, optional
 list. Validation rejects an overlap rather than assigning surprising
 precedence. A component not in either list follows `default`.
 
+A local marketplace path does not match a URL-based marketplace target.
+The evaluator still applies exact plugin identifiers and the category default.
+An inventory source that has no valid URL does not abort evaluation.
+
 A plugin identifier target and a marketplace target can independently match
 the same plugin — for example, an explicit `plugin` entry naming a plugin
 whose marketplace is separately listed under `blocked`. These are different

@@ -387,9 +387,10 @@ def _local_mcp_identity(command: str, args: list[str], server_name: object) -> s
 
 
 # uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
-# value. Used by `_command_dispatch` to walk past option/value pairs and
-# locate the actual subcommand. Inline `--flag=value` doesn't appear here
-# (the value is embedded in the same token).
+# value. `_skip_leading_uv_options` uses this set to walk past option/value
+# pairs and locate the actual subcommand. Inline `--flag=value` doesn't
+# appear here (the value is embedded in the same token). The mutable-reference
+# check uses that walker too, so the two reads of one command cannot drift.
 #
 # This list is best-effort against the uv CLI as of mid-2026. Missing
 # entries cause `uv <unknown-flag> <value> tool run X` to fall to binary
@@ -434,6 +435,14 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
         return "bunx", args[1:]
     if classified != "uv":
         return command, args
+    i = _skip_leading_uv_options(args)
+    if i + 1 < len(args) and args[i] == "tool" and args[i + 1] == "run":
+        return "uvx", args[i + 2 :]
+    return command, args
+
+
+def _skip_leading_uv_options(args: list[str]) -> int:
+    """Index of the first token that is not a leading uv global option."""
     i = 0
     while i < len(args) and args[i].startswith("-"):
         if "=" in args[i]:
@@ -442,9 +451,7 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
             i += 2
         else:
             i += 1
-    if i + 1 < len(args) and args[i] == "tool" and args[i + 1] == "run":
-        return "uvx", args[i + 2 :]
-    return command, args
+    return i
 
 
 def _classify_command(command: str) -> str:

@@ -570,11 +570,14 @@ def _target_matches(ref: ComponentRef, target: McpTarget | PluginTarget) -> bool
             and f"{ref.name}@{marketplace}" == target.plugin
         )
     source = extra.get("marketplace_source")
-    return (
-        isinstance(source, str)
-        and isinstance(target.marketplace, str)
-        and marketplace_key(source) == marketplace_key(target.marketplace)
-    )
+    if not isinstance(source, str) or not isinstance(target.marketplace, str):
+        return False
+    try:
+        source_key = marketplace_key(source)
+    except ValueError:
+        # Local Codex marketplaces have paths rather than source URLs.
+        return False
+    return source_key == marketplace_key(target.marketplace)
 
 
 def matches_vulnerability_gate(gate: VulnerabilityGate, advisory: dict[str, Any]) -> bool:

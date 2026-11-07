@@ -12,6 +12,50 @@ from tools.parsers import parse_repo_grouped
 from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
 
 
+def test_named_file_walk_filters_before_per_file_ignore_checks(tmp_path, monkeypatch):
+    import tools.parsers.gitignore as gitignore
+
+    nested = tmp_path / "nested" / ".codex" / "skills" / "demo"
+    nested.mkdir(parents=True)
+    skill = nested / "SKILL.md"
+    skill.write_text("skill")
+    for i in range(100):
+        (nested / f"unrelated-{i}.txt").write_text("unrelated")
+    checked = []
+    original = gitignore.is_ignored
+
+    def check(path, spec):
+        checked.append(path.name)
+        return original(path, spec)
+
+    monkeypatch.setattr(gitignore, "is_ignored", check)
+    assert list(iter_unignored_files(tmp_path, None, names=frozenset({"SKILL.md"}))) == [skill]
+    assert checked == ["SKILL.md"]
+
+
+def test_excluded_directories_are_pruned_before_descent(tmp_path, monkeypatch):
+    import tools.parsers.gitignore as gitignore
+
+    excluded = tmp_path / "project" / "node_modules"
+    excluded.mkdir(parents=True)
+    (excluded / "package.json").write_text("{}")
+    manifest = excluded.parent / "package.json"
+    manifest.write_text("{}")
+    visited = []
+    original = gitignore.os.walk
+
+    def walk(root):
+        for row in original(root):
+            visited.append(Path(row[0]))
+            yield row
+
+    monkeypatch.setattr(gitignore.os, "walk", walk)
+    assert list(iter_unignored_files(tmp_path, None, exclude_dirs=frozenset({"node_modules"}))) == [
+        manifest
+    ]
+    assert excluded not in visited
+
+
 def _write_package_json(path: Path, name: str = "x", version: str = "1.0.0") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

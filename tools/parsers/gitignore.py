@@ -104,7 +104,13 @@ def _is_ignored_dir(
     )
 
 
-def iter_unignored_files(root: Path, spec: Optional[GitIgnoreSpec]) -> Iterator[Path]:
+def iter_unignored_files(
+    root: Path,
+    spec: Optional[GitIgnoreSpec],
+    *,
+    names: frozenset[str] | None = None,
+    exclude_dirs: frozenset[str] = frozenset(),
+) -> Iterator[Path]:
     """Yield files under `root`, pruning ignored directories before descent."""
     negated_prefixes = _negated_prefixes(spec)
     for dirpath_str, dirnames, filenames in os.walk(root):
@@ -112,6 +118,8 @@ def iter_unignored_files(root: Path, spec: Optional[GitIgnoreSpec]) -> Iterator[
         dirnames.sort()
         kept_dirnames: list[str] = []
         for dirname in dirnames:
+            if dirname in exclude_dirs:
+                continue
             child = dirpath / dirname
             try:
                 rel = child.relative_to(root)
@@ -123,6 +131,8 @@ def iter_unignored_files(root: Path, spec: Optional[GitIgnoreSpec]) -> Iterator[
         dirnames[:] = kept_dirnames
 
         for filename in sorted(filenames):
+            if names is not None and filename not in names:
+                continue
             path = dirpath / filename
             try:
                 rel = path.relative_to(root)

@@ -1425,7 +1425,12 @@ def build_manifest_name_index(
     """
     spec = None if include_gitignored else load_gitignore_spec(scan_root)
     index: dict[tuple[str, str], Path] = {}
-    for path in iter_unignored_files(scan_root, spec):
+    for path in iter_unignored_files(
+        scan_root,
+        spec,
+        names=frozenset({"package.json", "pyproject.toml"}),
+        exclude_dirs=_NAME_INDEX_DEP_DIRS,
+    ):
         try:
             rel_dir_parts = path.relative_to(scan_root).parts[:-1]
         except ValueError:
@@ -1546,7 +1551,7 @@ def _add_project_skills(
     # eval root differ, evaluate the absolute path against eval_root.
     walk_spec = spec if eval_root == directory else None
     exclude_resolved = [p.resolve() for p in exclude_under] if exclude_under else []
-    for path in iter_unignored_files(directory, walk_spec):
+    for path in iter_unignored_files(directory, walk_spec, names=frozenset({"SKILL.md"})):
         if path.name != "SKILL.md" or not _is_project_skill_md(path, directory, surface):
             continue
         if _is_ignored_under(path, eval_root, spec):

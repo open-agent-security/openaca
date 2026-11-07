@@ -58,6 +58,44 @@ def _mcp(command: list[str]) -> ComponentRef:
     return ComponentRef(extra={"component_type": "mcp_server", "mcp_command": command})
 
 
+@pytest.mark.parametrize("default", ["allowed", "blocked"])
+@pytest.mark.parametrize("source", ["/local/marketplace", "file:///local/marketplace"])
+@pytest.mark.parametrize("explicit", [None, "allowed", "blocked"])
+def test_local_marketplace_sources_keep_admission_decisions(default, source, explicit):
+    plugin = ComponentRef(
+        name="demo",
+        extra={
+            "component_type": "plugin",
+            "marketplace": "local",
+            "marketplace_source": source,
+        },
+    )
+    document = {
+        "version": 1,
+        "admission": {
+            "mcps": {"default": "allowed"},
+            "skills": {"default": "allowed"},
+            "plugins": {
+                "default": default,
+                "allowed": [{"marketplace": "https://github.com/acme/approved"}],
+                "blocked": [{"marketplace": "https://github.com/acme/blocked"}],
+            },
+        },
+    }
+    if explicit is not None:
+        document["admission"]["plugins"][explicit].append({"plugin": "demo@local"})
+    policy = parse(document)
+    decisions = apply_risk_gates(
+        policy,
+        [EndpointComponent(plugin, None)],
+        advisories=[],
+        advisory_matches=[],
+        posture_matches=[],
+    )
+    assert len(decisions) == 1
+    assert decisions[0].blocked == ((explicit or default) == "blocked")
+
+
 def test_policy_requires_exact_v1_shape():
     with pytest.raises(PolicyValidationError, match="unsupported"):
         parse({"version": 1, "admission": {}, "unknown": True})

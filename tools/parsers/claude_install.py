@@ -229,26 +229,17 @@ def _walk_active_plugins(
         except ValueError as exc:
             warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
             marketplace_source = None
-        extra = {
-            "component_type": "plugin",
-            "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
-            "component_path": [{"type": "plugin", "name": plugin_name}],
-            "gitCommitSha": entry.get("gitCommitSha"),
-            "installPath": entry.get("installPath"),
-            "marketplace": marketplace,
-            "scope": entry.get("scope"),
-        }
-        if marketplace_source is not None:
-            extra["marketplace_source"] = marketplace_source
-
         refs.append(
-            ComponentRef(
-                name=plugin_name,
+            _installed_plugin_ref(
+                plugin_name=plugin_name,
                 version=version,
                 component_identity=component_identity,
-                source_manifest=str(lockfile_path),
-                source_locator=f"$.plugins.{plugin_key}[{index}]",
-                extra=extra,
+                lockfile_path=lockfile_path,
+                plugin_key=plugin_key,
+                index=index,
+                entry=entry,
+                marketplace=marketplace,
+                marketplace_source=marketplace_source,
             )
         )
 
@@ -733,6 +724,44 @@ def _component_type_for_child(ref: ComponentRef) -> str:
     if isinstance(extra_type, str) and extra_type:
         return extra_type
     return "component"
+
+
+def _installed_plugin_ref(
+    *,
+    plugin_name: str,
+    version: str | None,
+    component_identity: str,
+    lockfile_path: Path,
+    plugin_key: str,
+    index: int,
+    entry: dict,
+    marketplace: str | None,
+    marketplace_source: str | None,
+) -> ComponentRef:
+    """The plugin ref the install walker and graph seeding both emit.
+
+    Endpoint renderers and the mutable-install rule read this metadata.
+    One builder keeps the two callers from drifting.
+    """
+    extra: dict[str, Any] = {
+        "component_type": "plugin",
+        "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
+        "component_path": [{"type": "plugin", "name": plugin_name}],
+        "gitCommitSha": entry.get("gitCommitSha"),
+        "installPath": entry.get("installPath"),
+        "marketplace": marketplace,
+        "scope": entry.get("scope"),
+    }
+    if marketplace_source is not None:
+        extra["marketplace_source"] = marketplace_source
+    return ComponentRef(
+        name=plugin_name,
+        version=version,
+        component_identity=component_identity,
+        source_manifest=str(lockfile_path),
+        source_locator=f"$.plugins.{plugin_key}[{index}]",
+        extra=extra,
+    )
 
 
 def _split_plugin_key(plugin_key: str) -> tuple[str, Optional[str]]:

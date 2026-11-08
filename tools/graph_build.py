@@ -685,28 +685,20 @@ def _seed_active_plugins(
             if warnings is not None:
                 warnings.append(f"plugin {plugin_key}: invalid marketplace source ({exc})")
             marketplace_source = None
-        extra = {
-            "component_type": "plugin",
-            "declared_by": {"kind": "skill_lock", "path": str(lockfile_path)},
-            "component_path": [{"type": "plugin", "name": plugin_name}],
-            "gitCommitSha": entry.get("gitCommitSha"),
-            "installPath": entry.get("installPath"),
-            "marketplace": marketplace,
-            "scope": entry.get("scope"),
-        }
-        if marketplace_source is not None:
-            extra["marketplace_source"] = marketplace_source
 
-        # Carry the same plugin metadata `parse_install` emitted so endpoint
-        # renderers (gitCommitSha display, per-plugin tier-2 coverage) and
-        # posture rules (mutable-install-reference) keep working off the ref.
-        self_ref = ComponentRef(
-            name=plugin_name,
+        # Same plugin metadata `parse_install` emits, so endpoint renderers
+        # (gitCommitSha display, per-plugin tier-2 coverage) and posture rules
+        # (mutable-install-reference) keep working off the ref.
+        self_ref = claude_install._installed_plugin_ref(
+            plugin_name=plugin_name,
             version=version,
             component_identity=component_identity,
-            source_manifest=str(lockfile_path),
-            source_locator=f"$.plugins.{plugin_key}[{index}]",
-            extra=extra,
+            lockfile_path=lockfile_path,
+            plugin_key=plugin_key,
+            index=index,
+            entry=entry,
+            marketplace=marketplace,
+            marketplace_source=marketplace_source,
         )
         plugin_node = Node(key=occurrence_key(self_ref, normalize), kind="plugin", ref=self_ref)
         _add_child(graph, target, plugin_node)

@@ -14,7 +14,7 @@ from tools.agent_kinds import (
 )
 from tools.graph import Graph
 from tools.parsers import REGISTRY as _MANIFEST_REGISTRY
-from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
+from tools.parsers.gitignore import iter_unignored_relative_files
 from tools.posture import (
     collect_endpoint_mcp_manifests,
     collect_endpoint_settings_manifests,
@@ -66,12 +66,9 @@ def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> P
     composition never disagree about what is in scope. A declaration inside an
     ignored directory is invisible to both unless `--include-gitignored` is set.
     """
-    spec = None if include_gitignored else load_gitignore_spec(scan_root)
-    for path in iter_unignored_files(scan_root, spec):
-        try:
-            rel = path.relative_to(scan_root).as_posix()
-        except ValueError:
-            continue
+    for rel, path, _spec in iter_unignored_relative_files(
+        scan_root, include_gitignored=include_gitignored
+    ):
         if _matches_evidence(rel):
             return path
     return None

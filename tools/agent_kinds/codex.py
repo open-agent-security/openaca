@@ -14,7 +14,7 @@ from tools.agent_kinds import (
 )
 from tools.graph import Graph
 from tools.parsers import CODEX_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
-from tools.parsers.gitignore import iter_unignored_files, load_gitignore_spec
+from tools.parsers.gitignore import iter_unignored_relative_files
 from tools.posture import (
     collect_codex_endpoint_mcp_manifests,
     collect_codex_mcp_manifests,
@@ -121,13 +121,10 @@ def _matches_evidence(rel: str, path: Path, realized_roots: list[Path]) -> bool:
 
 def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> Path | None:
     """The first file proving this tree declares a Codex agent, else None."""
-    spec = None if include_gitignored else load_gitignore_spec(scan_root)
     realized_roots = _realized_plugin_roots(scan_root, include_gitignored=include_gitignored)
-    for path in iter_unignored_files(scan_root, spec):
-        try:
-            rel = path.relative_to(scan_root).as_posix()
-        except ValueError:
-            continue
+    for rel, path, _spec in iter_unignored_relative_files(
+        scan_root, include_gitignored=include_gitignored
+    ):
         if _matches_evidence(rel, path, realized_roots):
             return path
     return None

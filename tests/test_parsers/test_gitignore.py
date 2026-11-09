@@ -9,7 +9,12 @@ import pytest
 from pathspec import GitIgnoreSpec
 
 from tools.parsers import parse_repo_grouped
-from tools.parsers.gitignore import is_ignored, iter_unignored_files, load_gitignore_spec
+from tools.parsers.gitignore import (
+    is_ignored,
+    iter_unignored_files,
+    iter_unignored_relative_files,
+    load_gitignore_spec,
+)
 
 
 def test_named_file_walk_filters_before_per_file_ignore_checks(tmp_path, monkeypatch):
@@ -134,6 +139,27 @@ def test_gitignore_glob_patterns(tmp_path):
 
 def test_load_gitignore_spec_returns_none_when_absent(tmp_path):
     assert load_gitignore_spec(tmp_path) is None
+
+
+def test_relative_walk_uses_posix_paths_and_the_root_gitignore(tmp_path):
+    (tmp_path / "keep.txt").write_text("keep", encoding="utf-8")
+    nested = tmp_path / "dir" / "nested.txt"
+    nested.parent.mkdir()
+    nested.write_text("nested", encoding="utf-8")
+    (tmp_path / "skip.txt").write_text("skip", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("skip.txt\n", encoding="utf-8")
+
+    ignored = list(iter_unignored_relative_files(tmp_path))
+    rels = [rel for rel, _path, spec in ignored]
+    assert "keep.txt" in rels
+    assert "dir/nested.txt" in rels
+    assert "skip.txt" not in rels
+    assert all(spec is not None for _rel, _path, spec in ignored)
+
+    included = list(iter_unignored_relative_files(tmp_path, include_gitignored=True))
+    included_rels = [rel for rel, _path, spec in included]
+    assert "skip.txt" in included_rels
+    assert all(spec is None for _rel, _path, spec in included)
 
 
 def test_load_gitignore_spec_returns_none_on_unreadable_file(tmp_path):

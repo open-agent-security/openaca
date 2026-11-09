@@ -104,6 +104,26 @@ def _is_ignored_dir(
     )
 
 
+def iter_unignored_relative_files(
+    root: Path,
+    *,
+    include_gitignored: bool = False,
+) -> Iterator[tuple[str, Path, Optional[GitIgnoreSpec]]]:
+    """Yield `(relative path, path, spec)` for each file the repo walk keeps.
+
+    `spec` is `None` when `include_gitignored` is true. Otherwise `spec` is
+    the compiled `<root>/.gitignore`. Skip a path that is not under `root`.
+    Agent-kind evidence uses this walk, so the kinds skip the same files.
+    """
+    spec = None if include_gitignored else load_gitignore_spec(root)
+    for path in iter_unignored_files(root, spec):
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        yield rel, path, spec
+
+
 def iter_unignored_files(
     root: Path,
     spec: Optional[GitIgnoreSpec],

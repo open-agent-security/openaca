@@ -289,9 +289,6 @@ _GITHUB_URL = re.compile(
     r"(?P<repo>[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
 )
 
-#: Only an immutable commit is a version (ADR-0016); any other pin is a `git_ref`.
-_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
-
 
 def plugin_required_refs(data: dict, *, manifest_path: Path, record_gap) -> list[ComponentRef]:
     """The plugins a Devin plugin manifest requires, one ref per
@@ -354,7 +351,8 @@ def _required_plugin_ref(
         return None
     if not location:
         return None
-    version = pin.lower() if repo and pin and _COMMIT_SHA.fullmatch(pin) else None
+    # Only an immutable commit is a version (ADR-0016); any other pin is a git_ref.
+    version = pin.lower() if repo and pin and mcp_json._COMMIT_SHA_RE.fullmatch(pin) else None
     extra: dict = {}
     if subdirectory:
         extra["source_subdirectory"] = subdirectory

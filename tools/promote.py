@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,10 +10,9 @@ import click
 import yaml
 from jsonschema import Draft202012Validator
 
-from tools.lint import _FORMAT_CHECKER, UPSTREAM_ID_RE
+from tools.lint import _FORMAT_CHECKER, UPSTREAM_ID_RE, load_schema
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 CANONICAL_KEYS = ("schema_version", "id", "aliases", "modified", "database_specific")
 
@@ -33,12 +31,8 @@ def project_candidate_to_overlay(candidate: dict[str, Any]) -> dict[str, Any]:
     return overlay
 
 
-def _load_schema() -> dict[str, Any]:
-    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-
 def _validate_overlay(overlay: dict[str, Any]) -> None:
-    Draft202012Validator(_load_schema(), format_checker=_FORMAT_CHECKER).validate(overlay)
+    Draft202012Validator(load_schema(), format_checker=_FORMAT_CHECKER).validate(overlay)
 
 
 @click.command()

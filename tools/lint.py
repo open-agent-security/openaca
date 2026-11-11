@@ -42,7 +42,7 @@ UPSTREAM_ID_RE = re.compile(
 
 
 def load_schema() -> dict:
-    return json.loads(SCHEMA_PATH.read_text())
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
 def find_overlays(target: Path) -> list[Path]:

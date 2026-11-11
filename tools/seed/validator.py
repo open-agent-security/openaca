@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from tools.lint import check_no_empty_taxonomy_buckets, check_threat_kind_id_coupling
+from tools.lint import check_no_empty_taxonomy_buckets, check_threat_kind_id_coupling, load_schema
 from tools.promote import project_candidate_to_overlay
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "schema" / "openaca.schema.json"
 
 
 def validate_candidate(candidate: dict[str, Any]) -> list[str]:
@@ -33,7 +28,7 @@ def validate_candidate(candidate: dict[str, Any]) -> list[str]:
     errors.extend(check_threat_kind_id_coupling(candidate))
     errors.extend(check_no_empty_taxonomy_buckets(candidate))
 
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema = load_schema()
     validator = Draft202012Validator(schema)
     for error in validator.iter_errors(overlay):
         path = "/".join(str(part) for part in error.absolute_path) or "<root>"

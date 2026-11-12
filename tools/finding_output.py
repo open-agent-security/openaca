@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef, component_name_for
+from tools.component_ref import ComponentRef, bom_ref_for, component_name_for
 from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -190,8 +190,8 @@ def finding_to_output(
         if node is not None:
             out["bom_ref"] = node.key
     else:
-        extra_bom_ref = (ref.extra or {}).get("bom_ref")
-        if isinstance(extra_bom_ref, str) and extra_bom_ref:
+        extra_bom_ref = bom_ref_for(ref)
+        if extra_bom_ref is not None:
             out["bom_ref"] = extra_bom_ref
     declared_by = declared_by_for(ref)
     if declared_by is not None:

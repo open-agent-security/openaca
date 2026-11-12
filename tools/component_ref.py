@@ -19,6 +19,7 @@ from tools.identity import (
 
 __all__ = [
     "ComponentRef",
+    "bom_ref_for",
     "canonical_component_identity",
     "canonical_ecosystem",
     "component_name_for",
@@ -70,6 +71,11 @@ class ComponentRef:
         if self.version:
             return f"pkg:{purl_eco}/{encoded}@{self.version}"
         return f"pkg:{purl_eco}/{encoded}"
+
+
+def bom_ref_for(ref: ComponentRef) -> str | None:
+    value = (ref.extra or {}).get("bom_ref")
+    return value if isinstance(value, str) and value else None
 
 
 def component_name_for(ref: ComponentRef) -> str:

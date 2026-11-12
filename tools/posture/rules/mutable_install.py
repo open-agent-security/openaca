@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import Any
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.component_ref import ComponentRef, bom_ref_for, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.immutability import is_mutable_reference
 
@@ -53,15 +53,10 @@ def check_mutable_install(
                 component_path=_component_path_for(ref, install_source),
                 standards=_standards_for(ref),
                 remediation=REMEDIATION,
-                bom_ref=_bom_ref_for(ref),
+                bom_ref=bom_ref_for(ref),
             )
         )
     return findings
-
-
-def _bom_ref_for(ref: ComponentRef) -> str | None:
-    value = (ref.extra or {}).get("bom_ref")
-    return value if isinstance(value, str) and value else None
 
 
 def _mutable_install_source_for(ref: ComponentRef) -> str | None:

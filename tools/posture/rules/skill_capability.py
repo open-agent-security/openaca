@@ -12,7 +12,7 @@ from tools.capability_extract import (
     _executable_tool_base,
     _read_frontmatter,
 )
-from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.component_ref import ComponentRef, bom_ref_for, canonical_component_identity
 from tools.posture.finding import PostureFinding, Standards
 
 RULE_ID = "openaca-posture-skill-executable-tool"
@@ -84,13 +84,8 @@ def _allowed_executable_tool_finding(
         standards=_STANDARDS,
         remediation=REMEDIATION,
         evidence={"allowed_tools": executable},
-        bom_ref=_bom_ref_for(ref),
+        bom_ref=bom_ref_for(ref),
     )
-
-
-def _bom_ref_for(ref: ComponentRef) -> str | None:
-    value = (ref.extra or {}).get("bom_ref")
-    return value if isinstance(value, str) and value else None
 
 
 def _component_path(ref: ComponentRef) -> list[dict[str, str]]:

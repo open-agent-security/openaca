@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.component_ref import ComponentRef, bom_ref_for, canonical_component_identity
 from tools.observations.finding import (
     Confidence,
     ObservationFinding,
@@ -27,7 +27,7 @@ from tools.observations.finding import (
 )
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.finding import Severity as PostureSeverity
-from tools.posture.rules.skill_capability import _bom_ref_for, _component_path
+from tools.posture.rules.skill_capability import _component_path
 
 DEFAULT_COMMAND = "skillspector"
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -318,7 +318,7 @@ def _observation_from_result(
         categories=list(_CATEGORY_MAP.get(rule_id, [])),
         declared_by=declared_by,
         component_path=_component_path(ref),
-        bom_ref=_bom_ref_for(ref),
+        bom_ref=bom_ref_for(ref),
     )
 
 
@@ -352,7 +352,7 @@ def _posture_from_result(
         standards=Standards(),
         remediation=message,
         evidence=evidence,
-        bom_ref=_bom_ref_for(ref),
+        bom_ref=bom_ref_for(ref),
     )
 
 

@@ -736,6 +736,32 @@ def _seed_active_plugins(
             _add_child(graph, plugin_node, node)
 
 
+def _settings_paths_by_scope(
+    install_root: Path,
+    project_root: Path | None,
+    *,
+    project_config_dir: str,
+) -> dict[str, Path | None]:
+    """Representative path for each settings scope.
+
+    Remote MCP seeding and settings-scoped hook seeding both attribute a
+    component to the file of the scope that declared it.
+    """
+    project_dir = None if project_root is None else project_root / project_config_dir
+    return {
+        # An administrator's system-wide policy. It can declare `mcpServers`
+        # and `hooks`, so skipping it reported an MDM-managed endpoint's
+        # composition as complete while missing components it genuinely has.
+        # Provenance points at the base file even when a `managed-settings.d`
+        # drop-in supplied the value — the scope is what identity keys on, and
+        # the merged layer has one representative path.
+        "managed": settings_layers.default_managed_dir() / "managed-settings.json",
+        "user": install_root / "settings.json",
+        "project": None if project_dir is None else project_dir / "settings.json",
+        "local": None if project_dir is None else project_dir / "settings.local.json",
+    }
+
+
 def _seed_remote_mcps(
     graph: Graph,
     target: Node,
@@ -746,22 +772,9 @@ def _seed_remote_mcps(
     *,
     config_root_overridden: bool = False,
 ) -> None:
-    scope_to_settings_path = {
-        # An administrator's system-wide policy. It can declare `mcpServers`
-        # and `hooks`, so skipping it reported an MDM-managed endpoint's
-        # composition as complete while missing components it genuinely has.
-        # Provenance points at the base file even when a `managed-settings.d`
-        # drop-in supplied the value — the scope is what identity keys on, and
-        # the merged layer has one representative path.
-        "managed": settings_layers.default_managed_dir() / "managed-settings.json",
-        "user": install_root / "settings.json",
-        "project": (project_root / ".claude" / "settings.json")
-        if project_root is not None
-        else None,
-        "local": (project_root / ".claude" / "settings.local.json")
-        if project_root is not None
-        else None,
-    }
+    scope_to_settings_path = _settings_paths_by_scope(
+        install_root, project_root, project_config_dir=".claude"
+    )
     for scope in SCOPE_PRECEDENCE:
         settings_path = scope_to_settings_path.get(scope)
         if settings_path is None:
@@ -877,22 +890,11 @@ def _seed_direct_components(
     if not surface.seeds_hooks:
         return
     by_scope = by_scope or {}
-    scope_to_settings_path = {
-        # An administrator's system-wide policy. It can declare `mcpServers`
-        # and `hooks`, so skipping it reported an MDM-managed endpoint's
-        # composition as complete while missing components it genuinely has.
-        # Provenance points at the base file even when a `managed-settings.d`
-        # drop-in supplied the value — the scope is what identity keys on, and
-        # the merged layer has one representative path.
-        "managed": settings_layers.default_managed_dir() / "managed-settings.json",
-        "user": install_root / "settings.json",
-        "project": (project_root / surface.project_config_dir / "settings.json")
-        if project_root is not None
-        else None,
-        "local": (project_root / surface.project_config_dir / "settings.local.json")
-        if project_root is not None
-        else None,
-    }
+    scope_to_settings_path = _settings_paths_by_scope(
+        install_root,
+        project_root,
+        project_config_dir=surface.project_config_dir,
+    )
     for scope in SCOPE_PRECEDENCE:
         settings_path = scope_to_settings_path.get(scope)
         if settings_path is None:

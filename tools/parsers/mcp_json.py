@@ -538,7 +538,8 @@ def parse_mcp_servers(
         # rewrites `uv run python` etc.).
         install_source = _format_install_source(raw_command, raw_args)
         cmd_class = _classify_command(command) if command else ""
-        if cmd_class == "npx":
+        if cmd_class in {"npx", "bunx"}:
+            # bunx launches the same npm specs as npx.
             name, version = _parse_npx_args(args)
             if name and version:
                 refs.append(
@@ -604,29 +605,6 @@ def parse_mcp_servers(
                             extra=_mcp_ref_extra(source_manifest, install_source, server_name),
                         )
                     )
-        elif cmd_class == "bunx":
-            name, version = _parse_npx_args(args)
-            if name and version:
-                refs.append(
-                    ComponentRef(
-                        ecosystem="npm",
-                        name=name,
-                        version=version,
-                        source_manifest=source_manifest,
-                        source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
-                    )
-                )
-            elif name:
-                refs.append(
-                    ComponentRef(
-                        ecosystem="npm",
-                        name=name,
-                        source_manifest=source_manifest,
-                        source_locator=locator,
-                        extra=_mcp_ref_extra(source_manifest, install_source, server_name),
-                    )
-                )
         elif cmd_class == "docker":
             name, version = _parse_docker_run_image(args)
             if name:

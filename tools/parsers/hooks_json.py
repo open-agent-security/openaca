@@ -39,33 +39,12 @@ def parse_plugin_hooks(hooks_json_path: Path, *, strict: bool = False) -> list[C
     Returns [] for any read/parse error or shape violation (non-object root,
     missing or non-object `hooks` key). Hook identity is the payload hash.
     """
-    try:
-        raw = hooks_json_path.read_text()
-    except (OSError, UnicodeDecodeError):
-        if strict:
-            raise
-        return []
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        if strict:
-            raise
-        return []
-    if not isinstance(data, dict):
-        if strict:
-            raise ValueError("plugin hooks file must contain an object")
-        return []
-    hooks_block = data.get("hooks")
-    if not isinstance(hooks_block, dict):
-        if strict:
-            raise ValueError("plugin hooks file hooks must be an object")
-        return []
-    if strict:
-        _validate_hook_events(hooks_block, "plugin hook")
-    return _walk_events(
-        hooks_block,
-        source_manifest=str(hooks_json_path),
+    return _parse_enveloped_hooks(
+        hooks_json_path,
+        strict=strict,
         scope=None,
+        file_label="plugin hooks file",
+        event_label="plugin hook",
     )
 
 
@@ -80,8 +59,30 @@ def parse_standalone_hooks(
     point is new; `scope` is carried onto each ref the same way
     `parse_settings_hooks` carries it.
     """
+    return _parse_enveloped_hooks(
+        hooks_json_path,
+        strict=strict,
+        scope=scope,
+        file_label="hooks file",
+        event_label="hook",
+    )
+
+
+def _parse_enveloped_hooks(
+    path: Path,
+    *,
+    strict: bool,
+    scope: Optional[str],
+    file_label: str,
+    event_label: str,
+) -> list[ComponentRef]:
+    """Read a hooks file whose event map sits under a `hooks` key.
+
+    Plugin `hooks/hooks.json` and a standalone `hooks.json` share this
+    envelope. `file_label` and `event_label` are the words strict errors use.
+    """
     try:
-        raw = hooks_json_path.read_text()
+        raw = path.read_text()
     except (OSError, UnicodeDecodeError):
         if strict:
             raise
@@ -94,16 +95,16 @@ def parse_standalone_hooks(
         return []
     if not isinstance(data, dict):
         if strict:
-            raise ValueError("hooks file must contain an object")
+            raise ValueError(f"{file_label} must contain an object")
         return []
     hooks_block = data.get("hooks")
     if not isinstance(hooks_block, dict):
         if strict:
-            raise ValueError("hooks file hooks must be an object")
+            raise ValueError(f"{file_label} hooks must be an object")
         return []
     if strict:
-        _validate_hook_events(hooks_block, "hook")
-    return _walk_events(hooks_block, source_manifest=str(hooks_json_path), scope=scope)
+        _validate_hook_events(hooks_block, event_label)
+    return _walk_events(hooks_block, source_manifest=str(path), scope=scope)
 
 
 def parse_whole_file_hooks(

@@ -1007,3 +1007,24 @@ def test_vs_code_servers_block_no_longer_carries_runtime_hosts(tmp_path):
 
     assert refs
     assert "runtime_hosts" not in (refs[0].extra or {})
+
+
+def test_launch_line_in_command_emits_the_same_ref_as_args():
+    """Cursor accepts the whole launch line in `command`, with no `args`."""
+    one_string = parse_mcp_servers(
+        {"devtools": {"command": "npx -y chrome-devtools-mcp@0.9.0"}}, source_manifest="mcp.json"
+    )
+    split = parse_mcp_servers(
+        {"devtools": {"command": "npx", "args": ["-y", "chrome-devtools-mcp@0.9.0"]}},
+        source_manifest="mcp.json",
+    )
+    assert [r.purl for r in one_string] == ["pkg:npm/chrome-devtools-mcp@0.9.0"]
+    assert [r.purl for r in one_string] == [r.purl for r in split]
+    assert one_string[0].extra["install_source"] == "npx -y chrome-devtools-mcp@0.9.0"
+
+
+def test_executable_path_with_a_space_in_command_stays_one_binary():
+    refs = parse_mcp_servers(
+        {"local": {"command": "/Applications/My App/server"}}, source_manifest="mcp.json"
+    )
+    assert [r.component_identity for r in refs] == ["mcp-stdio/binary:/Applications/My App/server"]

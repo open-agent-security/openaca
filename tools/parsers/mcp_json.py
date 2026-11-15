@@ -455,6 +455,31 @@ def _skip_leading_uv_options(args: list[str]) -> int:
     return i
 
 
+#: Launchers whose whole launch line a host accepts in `command` alone.
+_LAUNCH_LINE_COMMANDS = frozenset({"npx", "bunx", "bun", "uvx", "uv", "docker"})
+
+
+def _split_launch_line(raw_command: object, raw_args: list[str]) -> tuple[str | None, list[str]]:
+    """Split `command: "npx -y pkg@1.0.0"` with no `args` into its launcher and args.
+
+    Cursor accepts a whole launch line in `command`. Read as one token it is a
+    binary named `npx -y pkg@1.0.0`, and the package gets no PURL. The split
+    applies only when the first token is a package launcher, so an executable
+    path that contains a space stays one command.
+    """
+    if not isinstance(raw_command, str):
+        return None, raw_args
+    if raw_args or not raw_command.strip() or len(raw_command.split()) < 2:
+        return raw_command, raw_args
+    try:
+        tokens = shlex.split(raw_command)
+    except ValueError:
+        return raw_command, raw_args
+    if len(tokens) < 2 or _classify_command(tokens[0]) not in _LAUNCH_LINE_COMMANDS:
+        return raw_command, raw_args
+    return tokens[0], tokens[1:]
+
+
 def _classify_command(command: str) -> str:
     """Return the canonical command name for classification.
 
@@ -528,10 +553,7 @@ def parse_mcp_servers(
         raw_args = [a for a in raw_args if isinstance(a, str)]
         if strict and (not isinstance(raw_command, str) or not raw_command):
             raise ValueError(f"MCP server {server_name!r} must have a command or URL")
-        command, args = _command_dispatch(
-            raw_command if isinstance(raw_command, str) else None,
-            raw_args,
-        )
+        command, args = _command_dispatch(*_split_launch_line(raw_command, raw_args))
         # Posture rules (plan 014) need the raw install reference to decide
         # whether it's mutable. Reconstruct from raw_command + raw_args so
         # we capture exactly what the user wrote (before _command_dispatch

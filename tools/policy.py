@@ -366,7 +366,7 @@ def _parse_targets(
                     )
                 # Matches the `<plugin>@<marketplace>` key format
                 # `installed_plugins.json` itself uses (see
-                # `tools.parsers.claude_install._split_plugin_key`): split on
+                # `tools.parsers.claude_settings._split_plugin_key`): split on
                 # the last "@" so a scoped plugin name (`@scope/plugin`) stays
                 # intact while `foo@`, `@marketplace`, and other malformed
                 # inputs are rejected instead of silently admitted.

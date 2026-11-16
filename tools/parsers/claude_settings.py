@@ -32,7 +32,9 @@ def parse(path: Path) -> list[ComponentRef]:
     for plugin_spec, is_enabled in enabled.items():
         if is_enabled is not True:
             continue
-        plugin_name, marketplace = _split_plugin_spec(plugin_spec)
+        if not isinstance(plugin_spec, str) or not plugin_spec:
+            continue
+        plugin_name, marketplace = _split_plugin_key(plugin_spec)
         if not plugin_name:
             continue
         identity = _plugin_identity(plugin_name, marketplace)
@@ -49,18 +51,17 @@ def parse(path: Path) -> list[ComponentRef]:
     return refs
 
 
-def _split_plugin_spec(spec: str) -> tuple[str, str | None]:
-    """Return `(name, marketplace)` from a settings plugin spec.
+def _split_plugin_key(plugin_key: str) -> tuple[str, str | None]:
+    """Return `(name, marketplace)` from a `<name>@<marketplace>` plugin key.
 
-    Uses rsplit so scoped names like `@scope/plugin@market` parse correctly:
-    `@scope/plugin@market` → name=`@scope/plugin`, marketplace=`market`.
+    Settings `enabledPlugins` keys and `installed_plugins.json` keys use this
+    shape. Split on the last `@` so `@scope/plugin@market` keeps the scope in
+    the name: name=`@scope/plugin`, marketplace=`market`.
     """
-    if not isinstance(spec, str) or not spec:
-        return "", None
-    if "@" in spec:
-        name, marketplace = spec.rsplit("@", 1)
+    if "@" in plugin_key:
+        name, marketplace = plugin_key.rsplit("@", 1)
         return name, marketplace or None
-    return spec, None
+    return plugin_key, None
 
 
 def _plugin_identity(plugin_name: str, marketplace: str | None) -> str:

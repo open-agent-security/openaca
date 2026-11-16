@@ -484,7 +484,7 @@ def _seed_endpoint(
                 if warnings is not None:
                     record_gap(warnings, "enabledPlugins keys must be plugin@marketplace strings")
                 continue
-            plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
+            plugin_name, marketplace = claude_settings._split_plugin_key(plugin_key)
             if not plugin_name or not marketplace:
                 if warnings is not None:
                     warnings.append("enabledPlugins keys must be plugin@marketplace strings")
@@ -666,7 +666,7 @@ def _seed_active_plugins(
         if warning is not None and warnings is not None:
             warnings.append(f"{plugin_key}: {warning}")
 
-        plugin_name, marketplace = claude_install._split_plugin_key(plugin_key)
+        plugin_name, marketplace = claude_settings._split_plugin_key(plugin_key)
         version = entry.get("version")
         if version is not None and not isinstance(version, str):
             if warnings is not None:

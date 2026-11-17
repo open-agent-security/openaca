@@ -2288,7 +2288,7 @@ def test_e2e_pi_endpoint_matches_an_installed_package_and_names_servers_by_alias
 def test_e2e_opencode_endpoint_composes_one_bom_and_matches_a_cached_plugin(tmp_path, monkeypatch):
     """OpenCode end to end: discovery from the XDG config root, the merge of a
     global and a project file, an npm plugin versioned from OpenCode's own
-    install (ADR-0082) matching an advisory through its PURL, posture, and a
+    install (ADR-0084) matching an advisory through its PURL, posture, and a
     BOM whose bom-refs carry no home path.
 
     The plugin is declared without a version, so only the cache can match it.

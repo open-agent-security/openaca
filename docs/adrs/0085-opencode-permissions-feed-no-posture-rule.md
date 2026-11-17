@@ -1,5 +1,5 @@
 ---
-id: 0083
+id: 0085
 title: OpenCode's permissions feed no posture rule, and the skill rule does not apply
 status: accepted
 date: 2026-11-17

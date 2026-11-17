@@ -80,7 +80,7 @@ no other runtime's config ([ADR-0056](../adrs/0056-codex-root-override.md)).
 `--kind cursor --config-dir …` is refused with the reason. Devin and OpenCode
 refuse it for the same cause
 ([ADR-0071](../adrs/0071-devin-cli-refuses-config-dir.md),
-[ADR-0081](../adrs/0081-opencode-agent-kind.md)).
+[ADR-0083](../adrs/0083-opencode-agent-kind.md)).
 Pi refuses it too
 ([ADR-0081](../adrs/0081-pi-agent-kind.md)): Pi reads `$HOME/.agents/skills`
 whatever its agent directory is, so set `PI_CODING_AGENT_DIR` instead.

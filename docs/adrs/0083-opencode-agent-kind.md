@@ -1,5 +1,5 @@
 ---
-id: 0081
+id: 0083
 title: Register OpenCode as an agent kind, partial at both sources
 status: accepted
 date: 2026-11-17

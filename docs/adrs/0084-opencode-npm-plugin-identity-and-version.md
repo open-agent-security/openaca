@@ -1,5 +1,5 @@
 ---
-id: 0082
+id: 0084
 title: Identify an OpenCode npm plugin as plugin/npm/<name>, versioned from its install
 status: accepted
 date: 2026-11-17

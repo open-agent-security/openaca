@@ -1451,7 +1451,7 @@ def collect_pi_project_trust_manifests(
     return [(path, {"projects": projects})] if projects else []
 
 
-# --- OpenCode posture surfaces (ADR-0081) ------------------------------------
+# --- OpenCode posture surfaces (ADR-0083) ------------------------------------
 #
 # Derived from the graph's own `mcp_server` refs, as for Cursor, Codex and
 # Devin: OpenCode merges a server across files by name, and a re-walk would

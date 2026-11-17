@@ -1,4 +1,4 @@
-"""OpenCode's composition builder (ADR-0081, ADR-0082,
+"""OpenCode's composition builder (ADR-0083, ADR-0084,
 docs/specs/opencode-agent-kind.md).
 
 The merge order of `Config.loadInstanceState`, the MCP merge by name and its
@@ -132,7 +132,7 @@ def test_global_files_merge_in_load_global_order(env):
 
 
 def test_a_later_enabled_toggle_switches_a_server_off_and_keeps_it(env):
-    """ADR-0081: one component per name, `enabled` always stated, attributed to
+    """ADR-0083: one component per name, `enabled` always stated, attributed to
     the file that declares the server."""
     _json(env.config / "opencode.json", {"mcp": {"github": _local("npx", "-y", "gh-mcp@1.0.0")}})
     _json(env.project / "opencode.json", {"mcp": {"github": {"enabled": False}}})
@@ -286,7 +286,7 @@ def _plugins(graph: Graph) -> dict:
 
 
 def test_an_npm_plugin_takes_its_version_from_opencodes_install(env):
-    """ADR-0082: a bare name installs as `<name>@latest`, and the installed
+    """ADR-0084: a bare name installs as `<name>@latest`, and the installed
     `package.json` gives the version that runs."""
     _json(env.config / "opencode.json", {"plugin": ["opencode-wakatime", "@acme/tool@^1.0.0"]})
     _install(env, "opencode-wakatime@latest", "opencode-wakatime", "opencode-wakatime", "1.2.3")

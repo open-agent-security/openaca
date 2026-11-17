@@ -1,4 +1,4 @@
-"""OpenCode's composition builder (ADR-0081).
+"""OpenCode's composition builder (ADR-0083).
 
 OpenCode merges its configuration files and configuration directories in one
 order (`Config.loadInstanceState`). This module states that order as a list of

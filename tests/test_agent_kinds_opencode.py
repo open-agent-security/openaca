@@ -1,4 +1,4 @@
-"""The OpenCode kind (ADR-0081, docs/specs/opencode-agent-kind.md)."""
+"""The OpenCode kind (ADR-0083, docs/specs/opencode-agent-kind.md)."""
 
 from __future__ import annotations
 
@@ -155,7 +155,7 @@ def test_config_dir_is_refused_with_opencodes_own_reason(tmp_path):
 
 
 def test_opencode_is_registered_with_only_the_rules_its_input_supports():
-    """ADR-0083: no permission rule and no skill rule."""
+    """ADR-0085: no permission rule and no skill rule."""
     kind = kind_for("opencode")
 
     assert kind is opencode.KIND

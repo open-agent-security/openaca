@@ -1,4 +1,4 @@
-"""OpenCode's configuration files (ADR-0081).
+"""OpenCode's configuration files (ADR-0083).
 
 `config.json`, `opencode.json` and `opencode.jsonc` share one schema, read as
 JSON with comments and trailing commas (`ConfigParse.jsonc`). Before it
@@ -353,7 +353,7 @@ def exact_version(version: str | None) -> str | None:
 
 def installed_package(cache_root: Path, spec: RegistrySpec) -> tuple[str, str] | None:
     """`(name, version)` from the package `Npm.add` installed for `spec`, the
-    directory OpenCode loads and never updates (ADR-0082)."""
+    directory OpenCode loads and never updates (ADR-0084)."""
     manifest = cache_root / "packages" / spec.install_key / "node_modules" / spec.install_name
     try:
         data = json.loads((manifest / "package.json").read_text(encoding="utf-8"))

@@ -16,6 +16,7 @@ from tools.graph import Graph
 from tools.lint import UPSTREAM_ID_RE
 from tools.marketplace import key as marketplace_key
 from tools.overlays import id_set
+from tools.parsers.claude_settings import _split_plugin_key
 from tools.posture import KNOWN_RULE_IDS
 from tools.severity import derive_severity_label
 
@@ -364,13 +365,10 @@ def _parse_targets(
                     raise PolicyValidationError(
                         f"{target_label}.plugin must be a non-empty plugin@marketplace string"
                     )
-                # Matches the `<plugin>@<marketplace>` key format
-                # `installed_plugins.json` itself uses (see
-                # `tools.parsers.claude_settings._split_plugin_key`): split on
-                # the last "@" so a scoped plugin name (`@scope/plugin`) stays
-                # intact while `foo@`, `@marketplace`, and other malformed
-                # inputs are rejected instead of silently admitted.
-                name, _, marketplace_part = plugin.rpartition("@")
+                # Same split as `installed_plugins.json` keys. A missing name
+                # or marketplace (`foo@`, `@marketplace`, a bare name) is
+                # rejected instead of admitted.
+                name, marketplace_part = _split_plugin_key(plugin)
                 if not name or not marketplace_part:
                     raise PolicyValidationError(
                         f"{target_label}.plugin must be a non-empty plugin@marketplace string"

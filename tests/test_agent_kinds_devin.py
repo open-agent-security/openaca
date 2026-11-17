@@ -126,15 +126,15 @@ def test_a_shared_agents_agents_repo_declares_only_devin(tmp_path):
 
 
 def test_a_shared_skills_repo_declares_every_kind_that_reads_it(tmp_path):
-    """ADR-0058's stated cost, applied to a third reader and then a fourth
-    (ADR-0081)."""
+    """ADR-0058's stated cost: one BOM for every kind that reads it, a
+    third reader, then a fourth (ADR-0081) and a fifth (ADR-0083)."""
     from tools.agent_kinds import DiscoveryContext, discover_agents
 
     _skill(tmp_path / ".agents" / "skills" / "shared")
 
     agents = discover_agents(DiscoveryContext(source="declared", scan_root=tmp_path))
 
-    assert {a.kind_id for a in agents} == {"cursor", "codex", "devin", "pi"}
+    assert {a.kind_id for a in agents} == {"cursor", "codex", "devin", "pi", "opencode"}
 
 
 _AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/{}/plugin.schema.json"

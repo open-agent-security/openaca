@@ -21,6 +21,7 @@ from tools.parsers import (
     devin_config,
     hooks_json,
     mcp_json,
+    opencode_config,
     package_json,
     package_lock_json,
     pi_config,
@@ -605,6 +606,58 @@ PI_MANIFEST_REGISTRY: list[ManifestPattern] = [
     *(
         ManifestPattern(f"**/.pi/extensions/{pattern}", _parse_repo_pi_extension)
         for pattern in ("*.ts", "*.js", "*/index.ts", "*/index.js")
+
+
+def _parse_repo_opencode_agent(path: Path) -> list[ComponentRef]:
+    return claude_command_agent.parse_file(path, kind="agent")[:1]
+
+
+def _no_hidden_opencode_skill_dir(path: Path, root=None, spec=None) -> bool:
+    """OpenCode's configuration-directory skill glob does not match a hidden
+    directory (`{skill,skills}/**/SKILL.md`, `dot` unset), so neither does
+    this count."""
+    parts = path.parts
+    for index in range(len(parts) - 2, -1, -1):
+        if parts[index] in opencode_config.SKILL_DIRS:
+            return not any(part.startswith(".") for part in parts[index + 1 : -1])
+    return True
+
+
+# OpenCode's manifest surface, mirroring `tools/graph_build_opencode.py`. Its
+# skill and Markdown globs are recursive, unlike Devin's.
+OPENCODE_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    *(
+        ManifestPattern(filename, opencode_config.parse_file)
+        for filename in opencode_config.PROJECT_FILENAMES
+    ),
+    *(
+        ManifestPattern(f"**/.opencode/{dirname}/**/*.md", _parse_repo_opencode_agent)
+        for dirname in opencode_config.AGENT_DIRS
+    ),
+    *(
+        ManifestPattern(f"**/.opencode/{dirname}/*.md", _parse_repo_opencode_agent)
+        for dirname in opencode_config.MODE_DIRS
+    ),
+    *(
+        ManifestPattern(f"**/.opencode/{dirname}/**/*.md", _parse_repo_command)
+        for dirname in opencode_config.COMMAND_DIRS
+    ),
+    *(
+        ManifestPattern(f"**/.opencode/{dirname}/*{suffix}", opencode_config.parse_plugin_file)
+        for dirname in opencode_config.PLUGIN_DIRS
+        for suffix in opencode_config.PLUGIN_SUFFIXES
+    ),
+    *(
+        ManifestPattern(
+            f"**/.opencode/{dirname}/**/SKILL.md",
+            claude_skill.parse,
+            _no_hidden_opencode_skill_dir,
+        )
+        for dirname in opencode_config.SKILL_DIRS
+    ),
+    *(
+        ManifestPattern(f"**/{owner}/skills/**/SKILL.md", claude_skill.parse)
+        for owner in opencode_config.EXTERNAL_SKILL_OWNERS
     ),
 ]
 

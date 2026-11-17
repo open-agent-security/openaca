@@ -193,6 +193,7 @@ def test_every_kind_is_registered_and_the_others_are_unchanged():
         DEVIN_MANIFEST_REGISTRY,
         HOST_AGNOSTIC_REGISTRY,
         PI_MANIFEST_REGISTRY,
+        OPENCODE_MANIFEST_REGISTRY,
     )
     from tools.parsers import (
         REGISTRY as FLAT_REGISTRY,
@@ -200,7 +201,7 @@ def test_every_kind_is_registered_and_the_others_are_unchanged():
 
     by_id = {k.id: k for k in REGISTRY}
 
-    assert set(by_id) == {"claude-code", "cursor", "codex", "devin", "pi"}
+    assert set(by_id) == {"claude-code", "cursor", "codex", "devin", "pi", "opencode"}
     assert by_id["claude-code"].manifest_patterns == tuple(FLAT_REGISTRY)
     assert by_id["cursor"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         CURSOR_MANIFEST_REGISTRY
@@ -210,6 +211,9 @@ def test_every_kind_is_registered_and_the_others_are_unchanged():
     )
     assert by_id["pi"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
         PI_MANIFEST_REGISTRY
+    )
+    assert by_id["opencode"].manifest_patterns == tuple(HOST_AGNOSTIC_REGISTRY) + tuple(
+        OPENCODE_MANIFEST_REGISTRY
     )
 
 

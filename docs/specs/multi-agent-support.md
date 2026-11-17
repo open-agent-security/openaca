@@ -418,6 +418,7 @@ lists them, read from a named release:
 | Codex | 0.157.1: the binary's agent roles | 4 | the marked root |
 | Cursor | — | none known | `skills-cursor/` |
 | Pi | 1.5.2: the shipped package. Its README states that Pi "skips features like sub-agents" | none | none |
+| OpenCode | v1.19.5 source: the `native` agent definitions and the built-in skill registration | 7 | 1 |
 
 To re-audit a list, read the definitions from the release, not names that
 appear in it. Claude Code's plugin-authoring docs show example skills as

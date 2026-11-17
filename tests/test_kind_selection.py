@@ -23,7 +23,8 @@ from tools.kind_selection import KindSelectionError, validate_kind_selection
 # known-kinds list is the registry's, so it grew when `devin`, `pi` and
 # `opencode` registered.
 _UNKNOWN_KIND = (
-    "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, devin, opencode, pi"
+    "unknown agent kind 'not-a-real-kind'; "
+    "known kinds: claude-code, codex, cursor, devin, opencode, pi"
 )
 _CONFIG_DIR_WITHOUT_KIND = (
     "--config-dir requires --kind: with more than one installed agent kind, "

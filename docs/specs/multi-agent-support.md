@@ -417,6 +417,7 @@ lists them, read from a named release:
 | Devin | 3000.10.48: the binary's subagent profiles. The shipped `docs/subagents.mdx` documents `subagent_explore` and `subagent_general` | 4 | none on disk |
 | Codex | 0.157.1: the binary's agent roles | 4 | the marked root |
 | Cursor | — | none known | `skills-cursor/` |
+| Pi | 1.5.2: the shipped package. Its README states that Pi "skips features like sub-agents" | none | none |
 
 To re-audit a list, read the definitions from the release, not names that
 appear in it. Claude Code's plugin-authoring docs show example skills as

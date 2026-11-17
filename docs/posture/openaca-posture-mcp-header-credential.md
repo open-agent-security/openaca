@@ -51,6 +51,8 @@ instead of a literal `http_headers` value. `http_headers` is static: putting
 JSON references such as `${TOKEN}`, `${env:TOKEN}`, and `${input:token}` are
 treated as indirect, including after `Bearer` or `Basic`. An empty fallback
 (`${TOKEN:-}`) is indirect; a literal fallback (`${TOKEN:-secret}`) is flagged.
+A bare `$TOKEN` is indirect too, because Pi expands it. A value that starts
+with `!` is indirect, because Pi runs it as a shell command.
 The rule does not resolve variables, validate their syntax for every host,
 contact servers, or verify credentials. Configure references your host supports.
 

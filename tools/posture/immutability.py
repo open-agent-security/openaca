@@ -39,6 +39,10 @@ def is_mutable_reference(ref: str) -> bool:
     if ref.startswith(("http://", "https://")):
         return False
 
+    # npm's own `npm:<name>[@version]` scheme, as Pi's package declarations use it.
+    if ref.startswith("npm:"):
+        return _is_mutable_pkg_spec(ref[len("npm:") :].strip())
+
     # npx package specs — parse --package/-p flags before falling back to positional
     if ref.startswith("npx "):
         args = ref[len("npx ") :].split()

@@ -216,9 +216,9 @@ def matches_evidence(rel: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _registry() -> tuple[AgentKind, ...]:
-    from tools.agent_kinds import claude_code, codex, cursor, devin_cli
+    from tools.agent_kinds import claude_code, codex, cursor, devin_cli, pi
 
-    return (claude_code.KIND, cursor.KIND, codex.KIND, devin_cli.KIND)
+    return (claude_code.KIND, cursor.KIND, codex.KIND, devin_cli.KIND, pi.KIND)
 
 
 REGISTRY: tuple[AgentKind, ...] = _registry()

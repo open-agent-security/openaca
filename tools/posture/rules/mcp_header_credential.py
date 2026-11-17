@@ -27,6 +27,8 @@ _AUTH_HEADERS = frozenset(
 # sends the string verbatim, and a path is not a credential either way.
 _REFERENCE = re.compile(
     r"\$\{(?:(?:env:|input:)?[A-Za-z_][A-Za-z0-9_.-]*(?::-)?|file:(?:~?/|\.{1,2}/)[^}\s]*)\}"
+    # Pi also expands a bare `$NAME` (docs/specs/pi-agent-kind.md, Posture).
+    r"|\$[A-Za-z_][A-Za-z0-9_]*"
 )
 
 
@@ -34,6 +36,10 @@ def _is_literal(value: object, *, static: bool) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
     value = value.strip()
+    # Pi runs a whole value that starts with `!` as a shell command; the text
+    # is the command, not the credential it prints.
+    if not static and value.startswith("!"):
+        return False
     parts = value.split(maxsplit=1)
     if parts[0].lower() in {"bearer", "basic"}:
         if len(parts) == 1:

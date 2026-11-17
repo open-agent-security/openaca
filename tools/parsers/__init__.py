@@ -23,6 +23,7 @@ from tools.parsers import (
     mcp_json,
     package_json,
     package_lock_json,
+    pi_config,
     pyproject_toml,
     uv_lock,
 )
@@ -546,6 +547,64 @@ DEVIN_MANIFEST_REGISTRY: list[ManifestPattern] = [
         "plugin.json",
         _parse_repo_devin_agent_plugins,
         _is_resolved_devin_plugin_format(""),
+    ),
+]
+
+
+def _is_loaded_pi_skill(root_dirname: str) -> GuardFn:
+    """Claim a `SKILL.md` only where Pi's recursive skill walk reaches it: no
+    `.`-prefixed or `node_modules` directory below the skill root, and no
+    `SKILL.md` in a directory above it, where the walk stops."""
+
+    def guard(path: Path, root: Path | None = None, spec: GitIgnoreSpec | None = None) -> bool:
+        _ = spec
+        rel = path.relative_to(root) if root is not None and path.is_relative_to(root) else path
+        parts = rel.parts
+        for index in range(len(parts) - 2):
+            if parts[index] != root_dirname or parts[index + 1] != "skills":
+                continue
+            between = parts[index + 2 : -1]
+            if any(part.startswith(".") or part == "node_modules" for part in between):
+                return False
+            skills_root = path.parents[len(parts) - 3 - index]
+            return not any(
+                (skills_root.joinpath(*between[:depth]) / "SKILL.md").is_file()
+                for depth in range(len(between))
+            )
+        return False
+
+    return guard
+
+
+def _parse_repo_pi_extension(path: Path) -> list[ComponentRef]:
+    name = path.parent.name if path.name in ("index.ts", "index.js") else path.stem
+    return [
+        ComponentRef(
+            name=name,
+            source_manifest=str(path),
+            source_locator="$",
+            extra={"component_type": "plugin"},
+        )
+    ]
+
+
+# Pi's manifest surface, mirroring `tools/graph_build_pi.py`. A project's
+# `.pi/` and the shared `.agents/skills` are read at any depth, because any
+# directory of a repository can be Pi's working directory. The prompts
+# directory loads its direct children only; a skill root is walked
+# recursively. An extension directory's `package.json` is claimed first by the
+# host-agnostic route.
+PI_MANIFEST_REGISTRY: list[ManifestPattern] = [
+    ManifestPattern("**/.pi/mcp.json", pi_config.parse_mcp_file),
+    ManifestPattern("**/.pi/settings.json", pi_config.parse_settings_file),
+    ManifestPattern("**/.pi/skills/**/SKILL.md", claude_skill.parse, _is_loaded_pi_skill(".pi")),
+    ManifestPattern(
+        "**/.agents/skills/**/SKILL.md", claude_skill.parse, _is_loaded_pi_skill(".agents")
+    ),
+    ManifestPattern("**/.pi/prompts/*.md", _parse_repo_command),
+    *(
+        ManifestPattern(f"**/.pi/extensions/{pattern}", _parse_repo_pi_extension)
+        for pattern in ("*.ts", "*.js", "*/index.ts", "*/index.js")
     ),
 ]
 

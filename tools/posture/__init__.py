@@ -51,6 +51,9 @@ __all__ = [
     "collect_endpoint_mcp_manifests",
     "collect_endpoint_settings_manifests",
     "collect_mcp_manifests",
+    "collect_pi_endpoint_mcp_manifests",
+    "collect_pi_mcp_manifests",
+    "collect_pi_project_trust_manifests",
     "collect_settings_manifests",
     "no_manifests",
     "resolve_cursor_permissions",
@@ -1393,3 +1396,56 @@ def collect_devin_endpoint_permissions_manifests(
             paths += [layer / ".devin" / "config.json", layer / ".devin" / "config.local.json"]
     chain = [level for path in paths if (level := devin_permissions.read_level(path)) is not None]
     return _devin_permissions_manifest([(chain, chain)])
+
+
+# --- Pi posture surfaces (ADR-0081) -----------------------------------------
+#
+# `insecure_transport` and `mcp_header_credential` derive from the graph's own
+# `mcp_server` refs, for the reason Cursor's, Codex's and Devin's collectors
+# give: Pi merges its two `mcp.json` scopes by name, applies project overrides
+# and drops entries it rejects. A re-walk would have to restate all of it.
+
+
+def collect_pi_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Pi's declared MCP posture surface, derived from composed refs.
+
+    `roots` and `include_gitignored` are accepted and unused — the graph they
+    would have searched was already built under those same settings.
+    """
+    del roots, include_gitignored
+    return _mcp_manifests_from_refs(refs or [])
+
+
+def collect_pi_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """Pi's installed MCP posture surface, derived from composed refs."""
+    del config_dir, project_root
+    return _mcp_manifests_from_refs(refs)
+
+
+def collect_pi_project_trust_manifests(
+    config_root: Path,
+    project_root: Path | None = None,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """Directories `<agent dir>/trust.json` records as trusted. A trusted
+    directory, and each directory below it, loads its `.pi/` extensions, which
+    run as code in the Pi process. Read directly: trust declares no
+    components. An unreadable store yields nothing, as Pi refuses it too."""
+    from tools.parsers import pi_config
+
+    path = config_root / pi_config.TRUST_FILENAME
+    try:
+        trust = pi_config.load_trust(path)
+    except (OSError, ValueError):
+        return []
+    projects = {directory: "trusted" for directory, decision in trust.items() if decision is True}
+    return [(path, {"projects": projects})] if projects else []

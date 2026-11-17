@@ -65,7 +65,7 @@ def test_policy_evidence_drives_posture_admission_without_a_settings_artifact(tm
     assert set(tmp_path.rglob("*")) == before
 
 
-@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin", "pi"])
+@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin", "pi", "opencode"])
 @pytest.mark.parametrize("include_posture", [False, True])
 def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):
     from tools.scan import main as scan_main
@@ -76,6 +76,19 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
         content = (
             '[mcp_servers.demo]\nurl = "https://example.test/mcp"\n'
             f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
+        )
+    elif kind == "opencode":
+        config = tmp_path / "opencode.json"
+        content = json.dumps(
+            {
+                "mcp": {
+                    "demo": {
+                        "type": "remote",
+                        "url": "https://example.test/mcp",
+                        "headers": {"Authorization": f"Bearer {token}"},
+                    }
+                }
+            }
         )
     else:
         config = (
@@ -126,6 +139,7 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
         ("devin", False),
         ("devin", True),
         ("pi", False),
+        ("opencode", False),
     ],
 )
 def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline):
@@ -140,6 +154,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             "codex": ".codex",
             "devin": ".config/devin",
             "pi": ".pi/agent",
+            "opencode": ".config/opencode",
         }[kind]
     )
     root.mkdir(parents=True)
@@ -148,6 +163,21 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
         (root / "config.toml").write_text(
             '[mcp_servers.demo]\nurl = "https://example.test/mcp"\n'
             f'http_headers = {{ Authorization = "Bearer {token}" }}\n'
+        )
+    elif kind == "opencode":
+        (root / "opencode.jsonc").write_text(
+            "// OpenCode reads JSON with comments\n"
+            + json.dumps(
+                {
+                    "mcp": {
+                        "demo": {
+                            "type": "remote",
+                            "url": "https://example.test/mcp",
+                            "headers": {"Authorization": f"Bearer {token}"},
+                        }
+                    }
+                }
+            )
         )
     else:
         filename = {
@@ -170,7 +200,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             )
         )
     args = ["endpoint", "--kind", kind, "--include-posture", "--format", "json"]
-    if kind not in ("cursor", "devin", "pi"):
+    if kind not in ("cursor", "devin", "pi", "opencode"):
         args.extend(["--config-dir", str(root)])
     result = CliRunner().invoke(scan_main, args)
     assert result.exit_code == 0, result.output
@@ -2250,6 +2280,21 @@ def test_e2e_pi_endpoint_matches_an_installed_package_and_names_servers_by_alias
     install read loses the finding a downstream detection joins on.
     """
     from tools.bom_cli import main as bom_main
+
+
+# --- OpenCode as the fifth agent kind -----------------------------------------
+
+
+def test_e2e_opencode_endpoint_composes_one_bom_and_matches_a_cached_plugin(tmp_path, monkeypatch):
+    """OpenCode end to end: discovery from the XDG config root, the merge of a
+    global and a project file, an npm plugin versioned from OpenCode's own
+    install (ADR-0082) matching an advisory through its PURL, posture, and a
+    BOM whose bom-refs carry no home path.
+
+    The plugin is declared without a version, so only the cache can match it.
+    `mcp-remote` stands in for any npm plugin: the suite has its advisory.
+    """
+    from openaca.core import collect_installed_agents
     from tools.scan import main as scan_main
 
     home = tmp_path / "home"
@@ -2275,12 +2320,59 @@ def test_e2e_pi_endpoint_matches_an_installed_package_and_names_servers_by_alias
         json.dumps({"mcpServers": {"team-docs": {"exposure": "direct"}}}), encoding="utf-8"
     )
 
+
+    config = home / ".config" / "opencode"
+    config.mkdir(parents=True)
+    (config / "opencode.jsonc").write_text(
+        "{\n  // OpenCode reads its config as JSON with comments\n"
+        '  "plugin": ["mcp-remote"],\n'
+        '  "mcp": {\n'
+        '    "plain": {"type": "remote", "url": "http://insecure.example.test/mcp"},\n'
+        '    "muted": {"type": "local", "command": ["npx", "-y", "muted-mcp@1.0.0"]},\n'
+        "  },\n}\n",
+        encoding="utf-8",
+    )
+    installed = home / ".cache/opencode/packages/mcp-remote@latest/node_modules"
+    (installed / "mcp-remote").mkdir(parents=True)
+    (installed / "mcp-remote" / "package.json").write_text(
+        json.dumps({"name": "mcp-remote", "version": "0.1.0"}), encoding="utf-8"
+    )
+    project = tmp_path / "repo"
+    (project / ".git").mkdir(parents=True)
+    (project / "opencode.json").write_text(
+        json.dumps({"mcp": {"muted": {"enabled": False}}}), encoding="utf-8"
+    )
+    (project / ".opencode" / "agents").mkdir(parents=True)
+    (project / ".opencode" / "agents" / "review.md").write_text("Review.\n", encoding="utf-8")
+
+    (agent,) = collect_installed_agents(project=project, kind_id="opencode")
+
+    root = {p["name"]: p["value"] for p in agent.bom["metadata"]["component"]["properties"]}
+    assert root["openaca:agent_kind"] == "opencode"
+    assert root["openaca:composition_coverage"] == "partial"
+    assert "general" in json.loads(root["openaca:builtin_agents"])
+    components = {c["name"]: c for c in agent.bom["components"]}
+    assert components["mcp-remote"]["purl"] == "pkg:npm/mcp-remote@0.1.0"
+    assert components["review"]
+    enabled = {
+        c["name"]: p["value"]
+        for c in agent.bom["components"]
+        for p in c.get("properties", [])
+        if p["name"] == "openaca:enabled"
+    }
+    assert enabled == {"plain": "true", "muted-mcp": "false"}
+    refs = [c["bom-ref"] for c in agent.bom["components"]]
+    assert not [r for r in refs if str(tmp_path) in r]
+
     result = CliRunner().invoke(
         scan_main,
         [
             "endpoint",
             "--kind",
             "pi",
+
+
+            "opencode",
             "--project",
             str(project),
             "--include-posture",
@@ -2331,6 +2423,12 @@ def test_e2e_pi_endpoint_matches_an_installed_package_and_names_servers_by_alias
         "openaca-posture-insecure-transport",
         "openaca-posture-project-trust",
     }
+
+
+    assert [(a["kind"], a["coverage"]) for a in doc["agents"]] == [("opencode", "partial")]
+    assert any("GHSA-6xpm-ggf7-wc3p" in json.dumps(f) for f in doc["findings"])
+    rule_ids = {f.get("rule_id") for f in doc["findings"]}
+    assert "openaca-posture-insecure-transport" in rule_ids
 
 
 def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):

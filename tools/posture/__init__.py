@@ -1449,3 +1449,88 @@ def collect_pi_project_trust_manifests(
         return []
     projects = {directory: "trusted" for directory, decision in trust.items() if decision is True}
     return [(path, {"projects": projects})] if projects else []
+
+
+# --- OpenCode posture surfaces (ADR-0081) ------------------------------------
+#
+# Derived from the graph's own `mcp_server` refs, as for Cursor, Codex and
+# Devin: OpenCode merges a server across files by name, and a re-walk would
+# have to restate the merge. Each composed server names the files it merges
+# from (`opencode_config.LAYERS_KEY`), so a header is attributed to the file
+# that sets it. Header values stay in this posture pass, never on a ref.
+
+
+def collect_opencode_mcp_manifests(
+    roots: list[Path],
+    include_gitignored: bool = True,
+    *,
+    refs: list[ComponentRef] | None = None,
+) -> list[tuple[Path, dict]]:
+    """OpenCode's declared MCP posture surface, derived from composed refs.
+
+    `roots` and `include_gitignored` are accepted and unused — the graph they
+    would have searched was already built under those same settings.
+    """
+    del roots, include_gitignored
+    return _opencode_mcp_manifests(refs or [])
+
+
+def collect_opencode_endpoint_mcp_manifests(
+    config_dir: Path,
+    project_root: Path | None,
+    refs: list[ComponentRef],
+) -> list[tuple[Path, dict]]:
+    """OpenCode's installed MCP posture surface, derived from composed refs."""
+    del config_dir, project_root
+    return _opencode_mcp_manifests(refs)
+
+
+def _opencode_mcp_manifests(refs: list[ComponentRef]) -> list[tuple[Path, dict]]:
+    """One `mcpServers` entry per composed OpenCode server, keyed by the file
+    the server is attributed to. Its `headers` merge across the server's files
+    in precedence order, as OpenCode merges them, and `_header_owners` names the
+    file that sets each one."""
+    from tools.parsers import opencode_config
+
+    entries: dict[Path, dict] = {}
+
+    def declared(path: Path, name: str) -> dict:
+        if path not in entries:
+            try:
+                data = opencode_config.load(path)
+                entries[path] = {
+                    key: item.entry for key, item in opencode_config.mcp_entries(data).items()
+                }
+            except (OSError, ValueError):
+                entries[path] = {}
+        entry = entries[path].get(name)
+        return entry if isinstance(entry, dict) else {}
+
+    by_path: dict[str, dict] = {}
+    for ref in refs:
+        extra = ref.extra or {}
+        layers = extra.get(opencode_config.LAYERS_KEY)
+        name = _mcp_server_ref_name(ref)
+        if extra.get("component_type") != "mcp_server" or not isinstance(layers, list):
+            continue
+        if not ref.source_manifest or name is None:
+            continue
+        headers: dict = {}
+        owners: dict[str, Path] = {}
+        for layer in layers:
+            layer_headers = declared(Path(layer), name).get("headers")
+            if isinstance(layer_headers, dict):
+                for header, value in layer_headers.items():
+                    headers[header] = opencode_config.dollar_references(value)
+                    owners[f"headers.{header}"] = Path(layer)
+        entry: dict = {"_component_source": Path(ref.source_manifest)}
+        url = extra.get("url")
+        if isinstance(url, str):
+            entry["url"] = url
+        if headers:
+            entry["headers"] = headers
+            entry["_header_owners"] = owners
+        if extra.get("enabled") is False:
+            entry["disabled"] = True
+        by_path.setdefault(ref.source_manifest, {"mcpServers": {}})["mcpServers"][name] = entry
+    return [(Path(source), manifest) for source, manifest in by_path.items()]

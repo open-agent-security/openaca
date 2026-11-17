@@ -39,6 +39,7 @@ the other source, and never set conservatively because a kind is new: a
 | `codex` | `complete` | `complete` |
 | `devin` | `partial` | `partial` |
 | `pi` | `partial` | `partial` |
+| `opencode` | `partial` | `partial` |
 
 Cursor is `partial` at both sources, for different reasons per source:
 installed composition is blind to plugin enable state (a server-side call),
@@ -91,6 +92,14 @@ whose contents it cannot read: one not installed yet, one under the global npm
 root, or, in a repository, any npm or git package. See
 [`docs/specs/pi-agent-kind.md`](../specs/pi-agent-kind.md).
 
+OpenCode is `partial` at both sources
+([ADR-0081](../adrs/0081-opencode-agent-kind.md)). At both, a plugin is code:
+its `config` hook receives the merged configuration and its `tool` hook adds
+tools, and no file records what it adds. Installed also misses MCP servers
+registered at run time, remote configuration, and the process environment
+that OpenCode runs in. See
+[`docs/specs/opencode-agent-kind.md`](../specs/opencode-agent-kind.md).
+
 ## Coverage by agent kind
 
 What each kind reads, what posture it reports, and where it stops. Use this to
@@ -106,33 +115,33 @@ Cell markers:
 
 ### Composition
 
-| | `claude-code` | `codex` | `cursor` | `devin` | `pi` |
-|---|---|---|---|---|---|
-| Config root | `--config-dir`, else `$CLAUDE_CONFIG_DIR`, else `~/.claude` | `--config-dir`, else `$CODEX_HOME`, else `~/.codex` | `~/.cursor` | `$XDG_CONFIG_HOME/devin`, else `~/.config/devin` | `$PI_CODING_AGENT_DIR`, else `~/.pi/agent` |
-| `--config-dir` | Accepted | Accepted; `.agents` moves with it (ADR-0059) | Refused (ADR-0054) | Refused (ADR-0071) | Refused (ADR-0081) |
-| Coverage, declared / installed | `complete` / `complete` | `complete` / `complete` | `partial` / `partial` | `partial` / `partial` | `partial` / `partial` |
-| What keeps it from `complete` | — | — | Plugin enable state and runtime MCP registration (installed); the extensibility flag (both) | Managed plugins and runtime MCP registration (installed); `read_config_from` (declared) | Servers and skills an extension registers at run time (both) |
-| MCP servers | `.mcp.json`, `mcp.json`, `claude_desktop_config.json`, settings `mcpServers`, managed settings | `config.toml` `[mcp_servers]`: user, project, profiles | `.cursor/mcp.json`, `~/.cursor/mcp.json` | `mcp_config.json`: user, project, project-local, merged by name; legacy `config.json` `mcpServers`; Claude Code‡ (`.mcp.json`, settings, `~/.claude.json`, `~/.claude/mcp_servers.json`), Cursor‡ and Windsurf‡ (stable channel) files, each its own occurrence | `<agent>/mcp.json`; `.pi/mcp.json` for a trusted project, merged by name |
-| Skills | `.claude/skills/`, plugin skills | `<root>/skills/`, `.codex/skills/`, `.agents/skills/`, `$HOME/.agents/skills/` | `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`†, `.codex/skills/`† | `.devin/skills/`, `.cognition/skills/`, `.agents/skills/`, `<config>/skills/`, `$XDG_CONFIG_HOME/cognition/skills/`, `$HOME/.agents/skills/`; `.claude/skills/`‡, `.windsurf/skills/`‡, `.github/skills/`‡, `~/.codeium/windsurf/skills/`‡, `~/.copilot/skills/`‡ | `<agent>/skills/`, `.pi/skills/`, `.agents/skills/` up to the repository root, `$HOME/.agents/skills/`, settings entries, package skills |
-| Subagents | `.claude/agents/*.md` | `<root>/agents/*.toml`, `[agents.*] config_file` | `.cursor/agents/`, `.claude/agents/`† | `.devin/agents/`, `.agents/agents/`, `<config>/agents/` | — |
-| Commands | `.claude/commands/*.md` | — | `.cursor/commands/`, `.claude/commands/`† | `.claude/commands/`‡, loaded as skills | Prompt templates: `<agent>/prompts/`, `.pi/prompts/`, settings entries, package prompts |
-| Plugins | `installed_plugins.json`; `.claude-plugin` | `plugins/cache/`; two manifests | `plugins/local/`, `plugins/cache/`; two manifests, presence-only | Store under `$XDG_DATA_HOME/devin/cli/plugins/`, presence-only from `lock.json`; three manifests in a repo | Settings packages: npm with the installed version, git with the checked-out commit, local; and extensions (ADR-0082) |
-| Hooks | settings `hooks`, plugin `hooks/hooks.json`, managed settings | `hooks.json`, `.codex/hooks.json`, plugin hooks | Plugin hooks | `.devin/hooks.v1.json`, config `hooks`, Claude Code settings `hooks`‡, plugin `hooks.json` in a repo | — |
-| Reads another runtime's files | No | `.agents/skills/` only (shared convention) | Claude Code and Codex, behind the extensibility flag | Claude Code, Cursor, Windsurf, Copilot, behind `read_config_from`; OpenCode and Zed deferred | `.agents/skills/` only (shared convention) |
-| Declared evidence includes `.agents/skills/` (ADR-0058) | No | Yes | Yes | Yes, and `.agents/agents/` (ADR-0072) | Yes |
+| | `claude-code` | `codex` | `cursor` | `devin` | `pi` | `opencode` |
+|---|---|---|---|---|---|---|
+| Config root | `--config-dir`, else `$CLAUDE_CONFIG_DIR`, else `~/.claude` | `--config-dir`, else `$CODEX_HOME`, else `~/.codex` | `~/.cursor` | `$XDG_CONFIG_HOME/devin`, else `~/.config/devin` | `$PI_CODING_AGENT_DIR`, else `~/.pi/agent` | `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode` |
+| `--config-dir` | Accepted | Accepted; `.agents` moves with it (ADR-0059) | Refused (ADR-0054) | Refused (ADR-0071) | Refused (ADR-0081) | Refused (ADR-0081) |
+| Coverage, declared / installed | `complete` / `complete` | `complete` / `complete` | `partial` / `partial` | `partial` / `partial` | `partial` / `partial` | `partial` / `partial` |
+| What keeps it from `complete` | — | — | Plugin enable state and runtime MCP registration (installed); the extensibility flag (both) | Managed plugins and runtime MCP registration (installed); `read_config_from` (declared) | Servers and skills an extension registers at run time (both) | Plugin code (both); runtime MCP registration, remote configuration and the process environment (installed) |
+| MCP servers | `.mcp.json`, `mcp.json`, `claude_desktop_config.json`, settings `mcpServers`, managed settings | `config.toml` `[mcp_servers]`: user, project, profiles | `.cursor/mcp.json`, `~/.cursor/mcp.json` | `mcp_config.json`: user, project, project-local, merged by name; legacy `config.json` `mcpServers`; Claude Code‡ (`.mcp.json`, settings, `~/.claude.json`, `~/.claude/mcp_servers.json`), Cursor‡ and Windsurf‡ (stable channel) files, each its own occurrence | `<agent>/mcp.json`; `.pi/mcp.json` for a trusted project, merged by name | `mcp` in `opencode.json(c)`, `.opencode/opencode.json(c)`, the global `config.json`, `opencode.json(c)`, and the managed directory, merged by name with `enabled` stated |
+| Skills | `.claude/skills/`, plugin skills | `<root>/skills/`, `.codex/skills/`, `.agents/skills/`, `$HOME/.agents/skills/` | `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`†, `.codex/skills/`† | `.devin/skills/`, `.cognition/skills/`, `.agents/skills/`, `<config>/skills/`, `$XDG_CONFIG_HOME/cognition/skills/`, `$HOME/.agents/skills/`; `.claude/skills/`‡, `.windsurf/skills/`‡, `.github/skills/`‡, `~/.codeium/windsurf/skills/`‡, `~/.copilot/skills/`‡ | `<agent>/skills/`, `.pi/skills/`, `.agents/skills/` up to the repository root, `$HOME/.agents/skills/`, settings entries, package skills | `{skill,skills}/` in `<config>`, `.opencode/` and `~/.opencode/`; `.claude/skills/` and `.agents/skills/` in the project and home; `skills.paths`; all recursive |
+| Subagents | `.claude/agents/*.md` | `<root>/agents/*.toml`, `[agents.*] config_file` | `.cursor/agents/`, `.claude/agents/`† | `.devin/agents/`, `.agents/agents/`, `<config>/agents/` | — | `agent`, `mode`; `{agent,agents}/**/*.md`, `{mode,modes}/*.md` in each configuration directory |
+| Commands | `.claude/commands/*.md` | — | `.cursor/commands/`, `.claude/commands/`† | `.claude/commands/`‡, loaded as skills | Prompt templates: `<agent>/prompts/`, `.pi/prompts/`, settings entries, package prompts | `command`; `{command,commands}/**/*.md` in each configuration directory |
+| Plugins | `installed_plugins.json`; `.claude-plugin` | `plugins/cache/`; two manifests | `plugins/local/`, `plugins/cache/`; two manifests, presence-only | Store under `$XDG_DATA_HOME/devin/cli/plugins/`, presence-only from `lock.json`; three manifests in a repo | Settings packages: npm with the installed version, git with the checked-out commit, local; and extensions (ADR-0082) | npm specs in `plugin`, versioned from `$XDG_CACHE_HOME/opencode/packages/` (ADR-0082); local `{plugin,plugins}/*.{ts,js}` |
+| Hooks | settings `hooks`, plugin `hooks/hooks.json`, managed settings | `hooks.json`, `.codex/hooks.json`, plugin hooks | Plugin hooks | `.devin/hooks.v1.json`, config `hooks`, Claude Code settings `hooks`‡, plugin `hooks.json` in a repo | — | — (a plugin runs hooks as code) |
+| Reads another runtime's files | No | `.agents/skills/` only (shared convention) | Claude Code and Codex, behind the extensibility flag | Claude Code, Cursor, Windsurf, Copilot, behind `read_config_from`; OpenCode and Zed deferred | `.agents/skills/` only (shared convention) | `.claude/skills/` and `.agents/skills/` |
+| Declared evidence includes `.agents/skills/` (ADR-0058) | No | Yes | Yes | Yes, and `.agents/agents/` (ADR-0072) | Yes | Yes |
 
 ### Posture
 
-| Rule (`openaca-posture-…`) | `claude-code` | `codex` | `cursor` | `devin` | `pi` |
-|---|---|---|---|---|---|
-| `insecure-transport` | Yes | Yes | Yes | Yes | Yes |
-| `mcp-header-credential` | Yes | Yes | Yes | Yes; a path-shaped `${file:…}` reads as a reference | Yes; a bare `$NAME` and a leading `!` read as references |
-| `mutable-install-reference` | Yes | Yes | Yes | Yes | Yes; `npm:` and git package declarations too |
-| `skill-executable-tool` | Yes | Yes | Yes | Yes; `exec` counts as executable | Yes |
-| `mcp-auto-approve` | Yes: `autoApprove` on a server entry | — | Yes: `permissions.json` | Yes: `permissions` `mcp__…` allows, merged across levels (ADR-0073) | — |
-| `command-policy-allow` | — | Yes: `rules/*.rules` | — | Yes: `permissions` `Exec(…)` and `exec` allows, merged across levels (ADR-0073) | — |
-| `project-trust` | — | Yes: `[projects.*] trust_level` | — | — | Yes: `trust.json` |
-| `api-endpoint-override` | Yes | — | — | — | — |
+| Rule (`openaca-posture-…`) | `claude-code` | `codex` | `cursor` | `devin` | `pi` | `opencode` |
+|---|---|---|---|---|---|---|
+| `insecure-transport` | Yes | Yes | Yes | Yes | Yes | Yes |
+| `mcp-header-credential` | Yes | Yes | Yes | Yes; a path-shaped `${file:…}` reads as a reference | Yes; a bare `$NAME` and a leading `!` read as references | Yes; `{env:…}` and `{file:…}` read as references |
+| `mutable-install-reference` | Yes | Yes | Yes | Yes | Yes; `npm:` and git package declarations too | Yes, for MCP servers |
+| `skill-executable-tool` | Yes | Yes | Yes | Yes; `exec` counts as executable | Yes | — (OpenCode ignores `allowed-tools`, ADR-0083) |
+| `mcp-auto-approve` | Yes: `autoApprove` on a server entry | — | Yes: `permissions.json` | Yes: `permissions` `mcp__…` allows, merged across levels (ADR-0073) | — | — (OpenCode allows every tool by default, ADR-0083) |
+| `command-policy-allow` | — | Yes: `rules/*.rules` | — | Yes: `permissions` `Exec(…)` and `exec` allows, merged across levels (ADR-0073) | — | — (ADR-0083) |
+| `project-trust` | — | Yes: `[projects.*] trust_level` | — | — | Yes: `trust.json` | — |
+| `api-endpoint-override` | Yes | — | — | — | — | — |
 
 ### Not covered, for any kind
 
@@ -140,7 +149,8 @@ Cell markers:
   instructions, not components.
 - **Components a server delivers at run time and never writes to a file the
   scan reads**: Cursor's team configuration, MCP servers an editor registers
-  over a protocol, and Devin's managed plugins where uncached.
+  over a protocol, Devin's managed plugins where uncached, and OpenCode's
+  remote configuration and run-time MCP servers.
 - **Components a Pi extension registers in code**: MCP servers from
   `pi.registerMcpServer()`, and skill and prompt paths from
   `resources_discover`.

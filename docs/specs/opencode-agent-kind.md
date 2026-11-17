@@ -1,9 +1,9 @@
 # OpenCode Agent Kind — Surface Audit
 
 *Implemented (2026-11-17): `opencode` is registered. Decisions:
-[ADR-0081](../adrs/0081-opencode-agent-kind.md),
-[ADR-0082](../adrs/0082-opencode-npm-plugin-identity-and-version.md),
-[ADR-0083](../adrs/0083-opencode-permissions-feed-no-posture-rule.md). Audited
+[ADR-0083](../adrs/0083-opencode-agent-kind.md),
+[ADR-0084](../adrs/0084-opencode-npm-plugin-identity-and-version.md),
+[ADR-0085](../adrs/0085-opencode-permissions-feed-no-posture-rule.md). Audited
 2026-11-17. This is the per-kind audit that
 [Multi-Agent Support](multi-agent-support.md) requires.*
 
@@ -241,7 +241,7 @@ not install again. So the installed `package.json` gives the version that runs.
   `alias@npm:real@1.0.0`, that name is `real`.
 - With no install, an exact version in the spec is the version. A range, a tag
   or no version gives no version.
-- The identity is `plugin/npm/<name>` (ADR-0082).
+- The identity is `plugin/npm/<name>` (ADR-0084).
 - A spec that is not a registry spec (a Git URL, a tarball URL, `file:`) is
   presence-only, with no version.
 - OpenCode ignores `opencode-openai-codex-auth` and `opencode-copilot-auth`,
@@ -378,7 +378,7 @@ An npm plugin keys under its configuration file, so no cache path enters a
   `mcp-server/npm/<package>` for a package launch, `mcp-remote/<host><path>` for
   a remote server.
 - **An npm plugin** takes `plugin/npm/<name>` and the PURL
-  `pkg:npm/<name>@<version>` (ADR-0082).
+  `pkg:npm/<name>@<version>` (ADR-0084).
 - **A local plugin, an agent and a command** are occurrence-local.
 - **A skill** takes the identity every kind gives it.
 
@@ -412,9 +412,9 @@ Posture rules read composed components, as for every kind.
 | `insecure_transport` | **Yes** | A remote server has `url`. An `http://` server is the same exposure |
 | `mcp_header_credential` | **Yes** | A remote server has `headers`. OpenCode writes a reference as `{env:NAME}` or `{file:path}`, not `${…}`. The OpenCode collector writes each in the `${…}` form the rule reads, so the rule stays strict for every other kind |
 | `mutable_install` | **Yes, for MCP servers** | The MCP branch reads the launch line, which the `command` array gives. It does not fire for a plugin: the rule reads launch lines, and a bare npm spec such as `name@1.2.3` reads as an opaque token |
-| `mcp_auto_approve` | **No** (ADR-0083) | OpenCode allows every tool by default. Its `permission` allows are not an opt-in from a confirming default |
-| `command_policy_allow` | **No** (ADR-0083) | The same reason, for `bash` |
-| `skill_capability` | **No** (ADR-0083) | OpenCode reads only `name` and `description` from a skill. It ignores `allowed-tools`, the field this rule reads |
+| `mcp_auto_approve` | **No** (ADR-0085) | OpenCode allows every tool by default. Its `permission` allows are not an opt-in from a confirming default |
+| `command_policy_allow` | **No** (ADR-0085) | The same reason, for `bash` |
+| `skill_capability` | **No** (ADR-0085) | OpenCode reads only `name` and `description` from a skill. It ignores `allowed-tools`, the field this rule reads |
 | `project_trust` | **No** | OpenCode has no trusted-directory concept |
 | `api_endpoint_override` | **No** | It matches Claude Code settings keys in a file that OpenCode does not have |
 
@@ -472,9 +472,9 @@ rule id, and it waits for its own ADR.
 
 | # | Decision | Detail | Record |
 |---|---|---|---|
-| 1 | Register `opencode`, `partial` at both sources; merge MCP servers by name with `enabled` stated; refuse `--config-dir` | [Coverage](#coverage), [MCP servers](#mcp-servers), [Roots](#roots) | [ADR-0081](../adrs/0081-opencode-agent-kind.md) |
-| 2 | An npm plugin is `plugin/npm/<name>`, versioned from OpenCode's install | [Plugins](#plugins) | [ADR-0082](../adrs/0082-opencode-npm-plugin-identity-and-version.md) |
-| 3 | OpenCode's `permission` feeds no posture rule, and `skill_capability` does not apply | [Posture](#posture) | [ADR-0083](../adrs/0083-opencode-permissions-feed-no-posture-rule.md) |
+| 1 | Register `opencode`, `partial` at both sources; merge MCP servers by name with `enabled` stated; refuse `--config-dir` | [Coverage](#coverage), [MCP servers](#mcp-servers), [Roots](#roots) | [ADR-0083](../adrs/0083-opencode-agent-kind.md) |
+| 2 | An npm plugin is `plugin/npm/<name>`, versioned from OpenCode's install | [Plugins](#plugins) | [ADR-0084](../adrs/0084-opencode-npm-plugin-identity-and-version.md) |
+| 3 | OpenCode's `permission` feeds no posture rule, and `skill_capability` does not apply | [Posture](#posture) | [ADR-0085](../adrs/0085-opencode-permissions-feed-no-posture-rule.md) |
 
 ## Verification
 

@@ -1,4 +1,4 @@
-"""OpenCode posture (ADR-0081, ADR-0083, docs/specs/opencode-agent-kind.md).
+"""OpenCode posture (ADR-0083, ADR-0085, docs/specs/opencode-agent-kind.md).
 
 Three rules apply. The MCP posture view comes from the composed servers: a
 server's headers merge across its files, each attributed to the file that sets
@@ -131,7 +131,7 @@ def test_an_unpinned_launch_is_a_mutable_install(roots):
 
 
 def test_permissions_and_skill_tools_report_nothing(roots):
-    """ADR-0083: OpenCode allows every tool by default, and ignores a skill's
+    """ADR-0085: OpenCode allows every tool by default, and ignores a skill's
     `allowed-tools`."""
     config, project = roots
     _json(

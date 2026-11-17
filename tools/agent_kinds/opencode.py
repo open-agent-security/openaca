@@ -1,4 +1,4 @@
-"""The OpenCode kind (ADR-0081). Mirrors `tools/agent_kinds/devin_cli.py`."""
+"""The OpenCode kind (ADR-0083). Mirrors `tools/agent_kinds/devin_cli.py`."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ KIND_ID = "opencode"
 DISPLAY_NAME = "OpenCode"
 ROOT_LABEL = "opencode"
 
-# Argued per source, from a named gap at that source (ADR-0081):
+# Argued per source, from a named gap at that source (ADR-0083):
 #   * both — a plugin is code: its `config` hook receives the merged
 #     configuration and its `tool` hook adds tools, so a file scan cannot see
 #     what a plugin adds.
@@ -171,7 +171,7 @@ KIND = AgentKind(
     root_override_refusal=ROOT_OVERRIDE_REFUSAL,
     # Not `mcp_auto_approve` or `command_policy_allow`: OpenCode allows every
     # tool by default, so a `permission` allow is no opt-in. Not
-    # `skill_capability`: OpenCode ignores `allowed-tools` (ADR-0083). Not
+    # `skill_capability`: OpenCode ignores `allowed-tools` (ADR-0085). Not
     # `project_trust` or `api_endpoint_override`: OpenCode has neither surface.
     posture_rules=frozenset(
         {

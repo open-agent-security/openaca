@@ -219,13 +219,15 @@ no modification of your Claude Code settings.
 ## Current coverage
 
 OpenACA V0 supports declared and installed agent composition for multiple agent
-kinds: Claude Code, Cursor, Codex, and Devin CLI.
+kinds: Claude Code, Cursor, Codex, Devin CLI, and Pi.
 
 Today it reads:
 
 - host-specific agent config such as `.claude/settings.json`, `.mcp.json`,
   `mcp.json`, `claude_desktop_config.json`, `installed_plugins.json`,
   `SKILL.md`, hooks, commands, and subagents (Claude Code, Cursor, Codex, Devin CLI);
+- Pi's `mcp.json`, settings packages with their installed npm versions,
+  extensions, skills, and prompt templates;
 - package manifests and lockfiles when they belong to agent components, such as
   dependencies bundled by a plugin.
 

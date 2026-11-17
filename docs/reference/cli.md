@@ -55,8 +55,8 @@ openaca scan endpoint \
 ```
 
 `scan endpoint` and `bom endpoint` both take `--kind`
-to limit discovery to one registered agent kind (`claude-code`, `cursor`, or
-`codex`).
+to limit discovery to one registered agent kind (`claude-code`, `cursor`,
+`codex`, `devin`, or `pi`).
 Omit `--kind` and discovery finds every installed kind whose own default root
 exists — a bare `openaca scan endpoint` with Claude Code, Cursor, and Codex
 installed renders one card per kind. `--config-dir` names one kind's root, so
@@ -65,7 +65,8 @@ alone can't say which kind's root it names, and the CLI errors rather than
 guessing. Each kind resolves its own default root when `--config-dir` is
 omitted — Claude Code from `$CLAUDE_CONFIG_DIR`, else `~/.claude`; Cursor from
 `~/.cursor` (no environment variable); Codex from `$CODEX_HOME`, else
-`~/.codex`. An unrecognized `--kind` is a hard error listing the known kinds.
+`~/.codex`; Pi from `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`. An
+unrecognized `--kind` is a hard error listing the known kinds.
 
 Not every kind accepts `--config-dir`. A kind declares whether naming a root
 fully specifies its target, and Cursor's does not: an installed Cursor is
@@ -74,7 +75,9 @@ only one and produce a composition stitched from two homes
 ([ADR-0054](../adrs/0054-per-kind-root-override.md)). Claude Code and Codex
 both accept it — Codex because `$CODEX_HOME` moves its whole tree and it reads
 no other runtime's config ([ADR-0056](../adrs/0056-codex-root-override.md)).
-`--kind cursor --config-dir …` is refused with the reason.
+`--kind cursor --config-dir …` is refused with the reason. Pi refuses it too
+([ADR-0081](../adrs/0081-pi-agent-kind.md)): Pi reads `$HOME/.agents/skills`
+whatever its agent directory is, so set `PI_CODING_AGENT_DIR` instead.
 
 A subcommand is required. Shared options such as `-v`, `--fail-on`, `--sarif`,
 `--format`, and `--no-color` can sit before or after the subcommand name:

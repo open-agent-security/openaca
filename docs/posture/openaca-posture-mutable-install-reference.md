@@ -16,6 +16,8 @@ against it. Mutable shapes:
 - npx/uvx specs pinned to `@latest`: `npx @scope/server-foo@latest`
 - npx/uvx specs with a non-exact version: `@scope/foo@1.2`,
   `mcp-bar>=1.0`
+- `npm:` specs with no exact version, as a Pi package declares them:
+  `npm:@scope/tools`, `npm:@scope/tools@^1.2.0`
 - Git refs targeting a branch or tag (not a full 40-char SHA):
   `git+https://host/x/y.git@main`, `git+https://host/x/y.git@v1.0.0`
 - Docker image refs without a `@sha256:` digest, even when tagged:

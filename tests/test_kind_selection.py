@@ -20,9 +20,9 @@ from tools.graph import Graph
 from tools.kind_selection import KindSelectionError, validate_kind_selection
 
 # Captured from `openaca scan endpoint` on commit 83ec849, before the move. The
-# known-kinds list is the registry's, so it grew when `devin` registered.
+# known-kinds list is the registry's, so it grew when `devin` and `pi` registered.
 _UNKNOWN_KIND = (
-    "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, devin"
+    "unknown agent kind 'not-a-real-kind'; known kinds: claude-code, codex, cursor, devin, pi"
 )
 _CONFIG_DIR_WITHOUT_KIND = (
     "--config-dir requires --kind: with more than one installed agent kind, "
@@ -45,6 +45,15 @@ _DEVIN_REFUSAL = (
     "under your home — and a root override moves only the first, producing a "
     "composition stitched from two homes that the output cannot distinguish from a "
     "correct scan."
+)
+
+# ADR-0081: Pi refuses, and names the variable that does relocate it.
+_PI_REFUSAL = (
+    "--config-dir is not supported for --kind pi: an installed Pi's composition "
+    "comes from its agent directory, from $HOME/.agents/skills, and from npm "
+    "packages that may sit under the global npm root, and a root override moves "
+    "only the first; set PI_CODING_AGENT_DIR to scan a relocated agent directory "
+    "the way Pi reads it."
 )
 
 
@@ -139,8 +148,15 @@ def test_the_cli_adapter_translates_the_domain_error(tmp_path):
         (["--config-dir", "<TMP>"], _CONFIG_DIR_WITHOUT_KIND),
         (["--kind", "cursor", "--config-dir", "<TMP>"], _CURSOR_REFUSAL),
         (["--kind", "devin", "--config-dir", "<TMP>"], _DEVIN_REFUSAL),
+        (["--kind", "pi", "--config-dir", "<TMP>"], _PI_REFUSAL),
     ],
-    ids=["unknown-kind", "config-dir-without-kind", "refusing-kind", "refusing-devin"],
+    ids=[
+        "unknown-kind",
+        "config-dir-without-kind",
+        "refusing-kind",
+        "refusing-devin",
+        "refusing-pi",
+    ],
 )
 def test_the_command_line_is_byte_identical_to_the_pre_move_capture(tmp_path, argv, message):
     result = CliRunner().invoke(

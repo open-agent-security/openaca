@@ -59,6 +59,13 @@ def _isolate_xdg_roots(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_pi_agent_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear `PI_CODING_AGENT_DIR`, which relocates Pi's agent directory, for
+    the reason `_isolate_xdg_roots` gives."""
+    monkeypatch.delenv("PI_CODING_AGENT_DIR", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_managed_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> Path:

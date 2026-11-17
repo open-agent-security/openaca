@@ -65,7 +65,7 @@ def test_policy_evidence_drives_posture_admission_without_a_settings_artifact(tm
     assert set(tmp_path.rglob("*")) == before
 
 
-@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin"])
+@pytest.mark.parametrize("kind", ["claude-code", "cursor", "codex", "devin", "pi"])
 @pytest.mark.parametrize("include_posture", [False, True])
 def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, include_posture):
     from tools.scan import main as scan_main
@@ -84,6 +84,7 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
                 "claude-code": ".mcp.json",
                 "cursor": ".cursor/mcp.json",
                 "devin": ".devin/mcp_config.json",
+                "pi": ".pi/mcp.json",
             }[kind]
         )
         content = json.dumps(
@@ -124,6 +125,7 @@ def test_mcp_header_credential_scan_is_opt_in_and_redacted(tmp_path, kind, inclu
         ("codex", False),
         ("devin", False),
         ("devin", True),
+        ("pi", False),
     ],
 )
 def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline):
@@ -137,6 +139,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             "cursor": ".cursor",
             "codex": ".codex",
             "devin": ".config/devin",
+            "pi": ".pi/agent",
         }[kind]
     )
     root.mkdir(parents=True)
@@ -167,7 +170,7 @@ def test_mcp_header_credential_endpoint_scan(tmp_path, monkeypatch, kind, inline
             )
         )
     args = ["endpoint", "--kind", kind, "--include-posture", "--format", "json"]
-    if kind not in ("cursor", "devin"):
+    if kind not in ("cursor", "devin", "pi"):
         args.extend(["--config-dir", str(root)])
     result = CliRunner().invoke(scan_main, args)
     assert result.exit_code == 0, result.output
@@ -2232,6 +2235,102 @@ def test_e2e_devin_cli_endpoint_composes_its_imports_and_reports_them(tmp_path, 
     assert refs and not [r for r in refs if str(tmp_path) in r]
     assert any(r.startswith("home/.claude.json#") for r in refs)
     assert any(r.startswith("devin/mcp_config.json#") for r in refs)
+
+
+def test_e2e_pi_endpoint_matches_an_installed_package_and_names_servers_by_alias(
+    tmp_path, monkeypatch
+):
+    """Pi end to end (ADR-0081, ADR-0082): discovery from the agent directory,
+    an npm package matched against the real corpus by its installed version,
+    posture from the merged `mcp.json` and `trust.json`, and a BOM whose MCP
+    server carries its configured name and whose bom-refs carry no home path.
+
+    The vulnerable package is declared unpinned in `settings.json`, so only
+    the installed copy's version can match it: a regression that drops the
+    install read loses the finding a downstream detection joins on.
+    """
+    from tools.bom_cli import main as bom_main
+    from tools.scan import main as scan_main
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    agent = home / ".pi" / "agent"
+    project = tmp_path / "project"
+    (project / ".pi").mkdir(parents=True)
+    agent.mkdir(parents=True)
+    (agent / "settings.json").write_text(
+        json.dumps({"packages": ["npm:@cyanheads/git-mcp-server"]}), encoding="utf-8"
+    )
+    installed = agent / "npm" / "node_modules" / "@cyanheads" / "git-mcp-server"
+    installed.mkdir(parents=True)
+    (installed / "package.json").write_text(
+        json.dumps({"name": "@cyanheads/git-mcp-server", "version": "1.1.0"}), encoding="utf-8"
+    )
+    (agent / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"team-docs": {"url": "http://docs.example.test/mcp"}}}),
+        encoding="utf-8",
+    )
+    (agent / "trust.json").write_text(json.dumps({str(project.resolve()): True}), encoding="utf-8")
+    (project / ".pi" / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"team-docs": {"exposure": "direct"}}}), encoding="utf-8"
+    )
+
+    result = CliRunner().invoke(
+        scan_main,
+        [
+            "endpoint",
+            "--kind",
+            "pi",
+            "--project",
+            str(project),
+            "--include-posture",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code in (0, 1), result.output
+    doc, _ = json.JSONDecoder().raw_decode(result.output[result.output.index("{") :])
+    assert [(a["kind"], a["coverage"]) for a in doc["agents"]] == [("pi", "partial")]
+    assert {f["agent"]["kind"] for f in doc["findings"]} == {"pi"}
+    rule_ids = {f.get("rule_id") for f in doc["findings"]}
+    assert "openaca-posture-insecure-transport" in rule_ids
+    assert "openaca-posture-mutable-install-reference" in rule_ids
+    assert "openaca-posture-project-trust" in rule_ids
+    assert any("GHSA-3q26-f695-pp76" in json.dumps(f) for f in doc["findings"])
+
+    out = tmp_path / "boms"
+    bom = CliRunner().invoke(
+        bom_main,
+        ["endpoint", "--kind", "pi", "--project", str(project), "--output-dir", str(out)],
+    )
+    assert bom.exit_code == 0, bom.output
+    (path,) = out.glob("*.cdx.json")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    refs = [c["bom-ref"] for c in document["components"]]
+    assert refs and not [r for r in refs if str(tmp_path) in r]
+    by_type = {}
+    for component in document["components"]:
+        props = {p["name"]: p["value"] for p in component.get("properties", [])}
+        by_type.setdefault(props.get("openaca:component_type"), []).append((component, props))
+    ((package, package_props),) = by_type["plugin"]
+    assert package["purl"] == "pkg:npm/%40cyanheads/git-mcp-server@1.1.0"
+    assert package_props["openaca:identity"] == "plugin/npm/@cyanheads/git-mcp-server"
+    ((_server, server_props),) = by_type["mcp_server"]
+    assert json.loads(server_props["openaca:component_path"]) == [
+        {"type": "mcp_server", "name": "team-docs"}
+    ]
+    assert server_props["openaca:enabled"] == "true"
+
+    from openaca.core import collect_installed_agents
+
+    (collected,) = collect_installed_agents(project=project, kind_id="pi")
+    assert (collected.agent_kind, collected.config_root) == ("pi", agent)
+    assert collected.bom["metadata"]["component"]["bom-ref"] == "root/pi"
+    assert {f.rule_id for f in collected.posture_findings} >= {
+        "openaca-posture-insecure-transport",
+        "openaca-posture-project-trust",
+    }
 
 
 def test_policy_evidence_includes_native_user_and_project_local_mcps(tmp_path):

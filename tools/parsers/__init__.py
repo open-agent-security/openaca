@@ -606,6 +606,8 @@ PI_MANIFEST_REGISTRY: list[ManifestPattern] = [
     *(
         ManifestPattern(f"**/.pi/extensions/{pattern}", _parse_repo_pi_extension)
         for pattern in ("*.ts", "*.js", "*/index.ts", "*/index.js")
+    ),
+]
 
 
 def _parse_repo_opencode_agent(path: Path) -> list[ComponentRef]:

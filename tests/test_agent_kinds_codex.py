@@ -192,8 +192,8 @@ def test_every_kind_is_registered_and_the_others_are_unchanged():
         CURSOR_MANIFEST_REGISTRY,
         DEVIN_MANIFEST_REGISTRY,
         HOST_AGNOSTIC_REGISTRY,
-        PI_MANIFEST_REGISTRY,
         OPENCODE_MANIFEST_REGISTRY,
+        PI_MANIFEST_REGISTRY,
     )
     from tools.parsers import (
         REGISTRY as FLAT_REGISTRY,

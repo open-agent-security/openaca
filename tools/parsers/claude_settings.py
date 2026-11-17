@@ -54,9 +54,10 @@ def parse(path: Path) -> list[ComponentRef]:
 def _split_plugin_key(plugin_key: str) -> tuple[str, str | None]:
     """Return `(name, marketplace)` from a `<name>@<marketplace>` plugin key.
 
-    Settings `enabledPlugins` keys and `installed_plugins.json` keys use this
-    shape. Split on the last `@` so `@scope/plugin@market` keeps the scope in
-    the name: name=`@scope/plugin`, marketplace=`market`.
+    Settings `enabledPlugins` keys, `installed_plugins.json` keys, and policy
+    plugin targets use this shape. Split on the last `@` so
+    `@scope/plugin@market` keeps the scope in the name: name=`@scope/plugin`,
+    marketplace=`market`.
     """
     if "@" in plugin_key:
         name, marketplace = plugin_key.rsplit("@", 1)

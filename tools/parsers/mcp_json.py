@@ -40,7 +40,7 @@ LOCAL_MCP_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 # Git object IDs are hex and case-insensitive, so an uppercase pin like
 # `@ABCDEF...` is still an immutable commit. Match both cases; the value is
 # lowercased before use so the PURL @version stays canonical. Devin plugin
-# pins use this same pattern (`devin_config`).
+# pins (`devin_config`) and Pi git refs (`pi_config`) use this same pattern.
 _COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 INTERPOLATION_RE = re.compile(r"\$\{[^}]+\}")
 _DOCKER_VALUE_FLAGS = frozenset(

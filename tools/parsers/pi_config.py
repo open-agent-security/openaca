@@ -34,7 +34,6 @@ _SERVER_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 _OVERRIDE_KEYS = frozenset({"enabled", "exposure", "toolExposure"})
 _NPM_SPEC = re.compile(r"^(@?[^@]+(?:/[^@]+)?)(?:@(.+))?$")
 _EXACT_SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-_COMMIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 _GIT_PROTOCOL = re.compile(r"^(?:https?|ssh|git)://", re.IGNORECASE)
 _SCP = re.compile(r"^git@([^:]+):(.+)$")
 _NOT_LOCAL_PREFIXES = ("npm:", "git:", "github:", "http:", "https:", "ssh:", "builtin:")
@@ -51,7 +50,7 @@ def is_exact_version(version: object) -> bool:
 
 
 def is_commit(ref: object) -> bool:
-    return isinstance(ref, str) and _COMMIT_SHA.fullmatch(ref) is not None
+    return isinstance(ref, str) and mcp_json._COMMIT_SHA_RE.fullmatch(ref) is not None
 
 
 # --- mcp.json ------------------------------------------------------------------

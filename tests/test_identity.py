@@ -294,6 +294,18 @@ def test_mcp_package_source_extracts_launcher_specific_packages():
         "PyPI",
         "weather-mcp",
     )
+    assert mcp_package_source("uv --directory /tmp tool run weather-mcp --token secret") == (
+        "uvx",
+        "PyPI",
+        "weather-mcp",
+    )
+    assert mcp_package_source("uv --directory=/tmp tool run weather-mcp") == (
+        "uvx",
+        "PyPI",
+        "weather-mcp",
+    )
+    # `--directory` takes the next token, so `tool` is a directory name.
+    assert mcp_package_source("uv --directory tool run python") is None
 
 
 def test_safe_unpinned_install_source_uses_install_source():

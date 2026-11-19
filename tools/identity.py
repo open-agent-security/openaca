@@ -85,12 +85,16 @@ def match_coordinate_for_bom(ref: Any) -> str | None:
     return candidate if isinstance(candidate, str) and candidate else None
 
 
-# uv global options that consume a separate value token.
-# Best-effort against the uv CLI as of mid-2026; missing entries cause
-# `uv <unknown-flag> <value> tool run X` to fall back instead of dispatching
-# as uvx — false negative, not false positive.  Mirrors _UV_VALUE_FLAGS in
-# mcp_json.py (which handles the separate command+args form at parse time).
-_UV_GLOBAL_VALUE_FLAGS = frozenset(
+# uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
+# value. `_skip_leading_uv_options` walks past those pairs to the
+# subcommand. An inline `--flag=value` token is one step (the value is
+# embedded). The MCP parser and the mutable-reference check call this
+# walker too, so the three reads of one command cannot drift.
+#
+# Best-effort against the uv CLI as of mid-2026. A missing entry makes
+# `uv <unknown-flag> <value> tool run X` fall back instead of dispatching
+# as uvx: a false negative, not a false positive.
+_UV_VALUE_FLAGS = frozenset(
     {
         "--directory",
         "--project",
@@ -111,21 +115,25 @@ _UV_GLOBAL_VALUE_FLAGS = frozenset(
 )
 
 
+def _skip_leading_uv_options(args: list[str]) -> int:
+    """Index of the first token that is not a leading uv global option."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if "=" in args[i]:
+            i += 1
+        elif args[i] in _UV_VALUE_FLAGS:
+            i += 2
+        else:
+            i += 1
+    return i
+
+
 def launcher_and_args(tokens: list[str]) -> tuple[str, list[str]]:
     if not tokens:
         return "", []
     if tokens[0] == "uv":
-        # Walk past leading uv global options to find the actual subcommand,
-        # so `uv --offline tool run pkg` dispatches as uvx. Inline
-        # `--flag=value` tokens are consumed in one step (value is embedded).
-        i = 1
-        while i < len(tokens) and tokens[i].startswith("-"):
-            if "=" in tokens[i]:
-                i += 1
-            elif tokens[i] in _UV_GLOBAL_VALUE_FLAGS:
-                i += 2
-            else:
-                i += 1
+        # `uv --offline tool run pkg` dispatches as uvx.
+        i = 1 + _skip_leading_uv_options(tokens[1:])
         if i + 1 < len(tokens) and tokens[i] == "tool" and tokens[i + 1] == "run":
             return "uvx", tokens[i + 2 :]
     if len(tokens) >= 2 and tokens[0] == "bun" and tokens[1] == "x":

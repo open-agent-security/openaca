@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from tools.component_ref import ComponentRef
+from tools.identity import _skip_leading_uv_options
 
 NPM_PINNED_RE = re.compile(r"^(?P<name>(?:@[^/]+/)?[^@]+)@(?P<version>[^@\s]+)$")
 PYPI_PINNED_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[A-Za-z0-9_.+-]+)$")
@@ -387,37 +388,6 @@ def _local_mcp_identity(command: str, args: list[str], server_name: object) -> s
     return None
 
 
-# uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate
-# value. `_skip_leading_uv_options` uses this set to walk past option/value
-# pairs and locate the actual subcommand. Inline `--flag=value` doesn't
-# appear here (the value is embedded in the same token). The mutable-reference
-# check uses that walker too, so the two reads of one command cannot drift.
-#
-# This list is best-effort against the uv CLI as of mid-2026. Missing
-# entries cause `uv <unknown-flag> <value> tool run X` to fall to binary
-# fallback instead of dispatching as uvx — false negative, not false
-# positive, so safe to ship and extend incrementally as new flags land.
-_UV_VALUE_FLAGS = frozenset(
-    {
-        "--directory",
-        "--project",
-        "--config-file",
-        "--cache-dir",
-        "--python",
-        "--python-preference",
-        "--color",
-        "--default-index",
-        "--index",
-        "--index-url",
-        "--extra-index-url",
-        "--find-links",
-        "--keyring-provider",
-        "--allow-insecure-host",
-        "--trusted-host",
-    }
-)
-
-
 def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[str]]:
     """Normalize `uv tool run <pkg>` and `bun x <pkg>` into the equivalent
     `uvx <pkg>` / `bunx <pkg>` runner forms.
@@ -440,19 +410,6 @@ def _command_dispatch(command: str | None, args: list[str]) -> tuple[str, list[s
     if i + 1 < len(args) and args[i] == "tool" and args[i + 1] == "run":
         return "uvx", args[i + 2 :]
     return command, args
-
-
-def _skip_leading_uv_options(args: list[str]) -> int:
-    """Index of the first token that is not a leading uv global option."""
-    i = 0
-    while i < len(args) and args[i].startswith("-"):
-        if "=" in args[i]:
-            i += 1
-        elif args[i] in _UV_VALUE_FLAGS:
-            i += 2
-        else:
-            i += 1
-    return i
 
 
 #: Launchers whose whole launch line a host accepts in `command` alone.

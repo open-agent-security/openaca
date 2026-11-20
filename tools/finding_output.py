@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef, bom_ref_for, component_name_for
+from tools.component_ref import ComponentRef, bom_ref_for, component_name_for, declared_by_for
 from tools.graph import Graph
 from tools.matcher import Finding
 from tools.observations.finding import ObservationFinding
@@ -69,15 +69,6 @@ def source_for(ref: ComponentRef) -> dict[str, Any]:
     if not source:
         source["status"] = "unknown"
     return source
-
-
-def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:
-    declared_by = (ref.extra or {}).get("declared_by")
-    if isinstance(declared_by, dict):
-        return dict(declared_by)
-    if ref.source_manifest:
-        return {"kind": "manifest", "path": ref.source_manifest}
-    return None
 
 
 def component_path_for(ref: ComponentRef) -> list[dict[str, str]]:

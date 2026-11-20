@@ -20,6 +20,7 @@ from tools.identity import (
 __all__ = [
     "ComponentRef",
     "bom_ref_for",
+    "declared_by_for",
     "canonical_component_identity",
     "canonical_ecosystem",
     "component_name_for",
@@ -76,6 +77,15 @@ class ComponentRef:
 def bom_ref_for(ref: ComponentRef) -> str | None:
     value = (ref.extra or {}).get("bom_ref")
     return value if isinstance(value, str) and value else None
+
+
+def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:
+    declared_by = (ref.extra or {}).get("declared_by")
+    if isinstance(declared_by, dict):
+        return dict(declared_by)
+    if ref.source_manifest:
+        return {"kind": "manifest", "path": ref.source_manifest}
+    return None
 
 
 def component_name_for(ref: ComponentRef) -> str:

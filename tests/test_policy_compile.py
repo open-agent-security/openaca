@@ -14,7 +14,6 @@ compile` still produces. The CLI cases were captured before the move.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import click
@@ -392,19 +391,17 @@ def test_an_unwritable_output_directory_raises_oserror_not_a_policy_error(tmp_pa
     compile` uncaught, so wrapping it in a domain error the command catches
     would turn a traceback into `Error: ...` with exit code 1."""
     target = _endpoint(tmp_path)
-    readonly = tmp_path / "readonly"
-    readonly.mkdir()
-    os.chmod(readonly, 0o500)
-    try:
-        with pytest.raises(OSError) as exc:
-            _compile(
-                target,
-                _BLOCK_MCPS,
-                output=readonly / "artifact.json",
-                dry_run=False,
-            )
-    finally:
-        os.chmod(readonly, 0o700)
+    # A file where the parent directory belongs fails `mkdir` for root too,
+    # which a read-only directory does not.
+    not_a_directory = tmp_path / "not-a-directory"
+    not_a_directory.write_text("", encoding="utf-8")
+    with pytest.raises(OSError) as exc:
+        _compile(
+            target,
+            _BLOCK_MCPS,
+            output=not_a_directory / "artifact.json",
+            dry_run=False,
+        )
 
     assert not isinstance(exc.value, PolicyValidationError)
     assert not isinstance(exc.value, PolicyEvaluationError)

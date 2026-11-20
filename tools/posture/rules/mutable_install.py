@@ -11,7 +11,12 @@ from dataclasses import replace
 from typing import Any
 
 from tools.active_in import active_in
-from tools.component_ref import ComponentRef, bom_ref_for, canonical_component_identity
+from tools.component_ref import (
+    ComponentRef,
+    bom_ref_for,
+    canonical_component_identity,
+    declared_by_for,
+)
 from tools.posture.finding import PostureFinding, Standards
 from tools.posture.immutability import is_mutable_reference
 
@@ -49,7 +54,7 @@ def check_mutable_install(
                 confidence=CONFIDENCE,
                 component=_component_for(ref, install_source),
                 active_in=active_in(ref, agent_kind=agent_kind),
-                declared_by=_declared_by_for(ref),
+                declared_by=declared_by_for(ref),
                 component_path=_component_path_for(ref, install_source),
                 standards=_standards_for(ref),
                 remediation=REMEDIATION,
@@ -96,15 +101,6 @@ def _component_for(ref: ComponentRef, install_source: str) -> dict[str, Any]:
     if ref.purl:
         component["source"] = {"purl": ref.purl}
     return component
-
-
-def _declared_by_for(ref: ComponentRef) -> dict | None:
-    declared_by = (ref.extra or {}).get("declared_by")
-    if isinstance(declared_by, dict):
-        return dict(declared_by)
-    if ref.source_manifest:
-        return {"kind": "manifest", "path": ref.source_manifest}
-    return None
 
 
 def _component_path_for(ref: ComponentRef, install_source: str) -> list[dict[str, str]]:

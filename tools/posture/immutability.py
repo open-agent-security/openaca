@@ -19,12 +19,12 @@ import re
 
 from tools.identity import _skip_leading_uv_options
 from tools.parsers.mcp_json import (
+    _COMMIT_SHA_RE,
     _parse_npx_args,
     _parse_uvx_args,
     _parse_uvx_github_from,
 )
 
-_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _DOCKER_DIGEST_RE = re.compile(r"@sha256:[a-f0-9]{64}$")
 _EXACT_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$")
 
@@ -125,7 +125,7 @@ def _is_mutable_git_ref(ref: str) -> bool:
         tail = ref[idx + 1 :].strip()
         # Strip any trailing query/path after the ref.
         tail = tail.split("?", 1)[0].split("/", 1)[0]
-        if _SHA_RE.match(tail):
+        if _COMMIT_SHA_RE.match(tail):
             return False
         return True
     return True  # no ref pinned at all

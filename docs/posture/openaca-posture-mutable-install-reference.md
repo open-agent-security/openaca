@@ -27,7 +27,7 @@ Immutable shapes (not flagged):
 
 - Exact semver: `==X.Y.Z`, `@X.Y.Z`
 - Full commit SHA: `git+https://host/x/y.git@a1b2c3d4e5f6…`
-  (40 hex chars)
+  (40 hex chars, either case)
 - Docker digest: `@sha256:<64-hex>`
 - Local checked-in paths: `./local-bin`, `/opt/x`, `file://…`
 

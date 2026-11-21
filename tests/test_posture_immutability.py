@@ -27,8 +27,9 @@ from tools.posture.immutability import is_mutable_reference
         ("git+https://github.com/x/y.git@main", True),
         ("git+https://github.com/x/y.git@v1.0.0", True),  # tag is mutable
         ("git+https://github.com/x/y.git", True),  # no ref pinned
-        # Full 40-char SHA → immutable
+        # Full 40-char SHA → immutable. Git object IDs ignore case.
         ("git+https://github.com/x/y.git@a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", False),
+        ("git+https://github.com/x/y.git@A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0", False),
         # Docker — mutable tags / no digest
         ("ghcr.io/github/github-mcp-server:latest", True),
         ("ghcr.io/github/github-mcp-server", True),  # no tag = latest

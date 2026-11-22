@@ -259,15 +259,28 @@ def _walk_active_plugins(
     return refs, warnings
 
 
+def is_unoverridden_default_claude_root(
+    install_root: Path, *, config_root_overridden: bool
+) -> bool:
+    """True when `install_root` is the default `~/.claude` and nothing moved it.
+
+    `effective_mcp_refs` reads the legacy `~/.claude.json` only in this case.
+    The graph normalizer uses the same test, so the two cannot drift.
+    """
+    return (
+        not config_root_overridden
+        and not os.environ.get("CLAUDE_CONFIG_DIR")
+        and install_root.resolve() == (Path.home() / ".claude").resolve()
+    )
+
+
 def effective_mcp_refs(
     install_root: Path, project_root: Path | None, *, config_root_overridden: bool = False
 ) -> list[ComponentRef]:
     """Select native local, project and user MCP entries, in that order."""
     path = install_root / ".claude.json"
-    if (
-        not config_root_overridden
-        and not os.environ.get("CLAUDE_CONFIG_DIR")
-        and install_root.resolve() == (Path.home() / ".claude").resolve()
+    if is_unoverridden_default_claude_root(
+        install_root, config_root_overridden=config_root_overridden
     ):
         path = Path.home() / ".claude.json"
     try:

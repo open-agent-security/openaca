@@ -17,7 +17,6 @@ reproducible across machines — the resolved scan path is evidence, not identit
 from __future__ import annotations
 
 import json
-import os
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -305,18 +304,16 @@ def build_rooted_graph(
     # root so node keys — which become CycloneDX bom-refs — are reproducible.
     # The gitignore root (`root_dir`/`root_spec`) and the normalize root derive
     # from the same scan root; they're separate concerns threaded in parallel.
-    # `effective_mcp_refs` (ADR-0054's one exception: the default root's legacy
-    # `~/.claude.json`) reads outside `install_root` only when `install_root`
-    # IS the unoverridden default `~/.claude` — the same condition it checks
-    # itself. An explicit `--config-dir` that happens to equal `$HOME` would
-    # otherwise share this root's own path with "home", and the stable sort
-    # in `_make_normalizer` would key every ordinary file under it as
-    # `home/...` instead of `<root_label>/...`, making bom-refs depend on
-    # where that root is mounted.
-    is_default_root = (
-        not config_root_overridden
-        and not os.environ.get("CLAUDE_CONFIG_DIR")
-        and Path(target).resolve() == (Path.home() / ".claude").resolve()
+    # `effective_mcp_refs` reads the legacy `~/.claude.json` outside
+    # `install_root` only for the unoverridden default `~/.claude`
+    # (ADR-0054). The normalizer uses that same test. An explicit
+    # `--config-dir` that happens to equal `$HOME` must not share this
+    # root's path with "home": `_make_normalizer`'s stable sort would key
+    # every ordinary file under it as `home/...` instead of
+    # `<root_label>/...`, and bom-refs would depend on where that root is
+    # mounted.
+    is_default_root = claude_install.is_unoverridden_default_claude_root(
+        Path(target), config_root_overridden=config_root_overridden
     )
     extra_roots = (("home", Path.home()),) if mode == "endpoint" and is_default_root else ()
     normalize = _make_normalizer(

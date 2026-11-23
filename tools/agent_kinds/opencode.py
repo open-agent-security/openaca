@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, Builtins, DiscoveryContext
+from tools.agent_kinds import (
+    AgentInstance,
+    AgentKind,
+    Builtins,
+    DiscoveryContext,
+    xdg_base_dir,
+)
 from tools.graph import Graph
 from tools.parsers import HOST_AGNOSTIC_REGISTRY, OPENCODE_MANIFEST_REGISTRY
 from tools.parsers.gitignore import iter_unignored_relative_files
@@ -52,29 +57,19 @@ def declared_evidence(scan_root: Path, *, include_gitignored: bool = False) -> P
     return None
 
 
-def _xdg_root(variable: str, default: Path) -> Path:
-    """`$<variable>` when it names an absolute path, else `default`. OpenCode
-    resolves a relative value against its own working directory, which a scan
-    cannot know."""
-    value = os.environ.get(variable)
-    if value and Path(value).is_absolute():
-        return Path(value)
-    return default
-
-
 def resolve_config_root(config_dir: Path | None = None) -> Path:
     """`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`.
 
     `config_dir` is accepted and ignored so this keeps the shape every kind's
     resolver has; the CLI rejects the flag before discovery.
     """
-    return _xdg_root("XDG_CONFIG_HOME", Path.home() / ".config") / "opencode"
+    return xdg_base_dir("XDG_CONFIG_HOME", Path.home() / ".config") / "opencode"
 
 
 def resolve_cache_root() -> Path:
     """`$XDG_CACHE_HOME/opencode`, else `~/.cache/opencode`: the npm plugin
     installs' parent, moved by a different variable from the config root."""
-    return _xdg_root("XDG_CACHE_HOME", Path.home() / ".cache") / "opencode"
+    return xdg_base_dir("XDG_CACHE_HOME", Path.home() / ".cache") / "opencode"
 
 
 def resolve_managed_root() -> Path:

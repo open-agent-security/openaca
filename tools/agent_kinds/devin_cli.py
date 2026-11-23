@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-import os
 from fnmatch import fnmatch
 from pathlib import Path
 
-from tools.agent_kinds import AgentInstance, AgentKind, Builtins, DiscoveryContext
+from tools.agent_kinds import (
+    AgentInstance,
+    AgentKind,
+    Builtins,
+    DiscoveryContext,
+    xdg_base_dir,
+)
 from tools.graph import Graph
 from tools.parsers import DEVIN_MANIFEST_REGISTRY, HOST_AGNOSTIC_REGISTRY
 from tools.parsers.gitignore import iter_unignored_relative_files
@@ -167,34 +172,25 @@ ROOT_OVERRIDE_REFUSAL = (
 )
 
 
-def _xdg_root(variable: str, default: Path) -> Path:
-    """`$<variable>` when it names an absolute path, else `default`. The XDG
-    base-directory specification treats a relative value as invalid."""
-    value = os.environ.get(variable)
-    if value and Path(value).is_absolute():
-        return Path(value)
-    return default
-
-
 def resolve_config_root(config_dir: Path | None = None) -> Path:
     """`$XDG_CONFIG_HOME/devin`, else `~/.config/devin` (ADR-0071).
 
     `config_dir` is accepted and ignored so this keeps the shape every kind's
     resolver has; the CLI rejects the flag before discovery.
     """
-    return _xdg_root("XDG_CONFIG_HOME", Path.home() / ".config") / "devin"
+    return xdg_base_dir("XDG_CONFIG_HOME", Path.home() / ".config") / "devin"
 
 
 def resolve_legacy_config_root() -> Path:
     """`$XDG_CONFIG_HOME/cognition`: the root's name before the rename, whose
     `skills/` Devin still lists."""
-    return _xdg_root("XDG_CONFIG_HOME", Path.home() / ".config") / "cognition"
+    return xdg_base_dir("XDG_CONFIG_HOME", Path.home() / ".config") / "cognition"
 
 
 def resolve_data_root() -> Path:
     """`$XDG_DATA_HOME/devin/cli`, else `~/.local/share/devin/cli`: the plugin
     store's parent, moved by a different variable from the config root."""
-    return _xdg_root("XDG_DATA_HOME", Path.home() / ".local" / "share") / "devin" / "cli"
+    return xdg_base_dir("XDG_DATA_HOME", Path.home() / ".local" / "share") / "devin" / "cli"
 
 
 def discover(ctx: DiscoveryContext) -> list[AgentInstance]:

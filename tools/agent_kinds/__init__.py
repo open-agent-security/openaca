@@ -14,6 +14,7 @@ retrofitted, so it is a list even while every registered kind is a singleton.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
@@ -198,6 +199,19 @@ class AgentKind:
             raise ValueError(
                 f"kind {self.id!r} allowlists unknown posture rule id(s): {sorted(unknown)}"
             )
+
+
+def xdg_base_dir(variable: str, default: Path) -> Path:
+    """`$<variable>` when it is an absolute path, else `default`.
+
+    Shared by Devin and OpenCode. A relative value is ignored: the XDG
+    base-directory specification treats one as invalid, and OpenCode
+    resolves one against its working directory, which a scan cannot know.
+    """
+    value = os.environ.get(variable)
+    if value and Path(value).is_absolute():
+        return Path(value)
+    return default
 
 
 def matches_evidence(rel: str, patterns: tuple[str, ...]) -> bool:

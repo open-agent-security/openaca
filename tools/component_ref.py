@@ -10,6 +10,7 @@ from tools.identity import (
     canonical_ecosystem,
     encode_purl_name,
     is_package_source_ref,
+    nonempty_str,
     safe_pinned_mcp_install_source,
     unpinned_mcp_package,
 )
@@ -75,8 +76,7 @@ class ComponentRef:
 
 
 def bom_ref_for(ref: ComponentRef) -> str | None:
-    value = (ref.extra or {}).get("bom_ref")
-    return value if isinstance(value, str) and value else None
+    return nonempty_str((ref.extra or {}).get("bom_ref"))
 
 
 def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:

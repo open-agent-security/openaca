@@ -80,9 +80,13 @@ def is_package_source_ref(ref: Any) -> bool:
     return bool(ref.name) and purl_type_for_ecosystem(ref.ecosystem) in PACKAGE_SOURCE_PURL_TYPES
 
 
+def nonempty_str(value: object) -> str | None:
+    """Return ``value`` when it is a non-empty string. Return ``None`` otherwise."""
+    return value if isinstance(value, str) and value else None
+
+
 def match_coordinate_for_bom(ref: Any) -> str | None:
-    candidate = (ref.extra or {}).get("match_coordinate")
-    return candidate if isinstance(candidate, str) and candidate else None
+    return nonempty_str((ref.extra or {}).get("match_coordinate"))
 
 
 # uv global options (`uv [OPTIONS] <COMMAND>`) that consume a separate

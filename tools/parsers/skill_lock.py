@@ -15,7 +15,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
+
+from tools.identity import nonempty_str
 
 
 @dataclass(frozen=True)
@@ -116,18 +118,14 @@ def _parse_entry(name: object, entry: object, path: Path) -> SkillLockEntry | No
         name=name,
         source=source,
         source_type=source_type,
-        source_url=_optional_str(entry.get("sourceUrl")),
-        ref=_optional_str(entry.get("ref")),
-        skill_path=_optional_str(entry.get("skillPath")),
+        source_url=nonempty_str(entry.get("sourceUrl")),
+        ref=nonempty_str(entry.get("ref")),
+        skill_path=nonempty_str(entry.get("skillPath")),
         hash=hash_value,
         hash_type=hash_type,
-        plugin_name=_optional_str(entry.get("pluginName")),
+        plugin_name=nonempty_str(entry.get("pluginName")),
         lockfile_path=str(path),
     )
-
-
-def _optional_str(value: Any) -> Optional[str]:
-    return value if isinstance(value, str) and value else None
 
 
 def _candidate_lock_paths(skill_md_path: Path, project_root: Optional[Path]) -> list[Path]:

@@ -24,7 +24,7 @@ from tools.capability import COVERAGE_LEVELS, Capability, capabilities_for_ref
 from tools.capability_corpus import load_capability_corpus
 from tools.component_ref import ComponentRef, canonical_component_identity
 from tools.graph import Edge, Graph, Node
-from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom
+from tools.identity import infer_unpinned_mcp_package, match_coordinate_for_bom, nonempty_str
 from tools.marketplace import source_digest
 
 OPENACA_BOM_SCHEMA_VERSION = "0.7"
@@ -487,8 +487,8 @@ def _component_ref_from_cyclonedx(component: dict[str, Any]) -> ComponentRef:
     extra["_identity_finalized"] = True
     return ComponentRef(
         ecosystem=parsed.get("ecosystem"),
-        name=parsed.get("name") or _string(component.get("name")),
-        version=parsed.get("version") or _string(component.get("version")),
+        name=parsed.get("name") or nonempty_str(component.get("name")),
+        version=parsed.get("version") or nonempty_str(component.get("version")),
         source_manifest=props.get("openaca:source_manifest") or "",
         source_locator=props.get("openaca:source_locator") or "",
         component_identity=component_identity,
@@ -811,7 +811,3 @@ def _parse_purl(purl: str) -> dict[str, str]:
     if version:
         parsed["version"] = version
     return parsed
-
-
-def _string(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None

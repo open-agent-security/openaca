@@ -18,6 +18,7 @@ from typing import Any, cast
 
 from tools.active_in import active_in
 from tools.component_ref import ComponentRef, bom_ref_for, canonical_component_identity
+from tools.identity import nonempty_str
 from tools.observations.finding import (
     Confidence,
     ObservationFinding,
@@ -270,7 +271,9 @@ def _findings_from_sarif(
     for run in _list_of_dicts(sarif.get("runs")):
         driver = _dict_at(run, "tool", "driver")
         source_version = (
-            _str(driver.get("semanticVersion")) or _str(driver.get("version")) or "unknown"
+            nonempty_str(driver.get("semanticVersion"))
+            or nonempty_str(driver.get("version"))
+            or "unknown"
         )
         for result in _list_of_dicts(run.get("results")):
             rule_id = _result_rule_id(result)
@@ -383,7 +386,7 @@ def _evidence_for_result(
 
 
 def _result_rule_id(result: dict[str, Any]) -> str | None:
-    return _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+    return nonempty_str(result.get("ruleId")) or nonempty_str(_dict_at(result, "rule").get("id"))
 
 
 def _severity(result: dict[str, Any]) -> ObservationSeverity:
@@ -406,7 +409,7 @@ def _severity(result: dict[str, Any]) -> ObservationSeverity:
             if parsed > 0:
                 return "low"
             return "info"
-    level = _str(result.get("level")) or "warning"
+    level = nonempty_str(result.get("level")) or "warning"
     return _LEVEL_TO_SEVERITY.get(level, "medium")
 
 
@@ -431,7 +434,7 @@ def _confidence(result: dict[str, Any]) -> Confidence:
 def _first_string_property(result: dict[str, Any], *names: str) -> str | None:
     properties = _dict_at(result, "properties")
     for name in names:
-        value = _str(properties.get(name))
+        value = nonempty_str(properties.get(name))
         if value is not None:
             return value.lower()
     return None
@@ -455,7 +458,7 @@ def _first_location(result: dict[str, Any], scan_path: Path) -> dict[str, Any]:
         artifact = _dict_at(physical, "artifactLocation")
         region = _dict_at(physical, "region")
         out: dict[str, Any] = {}
-        uri = _str(artifact.get("uri"))
+        uri = nonempty_str(artifact.get("uri"))
         if uri is not None:
             out["uri"] = uri if _is_absolute_uri(uri) else str(scan_path / uri)
         start_line = region.get("startLine")
@@ -476,7 +479,9 @@ def _apply_severity_overrides(
         return
     for run in _list_of_dicts(sarif.get("runs")):
         for result in _list_of_dicts(run.get("results")):
-            rule_id = _str(result.get("ruleId")) or _str(_dict_at(result, "rule").get("id"))
+            rule_id = nonempty_str(result.get("ruleId")) or nonempty_str(
+                _dict_at(result, "rule").get("id")
+            )
             if rule_id is None:
                 continue
             severity = severity_map.get(rule_id)
@@ -510,7 +515,3 @@ def _list_of_dicts(raw: object) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
     return [item for item in raw if isinstance(item, dict)]
-
-
-def _str(raw: object) -> str | None:
-    return raw if isinstance(raw, str) and raw else None

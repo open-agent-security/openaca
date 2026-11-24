@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from tools.identity import nonempty_str
+
 Priority = Literal["critical", "high", "medium", "low", "info"]
 Confidence = Literal["high", "medium", "low"]
 TriageAction = Literal["remove", "pin", "upgrade", "approve", "replace", "accept", "review"]
@@ -177,52 +179,52 @@ def _agent_of(raw: dict[str, Any]) -> tuple[str | None, str | None]:
     agent = raw.get("agent")
     if not isinstance(agent, dict):
         return None, None
-    return _as_str(agent.get("kind")), _as_str(agent.get("agent_id"))
+    return nonempty_str(agent.get("kind")), nonempty_str(agent.get("agent_id"))
 
 
 def _evidence_from_finding(raw: dict[str, Any]) -> TriageEvidence | None:
-    finding_type = _as_str(raw.get("finding_type")) or "finding"
+    finding_type = nonempty_str(raw.get("finding_type")) or "finding"
     if finding_type == "vulnerability":
-        evidence_id = _as_str(raw.get("id")) or _advisory_id(raw) or "unknown-advisory"
+        evidence_id = nonempty_str(raw.get("id")) or _advisory_id(raw) or "unknown-advisory"
         return TriageEvidence(
             finding_type=finding_type,
             id=evidence_id,
-            title=_as_str(raw.get("summary")) or _as_str(raw.get("title")) or evidence_id,
+            title=nonempty_str(raw.get("summary")) or nonempty_str(raw.get("title")) or evidence_id,
             severity=_priority(raw.get("severity")),
             confidence=_confidence(raw.get("confidence")),
             provenance="advisory-derived",
-            source=_as_str(raw.get("source")) or _matched_source(raw),
-            fixed_in=_as_str(raw.get("fixed_in")),
+            source=nonempty_str(raw.get("source")) or _matched_source(raw),
+            fixed_in=nonempty_str(raw.get("fixed_in")),
             component=_component(raw),
         )
     if finding_type == "posture":
-        evidence_id = _as_str(raw.get("rule_id")) or "unknown-posture"
-        source = _as_str(raw.get("source")) or "openaca"
+        evidence_id = nonempty_str(raw.get("rule_id")) or "unknown-posture"
+        source = nonempty_str(raw.get("source")) or "openaca"
         provenance = "scanner-derived" if source == "openaca" else "external-scanner-derived"
         return TriageEvidence(
             finding_type=finding_type,
             id=evidence_id,
-            title=_as_str(raw.get("title")) or evidence_id,
+            title=nonempty_str(raw.get("title")) or evidence_id,
             severity=_priority(raw.get("severity")),
             confidence=_confidence(raw.get("confidence")),
             provenance=provenance,
             source=source,
-            remediation=_as_str(raw.get("remediation")),
+            remediation=nonempty_str(raw.get("remediation")),
             component=_component(raw),
         )
     if finding_type == "observation":
-        evidence_id = _as_str(raw.get("observation_id")) or "unknown-observation"
-        source = _as_str(raw.get("source")) or "unknown"
+        evidence_id = nonempty_str(raw.get("observation_id")) or "unknown-observation"
+        source = nonempty_str(raw.get("source")) or "unknown"
         provenance = "scanner-derived" if source == "openaca" else "external-scanner-derived"
         return TriageEvidence(
             finding_type=finding_type,
             id=evidence_id,
-            title=_as_str(raw.get("title")) or evidence_id,
+            title=nonempty_str(raw.get("title")) or evidence_id,
             severity=_priority(raw.get("severity")),
             confidence=_confidence(raw.get("confidence")),
             provenance=provenance,
             source=source,
-            remediation=_as_str(raw.get("remediation")),
+            remediation=nonempty_str(raw.get("remediation")),
             component=_component(raw),
         )
     return None
@@ -231,8 +233,8 @@ def _evidence_from_finding(raw: dict[str, Any]) -> TriageEvidence | None:
 def _select_component(raw: dict[str, Any]) -> _SelectedComponent:
     path = _component_path(raw)
     own = _component(raw)
-    own_type = _as_str(own.get("type"))
-    own_name = _as_str(own.get("name"))
+    own_type = nonempty_str(own.get("type"))
+    own_name = nonempty_str(own.get("name"))
     for item in path:
         if item.get("type") in _AGENT_COMPONENT_TYPES:
             component_type = item["type"]
@@ -250,7 +252,7 @@ def _select_component(raw: dict[str, Any]) -> _SelectedComponent:
 
 
 def _component_id(raw: dict[str, Any], component_type: str, label: str, *, own: bool) -> str:
-    attributed_to = _as_str(raw.get("attributed_to"))
+    attributed_to = nonempty_str(raw.get("attributed_to"))
     if component_type == "plugin" and attributed_to:
         return attributed_to
     # `component.source.*`/`identity` describe the finding's OWN component. Use
@@ -262,13 +264,13 @@ def _component_id(raw: dict[str, Any], component_type: str, label: str, *, own: 
         component = _component(raw)
         source = component.get("source")
         if isinstance(source, dict):
-            purl = _as_str(source.get("purl"))
+            purl = nonempty_str(source.get("purl"))
             if purl:
                 return purl
-            match_coordinate = _as_str(source.get("match_coordinate"))
+            match_coordinate = nonempty_str(source.get("match_coordinate"))
             if match_coordinate:
                 return match_coordinate
-        identity = _as_str(component.get("identity"))
+        identity = nonempty_str(component.get("identity"))
         if identity:
             return identity
     return f"{component_type}/{label}"
@@ -353,15 +355,15 @@ def _component_path(raw: dict[str, Any]) -> list[dict[str, str]]:
         for item in path:
             if not isinstance(item, dict):
                 continue
-            typ = _as_str(item.get("type"))
-            name = _as_str(item.get("name"))
+            typ = nonempty_str(item.get("type"))
+            name = nonempty_str(item.get("name"))
             if typ and name:
                 out.append({"type": typ, "name": name})
     if out:
         return out
     component = _component(raw)
-    typ = _as_str(component.get("type")) or "component"
-    name = _as_str(component.get("name")) or "<unidentified>"
+    typ = nonempty_str(component.get("type")) or "component"
+    name = nonempty_str(component.get("name")) or "<unidentified>"
     return [{"type": typ, "name": name}]
 
 
@@ -396,15 +398,11 @@ def _advisory_id(raw: dict[str, Any]) -> str | None:
     matched = raw.get("matched_advisory")
     if not isinstance(matched, dict):
         return None
-    return _as_str(matched.get("id"))
+    return nonempty_str(matched.get("id"))
 
 
 def _matched_source(raw: dict[str, Any]) -> str | None:
     matched = raw.get("matched_advisory")
     if not isinstance(matched, dict):
         return None
-    return _as_str(matched.get("source"))
-
-
-def _as_str(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
+    return nonempty_str(matched.get("source"))

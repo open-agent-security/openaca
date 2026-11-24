@@ -5,11 +5,20 @@ from tools.identity import (
     match_coordinate_for_bom,
     match_coordinates,
     mcp_package_source,
+    nonempty_str,
     normalize_launcher_command,
     safe_unpinned_mcp_install_source,
     strip_package_version,
     unpinned_mcp_package,
 )
+
+
+def test_nonempty_str_keeps_only_a_non_empty_string():
+    assert nonempty_str("plugin") == "plugin"
+    assert nonempty_str("") is None
+    assert nonempty_str("   ") == "   "
+    assert nonempty_str(None) is None
+    assert nonempty_str(0) is None
 
 
 def test_package_backed_mcp_graph_identity_keeps_package_coordinate_separate():

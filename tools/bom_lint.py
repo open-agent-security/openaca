@@ -10,7 +10,7 @@ from typing import Any
 import click
 from jsonschema import Draft202012Validator
 
-from tools.agent_kinds import REGISTRY
+from tools.agent_kinds import COMPOSITION_SOURCES, REGISTRY
 from tools.bom import (
     AGENT_ROOT_PREFIX,
     AGENT_ROOTED_SCHEMA_VERSIONS,
@@ -33,7 +33,6 @@ _COMPONENT_TYPES = {
     "skill",
 }
 _SCOPES = {"agent-component", "agent-dependency", "software-dependency"}
-_COMPOSITION_SOURCES = {"installed", "declared"}
 
 
 def load_schema() -> dict[str, Any]:
@@ -149,10 +148,10 @@ def check_agent_metadata(doc: dict[str, Any]) -> list[str]:
         )
 
     source = props.get("openaca:composition_source")
-    if source not in _COMPOSITION_SOURCES:
+    if source not in COMPOSITION_SOURCES:
         errors.append(
             "metadata.component: openaca:composition_source must be one of "
-            f"{sorted(_COMPOSITION_SOURCES)}, got {source!r}"
+            f"{sorted(COMPOSITION_SOURCES)}, got {source!r}"
         )
 
     for name in ("openaca:builtin_agents", "openaca:builtin_skills"):

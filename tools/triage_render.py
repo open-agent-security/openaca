@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from tools.triage import TriageCard
+from tools.triage import TriageCard, _path_label
 
 TriageFormat = Literal["text", "markdown", "json"]
 
@@ -176,10 +176,6 @@ def _agent_label(card: TriageCard) -> str | None:
     if not card.agent_id:
         return card.agent_kind
     return f"{card.agent_kind}/{card.agent_id}"
-
-
-def _path_label(path: list[dict[str, str]]) -> str:
-    return " -> ".join(f"{item['type']} {item['name']}" for item in path) or "<unknown>"
 
 
 def _path_label_code_span(path: list[dict[str, str]]) -> str:

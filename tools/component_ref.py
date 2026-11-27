@@ -25,6 +25,7 @@ __all__ = [
     "canonical_component_identity",
     "canonical_ecosystem",
     "component_name_for",
+    "component_path_leaf_name",
     "encode_purl_name",
     "is_package_source_ref",
     "safe_pinned_mcp_install_source",
@@ -88,12 +89,26 @@ def declared_by_for(ref: ComponentRef) -> dict[str, Any] | None:
     return None
 
 
-def component_name_for(ref: ComponentRef) -> str:
+def component_path_leaf_name(ref: ComponentRef) -> str | None:
+    """The name on the last ``component_path`` entry, when that name is a string.
+
+    An empty string is a name. A missing path, a non-dict entry, or a
+    non-string name is ``None``, so callers can apply their own fallback.
+    """
     component_path = (ref.extra or {}).get("component_path")
     if isinstance(component_path, list) and component_path:
         last = component_path[-1]
-        if isinstance(last, dict) and isinstance(last.get("name"), str):
-            return last["name"]
+        if isinstance(last, dict):
+            name = last.get("name")
+            if isinstance(name, str):
+                return name
+    return None
+
+
+def component_name_for(ref: ComponentRef) -> str:
+    leaf = component_path_leaf_name(ref)
+    if leaf is not None:
+        return leaf
     if ref.name:
         return ref.name
     if ref.component_identity:

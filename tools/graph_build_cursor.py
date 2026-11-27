@@ -30,7 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from tools import cursor_commands, cursor_subagents
-from tools.component_ref import ComponentRef
+from tools.component_ref import ComponentRef, component_path_leaf_name
 from tools.graph import Graph, Node
 from tools.graph_build import (
     add_child,
@@ -377,15 +377,6 @@ def _add_installed_skills(
             add_skill_node(graph, parent, path.parent, normalize=normalize)
 
 
-def _mcp_server_name(ref: ComponentRef) -> str | None:
-    component_path = (ref.extra or {}).get("component_path")
-    if isinstance(component_path, list) and component_path:
-        last = component_path[-1]
-        if isinstance(last, dict) and isinstance(last.get("name"), str):
-            return last["name"]
-    return None
-
-
 def _add_installed_mcps(
     graph: Graph, parent: Node, config_root: Path, project_root: Path | None, normalize
 ) -> None:
@@ -408,7 +399,7 @@ def _add_installed_mcps(
         for ref in safe_parse(graph, mcp_json.parse, mcp_path):
             if component_type_of(ref) != "mcp_server":
                 continue
-            name = _mcp_server_name(ref)
+            name = component_path_leaf_name(ref)
             if name is not None:
                 entries[name] = ref
     for name in sorted(entries):

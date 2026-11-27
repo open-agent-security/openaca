@@ -15,7 +15,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from tools.component_ref import ComponentRef, canonical_component_identity
+from tools.component_ref import (
+    ComponentRef,
+    canonical_component_identity,
+    component_path_leaf_name,
+)
 from tools.parsers import jsonc, settings_layers
 from tools.parsers.gitignore import is_ignored, load_gitignore_spec
 from tools.parsers.settings_layers import load as _load_settings_layers
@@ -971,12 +975,8 @@ def collect_cursor_endpoint_mcp_manifests(
 
 
 def _mcp_server_ref_name(ref: ComponentRef) -> str | None:
-    component_path = (ref.extra or {}).get("component_path")
-    if isinstance(component_path, list) and component_path:
-        last = component_path[-1]
-        if isinstance(last, dict) and isinstance(last.get("name"), str):
-            return last["name"]
-    return ref.name
+    leaf = component_path_leaf_name(ref)
+    return ref.name if leaf is None else leaf
 
 
 _CURSOR_PERMISSIONS_FILENAME = "permissions.json"

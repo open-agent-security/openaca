@@ -4,6 +4,8 @@ from tools.component_ref import (
     ComponentRef,
     canonical_component_identity,
     canonical_ecosystem,
+    component_name_for,
+    component_path_leaf_name,
     encode_purl_name,
     is_package_source_ref,
     safe_pinned_mcp_install_source,
@@ -185,6 +187,40 @@ def test_safe_pinned_mcp_install_source_preserves_github_source_subdirectory():
         "uvx git+https://github.com/org/mono@0123456789abcdef0123456789abcdef01234567"
         "#subdirectory=packages/mcp"
     )
+
+
+def test_component_path_leaf_name_reads_the_last_string_name():
+    ref = ComponentRef(
+        name="package",
+        extra={
+            "component_path": [
+                {"type": "plugin", "name": "outer"},
+                {"type": "mcp_server", "name": "playwright"},
+            ]
+        },
+    )
+    assert component_path_leaf_name(ref) == "playwright"
+    assert component_name_for(ref) == "playwright"
+
+
+def test_component_path_leaf_name_keeps_an_empty_string():
+    ref = ComponentRef(name="package", extra={"component_path": [{"name": ""}]})
+    assert component_path_leaf_name(ref) == ""
+    assert component_name_for(ref) == ""
+
+
+def test_component_path_leaf_name_is_none_without_a_string_name():
+    assert component_path_leaf_name(ComponentRef(name="package")) is None
+    assert (
+        component_path_leaf_name(
+            ComponentRef(extra={"component_path": [{"type": "mcp_server", "name": 1}]})
+        )
+        is None
+    )
+    assert component_path_leaf_name(ComponentRef(extra={"component_path": ["playwright"]})) is None
+    assert component_name_for(ComponentRef(name="package")) == "package"
+    assert component_name_for(ComponentRef(component_identity="skill/x")) == "skill/x"
+    assert component_name_for(ComponentRef()) == "<unidentified>"
 
 
 def test_native_identity_for_unknown_ecosystem():
